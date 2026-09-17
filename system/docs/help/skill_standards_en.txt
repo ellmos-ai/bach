@@ -23,7 +23,7 @@ An Anthropic-compatible skill is a folder with the following structure:
 
   my-skill/
   +-- SKILL.md # Main definition (required)
-  +-- scripts/ # Executable scripts (optional)
+  +-- tools/ # Executable scripts (optional)
   |   +-- setup.sh
   |   +-- run.py
   +-- references/ # Reference documentation (optional)
@@ -88,7 +88,7 @@ to use efficiently:
     Contains all rules, workflows and instructions.
 
   Level 3 -- Bundled Resources (on demand)
-    Files from references/, scripts/ and assets/.
+    Files from references/, tools/ and assets/.
     Are only loaded if the skill explicitly requests them
     or the LLM needs them for the current task.
 
@@ -123,7 +123,7 @@ BACH can directly scaffold Anthropic-compatible skills:
 
 This command internally uses skill_init.py and creates:
 - SKILL.md with correct front matter
-- scripts/folder (empty)
+- tools/folder (empty)
 - references/ folder (empty)
 - assets/ folder (empty)
 
@@ -146,7 +146,7 @@ Aspect internal to BACH Anthropic standard
   Type field type (mandatory) -- (not available)
   Version version (mandatory) metadata.version (opt.)
   Dependencies dependencies (mandatory) -- (not formalized)
-  Tools In the skill folder scripts/
+  Tools In the skill folder tools/
   Documentation in the skill folder references/
   Static files data/ or assets/ assets/
   Workflows _workflows/ or locally In SKILL.md Body
@@ -182,7 +182,7 @@ portable). Claude Code Agents are optional and not portable.
 
 When exporting BACH agents:
   - Sub-agent definitions -> references/
-  - Orchestration code -> scripts/
+  - Orchestration code -> tools/
   - Optional: .claude/agents/<name>.md for Claude Code users
 
 

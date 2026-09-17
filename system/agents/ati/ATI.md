@@ -50,7 +50,7 @@ ARCHITEKTUR
 │  │  ┌─────────────────────────────────────────────────┐   │ │
 │  │  │            BACH Basis (vorhanden)               │   │ │
 │  │  │                                                 │   │ │
-│  │  │  [✓] Task-DB (bach.db, user.db)                 │   │ │
+│  │  │  [✓] Task-DB (bach.db, unified)                 │   │ │
 │  │  │  [✓] Scanner (AUFGABEN.txt)                     │   │ │
 │  │  │  [✓] Memory-System                              │   │ │
 │  │  │  [✓] GUI/Dashboard                              │   │ │
@@ -375,7 +375,7 @@ INTEGRATION MIT BACH
 ATI nutzt BACH-Basis-Features:
 ------------------------------
 - bach.db/tasks          -> Task-Management
-- user.db/scanned_tasks  -> Scanner-Tasks
+- bach.db/ati_scan_runs  -> Scanner-Tracking
 - bach.db/memory_*       -> Memory-System
 - hub/handlers/*         -> CLI-System
 - gui/daemon_service.py  -> Daemon-Basis

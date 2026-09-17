@@ -1273,51 +1273,51 @@
     "key": "agent_launcher_handler_agent_verwaltung",
     "namespace": "cli",
     "language": "en",
-    "value": "Agent Launcher Handler - Agent management\n==========================================\n\nbach agent list                          Verfuegbare Agents auflisten\nbach agent start <name> [--mode MODE] [--model MODEL]   Agent starten\nbach agent stop <name>                   Agent stoppen\nbach agent status                        Laufende Agents anzeigen\n\nOptions:\n  --mode plan|default     Modus (default: default)\n  --model sonnet|opus|haiku   Modell (default: sonnet)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Agent Launcher Handler - Agent Management\n==========================================\n\nbach agent list                          List available agents\nbach agent start <name> [--mode MODE] [--model MODEL]   Start an agent\nbach agent stop <name>                   Stop an agent\nbach agent status                        Show running agents\n\nOptions:\n  --mode plan|default     Mode (default: default)\n  --model sonnet|opus|haiku   Model (default: sonnet)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "agent_launcher_handler_agent_verwaltung",
     "namespace": "cli",
     "language": "es",
-    "value": "Controlador del iniciador de agentes: gestión de agentes\n============================================\n\nlista de agentes de bach Verfuegbare Agentes auflisten\ninicio del agente bach <nombre> [--mode MODE] [--model MODEL] inicio del agente\nagente de bach detener <nombre> Agente detener\nestado del agente de bach Laufende Agents anzeigen\n\nOpciones:\n  --modo plan|modo predeterminado (predeterminado: predeterminado)\n  --model soneto|opus|haiku Modell (por defecto: soneto)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Agent Launcher Handler - Gestión de agentes\n==========================================\n\nbach agent list                          Listar agentes disponibles\nbach agent start <name> [--mode MODE] [--model MODEL]   Iniciar un agente\nbach agent stop <name>                   Detener un agente\nbach agent status                        Mostrar agentes en ejecución\n\nOpciones:\n  --mode plan|default     Modo (por defecto: default)\n  --model sonnet|opus|haiku   Modelo (por defecto: sonnet)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "agent_launcher_handler_agent_verwaltung",
     "namespace": "cli",
     "language": "ja",
-    "value": "エージェント ランチャー ハンドラー - エージェント管理\n=========================================\n\nバッハ エージェント リスト Verfuegbare エージェントが聞く\nbach エージェントの開始 <名前> [--mode MODE] [--model MODEL] エージェントの開始\nbach エージェント停止 <名前> エージェント停止\nバッハ代理店のステータス Laufende 代理店の評価\n\nオプション:\n  --mode plan|default Modus (デフォルト: デフォルト)\n  --model ソネット|作品|俳句モデル (デフォルト: ソネット)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "エージェントランチャーハンドラー - エージェント管理\n==========================================\n\nbach agent list                          利用可能なエージェントを一覧表示\nbach agent start <name> [--mode MODE] [--model MODEL]   エージェントを起動\nbach agent stop <name>                   エージェントを停止\nbach agent status                        実行中のエージェントを表示\n\nオプション:\n  --mode plan|default     モード（デフォルト: default）\n  --model sonnet|opus|haiku   モデル（デフォルト: sonnet）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "agent_launcher_handler_agent_verwaltung",
     "namespace": "cli",
     "language": "ru",
-    "value": "Обработчик средства запуска агентов — управление агентами\n=========================================\n\nСписок агентов Баха Verfuegbare Agents auflisten\nЗапуск агента bach <имя> [--mode РЕЖИМ] [--модель МОДЕЛЬ] Запуск агента\nОстановка агента Баха <имя> Остановка агента\nСтатус агента Баха Laufende Agents anzeigen\n\nОпции:\n  --mode plan|default Модус (по умолчанию: по умолчанию)\n  --model sonnet|opus|haiku Modell (по умолчанию: сонет)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Обработчик запуска агентов - Управление агентами\n==========================================\n\nbach agent list                          Показать доступных агентов\nbach agent start <name> [--mode MODE] [--model MODEL]   Запустить агента\nbach agent stop <name>                   Остановить агента\nbach agent status                        Показать запущенных агентов\n\nОпции:\n  --mode plan|default     Режим (по умолчанию: default)\n  --model sonnet|opus|haiku   Модель (по умолчанию: sonnet)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "agent_launcher_handler_agent_verwaltung",
     "namespace": "cli",
     "language": "zh",
-    "value": "代理启动器处理程序 - 代理管理\n===========================================\n\n巴赫经纪人列表 Verfuegbare Agents auflisten\nbach 代理启动 <名称> [--mode MODE] [--model MODEL] 代理启动\nbach Agent stop <名称> 代理 stoppen\n巴赫代理状态 Laufende Agents anzeigen\n\n选项：\n  --mode plan|default Modus (默认：default)\n  --model sonnet|opus|haiku Modell（默认：sonnet）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "代理启动器处理器 - 代理管理\n==========================================\n\nbach agent list                          列出可用代理\nbach agent start <name> [--mode MODE] [--model MODEL]   启动代理\nbach agent stop <name>                   停止代理\nbach agent status                        显示运行中的代理\n\n选项：\n  --mode plan|default     模式（默认：default）\n  --model sonnet|opus|haiku   模型（默认：sonnet）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "agent_status_n_n_t",
@@ -5953,11 +5953,11 @@
     "key": "bach_data_analysis_handler",
     "namespace": "cli",
     "language": "en",
-    "value": "BACH Data Analysis Handler\n==========================\nCLI handler for data analysis functions.\n\nCommands:\n    bach data load <path>           Datei laden und Infos anzeigen\n    bach data describe <path>       Deskriptive Statistik\n    bach data head <path> [--rows]  Erste Zeilen anzeigen\n    bach data corr <path>           Korrelationsmatrix\n    bach data chart <path>          Chart erstellen (geplant)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "BACH Data Analysis Handler\n==========================\nCLI handler for data analysis functions.\n\nCommands:\n    bach data load <path>           Load a file and show info\n    bach data describe <path>       Descriptive statistics\n    bach data head <path> [--rows]  Show first rows\n    bach data corr <path>           Correlation matrix\n    bach data chart <path>          Create a chart (planned)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_data_analysis_handler",
@@ -5993,11 +5993,11 @@
     "key": "bach_data_analysis_handler",
     "namespace": "cli",
     "language": "zh",
-    "value": "BACH 数据分析处理程序\n=========================\n用于数据分析功能的 CLI 处理程序。\n\n命令：\n    bach data load <路径> Datei laden und Infos anzeigen\n    巴赫数据描述<路径>描述统计\n    bach 数据头 <路径> [--行] Erste Zeilen anzeigen\n    巴赫数据 corr <路径> 相关矩阵\n    bach 数据图表 <路径> 图表 erstellen (geplant)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "BACH 数据分析处理器\n==========================\n数据分析功能的 CLI 处理器。\n\n命令：\n    bach data load <path>           加载文件并显示信息\n    bach data describe <path>       描述性统计\n    bach data head <path> [--rows]  显示前几行\n    bach data corr <path>           相关性矩阵\n    bach data chart <path>          创建图表（计划中）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_distribution_handler",
@@ -7213,51 +7213,51 @@
     "key": "bach_trash_handler_cli_handler",
     "namespace": "cli",
     "language": "en",
-    "value": "BACH Trash Handler\n==================\nCLI handler for the trash system (soft delete).\n\nCommands:\n    bach trash list              Alle Eintraege im Papierkorb\n    bach trash delete PATH       Datei in Papierkorb verschieben\n    bach trash restore ID        Datei wiederherstellen\n    bach trash purge             Abgelaufene Dateien loeschen\n    bach trash info ID           Details zu einem Eintrag",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "BACH Trash Handler\n==================\nCLI handler for the trash system (soft delete).\n\nCommands:\n    bach trash list              All entries in the trash\n    bach trash delete PATH       Move a file to the trash\n    bach trash restore ID        Restore a file\n    bach trash purge             Delete expired files\n    bach trash info ID           Details of an entry",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_trash_handler_cli_handler",
     "namespace": "cli",
     "language": "es",
-    "value": "Manipulador de basura BACH\n===================\nControlador CLI para el sistema de papelera (eliminación temporal).\n\nComandos:\n    lista de basura de bach Alle Eintraege im Papierkorb\n    basura de bach eliminar PATH Datei en Papierkorb verschieben\n    ID de restauración de basura de Bach Datei wiederherstellen\n    purga de basura de bach Abgelaufene Dateien loeschen\n    información de basura de bach ID Detalles zu einem Eintrag",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "BACH Trash Handler\n==================\nControlador CLI para el sistema de papelera (Soft-Delete).\n\nComandos:\n    bach trash list              Todas las entradas de la papelera\n    bach trash delete PATH       Mover un archivo a la papelera\n    bach trash restore ID        Restaurar un archivo\n    bach trash purge             Eliminar archivos caducados\n    bach trash info ID           Detalles de una entrada",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_trash_handler_cli_handler",
     "namespace": "cli",
     "language": "ja",
-    "value": "BACH ゴミ処理装置\n==================\nゴミ箱システム (論理的な削除) の CLI ハンドラー。\n\nコマンド:\n    バッハのゴミリスト Alle Eintraege im Papierkorb\n    bach ゴミ箱削除 Papierkorb verschieben の PATH Datei\n    bach ゴミ箱 ID を復元する Datei wiederherstellen\n    バッハのゴミパージ アブゲラウフェネ・ダティエン・レーシェン\n    bach ゴミ箱情報 ID 詳細 zu einem Eintrag",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "BACH Trash ハンドラー\n==================\nゴミ箱システム（ソフト削除）の CLI ハンドラー。\n\nコマンド:\n    bach trash list              ゴミ箱内のすべてのエントリを表示\n    bach trash delete PATH       ファイルをゴミ箱へ移動\n    bach trash restore ID        ファイルを復元\n    bach trash purge             期限切れファイルを削除\n    bach trash info ID           エントリの詳細を表示",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_trash_handler_cli_handler",
     "namespace": "cli",
     "language": "ru",
-    "value": "BACH Мусорный обработчик\n==================\nОбработчик CLI для системы мусора (мягкое удаление).\n\nКоманды:\n    Список мусора Баха Alle Eintraege im Papierkorb\n    bach мусор удалить PATH Datei в Papierkorb verschieben\n    Бах мусор восстановить ID Datei Wiederherstellen\n    Очистка мусора от Баха Abgelaufene Dateien loeschen\n    bach информация о мусоре ID Details zu einem Eintrag",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "BACH Trash Handler\n==================\nCLI-обработчик системы корзины (Soft-Delete).\n\nКоманды:\n    bach trash list              Все записи в корзине\n    bach trash delete PATH       Переместить файл в корзину\n    bach trash restore ID        Восстановить файл\n    bach trash purge             Удалить просроченные файлы\n    bach trash info ID           Детали записи",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_trash_handler_cli_handler",
     "namespace": "cli",
     "language": "zh",
-    "value": "巴赫垃圾处理器\n=================\n垃圾系统的 CLI 处理程序（软删除）。\n\n命令：\n    巴赫垃圾清单 Alle Eintraege im Papierkorb\n    bach 垃圾删除 Papierkorb verschieben 中的 PATH Datei\n    巴赫垃圾恢复 ID Datei wiederherstellen\n    巴赫垃圾清理 Abgelaufene Dateien loeschen\n    巴赫垃圾信息 ID 详细信息 zu einem Eintrag",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "BACH 回收站处理器\n==================\n回收站系统（软删除）的 CLI 处理器。\n\n命令：\n    bach trash list              回收站中的所有条目\n    bach trash delete PATH       将文件移入回收站\n    bach trash restore ID        恢复文件\n    bach trash purge             删除过期文件\n    bach trash info ID           条目详情",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "bach_watcher_daemon_status",
@@ -10693,11 +10693,11 @@
     "key": "cv_handler_lebenslauf_verwaltung",
     "namespace": "cli",
     "language": "en",
-    "value": "CV Handler - resume management\n==================================\n\n--cv generate           Lebenslauf generieren (ASCII)\n--cv generate --output  In Datei speichern\n--cv generate --scan    Ordner automatisch scannen\n--cv status             Status der Datenbasis anzeigen",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "CV Handler - Resume Management\n==================================\n\n--cv generate           Generate resume (ASCII)\n--cv generate --output  Save to file\n--cv generate --scan    Automatically scan folder\n--cv status             Show database status",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "cv_handler_lebenslauf_verwaltung",
@@ -10733,11 +10733,11 @@
     "key": "cv_handler_lebenslauf_verwaltung",
     "namespace": "cli",
     "language": "zh",
-    "value": "CV Handler - 简历管理\n===================================\n\n--cv 生成一般生活习惯 (ASCII)\n--cv 生成 --output 在 Datei speichern 中\n--cv 生成 --scan 订单自动扫描\n--cv status 数据基础状态",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "CV 处理器 - 简历管理\n==================================\n\n--cv generate           生成简历（ASCII）\n--cv generate --output  保存到文件\n--cv generate --scan    自动扫描文件夹\n--cv status             显示数据库状态",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "daemon_status",
@@ -13163,41 +13163,41 @@
     "key": "doc_extraktion_fehlgeschlagen_antiword_libreof",
     "namespace": "cli",
     "language": "es",
-    "value": "[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[Error de extracción .doc - antiword/LibreOffice/textract no disponible]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "doc_extraktion_fehlgeschlagen_antiword_libreof",
     "namespace": "cli",
     "language": "ja",
-    "value": "[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[.doc抽出に失敗 - antiword/LibreOffice/textract が利用不可]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "doc_extraktion_fehlgeschlagen_antiword_libreof",
     "namespace": "cli",
     "language": "ru",
-    "value": "[.doc-Extraction fehlgeschlagen - antiword/LibreOffice/text nicht verfuegbar]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[Не удалось извлечь .doc - antiword/LibreOffice/textract недоступны]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "doc_extraktion_fehlgeschlagen_antiword_libreof",
     "namespace": "cli",
     "language": "zh",
-    "value": "[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[.doc 提取失败 - antiword/LibreOffice/textract 不可用]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "doc_path_updater_aktualisiert_ver",
@@ -22153,11 +22153,11 @@
     "key": "exportiert_gesundheitsdaten_als_csv_text_oder_vca",
     "namespace": "cli",
     "language": "en",
-    "value": "Exports health data as CSV, text or vCard 3.0.\n\nOptions:\n            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)\n            --specialty <fach>      Nur bestimmtes Fachgebiet (fuer contacts)\n            --format csv|txt|vcard  Exportformat (default: txt)\n            --file <pfad>           Speichern in Datei",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Exports health data as CSV, text or vCard 3.0.\n\n        Options:\n            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)\n            --specialty <fach>      Only a specific specialty (for contacts)\n            --format csv|txt|vcard  Export format (default: txt)\n            --file <pfad>           Save to file",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "exportiert_gesundheitsdaten_als_csv_text_oder_vca",
@@ -22183,11 +22183,11 @@
     "key": "exportiert_gesundheitsdaten_als_csv_text_oder_vca",
     "namespace": "cli",
     "language": "ru",
-    "value": "Экспортирует данные о состоянии здоровья в формате CSV, текста или vCard 3.0.\n\nОпции:\n            --entity <тип> контакты|диагностика|лекарства|лаборатории|все (по умолчанию: контакты)\n            --specialty <fach> Nur bestimmtes Fachgebiet (функция контактов)\n            --format csv|txt|vcard Экспортный формат (по умолчанию: txt)\n            --file <pfad> Speichern в Datei",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Экспортирует данные о здоровье в формате CSV, текста или vCard 3.0.\n\n        Опции:\n            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)\n            --specialty <fach>      Только определённая специальность (для contacts)\n            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)\n            --file <pfad>           Сохранить в файл",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "exportiert_gesundheitsdaten_als_csv_text_oder_vca",
@@ -22273,11 +22273,11 @@
     "key": "exportiert_kontakte_als_csv_text_oder_vcard_3_0",
     "namespace": "cli",
     "language": "en",
-    "value": "Exports contacts as CSV, text or vCard 3.0.\n\nOptions:\n            --type aerzte/arzt    Nur Arzt-Kontakte\n            --type beruflich      Nur berufliche Kontakte\n            --type versicherung   Nur Versicherungs-Kontakte\n            --format csv|txt|vcard  Exportformat (default: txt)\n            --file <pfad>         Speichern in Datei",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Exports contacts as CSV, text or vCard 3.0.\n\n        Options:\n            --type aerzte/arzt    Only doctor contacts\n            --type beruflich      Only business contacts\n            --type versicherung   Only insurance contacts\n            --format csv|txt|vcard  Export format (default: txt)\n            --file <pfad>         Save to file",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "exportiert_kontakte_als_csv_text_oder_vcard_3_0",
@@ -22303,11 +22303,11 @@
     "key": "exportiert_kontakte_als_csv_text_oder_vcard_3_0",
     "namespace": "cli",
     "language": "ru",
-    "value": "Экспортирует контакты в формате CSV, тексте или vCard 3.0.\n\nОпции:\n            --type aerzte/arzt Нур Арзт-Контакте\n            --type beruflich Nur berufliche Контакты\n            --type versicherung Нур Versicherungs-Контакте\n            --format csv|txt|vcard Экспортный формат (по умолчанию: txt)\n            --file <pfad> Speichern в Datei",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Экспортирует контакты в формате CSV, текста или vCard 3.0.\n\n        Опции:\n            --type aerzte/arzt    Только контакты врачей\n            --type beruflich      Только рабочие контакты\n            --type versicherung   Только контакты страховых компаний\n            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)\n            --file <pfad>         Сохранить в файл",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "exportiert_kontakte_als_csv_text_oder_vcard_3_0",
@@ -24733,51 +24733,51 @@
     "key": "fehler_bei_doc_filename_e",
     "namespace": "cli",
     "language": "en",
-    "value": "[FEHLER bei {doc.filename}: {e}]",
+    "value": "[ERROR at {doc.filename}: {e}]",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_doc_filename_e",
     "namespace": "cli",
     "language": "es",
-    "value": "[FEHLER bei {doc.nombre de archivo}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[ERROR en {doc.filename}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_doc_filename_e",
     "namespace": "cli",
     "language": "ja",
-    "value": "[FEHLER による {doc.filename}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[エラー {doc.filename}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_doc_filename_e",
     "namespace": "cli",
     "language": "ru",
-    "value": "[FEHLER в {doc.filename}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[Ошибка в {doc.filename}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_doc_filename_e",
     "namespace": "cli",
     "language": "zh",
-    "value": "[FEHLER 位于 {doc.filename}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[错误 {doc.filename}：{e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_filepath_name_e",
@@ -24793,51 +24793,51 @@
     "key": "fehler_bei_filepath_name_e",
     "namespace": "cli",
     "language": "en",
-    "value": "[FEHLER bei {filepath.name}: {e}]",
+    "value": "[ERROR at {filepath.name}: {e}]",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_filepath_name_e",
     "namespace": "cli",
     "language": "es",
-    "value": "[FEHLER en {ruta.archivo.nombre}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[ERROR en {filepath.name}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_filepath_name_e",
     "namespace": "cli",
     "language": "ja",
-    "value": "[FEHLER による {filepath.name}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[エラー {filepath.name}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_filepath_name_e",
     "namespace": "cli",
     "language": "ru",
-    "value": "[FEHLER в {filepath.name}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[Ошибка в {filepath.name}: {e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_filepath_name_e",
     "namespace": "cli",
     "language": "zh",
-    "value": "[FEHLER 位于 {filepath.name}: {e}]",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[错误 {filepath.name}：{e}]",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_bei_txt_file_e",
@@ -25393,51 +25393,51 @@
     "key": "fehler_beim_lesen_e",
     "namespace": "cli",
     "language": "en",
-    "value": "[FEHLER beim Lesen: {e}]",
+    "value": "[ERROR while reading: {e}]",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_beim_lesen_e",
     "namespace": "cli",
     "language": "es",
-    "value": "[FEHLER beim Lesen: {e}]",
+    "value": "[ERROR al leer: {e}]",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_beim_lesen_e",
     "namespace": "cli",
     "language": "ja",
-    "value": "[FEHLER beim Lesen: {e}]",
+    "value": "[読み込みエラー: {e}]",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_beim_lesen_e",
     "namespace": "cli",
     "language": "ru",
-    "value": "[FEHLER beim Lesen: {e}]",
+    "value": "[Ошибка чтения: {e}]",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_beim_lesen_e",
     "namespace": "cli",
     "language": "zh",
-    "value": "[FEHLER beim Lesen: {e}]",
+    "value": "[读取错误：{e}]",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "fehler_beim_lesen_von_self_secrets_file_e",
@@ -31273,11 +31273,11 @@
     "key": "format_format_type_nicht_unterstuetzt_verfue",
     "namespace": "cli",
     "language": "en",
-    "value": "Format '{format_type}' is not supported.\n\nAvailable formats:\n  --format txt      Standard TXT-Dateien\n  --format datev    DATEV Buchungsstapel CSV (fuer Steuerberater)\n  --format csv      Einfaches CSV (fuer Excel)\n  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)\n\nExample:\n  bach steuer export --jahr 2025 --format datev\n  bach steuer export --format vorsorge",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Format '{format_type}' not supported.\n\nAvailable formats:\n  --format txt      Standard TXT files\n  --format datev    DATEV booking batch CSV (for tax advisors)\n  --format csv      Simple CSV (for Excel)\n  --format vorsorge Vorsorgeaufwand schedule (insurance contributions)\n\nExamples:\n  bach steuer export --jahr 2025 --format datev\n  bach steuer export --format vorsorge",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "format_format_type_nicht_unterstuetzt_verfue",
@@ -31293,11 +31293,11 @@
     "key": "format_format_type_nicht_unterstuetzt_verfue",
     "namespace": "cli",
     "language": "ja",
-    "value": "形式「{format_type}」はサポートされていません。\n\n利用可能な形式:\n  --format txt 標準 TXT-Dateien\n  --format datev DATEV Buchungsstapel CSV (fuer Steuerberater)\n  --format csv Einfaches CSV (Excel 用)\n  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)\n\n例:\n  bach steuer エクスポート --jahr 2025 --format datev\n  bach steuer エクスポート --format vorsorge",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "形式「{format_type}」はサポートされていません。\n\n利用可能な形式:\n  --format txt      標準 TXT ファイル\n  --format datev    DATEV 記帳バッチ CSV（税理士向け）\n  --format csv      シンプルな CSV（Excel 向け）\n  --format vorsorge Anlage Vorsorgeaufwand 様式（保険料）\n\n使用例:\n  bach steuer export --jahr 2025 --format datev\n  bach steuer export --format vorsorge",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "format_format_type_nicht_unterstuetzt_verfue",
@@ -31313,11 +31313,11 @@
     "key": "format_format_type_nicht_unterstuetzt_verfue",
     "namespace": "cli",
     "language": "zh",
-    "value": "不支持格式“{format_type}”。\n\n可用格式：\n  --format txt 标准 TXT-Dateien\n  --format datev DATEV Buchungsstapel CSV (fuer Steuerberater)\n  --format csv Einfaches CSV（适用于 Excel）\n  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)\n\n示例：\n  bach Steuer 导出 --jahr 2025 --format datev\n  bach Steuer 导出 --format vorsorge",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "不支持格式“{format_type}”。\n\n可用格式：\n  --format txt      标准 TXT 文件\n  --format datev    DATEV 记账批次 CSV（供税务顾问使用）\n  --format csv      简单 CSV（供 Excel 使用）\n  --format vorsorge 养老支出附表（保险缴费）\n\n示例：\n  bach steuer export --jahr 2025 --format datev\n  bach steuer export --format vorsorge",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "format_jeder_eintrag_zeigt_icon_dist_t",
@@ -32593,51 +32593,51 @@
     "key": "generiert_validiert_yaml_header_fuer_skill_md_date",
     "namespace": "cli",
     "language": "en",
-    "value": "Generates/validates YAML headers for SKILL.md files.\n\nUsage:\n            bach --maintain headers                  # Dry-run alle\n            bach --maintain headers --fix            # Alle korrigieren\n            bach --maintain headers --path skills/   # Bestimmter Ordner\n            bach --maintain headers --update-db      # DB-Versionen updaten",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Generates/validates YAML headers for SKILL.md files.\n\n        Usage:\n            bach --maintain headers                  # Dry-run all\n            bach --maintain headers --fix            # Fix all\n            bach --maintain headers --path skills/   # Specific folder\n            bach --maintain headers --update-db      # Update DB versions",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "generiert_validiert_yaml_header_fuer_skill_md_date",
     "namespace": "cli",
     "language": "es",
-    "value": "Genera/valida encabezados YAML para archivos SKILL.md.\n\nUso:\n            bach --mantener encabezados # Ejecución en seco todo\n            bach --mantener encabezados --fix # Alle korrigieren\n            bach --mantener encabezados --habilidades de ruta/ # Bestimmter Ordner\n            bach --maintain headers --update-db # Actualización de versiones de DB",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Genera/valida encabezados YAML para archivos SKILL.md.\n\n        Uso:\n            bach --maintain headers                  # Simulación de todos\n            bach --maintain headers --fix            # Corregir todos\n            bach --maintain headers --path skills/   # Carpeta específica\n            bach --maintain headers --update-db      # Actualizar versiones en DB",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "generiert_validiert_yaml_header_fuer_skill_md_date",
     "namespace": "cli",
     "language": "ja",
-    "value": "SKILL.md ファイルの YAML ヘッダーを生成/検証します。\n\n使用法:\n            bach --maintain headers # 予行演習\n            bach --maintain headers --fix # Alle korrigieren\n            bach --maintain headers --path skill/ # Bestimmter Ordner\n            bach --maintain headers --update-db # DB バージョンの更新",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "SKILL.md ファイルの YAML ヘッダーを生成/検証します。\n\n        使用方法:\n            bach --maintain headers                  # すべてドライラン\n            bach --maintain headers --fix            # すべて修正\n            bach --maintain headers --path skills/   # 特定のフォルダー\n            bach --maintain headers --update-db      # DB のバージョンを更新",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "generiert_validiert_yaml_header_fuer_skill_md_date",
     "namespace": "cli",
     "language": "ru",
-    "value": "Генерирует/проверяет заголовки YAML для файлов SKILL.md.\n\nИспользование:\n            bach --maintain headers # Пробный запуск всех\n            bach --maintain headers --fix # Все исправления\n            bach --maintain headers --path assets/ # Bestimmter Ordner\n            bach --maintain headers --update-db # Обновление версий БД",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Генерирует/проверяет YAML-заголовки для файлов SKILL.md.\n\n        Использование:\n            bach --maintain headers                  # Пробный запуск всех\n            bach --maintain headers --fix            # Исправить все\n            bach --maintain headers --path skills/   # Определённая папка\n            bach --maintain headers --update-db      # Обновить версии в DB",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "generiert_validiert_yaml_header_fuer_skill_md_date",
     "namespace": "cli",
     "language": "zh",
-    "value": "生成/验证 SKILL.md 文件的 YAML 标头。\n\n用途：\n            bach --maintain headers # 试运行 alle\n            bach --维护标头 --fix # Alle korrigieren\n            bach --维护标头 --路径技能/ # Bestimmter Ordner\n            bach --maintain headers --update-db # DB-Versionen updaten",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "生成/验证 SKILL.md 文件的 YAML 标头。\n\n        用法：\n            bach --maintain headers                  # 全部预演\n            bach --maintain headers --fix            # 全部修正\n            bach --maintain headers --path skills/   # 指定文件夹\n            bach --maintain headers --update-db      # 更新数据库版本",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "generiert_warnungen_basierend_auf_simulationsergeb",
@@ -37873,51 +37873,51 @@
     "key": "hinweis_pfad_heilung_ist_nicht_mehr_noetig",
     "namespace": "cli",
     "language": "en",
-    "value": "HINWEIS: Pfad-Heilung ist nicht mehr noetig!\n============================================================\nbach_paths.py verwaltet alle Laufzeit-Pfade automatisch.\nWenn BACH verschoben wird, passen sich Pfade von selbst an.\n\nFuer Dokumentations-Updates (Help, Wiki, Markdown):\n  bach --maintain docs-paths          Dry-Run (nur anzeigen)\n  bach --maintain docs-paths --apply  Tatsaechlich korrigieren\n\nSiehe: bach --help tools/path_healer",
+    "value": "NOTE: Path healing is no longer necessary!\n============================================================\nbach_paths.py manages all runtime paths automatically.\nIf BACH is moved, paths adapt on their own.\n\nFor documentation updates (Help, Wiki, Markdown):\n  bach --maintain docs-paths          Dry run (display only)\n  bach --maintain docs-paths --apply  Actually correct them\n\nSee: bach --help tools/path_healer",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "hinweis_pfad_heilung_ist_nicht_mehr_noetig",
     "namespace": "cli",
     "language": "es",
-    "value": "HINWEIS: ¡Pfad-Heilung ist nicht mehr noetig!\n===============================================================\nbach_paths.py se actualiza automáticamente.\nCuando BACH verschoben wird, passen sich Pfade von selbst an.\n\nFuer Dokumentations-Actualizaciones (Ayuda, Wiki, Markdown):\n  bach --mantener docs-paths Ejecución en seco (nueva aparición)\n  bach --mantener docs-paths --aplicar Tatsaechlich korrigieren\n\nVer: bach --help tools/path_healer",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "AVISO: ¡La corrección de rutas ya no es necesaria!\n============================================================\nbach_paths.py gestiona todas las rutas de ejecución automáticamente.\nSi BACH se mueve, las rutas se adaptan por sí solas.\n\nPara actualizaciones de documentación (Help, Wiki, Markdown):\n  bach --maintain docs-paths          Simulación (solo mostrar)\n  bach --maintain docs-paths --apply  Corregir de verdad\n\nVer: bach --help tools/path_healer",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "hinweis_pfad_heilung_ist_nicht_mehr_noetig",
     "namespace": "cli",
     "language": "ja",
-    "value": "ヒンヴァイス: Pfad-Heilung は重要な情報です!\n======================================================\nbach_paths.py はすべての Laufzeit-Pfade を自動化します。\nWenn BACH verschoben wird, passen sich Pfade von selbst an.\n\n燃料ドキュメント - 更新 (ヘルプ、Wiki、マークダウン):\n  bach --maintain docs-paths ドライラン (新しい情報)\n  bach --maintain docs-paths --apply Tatsaechlich korrigieren\n\n情報: bach --help tools/path_healer",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "注意: パス修復はもう必要ありません！\n============================================================\nbach_paths.py はすべてのランタイムパスを自動管理します。\nBACH を移動しても、パスは自動的に適応します。\n\nドキュメント更新（Help、Wiki、Markdown）の場合:\n  bach --maintain docs-paths          ドライラン（表示のみ）\n  bach --maintain docs-paths --apply  実際に修正する\n\n参照: bach --help tools/path_healer",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "hinweis_pfad_heilung_ist_nicht_mehr_noetig",
     "namespace": "cli",
     "language": "ru",
-    "value": "ПОДСКАЗКА: Pfad-Heilung ist nicht mehr noetig!\n=========================================================\nbach_paths.py автоматически выполняет все функции Laufzeit-Pfade.\nWenn BACH verschoben wird, passen sich Pfade von selbst an.\n\nFuer Документация-Обновления (Помощь, Wiki, Markdown):\n  bach --maintain docs-paths Dry-Run (nur anzeigen)\n  bach --maintain docs-paths --apply Tatsaechlich korrigieren\n\nЗие: bach --help Tools/path_healer",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "ПОДСКАЗКА: Восстановление путей больше не требуется!\n============================================================\nbach_paths.py автоматически управляет всеми путями среды выполнения.\nЕсли BACH перемещён, пути подстраиваются сами.\n\nДля обновлений документации (Help, Wiki, Markdown):\n  bach --maintain docs-paths          Пробный запуск (только показать)\n  bach --maintain docs-paths --apply  Реально исправить\n\nСм.: bach --help tools/path_healer",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "hinweis_pfad_heilung_ist_nicht_mehr_noetig",
     "namespace": "cli",
     "language": "zh",
-    "value": "注意：Pfad-Heilung ist nicht mehr noetig！\n===============================================================\nbach_paths.py verwaltet alle Laufzeit-Pfade automatisch。\n巴赫 (BACH) 是世界上最伟大的音乐人之一。\n\nFuer 文档-更新（帮助、Wiki、Markdown）：\n  bach --维护文档路径试运行 (nur anzeigen)\n  bach --维护文档路径 --apply Tatsaechlich korrigieren\n\n世赫：巴赫-帮助工具/path_healer",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "注意：路径修复已不再需要！\n============================================================\nbach_paths.py 会自动管理所有运行时路径。\n移动 BACH 后，路径会自动适应。\n\n如需更新文档（Help、Wiki、Markdown）：\n  bach --maintain docs-paths          预演（仅显示）\n  bach --maintain docs-paths --apply  实际执行修正\n\n参见：bach --help tools/path_healer",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "hinzuf_gen",
@@ -37993,51 +37993,51 @@
     "key": "holt_aktuelle_daten_f_r_die_hauptindizes",
     "namespace": "cli",
     "language": "en",
-    "value": "Holt aktuelle Daten für die Hauptindizes.\n\nParameters:\n            Liste von Dicts mit Index-Daten",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Fetches current data for the main indices.\n\n        Returns:\n            List of dicts with index data",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_aktuelle_daten_f_r_die_hauptindizes",
     "namespace": "cli",
     "language": "es",
-    "value": "Holt aktuelle Daten für die Hauptindizes.\n\nParámetros:\n            Lista de dictados con datos indexados",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Obtiene datos actuales para los índices principales.\n\n        Devuelve:\n            Lista de dicts con datos de índices",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_aktuelle_daten_f_r_die_hauptindizes",
     "namespace": "cli",
     "language": "ja",
-    "value": "Holt aktuelle Daten für die Hauptindizes。\n\nパラメータ:\n            索引データの辞書リスト",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "主要指数の最新データを取得します。\n\n        戻り値:\n            指数データを含む辞書のリスト",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_aktuelle_daten_f_r_die_hauptindizes",
     "namespace": "cli",
     "language": "ru",
-    "value": "Holt aktuelle Daten für die Hauptindizes.\n\nПараметры:\n            Список диктовок с индексными данными",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Получает актуальные данные по основным индексам.\n\n        Возврат:\n            Список словарей с данными индексов",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_aktuelle_daten_f_r_die_hauptindizes",
     "namespace": "cli",
     "language": "zh",
-    "value": "Holt aktuelle Daten für die Hauptindizes。\n\n参数：\n            带索引日期的词典列表",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "获取主要指数的最新数据。\n\n        返回：\n            包含指数数据的字典列表",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_alle_ergebnisse_f_r_ein_symbol",
@@ -38233,51 +38233,51 @@
     "key": "holt_den_aktuellen_preis_und_nderung_ar",
     "namespace": "cli",
     "language": "en",
-    "value": "Holt den aktuellen Preis und Änderung.\n\nArgs:\n            ticker: Das Symbol\n\nParameters:\n            Tuple (aktueller_preis, änderung, änderung_prozent) oder None",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Fetches the current price and change.\n\n        Args:\n            ticker: The symbol\n\n        Returns:\n            Tuple (current_price, change, change_percent) or None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_den_aktuellen_preis_und_nderung_ar",
     "namespace": "cli",
     "language": "es",
-    "value": "Holt den aktuellen Preis und Änderung.\n\nArgumentos:\n            ticker: El símbolo\n\nParámetros:\n            Tupla (aktueller_preis, änderung, änderung_prozent) o Ninguno",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Obtiene el precio actual y su variación.\n\n        Argumentos:\n            ticker: El símbolo\n\n        Devuelve:\n            Tupla (precio_actual, cambio, cambio_porcentual) o None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_den_aktuellen_preis_und_nderung_ar",
     "namespace": "cli",
     "language": "ja",
-    "value": "Holt den aktuellen Preis und Änderung.\n\n引数:\n            ティッカー: ダスシンボル\n\nパラメータ:\n            タプル (aktueller_preis、änderung、änderung_prozent) またはなし",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "現在の価格と変動を取得します。\n\n        引数:\n            ticker: シンボル\n\n        戻り値:\n            タプル (現在価格, 変動, 変動率) または None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_den_aktuellen_preis_und_nderung_ar",
     "namespace": "cli",
     "language": "ru",
-    "value": "Holt den aktuellen Preis und Änderung.\n\nАргументы:\n            тикер: Das Символ\n\nПараметры:\n            Кортеж (aktueller_preis, änderung, änderung_prozent) или нет",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Получает текущую цену и изменение.\n\n        Аргументы:\n            ticker: Символ\n\n        Возврат:\n            Кортеж (текущая_цена, изменение, изменение_процент) или None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_den_aktuellen_preis_und_nderung_ar",
     "namespace": "cli",
     "language": "zh",
-    "value": "Holt den aktuellen Preis und änderung。\n\n参数：\n            股票代码： Das Symbol\n\n参数：\n            元组 (aktueller_preis, änderung, änderung_prozent) 或无",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "获取当前价格和变动。\n\n        参数：\n            ticker: 代码\n\n        返回：\n            元组 (当前价格, 变动, 变动百分比) 或 None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "holt_die_neuesten_aktivit_ten_jobs_ergebnisse",
@@ -39073,51 +39073,51 @@
     "key": "importiert_dateien_in_den_data_roh_ordner_fruehe",
     "namespace": "cli",
     "language": "en",
-    "value": "Importiert Dateien in den data_roh/ Ordner (frueher: data/).\n\nArgs:\n            session: Aktive Session\n            files: Liste von Dateipfaden\n            clear_existing: Bestehende Dateien in data_roh/ loeschen\n\nParameters:\n            Anzahl importierter Dateien",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Imports files into the data_roh/ folder (formerly: data/).\n\n        Args:\n            session: Active session\n            files: List of file paths\n            clear_existing: Delete existing files in data_roh/\n\n        Returns:\n            Number of imported files",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_dateien_in_den_data_roh_ordner_fruehe",
     "namespace": "cli",
     "language": "es",
-    "value": "Importiert Dateien in den data_roh/ Ordner (frueher: data/).\n\nArgumentos:\n            sesión: Sesión Activa\n            archivos: Liste von Dateipfaden\n            clear_existing: Bestehende Dateien en data_roh/loeschen\n\nParámetros:\n            Anzahl importador de datos",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Importa archivos a la carpeta data_roh/ (antes: data/).\n\n        Argumentos:\n            session: Sesión activa\n            files: Lista de rutas de archivos\n            clear_existing: Eliminar archivos existentes en data_roh/\n\n        Devuelve:\n            Número de archivos importados",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_dateien_in_den_data_roh_ordner_fruehe",
     "namespace": "cli",
     "language": "ja",
-    "value": "Importiert Dateien in den data_roh/ Ordner (frueher: data/)。\n\n引数:\n            セッション: アクティブセッション\n            ファイル: Liste von Dateipfaden\n            clear_existing: data_roh/loeschen の Bestehende Dateien\n\nパラメータ:\n            アンザール輸入業者 ダティエン",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "data_roh/ フォルダー（旧: data/）にファイルをインポートします。\n\n        引数:\n            session: アクティブなセッション\n            files: ファイルパスのリスト\n            clear_existing: data_roh/ 内の既存ファイルを削除\n\n        戻り値:\n            インポートされたファイル数",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_dateien_in_den_data_roh_ordner_fruehe",
     "namespace": "cli",
     "language": "ru",
-    "value": "Импортируйте данные в data_roh/Ordner (создание: data/).\n\nАргументы:\n            сессия: Активная сессия\n            файлы: Liste von Dateipfaden\n            Clear_existing: Bestehende Dateien в data_roh/loeschen\n\nПараметры:\n            Anzahl импортер Dateien",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Импортирует файлы в папку data_roh/ (раньше: data/).\n\n        Аргументы:\n            session: Активная сессия\n            files: Список путей к файлам\n            clear_existing: Удалить существующие файлы в data_roh/\n\n        Возврат:\n            Количество импортированных файлов",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_dateien_in_den_data_roh_ordner_fruehe",
     "namespace": "cli",
     "language": "zh",
-    "value": "在 den data_roh/Ordner 中导入 Dateien（原：data/）。\n\n参数：\n            会话：活跃会话\n            文件：Liste von Dateipfaden\n            clear_existing：data_roh/ loeschen 中的 Bestehende Dateien\n\n参数：\n            安扎尔进口商日期",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "将文件导入 data_roh/ 文件夹（原：data/）。\n\n        参数：\n            session: 活动会话\n            files: 文件路径列表\n            clear_existing: 删除 data_roh/ 中的现有文件\n\n        返回：\n            导入的文件数量",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_transaktionen_aus_einer_camt_053_datei",
@@ -39203,41 +39203,41 @@
     "key": "importiert_und_erstellt_usmcclient_lazy_damit_ke",
     "namespace": "cli",
     "language": "es",
-    "value": "Importiert und erstellt USMCClient (perezoso, damit kein harter Import-Fehler).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Importa y crea USMCClient (lazy, para evitar un error de importación estricto).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_und_erstellt_usmcclient_lazy_damit_ke",
     "namespace": "cli",
     "language": "ja",
-    "value": "Importiert und erstellt USMCClient (怠惰、damit kein harter Import-Fehler)。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "USMCClient をインポートして作成します（lazy、ハードなインポートエラーを回避）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_und_erstellt_usmcclient_lazy_damit_ke",
     "namespace": "cli",
     "language": "ru",
-    "value": "Importiert und erstellt USMCClient (ленивый, черт возьми, Import-Fehler).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Импортирует и создаёт USMCClient (lazy, чтобы избежать жёсткой ошибки импорта).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_und_erstellt_usmcclient_lazy_damit_ke",
     "namespace": "cli",
     "language": "zh",
-    "value": "Importiert und erstellt USMCClient（懒惰，damit kein harter Import-Fehler）。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "导入并创建 USMCClient（lazy，避免硬性导入错误）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "importiert_und_registriert_alle_verf_gbaren_analyz",
@@ -39553,31 +39553,31 @@
     "key": "info_scanne_ordner_nach_sensiblen_daten_scan_f",
     "namespace": "cli",
     "language": "en",
-    "value": "[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}",
+    "value": "[INFO] Scanning folder for sensitive data: {scan_folder}",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "info_scanne_ordner_nach_sensiblen_daten_scan_f",
     "namespace": "cli",
     "language": "es",
-    "value": "[INFO] Scanne Ordner nach sensen Fecha: {scan_folder}",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[INFO] Escaneando carpeta en busca de datos sensibles: {scan_folder}",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "info_scanne_ordner_nach_sensiblen_daten_scan_f",
     "namespace": "cli",
     "language": "ja",
-    "value": "[情報] Scanne Ordner nach sensiblen 日付: {scan_folder}",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[INFO] フォルダーをスキャンして機密データを検索しています: {scan_folder}",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "info_scanne_ordner_nach_sensiblen_daten_scan_f",
@@ -39593,11 +39593,11 @@
     "key": "info_scanne_ordner_nach_sensiblen_daten_scan_f",
     "namespace": "cli",
     "language": "zh",
-    "value": "[INFO] Scanne Ordner nach sensiblen Daten：{scan_folder}",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "[INFO] 正在扫描文件夹以查找敏感数据：{scan_folder}",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "initialisiert_den_detector_args",
@@ -39673,11 +39673,11 @@
     "key": "initialisiert_den_hook_args",
     "namespace": "cli",
     "language": "en",
-    "value": "Initialisiert den Hook.\n\nArgs:\n            data_dir: Ordner mit echten Klientendaten\n            bundles_dir: Ordner mit anonymisierten Bundles",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Initializes the hook.\n\n        Args:\n            data_dir: Folder with real client data\n            bundles_dir: Folder with anonymized bundles",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "initialisiert_den_hook_args",
@@ -39693,11 +39693,11 @@
     "key": "initialisiert_den_hook_args",
     "namespace": "cli",
     "language": "ja",
-    "value": "フックの初期化。\n\n引数:\n            data_dir: Ordner mit echten Klientendaten\n            Bundles_dir: バンドルを匿名化するための順序",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "フックを初期化します。\n\n        引数:\n            data_dir: 実際のクライアントデータを含むフォルダー\n            bundles_dir: 匿名化されたバンドルを含むフォルダー",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "initialisiert_den_hook_args",
@@ -39713,11 +39713,11 @@
     "key": "initialisiert_den_hook_args",
     "namespace": "cli",
     "language": "zh",
-    "value": "钩子初始化。\n\n参数：\n            data_dir：Ordner mit echten Klientendaten\n            Bundles_dir: 匿名捆绑包",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "初始化钩子。\n\n        参数：\n            data_dir: 包含真实客户数据的文件夹\n            bundles_dir: 包含匿名化数据包的文件夹",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "initialisiert_oder_syncht_die_secrets_datei",
@@ -39773,11 +39773,11 @@
     "key": "initialisiert_oder_syncht_die_secrets_datei",
     "namespace": "cli",
     "language": "zh",
-    "value": "初始化或同步 Secrets-Datei。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "初始化或同步 Secrets 文件。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "inject_handler_injektor_steuerung_und_aufgaben_z",
@@ -42073,11 +42073,11 @@
     "key": "items_items_fehler_errors_count",
     "namespace": "cli",
     "language": "en",
-    "value": "Items: {items}, Fehler: {errors_count}",
+    "value": "Items: {items}, Errors: {errors_count}",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "items_items_fehler_errors_count",
@@ -42253,31 +42253,31 @@
     "key": "kein_tarnname_gefunden_f_r_args_klient",
     "namespace": "cli",
     "language": "en",
-    "value": "Kein Tarnname gefunden für: {args.klient}",
+    "value": "No codename found for: {args.klient}",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kein_tarnname_gefunden_f_r_args_klient",
     "namespace": "cli",
     "language": "es",
-    "value": "Kein Tarnname gefunden für: {args.klient}",
+    "value": "No se encontró ningún alias para: {args.klient}",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kein_tarnname_gefunden_f_r_args_klient",
     "namespace": "cli",
     "language": "ja",
-    "value": "Kein Tarnname gefunden für: {args.klient}",
+    "value": "コードネームが見つかりません: {args.klient}",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kein_tarnname_gefunden_f_r_args_klient",
@@ -42613,11 +42613,11 @@
     "key": "keine_ergebnisse_f_r_query",
     "namespace": "cli",
     "language": "en",
-    "value": "Keine Ergebnisse für: {query}",
+    "value": "No results for: {query}",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_ergebnisse_f_r_query",
@@ -42643,11 +42643,11 @@
     "key": "keine_ergebnisse_f_r_query",
     "namespace": "cli",
     "language": "ru",
-    "value": "Keine Ergebnisse für: {query}",
+    "value": "Нет результатов для: {query}",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_ergebnisse_f_r_query",
@@ -42773,11 +42773,11 @@
     "key": "keine_ordner_zuordnungen_gefunden",
     "namespace": "cli",
     "language": "zh",
-    "value": "Keine Ordner-Zuordnungen gefunden。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "未找到文件夹映射。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_pause_f_r_session_profil",
@@ -42973,21 +42973,21 @@
     "key": "keine_skills_geladen_skill_md_fehlt",
     "namespace": "cli",
     "language": "en",
-    "value": "# Keine Skills geladen (SKILL.md fehlt)",
+    "value": "# No skills loaded (SKILL.md missing)",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_skills_geladen_skill_md_fehlt",
     "namespace": "cli",
     "language": "es",
-    "value": "# Keine Skills geladen (SKILL.md fehlt)",
+    "value": "# No hay skills cargados (falta SKILL.md)",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_skills_geladen_skill_md_fehlt",
@@ -43003,21 +43003,21 @@
     "key": "keine_skills_geladen_skill_md_fehlt",
     "namespace": "cli",
     "language": "ru",
-    "value": "# Keine Skills geladen (SKILL.md fehlt)",
+    "value": "# Навыки не загружены (отсутствует SKILL.md)",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_skills_geladen_skill_md_fehlt",
     "namespace": "cli",
     "language": "zh",
-    "value": "# Keine Skills geladen (SKILL.md fehlt)",
+    "value": "# 未加载任何技能（缺少 SKILL.md）",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "keine_wartenden_ordner",
@@ -43153,51 +43153,51 @@
     "key": "kernel_seal_handler_sq021",
     "namespace": "cli",
     "language": "en",
-    "value": "Kernel Seal Handler (SQ021)\n============================\n\nSiegelsystem fuer BACH-Integritaet.\n\nDas Siegel:\n- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)\n- Warnt bei Veraenderungen\n- Ermoeglicht Restore/Repair\n\nStart job with CLI\n    bach seal check       Vollstaendige Hash-Pruefung\n    bach seal repair      Neuen Hash berechnen und speichern\n    bach seal status      Zeige aktuellen Seal-Status\n\nAuthor: BACH Development Team\nCreated: 2026-02-20 (SQ021, Runde 4)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Kernel Seal Handler (SQ021)\n============================\n\nSeal system for BACH integrity.\n\nThe seal:\n- Computes a SHA256 hash over all CORE files (dist_type=2)\n- Warns about changes\n- Enables restore/repair\n\nCLI:\n    bach seal check       Full hash verification\n    bach seal repair      Compute and save a new hash\n    bach seal status      Show current seal status\n\nAuthor: BACH Development Team\nCreated: 2026-02-20 (SQ021, Round 4)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kernel_seal_handler_sq021",
     "namespace": "cli",
     "language": "es",
-    "value": "Manipulador de sello de grano (SQ021)\n=============================\n\nSiegelsystem fuer BACH-Integritaet.\n\nEl Siegel:\n- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)\n- Warnt bei Veraenderungen\n- Ermoeglicht Restauración/Reparación\n\nIniciar trabajo con CLI\n    control de sello de bach Vollstaendige Hash-Pruefung\n    Reparación de sellos de Bach Neuen Hash berechnen und speichern\n    estado del sello de bach Zeige aktuellen Estado del sello\n\nAutor: Equipo de desarrollo de BACH\nCreado: 2026-02-20 (SQ021, Serie 4)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Kernel Seal Handler (SQ021)\n============================\n\nSistema de sello para la integridad de BACH.\n\nEl sello:\n- Calcula un hash SHA256 sobre todos los archivos CORE (dist_type=2)\n- Advierte sobre cambios\n- Permite restaurar/reparar\n\nCLI:\n    bach seal check       Verificación completa de hash\n    bach seal repair      Calcular y guardar un nuevo hash\n    bach seal status      Mostrar estado actual del sello\n\nAutor: BACH Development Team\nCreado: 2026-02-20 (SQ021, Ronda 4)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kernel_seal_handler_sq021",
     "namespace": "cli",
     "language": "ja",
-    "value": "カーネル シール ハンドラー (SQ021)\n============================\n\nSiegelsystem は BACH-Integritaet をサポートします。\n\nダス・シーゲル:\n- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)\n- ヴァルト バイ ヴェレンダーンゲン\n- エルモーグリヒトの復元/修理\n\nCLIでジョブを開始する\n    bach シール チェック Vollstaendige Hash-Pruefung\n    bach シール修理 Neuen Hash berechnen und speichern\n    bach シールのステータス Zeige aktuellen シールのステータス\n\n著者: BACH 開発チーム\n作成日: 2026-02-20 (SQ021、Runde 4)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Kernel Seal ハンドラー (SQ021)\n============================\n\nBACH の整合性を保証するシールシステム。\n\nシールの機能:\n- すべての CORE ファイルの SHA256 ハッシュを計算 (dist_type=2)\n- 変更時に警告\n- 復元/修復を可能にする\n\nCLI:\n    bach seal check       完全なハッシュ検証\n    bach seal repair      新しいハッシュを計算して保存\n    bach seal status      現在のシール状態を表示\n\nAuthor: BACH Development Team\nCreated: 2026-02-20 (SQ021, ラウンド 4)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kernel_seal_handler_sq021",
     "namespace": "cli",
     "language": "ru",
-    "value": "Обработчик уплотнений ядра (SQ021)\n===========================\n\nSiegelsystem fuer BACH-Integritaet.\n\nДас Сигел:\n- Берехнет SHA256-хэш всех CORE-Dateien (dist_type=2)\n- Предупреждение в Veraenderungen\n- Восстановление/ремонт Ermoeglicht\n\nНачать работу с CLI\n    Проверка печати Баха Vollstaendige Hash-Pruefung\n    ремонт уплотнений Баха Neuen Hash berechnen und speichern\n    Статус печати Баха Zeige aktuellen Seal-Status\n\nАвтор: Команда разработчиков BACH\nСоздано: 20 февраля 2026 г. (SQ021, Рунде 4)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Kernel Seal Handler (SQ021)\n============================\n\nСистема пломб для целостности BACH.\n\nПломба:\n- Вычисляет SHA256-хеш по всем файлам CORE (dist_type=2)\n- Предупреждает об изменениях\n- Позволяет восстановить/починить\n\nCLI:\n    bach seal check       Полная проверка хеша\n    bach seal repair      Вычислить и сохранить новый хеш\n    bach seal status      Показать текущий статус пломбы\n\nАвтор: BACH Development Team\nСоздано: 2026-02-20 (SQ021, раунд 4)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kernel_seal_handler_sq021",
     "namespace": "cli",
     "language": "zh",
-    "value": "内核密封处理器 (SQ021)\n===========================\n\nSiegelsystem fuer BACH-Integritaet。\n\n达斯·西格尔：\n- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)\n- Warnt bei Veraenderungen\n- Ermoeglicht 恢复/修复\n\n使用 CLI 开始作业\n    巴赫密封检查 Vollstaendige Hash-Pruefung\n    巴赫密封修复 Neuen Hash berechnen und speichern\n    巴赫密封状态 Zeige aktuellen Seal-Status\n\n作者：巴赫开发团队\n创建时间：2026-02-20（SQ021，润德 4）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "内核印章处理器 (SQ021)\n============================\n\n保障 BACH 完整性的印章系统。\n\n印章：\n- 计算所有 CORE 文件的 SHA256 哈希（dist_type=2）\n- 更改时发出警告\n- 支持恢复/修复\n\nCLI:\n    bach seal check       完整哈希校验\n    bach seal repair      计算并保存新哈希\n    bach seal status      显示当前印章状态\n\n作者：BACH Development Team\n创建：2026-02-20（SQ021，第 4 轮）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kernel_seal_status",
@@ -43363,21 +43363,21 @@
     "key": "klienten_ordner_und_pipeline_status_auflisten",
     "namespace": "cli",
     "language": "ru",
-    "value": "Клиент-Ordner und Pipeline-Status auflisten.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Показать список папок клиентов и статус пайплайнов.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "klienten_ordner_und_pipeline_status_auflisten",
     "namespace": "cli",
     "language": "zh",
-    "value": "Klienten-Ordner 和 Pipeline-Status auflisten。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "列出客户文件夹和流水线状态。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "kompletter_workflow_scannen_extrahieren_anony",
@@ -43813,41 +43813,41 @@
     "key": "konvertiert_pdf_seiten_zu_png_bildern_be",
     "namespace": "cli",
     "language": "en",
-    "value": "Konvertiert PDF-Seiten zu PNG-Bildern.\n\n        Benoetigt pdf2image + poppler.\n\n        Args:\n            file_path: Pfad to the PDF\n            output_dir: output-folder for die Bilder\n            max_dim: Maximale Dimension (Breite/Hoehe) in Pixeln\n\n        Returns:\n            list der erzeugten Bild-Pfade",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Converts PDF pages to PNG images.\n\n        Requires pdf2image + poppler.\n\n        Args:\n            file_path: Path to the PDF\n            output_dir: Output folder for the images\n            max_dim: Maximum dimension (width/height) in pixels\n\n        Returns:\n            List of generated image paths",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "konvertiert_pdf_seiten_zu_png_bildern_be",
     "namespace": "cli",
     "language": "es",
-    "value": "Convierta páginas PDF en imágenes PNG.\n\n        Benoetigt pdf2image + poppler.\n\n        Argumentos:\n            file_path: paso al PDF\n            output_dir: carpeta de salida para la imagen\n            max_dim: Dimensión máxima (Breite/Hoehe) en píxeles\n\n        Devoluciones:\n            list der erzeugten Bild-Pfade",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Convierte páginas PDF en imágenes PNG.\n\n        Requiere pdf2image + poppler.\n\n        Argumentos:\n            file_path: Ruta al PDF\n            output_dir: Carpeta de salida para las imágenes\n            max_dim: Dimensión máxima (ancho/alto) en píxeles\n\n        Devuelve:\n            Lista de rutas de las imágenes generadas",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "konvertiert_pdf_seiten_zu_png_bildern_be",
     "namespace": "cli",
     "language": "ja",
-    "value": "Konvertiert PDF-青天図 PNG-Bildern。\n\n        Benoetigt pdf2image + ポプラー。\n\n        引数:\n            file_path: PDF へのパス\n            Output_dir: ダイビルダーの出力フォルダー\n            max_dim: Pixeln の最大寸法 (Breite/Hoehe)\n\n        戻り値:\n            list der erzeugten Bild-Pfade",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "PDF ページを PNG 画像に変換します。\n\n        pdf2image + poppler が必要です。\n\n        引数:\n            file_path: PDF へのパス\n            output_dir: 画像の出力フォルダー\n            max_dim: 最大サイズ（幅/高さ、ピクセル単位）\n\n        戻り値:\n            生成された画像パスのリスト",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "konvertiert_pdf_seiten_zu_png_bildern_be",
     "namespace": "cli",
     "language": "ru",
-    "value": "Конвертировать PDF-файлы в PNG-изображения.\n\n        Benoetigt pdf2image + poppler.\n\n        Аргументы:\n            file_path: Пфад в PDF\n            output_dir: выходная папка для создания изображений\n            max_dim: Максимальный размер (Breite/Hoehe) в пикселях\n\n        Возврат:\n            список erzeugten Bild-Pfade",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Конвертирует страницы PDF в изображения PNG.\n\n        Требуется pdf2image + poppler.\n\n        Аргументы:\n            file_path: Путь к PDF\n            output_dir: Папка вывода для изображений\n            max_dim: Максимальный размер (ширина/высота) в пикселях\n\n        Возврат:\n            Список созданных путей к изображениям",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:57:55.362865",
-    "updated_at": "2026-05-17T06:57:55.362865"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "konvertiert_pdf_seiten_zu_png_bildern_be",
@@ -44653,21 +44653,21 @@
     "key": "l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt",
     "namespace": "cli",
     "language": "en",
-    "value": "Loads Pfad-Overrides aus der kanonischen DB des aktuellen Roots.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Loads path overrides from the canonical DB of the current root.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.886536",
-    "updated_at": "2026-05-17T04:38:01.886536"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt",
     "namespace": "cli",
     "language": "es",
-    "value": "Carga Pfad-Overrides aus der kanonischen DB des aktuellen Roots.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Carga los overrides de rutas desde la DB canónica del root actual.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt",
@@ -44693,11 +44693,11 @@
     "key": "l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt",
     "namespace": "cli",
     "language": "zh",
-    "value": "加载 Pfad-Overrides aus der kanonischen DB des aktuellen Roots。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "从当前根目录的规范数据库加载路径覆盖。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "l_dt_skill_md_persoenlicher_assistent_beim_start",
@@ -47173,11 +47173,11 @@
     "key": "liest_inhalte_sicher_aus_dem_anonymisierten_bundle",
     "namespace": "cli",
     "language": "en",
-    "value": "Liest Inhalte sicher aus dem anonymisierten Bundle.\n\n        WICHTIG: Diese Methode Returns NUR anonymisierte Inhalte zurück.\n        Der Chatbot sieht nur Tarnnamen, niemals echte Namen.\n\n        Args:\n            klient_name: Name des Klienten\n            filename: Optionaler file name (sonst all files)\n            include_extended: Auch extended/ einbeziehen\n\n        Returns:\n            Anonymisierter Textinhalt",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Safely reads contents from the anonymized bundle.\n\n        IMPORTANT: This method returns ONLY anonymized contents.\n        The chatbot only sees codenames, never real names.\n\n        Args:\n            klient_name: Name of the client\n            filename: Optional filename (otherwise all files)\n            include_extended: Also include extended/\n\n        Returns:\n            Anonymized text content",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.900688",
-    "updated_at": "2026-05-17T04:38:01.900688"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "liest_inhalte_sicher_aus_dem_anonymisierten_bundle",
@@ -47713,21 +47713,21 @@
     "key": "list_available_alle_verf_gbaren_pipeline_defi",
     "namespace": "cli",
     "language": "en",
-    "value": "list-available      all verfügbaren Pipeline-Definitionen",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "list-available      All available pipeline definitions",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.900688",
-    "updated_at": "2026-05-17T04:38:01.900688"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "list_available_alle_verf_gbaren_pipeline_defi",
     "namespace": "cli",
     "language": "es",
-    "value": "lista disponible todas las definiciones de tuberías verfügbaren",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "list-available      Todas las definiciones de pipelines disponibles",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "list_available_alle_verf_gbaren_pipeline_defi",
@@ -47753,11 +47753,11 @@
     "key": "list_available_alle_verf_gbaren_pipeline_defi",
     "namespace": "cli",
     "language": "zh",
-    "value": "列出可用的所有 verfügbaren Pipeline-Definitionen",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "list-available      所有可用的流水线定义",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "liste_consolidation_eintr_ge",
@@ -47863,11 +47863,11 @@
     "key": "listet_alle_migrationen_mit_status",
     "namespace": "cli",
     "language": "ru",
-    "value": "Список всех Migrationen mit status.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Показывает все миграции со статусами.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_alle_migrationen_mit_status",
@@ -48053,11 +48053,11 @@
     "key": "listet_alle_verf_gbaren_dateien_im_bundle_auf",
     "namespace": "cli",
     "language": "zh",
-    "value": "列出 Bundle auf 中的所有 verfügbaren 文件。\n\n        参数：\n            klient_name: 客户名称\n\n        返回：\n            列出文件信息（nur anonymisierte Namen）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "列出数据包中的所有可用文件。\n\n        参数：\n            klient_name: 客户名称\n\n        返回：\n            文件信息列表（仅匿名化名称）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_alle_verf_gbaren_pfade_auf_returns",
@@ -48103,21 +48103,21 @@
     "key": "listet_alle_verf_gbaren_pfade_auf_returns",
     "namespace": "cli",
     "language": "ru",
-    "value": "Список всех предложений Pfade auf.\n\n    Возврат:\n        Dict mit Pfadnamen und deren Werten",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Показывает все доступные пути.\n\n    Возврат:\n        Dict с именами путей и их значениями",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_alle_verf_gbaren_pfade_auf_returns",
     "namespace": "cli",
     "language": "zh",
-    "value": "列出所有 verfügbaren Pfade auf。\n\n    返回：\n        词典名称和含义",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "列出所有可用路径。\n\n    返回：\n        包含路径名称及其值的字典",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_alle_verf_gbaren_pipeline_definitionen_auf",
@@ -48173,11 +48173,11 @@
     "key": "listet_alle_verf_gbaren_pipeline_definitionen_auf",
     "namespace": "cli",
     "language": "zh",
-    "value": "列出所有 verfügbaren Pipeline-Definitionen auf。\n\n        返回：\n            管道元数据列表（ID、名称、类型、描述）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "列出所有可用的流水线定义。\n\n        返回：\n            流水线元数据列表（id、名称、类型、描述）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_alle_verfuegbaren_agents",
@@ -48623,11 +48623,11 @@
     "key": "listet_verfuegbare_llmauto_chain_configs_auf",
     "namespace": "cli",
     "language": "es",
-    "value": "Liste verfuegbare llmauto Chain-Configs auf.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Lista las Chain-Configs de llmauto disponibles.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_verfuegbare_llmauto_chain_configs_auf",
@@ -48683,11 +48683,11 @@
     "key": "listet_verfuegbare_profile",
     "namespace": "cli",
     "language": "es",
-    "value": "Liste el perfil verfuegbare.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Lista los perfiles disponibles.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "listet_verfuegbare_profile",
@@ -51193,11 +51193,11 @@
     "key": "n_len_pipelines_verf_gbare_pipelines_n",
     "namespace": "cli",
     "language": "en",
-    "value": "\\n{len(pipelines)} verfügbare Pipelines:\\n",
+    "value": "\\n{len(pipelines)} available pipelines:\\n",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.901876",
-    "updated_at": "2026-05-17T04:38:01.901876"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_len_pipelines_verf_gbare_pipelines_n",
@@ -51223,21 +51223,21 @@
     "key": "n_len_pipelines_verf_gbare_pipelines_n",
     "namespace": "cli",
     "language": "ru",
-    "value": "\\n{len(pipelines)} verfügbare Pipelines:\\n",
+    "value": "\\n{len(pipelines)} доступных пайплайнов:\\n",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_len_pipelines_verf_gbare_pipelines_n",
     "namespace": "cli",
     "language": "zh",
-    "value": "\\n{len(pipelines)} verfügbare 管道:\\n",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "\\n{len(pipelines)} 个可用流水线:\\n",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_len_prompt_2000_weitere_zeichen",
@@ -51433,31 +51433,31 @@
     "key": "n_warnung_einige_pfade_fehlen",
     "namespace": "cli",
     "language": "en",
-    "value": "\\n[warning] Einige Pfade fehlen:",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "\\n[WARNING] Some paths are missing:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.901876",
-    "updated_at": "2026-05-17T04:38:01.901876"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_warnung_einige_pfade_fehlen",
     "namespace": "cli",
     "language": "es",
-    "value": "\\n[advertencia] Einige Pfade fehlen:",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "\\n[ADVERTENCIA] Faltan algunas rutas:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_warnung_einige_pfade_fehlen",
     "namespace": "cli",
     "language": "ja",
-    "value": "\\n[警告] Einige Pfade fehlen:",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "\\n[警告] 一部のパスが不足しています:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "n_warnung_einige_pfade_fehlen",
@@ -51473,11 +51473,11 @@
     "key": "n_warnung_einige_pfade_fehlen",
     "namespace": "cli",
     "language": "zh",
-    "value": "\\n[警告] Einige Pfade fehlen:",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "\\n[警告] 部分路径缺失:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "name_15_path_status",
@@ -52153,21 +52153,21 @@
     "key": "nhinweis_ctx",
     "namespace": "cli",
     "language": "en",
-    "value": "\\nHinweis: {ctx[",
+    "value": "\\nNote: {ctx[",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.901876",
-    "updated_at": "2026-05-17T04:38:01.901876"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "nhinweis_ctx",
     "namespace": "cli",
     "language": "es",
-    "value": "\\nHinweis: {ctx[",
+    "value": "\\nNota: {ctx[",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "nhinweis_ctx",
@@ -52213,11 +52213,11 @@
     "key": "nhinweis_preset",
     "namespace": "cli",
     "language": "en",
-    "value": "\\nHinweis: {preset[",
+    "value": "\\nNote: {preset[",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.901876",
-    "updated_at": "2026-05-17T04:38:01.901876"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "nhinweis_preset",
@@ -53183,11 +53183,11 @@
     "key": "nverfuegbare_profile_dateien",
     "namespace": "cli",
     "language": "es",
-    "value": "\\nArchivos de perfil Verfuegbare:",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "\\nArchivos de perfil disponibles:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "nverfuegbare_profile_dateien",
@@ -54513,11 +54513,11 @@
     "key": "parst_json_felder_rueckwaertskompatibel_und_faellt",
     "namespace": "cli",
     "language": "ja",
-    "value": "JSON-Felder の rueckwaertskompatibel と faellt auf Klartext zurueck を表示します。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "JSON フィールドを後方互換でパースし、プレーンテキストにフォールバックします。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "parst_json_felder_rueckwaertskompatibel_und_faellt",
@@ -54533,11 +54533,11 @@
     "key": "parst_json_felder_rueckwaertskompatibel_und_faellt",
     "namespace": "cli",
     "language": "zh",
-    "value": "第一部分 JSON-Felder rueckwaertskompatibel 和 faellt auf Klartext zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "向后兼容地解析 JSON 字段，并回退到纯文本。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "parst_presence_datei_und_prueft_aktivitaet",
@@ -54613,21 +54613,21 @@
     "key": "parst_url_und_gibt_markdown_zurueck_mit_chunking",
     "namespace": "cli",
     "language": "en",
-    "value": "Parst URL und Returns Markdown zurueck (mit Chunking-Support).",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Parses a URL and returns Markdown (with chunking support).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.902869",
-    "updated_at": "2026-05-17T04:38:01.902869"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "parst_url_und_gibt_markdown_zurueck_mit_chunking",
     "namespace": "cli",
     "language": "es",
-    "value": "Parte de URL y devoluciones Markdown zurueck (con soporte de fragmentación).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Analiza una URL y devuelve Markdown (con soporte de fragmentación).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "parst_url_und_gibt_markdown_zurueck_mit_chunking",
@@ -54653,11 +54653,11 @@
     "key": "parst_url_und_gibt_markdown_zurueck_mit_chunking",
     "namespace": "cli",
     "language": "zh",
-    "value": "解析 URL 并返回 Markdown zurueck（mit Chunking-Support）。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "解析 URL 并返回 Markdown（支持分块）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "partner_handler_partner_verwaltung",
@@ -55693,11 +55693,11 @@
     "key": "pipeline_l_uft_lock_lock_file_aktenordner",
     "namespace": "cli",
     "language": "en",
-    "value": "Pipeline läuft (Lock: {lock_file}). Aktenordner: {pipeline.base_path}",
+    "value": "Pipeline is running (Lock: {lock_file}). Case folder: {pipeline.base_path}",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.902869",
-    "updated_at": "2026-05-17T04:38:01.902869"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pipeline_l_uft_lock_lock_file_aktenordner",
@@ -56293,51 +56293,51 @@
     "key": "pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min",
     "namespace": "cli",
     "language": "en",
-    "value": "Prüft ob andere PCs active sind (innerhalb 5 Min).\n\n        Returns:\n            list von aktiven Hosts mit Zeitstempel",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Checks if other PCs are active (within 5 min).\n\n        Returns:\n            List of active hosts with timestamps",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.902869",
-    "updated_at": "2026-05-17T04:38:01.902869"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min",
     "namespace": "cli",
     "language": "es",
-    "value": "Prüft ob other PCs active sind (innerhalb 5 Min).\n\n        Devoluciones:\n            list von aktiven Hosts mit Zeitstempel",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Comprueba si otros PCs están activos (dentro de 5 min).\n\n        Devuelve:\n            Lista de hosts activos con marca de tiempo",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min",
     "namespace": "cli",
     "language": "ja",
-    "value": "Prüft ob andere PC のアクティブなシンド (インナーハーフ 5 分)。\n\n        戻り値:\n            ツァイトシュテンペルの活動ホストのリスト",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "他の PC がアクティブかどうかを確認します（5 分以内）。\n\n        戻り値:\n            タイムスタンプ付きのアクティブホストのリスト",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min",
     "namespace": "cli",
     "language": "ru",
-    "value": "Prüft ob andere PCs active sind (внутреннее время 5 минут).\n\n        Возврат:\n            список активных хостов с Zeitstempel",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет, активны ли другие ПК (в течение 5 мин).\n\n        Возврат:\n            Список активных хостов с метками времени",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min",
     "namespace": "cli",
     "language": "zh",
-    "value": "Prüft ob andere PCs active sind（innerhalb 5 分钟）。\n\n        返回：\n            列出 Zeitstempel 的活动主机",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查其他 PC 是否处于活动状态（5 分钟内）。\n\n        返回：\n            带时间戳的活动主机列表",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_der_token_verbrauch_3x_budget_ist",
@@ -56363,41 +56363,41 @@
     "key": "pr_ft_ob_der_token_verbrauch_3x_budget_ist",
     "namespace": "cli",
     "language": "es",
-    "value": "Prüft ob der Token-Verbrauch > 3x Presupuesto ist.\n\n        Devoluciones:\n            TokenExplosionAlert cuando se activa la explosión, sonst Ninguno",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Comprueba si el consumo de tokens es > 3x el presupuesto.\n\n        Devuelve:\n            TokenExplosionAlert si se detecta una explosión, si no None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_der_token_verbrauch_3x_budget_ist",
     "namespace": "cli",
     "language": "ja",
-    "value": "Prüft ob der Token-Verbrauch > 3x 予算 ist.\n\n        戻り値:\n            TokenExplosionAlert 爆発に関する警告、重要なもの なし",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "トークン消費が予算の 3 倍を超えているかどうかを確認します。\n\n        戻り値:\n            爆発が検出された場合は TokenExplosionAlert、それ以外は None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_der_token_verbrauch_3x_budget_ist",
     "namespace": "cli",
     "language": "ru",
-    "value": "Prüft ob der Token-Verbrauch > 3x Budget ist.\n\n        Возврат:\n            TokenExplosionAlert при взрыве erkannt, sonst Нет",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет, превышает ли потребление токенов бюджет в 3 раза.\n\n        Возврат:\n            TokenExplosionAlert при обнаружении взрыва, иначе None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_der_token_verbrauch_3x_budget_ist",
     "namespace": "cli",
     "language": "zh",
-    "value": "Prüft ob der Token-Verbrauch > 3x 预算 ist。\n\n        返回：\n            TokenExplosionAlert wenn 爆炸 erkannt, sonst None",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查令牌消耗是否超过预算的 3 倍。\n\n        返回：\n            检测到激增时返回 TokenExplosionAlert，否则返回 None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_ein_analyzer_existiert",
@@ -56653,21 +56653,21 @@
     "key": "pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach",
     "namespace": "cli",
     "language": "en",
-    "value": "Prüft ob ein zu mächtiges Modell for einen einfachen Task\n        verwendet wird.\n\n        Returns:\n            OverkillAlert wenn Overkill erkannt, sonst None",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Checks if an overly powerful model is being used\n        for a simple task.\n\n        Returns:\n            OverkillAlert if overkill detected, otherwise None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.902869",
-    "updated_at": "2026-05-17T04:38:01.902869"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach",
     "namespace": "cli",
     "language": "es",
-    "value": "Prüft ob ein zu mächtiges Modell for einen einfachen Task\n        verwendet wird.\n\n        Devoluciones:\n            OverkillAlert cuando Overkill erkannt, sonst Ninguno",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Comprueba si se está usando un modelo demasiado potente\n        para una tarea sencilla.\n\n        Devuelve:\n            OverkillAlert si se detecta overkill, si no None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach",
@@ -56683,21 +56683,21 @@
     "key": "pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach",
     "namespace": "cli",
     "language": "ru",
-    "value": "Prüft ob ein zu mächtiges Модель для einen einfachen Task\n        verwendet wird.\n\n        Возврат:\n            OverkillAlert при Overkill erkannt, sonst Нет",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет, используется ли слишком мощная модель\n        для простой задачи.\n\n        Возврат:\n            OverkillAlert при обнаружении overkill, иначе None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach",
     "namespace": "cli",
     "language": "zh",
-    "value": "Prüft ob ein zu mächtiges einen einfachen 任务模型\n        韦尔文代线\n\n        返回：\n            OverkillAlert wenn Overkill erkannt，儿子 无",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查是否为简单任务\n        使用了过于强大的模型。\n\n        返回：\n            检测到过度配置时返回 OverkillAlert，否则返回 None",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
@@ -56713,51 +56713,51 @@
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
     "namespace": "cli",
     "language": "en",
-    "value": "Prüft ob Provider available ist (Circuit nicht OPEN).",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Checks if the provider is available (circuit not OPEN).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.902869",
-    "updated_at": "2026-05-17T04:38:01.902869"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
     "namespace": "cli",
     "language": "es",
-    "value": "Prüft ob Provider available ist (Circuito no ABIERTO).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Comprueba si el proveedor está disponible (circuito no ABIERTO).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
     "namespace": "cli",
     "language": "ja",
-    "value": "Prüft ob Provider が利用可能です (サーキットニッチオープン)。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "プロバイダーが利用可能かどうかを確認します（サーキットが OPEN でないこと）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
     "namespace": "cli",
     "language": "ru",
-    "value": "Prüft ob Поставщик доступен (Circuit nicht OPEN).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет, доступен ли провайдер (Circuit не OPEN).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope",
     "namespace": "cli",
     "language": "zh",
-    "value": "Prüft ob Provider 可用（Circuit nicht OPEN）。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查提供方是否可用（断路器未处于 OPEN 状态）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "privacy_classifier_datenschutz_ampel_fuer_dokume",
@@ -57513,11 +57513,11 @@
     "key": "prueft_auf_neue_events_gibt_liste_von_watchereven",
     "namespace": "cli",
     "language": "ja",
-    "value": "プルーフ・オフ・ノイのイベント。 WatcherEvent zurueck のリストを返します。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "新しいイベントを確認します。WatcherEvent のリストを返します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "prueft_auf_neue_events_gibt_liste_von_watchereven",
@@ -57533,11 +57533,11 @@
     "key": "prueft_auf_neue_events_gibt_liste_von_watchereven",
     "namespace": "cli",
     "language": "zh",
-    "value": "普吕夫特新事件。返回 WatcherEvent zurueck 的列表。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查新事件。返回 WatcherEvent 列表。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "prueft_claude_cli_pfad_aus_config_und_sucht_automa",
@@ -57763,11 +57763,11 @@
     "key": "prueft_laufende_stale_pid_dateien_und_bereinigt_al",
     "namespace": "cli",
     "language": "ru",
-    "value": "Просмотрите устаревшие PID-файлы и используйте Altlasten.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет запущенные/устаревшие PID-файлы и очищает устаревшие остатки.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "prueft_laufende_stale_pid_dateien_und_bereinigt_al",
@@ -58313,11 +58313,11 @@
     "key": "prueft_ob_genug_zeit_seit_dem_letzten_start_vergan",
     "namespace": "cli",
     "language": "zh",
-    "value": "请先开始操作。\n    返回 True zurueck wenn 启动 erlaubt ist。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查自上次启动以来是否已过去足够的时间。\n    如果允许启动则返回 True。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "prueft_ob_heute_schon_ein_backup_von_diesem_host_e",
@@ -59413,11 +59413,11 @@
     "key": "quelltexte_aus_klienten_ordner_extrahieren",
     "namespace": "cli",
     "language": "en",
-    "value": "Quelltexte aus Klienten-folder extrahieren.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Extract source texts from the client folder.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "quelltexte_aus_klienten_ordner_extrahieren",
@@ -59433,11 +59433,11 @@
     "key": "quelltexte_aus_klienten_ordner_extrahieren",
     "namespace": "cli",
     "language": "ja",
-    "value": "Klienten フォルダー外の Quelltexte。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "クライアントフォルダーから元のテキストを抽出します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "quelltexte_aus_klienten_ordner_extrahieren",
@@ -59453,11 +59453,11 @@
     "key": "quelltexte_aus_klienten_ordner_extrahieren",
     "namespace": "cli",
     "language": "zh",
-    "value": "Quelltexte aus Klienten-folder extrahieren。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "从客户文件夹中提取源文本。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "queue_status",
@@ -59903,41 +59903,41 @@
     "key": "rate_sprechgeschwindigkeit_standard_170_schnel",
     "namespace": "cli",
     "language": "es",
-    "value": "tasa: Sprechgeschwindigkeit (Estándar: 170, Schneller als pyttsx3-Default 200)\n        voice_name: 'auto' (Zira bevorzugt), o Name-Fragment der Stimme\n        motor: 'pyttsx3', 'piper', o 'auto' (erster verfuegbarer)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "rate: Velocidad de habla (por defecto: 170, más rápido que el valor 200 de pyttsx3)\n        voice_name: 'auto' (prefiere Zira), o fragmento del nombre de la voz\n        engine: 'pyttsx3', 'piper', o 'auto' (el primero disponible)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "rate_sprechgeschwindigkeit_standard_170_schnel",
     "namespace": "cli",
     "language": "ja",
-    "value": "レート: Sprechgeschwindigkeit (標準: 170、シュネラー als pyttsx3 - デフォルト 200)\n        voice_name: 'auto' (Zira bevorzugt)、名前のフラグメント der Stimme\n        エンジン: 'pyttsx3'、'piper'、または 'auto' (erster verfuegbarer)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "rate: 読み上げ速度（デフォルト: 170、pyttsx3 の既定値 200 より高速）\n        voice_name: 'auto'（Zira 優先）、または音声名の一部\n        engine: 'pyttsx3'、'piper'、または 'auto'（最初に利用可能なもの）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "rate_sprechgeschwindigkeit_standard_170_schnel",
     "namespace": "cli",
     "language": "ru",
-    "value": "ставка: Sprechgeschwindigkeit (Стандарт: 170, Schneller als pyttsx3 — по умолчанию 200)\n        voice_name: 'auto' (Zira bevorzugt), или фрагмент имени der Stimme\n        двигатель: 'pyttsx3', 'piper', или 'auto' (erster verfuegbarer)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "rate: Скорость речи (по умолчанию: 170, быстрее значения 200 по умолчанию у pyttsx3)\n        voice_name: 'auto' (предпочтительно Zira), или фрагмент имени голоса\n        engine: 'pyttsx3', 'piper', или 'auto' (первый доступный)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "rate_sprechgeschwindigkeit_standard_170_schnel",
     "namespace": "cli",
     "language": "zh",
-    "value": "速率：Sprechgeschwindigkeit（标准：170，schneller als pyttsx3-默认 200）\n        voice_name: 'auto' (Zira bevorzugt)，或名称片段 der Stimme\n        引擎：“pyttsx3”、“piper”、或“auto”（erster verfuegbarer）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "rate: 语速（默认：170，快于 pyttsx3 默认值 200）\n        voice_name: 'auto'（优先使用 Zira），或语音名称片段\n        engine: 'pyttsx3'、'piper' 或 'auto'（第一个可用的）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "readme_md_f_r_standalone_nutzung_generieren",
@@ -61393,11 +61393,11 @@
     "key": "sammelt_und_zeigt_den_aktuellen_db_basierten_syste",
     "namespace": "cli",
     "language": "en",
-    "value": "Sammelt und Shows den aktuellen DB-basierten Systemstatus.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Collects and displays the current DB-based system status.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "sammelt_und_zeigt_den_aktuellen_db_basierten_syste",
@@ -62053,31 +62053,31 @@
     "key": "scannt_einen_ordner_und_kategorisiert_alle_dokumen",
     "namespace": "cli",
     "language": "en",
-    "value": "Scannt einen folder und kategorisiert all documents.\n\n        Args:\n            folder: Pfad to the Klienten-folder\n            recursive: Unterordner einbeziehen (Default: True)\n\n        Returns:\n            ScanResult mit kategorisierten Dokumenten",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Scans a folder and categorizes all documents.\n\n        Args:\n            folder: Path to the client folder\n            recursive: Include subfolders (Default: True)\n\n        Returns:\n            ScanResult with categorized documents",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "scannt_einen_ordner_und_kategorisiert_alle_dokumen",
     "namespace": "cli",
     "language": "es",
-    "value": "Escanee una carpeta y categorice todos los documentos.\n\n        Argumentos:\n            carpeta: Pfad a la carpeta Klienten\n            recursivo: Unterordner einbeziehen (Predeterminado: Verdadero)\n\n        Devoluciones:\n            ScanResult con documentos clasificados",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Escanea una carpeta y categoriza todos los documentos.\n\n        Argumentos:\n            folder: Ruta a la carpeta del cliente\n            recursive: Incluir subcarpetas (Default: True)\n\n        Devuelve:\n            ScanResult con documentos categorizados",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "scannt_einen_ordner_und_kategorisiert_alle_dokumen",
     "namespace": "cli",
     "language": "ja",
-    "value": "フォルダーをスキャンし、すべてのドキュメントを分類します。\n\n        引数:\n            フォルダー: Pfad を Klienten フォルダーに追加\n            再帰的: Unterordner einbeziehen (デフォルト: True)\n\n        戻り値:\n            ScanResult とカテゴリのドキュメント",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "フォルダーをスキャンし、すべてのドキュメントを分類します。\n\n        引数:\n            folder: クライアントフォルダーへのパス\n            recursive: サブフォルダーを含める（デフォルト: True）\n\n        戻り値:\n            分類されたドキュメントを含む ScanResult",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "scannt_einen_ordner_und_kategorisiert_alle_dokumen",
@@ -62093,11 +62093,11 @@
     "key": "scannt_einen_ordner_und_kategorisiert_alle_dokumen",
     "namespace": "cli",
     "language": "zh",
-    "value": "扫描每个文件夹并对所有文档进行分类。\n\n        参数：\n            文件夹：Pfad 到 Klienten 文件夹\n            递归：Unterordner einbeziehen（默认值：True）\n\n        返回：\n            ScanResult 及其类别文档",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "扫描文件夹并对所有文档进行分类。\n\n        参数：\n            folder: 客户文件夹路径\n            recursive: 包含子文件夹（默认：True）\n\n        返回：\n            包含已分类文档的 ScanResult",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "scannt_filesystem_nach_boss_agenten_und_experten",
@@ -69313,31 +69313,31 @@
     "key": "setzt_dead_letter_nachrichten_zurueck_auf_pending",
     "namespace": "cli",
     "language": "en",
-    "value": "Setzt Dead-Letter-messages zurueck auf 'pending'.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Resets dead-letter messages back to 'pending'.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_dead_letter_nachrichten_zurueck_auf_pending",
     "namespace": "cli",
     "language": "es",
-    "value": "Setzt Dead-Letter-messages zurueck auf 'pendiente'.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Restablece los mensajes de dead-letter a 'pending'.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_dead_letter_nachrichten_zurueck_auf_pending",
     "namespace": "cli",
     "language": "ja",
-    "value": "Setzt Dead-Letter-messages zurueck auf 'pending' 。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "デッドレターメッセージを 'pending' に戻します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_dead_letter_nachrichten_zurueck_auf_pending",
@@ -69353,11 +69353,11 @@
     "key": "setzt_dead_letter_nachrichten_zurueck_auf_pending",
     "namespace": "cli",
     "language": "zh",
-    "value": "Setzt 死信消息 zurueck auf 'pending'。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "将死信消息重置为 'pending'。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_analyzer_zur_ck",
@@ -69433,51 +69433,51 @@
     "key": "setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru",
     "namespace": "cli",
     "language": "en",
-    "value": "Setzt den Arbeitsmodus for today. Returns False zurueck bei ungueltigem Modus.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Sets the work mode for today. Returns False for an invalid mode.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru",
     "namespace": "cli",
     "language": "es",
-    "value": "Setzt den Arbeitsmodus de hoy. Devuelve False zurueck bei ungueltigem Modus.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Establece el modo de trabajo para hoy. Devuelve False para un modo no válido.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru",
     "namespace": "cli",
     "language": "ja",
-    "value": "今日のSetzt den Arbeitsmodus。 False zurueck bei ungueltigem Modus を返します。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "今日の作業モードを設定します。無効なモードの場合は False を返します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru",
     "namespace": "cli",
     "language": "ru",
-    "value": "Setzt den Arbeitsmodus на сегодня. Возвращает False zurueck bei ungueltigem Modus.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Задаёт рабочий режим на сегодня. Возвращает False при недопустимом режиме.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru",
     "namespace": "cli",
     "language": "zh",
-    "value": "今天就设置 Arbeitsmodus。返回 False zurueck bei ungueltigem Modus。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "设置今天的工作模式。模式无效时返回 False。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_budget_verbrauch_auf_0_zurueck",
@@ -69533,11 +69533,11 @@
     "key": "setzt_den_budget_verbrauch_auf_0_zurueck",
     "namespace": "cli",
     "language": "zh",
-    "value": "Setzt den Budget-Verbrauch auf 0 zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "将预算消耗重置为 0。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_state_einer_llmauto_kette_zurueck",
@@ -69573,11 +69573,11 @@
     "key": "setzt_den_state_einer_llmauto_kette_zurueck",
     "namespace": "cli",
     "language": "ja",
-    "value": "Setzt den State einer llmauto-Kette zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "llmauto チェーンの状態をリセットします。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_den_state_einer_llmauto_kette_zurueck",
@@ -69593,11 +69593,11 @@
     "key": "setzt_den_state_einer_llmauto_kette_zurueck",
     "namespace": "cli",
     "language": "zh",
-    "value": "Setzt den State einer llmauto-Kette zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "重置 llmauto 链的状态。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_ein_ml_modell_f_r_die_methodenauswahl",
@@ -69693,11 +69693,11 @@
     "key": "setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel",
     "namespace": "cli",
     "language": "ja",
-    "value": "Setzt Modus zurueck wenn Vollzugriff-Timeout abgelaufen。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "全アクセスのタイムアウトが切れたらモードを戻します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel",
@@ -69713,11 +69713,11 @@
     "key": "setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel",
     "namespace": "cli",
     "language": "zh",
-    "value": "Setzt Modus zurueck wenn Vollzugriff-Timeout abgelaufen。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "当完全访问超时到期时恢复模式。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "shutdown_handler_session_beenden_db_basiert",
@@ -70213,11 +70213,11 @@
     "key": "skill_spezifische_tools_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "en",
-    "value": "skill-spezifische tools im skill-folder find.\n\n        Sucht after:\n        - *.py Dateien im Skill-Root\n        - tools/ Unterverzeichnis\n\n        Returns:\n            list von (Path, relative_name) Tupeln",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Find skill-specific tools in the skill folder.\n\n        Searches for:\n        - *.py files in the skill root\n        - tools/ subdirectory\n\n        Returns:\n            List of (Path, relative_name) tuples",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_tools_im_skill_ordner_finden",
@@ -70233,31 +70233,31 @@
     "key": "skill_spezifische_tools_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "ja",
-    "value": "スキルフォルダーの検索でスキル固有のツールを見つけます。\n\n        その後:\n        - *.py Dateien im スキルルート\n        - ツール/Unterverzeichnis\n\n        戻り値:\n            list von (パス、相対名) トゥペルン",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "スキルフォルダー内のスキル固有ツールを検索します。\n\n        検索対象:\n        - スキルルート内の *.py ファイル\n        - tools/ サブディレクトリ\n\n        戻り値:\n            (Path, relative_name) タプルのリスト",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_tools_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "ru",
-    "value": "Специализированные инструменты в папке навыков.\n\n        Такое после:\n        - *.py Dateien im Skill-Root\n        - инструменты/Unterverzeichnis\n\n        Возврат:\n            список фонов (Путь, относительное_имя) Tupeln",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Ищет специфичные для навыка инструменты в папке навыка.\n\n        Ищет:\n        - *.py файлы в корне навыка\n        - подкаталог tools/\n\n        Возврат:\n            Список кортежей (Path, relative_name)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_tools_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "zh",
-    "value": "技能专用工具在技能文件夹中找到。\n\n        如此之后：\n        - *.py Dateien im 技能根\n        - 工具/Unterverzeichnis\n\n        返回：\n            列表冯（路径，相对名称）Tupeln",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "在技能文件夹中查找技能专用工具。\n\n        查找：\n        - 技能根目录中的 *.py 文件\n        - tools/ 子目录\n\n        返回：\n            (Path, relative_name) 元组列表",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_workflows_im_skill_ordner_finden",
@@ -70273,11 +70273,11 @@
     "key": "skill_spezifische_workflows_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "en",
-    "value": "skill-spezifische Workflows im skill-folder find.\n\n        Sucht after:\n        - workflow_*.md Dateien im Root\n        - workflows/ Unterverzeichnis\n\n        Returns:\n            list von (Path, relative_name) Tupeln",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Find skill-specific workflows in the skill folder.\n\n        Searches for:\n        - workflow_*.md files in the root\n        - workflows/ subdirectory\n\n        Returns:\n            List of (Path, relative_name) tuples",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_workflows_im_skill_ordner_finden",
@@ -70293,11 +70293,11 @@
     "key": "skill_spezifische_workflows_im_skill_ordner_finden",
     "namespace": "cli",
     "language": "ja",
-    "value": "スキルフォルダーでワークフローを特定します。\n\n        その後:\n        - workflow_*.md Dateien im Root\n        - ワークフロー/Unterverzeichnis\n\n        戻り値:\n            list von (パス、相対名) トゥペルン",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "スキルフォルダー内のスキル固有ワークフローを検索します。\n\n        検索対象:\n        - ルート内の workflow_*.md ファイル\n        - workflows/ サブディレクトリ\n\n        戻り値:\n            (Path, relative_name) タプルのリスト",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "skill_spezifische_workflows_im_skill_ordner_finden",
@@ -70703,41 +70703,41 @@
     "key": "smart_home_fritzbox_integration",
     "namespace": "cli",
     "language": "es",
-    "value": "Hogar inteligente (integración de FritzBox)\n====================================\n\n  estado de bach smarthome Verbindungs-Status\n  dispositivos bach smarthome Verbundene Geraete\n  bach smarthome wifi Estado WLAN\n  ancho de banda de bach smarthome Bandbreite\n  bach smarthome reconnect Internet neu verbinden\n  bach smarthome info Cuadro de información\n\nVoraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Smart Home (FritzBox Integration)\n==================================\n\n  bach smarthome status       Estado de la conexión\n  bach smarthome devices      Dispositivos conectados\n  bach smarthome wifi         Estado del WLAN\n  bach smarthome bandwidth    Ancho de banda\n  bach smarthome reconnect    Reconectar a Internet\n  bach smarthome info         Información de la Box\n\nRequisito: FritzBox accesible en fritz.box:49000 (TR-064).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "smart_home_fritzbox_integration",
     "namespace": "cli",
     "language": "ja",
-    "value": "スマートホーム (FritzBox 統合)\n=================================\n\n  bach スマートホーム ステータス Verbindungs-Status\n  bach スマートホーム デバイス Verbundene Geraete\n  bach スマートホーム wifi WLAN ステータス\n  bach スマートホーム帯域幅 Bandbreite\n  bach スマートホームがインターネットに再接続する neu verbinden\n  bach スマートホーム情報 Box-Informationen\n\n内容: FritzBox unter fritz.box:49000 erreichbar (TR-064)。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "スマートホーム（FritzBox 連携）\n==================================\n\n  bach smarthome status       接続状態\n  bach smarthome devices      接続済みデバイス\n  bach smarthome wifi         WLAN の状態\n  bach smarthome bandwidth    帯域幅\n  bach smarthome reconnect    インターネットに再接続\n  bach smarthome info         Box の情報\n\n前提: fritz.box:49000 で FritzBox にアクセスできること（TR-064）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "smart_home_fritzbox_integration",
     "namespace": "cli",
     "language": "ru",
-    "value": "Умный дом (интеграция с FritzBox)\n=================================\n\n  Статус умного дома Баха Verbindungs-Status\n  Устройства умного дома bach Verbundene Geraete\n  Умный дом Баха Wi-Fi Статус WLAN\n  Пропускная способность умного дома Баха Bandbreite\n  Умный дом Баха повторно подключился к Интернету\n  Информация об умном доме Баха Box-Informationen\n\nВыбор: FritzBox unter fritz.box:49000 erreichbar (TR-064).",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Умный дом (интеграция FritzBox)\n==================================\n\n  bach smarthome status       Статус соединения\n  bach smarthome devices      Подключённые устройства\n  bach smarthome wifi         Статус WLAN\n  bach smarthome bandwidth    Пропускная способность\n  bach smarthome reconnect    Переподключить интернет\n  bach smarthome info         Информация о Box\n\nТребование: FritzBox доступна по адресу fritz.box:49000 (TR-064).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "smart_home_fritzbox_integration",
     "namespace": "cli",
     "language": "zh",
-    "value": "智能家居（FritzBox 集成）\n===================================\n\n  bach smarthome 状态 Verbindungs-Status\n  巴赫智能家居设备 Verbundene Geraete\n  bach smarthome wifi WLAN-状态\n  巴赫智能家居带宽 Bandbreite\n  巴赫智能家居重新连接互联网 neu verbinden\n  巴赫智能家居信息盒-Informationen\n\n文件：FritzBox unter fritz.box:49000 erreichbar (TR-064)。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "智能家居（FritzBox 集成）\n==================================\n\n  bach smarthome status       连接状态\n  bach smarthome devices      已连接设备\n  bach smarthome wifi         WLAN 状态\n  bach smarthome bandwidth    带宽\n  bach smarthome reconnect    重新连接互联网\n  bach smarthome info         Box 信息\n\n前提：可通过 fritz.box:49000 访问 FritzBox（TR-064）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "smarthomehandler_smart_home_integration_fritzbo",
@@ -71293,51 +71293,51 @@
     "key": "startet_claude_p_und_gibt_antwort_zurueck",
     "namespace": "cli",
     "language": "en",
-    "value": "Startet claude -p und Returns Antwort zurueck.\n\n        Args:\n            prompt: Der Prompt-text\n            use_continue: True = --continue (bestehende session fortsetzen),\n                          False = neue session (voller system-Prompt)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Starts claude -p and returns the answer.\n\n        Args:\n            prompt: The prompt text\n            use_continue: True = --continue (resume existing session),\n                          False = new session (full system prompt)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_claude_p_und_gibt_antwort_zurueck",
     "namespace": "cli",
     "language": "es",
-    "value": "Startet claude -p y Returns Responde zurueck.\n\n        Argumentos:\n            mensaje: El texto del mensaje\n            use_continue: True = --continue (mejor sesión fortalecida),\n                          Falso = nueva sesión (voller system-Prompt)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Inicia claude -p y devuelve la respuesta.\n\n        Argumentos:\n            prompt: El texto del prompt\n            use_continue: True = --continue (continuar sesión existente),\n                          False = nueva sesión (prompt de sistema completo)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_claude_p_und_gibt_antwort_zurueck",
     "namespace": "cli",
     "language": "ja",
-    "value": "Startet claude -p と Antwort zurueck を返します。\n\n        引数:\n            プロンプト: プロンプトテキスト\n            use_ continue: True = -- continue (ベスト ヘンデ セッション フォートセッツェン)、\n                          False = 新しいセッション (ボリューム システム プロンプト)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "claude -p を起動し、回答を返します。\n\n        引数:\n            prompt: プロンプトテキスト\n            use_continue: True = --continue（既存セッションを継続）、\n                          False = 新しいセッション（完全なシステムプロンプト）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_claude_p_und_gibt_antwort_zurueck",
     "namespace": "cli",
     "language": "ru",
-    "value": "Startet claude -p und Returns Antwort zurueck.\n\n        Аргументы:\n            подсказка: Der Prompt-text\n            use_continue: True = --continue (оптимизация сеанса),\n                          False = новый сеанс (системная подсказка voller)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Запускает claude -p и возвращает ответ.\n\n        Аргументы:\n            prompt: Текст промпта\n            use_continue: True = --continue (продолжить существующую сессию),\n                          False = новая сессия (полный системный промпт)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_claude_p_und_gibt_antwort_zurueck",
     "namespace": "cli",
     "language": "zh",
-    "value": "启动 claude -p 并返回 Antwort zurueck。\n\n        参数：\n            提示：Der Prompt-text\n            use_continue: True = --continue (bestehende session fortsetzen),\n                          False = neue 会话（voller 系统提示）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "启动 claude -p 并返回答案。\n\n        参数：\n            prompt: 提示文本\n            use_continue: True = --continue（继续现有会话）、\n                          False = 新会话（完整系统提示）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_einen_neuen_pipeline_run_erstellt_eintrag",
@@ -71413,21 +71413,21 @@
     "key": "startet_listen_loop_in_eigenem_thread_gibt_threa",
     "namespace": "cli",
     "language": "en",
-    "value": "Startet Listen-Loop in eigenem Thread. Returns (Thread, StopEvent) zurueck.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Starts the listen loop in its own thread. Returns (Thread, StopEvent).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_listen_loop_in_eigenem_thread_gibt_threa",
     "namespace": "cli",
     "language": "es",
-    "value": "Inicie el bucle de escucha en un hilo propio. Devuelve (Thread, StopEvent) zurueck.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Inicia el bucle de escucha en su propio hilo. Devuelve (Thread, StopEvent).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_listen_loop_in_eigenem_thread_gibt_threa",
@@ -71443,21 +71443,21 @@
     "key": "startet_listen_loop_in_eigenem_thread_gibt_threa",
     "namespace": "cli",
     "language": "ru",
-    "value": "Начать цикл прослушивания в собственном потоке. Возвращает (Thread, StopEvent) zurueck.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Запускает цикл прослушивания в отдельном потоке. Возвращает (Thread, StopEvent).",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_listen_loop_in_eigenem_thread_gibt_threa",
     "namespace": "cli",
     "language": "zh",
-    "value": "在特征线程中启动监听循环。返回 (Thread, StopEvent) zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "在独立线程中启动监听循环。返回 (Thread, StopEvent)。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "startet_sofort_eine_claude_session_mit_dem_prompt",
@@ -73033,11 +73033,11 @@
     "key": "sucht_im_fts5_index_args_qu",
     "namespace": "cli",
     "language": "en",
-    "value": "Sucht im FTS5-Index.\n\n        Args:\n            query: Suchbegriff (FTS5-Syntax)\n            limit: Maximale Ergebnisse\n\n        Returns:\n            list: Suchergebnisse als Dicts oder Fehlermeldung",
+    "value": "Searches the FTS5 index.\n\n        Args:\n            query: Search term (FTS5 syntax)\n            limit: Maximum results\n\n        Returns:\n            list: Search results as dicts or error message",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "sucht_im_fts5_index_args_qu",
@@ -73633,31 +73633,31 @@
     "key": "synchronisiert_db_status_zurueck_zu_aufgaben_txt_d",
     "namespace": "cli",
     "language": "en",
-    "value": "Synchronisiert DB-status zurueck zu tasks.txt files",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Syncs DB status back to AUFGABEN.txt files",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "synchronisiert_db_status_zurueck_zu_aufgaben_txt_d",
     "namespace": "cli",
     "language": "es",
-    "value": "Sincronización de archivos DB-status zurueck zu task.txt",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Sincroniza el estado de la DB de vuelta a los archivos AUFGABEN.txt",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "synchronisiert_db_status_zurueck_zu_aufgaben_txt_d",
     "namespace": "cli",
     "language": "ja",
-    "value": "Synchronisiert DB ステータス zurueck zu task.txt ファイル",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "DB ステータスを AUFGABEN.txt ファイルへ同期し戻します",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "synchronisiert_db_status_zurueck_zu_aufgaben_txt_d",
@@ -73673,11 +73673,11 @@
     "key": "synchronisiert_db_status_zurueck_zu_aufgaben_txt_d",
     "namespace": "cli",
     "language": "zh",
-    "value": "同步 DB 状态 zurueck zutasks.txt 文件",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "将数据库状态同步回 AUFGABEN.txt 文件",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "synchronisiert_skills_dateien_mit_db",
@@ -76513,11 +76513,11 @@
     "key": "uebersprungen_skipped_fehlen_oder_lesefehler",
     "namespace": "cli",
     "language": "en",
-    "value": "Uebersprungen: {skipped} (fehlen oder Lesefehler)",
+    "value": "Skipped: {skipped} (missing or read errors)",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "uebersprungen_skipped_fehlen_oder_lesefehler",
@@ -77663,11 +77663,11 @@
     "key": "update_handler_versions_und_update_verwaltung",
     "namespace": "cli",
     "language": "es",
-    "value": "Controlador de actualizaciones - Versiones y actualizaciones\n==================================================\n\ncomprobación de actualización de bach Auf Actualizaciones pruefen\nestado de actualización de bach Aktuelle Version + Verifikation anzeigen\nbach update apply Actualizar einspielen (Copia de seguridad + Extraer + Migrar + Verificar)\nreversión de actualización de bach Revertir para hacer copia de seguridad previa a la actualización\nactualización de bach verificar System-Integritaet pruefen\nactualización de bach migraciones Ausstehende Migrationen anzeigen/ausfuehren",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Update Handler - Gestión de versiones y actualizaciones\n=================================================\n\nbach update check          Comprobar actualizaciones\nbach update status         Mostrar versión actual + verificación\nbach update apply          Aplicar actualización (Backup + Pull + Migrate + Verify)\nbach update rollback       Rollback al último backup pre-actualización\nbach update verify         Comprobar integridad del sistema\nbach update migrations     Mostrar/ejecutar migraciones pendientes",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "update_handler_versions_und_update_verwaltung",
@@ -79153,31 +79153,31 @@
     "key": "user_sync_py_user_md_bidirektionale_synchronisa",
     "namespace": "cli",
     "language": "en",
-    "value": "user_sync.py -- USER.md bidirektionale Synchronisation\n\nLiest USER.md und schreibt Aenderungen in user_profile table zurueck.\nUmgekehrt: DB -> USER.md (Regenerierung beim Shutdown).\n\nAufgerufen von:\n- bach --startup  (Block 0.07: USER.md -> DB)\n- bach --shutdown (Block 5.7: DB -> USER.md)\n\nnotice: USER.md liegt im BACH-Root-directory (eine Ebene ueber system/).\n         Pfad: BACH/USER.md",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "user_sync.py -- USER.md bidirectional synchronization\n\nReads USER.md and writes changes back to the user_profile table.\nReverse: DB -> USER.md (regeneration on shutdown).\n\nCalled by:\n- bach --startup  (block 0.07: USER.md -> DB)\n- bach --shutdown (block 5.7: DB -> USER.md)\n\nNote: USER.md is located in the BACH root directory (one level above system/).\n      Path: BACH/USER.md",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "user_sync_py_user_md_bidirektionale_synchronisa",
     "namespace": "cli",
     "language": "es",
-    "value": "user_sync.py -- USER.md Sincronización bidireccional\n\nLiest USER.md y schreibt Aenderungen en la tabla user_profile zurueck.\nUmgekehrt: DB -> USER.md (Regeneración antes del apagado).\n\nAufgerufen von:\n- bach --startup (Bloque 0.07: USER.md -> DB)\n- bach --shutdown (Bloque 5.7: DB -> USER.md)\n\naviso: USER.md se encuentra en el directorio raíz BACH (eine Ebene ueber system/).\n         Página: BACH/USER.md",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "user_sync.py -- Sincronización bidireccional de USER.md\n\nLee USER.md y devuelve los cambios a la tabla user_profile.\nInverso: DB -> USER.md (regeneración al apagar).\n\nLlamado por:\n- bach --startup  (bloque 0.07: USER.md -> DB)\n- bach --shutdown (bloque 5.7: DB -> USER.md)\n\nNota: USER.md está en el directorio raíz de BACH (un nivel encima de system/).\n      Ruta: BACH/USER.md",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "user_sync_py_user_md_bidirektionale_synchronisa",
     "namespace": "cli",
     "language": "ja",
-    "value": "user_sync.py -- USER.md 双方向同期\n\nuser_profile テーブル zurueck の最も正しい USER.md と schreibt Aenderungen。\n例: DB -> USER.md (シャットダウン時の再生)。\n\nアウフゲルフェン・フォン:\n- bach --startup (ブロック 0.07: USER.md -> DB)\n- bach --shutdown (ブロック 5.7: DB -> USER.md)\n\n注意: USER.md liegt im BACH-Root-directory (eine Ebene ueber system/)。\n         Pfad: BACH/USER.md",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "user_sync.py -- USER.md の双方向同期\n\nUSER.md を読み取り、変更を user_profile テーブルに書き戻します。\n逆方向: DB -> USER.md（シャットダウン時に再生成）。\n\n呼び出し元:\n- bach --startup  (ブロック 0.07: USER.md -> DB)\n- bach --shutdown (ブロック 5.7: DB -> USER.md)\n\n注意: USER.md は BACH のルートディレクトリ（system/ の 1 つ上）にあります。\n      パス: BACH/USER.md",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "user_sync_py_user_md_bidirektionale_synchronisa",
@@ -79193,11 +79193,11 @@
     "key": "user_sync_py_user_md_bidirektionale_synchronisa",
     "namespace": "cli",
     "language": "zh",
-    "value": "user_sync.py -- USER.md 双向同步\n\n位于 user_profile 表 zurueck 中的 USER.md 和 schreibt Aenderungen。\nUmgekehrt：DB -> USER.md（Regenerierung beim Shutdown）。\n\n奥夫格鲁芬冯：\n- bach --startup （块 0.07：USER.md -> DB）\n- bach --shutdown （块 5.7：DB -> USER.md）\n\n注意：USER.md 位于 BACH 根目录（eine Ebene ueber system/）。\n         Pfad：BACH/USER.md",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "user_sync.py -- USER.md 双向同步\n\n读取 USER.md 并将更改写回 user_profile 表。\n反向：数据库 -> USER.md（关机时重新生成）。\n\n调用方：\n- bach --startup  (Block 0.07: USER.md -> DB)\n- bach --shutdown (Block 5.7: DB -> USER.md)\n\n注意：USER.md 位于 BACH 根目录（system/ 的上一级）。\n      路径：BACH/USER.md",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_die_eingabedaten_returns",
@@ -79273,51 +79273,51 @@
     "key": "validiert_wichtige_pfade_returns_li",
     "namespace": "cli",
     "language": "en",
-    "value": "Validiert wichtige Pfade.\n\n    Returns:\n        list von Warnungen (empty wenn alles ok)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Validates important paths.\n\n    Returns:\n        List of warnings (empty if everything is ok)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_wichtige_pfade_returns_li",
     "namespace": "cli",
     "language": "es",
-    "value": "Validiert wichtige Pfade.\n\n    Devoluciones:\n        list von Warnungen (vacía cuando todo está bien)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Valida rutas importantes.\n\n    Devuelve:\n        Lista de advertencias (vacía si todo está bien)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_wichtige_pfade_returns_li",
     "namespace": "cli",
     "language": "ja",
-    "value": "Validiert wichtige Pfade。\n\n    戻り値:\n        list von Warnungen (空でも大丈夫です)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "重要なパスを検証します。\n\n    戻り値:\n        警告のリスト（すべて問題なければ空）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_wichtige_pfade_returns_li",
     "namespace": "cli",
     "language": "ru",
-    "value": "Validiert wichtige Pfade.\n\n    Возврат:\n        list von Warnungen (пусто, если все ок)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверяет важные пути.\n\n    Возврат:\n        Список предупреждений (пуст, если всё в порядке)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_wichtige_pfade_returns_li",
     "namespace": "cli",
     "language": "zh",
-    "value": "有效的 Pfade。\n\n    返回：\n        list von Warnungen（空 wenn alles ok）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "验证重要路径。\n\n    返回：\n        警告列表（一切正常时为空）",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "validiert_workflow_dateien_auf_konsistentes_format",
@@ -79703,11 +79703,11 @@
     "key": "verf_gbare_pfade",
     "namespace": "cli",
     "language": "es",
-    "value": "Pfade verfügbare:",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Rutas disponibles:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verf_gbare_pfade",
@@ -79733,11 +79733,11 @@
     "key": "verf_gbare_pfade",
     "namespace": "cli",
     "language": "zh",
-    "value": "Verfügbare Pfade：",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "可用路径:",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verfuegbare_modelle_auflisten",
@@ -79833,11 +79833,11 @@
     "key": "verfuegbare_operationen_mit_beschreibung",
     "namespace": "cli",
     "language": "ja",
-    "value": "Verfuegbare Operationen mit Beschreibung。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "使用可能な操作とその説明。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verfuegbare_operationen_mit_beschreibung",
@@ -79853,11 +79853,11 @@
     "key": "verfuegbare_operationen_mit_beschreibung",
     "namespace": "cli",
     "language": "zh",
-    "value": "Verfuegbare Operan mit Beschreibung。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "可用操作及其说明。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verhindert_mehrfachen_start_der_tray_app_nut",
@@ -80173,21 +80173,21 @@
     "key": "versions_check_f_r_einen_skill_v2_0_ve",
     "namespace": "cli",
     "language": "en",
-    "value": "Versions-Check for einen skill (v2.0).\n\n        Vergleicht:\n        - Lokale Version (aus YAML-Header)\n        - Zentrale Version (falls verfügbar)\n\n        Prinzip: Immer die höchste Versionsnummer verwenden!\n\n        Args:\n            name: skill-Name\n\n        Returns:\n            (success, message)",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Version check for a skill (v2.0).\n\n        Compares:\n        - Local version (from YAML header)\n        - Central version (if available)\n\n        Principle: Always use the highest version number!\n\n        Args:\n            name: Skill name\n\n        Returns:\n            (success, message)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "versions_check_f_r_einen_skill_v2_0_ve",
     "namespace": "cli",
     "language": "es",
-    "value": "Versiones: compruebe si hay alguna habilidad (v2.0).\n\n        Vergleicht:\n        - Versión local (como encabezado YAML)\n        - Versión Zentrale (falls verfügbar)\n\n        Principio: ¡Immer die höchste Versionsnummer verwenden!\n\n        Argumentos:\n            nombre: nombre-habilidad\n\n        Devoluciones:\n            (éxito, mensaje)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Comprobación de versiones para un skill (v2.0).\n\n        Compara:\n        - Versión local (del encabezado YAML)\n        - Versión central (si está disponible)\n\n        Principio: ¡Usar siempre el número de versión más alto!\n\n        Argumentos:\n            name: Nombre del skill\n\n        Devuelve:\n            (success, message)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "versions_check_f_r_einen_skill_v2_0_ve",
@@ -80203,21 +80203,21 @@
     "key": "versions_check_f_r_einen_skill_v2_0_ve",
     "namespace": "cli",
     "language": "ru",
-    "value": "Версии-Проверьте навык Einen (v2.0).\n\n        Значение:\n        - Локальная версия (например, YAML-заголовок)\n        - Версия Zentrale (водопад verfügbar)\n\n        Принцип: Immer die Höchste Versionsnummer verwenden!\n\n        Аргументы:\n            имя: Имя навыка\n\n        Возврат:\n            (успех, сообщение)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Проверка версий для навыка (v2.0).\n\n        Сравнивает:\n        - Локальную версию (из YAML-заголовка)\n        - Центральную версию (если доступна)\n\n        Принцип: Всегда использовать самый высокий номер версии!\n\n        Аргументы:\n            name: Название навыка\n\n        Возврат:\n            (success, message)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "versions_check_f_r_einen_skill_v2_0_ve",
     "namespace": "cli",
     "language": "zh",
-    "value": "版本 - 检查 einen 技能 (v2.0)。\n\n        说明：\n        - Lokale 版本（aus YAML 标头）\n        - Zentrale 版本 (falls verfügbar)\n\n        原理： 立即查看版本号！\n\n        参数：\n            name: 技能-名称\n\n        返回：\n            （成功，消息）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "技能版本检查 (v2.0)。\n\n        比较：\n        - 本地版本（来自 YAML 标头）\n        - 中央版本（如可用）\n\n        原则：始终使用最高的版本号！\n\n        参数：\n            name: 技能名称\n\n        返回：\n            (success, message)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "versucht_das_geburtsdatum_aus_dem_aktendeckblatt_z",
@@ -80493,31 +80493,31 @@
     "key": "verwaltet_db_backups_und_prosync_zwischen_systemen",
     "namespace": "cli",
     "language": "ja",
-    "value": "Verwaltet DB バックアップと ProSync zwischen Systemen。\n\n    ProSync アーキテクト:\n    - Jedes System ハットアインロケール DB (~/.bach/bach.db)\n    - OneDrive および Transit-Hub の .bachdb-Dateien\n    - BACH の同期 - 開始 (プル) と - 終了 (プッシュ)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "DB バックアップとシステム間の ProSync を管理します。\n\n    ProSync アーキテクチャ:\n    - 各システムはローカル DB を持ちます (~/.bach/bach.db)\n    - OneDrive は .bachdb ファイルの中継ハブとして機能します\n    - BACH 起動時 (pull) と終了時 (push) に同期します",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verwaltet_db_backups_und_prosync_zwischen_systemen",
     "namespace": "cli",
     "language": "ru",
-    "value": "Verwaltet DB-Backups и ProSync zwischen Systemen.\n\n    ProSync-Архитектура:\n    - Jedes System имеет локальную базу данных (~/.bach/bach.db)\n    - OneDrive используется как Transit-Hub для .bachdb-Dateien\n    - Синхронизация с BACH - Старт (тянуть) и Выход (нажимать)",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Управляет бэкапами БД и ProSync между системами.\n\n    Архитектура ProSync:\n    - У каждой системы локальная БД (~/.bach/bach.db)\n    - OneDrive служит транзитным хабом для файлов .bachdb\n    - Синхронизация при старте BACH (pull) и выходе (push)",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verwaltet_db_backups_und_prosync_zwischen_systemen",
     "namespace": "cli",
     "language": "zh",
-    "value": "Verwaltet DB-Backups 和 ProSync zwischen Systemen。\n\n    ProSync-架构：\n    - Jedes System hat eine lokale DB (~/.bach/bach.db)\n    - OneDrive 用作 .bachdb-Dateien 的 Transit-Hub\n    - 同步 BACH 启动（拉）和退出（推）",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "管理数据库备份和系统间的 ProSync。\n\n    ProSync 架构：\n    - 每个系统各有一个本地数据库（~/.bach/bach.db）\n    - OneDrive 作为 .bachdb 文件的中转枢纽\n    - 在 BACH 启动（拉取）和退出（推送）时同步",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "verwenden_sie_bach_pipeline_status",
@@ -81013,31 +81013,31 @@
     "key": "warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer",
     "namespace": "cli",
     "language": "en",
-    "value": "Warmup-Call um Modell in GPU zu load. Returns Dauer in Sekunden zurueck.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Warmup call to load the model into the GPU. Returns the duration in seconds.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer",
     "namespace": "cli",
     "language": "es",
-    "value": "Calentamiento: llame a un modelo en GPU para cargar. Dauer regresa en Sekunden zurueck.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Llamada de calentamiento para cargar el modelo en la GPU. Devuelve la duración en segundos.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer",
     "namespace": "cli",
     "language": "ja",
-    "value": "ウォームアップ - ロード中の GPU でモデルを呼び出します。 Sekunden zurueck で Dauer を返します。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "モデルを GPU に読み込むためのウォームアップ呼び出し。所要時間（秒）を返します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer",
@@ -81053,11 +81053,11 @@
     "key": "warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer",
     "namespace": "cli",
     "language": "zh",
-    "value": "GPU 负载中的预热-调用 um Modell。将 Dauer 返回到 Sekunden zurueck。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "预热调用以将模型加载到 GPU。返回耗时（秒）。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "warn_anonymizer_whitelist_konnte_nicht_geladen_w",
@@ -82453,11 +82453,11 @@
     "key": "webscrapehandler_browser_steuerung_ersetzt_play",
     "namespace": "cli",
     "language": "en",
-    "value": "WebScrapeHandler - Browser-Steuerung (ersetzt Playwright MCP)\n==============================================================\nbach web-scrape get <url>           HTTP GET, Body zurueckgeben\nbach web-scrape links <url>         Alle Links einer Seite\nbach web-scrape forms <url>         Formular-Felder erkennen\nbach web-scrape screenshot <url>    Screenshot (braucht selenium)\nbach web-scrape headers <url>       Response-Headers anzeigen\n\nTask: 996",
+    "value": "WebScrapeHandler - Browser Control (replaces Playwright MCP)\n==============================================================\nbach web-scrape get <url>           HTTP GET, return body\nbach web-scrape links <url>         All links of a page\nbach web-scrape forms <url>         Detect form fields\nbach web-scrape screenshot <url>    Screenshot (requires selenium)\nbach web-scrape headers <url>       Show response headers\n\nTask: 996",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "webscrapehandler_browser_steuerung_ersetzt_play",
@@ -82693,11 +82693,11 @@
     "key": "wie_get_path_aber_pr_ft_zuerst_db_overrides",
     "namespace": "cli",
     "language": "en",
-    "value": "Wie get_path(), aber prüft zuerst DB-Overrides.\n\n    Args:\n        name: Pfadname\n\n    Returns:\n        Path (Override aus DB falls vorhanden, sonst Standard)",
+    "value": "Like get_path(), but checks DB overrides first.\n\n    Args:\n        name: Path name\n\n    Returns:\n        Path (override from DB if present, otherwise default)",
     "is_verified": 1,
-    "source": "mixed_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "wie_get_path_aber_pr_ft_zuerst_db_overrides",
@@ -83173,51 +83173,51 @@
     "key": "word_template_service_allge",
     "namespace": "cli",
     "language": "en",
-    "value": "Word Template Service\n=====================\n\nAllgemeiner Service for Word-Template-Befuellung via python-docx.\nUnterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,\nCheckbox-Steuerung und Satzbausteine.\n\nAbhaengigkeit: python-docx (pip install python-docx)\n\nVersion: 1.1.0 (Tabellen-Support for Förderziele)\ncreated: 2026-01-27\nupdated: 2026-01-31",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Word Template Service\n=====================\n\nGeneric service for filling Word templates via python-docx.\nSupports placeholder replacement, table row filtering,\ncheckbox control and text building blocks.\n\nDependency: python-docx (pip install python-docx)\n\nVersion: 1.1.0 (table support for Förderziele)\nCreated: 2026-01-27\nUpdated: 2026-01-31",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "word_template_service_allge",
     "namespace": "cli",
     "language": "es",
-    "value": "Servicio de plantillas de Word\n======================\n\nServicio completo para la configuración de plantillas de Word a través de python-docx.\nUnterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,\nCheckbox-Steuerung und Satzbausteine.\n\nConfiguración: python-docx (pip install python-docx)\n\nVersión: 1.1.0 (Tabellen-Support for Förderziele)\ncreado: 2026-01-27\nactualizado: 2026-01-31",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Servicio de plantillas de Word\n=====================\n\nServicio genérico para rellenar plantillas de Word mediante python-docx.\nSoporta reemplazo de placeholders, filtrado de filas de tablas,\ncontrol de casillas de verificación y bloques de texto.\n\nDependencia: python-docx (pip install python-docx)\n\nVersión: 1.1.0 (soporte de tablas para Förderziele)\nCreado: 2026-01-27\nActualizado: 2026-01-31",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "word_template_service_allge",
     "namespace": "cli",
     "language": "ja",
-    "value": "Wordテンプレートサービス\n=====================\n\npython-docx 経由の Word-Template-Befuellung 用の Allgemeiner サービス。\nUnterstuetzt Platzhalter-Ersetzung、Tabellenzeilen-Filterung、\nチェックボックス - Steuerung und Satzbausteine。\n\nAbhaengigkeit: python-docx (pip install python-docx)\n\nバージョン: 1.1.0 (Tabellen-Förderziele のサポート)\n作成日: 2026-01-27\n更新日: 2026-01-31",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Word テンプレートサービス\n=====================\n\npython-docx による Word テンプレート入力のための汎用サービスです。\nプレースホルダー置換、テーブル行のフィルタリング、\nチェックボックス制御、文章ブロックをサポートします。\n\n依存関係: python-docx (pip install python-docx)\n\nバージョン: 1.1.0（Förderziele のテーブル対応）\n作成日: 2026-01-27\n更新日: 2026-01-31",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "word_template_service_allge",
     "namespace": "cli",
     "language": "ru",
-    "value": "Служба шаблонов слов\n=====================\n\nСервис Allgemeiner для Word-Template-Befuellung через python-docx.\nUnterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,\nФлажок-Steuerung und Satzbausteine.\n\nAbhaengigkeit: python-docx (pip install python-docx)\n\nВерсия: 1.1.0 (Tabellen-поддержка Förderziele)\nсоздано: 27.01.2026\nобновлено: 31 января 2026 г.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Служба шаблонов Word\n=====================\n\nУниверсальный сервис для заполнения шаблонов Word через python-docx.\nПоддерживает замену плейсхолдеров, фильтрацию строк таблиц,\nуправление чекбоксами и текстовые блоки.\n\nЗависимость: python-docx (pip install python-docx)\n\nВерсия: 1.1.0 (поддержка таблиц для Förderziele)\nСоздано: 2026-01-27\nОбновлено: 2026-01-31",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "word_template_service_allge",
     "namespace": "cli",
     "language": "zh",
-    "value": "Word模板服务\n=====================\n\n通过 python-docx 提供 Word-Template-Befuellung 的 Allgemeiner 服务。\nUnterstuetzt Platzhalter-Ersetzung, Tabellnzeilen-Filterung,\n复选框-Steuerung 和Satzbausteine。\n\nAbhaengigkeit：python-docx (pip install python-docx)\n\n版本：1.1.0（Tabellen-Förderziele 支持）\n创建时间：2026-01-27\n更新时间：2026-01-31",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Word 模板服务\n=====================\n\n通过 python-docx 填充 Word 模板的通用服务。\n支持占位符替换、表格行过滤、\n复选框控制和文本模块。\n\n依赖：python-docx (pip install python-docx)\n\n版本：1.1.0（支持 Förderziele 表格）\n创建：2026-01-27\n更新：2026-01-31",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "workflow_format_validator",
@@ -83653,11 +83653,11 @@
     "key": "zeigt_aktuellen_seal_status_returns",
     "namespace": "cli",
     "language": "en",
-    "value": "Shows aktuellen Seal-status.\n\n        Returns:\n            0 = SUCCESS",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Shows the current seal status.\n\n        Returns:\n            0 = SUCCESS",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "zeigt_aktuellen_seal_status_returns",
@@ -83673,11 +83673,11 @@
     "key": "zeigt_aktuellen_seal_status_returns",
     "namespace": "cli",
     "language": "ja",
-    "value": "aktuellen シールのステータスを表示します。\n\n        戻り値:\n            0 = 成功",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "現在の Seal ステータスを表示します。\n\n        戻り値:\n            0 = SUCCESS",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "zeigt_aktuellen_seal_status_returns",
@@ -84013,11 +84013,11 @@
     "key": "zeigt_den_aktuellen_status_an",
     "namespace": "cli",
     "language": "en",
-    "value": "Shows den aktuellen status an.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Shows the current status.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "zeigt_den_aktuellen_status_an",
@@ -96283,11 +96283,11 @@
     "key": "erstellt_die_workflow_tuev_tabelle_und_synchronisi",
     "namespace": "gui",
     "language": "ru",
-    "value": "создал таблицу workflow_tuev и синхронизировал ее с системой Datei.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Создаёт таблицу workflow_tuev и синхронизирует её с файловой системой.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:01:15.980267",
-    "updated_at": "2026-05-17T07:01:15.980267"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "erstellt_die_workflow_tuev_tabelle_und_synchronisi",
@@ -99193,31 +99193,31 @@
     "key": "gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde",
     "namespace": "gui",
     "language": "en",
-    "value": "Returns Jobs zurueck, die in den naechsten 60 Sekunden faellig sind.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Returns jobs that are due within the next 60 seconds.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde",
     "namespace": "gui",
     "language": "es",
-    "value": "Devuelve Jobs zurueck, die in den naechsten 60 Sekunden faellig sind.",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "Devuelve los trabajos que vencen en los próximos 60 segundos.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T06:51:57.361081",
-    "updated_at": "2026-05-17T06:51:57.361081"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde",
     "namespace": "gui",
     "language": "ja",
-    "value": "戻りジョブ zurueck、den naechsten 60 Sekunden faellig sind で死ぬ。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "今後 60 秒以内に期限が来るジョブを返します。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:04:20.383002",
-    "updated_at": "2026-05-17T07:04:20.383002"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde",
@@ -102253,11 +102253,11 @@
     "key": "liefert_aktuellen_daemon_status_mit_job_statistike",
     "namespace": "gui",
     "language": "en",
-    "value": "Liefert aktuellen daemon-status mit Job-Statistiken und Runtime-Metriken.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Returns the current daemon status with job statistics and runtime metrics.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "liefert_aktuellen_daemon_status_mit_job_statistike",
@@ -102293,11 +102293,11 @@
     "key": "liefert_aktuellen_daemon_status_mit_job_statistike",
     "namespace": "gui",
     "language": "zh",
-    "value": "Liefert aktuellen daemon-status mit Job-Statistiken 和 Runtime-Metriken。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "返回当前守护进程状态，包含作业统计和运行时指标。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "liefert_ati_statistiken_inkl_tages_z_hler",
@@ -105853,11 +105853,11 @@
     "key": "pr_ft_ob_bridge_daemon_l_uft",
     "namespace": "gui",
     "language": "en",
-    "value": "Prüft ob Bridge-daemon läuft.",
-    "is_verified": 0,
-    "source": "mixed_auto",
+    "value": "Checks if the Bridge daemon is running.",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T04:38:01.903621",
-    "updated_at": "2026-05-17T04:38:01.903621"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_bridge_daemon_l_uft",
@@ -105893,11 +105893,11 @@
     "key": "pr_ft_ob_bridge_daemon_l_uft",
     "namespace": "gui",
     "language": "zh",
-    "value": "Prüft ob Bridge-daemon läuft。",
-    "is_verified": 0,
-    "source": "google_auto",
+    "value": "检查 Bridge 守护进程是否正在运行。",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T07:11:17.069268",
-    "updated_at": "2026-05-17T07:11:17.069268"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "pr_ft_ob_dateiinhalt_sich_ge_ndert_hat",
@@ -128963,31 +128963,31 @@
     "key": "tools/agent_cli",
     "namespace": "help_doc",
     "language": "es",
-    "value": "BACH Tool: agent_cli\n--------------------------------------------------\nGeneriert: 2026-01-23 10:36\nQuelle: tools/agent_cli.py\n\nBESCHREIBUNG\n----------------------------------------\nBACH Agent CLI v1.0.0\n---------------------\n\nCLI-Tool zur Verwaltung von BACH Agenten und Experten.\n\nFeatures:\n- Agenten auflisten und aktivieren\n- Experten anzeigen\n- User-Ordner initialisieren\n- Datenbank-Schema anwenden\n\nUsage:\n    python agent_cli.py list                    # Alle Agenten\n    python agent_cli.py experts                 # Alle Experten\n    python agent_cli.py info <agent>            # Agent-Details\n    python agent_cli.py init <agent>            # User-Ordner erstellen\n    python agent_cli.py setup-db                # Datenbank initialisieren\n    python agent_cli.py status                  # System-Status\n\nAutor: BACH System\nDatum: 2026-01-20\n\nVERWENDUNG\n----------------------------------------\npython bach.py tools run agent_cli [args]\noder direkt: python tools/agent_cli.py [args]\n\nHINWEISE\n----------------------------------------\n- Automatisch generiert aus Docstring\n- Bei Fragen: bach tools show agent_cli\n",
-    "is_verified": 0,
-    "source": "filesystem-import-20260823",
+    "value": "BACH Tool: agent_cli\n==================================================\nGenerado: 2026-01-23 10:36\nFuente: tools/agent_cli.py\n\nDESCRIPCIÓN\n----------------------------------------\nBACH Agent CLI v1.0.0\n=====================\n\nCLI-Tool para administrar agentes y expertos de BACH.\n\nFeatures:\n- Listar y activar agentes\n- Mostrar expertos\n- Inicializar carpeta de usuario\n- Aplicar esquema de base de datos\n\nUsage:\n    python agent_cli.py list                    # Todos los agentes\n    python agent_cli.py experts                 # Todos los expertos\n    python agent_cli.py info <agent>            # Detalles del agente\n    python agent_cli.py init <agent>            # Crear carpeta de usuario\n    python agent_cli.py setup-db                # Inicializar base de datos\n    python agent_cli.py status                  # Estado del sistema\n\nAutor: BACH System\nFecha: 2026-01-20\n\nUSO\n----------------------------------------\npython bach.py tools run agent_cli [args]\no directamente: python tools/agent_cli.py [args]\n\nNOTAS\n----------------------------------------\n- Generado automáticamente a partir del docstring\n- Preguntas: bach tools show agent_cli\n",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-08-23 07:28:21",
-    "updated_at": "2026-08-23 07:28:21"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "tools/agent_cli",
     "namespace": "help_doc",
     "language": "ja",
-    "value": "BACH Tool: agent_cli\n--------------------------------------------------\nGeneriert: 2026-01-23 10:36\nQuelle: tools/agent_cli.py\n\nBESCHREIBUNG\n----------------------------------------\nBACH Agent CLI v1.0.0\n---------------------\n\nCLI-Tool zur Verwaltung von BACH Agenten und Experten.\n\nFeatures:\n- Agenten auflisten und aktivieren\n- Experten anzeigen\n- User-Ordner initialisieren\n- Datenbank-Schema anwenden\n\nUsage:\n    python agent_cli.py list                    # Alle Agenten\n    python agent_cli.py experts                 # Alle Experten\n    python agent_cli.py info <agent>            # Agent-Details\n    python agent_cli.py init <agent>            # User-Ordner erstellen\n    python agent_cli.py setup-db                # Datenbank initialisieren\n    python agent_cli.py status                  # System-Status\n\nAutor: BACH System\nDatum: 2026-01-20\n\nVERWENDUNG\n----------------------------------------\npython bach.py tools run agent_cli [args]\noder direkt: python tools/agent_cli.py [args]\n\nHINWEISE\n----------------------------------------\n- Automatisch generiert aus Docstring\n- Bei Fragen: bach tools show agent_cli\n",
-    "is_verified": 0,
-    "source": "filesystem-import-20260823",
+    "value": "BACH Tool: agent_cli\n==================================================\n生成日時: 2026-01-23 10:36\nソース: tools/agent_cli.py\n\n説明\n----------------------------------------\nBACH Agent CLI v1.0.0\n=====================\n\nBACH エージェントと専門家を管理するための CLI ツール。\n\n機能:\n- エージェントの一覧表示と有効化\n- 専門家の表示\n- ユーザーフォルダーの初期化\n- データベーススキーマの適用\n\nUsage:\n    python agent_cli.py list                    # すべてのエージェント\n    python agent_cli.py experts                 # すべての専門家\n    python agent_cli.py info <agent>            # エージェントの詳細\n    python agent_cli.py init <agent>            # ユーザーフォルダーを作成\n    python agent_cli.py setup-db                # データベースを初期化\n    python agent_cli.py status                  # システム状態\n\n作成者: BACH System\n日付: 2026-01-20\n\n使用方法\n----------------------------------------\npython bach.py tools run agent_cli [args]\nまたは直接: python tools/agent_cli.py [args]\n\n注意事項\n----------------------------------------\n- Docstring から自動生成\n- 質問は: bach tools show agent_cli\n",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-08-23 07:28:21",
-    "updated_at": "2026-08-23 07:28:21"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "tools/agent_cli",
     "namespace": "help_doc",
     "language": "ru",
-    "value": "BACH Tool: agent_cli\n--------------------------------------------------\nGeneriert: 2026-01-23 10:36\nQuelle: tools/agent_cli.py\n\nBESCHREIBUNG\n----------------------------------------\nBACH Agent CLI v1.0.0\n---------------------\n\nCLI-Tool zur Verwaltung von BACH Agenten und Experten.\n\nFeatures:\n- Agenten auflisten und aktivieren\n- Experten anzeigen\n- User-Ordner initialisieren\n- Datenbank-Schema anwenden\n\nUsage:\n    python agent_cli.py list                    # Alle Agenten\n    python agent_cli.py experts                 # Alle Experten\n    python agent_cli.py info <agent>            # Agent-Details\n    python agent_cli.py init <agent>            # User-Ordner erstellen\n    python agent_cli.py setup-db                # Datenbank initialisieren\n    python agent_cli.py status                  # System-Status\n\nAutor: BACH System\nDatum: 2026-01-20\n\nVERWENDUNG\n----------------------------------------\npython bach.py tools run agent_cli [args]\noder direkt: python tools/agent_cli.py [args]\n\nHINWEISE\n----------------------------------------\n- Automatisch generiert aus Docstring\n- Bei Fragen: bach tools show agent_cli\n",
-    "is_verified": 0,
-    "source": "filesystem-import-20260823",
+    "value": "BACH Tool: agent_cli\n==================================================\nСгенерировано: 2026-01-23 10:36\nИсточник: tools/agent_cli.py\n\nОПИСАНИЕ\n----------------------------------------\nBACH Agent CLI v1.0.0\n=====================\n\nCLI-инструмент для управления агентами и экспертами BACH.\n\nВозможности:\n- Список и активация агентов\n- Показ экспертов\n- Инициализация пользовательской папки\n- Применение схемы базы данных\n\nUsage:\n    python agent_cli.py list                    # Все агенты\n    python agent_cli.py experts                 # Все эксперты\n    python agent_cli.py info <agent>            # Детали агента\n    python agent_cli.py init <agent>            # Создать папку пользователя\n    python agent_cli.py setup-db                # Инициализировать базу данных\n    python agent_cli.py status                  # Статус системы\n\nАвтор: BACH System\nДата: 2026-01-20\n\nИСПОЛЬЗОВАНИЕ\n----------------------------------------\npython bach.py tools run agent_cli [args]\nили напрямую: python tools/agent_cli.py [args]\n\nЗАМЕТКИ\n----------------------------------------\n- Автоматически сгенерировано из docstring\n- Вопросы: bach tools show agent_cli\n",
+    "is_verified": 1,
+    "source": "manual_qa_1317",
     "created_at": "2026-08-23 07:28:21",
-    "updated_at": "2026-08-23 07:28:21"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "tools/agent_cli",
@@ -181523,11 +181523,11 @@
     "key": "workflow_root_docs_review_zwei_experten_pipeline",
     "namespace": "skills",
     "language": "es",
-    "value": "Workflow: Root-Docs-Review (Zwei-Experten-Pipeline)",
+    "value": "Flujo de trabajo: revisión de documentos raíz (canalización de dos expertos)",
     "is_verified": 1,
-    "source": "google_auto",
+    "source": "manual_qa_1317",
     "created_at": "2026-05-17T09:20:57.594245",
-    "updated_at": "2026-05-17T09:20:57.594245"
+    "updated_at": "2026-09-16T11:28:30.072531"
   },
   {
     "key": "workflow_root_docs_review_zwei_experten_pipeline",

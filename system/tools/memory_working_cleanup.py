@@ -44,6 +44,7 @@ class WorkingMemoryCleanup:
                 expires_at,
                 is_active
             FROM memory_working
+            WHERE is_active = 1
             ORDER BY created_at DESC
             """
         )

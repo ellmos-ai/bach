@@ -41,7 +41,7 @@ Claude: "Diese Nachricht habe ich bereits nach der letzten Komprimierung bearbei
 **Marker am Session-Start:**
 ```
 [NOTE: This conversation was successfully compacted...]
-[Transcript: /mnt/transcripts/YYYY-MM-DD-HH-MM-SS-*.txt]
+[Transcript: /mnt/trantools/YYYY-MM-DD-HH-MM-SS-*.txt]
 ```
 
 **Check:**

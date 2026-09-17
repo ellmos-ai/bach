@@ -73,7 +73,112 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   subprocess.run-Mock-Test wurde durch einen echten Verhaltenstest ersetzt.
   Help-Docs `docs/help/sandbox.txt` v1.1.0.
 
+- **Service-Doku vervollstaendigt: 6 neue Service-SKILLs (Task #1325):**
+  Die aus der Anschlussanalyse (#1321) als dokumentationslos identifizierten
+  Services erhielten je ein SKILL.md nach der Service-Vorlage
+  (`hub/_services/help/SKILL.md`): **dashboard** (DailyOverview INT05,
+  Tagesaggregation aus User-DB, Integration via haushalt.py),
+  **delegation** (Compat-Layer fuer Delegations-Bausteine, externer
+  clutch-Scorer bevorzugt, Env-Schalter BACH_CLUTCH_PATH/
+  BACH_DISABLE_EXTERNAL_CLUTCH, Integration via clutch.py/partner.py),
+  **delivery** (Delivery Engine v1.0.0, 6 Kanaele, Modes parallel/only —
+  Status `ready`, da noch von keinem Handler importiert),
+  **llm** (Model-Backend-Abstraktion mit 6 Backends: Ollama/OpenAI/
+  LMStudio/Hermes/Anthropic/CLI, Integration via chat/telegram),
+  **mail** (Financial Mail Service v1.1 + email_sender mit
+  Draft-zuerst-Prinzip, account_manager, mail_setup, abo_sync),
+  **stigmergy** (Pheromon-basierte Schwarm-Koordination SQ051, API
+  deposit/sense/evaporate/get_best_path, Integration via
+  tools/schwarm/stigmergy_pattern.py). Je Sektionen Zweck/API/Abhaengigkeiten
+  mit Integrationsnachweisen aus Codeanalyse (grep-Referenzen).
+  **Begleitender Checker-Fix:** `_check_required_sections` im
+  `tools/doc_update_checker.py` erwartete bisher Agenten-Sektionen
+  (CLI-Befehle/Dateien) auch fuer Service-SKILLs — kein einziges der 16
+  bestehenden Service-SKILLs erfuellt diese (Service-Konvention ist
+  Zweck/Beschreibung/Uebersicht). Neue Service-Regel: nur noch eine
+  Zweck-Sektion (Zweck|Beschreibung|Uebersicht) wird erwartet.
+  Fehlalarme 43 → 3 (document/voice/market nutzen abweichende Titel-Stile
+  und bleiben als echte Hinweise sichtbar). Verifikation: --json-Lauf,
+  6 neue Dateien 0 Issues/0 outdated, 0 ungueltige Pfade.
+
 ### Fixed
+
+- **Working Memory: Archivierung nach Systemregel (Task #1320):**
+  SQ043-Cleanup durchgefuehrt (`bach mem working set-expires` +
+  `cleanup`): 31 von 131 Working-Memory-Eintraegen archiviert
+  (Soft-Delete `is_active=0`, reversibel) — 29 automatische
+  Chat-Session-Notizen erledigter Tasks (#1127/#1153/#1203) aus 07.–10.09.,
+  2 Eintraege >14d (Testmarker INTEGTEST_1788060874, Lerncockpit-Chat-Duplikate
+  03.09., kein offener Task referenziert). Alle 31 hatten Prioritaet 0; alle
+  131 Eintraege hatten expires_at=NULL, daher Expires retroaktiv gesetzt
+  (100 frisch → +7d, 31 alt → sofort). Backup vorher:
+  `logs/backup/memory_working_backup_20260917.json` (131 Eintraege, JSON).
+  Status danach: 131 → 100 aktive; alle verbleibenden KEEP (<7d), inkl. der
+  Review-Notizen von heute (#1319/#1321/#1323/#1324/#1325). **Werkzeugfix:**
+  `tools/memory_working_cleanup.py` `analyze_stats()` zaehlte ohne
+  `is_active=1`-Filter archivierte Eintraege weiter mit (Cleanup-Report
+  zeigte nach Archivierung fälschlich GESAMT 131 statt 100) → WHERE-Klausel
+  ergaenzt, konsistent mit `cleanup_soft()`. Verifiziert per Direktaufruf
+  (GESAMT 100/KEEP 100); die langlaufenden Daemon-Prozesse (telegram_chat,
+  gui/server, seit 13.09.) halten noch die alte Modulversion im Import-Cache
+  — CLI-Analyze zeigt korrekte Zahlen nach naechstem Daemon-Restart.
+
+- **System-Anschlussanalyse: Registry- & Help-Integration (Task #1321):**
+  5-Schritte-Workflow (`skills/workflows/system-anschlussanalyse.md`)
+  vollstaendig durchlaufen. (1) Registry: 3 stale `skill_path`-Eintraege in
+  `bach_agents` (kanonische DB `~/.bach/bach.db`) zeigten auf nicht mehr
+  existierende Flat-Files (`agents/<name>.txt`), waehrend die echten
+  `agents/<name>/SKILL.md` existieren → auf die SKILL.md-Pfade korrigiert
+  (persoenlicher-assistent, gesundheitsassistent, bueroassistent); DB-Backup
+  vorher angelegt (`logs/backup/bach_db_pre_agentpath_fix_20260917.db`).
+  Registry-Watcher danach: Stale 3 → 0, Agents OK 4 → 7, Status HEALTHY.
+  (2) Help-Luecken: Von 110 Registry-Handlern hatten 9 keine per
+  `bach --help <handler>` erreichbare Doku. Neue Help-Dateien fuer
+  `notespace`, `security`, `telemetry` (aus Modul-Docstrings). Fuer 6
+  Namens-Mismatches (Handler-Name ≠ Modul-Help-Datei: api→apibook,
+  apiprober→api_prober, dbsync→db_sync, healthcheck→health, msg→messages,
+  shared-mem→shared_memory) neues `TOPIC_ALIASES`-Mapping in `hub/help.py`
+  (`_show_topic`), statt Stub-Dateien (keine Doppelstruktur).
+  (3) `hub/api_prober.py`: `profile_name = "api-prober"` war ein totes
+  Klassen-Attribut (Registry prueft nur Property/_profile_name, fiel auf
+  Klassennamen `apiprober` zurueck; `HandlerAdapter` als einziger
+  Attribut-Leser ist unbenutzt) → als echte Property mit dem effektiven
+  Namen `apiprober` implementiert; Registry nach Verifikation unveraendert
+  (110 Handler). (4) `docs/help/practices.txt` (REGELWERK-INDEX) inhaltlich
+  validiert — Index-Ziele und 7 Architektur-Prinzipien weiterhin korrekt,
+  ueberfaelliges Pruefdatum aktualisiert (2026-08-08 → 2026-09-17, naechste
+  Pruefung 2027-03-17). Offene Punkte als Tasks #1325 (6 Services ohne
+  Doku) und #1326 (TO-DECIDE: --maintain heal deprecation) erfasst.
+
+- **Agenten-SKILL-Pflege: 25 Warn-Faelle aus Doc-Report 2026-09-17 (Task #1324):**
+  Alle 25 als veraltet gemeldeten Dateien inhaltlich geprueft. Ergebnis: 20
+  inhaltlich gueltig (reine mtime-Veraltung), 4 Handlungsbedarfe behoben:
+  (1) `agents/hq5-test-agent/` war ein nie fertiggestelltes Self-Extension-
+  Template (TODO-Marker, keine aktiven Referenzen) → nach
+  `agents/_archive/hq5-test-agent/` archiviert. `test-agent` bleibt aktiv
+  (Referenz-Agent in `tests/test_smoke.py`). (2) `agents/entwickler/SKILL.md`
+  nannte das Zielsystem noch „RecludOS" (BACH-Vorgaengername) in Description
+  und Body → auf BACH korrigiert; historische Quellenvermerke in `agents/ati/`
+  („Portiert von RecludOS") bewusst unangetastet. (3) `agents/research/SKILL.md`
+  Datums-Inkonsistenz (YAML 2026-02-04 vs. Markdown-Zeile 2026-01-22)
+  → auf 2026-09-17 synchronisiert. (4) `agents/README.md` beschrieb die
+  pra-BACH-Struktur `skills/_agents/` und nur 3 Boss-Agenten → komplett auf
+  aktuellen Zustand aktualisiert (10 Agenten inkl. Fach-/Test-Agenten,
+  `tools/agents/agent_cli.py`-Pfade, Archiv-Struktur, SKILL-Header-Konvention).
+  updated-Felder der gepflegten SKILLs auf 2026-09-17 gesetzt.
+
+- **Doc-Update-Checker: Pfad-Migrationen & mtime-False-Positives (Task #1323):**
+  Routine `docs report` auf 2101 Doku-Dateien. (1) 15 ungueltige Pfade
+  (`scripts/` → `tools/`) in 14 Dateien via `doc_update_checker.py auto-update`
+  automatisiert korrigiert (docs/help/*, skills/_services/*, wiki/*); Re-Check:
+  0 ungueltige Pfade. (2) Age-Check-False-Positives eleminiert: wiki-READMEs
+  tragen eigene inhaltsbasierte Kuratierung ("Zuletzt validiert"/"Naechste
+  Pruefung", meist 2027-02-05) oder sind Struktur-Platzhalter ("STRUKTUR
+  ANGELEGT") — mtime ist kein Aktualitaetssignal. Neue Exempt-Regel in
+  `_check_age` (doc_type readme + Pfadpraefix `wiki/`), konsistent mit dem
+  help/guide-Exempt aus Task #1305: "Veraltet" faellt von 141 auf 25 echte
+  Warn-Faelle (aktive Agenten-/Service-SKILLs, 67d, keine critical).
+  Finaler Report: `system/logs/Doc_Update_Report_2026-09-17_20-42.md`.
 
 - **`_extract_base_command` Windows-Pfad-Parsing (Task #1071, Nebenbefund):**
   shlex im POSIX-Modus frass Backslashes (`C:\Windows\System32\cmd.exe` →
@@ -167,6 +272,69 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **user.db-Doku-Konsolidierung nachgezogen (Nebenbefund aus Anschlussanalyse #1321, 2026-09-17):**
+  Die v1.1.84-Konsolidierung (Task 772, "user.db in bach.db") war im Code vollstaendig
+  umgesetzt, aber 6 Dokumentstellen beschrieben noch Tabellen "in user.db" — inklusive
+  agents/README.md (Sektion "user.db"), 3 Agenten-SKILLs (gesundheitsassistent,
+  persoenlicher-assistent, bueroassistent) und ATI.md (2 Stellen). Verifikation vor Fix:
+  saemliche Expert-Tabellen (health_*, psycho_*, assistant_*, household_*, steuer_*)
+  liegen nachweislich in bach.db mit Live-Daten (health_contacts: 15 Zeilen,
+  steuer_posten: 794). ATI.md: "Task-DB (bach.db, user.db)" → "(bach.db, unified)"
+  (laengengleich, Box-Ausrichtung erhalten); veraltete Referenz "user.db/scanned_tasks"
+  → "bach.db/ati_scan_runs" (tabelle scanned_tasks existiert nirgends mehr; aktueller
+  Scanner-Tracking ist ati_scan_runs, genutzt von hub/ati.py und hub/scan.py).
+  Zusaetzlich 0-Byte-Artefakt data/user.db entfernt (Papierkorb): kein Code-Verweis
+  (grep-Beweis), erzeugt bei Einmal-Config-Wechsel am 12.09. 01:21 (gleichzeitige
+  Artefakte .clock_state 2, ollama_config.json.qwen35bak), kein wiederkehrender Job.
+  Bewusst unangetastet: Legacy-Variablennamen user_db_path (abo/contact/gesundheit/
+  cv_generator — alle zeigen auf die kanonische DB) und translations-Lesson-Inhalte
+  (historische Aufzeichnungen). Nebenbefund: verwaiste Tabelle health_symptoms in
+  bach.db ohne jeden Code-Verweis; data/.clock_state 2 = Transfer-Duplikat.
+- **Wiki-Index-Luecke word_automation.txt geschlossen (Hintergrundworker-Lauf 2026-09-17, Nebenbefund Tasks #1318/#1327):**
+  Der Artikel (Stand 2026-01-24, Methodenvergleich Word-Berichtsvorlagen mit LLM)
+  war unindiziert und ohne Metadaten-Header — damit fuer Fristpruefungen unsichtbar
+  (gleiches Versagensmuster wie word_template_service.txt vor Task #1318).
+  Metadaten-Header nach #1327-Konvention ergaenzt (Portabilitaet UNIVERSAL,
+  Status Ungeprueft) und Index-Eintrag in wiki/_index.txt (Sektion ENTWICKLUNG,
+  direkt neben der technischen Referenz word_template_service.txt) gesetzt.
+  Inhalte bewusst nicht geprueft — das uebernimmt der naechste regulaere
+  wiki_author-Lauf (Modus A, faellig 2026-09-21).
+- **Wiki-Stichprobe word_template_service.txt (Task #1318, wiki_author recurring, Modus C — Rotation A→B→C):**
+  Fakten-Stichprobe (12 Fakten, Zufallsauswahl) gegen Produktionscode und
+  externe Quellen verifiziert: 4 korrekt, 1 praegisiert, 7 veraltet/falsch
+  (33–42 %) → gem. Workflow-Konsequenz "<50 %: Ueberarbeitung markieren,
+  Task erstellen": Metadaten-Header ergaenzt (fehlte komplett — der Artikel
+  erschien dadurch nie in Faelligkeits-Auswertungen), Status-Marker
+  "UEBERARBEITUNG NOETIG", verkuerzte Prueffrist 2026-09-24, neuer
+  Vollrevisions-Task #1327 mit konkreter Fehlerliste (fill_template
+  existiert nicht — real load_template()+save(); fill_table/filter_icf_sections
+  unbenannt — real fill_table_rows/filter_table_rows; vMerge-Sektion ohne
+  Codebasis; Foerderziel-{{Z1_*}}-Schema veraltet — real Header-basierte
+  Spaltenerkennung; Namespace-Typo http:/schemas → http://schemas).
+  Fehlender Wiki-Index-Eintrag unter ENTWICKLUNG ergaenzt. Bestaetigt
+  korrekt: Run-Fragmentierung, Platzhalterformat, SDT-Checkbox-Abschnitt
+  (python-docx 1.2.0 weiterhin ohne Content-Control-API; w14:checked
+  val=0/1 + zusaetzliches Symbol-Update). Report:
+  system/logs/wiki_author/REPORT_2026-09-17_word_template_service.md
+- **Wiki-Vollrevision word_template_service.txt (Task #1327, Folgetask aus Modus-C-Stichprobe #1318):**
+  Komplette Neuauflage der technischen Referenz gegen Code v1.1.0 (vollstaendig
+  gelesen, 15 Methoden). Alle 7 Stichproben-Fehler behoben: Phantom-Methoden
+  entfernt (fill_template, fill_table, filter_icf_sections, clone_row, remove_row)
+  und durch reale Pendants ersetzt (load_template+save, fill_table_rows,
+  filter_table_rows, fill_foerderziele_table, fill_icf_placeholders_and_cleanup,
+  set_cell_text, find_table_row_by_text, activate_textblock/remove_textblock,
+  remove_table_row, get_table_data); vMerge-Sektion gestrichen und als explizite
+  Warnung dokumentiert (Code hat keinerlei vMerge-Logik, per grep verifiziert);
+  Namespace-Typo korrigiert (http://schemas.microsoft.com/office/word/2010/wordml,
+  Code Z.263); set_checkbox-Parameter korrekt als label_contains dokumentiert
+  (sucht ausschliesslich in Tabellenzellen); Foerderziel-Abschnitt auf
+  Header-basierte Spaltenerkennung umgestellt ({{Z1_*}}-Schema existierte nie
+  im Code; fill_icf_placeholders_and_cleanup nutzt bewusst EINFACHE Klammern
+  {CODE-Ziel}); Ersetzungsbereiche dokumentiert (XML-Iteration erfasst auch
+  Textboxen/SDT, zusaetzlich Header/Footer je Section). Metadaten: validiert
+  2026-09-17, Prueffrist auf regulaeres Intervall 2027-03-17 zurueckgesetzt,
+  Wiki-Index-Status aktualisiert. Revisions-Report:
+  system/logs/wiki_author/REPORT_2026-09-17_word_template_service_REVISION.md
 - **M8-Doku-Nachlauf clutch abgeschlossen (Task 1228, ROADMAP-Bullet nachgezogen):**
   Verifiziert, dass `clutch/docs/BACH_MIGRATION.md` in beiden kanonischen Kopien auf
   dem Ist-Stand steht: Modul-Bus `.TOPICS/.AI/.MODULES/.ORCHESTRATION/clutch/docs/`

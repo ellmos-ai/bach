@@ -6,7 +6,7 @@ Tool: doc_update_checker
 Version: 1.1.0
 Author: BACH Team
 Created: 2026-02-04
-Updated: 2026-05-15
+Updated: 2026-09-17
 Anthropic-Compatible: True
 
 Description:
@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "BACH Team"
 
 
@@ -52,6 +52,10 @@ REPORTS_DIR = BACH_ROOT / "logs"
 OUTDATED_DAYS = 60
 WARNING_DAYS = 30
 CRITICAL_DAYS = 90
+
+# Statische, kuratierte Doku-Typen: mtime ist hier kein Aktualitaetssignal
+# (2014 False-Positives, vgl. Task #1305 / Report 2026-09-16).
+AGE_CHECK_EXEMPT_TYPES = frozenset({"help", "guide"})
 
 STATIC_PATH_MIGRATIONS: List[Tuple[str, str]] = [
     ("scripts/", "tools/"),
@@ -88,7 +92,7 @@ VERSION_PATTERN = re.compile(r"[vV]?(\d+\.\d+\.\d+)")
 class DocUpdateChecker:
     """Dateibasierte Dokumentationsprüfung für BACH."""
 
-    VERSION = "1.1.0"
+    VERSION = "1.2.0"
 
     def __init__(self, db_path: Optional[Path] = None, base_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path is not None else DB_FILE
@@ -196,6 +200,19 @@ class DocUpdateChecker:
 
     def _check_age(self, doc: Dict) -> Optional[Dict]:
         if not doc.get("path"):
+            return None
+
+        # mtime-False-Positives vermeiden: statische Help/Guide-Dateien
+        # sind inhaltlich aktuell, auch wenn lange nicht bearbeitet.
+        if doc.get("doc_type") in AGE_CHECK_EXEMPT_TYPES:
+            return None
+
+        # Wiki-Artikel und -Struktur: eigene, inhaltsbasierte Kuratierung.
+        # Wiki-READMEs tragen "Zuletzt validiert"/"Naechste Pruefung"-Header
+        # (meist 2027-02-05) oder sind Struktur-Platzhalter ("STRUKTUR
+        # ANGELEGT"). mtime ist hier kein Aktualitaetssignal (113
+        # False-Positives, vgl. Report 2026-09-17 / Task #1323).
+        if doc.get("doc_type") == "readme" and doc.get("path", "").startswith("wiki/"):
             return None
 
         full_path = self.root / doc["path"]
@@ -344,6 +361,32 @@ class DocUpdateChecker:
 
         doc_type = doc.get("doc_type", "")
         if doc_type not in required_sections:
+            return issues
+
+        # Service-SKILLs (hub/_services/) folgen der Service-Konvention
+        # (Zweck/Beschreibung/Uebersicht + API/Verwendung + Abhaengigkeiten),
+        # nicht der Agenten-Konvention (CLI-Befehle, Dateien): Die meisten
+        # Services haben gar kein CLI. Erwartet wird daher mindestens eine
+        # Zweck-Sektion; der Rest bleibt der Service-eigenen Struktur
+        # ueberlassen (Vorlage: hub/_services/help/SKILL.md, vgl. Task #1325,
+        # 2026-09-17).
+        if doc_type == "skill" and doc.get("path", "").startswith("hub/_services/"):
+            try:
+                content = full_path.read_text(encoding="utf-8")
+            except OSError:
+                return issues
+            if not any(
+                s in content
+                for s in ("## Zweck", "## Beschreibung", "## Übersicht")
+            ):
+                issues.append(
+                    {
+                        "doc_path": doc["path"],
+                        "doc_type": doc_type,
+                        "missing_section": "## Zweck (Service-Konvention: Zweck/Beschreibung/Uebersicht)",
+                        "auto_fixable": False,
+                    }
+                )
             return issues
 
         try:

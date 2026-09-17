@@ -152,7 +152,7 @@ Für Briefings und Dossiers nutzen:
 * `bach_experts` (Haushaltsmanagement)
 * `agent_expert_mapping` (Zuordnung)
 
-**Tabellen in `user.db`:**
+**Tabellen in `bach.db` (seit v1.1.84 konsolidiert):**
 
 * `assistant_contacts` (Kontakte)
 * `assistant_calendar` (Termine)

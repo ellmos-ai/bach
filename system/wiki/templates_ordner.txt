@@ -61,7 +61,7 @@ INHALT
   _data/                      Daten
   _docs/                      Dokumentation
   _reports/                   Berichte
-  _scripts/                   Scripts
+  _tools/                   Scripts
   _temp/                      Temporaere Dateien
 
 VERWENDUNG IN BACH

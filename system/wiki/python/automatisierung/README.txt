@@ -292,7 +292,7 @@ WINDOWS TASK SCHEDULER
   #    - Argumente: Pfad zum Skript
 
   # Oder per Kommandozeile:
-  # schtasks /create /tn "MeinPythonTask" /tr "python C:\scripts\mein_script.py" /sc daily /st 09:00
+  # schtasks /create /tn "MeinPythonTask" /tr "python C:\tools\mein_script.py" /sc daily /st 09:00
 
 GUI-AUTOMATISIERUNG
 ===================

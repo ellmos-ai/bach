@@ -1,3 +1,13 @@
+---
+name: routing
+version: 1.0.0
+type: service
+description: Routing-Service - Routen zwischen GPS-Koordinaten via OSRM/Nominatim (Auto, Fahrrad, zu Fuss)
+author: BACH System
+updated: 2026-02-18
+status: active
+---
+
 # BACH Routing Service
 
 **Version:** 1.0

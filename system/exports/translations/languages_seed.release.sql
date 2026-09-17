@@ -290,61 +290,61 @@ bach agent status                        Laufende Agents anzeigen
 Optionen:
   --mode plan|default     Modus (default: default)
   --model sonnet|opus|haiku   Modell (default: sonnet)', 0, 'auto_detected', '2026-05-17T03:06:06.264902', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'en', 'Agent Launcher Handler - Agent management
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'en', 'Agent Launcher Handler - Agent Management
  ==========================================
 
-bach agent list                          Verfuegbare Agents auflisten
-bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
-bach agent stop <name>                   Agent stoppen
-bach agent status                        Laufende Agents anzeigen
+bach agent list                          List available agents
+bach agent start <name> [--mode MODE] [--model MODEL]   Start an agent
+bach agent stop <name>                   Stop an agent
+bach agent status                        Show running agents
 
 Options:
-  --mode plan|default     Modus (default: default)
-  --model sonnet|opus|haiku   Modell (default: sonnet)', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'es', 'Controlador del iniciador de agentes: gestión de agentes
- ============================================
+  --mode plan|default     Mode (default: default)
+  --model sonnet|opus|haiku   Model (default: sonnet)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'es', 'Agent Launcher Handler - Gestión de agentes
+ ==========================================
 
-lista de agentes de bach Verfuegbare Agentes auflisten
-inicio del agente bach <nombre> [--mode MODE] [--model MODEL] inicio del agente
-agente de bach detener <nombre> Agente detener
-estado del agente de bach Laufende Agents anzeigen
+bach agent list                          Listar agentes disponibles
+bach agent start <name> [--mode MODE] [--model MODEL]   Iniciar un agente
+bach agent stop <name>                   Detener un agente
+bach agent status                        Mostrar agentes en ejecución
 
 Opciones:
-  --modo plan|modo predeterminado (predeterminado: predeterminado)
-  --model soneto|opus|haiku Modell (por defecto: soneto)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'ja', 'エージェント ランチャー ハンドラー - エージェント管理
- =========================================
+  --mode plan|default     Modo (por defecto: default)
+  --model sonnet|opus|haiku   Modelo (por defecto: sonnet)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'ja', 'エージェントランチャーハンドラー - エージェント管理
+ ==========================================
 
-バッハ エージェント リスト Verfuegbare エージェントが聞く
-bach エージェントの開始 <名前> [--mode MODE] [--model MODEL] エージェントの開始
-bach エージェント停止 <名前> エージェント停止
-バッハ代理店のステータス Laufende 代理店の評価
+bach agent list                          利用可能なエージェントを一覧表示
+bach agent start <name> [--mode MODE] [--model MODEL]   エージェントを起動
+bach agent stop <name>                   エージェントを停止
+bach agent status                        実行中のエージェントを表示
 
 オプション:
-  --mode plan|default Modus (デフォルト: デフォルト)
-  --model ソネット|作品|俳句モデル (デフォルト: ソネット)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'ru', 'Обработчик средства запуска агентов — управление агентами
- =========================================
+  --mode plan|default     モード（デフォルト: default）
+  --model sonnet|opus|haiku   モデル（デフォルト: sonnet）', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'ru', 'Обработчик запуска агентов - Управление агентами
+ ==========================================
 
-Список агентов Баха Verfuegbare Agents auflisten
-Запуск агента bach <имя> [--mode РЕЖИМ] [--модель МОДЕЛЬ] Запуск агента
-Остановка агента Баха <имя> Остановка агента
-Статус агента Баха Laufende Agents anzeigen
+bach agent list                          Показать доступных агентов
+bach agent start <name> [--mode MODE] [--model MODEL]   Запустить агента
+bach agent stop <name>                   Остановить агента
+bach agent status                        Показать запущенных агентов
 
 Опции:
-  --mode plan|default Модус (по умолчанию: по умолчанию)
-  --model sonnet|opus|haiku Modell (по умолчанию: сонет)', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'zh', '代理启动器处理程序 - 代理管理
- ===========================================
+  --mode plan|default     Режим (по умолчанию: default)
+  --model sonnet|opus|haiku   Модель (по умолчанию: sonnet)', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_launcher_handler_agent_verwaltung', 'cli', 'zh', '代理启动器处理器 - 代理管理
+ ==========================================
 
-巴赫经纪人列表 Verfuegbare Agents auflisten
-bach 代理启动 <名称> [--mode MODE] [--model MODEL] 代理启动
-bach Agent stop <名称> 代理 stoppen
-巴赫代理状态 Laufende Agents anzeigen
+bach agent list                          列出可用代理
+bach agent start <name> [--mode MODE] [--model MODEL]   启动代理
+bach agent stop <name>                   停止代理
+bach agent status                        显示运行中的代理
 
 选项：
-  --mode plan|default Modus (默认：default)
-  --model sonnet|opus|haiku Modell（默认：sonnet）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+  --mode plan|default     模式（默认：default）
+  --model sonnet|opus|haiku   模型（默认：sonnet）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_status_n_n_t', 'cli', 'de', '=== AGENT STATUS ===\n\n{t(', 0, 'auto_detected', '2026-05-17T03:06:06.195492', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_status_n_n_t', 'cli', 'en', '=== AGENT STATUS ===\n\n{t(', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('agent_status_n_n_t', 'cli', 'es', '=== ESTADO DEL AGENTE ===\n\n{t(', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -1752,11 +1752,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 CLI handler for data analysis functions.
 
 Commands:
-    bach data load <path>           Datei laden und Infos anzeigen
-    bach data describe <path>       Deskriptive Statistik
-    bach data head <path> [--rows]  Erste Zeilen anzeigen
-    bach data corr <path>           Korrelationsmatrix
-    bach data chart <path>          Chart erstellen (geplant)', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+    bach data load <path>           Load a file and show info
+    bach data describe <path>       Descriptive statistics
+    bach data head <path> [--rows]  Show first rows
+    bach data corr <path>           Correlation matrix
+    bach data chart <path>          Create a chart (planned)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_data_analysis_handler', 'cli', 'es', 'Controlador de análisis de datos BACH
  ============================
 Controlador CLI para funciones de análisis de datos.
@@ -1787,16 +1787,16 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
     bach data head <путь> [--rows] Erste Zeilen anzeigen
     bach data corr <путь> Korrelationsmatrix
     Диаграмма данных Баха <путь> Диаграмма erstellen (geplant)', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_data_analysis_handler', 'cli', 'zh', 'BACH 数据分析处理程序
- =========================
-用于数据分析功能的 CLI 处理程序。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_data_analysis_handler', 'cli', 'zh', 'BACH 数据分析处理器
+ ==========================
+数据分析功能的 CLI 处理器。
 
 命令：
-    bach data load <路径> Datei laden und Infos anzeigen
-    巴赫数据描述<路径>描述统计
-    bach 数据头 <路径> [--行] Erste Zeilen anzeigen
-    巴赫数据 corr <路径> 相关矩阵
-    bach 数据图表 <路径> 图表 erstellen (geplant)', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+    bach data load <path>           加载文件并显示信息
+    bach data describe <path>       描述性统计
+    bach data head <path> [--rows]  显示前几行
+    bach data corr <path>           相关性矩阵
+    bach data chart <path>          创建图表（计划中）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_distribution_handler', 'cli', 'de', 'BACH Distribution Handler
  =========================
 CLI-Handler fuer Distribution-System.
@@ -2796,51 +2796,51 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 CLI handler for the trash system (soft delete).
 
 Commands:
-    bach trash list              Alle Eintraege im Papierkorb
-    bach trash delete PATH       Datei in Papierkorb verschieben
-    bach trash restore ID        Datei wiederherstellen
-    bach trash purge             Abgelaufene Dateien loeschen
-    bach trash info ID           Details zu einem Eintrag', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'es', 'Manipulador de basura BACH
- ===================
-Controlador CLI para el sistema de papelera (eliminación temporal).
+    bach trash list              All entries in the trash
+    bach trash delete PATH       Move a file to the trash
+    bach trash restore ID        Restore a file
+    bach trash purge             Delete expired files
+    bach trash info ID           Details of an entry', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'es', 'BACH Trash Handler
+ ==================
+Controlador CLI para el sistema de papelera (Soft-Delete).
 
 Comandos:
-    lista de basura de bach Alle Eintraege im Papierkorb
-    basura de bach eliminar PATH Datei en Papierkorb verschieben
-    ID de restauración de basura de Bach Datei wiederherstellen
-    purga de basura de bach Abgelaufene Dateien loeschen
-    información de basura de bach ID Detalles zu einem Eintrag', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'ja', 'BACH ゴミ処理装置
+    bach trash list              Todas las entradas de la papelera
+    bach trash delete PATH       Mover un archivo a la papelera
+    bach trash restore ID        Restaurar un archivo
+    bach trash purge             Eliminar archivos caducados
+    bach trash info ID           Detalles de una entrada', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'ja', 'BACH Trash ハンドラー
  ==================
-ゴミ箱システム (論理的な削除) の CLI ハンドラー。
+ゴミ箱システム（ソフト削除）の CLI ハンドラー。
 
 コマンド:
-    バッハのゴミリスト Alle Eintraege im Papierkorb
-    bach ゴミ箱削除 Papierkorb verschieben の PATH Datei
-    bach ゴミ箱 ID を復元する Datei wiederherstellen
-    バッハのゴミパージ アブゲラウフェネ・ダティエン・レーシェン
-    bach ゴミ箱情報 ID 詳細 zu einem Eintrag', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'ru', 'BACH Мусорный обработчик
+    bach trash list              ゴミ箱内のすべてのエントリを表示
+    bach trash delete PATH       ファイルをゴミ箱へ移動
+    bach trash restore ID        ファイルを復元
+    bach trash purge             期限切れファイルを削除
+    bach trash info ID           エントリの詳細を表示', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'ru', 'BACH Trash Handler
  ==================
-Обработчик CLI для системы мусора (мягкое удаление).
+CLI-обработчик системы корзины (Soft-Delete).
 
 Команды:
-    Список мусора Баха Alle Eintraege im Papierkorb
-    bach мусор удалить PATH Datei в Papierkorb verschieben
-    Бах мусор восстановить ID Datei Wiederherstellen
-    Очистка мусора от Баха Abgelaufene Dateien loeschen
-    bach информация о мусоре ID Details zu einem Eintrag', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'zh', '巴赫垃圾处理器
- =================
-垃圾系统的 CLI 处理程序（软删除）。
+    bach trash list              Все записи в корзине
+    bach trash delete PATH       Переместить файл в корзину
+    bach trash restore ID        Восстановить файл
+    bach trash purge             Удалить просроченные файлы
+    bach trash info ID           Детали записи', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_trash_handler_cli_handler', 'cli', 'zh', 'BACH 回收站处理器
+ ==================
+回收站系统（软删除）的 CLI 处理器。
 
 命令：
-    巴赫垃圾清单 Alle Eintraege im Papierkorb
-    bach 垃圾删除 Papierkorb verschieben 中的 PATH Datei
-    巴赫垃圾恢复 ID Datei wiederherstellen
-    巴赫垃圾清理 Abgelaufene Dateien loeschen
-    巴赫垃圾信息 ID 详细信息 zu einem Eintrag', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+    bach trash list              回收站中的所有条目
+    bach trash delete PATH       将文件移入回收站
+    bach trash restore ID        恢复文件
+    bach trash purge             删除过期文件
+    bach trash info ID           条目详情', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_watcher_daemon_status', 'cli', 'de', 'BACH WATCHER DAEMON STATUS', 0, 'auto_detected', '2026-05-17T03:06:06.212970', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_watcher_daemon_status', 'cli', 'en', 'BACH WATCHER DAEMON STATUS', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('bach_watcher_daemon_status', 'cli', 'es', 'ESTADO DEL DEMONIO DE BACH WATCHER', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -3946,13 +3946,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 --cv generate --output  In Datei speichern
 --cv generate --scan    Ordner automatisch scannen
 --cv status             Status der Datenbasis anzeigen', 0, 'auto_detected', '2026-05-17T03:06:06.244228', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('cv_handler_lebenslauf_verwaltung', 'cli', 'en', 'CV Handler - resume management
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('cv_handler_lebenslauf_verwaltung', 'cli', 'en', 'CV Handler - Resume Management
  ==================================
 
---cv generate           Lebenslauf generieren (ASCII)
---cv generate --output  In Datei speichern
---cv generate --scan    Ordner automatisch scannen
---cv status             Status der Datenbasis anzeigen', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+--cv generate           Generate resume (ASCII)
+--cv generate --output  Save to file
+--cv generate --scan    Automatically scan folder
+--cv status             Show database status', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('cv_handler_lebenslauf_verwaltung', 'cli', 'es', 'Manejador de CV - gestión de currículums
  ====================================
 
@@ -3974,13 +3974,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 --cv генерировать --output В списке дат
 --cv генерировать --scan Автоматическое сканирование порядка
 --cv status Статус базы данных', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('cv_handler_lebenslauf_verwaltung', 'cli', 'zh', 'CV Handler - 简历管理
- ===================================
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('cv_handler_lebenslauf_verwaltung', 'cli', 'zh', 'CV 处理器 - 简历管理
+ ==================================
 
---cv 生成一般生活习惯 (ASCII)
---cv 生成 --output 在 Datei speichern 中
---cv 生成 --scan 订单自动扫描
---cv status 数据基础状态', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+--cv generate           生成简历（ASCII）
+--cv generate --output  保存到文件
+--cv generate --scan    自动扫描文件夹
+--cv status             显示数据库状态', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('daemon_status', 'cli', 'de', 'Daemon-Status:', 0, 'auto_detected', '2026-05-17T03:06:06.264902', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('daemon_status', 'cli', 'en', 'Daemon status:', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('daemon_status', 'cli', 'es', 'Estado del demonio:', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -4607,10 +4607,10 @@ dry_run：如果为True，则仅输出描述
 （成功：bool，消息：str）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'de', '[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/textract nicht verfuegbar]', 0, 'auto_detected', '2026-05-17T03:06:06.275256', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'en', '[.doc extraction failed - antiword/LibreOffice/textract not available]', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'es', '[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'ja', '[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'ru', '[.doc-Extraction fehlgeschlagen - antiword/LibreOffice/text nicht verfuegbar]', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'zh', '[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/texttract nicht verfuegbar]', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'es', '[Error de extracción .doc - antiword/LibreOffice/textract no disponible]', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'ja', '[.doc抽出に失敗 - antiword/LibreOffice/textract が利用不可]', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'ru', '[Не удалось извлечь .doc - antiword/LibreOffice/textract недоступны]', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_extraktion_fehlgeschlagen_antiword_libreof', 'cli', 'zh', '[.doc 提取失败 - antiword/LibreOffice/textract 不可用]', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('doc_path_updater_aktualisiert_ver', 'cli', 'de', 'Doc Path Updater
  ================
 Aktualisiert veraltete Pfade in Dokumentation (.md, .txt).
@@ -6630,11 +6630,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             --file <pfad>           Speichern in Datei', 0, 'auto_detected', '2026-05-17T03:06:06.184910', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_gesundheitsdaten_als_csv_text_oder_vca', 'cli', 'en', 'Exports health data as CSV, text or vCard 3.0.
 
-Options:
+        Options:
             --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
-            --specialty <fach>      Nur bestimmtes Fachgebiet (fuer contacts)
-            --format csv|txt|vcard  Exportformat (default: txt)
-            --file <pfad>           Speichern in Datei', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+            --specialty <fach>      Only a specific specialty (for contacts)
+            --format csv|txt|vcard  Export format (default: txt)
+            --file <pfad>           Save to file', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_gesundheitsdaten_als_csv_text_oder_vca', 'cli', 'es', 'Exporta datos de salud como CSV, texto o vCard 3.0.
 
 Opciones:
@@ -6649,13 +6649,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             --specialty <fach> Nur bestimmtes Fachgebiet (連絡先の詳細)
             --format csv|txt|vcard エクスポート形式 (デフォルト: txt)
             --file <pfad> ダテイのシュパイヒャーン', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_gesundheitsdaten_als_csv_text_oder_vca', 'cli', 'ru', 'Экспортирует данные о состоянии здоровья в формате CSV, текста или vCard 3.0.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_gesundheitsdaten_als_csv_text_oder_vca', 'cli', 'ru', 'Экспортирует данные о здоровье в формате CSV, текста или vCard 3.0.
 
-Опции:
-            --entity <тип> контакты|диагностика|лекарства|лаборатории|все (по умолчанию: контакты)
-            --specialty <fach> Nur bestimmtes Fachgebiet (функция контактов)
-            --format csv|txt|vcard Экспортный формат (по умолчанию: txt)
-            --file <pfad> Speichern в Datei', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
+        Опции:
+            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
+            --specialty <fach>      Только определённая специальность (для contacts)
+            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)
+            --file <pfad>           Сохранить в файл', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_gesundheitsdaten_als_csv_text_oder_vca', 'cli', 'zh', '将健康数据导出为 CSV、文本或 vCard 3.0。
 
 选项：
@@ -6721,12 +6721,12 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             --file <pfad>         Speichern in Datei', 0, 'auto_detected', '2026-05-17T03:06:06.190397', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_kontakte_als_csv_text_oder_vcard_3_0', 'cli', 'en', 'Exports contacts as CSV, text or vCard 3.0.
 
-Options:
-            --type aerzte/arzt    Nur Arzt-Kontakte
-            --type beruflich      Nur berufliche Kontakte
-            --type versicherung   Nur Versicherungs-Kontakte
-            --format csv|txt|vcard  Exportformat (default: txt)
-            --file <pfad>         Speichern in Datei', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+        Options:
+            --type aerzte/arzt    Only doctor contacts
+            --type beruflich      Only business contacts
+            --type versicherung   Only insurance contacts
+            --format csv|txt|vcard  Export format (default: txt)
+            --file <pfad>         Save to file', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_kontakte_als_csv_text_oder_vcard_3_0', 'cli', 'es', 'Exporta contactos como CSV, texto o vCard 3.0.
 
 Opciones:
@@ -6743,14 +6743,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             --type versicherung Nur Versicherungs-Kontakte
             --format csv|txt|vcard エクスポート形式 (デフォルト: txt)
             --file <pfad> ダテイのシュパイヒャーン', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_kontakte_als_csv_text_oder_vcard_3_0', 'cli', 'ru', 'Экспортирует контакты в формате CSV, тексте или vCard 3.0.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_kontakte_als_csv_text_oder_vcard_3_0', 'cli', 'ru', 'Экспортирует контакты в формате CSV, текста или vCard 3.0.
 
-Опции:
-            --type aerzte/arzt Нур Арзт-Контакте
-            --type beruflich Nur berufliche Контакты
-            --type versicherung Нур Versicherungs-Контакте
-            --format csv|txt|vcard Экспортный формат (по умолчанию: txt)
-            --file <pfad> Speichern в Datei', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
+        Опции:
+            --type aerzte/arzt    Только контакты врачей
+            --type beruflich      Только рабочие контакты
+            --type versicherung   Только контакты страховых компаний
+            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)
+            --file <pfad>         Сохранить в файл', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('exportiert_kontakte_als_csv_text_oder_vcard_3_0', 'cli', 'zh', '将联系人导出为 CSV、文本或 vCard 3.0。
 
 选项：
@@ -7432,17 +7432,17 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler', 'cli', 'ru', 'Ошибка', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler', 'cli', 'zh', '错误', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'de', '[FEHLER bei {doc.filename}: {e}]', 0, 'auto_detected', '2026-05-17T03:06:06.229066', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'en', '[FEHLER bei {doc.filename}: {e}]', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'es', '[FEHLER bei {doc.nombre de archivo}: {e}]', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'ja', '[FEHLER による {doc.filename}: {e}]', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'ru', '[FEHLER в {doc.filename}: {e}]', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'zh', '[FEHLER 位于 {doc.filename}: {e}]', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'en', '[ERROR at {doc.filename}: {e}]', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'es', '[ERROR en {doc.filename}: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'ja', '[エラー {doc.filename}: {e}]', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'ru', '[Ошибка в {doc.filename}: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_doc_filename_e', 'cli', 'zh', '[错误 {doc.filename}：{e}]', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'de', '[FEHLER bei {filepath.name}: {e}]', 0, 'auto_detected', '2026-05-17T03:06:06.257406', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'en', '[FEHLER bei {filepath.name}: {e}]', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'es', '[FEHLER en {ruta.archivo.nombre}: {e}]', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'ja', '[FEHLER による {filepath.name}: {e}]', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'ru', '[FEHLER в {filepath.name}: {e}]', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'zh', '[FEHLER 位于 {filepath.name}: {e}]', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'en', '[ERROR at {filepath.name}: {e}]', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'es', '[ERROR en {filepath.name}: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'ja', '[エラー {filepath.name}: {e}]', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'ru', '[Ошибка в {filepath.name}: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_filepath_name_e', 'cli', 'zh', '[错误 {filepath.name}：{e}]', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_txt_file_e', 'cli', 'de', 'Fehler bei {txt_file}: {e}', 0, 'auto_detected', '2026-05-17T03:06:06.224270', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_txt_file_e', 'cli', 'en', 'Error on {txt_file}: {e}', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_bei_txt_file_e', 'cli', 'es', 'Error en {txt_file}: {e}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -7498,11 +7498,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_laden_mehrerer_ticker_e', 'cli', 'ru', 'Ошибка загрузки нескольких тикеров: {e}', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_laden_mehrerer_ticker_e', 'cli', 'zh', '加载多个代码时出错：{e}', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'de', '[FEHLER beim Lesen: {e}]', 0, 'auto_detected', '2026-05-17T03:06:06.195492', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'en', '[FEHLER beim Lesen: {e}]', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'es', '[FEHLER beim Lesen: {e}]', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'ja', '[FEHLER beim Lesen: {e}]', 1, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'ru', '[FEHLER beim Lesen: {e}]', 1, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'zh', '[FEHLER beim Lesen: {e}]', 1, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'en', '[ERROR while reading: {e}]', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'es', '[ERROR al leer: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'ja', '[読み込みエラー: {e}]', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'ru', '[Ошибка чтения: {e}]', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_e', 'cli', 'zh', '[读取错误：{e}]', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_von_self_secrets_file_e', 'cli', 'de', '✗ Fehler beim Lesen von {self.secrets_file}: {e}', 0, 'auto_detected', '2026-05-17T03:06:06.180871', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_von_self_secrets_file_e', 'cli', 'en', '✗ Error reading {self.secrets_file}: {e}', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('fehler_beim_lesen_von_self_secrets_file_e', 'cli', 'es', '✗ Error al leer {self.secrets_file}: {e}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -8294,17 +8294,17 @@ Verfuegbare Formate:
 Beispiel:
   bach steuer export --jahr 2025 --format datev
   bach steuer export --format vorsorge', 0, 'auto_detected', '2026-05-17T03:06:06.180871', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'en', 'Format ''{format_type}'' is not supported.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'en', 'Format ''{format_type}'' not supported.
 
 Available formats:
-  --format txt      Standard TXT-Dateien
-  --format datev    DATEV Buchungsstapel CSV (fuer Steuerberater)
-  --format csv      Einfaches CSV (fuer Excel)
-  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+  --format txt      Standard TXT files
+  --format datev    DATEV booking batch CSV (for tax advisors)
+  --format csv      Simple CSV (for Excel)
+  --format vorsorge Vorsorgeaufwand schedule (insurance contributions)
 
-Example:
+Examples:
   bach steuer export --jahr 2025 --format datev
-  bach steuer export --format vorsorge', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+  bach steuer export --format vorsorge', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'es', 'El formato ''{format_type}'' no es compatible.
 
 Formatos disponibles:
@@ -8319,14 +8319,14 @@ Ejemplo:
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'ja', '形式「{format_type}」はサポートされていません。
 
 利用可能な形式:
-  --format txt 標準 TXT-Dateien
-  --format datev DATEV Buchungsstapel CSV (fuer Steuerberater)
-  --format csv Einfaches CSV (Excel 用)
-  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+  --format txt      標準 TXT ファイル
+  --format datev    DATEV 記帳バッチ CSV（税理士向け）
+  --format csv      シンプルな CSV（Excel 向け）
+  --format vorsorge Anlage Vorsorgeaufwand 様式（保険料）
 
-例:
-  bach steuer エクスポート --jahr 2025 --format datev
-  bach steuer エクスポート --format vorsorge', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+使用例:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'ru', 'Формат «{format_type}» не поддерживается.
 
 Доступные форматы:
@@ -8341,14 +8341,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_format_type_nicht_unterstuetzt_verfue', 'cli', 'zh', '不支持格式“{format_type}”。
 
 可用格式：
-  --format txt 标准 TXT-Dateien
-  --format datev DATEV Buchungsstapel CSV (fuer Steuerberater)
-  --format csv Einfaches CSV（适用于 Excel）
-  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+  --format txt      标准 TXT 文件
+  --format datev    DATEV 记账批次 CSV（供税务顾问使用）
+  --format csv      简单 CSV（供 Excel 使用）
+  --format vorsorge 养老支出附表（保险缴费）
 
 示例：
-  bach Steuer 导出 --jahr 2025 --format datev
-  bach Steuer 导出 --format vorsorge', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('format_jeder_eintrag_zeigt_icon_dist_t', 'cli', 'de', '## Format
 
 Jeder Eintrag zeigt:
@@ -8802,39 +8802,39 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             bach --maintain headers --update-db      # DB-Versionen updaten', 0, 'auto_detected', '2026-05-17T03:06:06.182893', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'en', 'Generates/validates YAML headers for SKILL.md files.
 
-Usage:
-            bach --maintain headers                  # Dry-run alle
-            bach --maintain headers --fix            # Alle korrigieren
-            bach --maintain headers --path skills/   # Bestimmter Ordner
-            bach --maintain headers --update-db      # DB-Versionen updaten', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+        Usage:
+            bach --maintain headers                  # Dry-run all
+            bach --maintain headers --fix            # Fix all
+            bach --maintain headers --path skills/   # Specific folder
+            bach --maintain headers --update-db      # Update DB versions', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'es', 'Genera/valida encabezados YAML para archivos SKILL.md.
 
-Uso:
-            bach --mantener encabezados # Ejecución en seco todo
-            bach --mantener encabezados --fix # Alle korrigieren
-            bach --mantener encabezados --habilidades de ruta/ # Bestimmter Ordner
-            bach --maintain headers --update-db # Actualización de versiones de DB', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+        Uso:
+            bach --maintain headers                  # Simulación de todos
+            bach --maintain headers --fix            # Corregir todos
+            bach --maintain headers --path skills/   # Carpeta específica
+            bach --maintain headers --update-db      # Actualizar versiones en DB', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'ja', 'SKILL.md ファイルの YAML ヘッダーを生成/検証します。
 
-使用法:
-            bach --maintain headers # 予行演習
-            bach --maintain headers --fix # Alle korrigieren
-            bach --maintain headers --path skill/ # Bestimmter Ordner
-            bach --maintain headers --update-db # DB バージョンの更新', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'ru', 'Генерирует/проверяет заголовки YAML для файлов SKILL.md.
+        使用方法:
+            bach --maintain headers                  # すべてドライラン
+            bach --maintain headers --fix            # すべて修正
+            bach --maintain headers --path skills/   # 特定のフォルダー
+            bach --maintain headers --update-db      # DB のバージョンを更新', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'ru', 'Генерирует/проверяет YAML-заголовки для файлов SKILL.md.
 
-Использование:
-            bach --maintain headers # Пробный запуск всех
-            bach --maintain headers --fix # Все исправления
-            bach --maintain headers --path assets/ # Bestimmter Ordner
-            bach --maintain headers --update-db # Обновление версий БД', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
+        Использование:
+            bach --maintain headers                  # Пробный запуск всех
+            bach --maintain headers --fix            # Исправить все
+            bach --maintain headers --path skills/   # Определённая папка
+            bach --maintain headers --update-db      # Обновить версии в DB', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_validiert_yaml_header_fuer_skill_md_date', 'cli', 'zh', '生成/验证 SKILL.md 文件的 YAML 标头。
 
-用途：
-            bach --maintain headers # 试运行 alle
-            bach --维护标头 --fix # Alle korrigieren
-            bach --维护标头 --路径技能/ # Bestimmter Ordner
-            bach --maintain headers --update-db # DB-Versionen updaten', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        用法：
+            bach --maintain headers                  # 全部预演
+            bach --maintain headers --fix            # 全部修正
+            bach --maintain headers --path skills/   # 指定文件夹
+            bach --maintain headers --update-db      # 更新数据库版本', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_warnungen_basierend_auf_simulationsergeb', 'cli', 'de', 'Generiert Warnungen basierend auf Simulationsergebnissen', 0, 'auto_detected', '2026-05-17T03:06:06.212970', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_warnungen_basierend_auf_simulationsergeb', 'cli', 'en', 'Generates alerts based on simulation results', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('generiert_warnungen_basierend_auf_simulationsergeb', 'cli', 'es', 'Genera alertas basadas en resultados de simulación.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -10129,56 +10129,56 @@ Fuer Dokumentations-Updates (Help, Wiki, Markdown):
   bach --maintain docs-paths --apply  Tatsaechlich korrigieren
 
 Siehe: bach --help tools/path_healer', 0, 'auto_detected', '2026-05-17T03:06:06.184910', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'en', 'HINWEIS: Pfad-Heilung ist nicht mehr noetig!
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'en', 'NOTE: Path healing is no longer necessary!
  ============================================================
-bach_paths.py verwaltet alle Laufzeit-Pfade automatisch.
-Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+bach_paths.py manages all runtime paths automatically.
+If BACH is moved, paths adapt on their own.
 
-Fuer Dokumentations-Updates (Help, Wiki, Markdown):
-  bach --maintain docs-paths          Dry-Run (nur anzeigen)
-  bach --maintain docs-paths --apply  Tatsaechlich korrigieren
+For documentation updates (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Dry run (display only)
+  bach --maintain docs-paths --apply  Actually correct them
 
-Siehe: bach --help tools/path_healer', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'es', 'HINWEIS: ¡Pfad-Heilung ist nicht mehr noetig!
- ===============================================================
-bach_paths.py se actualiza automáticamente.
-Cuando BACH verschoben wird, passen sich Pfade von selbst an.
+See: bach --help tools/path_healer', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'es', 'AVISO: ¡La corrección de rutas ya no es necesaria!
+ ============================================================
+bach_paths.py gestiona todas las rutas de ejecución automáticamente.
+Si BACH se mueve, las rutas se adaptan por sí solas.
 
-Fuer Dokumentations-Actualizaciones (Ayuda, Wiki, Markdown):
-  bach --mantener docs-paths Ejecución en seco (nueva aparición)
-  bach --mantener docs-paths --aplicar Tatsaechlich korrigieren
+Para actualizaciones de documentación (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Simulación (solo mostrar)
+  bach --maintain docs-paths --apply  Corregir de verdad
 
-Ver: bach --help tools/path_healer', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'ja', 'ヒンヴァイス: Pfad-Heilung は重要な情報です!
- ======================================================
-bach_paths.py はすべての Laufzeit-Pfade を自動化します。
-Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+Ver: bach --help tools/path_healer', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'ja', '注意: パス修復はもう必要ありません！
+ ============================================================
+bach_paths.py はすべてのランタイムパスを自動管理します。
+BACH を移動しても、パスは自動的に適応します。
 
-燃料ドキュメント - 更新 (ヘルプ、Wiki、マークダウン):
-  bach --maintain docs-paths ドライラン (新しい情報)
-  bach --maintain docs-paths --apply Tatsaechlich korrigieren
+ドキュメント更新（Help、Wiki、Markdown）の場合:
+  bach --maintain docs-paths          ドライラン（表示のみ）
+  bach --maintain docs-paths --apply  実際に修正する
 
-情報: bach --help tools/path_healer', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'ru', 'ПОДСКАЗКА: Pfad-Heilung ist nicht mehr noetig!
- =========================================================
-bach_paths.py автоматически выполняет все функции Laufzeit-Pfade.
-Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+参照: bach --help tools/path_healer', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'ru', 'ПОДСКАЗКА: Восстановление путей больше не требуется!
+ ============================================================
+bach_paths.py автоматически управляет всеми путями среды выполнения.
+Если BACH перемещён, пути подстраиваются сами.
 
-Fuer Документация-Обновления (Помощь, Wiki, Markdown):
-  bach --maintain docs-paths Dry-Run (nur anzeigen)
-  bach --maintain docs-paths --apply Tatsaechlich korrigieren
+Для обновлений документации (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Пробный запуск (только показать)
+  bach --maintain docs-paths --apply  Реально исправить
 
-Зие: bach --help Tools/path_healer', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'zh', '注意：Pfad-Heilung ist nicht mehr noetig！
- ===============================================================
-bach_paths.py verwaltet alle Laufzeit-Pfade automatisch。
-巴赫 (BACH) 是世界上最伟大的音乐人之一。
+См.: bach --help tools/path_healer', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinweis_pfad_heilung_ist_nicht_mehr_noetig', 'cli', 'zh', '注意：路径修复已不再需要！
+ ============================================================
+bach_paths.py 会自动管理所有运行时路径。
+移动 BACH 后，路径会自动适应。
 
-Fuer 文档-更新（帮助、Wiki、Markdown）：
-  bach --维护文档路径试运行 (nur anzeigen)
-  bach --维护文档路径 --apply Tatsaechlich korrigieren
+如需更新文档（Help、Wiki、Markdown）：
+  bach --maintain docs-paths          预演（仅显示）
+  bach --maintain docs-paths --apply  实际执行修正
 
-世赫：巴赫-帮助工具/path_healer', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+参见：bach --help tools/path_healer', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinzuf_gen', 'cli', 'de', 'Hinzufügen', 0, 'auto_detected', '2026-05-17T03:06:06.229066', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinzuf_gen', 'cli', 'en', 'Add', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('hinzuf_gen', 'cli', 'es', 'Añadir', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -10189,26 +10189,26 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Liste von Dicts mit Index-Daten', 0, 'auto_detected', '2026-05-17T03:06:06.191447', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'en', 'Holt aktuelle Daten für die Hauptindizes.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'en', 'Fetches current data for the main indices.
 
-Parameters:
-            Liste von Dicts mit Index-Daten', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'es', 'Holt aktuelle Daten für die Hauptindizes.
+        Returns:
+            List of dicts with index data', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'es', 'Obtiene datos actuales para los índices principales.
 
-Parámetros:
-            Lista de dictados con datos indexados', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'ja', 'Holt aktuelle Daten für die Hauptindizes。
+        Devuelve:
+            Lista de dicts con datos de índices', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'ja', '主要指数の最新データを取得します。
 
-パラメータ:
-            索引データの辞書リスト', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'ru', 'Holt aktuelle Daten für die Hauptindizes.
+        戻り値:
+            指数データを含む辞書のリスト', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'ru', 'Получает актуальные данные по основным индексам.
 
-Параметры:
-            Список диктовок с индексными данными', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'zh', 'Holt aktuelle Daten für die Hauptindizes。
+        Возврат:
+            Список словарей с данными индексов', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_aktuelle_daten_f_r_die_hauptindizes', 'cli', 'zh', '获取主要指数的最新数据。
 
-参数：
-            带索引日期的词典列表', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        返回：
+            包含指数数据的字典列表', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_alle_ergebnisse_f_r_ein_symbol', 'cli', 'de', 'Holt alle Ergebnisse für ein Symbol', 0, 'auto_detected', '2026-05-17T03:06:06.279222', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_alle_ergebnisse_f_r_ein_symbol', 'cli', 'en', 'Retrieve all results for a symbol', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_alle_ergebnisse_f_r_ein_symbol', 'cli', 'es', 'Obtener todos los resultados para un símbolo', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -10234,41 +10234,41 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Tuple (aktueller_preis, änderung, änderung_prozent) oder None', 0, 'auto_detected', '2026-05-17T03:06:06.277450', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'en', 'Holt den aktuellen Preis und Änderung.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'en', 'Fetches the current price and change.
 
-Args:
-            ticker: Das Symbol
+        Args:
+            ticker: The symbol
 
-Parameters:
-            Tuple (aktueller_preis, änderung, änderung_prozent) oder None', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'es', 'Holt den aktuellen Preis und Änderung.
+        Returns:
+            Tuple (current_price, change, change_percent) or None', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'es', 'Obtiene el precio actual y su variación.
 
-Argumentos:
+        Argumentos:
             ticker: El símbolo
 
-Parámetros:
-            Tupla (aktueller_preis, änderung, änderung_prozent) o Ninguno', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'ja', 'Holt den aktuellen Preis und Änderung.
+        Devuelve:
+            Tupla (precio_actual, cambio, cambio_porcentual) o None', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'ja', '現在の価格と変動を取得します。
 
-引数:
-            ティッカー: ダスシンボル
+        引数:
+            ticker: シンボル
 
-パラメータ:
-            タプル (aktueller_preis、änderung、änderung_prozent) またはなし', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'ru', 'Holt den aktuellen Preis und Änderung.
+        戻り値:
+            タプル (現在価格, 変動, 変動率) または None', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'ru', 'Получает текущую цену и изменение.
 
-Аргументы:
-            тикер: Das Символ
+        Аргументы:
+            ticker: Символ
 
-Параметры:
-            Кортеж (aktueller_preis, änderung, änderung_prozent) или нет', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'zh', 'Holt den aktuellen Preis und änderung。
+        Возврат:
+            Кортеж (текущая_цена, изменение, изменение_процент) или None', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_den_aktuellen_preis_und_nderung_ar', 'cli', 'zh', '获取当前价格和变动。
 
-参数：
-            股票代码： Das Symbol
+        参数：
+            ticker: 代码
 
-参数：
-            元组 (aktueller_preis, änderung, änderung_prozent) 或无', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        返回：
+            元组 (当前价格, 变动, 变动百分比) 或 None', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_die_neuesten_aktivit_ten_jobs_ergebnisse', 'cli', 'de', 'Holt die neuesten Aktivitäten (Jobs + Ergebnisse)', 0, 'auto_detected', '2026-02-02T03:35:38.875308', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_die_neuesten_aktivit_ten_jobs_ergebnisse', 'cli', 'en', 'Gets the latest activities (jobs + results)', 0, 'waterfall_swarm', '2026-03-06 19:53:44', '2026-03-06 19:53:44');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('holt_die_neuesten_aktivit_ten_jobs_ergebnisse', 'cli', 'es', 'Obtiene las últimas actividades (trabajos + resultados)', 0, 'google_auto', '2026-05-17T06:03:58.337154', '2026-05-17T06:03:58.337154');
@@ -10554,51 +10554,51 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Anzahl importierter Dateien', 0, 'auto_detected', '2026-05-17T03:06:06.275256', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'en', 'Importiert Dateien in den data_roh/ Ordner (frueher: data/).
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'en', 'Imports files into the data_roh/ folder (formerly: data/).
 
-Args:
-            session: Aktive Session
-            files: Liste von Dateipfaden
-            clear_existing: Bestehende Dateien in data_roh/ loeschen
+        Args:
+            session: Active session
+            files: List of file paths
+            clear_existing: Delete existing files in data_roh/
 
-Parameters:
-            Anzahl importierter Dateien', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'es', 'Importiert Dateien in den data_roh/ Ordner (frueher: data/).
+        Returns:
+            Number of imported files', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'es', 'Importa archivos a la carpeta data_roh/ (antes: data/).
 
-Argumentos:
-            sesión: Sesión Activa
-            archivos: Liste von Dateipfaden
-            clear_existing: Bestehende Dateien en data_roh/loeschen
+        Argumentos:
+            session: Sesión activa
+            files: Lista de rutas de archivos
+            clear_existing: Eliminar archivos existentes en data_roh/
 
-Parámetros:
-            Anzahl importador de datos', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'ja', 'Importiert Dateien in den data_roh/ Ordner (frueher: data/)。
+        Devuelve:
+            Número de archivos importados', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'ja', 'data_roh/ フォルダー（旧: data/）にファイルをインポートします。
 
-引数:
-            セッション: アクティブセッション
-            ファイル: Liste von Dateipfaden
-            clear_existing: data_roh/loeschen の Bestehende Dateien
+        引数:
+            session: アクティブなセッション
+            files: ファイルパスのリスト
+            clear_existing: data_roh/ 内の既存ファイルを削除
 
-パラメータ:
-            アンザール輸入業者 ダティエン', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'ru', 'Импортируйте данные в data_roh/Ordner (создание: data/).
+        戻り値:
+            インポートされたファイル数', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'ru', 'Импортирует файлы в папку data_roh/ (раньше: data/).
 
-Аргументы:
-            сессия: Активная сессия
-            файлы: Liste von Dateipfaden
-            Clear_existing: Bestehende Dateien в data_roh/loeschen
+        Аргументы:
+            session: Активная сессия
+            files: Список путей к файлам
+            clear_existing: Удалить существующие файлы в data_roh/
 
-Параметры:
-            Anzahl импортер Dateien', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'zh', '在 den data_roh/Ordner 中导入 Dateien（原：data/）。
+        Возврат:
+            Количество импортированных файлов', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_dateien_in_den_data_roh_ordner_fruehe', 'cli', 'zh', '将文件导入 data_roh/ 文件夹（原：data/）。
 
-参数：
-            会话：活跃会话
-            文件：Liste von Dateipfaden
-            clear_existing：data_roh/ loeschen 中的 Bestehende Dateien
+        参数：
+            session: 活动会话
+            files: 文件路径列表
+            clear_existing: 删除 data_roh/ 中的现有文件
 
-参数：
-            安扎尔进口商日期', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        返回：
+            导入的文件数量', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_transaktionen_aus_einer_camt_053_datei', 'cli', 'de', 'Importiert Transaktionen aus einer CAMT.053 Datei.', 0, 'auto_detected', '2026-02-02T03:35:38.877122', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_transaktionen_aus_einer_camt_053_datei', 'cli', 'en', 'Imports transactions from a CAMT.053 file.', 0, 'waterfall_swarm', '2026-03-06 19:53:44', '2026-03-06 19:53:44');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_transaktionen_aus_einer_camt_053_datei', 'cli', 'es', 'Importa transacciones desde un archivo CAMT.053.', 0, 'google_auto', '2026-05-17T06:03:58.337154', '2026-05-17T06:03:58.337154');
@@ -10607,10 +10607,10 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_transaktionen_aus_einer_camt_053_datei', 'cli', 'zh', '从 CAMT.053 文件导入事务。', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'de', 'Importiert und erstellt USMCClient (lazy, damit kein harter Import-Fehler).', 0, 'auto_detected', '2026-05-17T03:06:06.162788', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'en', 'Imported and created USMCClient (lazy, to avoid hard import errors).', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'es', 'Importiert und erstellt USMCClient (perezoso, damit kein harter Import-Fehler).', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'ja', 'Importiert und erstellt USMCClient (怠惰、damit kein harter Import-Fehler)。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'ru', 'Importiert und erstellt USMCClient (ленивый, черт возьми, Import-Fehler).', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'zh', 'Importiert und erstellt USMCClient（懒惰，damit kein harter Import-Fehler）。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'es', 'Importa y crea USMCClient (lazy, para evitar un error de importación estricto).', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'ja', 'USMCClient をインポートして作成します（lazy、ハードなインポートエラーを回避）。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'ru', 'Импортирует и создаёт USMCClient (lazy, чтобы избежать жёсткой ошибки импорта).', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_erstellt_usmcclient_lazy_damit_ke', 'cli', 'zh', '导入并创建 USMCClient（lazy，避免硬性导入错误）。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('importiert_und_registriert_alle_verf_gbaren_analyz', 'cli', 'de', 'Importiert und registriert alle verfügbaren Analyzer.
 
     Wird beim Laden des Moduls aufgerufen.', 0, 'auto_detected', '2026-05-17T03:06:06.240888', '2026-05-17 01:06:06');
@@ -10654,11 +10654,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_onedrive_exe_nicht_gefunden_ueberspringe_s', 'cli', 'ru', '[ИНФО] OneDrive.exe не используется, ueberspringe Stopp', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_onedrive_exe_nicht_gefunden_ueberspringe_s', 'cli', 'zh', '[信息] OneDrive.exe 不可用，ueberspringe Stopp', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'de', '[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}', 0, 'auto_detected', '2026-05-17T03:06:06.261444', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'en', '[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'es', '[INFO] Scanne Ordner nach sensen Fecha: {scan_folder}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'ja', '[情報] Scanne Ordner nach sensiblen 日付: {scan_folder}', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'en', '[INFO] Scanning folder for sensitive data: {scan_folder}', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'es', '[INFO] Escaneando carpeta en busca de datos sensibles: {scan_folder}', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'ja', '[INFO] フォルダーをスキャンして機密データを検索しています: {scan_folder}', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'ru', '[ИНФО] Отсканируйте заказ на разумную дату: {scan_folder}', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'zh', '[INFO] Scanne Ordner nach sensiblen Daten：{scan_folder}', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('info_scanne_ordner_nach_sensiblen_daten_scan_f', 'cli', 'zh', '[INFO] 正在扫描文件夹以查找敏感数据：{scan_folder}', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_detector_args', 'cli', 'de', 'Initialisiert den Detector.
 
         Args:
@@ -10688,37 +10688,37 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
         Args:
             data_dir: Ordner mit echten Klientendaten
             bundles_dir: Ordner mit anonymisierten Bundles', 0, 'auto_detected', '2026-05-17T03:06:06.197520', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'en', 'Initialisiert den Hook.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'en', 'Initializes the hook.
 
-Args:
-            data_dir: Ordner mit echten Klientendaten
-            bundles_dir: Ordner mit anonymisierten Bundles', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+        Args:
+            data_dir: Folder with real client data
+            bundles_dir: Folder with anonymized bundles', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'es', 'Inicialice el gancho.
 
 Argumentos:
             data_dir: Ordenar con clientes actuales
             bundles_dir: Ordenar paquetes anónimos', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'ja', 'フックの初期化。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'ja', 'フックを初期化します。
 
-引数:
-            data_dir: Ordner mit echten Klientendaten
-            Bundles_dir: バンドルを匿名化するための順序', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+        引数:
+            data_dir: 実際のクライアントデータを含むフォルダー
+            bundles_dir: 匿名化されたバンドルを含むフォルダー', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'ru', 'Инициализируйте с помощью крючка.
 
 Аргументы:
             data_dir: Заказ с клиентскими данными
             Bundles_dir: Упорядочить анонимные пакеты', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'zh', '钩子初始化。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_den_hook_args', 'cli', 'zh', '初始化钩子。
 
-参数：
-            data_dir：Ordner mit echten Klientendaten
-            Bundles_dir: 匿名捆绑包', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        参数：
+            data_dir: 包含真实客户数据的文件夹
+            bundles_dir: 包含匿名化数据包的文件夹', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'de', 'Initialisiert oder syncht die Secrets-Datei.', 0, 'auto_detected', '2026-05-17T03:06:06.210889', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'en', 'Initialize or sync the Secrets file.', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'es', 'Inicialice o sincronice la fecha secreta.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'ja', 'Secrets-Date を初期化して同期します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'ru', 'Инициализируйте или синхронизируйте секретные данные.', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'zh', '初始化或同步 Secrets-Datei。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('initialisiert_oder_syncht_die_secrets_datei', 'cli', 'zh', '初始化或同步 Secrets 文件。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('inject_handler_injektor_steuerung_und_aufgaben_z', 'cli', 'de', 'Inject Handler - Injektor-Steuerung und Aufgaben-Zuweisung
  ==========================================================
 
@@ -11548,7 +11548,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
         - 在 ~/.claude/settings.json 中合并 Hook-Konfiguration
         - Nicht-destruktiv: bestehende Hooks bleiben erhalten', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'de', 'Items: {items}, Fehler: {errors_count}', 0, 'auto_detected', '2026-05-17T03:06:06.246246', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'en', 'Items: {items}, Fehler: {errors_count}', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'en', 'Items: {items}, Errors: {errors_count}', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'es', 'Artículos: {items}, Fehler: {errors_count}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'ja', 'アイテム: {items}、フェーラー: {errors_count}', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('items_items_fehler_errors_count', 'cli', 'ru', 'Предметы: {items}, Фелер: {errors_count}', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
@@ -11698,9 +11698,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_profil_geladen', 'cli', 'ru', '[Кейн Профиль желаден]', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_profil_geladen', 'cli', 'zh', '[未加载配置文件]', 1, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'de', 'Kein Tarnname gefunden für: {args.klient}', 0, 'auto_detected', '2026-05-17T03:06:06.224270', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'en', 'Kein Tarnname gefunden für: {args.klient}', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'es', 'Kein Tarnname gefunden für: {args.klient}', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'ja', 'Kein Tarnname gefunden für: {args.klient}', 1, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'en', 'No codename found for: {args.klient}', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'es', 'No se encontró ningún alias para: {args.klient}', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'ja', 'コードネームが見つかりません: {args.klient}', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'ru', 'Имя пользователя для: {args.klient}', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kein_tarnname_gefunden_f_r_args_klient', 'cli', 'zh', 'Kein Tarnname gefunden für：{args.klient}', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_abos_gefunden_n_nfuehre', 'cli', 'de', 'Keine Abos gefunden.\n\nFuehre', 0, 'auto_detected', '2026-02-02T03:35:38.877809', NULL);
@@ -11788,10 +11788,10 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_daten_keine_passenden_dokumente_im_bundle', 'cli', 'ru', '[KEINE DATEN] Перейдите к другому документу в пакете.', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_daten_keine_passenden_dokumente_im_bundle', 'cli', 'zh', '[KEINE DATEN] Keine passenden Dokumente im Bundle gefunden。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'de', 'Keine Ergebnisse für: {query}', 0, 'auto_detected', '2026-05-17T03:06:06.227045', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'en', 'Keine Ergebnisse für: {query}', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'en', 'No results for: {query}', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'es', 'Keine Ergebnisse para: {consulta}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'ja', 'Keine Ergebnisse für: {クエリ}', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'ru', 'Keine Ergebnisse für: {query}', 1, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'ru', 'Нет результатов для: {query}', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ergebnisse_f_r_query', 'cli', 'zh', 'Keine Ergebnisse für：{查询}', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_konfiguration_erforderlich', 'cli', 'de', 'Keine Konfiguration erforderlich', 0, 'auto_detected', '2026-05-17T03:06:06.222250', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_konfiguration_erforderlich', 'cli', 'en', 'No configuration required', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
@@ -11804,7 +11804,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ordner_zuordnungen_gefunden', 'cli', 'es', 'No se encontraron asignaciones de carpetas.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ordner_zuordnungen_gefunden', 'cli', 'ja', 'ケイネ・オードナー＝ズオルドヌンゲン・ゲフンデン。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ordner_zuordnungen_gefunden', 'cli', 'ru', 'Связи с папками не найдены.', 1, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ordner_zuordnungen_gefunden', 'cli', 'zh', 'Keine Ordner-Zuordnungen gefunden。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_ordner_zuordnungen_gefunden', 'cli', 'zh', '未找到文件夹映射。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_pause_f_r_session_profil', 'cli', 'de', 'Keine Pause für Session-Profil', 0, 'auto_detected', '2026-05-17T03:06:06.200551', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_pause_f_r_session_profil', 'cli', 'en', 'No pause for session profile', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_pause_f_r_session_profil', 'cli', 'es', 'No hay pausa para el perfil de sesión', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -11824,11 +11824,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_session_steering_hinweise_f_r', 'cli', 'ru', 'Нет подсказок по управлению сессией для', 1, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_session_steering_hinweise_f_r', 'cli', 'zh', '没有会话引导提示', 1, 'manual-rest-1301', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'de', '# Keine Skills geladen (SKILL.md fehlt)', 0, 'auto_detected', '2026-05-17T03:06:06.165658', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'en', '# Keine Skills geladen (SKILL.md fehlt)', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'es', '# Keine Skills geladen (SKILL.md fehlt)', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'en', '# No skills loaded (SKILL.md missing)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'es', '# No hay skills cargados (falta SKILL.md)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'ja', '# ケイネスキルゲラデン (SKILL.md fehlt)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'ru', '# Keine Skills geladen (SKILL.md fehlt)', 1, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'zh', '# Keine Skills geladen (SKILL.md fehlt)', 1, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'ru', '# Навыки не загружены (отсутствует SKILL.md)', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_skills_geladen_skill_md_fehlt', 'cli', 'zh', '# 未加载任何技能（缺少 SKILL.md）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_wartenden_ordner', 'cli', 'de', 'Keine wartenden Ordner', 0, 'auto_detected', '2026-02-02T03:35:38.883979', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_wartenden_ordner', 'cli', 'en', 'No pending folders', 0, 'waterfall_swarm', '2026-03-06 19:53:38', '2026-03-06 19:53:38');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('keine_wartenden_ordner', 'cli', 'es', 'No hay carpetas pendientes', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -11861,88 +11861,88 @@ Created: 2026-02-20 (SQ021, Runde 4)', 0, 'auto_detected', '2026-05-17T03:06:06.
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'en', 'Kernel Seal Handler (SQ021)
  ============================
 
-Siegelsystem fuer BACH-Integritaet.
+Seal system for BACH integrity.
 
-Das Siegel:
-- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
-- Warnt bei Veraenderungen
-- Ermoeglicht Restore/Repair
+The seal:
+- Computes a SHA256 hash over all CORE files (dist_type=2)
+- Warns about changes
+- Enables restore/repair
 
-Start job with CLI
-    bach seal check       Vollstaendige Hash-Pruefung
-    bach seal repair      Neuen Hash berechnen und speichern
-    bach seal status      Zeige aktuellen Seal-Status
+CLI:
+    bach seal check       Full hash verification
+    bach seal repair      Compute and save a new hash
+    bach seal status      Show current seal status
 
 Author: BACH Development Team
-Created: 2026-02-20 (SQ021, Runde 4)', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'es', 'Manipulador de sello de grano (SQ021)
- =============================
-
-Siegelsystem fuer BACH-Integritaet.
-
-El Siegel:
-- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
-- Warnt bei Veraenderungen
-- Ermoeglicht Restauración/Reparación
-
-Iniciar trabajo con CLI
-    control de sello de bach Vollstaendige Hash-Pruefung
-    Reparación de sellos de Bach Neuen Hash berechnen und speichern
-    estado del sello de bach Zeige aktuellen Estado del sello
-
-Autor: Equipo de desarrollo de BACH
-Creado: 2026-02-20 (SQ021, Serie 4)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'ja', 'カーネル シール ハンドラー (SQ021)
+Created: 2026-02-20 (SQ021, Round 4)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'es', 'Kernel Seal Handler (SQ021)
  ============================
 
-Siegelsystem は BACH-Integritaet をサポートします。
+Sistema de sello para la integridad de BACH.
 
-ダス・シーゲル:
-- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
-- ヴァルト バイ ヴェレンダーンゲン
-- エルモーグリヒトの復元/修理
+El sello:
+- Calcula un hash SHA256 sobre todos los archivos CORE (dist_type=2)
+- Advierte sobre cambios
+- Permite restaurar/reparar
 
-CLIでジョブを開始する
-    bach シール チェック Vollstaendige Hash-Pruefung
-    bach シール修理 Neuen Hash berechnen und speichern
-    bach シールのステータス Zeige aktuellen シールのステータス
+CLI:
+    bach seal check       Verificación completa de hash
+    bach seal repair      Calcular y guardar un nuevo hash
+    bach seal status      Mostrar estado actual del sello
 
-著者: BACH 開発チーム
-作成日: 2026-02-20 (SQ021、Runde 4)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'ru', 'Обработчик уплотнений ядра (SQ021)
- ===========================
+Autor: BACH Development Team
+Creado: 2026-02-20 (SQ021, Ronda 4)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'ja', 'Kernel Seal ハンドラー (SQ021)
+ ============================
 
-Siegelsystem fuer BACH-Integritaet.
+BACH の整合性を保証するシールシステム。
 
-Дас Сигел:
-- Берехнет SHA256-хэш всех CORE-Dateien (dist_type=2)
-- Предупреждение в Veraenderungen
-- Восстановление/ремонт Ermoeglicht
+シールの機能:
+- すべての CORE ファイルの SHA256 ハッシュを計算 (dist_type=2)
+- 変更時に警告
+- 復元/修復を可能にする
 
-Начать работу с CLI
-    Проверка печати Баха Vollstaendige Hash-Pruefung
-    ремонт уплотнений Баха Neuen Hash berechnen und speichern
-    Статус печати Баха Zeige aktuellen Seal-Status
+CLI:
+    bach seal check       完全なハッシュ検証
+    bach seal repair      新しいハッシュを計算して保存
+    bach seal status      現在のシール状態を表示
 
-Автор: Команда разработчиков BACH
-Создано: 20 февраля 2026 г. (SQ021, Рунде 4)', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'zh', '内核密封处理器 (SQ021)
- ===========================
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, ラウンド 4)', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'ru', 'Kernel Seal Handler (SQ021)
+ ============================
 
-Siegelsystem fuer BACH-Integritaet。
+Система пломб для целостности BACH.
 
-达斯·西格尔：
-- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
-- Warnt bei Veraenderungen
-- Ermoeglicht 恢复/修复
+Пломба:
+- Вычисляет SHA256-хеш по всем файлам CORE (dist_type=2)
+- Предупреждает об изменениях
+- Позволяет восстановить/починить
 
-使用 CLI 开始作业
-    巴赫密封检查 Vollstaendige Hash-Pruefung
-    巴赫密封修复 Neuen Hash berechnen und speichern
-    巴赫密封状态 Zeige aktuellen Seal-Status
+CLI:
+    bach seal check       Полная проверка хеша
+    bach seal repair      Вычислить и сохранить новый хеш
+    bach seal status      Показать текущий статус пломбы
 
-作者：巴赫开发团队
-创建时间：2026-02-20（SQ021，润德 4）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+Автор: BACH Development Team
+Создано: 2026-02-20 (SQ021, раунд 4)', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_handler_sq021', 'cli', 'zh', '内核印章处理器 (SQ021)
+ ============================
+
+保障 BACH 完整性的印章系统。
+
+印章：
+- 计算所有 CORE 文件的 SHA256 哈希（dist_type=2）
+- 更改时发出警告
+- 支持恢复/修复
+
+CLI:
+    bach seal check       完整哈希校验
+    bach seal repair      计算并保存新哈希
+    bach seal status      显示当前印章状态
+
+作者：BACH Development Team
+创建：2026-02-20（SQ021，第 4 轮）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_status', 'cli', 'de', '[KERNEL SEAL STATUS]', 0, 'auto_detected', '2026-05-17T03:06:06.261444', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_status', 'cli', 'en', '[KERNEL SEAL STATUS]', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kernel_seal_status', 'cli', 'es', '[ESTADO DEL SELLO DEL NÚCLEO]', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -11983,8 +11983,8 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'en', 'List client folders and pipeline status.', 1, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'es', 'Listar carpetas de clientes y estado de la tubería.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'ja', 'クリエンテン・オードナーとパイプラインのステータスを聞きます。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'ru', 'Клиент-Ordner und Pipeline-Status auflisten.', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'zh', 'Klienten-Ordner 和 Pipeline-Status auflisten。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'ru', 'Показать список папок клиентов и статус пайплайнов.', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('klienten_ordner_und_pipeline_status_auflisten', 'cli', 'zh', '列出客户文件夹和流水线状态。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('kompletter_workflow_scannen_extrahieren_anony', 'cli', 'de', 'Kompletter Workflow: Scannen + Extrahieren + Anonymisieren.
 
     Args:
@@ -12086,50 +12086,50 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Liste der erzeugten Bild-Pfade', 0, 'auto_detected', '2026-05-17T03:06:06.191447', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'en', 'Konvertiert PDF-Seiten zu PNG-Bildern.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'en', 'Converts PDF pages to PNG images.
 
-        Benoetigt pdf2image + poppler.
+        Requires pdf2image + poppler.
 
         Args:
-            file_path: Pfad to the PDF
-            output_dir: output-folder for die Bilder
-            max_dim: Maximale Dimension (Breite/Hoehe) in Pixeln
+            file_path: Path to the PDF
+            output_dir: Output folder for the images
+            max_dim: Maximum dimension (width/height) in pixels
 
         Returns:
-            list der erzeugten Bild-Pfade', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'es', 'Convierta páginas PDF en imágenes PNG.
+            List of generated image paths', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'es', 'Convierte páginas PDF en imágenes PNG.
 
-        Benoetigt pdf2image + poppler.
+        Requiere pdf2image + poppler.
 
         Argumentos:
-            file_path: paso al PDF
-            output_dir: carpeta de salida para la imagen
-            max_dim: Dimensión máxima (Breite/Hoehe) en píxeles
+            file_path: Ruta al PDF
+            output_dir: Carpeta de salida para las imágenes
+            max_dim: Dimensión máxima (ancho/alto) en píxeles
 
-        Devoluciones:
-            list der erzeugten Bild-Pfade', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'ja', 'Konvertiert PDF-青天図 PNG-Bildern。
+        Devuelve:
+            Lista de rutas de las imágenes generadas', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'ja', 'PDF ページを PNG 画像に変換します。
 
-        Benoetigt pdf2image + ポプラー。
+        pdf2image + poppler が必要です。
 
         引数:
             file_path: PDF へのパス
-            Output_dir: ダイビルダーの出力フォルダー
-            max_dim: Pixeln の最大寸法 (Breite/Hoehe)
+            output_dir: 画像の出力フォルダー
+            max_dim: 最大サイズ（幅/高さ、ピクセル単位）
 
         戻り値:
-            list der erzeugten Bild-Pfade', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'ru', 'Конвертировать PDF-файлы в PNG-изображения.
+            生成された画像パスのリスト', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'ru', 'Конвертирует страницы PDF в изображения PNG.
 
-        Benoetigt pdf2image + poppler.
+        Требуется pdf2image + poppler.
 
         Аргументы:
-            file_path: Пфад в PDF
-            output_dir: выходная папка для создания изображений
-            max_dim: Максимальный размер (Breite/Hoehe) в пикселях
+            file_path: Путь к PDF
+            output_dir: Папка вывода для изображений
+            max_dim: Максимальный размер (ширина/высота) в пикселях
 
         Возврат:
-            список erzeugten Bild-Pfade', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
+            Список созданных путей к изображениям', 1, 'manual_qa_1317', '2026-05-17T06:57:55.362865', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('konvertiert_pdf_seiten_zu_png_bildern_be', 'cli', 'zh', 'Konvertiert PDF-Seiten zu PNG-Bildern。
 
         Benoetigt pdf2image + poppler。
@@ -12514,11 +12514,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
         返回：
             新闻词典列表', 0, 'google_auto', '2026-05-17T06:44:24.774895', '2026-05-17T06:44:24.774895');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'de', 'Lädt Pfad-Overrides aus der kanonischen DB des aktuellen Roots.', 0, 'auto_detected', '2026-05-17T03:06:06.279222', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'en', 'Loads Pfad-Overrides aus der kanonischen DB des aktuellen Roots.', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'es', 'Carga Pfad-Overrides aus der kanonischen DB des aktuellen Roots.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'en', 'Loads path overrides from the canonical DB of the current root.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.886536', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'es', 'Carga los overrides de rutas desde la DB canónica del root actual.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'ja', 'DB のルートを Pfad-Overrides でロードします。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'ru', 'Загружает Pfad-Overrides из канонической базы данных актуальных корней.', 0, 'google_auto', '2026-05-17T06:57:55.362865', '2026-05-17T06:57:55.362865');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'zh', '加载 Pfad-Overrides aus der kanonischen DB des aktuellen Roots。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt', 'cli', 'zh', '从当前根目录的规范数据库加载路径覆盖。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_skill_md_persoenlicher_assistent_beim_start', 'cli', 'de', 'Lädt SKILL.md + persoenlicher-assistent beim Start.', 0, 'auto_detected', '2026-05-17T03:06:06.165658', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_skill_md_persoenlicher_assistent_beim_start', 'cli', 'en', 'Loads skill.md + persoenlicher-assistent beim Start.', 0, 'mixed_auto', '2026-05-17T04:38:01.886536', '2026-05-17T04:38:01.886536');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('l_dt_skill_md_persoenlicher_assistent_beim_start', 'cli', 'es', 'Carga Skill.md + asistente personal antes de iniciar.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -13047,18 +13047,18 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Anonymisierter Textinhalt', 0, 'auto_detected', '2026-05-17T03:06:06.250029', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liest_inhalte_sicher_aus_dem_anonymisierten_bundle', 'cli', 'en', 'Liest Inhalte sicher aus dem anonymisierten Bundle.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liest_inhalte_sicher_aus_dem_anonymisierten_bundle', 'cli', 'en', 'Safely reads contents from the anonymized bundle.
 
-        WICHTIG: Diese Methode Returns NUR anonymisierte Inhalte zurück.
-        Der Chatbot sieht nur Tarnnamen, niemals echte Namen.
+        IMPORTANT: This method returns ONLY anonymized contents.
+        The chatbot only sees codenames, never real names.
 
         Args:
-            klient_name: Name des Klienten
-            filename: Optionaler file name (sonst all files)
-            include_extended: Auch extended/ einbeziehen
+            klient_name: Name of the client
+            filename: Optional filename (otherwise all files)
+            include_extended: Also include extended/
 
         Returns:
-            Anonymisierter Textinhalt', 0, 'mixed_auto', '2026-05-17T04:38:01.900688', '2026-05-17T04:38:01.900688');
+            Anonymized text content', 1, 'manual_qa_1317', '2026-05-17T04:38:01.900688', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liest_inhalte_sicher_aus_dem_anonymisierten_bundle', 'cli', 'es', 'Liest Inhalte sicher aus dem anonymisierten Bundle.
 
         WICHTIG: Este método devuelve NUR anonymisierte Inhalte zurück.
@@ -13312,11 +13312,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liest_vorgemerkte_operator_hinweise', 'cli', 'ru', 'Liest vorgemerkte Оператор-Hinweise.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liest_vorgemerkte_operator_hinweise', 'cli', 'zh', 'Liest Vergemerkte Operator-Hinweise。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'de', 'list-available      Alle verfügbaren Pipeline-Definitionen', 0, 'auto_detected', '2026-05-17T03:06:06.197520', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'en', 'list-available      all verfügbaren Pipeline-Definitionen', 0, 'mixed_auto', '2026-05-17T04:38:01.900688', '2026-05-17T04:38:01.900688');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'es', 'lista disponible todas las definiciones de tuberías verfügbaren', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'en', 'list-available      All available pipeline definitions', 1, 'manual_qa_1317', '2026-05-17T04:38:01.900688', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'es', 'list-available      Todas las definiciones de pipelines disponibles', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'ja', 'リスト - 利用可能なすべてのパイプライン定義', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'ru', 'список доступных всех определений трубопроводов', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'zh', '列出可用的所有 verfügbaren Pipeline-Definitionen', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('list_available_alle_verf_gbaren_pipeline_defi', 'cli', 'zh', 'list-available      所有可用的流水线定义', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liste_consolidation_eintr_ge', 'cli', 'de', 'Liste Consolidation-Einträge.', 0, 'auto_detected', '2026-05-17T03:06:06.211432', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liste_consolidation_eintr_ge', 'cli', 'en', 'list Consolidation-entries.', 0, 'mixed_auto', '2026-05-17T04:38:01.900688', '2026-05-17T04:38:01.900688');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liste_consolidation_eintr_ge', 'cli', 'es', 'list Entradas de consolidación.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -13327,7 +13327,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'en', 'Lists all migrations with status.', 1, 'manual_qa_1316', '2026-05-17T04:38:01.900688', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'es', 'Lista todas las migraciones con estado.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'ja', 'すべての移行ステータスを一覧表示します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'ru', 'Список всех Migrationen mit status.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'ru', 'Показывает все миграции со статусами.', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_migrationen_mit_status', 'cli', 'zh', '列出所有迁移状态。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_ordner_auf', 'cli', 'de', 'Listet alle Ordner auf.', 0, 'auto_detected', '2026-05-17T03:06:06.180871', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_ordner_auf', 'cli', 'en', 'Lists all folders.', 1, 'manual_qa_1316', '2026-05-17T04:38:01.900688', '2026-09-16 09:14:46');
@@ -13376,13 +13376,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Возврат:
             список информации о файлах (анонимное имя)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_dateien_im_bundle_auf', 'cli', 'zh', '列出 Bundle auf 中的所有 verfügbaren 文件。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_dateien_im_bundle_auf', 'cli', 'zh', '列出数据包中的所有可用文件。
 
         参数：
             klient_name: 客户名称
 
         返回：
-            列出文件信息（nur anonymisierte Namen）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            文件信息列表（仅匿名化名称）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pfade_auf_returns', 'cli', 'de', 'Listet alle verfügbaren Pfade auf.
 
     Returns:
@@ -13399,14 +13399,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
     戻り値:
         Dict mit Pfadnamen und deren Werten', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pfade_auf_returns', 'cli', 'ru', 'Список всех предложений Pfade auf.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pfade_auf_returns', 'cli', 'ru', 'Показывает все доступные пути.
 
     Возврат:
-        Dict mit Pfadnamen und deren Werten', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pfade_auf_returns', 'cli', 'zh', '列出所有 verfügbaren Pfade auf。
+        Dict с именами путей и их значениями', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pfade_auf_returns', 'cli', 'zh', '列出所有可用路径。
 
     返回：
-        词典名称和含义', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        包含路径名称及其值的字典', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pipeline_definitionen_auf', 'cli', 'de', 'Listet alle verfügbaren Pipeline-Definitionen auf.
 
         Returns:
@@ -13427,10 +13427,10 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Возврат:
             список Pipeline-Metadatan (идентификатор, имя, тип, описание)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pipeline_definitionen_auf', 'cli', 'zh', '列出所有 verfügbaren Pipeline-Definitionen auf。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verf_gbaren_pipeline_definitionen_auf', 'cli', 'zh', '列出所有可用的流水线定义。
 
         返回：
-            管道元数据列表（ID、名称、类型、描述）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            流水线元数据列表（id、名称、类型、描述）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verfuegbaren_agents', 'cli', 'de', 'Listet alle verfuegbaren Agents.', 0, 'auto_detected', '2026-05-17T03:06:06.257406', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verfuegbaren_agents', 'cli', 'en', 'Lists all available agents.', 1, 'manual_qa_1131', '2026-05-17T04:38:01.900688', '2026-09-16 11:03:07');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_alle_verfuegbaren_agents', 'cli', 'es', 'Lista todos los agentes disponibles.', 1, 'manual_qa_1131', '2026-05-17T06:51:57.361081', '2026-09-16 11:03:29');
@@ -13541,13 +13541,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_entwuerfe_nach_status', 'cli', 'zh', '按状态列出草稿。', 1, 'manual_qa_1316', '2026-05-17T07:11:17.069268', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'de', 'Listet verfuegbare llmauto Chain-Configs auf.', 0, 'auto_detected', '2026-05-17T03:06:06.261444', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'en', 'Lists available llmauto Chain-Configs.', 1, 'mixed_auto', '2026-05-17T04:38:01.900688', '2026-05-17T04:38:01.900688');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'es', 'Liste verfuegbare llmauto Chain-Configs auf.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'es', 'Lista las Chain-Configs de llmauto disponibles.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'ja', 'llmauto チェーン設定のリストを表示します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'ru', 'Список версий llmauto Chain-Configs auf.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_llmauto_chain_configs_auf', 'cli', 'zh', '列出可用的 llmauto 链式配置。', 1, 'manual_qa_1316', '2026-05-17T07:11:17.069268', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'de', 'Listet verfuegbare Profile.', 0, 'auto_detected', '2026-05-17T03:06:06.190397', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'en', 'Lists available profiles.', 1, 'mixed_auto', '2026-05-17T04:38:01.900688', '2026-05-17T04:38:01.900688');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'es', 'Liste el perfil verfuegbare.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'es', 'Lista los perfiles disponibles.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'ja', 'プロフィールをリストします。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'ru', 'Список поддерживаемых профилей.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('listet_verfuegbare_profile', 'cli', 'zh', '列出可用的配置文件。', 1, 'manual_qa_1316', '2026-05-17T07:11:17.069268', '2026-09-16 09:14:46');
@@ -14092,11 +14092,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_created_tasks_erstellt', 'cli', 'ru', '\n{len(created)} Созданные задачи', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_created_tasks_erstellt', 'cli', 'zh', '\n{len(created)} 任务已创建', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'de', '\n{len(pipelines)} verfügbare Pipelines:\n', 0, 'auto_detected', '2026-05-17T03:06:06.197520', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'en', '\n{len(pipelines)} verfügbare Pipelines:\n', 1, 'mixed_auto', '2026-05-17T04:38:01.901876', '2026-05-17T04:38:01.901876');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'en', '\n{len(pipelines)} available pipelines:\n', 1, 'manual_qa_1317', '2026-05-17T04:38:01.901876', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'es', '\n{len(pipelines)} Pipelines activados:\n', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'ja', '\n{len(pipelines)} のパイプラインのバージョン:\n', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'ru', '\n{len(pipelines)} verfügbare Pipelines:\n', 1, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'zh', '\n{len(pipelines)} verfügbare 管道:\n', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'ru', '\n{len(pipelines)} доступных пайплайнов:\n', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_pipelines_verf_gbare_pipelines_n', 'cli', 'zh', '\n{len(pipelines)} 个可用流水线:\n', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_prompt_2000_weitere_zeichen', 'cli', 'de', '\n... ({len(prompt) - 2000} weitere Zeichen)', 0, 'auto_detected', '2026-02-02T03:35:38.875308', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_prompt_2000_weitere_zeichen', 'cli', 'en', '\n... ({len(prompt) - 2000} more characters)', 0, 'waterfall_swarm', '2026-03-06 19:53:38', '2026-03-06 19:53:38');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_len_prompt_2000_weitere_zeichen', 'cli', 'es', '\n... ({len(prompt) - 2000} caracteres más)', 1, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -14116,11 +14116,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_task_id_status_target', 'cli', 'ru', '\n{task_id} [{статус}] -> {цель}', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_task_id_status_target', 'cli', 'zh', '\n{task_id} [{status}] -> {目标}', 0, 'google_auto', '2026-05-17T06:44:24.774895', '2026-05-17T06:44:24.774895');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'de', '\n[WARNUNG] Einige Pfade fehlen:', 0, 'auto_detected', '2026-05-17T03:06:06.229066', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'en', '\n[warning] Einige Pfade fehlen:', 0, 'mixed_auto', '2026-05-17T04:38:01.901876', '2026-05-17T04:38:01.901876');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'es', '\n[advertencia] Einige Pfade fehlen:', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'ja', '\n[警告] Einige Pfade fehlen:', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'en', '\n[WARNING] Some paths are missing:', 1, 'manual_qa_1317', '2026-05-17T04:38:01.901876', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'es', '\n[ADVERTENCIA] Faltan algunas rutas:', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'ja', '\n[警告] 一部のパスが不足しています:', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'ru', '\n[предупреждение] Эйниге Пфаде фелен:', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'zh', '\n[警告] Einige Pfade fehlen:', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('n_warnung_einige_pfade_fehlen', 'cli', 'zh', '\n[警告] 部分路径缺失:', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('name_15_path_status', 'cli', 'de', '{name:15} {path} {status}', 0, 'auto_detected', '2026-02-02T03:35:38.882608', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('name_15_path_status', 'cli', 'en', '{name:15} {path} {status}', 1, 'waterfall_swarm', '2026-03-06 19:53:38', '2026-03-06 19:53:38');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('name_15_path_status', 'cli', 'es', '{name:15} {path} {status}', 1, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -14254,13 +14254,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('ngefundene_dokumente_len_result_documents', 'cli', 'ru', '\nНайдены документы: {len(result.documents)}', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('ngefundene_dokumente_len_result_documents', 'cli', 'zh', '\n找到的文档：{len(result.documents)}', 0, 'google_auto', '2026-05-17T06:44:24.774895', '2026-05-17T06:44:24.774895');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'de', '\nHinweis: {ctx[', 0, 'auto_detected', '2026-05-17T03:06:06.268939', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'en', '\nHinweis: {ctx[', 1, 'mixed_auto', '2026-05-17T04:38:01.901876', '2026-05-17T04:38:01.901876');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'es', '\nHinweis: {ctx[', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'en', '\nNote: {ctx[', 1, 'manual_qa_1317', '2026-05-17T04:38:01.901876', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'es', '\nNota: {ctx[', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'ja', '\nヒント: {ctx[', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'ru', '\nПодсказка: {ctx[', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_ctx', 'cli', 'zh', '\n注意事项: {ctx[', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'de', '\nHinweis: {preset[', 0, 'auto_detected', '2026-05-17T03:06:06.193470', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'en', '\nHinweis: {preset[', 1, 'mixed_auto', '2026-05-17T04:38:01.901876', '2026-05-17T04:38:01.901876');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'en', '\nNote: {preset[', 1, 'manual_qa_1317', '2026-05-17T04:38:01.901876', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'es', '\nHinweis: {preestablecido[', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'ja', '\nヒント: {プリセット[', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nhinweis_preset', 'cli', 'ru', '\nПодсказка: {предустановка[', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
@@ -14357,7 +14357,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverf_gbare_pipelines', 'cli', 'zh', '\nVerfügbare 管道：', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'de', '\nVerfuegbare Profile Dateien:', 0, 'auto_detected', '2026-05-17T03:06:06.219625', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'en', '\nVerfuegbare Profile files:', 0, 'mixed_auto', '2026-05-17T04:38:01.901876', '2026-05-17T04:38:01.901876');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'es', '\nArchivos de perfil Verfuegbare:', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'es', '\nArchivos de perfil disponibles:', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'ja', '\nVerfuegbare プロファイル ファイル:', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'ru', '\nДобавить файлы профиля:', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('nverfuegbare_profile_dateien', 'cli', 'zh', '\nVerfuegbare 配置文件：', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
@@ -14490,9 +14490,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'de', 'Parst JSON-Felder rueckwaertskompatibel und faellt auf Klartext zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.266920', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'en', 'Parses JSON fields backward-compatible and falls back to plaintext.', 1, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'es', 'Parsea los campos de JSON de forma compatible hacia atrás y devuelve texto plano.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'ja', 'JSON-Felder の rueckwaertskompatibel と faellt auf Klartext zurueck を表示します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'ja', 'JSON フィールドを後方互換でパースし、プレーンテキストにフォールバックします。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'ru', 'Используйте JSON-Felder rueckwaertskomatibel и faellt auf Klartext Zurueck.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'zh', '第一部分 JSON-Felder rueckwaertskompatibel 和 faellt auf Klartext zurueck。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_json_felder_rueckwaertskompatibel_und_faellt', 'cli', 'zh', '向后兼容地解析 JSON 字段，并回退到纯文本。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_presence_datei_und_prueft_aktivitaet', 'cli', 'de', 'Parst Presence-Datei und prueft Aktivitaet.', 0, 'auto_detected', '2026-02-02T03:35:38.879923', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_presence_datei_und_prueft_aktivitaet', 'cli', 'en', 'Parses presence file and checks activity.', 0, 'waterfall_swarm', '2026-03-06 19:53:38', '2026-03-06 19:53:38');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_presence_datei_und_prueft_aktivitaet', 'cli', 'es', 'Analiza el archivo de presencia y comprueba la actividad.', 0, 'google_auto', '2026-05-17T06:03:58.337154', '2026-05-17T06:03:58.337154');
@@ -14500,11 +14500,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_presence_datei_und_prueft_aktivitaet', 'cli', 'ru', 'Парсит файл присутствия и проверяет активность.', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_presence_datei_und_prueft_aktivitaet', 'cli', 'zh', '解析存在文件并检查活动。', 0, 'google_auto', '2026-05-17T06:44:24.774895', '2026-05-17T06:44:24.774895');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'de', 'Parst URL und gibt Markdown zurueck (mit Chunking-Support).', 0, 'auto_detected', '2026-05-17T03:06:06.212970', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'en', 'Parst URL und Returns Markdown zurueck (mit Chunking-Support).', 0, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'es', 'Parte de URL y devoluciones Markdown zurueck (con soporte de fragmentación).', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'en', 'Parses a URL and returns Markdown (with chunking support).', 1, 'manual_qa_1317', '2026-05-17T04:38:01.902869', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'es', 'Analiza una URL y devuelve Markdown (con soporte de fragmentación).', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'ja', 'URL を解析し、Markdown を返す (チャンキング サポートを含む)。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'ru', 'Анализ URL-адреса и возврат данных Markdown (с поддержкой фрагментирования).', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'zh', '解析 URL 并返回 Markdown zurueck（mit Chunking-Support）。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('parst_url_und_gibt_markdown_zurueck_mit_chunking', 'cli', 'zh', '解析 URL 并返回 Markdown（支持分块）。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('partner_handler_partner_verwaltung', 'cli', 'de', 'Partner Handler - Partner-Verwaltung
  ====================================
 
@@ -14854,7 +14854,7 @@ SQ011：通用管道安装框架
 - Pipeline-Definitionen aus pipelines/*.json lesen
 - 管道运行跟踪', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'de', 'Pipeline läuft (Lock: {lock_file}). Aktenordner: {pipeline.base_path}', 0, 'auto_detected', '2026-05-17T03:06:06.272979', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'en', 'Pipeline läuft (Lock: {lock_file}). Aktenordner: {pipeline.base_path}', 1, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'en', 'Pipeline is running (Lock: {lock_file}). Case folder: {pipeline.base_path}', 1, 'manual_qa_1317', '2026-05-17T04:38:01.902869', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'es', 'Läuft de tubería (Bloqueo: {lock_file}). Código de activación: {pipeline.base_path}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'ja', 'パイプラインの解放 (ロック: {lock_file})。アクテンノルドナー: {pipeline.base_path}', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pipeline_l_uft_lock_lock_file_aktenordner', 'cli', 'ru', 'Открытие конвейера (блокировка: {lock_file}). Актенорднер: {pipeline.base_path}', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
@@ -14989,26 +14989,26 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Liste von aktiven Hosts mit Zeitstempel', 0, 'auto_detected', '2026-05-17T03:06:06.199540', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'en', 'Prüft ob andere PCs active sind (innerhalb 5 Min).
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'en', 'Checks if other PCs are active (within 5 min).
 
         Returns:
-            list von aktiven Hosts mit Zeitstempel', 0, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'es', 'Prüft ob other PCs active sind (innerhalb 5 Min).
+            List of active hosts with timestamps', 1, 'manual_qa_1317', '2026-05-17T04:38:01.902869', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'es', 'Comprueba si otros PCs están activos (dentro de 5 min).
 
-        Devoluciones:
-            list von aktiven Hosts mit Zeitstempel', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'ja', 'Prüft ob andere PC のアクティブなシンド (インナーハーフ 5 分)。
+        Devuelve:
+            Lista de hosts activos con marca de tiempo', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'ja', '他の PC がアクティブかどうかを確認します（5 分以内）。
 
         戻り値:
-            ツァイトシュテンペルの活動ホストのリスト', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'ru', 'Prüft ob andere PCs active sind (внутреннее время 5 минут).
+            タイムスタンプ付きのアクティブホストのリスト', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'ru', 'Проверяет, активны ли другие ПК (в течение 5 мин).
 
         Возврат:
-            список активных хостов с Zeitstempel', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'zh', 'Prüft ob andere PCs active sind（innerhalb 5 分钟）。
+            Список активных хостов с метками времени', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min', 'cli', 'zh', '检查其他 PC 是否处于活动状态（5 分钟内）。
 
         返回：
-            列出 Zeitstempel 的活动主机', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            带时间戳的活动主机列表', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'de', 'Prüft ob der Token-Verbrauch > 3x Budget ist.
 
         Returns:
@@ -15017,22 +15017,22 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
 Returns:
     TokenExplosionAlert if explosion detected, otherwise None', 1, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'es', 'Prüft ob der Token-Verbrauch > 3x Presupuesto ist.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'es', 'Comprueba si el consumo de tokens es > 3x el presupuesto.
 
-        Devoluciones:
-            TokenExplosionAlert cuando se activa la explosión, sonst Ninguno', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'ja', 'Prüft ob der Token-Verbrauch > 3x 予算 ist.
+        Devuelve:
+            TokenExplosionAlert si se detecta una explosión, si no None', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'ja', 'トークン消費が予算の 3 倍を超えているかどうかを確認します。
 
         戻り値:
-            TokenExplosionAlert 爆発に関する警告、重要なもの なし', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'ru', 'Prüft ob der Token-Verbrauch > 3x Budget ist.
+            爆発が検出された場合は TokenExplosionAlert、それ以外は None', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'ru', 'Проверяет, превышает ли потребление токенов бюджет в 3 раза.
 
         Возврат:
-            TokenExplosionAlert при взрыве erkannt, sonst Нет', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'zh', 'Prüft ob der Token-Verbrauch > 3x 预算 ist。
+            TokenExplosionAlert при обнаружении взрыва, иначе None', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_der_token_verbrauch_3x_budget_ist', 'cli', 'zh', '检查令牌消耗是否超过预算的 3 倍。
 
         返回：
-            TokenExplosionAlert wenn 爆炸 erkannt, sonst None', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            检测到激增时返回 TokenExplosionAlert，否则返回 None', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_analyzer_existiert', 'cli', 'de', 'Prüft ob ein Analyzer existiert', 0, 'auto_detected', '2026-02-02T03:35:38.876518', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_analyzer_existiert', 'cli', 'en', 'Checks if an analyzer exists', 0, 'waterfall_swarm', '2026-03-06 19:53:38', '2026-03-06 19:53:38');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_analyzer_existiert', 'cli', 'es', 'Comprueba si existe un analizador.', 0, 'google_auto', '2026-05-17T06:03:58.337154', '2026-05-17T06:03:58.337154');
@@ -15098,37 +15098,37 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             OverkillAlert wenn Overkill erkannt, sonst None', 0, 'auto_detected', '2026-05-17T03:06:06.277450', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'en', 'Prüft ob ein zu mächtiges Modell for einen einfachen Task
-        verwendet wird.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'en', 'Checks if an overly powerful model is being used
+        for a simple task.
 
         Returns:
-            OverkillAlert wenn Overkill erkannt, sonst None', 0, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'es', 'Prüft ob ein zu mächtiges Modell for einen einfachen Task
-        verwendet wird.
+            OverkillAlert if overkill detected, otherwise None', 1, 'manual_qa_1317', '2026-05-17T04:38:01.902869', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'es', 'Comprueba si se está usando un modelo demasiado potente
+        para una tarea sencilla.
 
-        Devoluciones:
-            OverkillAlert cuando Overkill erkannt, sonst Ninguno', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+        Devuelve:
+            OverkillAlert si se detecta overkill, si no None', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'ja', 'einen einfachen タスクのモデルを作成する
         ヴェルウェンデットワード。
 
         戻り値:
             OverkillAlert wen Overkill erkannt、sonst なし', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'ru', 'Prüft ob ein zu mächtiges Модель для einen einfachen Task
-        verwendet wird.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'ru', 'Проверяет, используется ли слишком мощная модель
+        для простой задачи.
 
         Возврат:
-            OverkillAlert при Overkill erkannt, sonst Нет', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'zh', 'Prüft ob ein zu mächtiges einen einfachen 任务模型
-        韦尔文代线
+            OverkillAlert при обнаружении overkill, иначе None', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach', 'cli', 'zh', '检查是否为简单任务
+        使用了过于强大的模型。
 
         返回：
-            OverkillAlert wenn Overkill erkannt，儿子 无', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            检测到过度配置时返回 OverkillAlert，否则返回 None', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'de', 'Prüft ob Provider verfügbar ist (Circuit nicht OPEN).', 0, 'auto_detected', '2026-05-17T03:06:06.174780', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'en', 'Prüft ob Provider available ist (Circuit nicht OPEN).', 0, 'mixed_auto', '2026-05-17T04:38:01.902869', '2026-05-17T04:38:01.902869');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'es', 'Prüft ob Provider available ist (Circuito no ABIERTO).', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'ja', 'Prüft ob Provider が利用可能です (サーキットニッチオープン)。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'ru', 'Prüft ob Поставщик доступен (Circuit nicht OPEN).', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'zh', 'Prüft ob Provider 可用（Circuit nicht OPEN）。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'en', 'Checks if the provider is available (circuit not OPEN).', 1, 'manual_qa_1317', '2026-05-17T04:38:01.902869', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'es', 'Comprueba si el proveedor está disponible (circuito no ABIERTO).', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'ja', 'プロバイダーが利用可能かどうかを確認します（サーキットが OPEN でないこと）。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'ru', 'Проверяет, доступен ли провайдер (Circuit не OPEN).', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope', 'cli', 'zh', '检查提供方是否可用（断路器未处于 OPEN 状态）。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('privacy_classifier_datenschutz_ampel_fuer_dokume', 'cli', 'de', 'Privacy Classifier — Datenschutz-Ampel fuer Dokumente (INT06)
 
 Portiert aus ProFiler Datenschutzampel. Klassifiziert Texte/Dateien
@@ -15408,9 +15408,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'de', 'Prueft auf neue Events. Gibt Liste von WatcherEvent zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.180871', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'en', 'Checks for new events. Returns a list of WatcherEvent.', 1, 'manual_qa_1316', '2026-05-17T04:38:01.903621', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'es', 'Comprueba si hay nuevos eventos. Devuelve una lista de WatcherEvent.', 1, 'manual_qa_1316', '2026-05-17T06:51:57.361081', '2026-09-16 09:14:46');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'ja', 'プルーフ・オフ・ノイのイベント。 WatcherEvent zurueck のリストを返します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'ja', '新しいイベントを確認します。WatcherEvent のリストを返します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'ru', 'Прюфт на новых событиях. Список возвратов от WatcherEvent.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'zh', '普吕夫特新事件。返回 WatcherEvent zurueck 的列表。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_auf_neue_events_gibt_liste_von_watchereven', 'cli', 'zh', '检查新事件。返回 WatcherEvent 列表。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_claude_cli_pfad_aus_config_und_sucht_automa', 'cli', 'de', 'Prueft Claude CLI Pfad aus config und sucht automatisch neu falls ungueltig.
     Aktualisiert config.json wenn ein neuer Pfad gefunden wird.', 0, 'auto_detected', '2026-05-17T03:06:06.241869', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_claude_cli_pfad_aus_config_und_sucht_automa', 'cli', 'en', 'Checks the Claude CLI path from config and automatically searches for a new one if invalid.
@@ -15439,7 +15439,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'en', 'Checks running/stale PID files and cleans up legacy leftovers.', 1, 'manual_qa_1316', '2026-05-17T04:38:01.903621', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'es', 'Verifica los archivos PID en ejecución o caducos y elimina residuos antiguos.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'ja', '実行中/古い PID ファイルを確認し、遺残留物をクリーンアップします。', 1, 'manual_qa_1316', '2026-05-17T07:04:20.383002', '2026-09-16 09:14:46');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'ru', 'Просмотрите устаревшие PID-файлы и используйте Altlasten.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'ru', 'Проверяет запущенные/устаревшие PID-файлы и очищает устаревшие остатки.', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_laufende_stale_pid_dateien_und_bereinigt_al', 'cli', 'zh', '检查运行中/过期的 PID 文件并清理遗留残留。', 1, 'manual_qa_1316', '2026-05-17T07:11:17.069268', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_nach_verfuegbaren_updates', 'cli', 'de', 'Prueft nach verfuegbaren Updates.', 0, 'auto_detected', '2026-05-17T03:06:06.197520', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_nach_verfuegbaren_updates', 'cli', 'en', 'Checks for available updates.', 1, 'manual_qa_1131', '2026-05-17T04:38:01.903621', '2026-09-16 11:03:07');
@@ -15541,8 +15541,8 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
     起動が許可されている場合は True を返します。', 1, 'manual_qa_1316', '2026-05-17T07:04:20.383002', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_genug_zeit_seit_dem_letzten_start_vergan', 'cli', 'ru', 'Проверяет, прошло ли достаточно времени с момента последнего запуска.
     Возвращает True, если запуск разрешён.', 1, 'manual_qa_1316', '2026-05-17T07:01:15.980267', '2026-09-16 09:14:46');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_genug_zeit_seit_dem_letzten_start_vergan', 'cli', 'zh', '请先开始操作。
-    返回 True zurueck wenn 启动 erlaubt ist。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_genug_zeit_seit_dem_letzten_start_vergan', 'cli', 'zh', '检查自上次启动以来是否已过去足够的时间。
+    如果允许启动则返回 True。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_heute_schon_ein_backup_von_diesem_host_e', 'cli', 'de', 'Prueft ob heute schon ein Backup von diesem Host erstellt wurde.', 0, 'auto_detected', '2026-05-17T03:06:06.193470', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_heute_schon_ein_backup_von_diesem_host_e', 'cli', 'en', 'Checks if a backup of this host has already been created today.', 1, 'manual_qa_1316', '2026-05-17T04:38:01.903621', '2026-09-16 09:14:46');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('prueft_ob_heute_schon_ein_backup_von_diesem_host_e', 'cli', 'es', 'Comprueba si ya se ha creado hoy una copia de seguridad de este host.', 1, 'manual_qa_1316', '2026-05-17T06:51:57.361081', '2026-09-16 09:14:46');
@@ -15670,11 +15670,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('python_report_workflow_service_py_prompt_ordner', 'cli', 'ru', 'python report_workflow_service.py приглашение <папка> <имя> [дата_рождения]', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('python_report_workflow_service_py_prompt_ordner', 'cli', 'zh', 'python report_workflow_service.py提示 <文件夹> <名称> [出生日期]', 0, 'google_auto', '2026-05-17T06:44:24.774895', '2026-05-17T06:44:24.774895');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'de', 'Quelltexte aus Klienten-Ordner extrahieren.', 0, 'auto_detected', '2026-05-17T03:06:06.199540', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'en', 'Quelltexte aus Klienten-folder extrahieren.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'en', 'Extract source texts from the client folder.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'es', 'Extraer los textos de origen desde la carpeta del cliente.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'ja', 'Klienten フォルダー外の Quelltexte。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'ja', 'クライアントフォルダーから元のテキストを抽出します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'ru', 'Введите текст в дополнительную папку клиента.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'zh', 'Quelltexte aus Klienten-folder extrahieren。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('quelltexte_aus_klienten_ordner_extrahieren', 'cli', 'zh', '从客户文件夹中提取源文本。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('queue_status', 'cli', 'de', 'Queue Status', 0, 'auto_detected', '2026-05-17T03:06:06.219625', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('queue_status', 'cli', 'en', 'Queue status', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('queue_status', 'cli', 'es', 'Estado de la cola', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -15771,18 +15771,18 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'en', 'rate: Speaking speed (Default: 170, faster than pyttsx3 default 200)
         voice_name: ''auto'' (Zira preferred), or a fragment of the voice name
         engine: ''pyttsx3'', ''piper'', or ''auto'' (first available)', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'es', 'tasa: Sprechgeschwindigkeit (Estándar: 170, Schneller als pyttsx3-Default 200)
-        voice_name: ''auto'' (Zira bevorzugt), o Name-Fragment der Stimme
-        motor: ''pyttsx3'', ''piper'', o ''auto'' (erster verfuegbarer)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'ja', 'レート: Sprechgeschwindigkeit (標準: 170、シュネラー als pyttsx3 - デフォルト 200)
-        voice_name: ''auto'' (Zira bevorzugt)、名前のフラグメント der Stimme
-        エンジン: ''pyttsx3''、''piper''、または ''auto'' (erster verfuegbarer)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'ru', 'ставка: Sprechgeschwindigkeit (Стандарт: 170, Schneller als pyttsx3 — по умолчанию 200)
-        voice_name: ''auto'' (Zira bevorzugt), или фрагмент имени der Stimme
-        двигатель: ''pyttsx3'', ''piper'', или ''auto'' (erster verfuegbarer)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'zh', '速率：Sprechgeschwindigkeit（标准：170，schneller als pyttsx3-默认 200）
-        voice_name: ''auto'' (Zira bevorzugt)，或名称片段 der Stimme
-        引擎：“pyttsx3”、“piper”、或“auto”（erster verfuegbarer）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'es', 'rate: Velocidad de habla (por defecto: 170, más rápido que el valor 200 de pyttsx3)
+        voice_name: ''auto'' (prefiere Zira), o fragmento del nombre de la voz
+        engine: ''pyttsx3'', ''piper'', o ''auto'' (el primero disponible)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'ja', 'rate: 読み上げ速度（デフォルト: 170、pyttsx3 の既定値 200 より高速）
+        voice_name: ''auto''（Zira 優先）、または音声名の一部
+        engine: ''pyttsx3''、''piper''、または ''auto''（最初に利用可能なもの）', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'ru', 'rate: Скорость речи (по умолчанию: 170, быстрее значения 200 по умолчанию у pyttsx3)
+        voice_name: ''auto'' (предпочтительно Zira), или фрагмент имени голоса
+        engine: ''pyttsx3'', ''piper'', или ''auto'' (первый доступный)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('rate_sprechgeschwindigkeit_standard_170_schnel', 'cli', 'zh', 'rate: 语速（默认：170，快于 pyttsx3 默认值 200）
+        voice_name: ''auto''（优先使用 Zira），或语音名称片段
+        engine: ''pyttsx3''、''piper'' 或 ''auto''（第一个可用的）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('readme_md_f_r_standalone_nutzung_generieren', 'cli', 'de', 'README.md für Standalone-Nutzung generieren.
 
         Enthält:
@@ -16378,7 +16378,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('run_id_pipeline_ausf_hren_phase_3', 'cli', 'ru', 'запустить <id> Выполнение конвейера (этап 3)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('run_id_pipeline_ausf_hren_phase_3', 'cli', 'zh', 'run <id> 管道执行（阶段 3）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'de', 'Sammelt und zeigt den aktuellen DB-basierten Systemstatus.', 0, 'auto_detected', '2026-05-17T03:06:06.227045', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'en', 'Sammelt und Shows den aktuellen DB-basierten Systemstatus.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'en', 'Collects and displays the current DB-based system status.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'es', 'Recopile y muestre el estado actual del sistema basado en la base de datos.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'ja', 'Sammelt および DB ベースのシステムステータスの詳細を表示します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sammelt_und_zeigt_den_aktuellen_db_basierten_syste', 'cli', 'ru', 'Сам плавится и показывает актуальный системный статус базы данных БД.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
@@ -16505,30 +16505,30 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             ScanResult mit kategorisierten Dokumenten', 0, 'auto_detected', '2026-05-17T03:06:06.215983', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'en', 'Scannt einen folder und kategorisiert all documents.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'en', 'Scans a folder and categorizes all documents.
 
         Args:
-            folder: Pfad to the Klienten-folder
-            recursive: Unterordner einbeziehen (Default: True)
+            folder: Path to the client folder
+            recursive: Include subfolders (Default: True)
 
         Returns:
-            ScanResult mit kategorisierten Dokumenten', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'es', 'Escanee una carpeta y categorice todos los documentos.
+            ScanResult with categorized documents', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'es', 'Escanea una carpeta y categoriza todos los documentos.
 
         Argumentos:
-            carpeta: Pfad a la carpeta Klienten
-            recursivo: Unterordner einbeziehen (Predeterminado: Verdadero)
+            folder: Ruta a la carpeta del cliente
+            recursive: Incluir subcarpetas (Default: True)
 
-        Devoluciones:
-            ScanResult con documentos clasificados', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+        Devuelve:
+            ScanResult con documentos categorizados', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'ja', 'フォルダーをスキャンし、すべてのドキュメントを分類します。
 
         引数:
-            フォルダー: Pfad を Klienten フォルダーに追加
-            再帰的: Unterordner einbeziehen (デフォルト: True)
+            folder: クライアントフォルダーへのパス
+            recursive: サブフォルダーを含める（デフォルト: True）
 
         戻り値:
-            ScanResult とカテゴリのドキュメント', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+            分類されたドキュメントを含む ScanResult', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'ru', 'Отсканируйте папку и классифицируйте все документы.
 
         Аргументы:
@@ -16537,14 +16537,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Возврат:
             ScanResult с категориальными документами', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'zh', '扫描每个文件夹并对所有文档进行分类。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_einen_ordner_und_kategorisiert_alle_dokumen', 'cli', 'zh', '扫描文件夹并对所有文档进行分类。
 
         参数：
-            文件夹：Pfad 到 Klienten 文件夹
-            递归：Unterordner einbeziehen（默认值：True）
+            folder: 客户文件夹路径
+            recursive: 包含子文件夹（默认：True）
 
         返回：
-            ScanResult 及其类别文档', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            包含已分类文档的 ScanResult', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('scannt_filesystem_nach_boss_agenten_und_experten', 'cli', 'de', 'Scannt Filesystem nach Boss-Agenten und Experten.
 
         Boss-Agenten:  agents/*/SKILL.md  (Unterordner ohne fuehrendes _)
@@ -19516,11 +19516,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_das_windows_hidden_attribut_auf_eine_datei', 'cli', 'ru', 'Установите скрытый атрибут Windows для собственного файла (в Windows).', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_das_windows_hidden_attribut_auf_eine_datei', 'cli', 'zh', '设置 Windows 隐藏属性文件（nur Windows）。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'de', 'Setzt Dead-Letter-Nachrichten zurueck auf ''pending''.', 0, 'auto_detected', '2026-05-17T03:06:06.206650', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'en', 'Setzt Dead-Letter-messages zurueck auf ''pending''.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'es', 'Setzt Dead-Letter-messages zurueck auf ''pendiente''.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'ja', 'Setzt Dead-Letter-messages zurueck auf ''pending'' 。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'en', 'Resets dead-letter messages back to ''pending''.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'es', 'Restablece los mensajes de dead-letter a ''pending''.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'ja', 'デッドレターメッセージを ''pending'' に戻します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'ru', 'Setzt Dead Letter-сообщения остаются в состоянии «ожидания».', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'zh', 'Setzt 死信消息 zurueck auf ''pending''。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_dead_letter_nachrichten_zurueck_auf_pending', 'cli', 'zh', '将死信消息重置为 ''pending''。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_analyzer_zur_ck', 'cli', 'de', 'Setzt den Analyzer zurück', 0, 'auto_detected', '2026-02-02T03:35:38.882608', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_analyzer_zur_ck', 'cli', 'en', 'Resets the analyzer', 0, 'waterfall_swarm', '2026-03-06 19:52:54', '2026-03-06 19:52:54');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_analyzer_zur_ck', 'cli', 'es', 'Reinicia el analizador', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -19528,23 +19528,23 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_analyzer_zur_ck', 'cli', 'ru', 'Сбрасывает анализатор', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_analyzer_zur_ck', 'cli', 'zh', '重置分析仪', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'de', 'Setzt den Arbeitsmodus fuer heute. Gibt False zurueck bei ungueltigem Modus.', 0, 'auto_detected', '2026-05-17T03:06:06.244228', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'en', 'Setzt den Arbeitsmodus for today. Returns False zurueck bei ungueltigem Modus.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'es', 'Setzt den Arbeitsmodus de hoy. Devuelve False zurueck bei ungueltigem Modus.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'ja', '今日のSetzt den Arbeitsmodus。 False zurueck bei ungueltigem Modus を返します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'ru', 'Setzt den Arbeitsmodus на сегодня. Возвращает False zurueck bei ungueltigem Modus.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'zh', '今天就设置 Arbeitsmodus。返回 False zurueck bei ungueltigem Modus。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'en', 'Sets the work mode for today. Returns False for an invalid mode.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'es', 'Establece el modo de trabajo para hoy. Devuelve False para un modo no válido.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'ja', '今日の作業モードを設定します。無効なモードの場合は False を返します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'ru', 'Задаёт рабочий режим на сегодня. Возвращает False при недопустимом режиме.', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_arbeitsmodus_fuer_heute_gibt_false_zuru', 'cli', 'zh', '设置今天的工作模式。模式无效时返回 False。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'de', 'Setzt den Budget-Verbrauch auf 0 zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.224270', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'en', 'Reset the budget consumption to 0.', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'es', 'Restablece el consumo de presupuesto a 0.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'ja', '0 の予算を設定します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'ru', 'Setzt den Budget-Verbrauch на 0 дней.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'zh', 'Setzt den Budget-Verbrauch auf 0 zurueck。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_budget_verbrauch_auf_0_zurueck', 'cli', 'zh', '将预算消耗重置为 0。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'de', 'Setzt den State einer llmauto-Kette zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.172760', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'en', 'Reset the state of an llmauto chain.', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'es', 'Restablece el estado de una cadena llmauto.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'ja', 'Setzt den State einer llmauto-Kette zurueck。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'ja', 'llmauto チェーンの状態をリセットします。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'ru', 'Сбросьте состояние цепочки llmauto.', 1, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'zh', 'Setzt den State einer llmauto-Kette zurueck。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_den_state_einer_llmauto_kette_zurueck', 'cli', 'zh', '重置 llmauto 链的状态。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_ein_ml_modell_f_r_die_methodenauswahl', 'cli', 'de', 'Setzt ein ML-Modell für die Methodenauswahl', 0, 'auto_detected', '2026-02-02T03:35:38.876518', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_ein_ml_modell_f_r_die_methodenauswahl', 'cli', 'en', 'Sets an ML model for method selection', 0, 'waterfall_swarm', '2026-03-06 19:52:54', '2026-03-06 19:52:54');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_ein_ml_modell_f_r_die_methodenauswahl', 'cli', 'es', 'Establece un modelo ML para la selección de métodos', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -19554,9 +19554,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'de', 'Setzt Modus zurueck wenn Vollzugriff-Timeout abgelaufen.', 0, 'auto_detected', '2026-05-17T03:06:06.259422', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'en', 'Revert to read-only mode when full-access timeout expires.', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'es', 'Vuelve al modo cuando se agote el tiempo de espera para acceso completo.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'ja', 'Setzt Modus zurueck wenn Vollzugriff-Timeout abgelaufen。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'ja', '全アクセスのタイムアウトが切れたらモードを戻します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'ru', 'Возврат в режим, когда истек таймаут полного доступа.', 1, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'zh', 'Setzt Modus zurueck wenn Vollzugriff-Timeout abgelaufen。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('setzt_modus_zurueck_wenn_vollzugriff_timeout_abgel', 'cli', 'zh', '当完全访问超时到期时恢复模式。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('shutdown_handler_session_beenden_db_basiert', 'cli', 'de', 'Shutdown Handler - Session beenden (DB-basiert)
  ================================================
 
@@ -19805,14 +19805,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Liste von (Path, relative_name) Tupeln', 0, 'auto_detected', '2026-05-17T03:06:06.250029', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'en', 'skill-spezifische tools im skill-folder find.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'en', 'Find skill-specific tools in the skill folder.
 
-        Sucht after:
-        - *.py Dateien im Skill-Root
-        - tools/ Unterverzeichnis
+        Searches for:
+        - *.py files in the skill root
+        - tools/ subdirectory
 
         Returns:
-            list von (Path, relative_name) Tupeln', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+            List of (Path, relative_name) tuples', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'es', 'Herramientas específicas de habilidades en la búsqueda de carpetas de habilidades.
 
         Después de:
@@ -19821,30 +19821,30 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Devoluciones:
             list von (Ruta, nombre_relativo) Tupeln', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'ja', 'スキルフォルダーの検索でスキル固有のツールを見つけます。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'ja', 'スキルフォルダー内のスキル固有ツールを検索します。
 
-        その後:
-        - *.py Dateien im スキルルート
-        - ツール/Unterverzeichnis
+        検索対象:
+        - スキルルート内の *.py ファイル
+        - tools/ サブディレクトリ
 
         戻り値:
-            list von (パス、相対名) トゥペルン', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'ru', 'Специализированные инструменты в папке навыков.
+            (Path, relative_name) タプルのリスト', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'ru', 'Ищет специфичные для навыка инструменты в папке навыка.
 
-        Такое после:
-        - *.py Dateien im Skill-Root
-        - инструменты/Unterverzeichnis
+        Ищет:
+        - *.py файлы в корне навыка
+        - подкаталог tools/
 
         Возврат:
-            список фонов (Путь, относительное_имя) Tupeln', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'zh', '技能专用工具在技能文件夹中找到。
+            Список кортежей (Path, relative_name)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_tools_im_skill_ordner_finden', 'cli', 'zh', '在技能文件夹中查找技能专用工具。
 
-        如此之后：
-        - *.py Dateien im 技能根
-        - 工具/Unterverzeichnis
+        查找：
+        - 技能根目录中的 *.py 文件
+        - tools/ 子目录
 
         返回：
-            列表冯（路径，相对名称）Tupeln', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            (Path, relative_name) 元组列表', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'de', 'Skill-spezifische Workflows im Skill-Ordner finden.
 
         Sucht nach:
@@ -19853,14 +19853,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             Liste von (Path, relative_name) Tupeln', 0, 'auto_detected', '2026-05-17T03:06:06.178851', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'en', 'skill-spezifische Workflows im skill-folder find.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'en', 'Find skill-specific workflows in the skill folder.
 
-        Sucht after:
-        - workflow_*.md Dateien im Root
-        - workflows/ Unterverzeichnis
+        Searches for:
+        - workflow_*.md files in the root
+        - workflows/ subdirectory
 
         Returns:
-            list von (Path, relative_name) Tupeln', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+            List of (Path, relative_name) tuples', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'es', 'Flujos de trabajo específicos de habilidades en la búsqueda de carpetas de habilidades.
 
         Después de:
@@ -19869,14 +19869,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Devoluciones:
             list von (Ruta, nombre_relativo) Tupeln', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'ja', 'スキルフォルダーでワークフローを特定します。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'ja', 'スキルフォルダー内のスキル固有ワークフローを検索します。
 
-        その後:
-        - workflow_*.md Dateien im Root
-        - ワークフロー/Unterverzeichnis
+        検索対象:
+        - ルート内の workflow_*.md ファイル
+        - workflows/ サブディレクトリ
 
         戻り値:
-            list von (パス、相対名) トゥペルン', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+            (Path, relative_name) タプルのリスト', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('skill_spezifische_workflows_im_skill_ordner_finden', 'cli', 'ru', 'Специализированные рабочие процессы в папке навыков.
 
         Такое после:
@@ -19951,50 +19951,50 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
   bach smarthome info         Box Information
 
 Requirement: FritzBox accessible at fritz.box:49000 (TR-064).', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'es', 'Hogar inteligente (integración de FritzBox)
- ====================================
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'es', 'Smart Home (FritzBox Integration)
+ ==================================
 
-  estado de bach smarthome Verbindungs-Status
-  dispositivos bach smarthome Verbundene Geraete
-  bach smarthome wifi Estado WLAN
-  ancho de banda de bach smarthome Bandbreite
-  bach smarthome reconnect Internet neu verbinden
-  bach smarthome info Cuadro de información
+  bach smarthome status       Estado de la conexión
+  bach smarthome devices      Dispositivos conectados
+  bach smarthome wifi         Estado del WLAN
+  bach smarthome bandwidth    Ancho de banda
+  bach smarthome reconnect    Reconectar a Internet
+  bach smarthome info         Información de la Box
 
-Voraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'ja', 'スマートホーム (FritzBox 統合)
- =================================
+Requisito: FritzBox accesible en fritz.box:49000 (TR-064).', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'ja', 'スマートホーム（FritzBox 連携）
+ ==================================
 
-  bach スマートホーム ステータス Verbindungs-Status
-  bach スマートホーム デバイス Verbundene Geraete
-  bach スマートホーム wifi WLAN ステータス
-  bach スマートホーム帯域幅 Bandbreite
-  bach スマートホームがインターネットに再接続する neu verbinden
-  bach スマートホーム情報 Box-Informationen
+  bach smarthome status       接続状態
+  bach smarthome devices      接続済みデバイス
+  bach smarthome wifi         WLAN の状態
+  bach smarthome bandwidth    帯域幅
+  bach smarthome reconnect    インターネットに再接続
+  bach smarthome info         Box の情報
 
-内容: FritzBox unter fritz.box:49000 erreichbar (TR-064)。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'ru', 'Умный дом (интеграция с FritzBox)
- =================================
+前提: fritz.box:49000 で FritzBox にアクセスできること（TR-064）。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'ru', 'Умный дом (интеграция FritzBox)
+ ==================================
 
-  Статус умного дома Баха Verbindungs-Status
-  Устройства умного дома bach Verbundene Geraete
-  Умный дом Баха Wi-Fi Статус WLAN
-  Пропускная способность умного дома Баха Bandbreite
-  Умный дом Баха повторно подключился к Интернету
-  Информация об умном доме Баха Box-Informationen
+  bach smarthome status       Статус соединения
+  bach smarthome devices      Подключённые устройства
+  bach smarthome wifi         Статус WLAN
+  bach smarthome bandwidth    Пропускная способность
+  bach smarthome reconnect    Переподключить интернет
+  bach smarthome info         Информация о Box
 
-Выбор: FritzBox unter fritz.box:49000 erreichbar (TR-064).', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
+Требование: FritzBox доступна по адресу fritz.box:49000 (TR-064).', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smart_home_fritzbox_integration', 'cli', 'zh', '智能家居（FritzBox 集成）
- ===================================
+ ==================================
 
-  bach smarthome 状态 Verbindungs-Status
-  巴赫智能家居设备 Verbundene Geraete
-  bach smarthome wifi WLAN-状态
-  巴赫智能家居带宽 Bandbreite
-  巴赫智能家居重新连接互联网 neu verbinden
-  巴赫智能家居信息盒-Informationen
+  bach smarthome status       连接状态
+  bach smarthome devices      已连接设备
+  bach smarthome wifi         WLAN 状态
+  bach smarthome bandwidth    带宽
+  bach smarthome reconnect    重新连接互联网
+  bach smarthome info         Box 信息
 
-文件：FritzBox unter fritz.box:49000 erreichbar (TR-064)。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+前提：可通过 fritz.box:49000 访问 FritzBox（TR-064）。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('smarthomehandler_smart_home_integration_fritzbo', 'cli', 'de', 'SmartHomeHandler - Smart Home Integration (FritzBox)
  =====================================================
 
@@ -20217,36 +20217,36 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
             prompt: Der Prompt-Text
             use_continue: True = --continue (bestehende Session fortsetzen),
                           False = neue Session (voller System-Prompt)', 0, 'auto_detected', '2026-05-17T03:06:06.266920', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'en', 'Startet claude -p und Returns Antwort zurueck.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'en', 'Starts claude -p and returns the answer.
 
         Args:
-            prompt: Der Prompt-text
-            use_continue: True = --continue (bestehende session fortsetzen),
-                          False = neue session (voller system-Prompt)', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'es', 'Startet claude -p y Returns Responde zurueck.
+            prompt: The prompt text
+            use_continue: True = --continue (resume existing session),
+                          False = new session (full system prompt)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'es', 'Inicia claude -p y devuelve la respuesta.
 
         Argumentos:
-            mensaje: El texto del mensaje
-            use_continue: True = --continue (mejor sesión fortalecida),
-                          Falso = nueva sesión (voller system-Prompt)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'ja', 'Startet claude -p と Antwort zurueck を返します。
+            prompt: El texto del prompt
+            use_continue: True = --continue (continuar sesión existente),
+                          False = nueva sesión (prompt de sistema completo)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'ja', 'claude -p を起動し、回答を返します。
 
         引数:
-            プロンプト: プロンプトテキスト
-            use_ continue: True = -- continue (ベスト ヘンデ セッション フォートセッツェン)、
-                          False = 新しいセッション (ボリューム システム プロンプト)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'ru', 'Startet claude -p und Returns Antwort zurueck.
+            prompt: プロンプトテキスト
+            use_continue: True = --continue（既存セッションを継続）、
+                          False = 新しいセッション（完全なシステムプロンプト）', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'ru', 'Запускает claude -p и возвращает ответ.
 
         Аргументы:
-            подсказка: Der Prompt-text
-            use_continue: True = --continue (оптимизация сеанса),
-                          False = новый сеанс (системная подсказка voller)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'zh', '启动 claude -p 并返回 Antwort zurueck。
+            prompt: Текст промпта
+            use_continue: True = --continue (продолжить существующую сессию),
+                          False = новая сессия (полный системный промпт)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_claude_p_und_gibt_antwort_zurueck', 'cli', 'zh', '启动 claude -p 并返回答案。
 
         参数：
-            提示：Der Prompt-text
-            use_continue: True = --continue (bestehende session fortsetzen),
-                          False = neue 会话（voller 系统提示）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            prompt: 提示文本
+            use_continue: True = --continue（继续现有会话）、
+                          False = 新会话（完整系统提示）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_einen_neuen_pipeline_run_erstellt_eintrag', 'cli', 'de', 'Startet einen neuen Pipeline-Run (erstellt Eintrag in pipeline_runs).
 
         Args:
@@ -20290,11 +20290,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
         返回：
             run_id 成功，没有错误', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'de', 'Startet Listen-Loop in eigenem Thread. Gibt (Thread, StopEvent) zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.191447', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'en', 'Startet Listen-Loop in eigenem Thread. Returns (Thread, StopEvent) zurueck.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'es', 'Inicie el bucle de escucha en un hilo propio. Devuelve (Thread, StopEvent) zurueck.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'en', 'Starts the listen loop in its own thread. Returns (Thread, StopEvent).', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'es', 'Inicia el bucle de escucha en su propio hilo. Devuelve (Thread, StopEvent).', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'ja', 'eigenem スレッドで Listen-Loop を開始します。 (Thread, StopEvent) を返します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'ru', 'Начать цикл прослушивания в собственном потоке. Возвращает (Thread, StopEvent) zurueck.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'zh', '在特征线程中启动监听循环。返回 (Thread, StopEvent) zurueck。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'ru', 'Запускает цикл прослушивания в отдельном потоке. Возвращает (Thread, StopEvent).', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_listen_loop_in_eigenem_thread_gibt_threa', 'cli', 'zh', '在独立线程中启动监听循环。返回 (Thread, StopEvent)。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('startet_sofort_eine_claude_session_mit_dem_prompt', 'cli', 'de', 'Startet sofort eine Claude-Session mit dem Prompt.
 
         Nutzt Quick-Entry (Ctrl+Alt+Space) via pyautogui.
@@ -20591,14 +20591,14 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             list: Suchergebnisse als Dicts oder Fehlermeldung', 0, 'auto_detected', '2026-05-17T03:06:06.218519', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sucht_im_fts5_index_args_qu', 'cli', 'en', 'Sucht im FTS5-Index.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sucht_im_fts5_index_args_qu', 'cli', 'en', 'Searches the FTS5 index.
 
         Args:
-            query: Suchbegriff (FTS5-Syntax)
-            limit: Maximale Ergebnisse
+            query: Search term (FTS5 syntax)
+            limit: Maximum results
 
         Returns:
-            list: Suchergebnisse als Dicts oder Fehlermeldung', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+            list: Search results as dicts or error message', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('sucht_im_fts5_index_args_qu', 'cli', 'es', 'Esto es el índice FTS5.
 
         Argumentos:
@@ -20758,11 +20758,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiere_md_txt_f_r_legacy_support', 'cli', 'ru', 'Синхронизация .md -> .txt для поддержки устаревших версий', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiere_md_txt_f_r_legacy_support', 'cli', 'zh', 'Synchronisiere .md -> .txt 用于旧版支持', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'de', 'Synchronisiert DB-Status zurueck zu AUFGABEN.txt Dateien', 0, 'auto_detected', '2026-05-17T03:06:06.246246', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'en', 'Synchronisiert DB-status zurueck zu tasks.txt files', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'es', 'Sincronización de archivos DB-status zurueck zu task.txt', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'ja', 'Synchronisiert DB ステータス zurueck zu task.txt ファイル', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'en', 'Syncs DB status back to AUFGABEN.txt files', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'es', 'Sincroniza el estado de la DB de vuelta a los archivos AUFGABEN.txt', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'ja', 'DB ステータスを AUFGABEN.txt ファイルへ同期し戻します', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'ru', 'Синхронизация статуса БД с файлами Task.txt', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'zh', '同步 DB 状态 zurueck zutasks.txt 文件', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_db_status_zurueck_zu_aufgaben_txt_d', 'cli', 'zh', '将数据库状态同步回 AUFGABEN.txt 文件', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_skills_dateien_mit_db', 'cli', 'de', 'Synchronisiert skills/ Dateien mit DB.', 0, 'auto_detected', '2026-02-02T03:35:38.883979', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_skills_dateien_mit_db', 'cli', 'en', 'Synchronizes skills/ files with DB.', 0, 'waterfall_swarm', '2026-03-06 19:52:54', '2026-03-06 19:52:54');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('synchronisiert_skills_dateien_mit_db', 'cli', 'es', 'Sincroniza habilidades/archivos con DB.', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -21292,7 +21292,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('txt_dateien_aus_db_regenerieren', 'cli', 'ru', 'Восстановить файлы TXT из БД.', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('txt_dateien_aus_db_regenerieren', 'cli', 'zh', '从数据库重新生成 TXT 文件。', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'de', 'Uebersprungen: {skipped} (fehlen oder Lesefehler)', 0, 'auto_detected', '2026-05-17T03:06:06.206650', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'en', 'Uebersprungen: {skipped} (fehlen oder Lesefehler)', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'en', 'Skipped: {skipped} (missing or read errors)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'es', 'Uebersprungen: {omitido} (fehlen oder Lesefehler)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'ja', 'ウーバーシュプルンゲン: {スキップ} (fehlen oder Lesefehler)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('uebersprungen_skipped_fehlen_oder_lesefehler', 'cli', 'ru', 'Юберспрунген: {пропущено} (fehlen oder Lesefehler)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
@@ -21602,15 +21602,15 @@ bach update apply          Apply update (Backup + Pull + Migrate + Verify)
 bach update rollback       Rollback to the last pre-update backup
 bach update verify         Check system integrity
 bach update migrations     Show/run pending migrations', 1, 'manual_qa_1316', '2026-05-17T04:38:01.903621', '2026-09-16 09:14:46');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('update_handler_versions_und_update_verwaltung', 'cli', 'es', 'Controlador de actualizaciones - Versiones y actualizaciones
- ==================================================
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('update_handler_versions_und_update_verwaltung', 'cli', 'es', 'Update Handler - Gestión de versiones y actualizaciones
+ =================================================
 
-comprobación de actualización de bach Auf Actualizaciones pruefen
-estado de actualización de bach Aktuelle Version + Verifikation anzeigen
-bach update apply Actualizar einspielen (Copia de seguridad + Extraer + Migrar + Verificar)
-reversión de actualización de bach Revertir para hacer copia de seguridad previa a la actualización
-actualización de bach verificar System-Integritaet pruefen
-actualización de bach migraciones Ausstehende Migrationen anzeigen/ausfuehren', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+bach update check          Comprobar actualizaciones
+bach update status         Mostrar versión actual + verificación
+bach update apply          Aplicar actualización (Backup + Pull + Migrate + Verify)
+bach update rollback       Rollback al último backup pre-actualización
+bach update verify         Comprobar integridad del sistema
+bach update migrations     Mostrar/ejecutar migraciones pendientes', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('update_handler_versions_und_update_verwaltung', 'cli', 'ja', 'アップデートハンドラー - バージョンとアップデート管理
  =================================================
 
@@ -22033,39 +22033,39 @@ Aufgerufen von:
 
 Hinweis: USER.md liegt im BACH-Root-Verzeichnis (eine Ebene ueber system/).
          Pfad: BACH/USER.md', 0, 'auto_detected', '2026-05-17T03:06:06.268939', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'en', 'user_sync.py -- USER.md bidirektionale Synchronisation
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'en', 'user_sync.py -- USER.md bidirectional synchronization
 
-Liest USER.md und schreibt Aenderungen in user_profile table zurueck.
-Umgekehrt: DB -> USER.md (Regenerierung beim Shutdown).
+Reads USER.md and writes changes back to the user_profile table.
+Reverse: DB -> USER.md (regeneration on shutdown).
 
-Aufgerufen von:
-- bach --startup  (Block 0.07: USER.md -> DB)
-- bach --shutdown (Block 5.7: DB -> USER.md)
+Called by:
+- bach --startup  (block 0.07: USER.md -> DB)
+- bach --shutdown (block 5.7: DB -> USER.md)
 
-notice: USER.md liegt im BACH-Root-directory (eine Ebene ueber system/).
-         Pfad: BACH/USER.md', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'es', 'user_sync.py -- USER.md Sincronización bidireccional
+Note: USER.md is located in the BACH root directory (one level above system/).
+      Path: BACH/USER.md', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'es', 'user_sync.py -- Sincronización bidireccional de USER.md
 
-Liest USER.md y schreibt Aenderungen en la tabla user_profile zurueck.
-Umgekehrt: DB -> USER.md (Regeneración antes del apagado).
+Lee USER.md y devuelve los cambios a la tabla user_profile.
+Inverso: DB -> USER.md (regeneración al apagar).
 
-Aufgerufen von:
-- bach --startup (Bloque 0.07: USER.md -> DB)
-- bach --shutdown (Bloque 5.7: DB -> USER.md)
+Llamado por:
+- bach --startup  (bloque 0.07: USER.md -> DB)
+- bach --shutdown (bloque 5.7: DB -> USER.md)
 
-aviso: USER.md se encuentra en el directorio raíz BACH (eine Ebene ueber system/).
-         Página: BACH/USER.md', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'ja', 'user_sync.py -- USER.md 双方向同期
+Nota: USER.md está en el directorio raíz de BACH (un nivel encima de system/).
+      Ruta: BACH/USER.md', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'ja', 'user_sync.py -- USER.md の双方向同期
 
-user_profile テーブル zurueck の最も正しい USER.md と schreibt Aenderungen。
-例: DB -> USER.md (シャットダウン時の再生)。
+USER.md を読み取り、変更を user_profile テーブルに書き戻します。
+逆方向: DB -> USER.md（シャットダウン時に再生成）。
 
-アウフゲルフェン・フォン:
-- bach --startup (ブロック 0.07: USER.md -> DB)
+呼び出し元:
+- bach --startup  (ブロック 0.07: USER.md -> DB)
 - bach --shutdown (ブロック 5.7: DB -> USER.md)
 
-注意: USER.md liegt im BACH-Root-directory (eine Ebene ueber system/)。
-         Pfad: BACH/USER.md', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+注意: USER.md は BACH のルートディレクトリ（system/ の 1 つ上）にあります。
+      パス: BACH/USER.md', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'ru', 'user_sync.py -- Двунаправленная синхронизация USER.md
 
 Liest USER.md и schreibt Aenderungen в таблице user_profile.
@@ -22079,15 +22079,15 @@ Liest USER.md и schreibt Aenderungen в таблице user_profile.
          Pfad: BACH/USER.md', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('user_sync_py_user_md_bidirektionale_synchronisa', 'cli', 'zh', 'user_sync.py -- USER.md 双向同步
 
-位于 user_profile 表 zurueck 中的 USER.md 和 schreibt Aenderungen。
-Umgekehrt：DB -> USER.md（Regenerierung beim Shutdown）。
+读取 USER.md 并将更改写回 user_profile 表。
+反向：数据库 -> USER.md（关机时重新生成）。
 
-奥夫格鲁芬冯：
-- bach --startup （块 0.07：USER.md -> DB）
-- bach --shutdown （块 5.7：DB -> USER.md）
+调用方：
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
 
-注意：USER.md 位于 BACH 根目录（eine Ebene ueber system/）。
-         Pfad：BACH/USER.md', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+注意：USER.md 位于 BACH 根目录（system/ 的上一级）。
+      路径：BACH/USER.md', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_die_eingabedaten_returns', 'cli', 'de', 'Validiert die Eingabedaten.
 
         Returns:
@@ -22116,26 +22116,26 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
     Returns:
         Liste von Warnungen (leer wenn alles ok)', 0, 'auto_detected', '2026-05-17T03:06:06.239928', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'en', 'Validiert wichtige Pfade.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'en', 'Validates important paths.
 
     Returns:
-        list von Warnungen (empty wenn alles ok)', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'es', 'Validiert wichtige Pfade.
+        List of warnings (empty if everything is ok)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'es', 'Valida rutas importantes.
 
-    Devoluciones:
-        list von Warnungen (vacía cuando todo está bien)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'ja', 'Validiert wichtige Pfade。
+    Devuelve:
+        Lista de advertencias (vacía si todo está bien)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'ja', '重要なパスを検証します。
 
     戻り値:
-        list von Warnungen (空でも大丈夫です)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'ru', 'Validiert wichtige Pfade.
+        警告のリスト（すべて問題なければ空）', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'ru', 'Проверяет важные пути.
 
     Возврат:
-        list von Warnungen (пусто, если все ок)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'zh', '有效的 Pfade。
+        Список предупреждений (пуст, если всё в порядке)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_wichtige_pfade_returns_li', 'cli', 'zh', '验证重要路径。
 
     返回：
-        list von Warnungen（空 wenn alles ok）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+        警告列表（一切正常时为空）', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('validiert_workflow_dateien_auf_konsistentes_format', 'cli', 'de', 'Validiert Workflow-Dateien auf konsistentes Format.
 
         Verwendung:
@@ -22192,10 +22192,10 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verarbeitung_l_uft', 'cli', 'zh', '处理中...', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'de', 'Verfügbare Pfade:', 0, 'auto_detected', '2026-05-17T03:06:06.224270', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'en', 'Available paths:', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'es', 'Pfade verfügbare:', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'es', 'Rutas disponibles:', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'ja', '利用可能なパス:', 1, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'ru', 'Верфюгбаре Пфаде:', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'zh', 'Verfügbare Pfade：', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verf_gbare_pfade', 'cli', 'zh', '可用路径:', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_modelle_auflisten', 'cli', 'de', 'Verfuegbare Modelle auflisten.', 0, 'auto_detected', '2026-02-02T03:35:38.887824', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_modelle_auflisten', 'cli', 'en', 'List available models.', 0, 'waterfall_swarm', '2026-03-06 19:52:09', '2026-03-06 19:52:09');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_modelle_auflisten', 'cli', 'es', 'Listar modelos disponibles.', 0, 'google_auto', '2026-05-17T05:57:01.217417', '2026-05-17T05:57:01.217417');
@@ -22205,9 +22205,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'de', 'Verfuegbare Operationen mit Beschreibung.', 0, 'auto_detected', '2026-05-17T03:06:06.162788', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'en', 'Available operations with description.', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'es', 'Operaciones disponibles con descripción.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'ja', 'Verfuegbare Operationen mit Beschreibung。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'ja', '使用可能な操作とその説明。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'ru', 'Доступные операции с описанием.', 1, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'zh', 'Verfuegbare Operan mit Beschreibung。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verfuegbare_operationen_mit_beschreibung', 'cli', 'zh', '可用操作及其说明。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verhindert_mehrfachen_start_der_tray_app_nut', 'cli', 'de', 'Verhindert mehrfachen Start der Tray-App.
 
     Nutzt OS-Level Advisory Lock: msvcrt.locking (Windows) bzw. fcntl.flock (Unix).
@@ -22275,32 +22275,32 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             (success, message)', 0, 'auto_detected', '2026-05-17T03:06:06.275256', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'en', 'Versions-Check for einen skill (v2.0).
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'en', 'Version check for a skill (v2.0).
 
-        Vergleicht:
-        - Lokale Version (aus YAML-Header)
-        - Zentrale Version (falls verfügbar)
+        Compares:
+        - Local version (from YAML header)
+        - Central version (if available)
 
-        Prinzip: Immer die höchste Versionsnummer verwenden!
+        Principle: Always use the highest version number!
 
         Args:
-            name: skill-Name
+            name: Skill name
 
         Returns:
-            (success, message)', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'es', 'Versiones: compruebe si hay alguna habilidad (v2.0).
+            (success, message)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'es', 'Comprobación de versiones para un skill (v2.0).
 
-        Vergleicht:
-        - Versión local (como encabezado YAML)
-        - Versión Zentrale (falls verfügbar)
+        Compara:
+        - Versión local (del encabezado YAML)
+        - Versión central (si está disponible)
 
-        Principio: ¡Immer die höchste Versionsnummer verwenden!
+        Principio: ¡Usar siempre el número de versión más alto!
 
         Argumentos:
-            nombre: nombre-habilidad
+            name: Nombre del skill
 
-        Devoluciones:
-            (éxito, mensaje)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
+        Devuelve:
+            (success, message)', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'ja', 'バージョン - einen スキル (v2.0) を確認します。
 
         フェルグライヒト:
@@ -22314,32 +22314,32 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         戻り値:
             (成功、メッセージ)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'ru', 'Версии-Проверьте навык Einen (v2.0).
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'ru', 'Проверка версий для навыка (v2.0).
 
-        Значение:
-        - Локальная версия (например, YAML-заголовок)
-        - Версия Zentrale (водопад verfügbar)
+        Сравнивает:
+        - Локальную версию (из YAML-заголовка)
+        - Центральную версию (если доступна)
 
-        Принцип: Immer die Höchste Versionsnummer verwenden!
+        Принцип: Всегда использовать самый высокий номер версии!
 
         Аргументы:
-            имя: Имя навыка
+            name: Название навыка
 
         Возврат:
-            (успех, сообщение)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'zh', '版本 - 检查 einen 技能 (v2.0)。
+            (success, message)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versions_check_f_r_einen_skill_v2_0_ve', 'cli', 'zh', '技能版本检查 (v2.0)。
 
-        说明：
-        - Lokale 版本（aus YAML 标头）
-        - Zentrale 版本 (falls verfügbar)
+        比较：
+        - 本地版本（来自 YAML 标头）
+        - 中央版本（如可用）
 
-        原理： 立即查看版本号！
+        原则：始终使用最高的版本号！
 
         参数：
-            name: 技能-名称
+            name: 技能名称
 
         返回：
-            （成功，消息）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+            (success, message)', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('versucht_das_geburtsdatum_aus_dem_aktendeckblatt_z', 'cli', 'de', 'Versucht das Geburtsdatum aus dem Aktendeckblatt zu extrahieren.
         Fallback: Platzhalter ''01.01.2010''.
 
@@ -22436,24 +22436,24 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
     - Cada sistema tiene una base de datos local (~/.bach/bach.db)
     - OneDrive es compatible con Transit-Hub para archivos .bachdb
     - Sincronización entre BACH-Start (tirar) y -Salir (empujar)', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'ja', 'Verwaltet DB バックアップと ProSync zwischen Systemen。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'ja', 'DB バックアップとシステム間の ProSync を管理します。
 
-    ProSync アーキテクト:
-    - Jedes System ハットアインロケール DB (~/.bach/bach.db)
-    - OneDrive および Transit-Hub の .bachdb-Dateien
-    - BACH の同期 - 開始 (プル) と - 終了 (プッシュ)', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'ru', 'Verwaltet DB-Backups и ProSync zwischen Systemen.
+    ProSync アーキテクチャ:
+    - 各システムはローカル DB を持ちます (~/.bach/bach.db)
+    - OneDrive は .bachdb ファイルの中継ハブとして機能します
+    - BACH 起動時 (pull) と終了時 (push) に同期します', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'ru', 'Управляет бэкапами БД и ProSync между системами.
 
-    ProSync-Архитектура:
-    - Jedes System имеет локальную базу данных (~/.bach/bach.db)
-    - OneDrive используется как Transit-Hub для .bachdb-Dateien
-    - Синхронизация с BACH - Старт (тянуть) и Выход (нажимать)', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'zh', 'Verwaltet DB-Backups 和 ProSync zwischen Systemen。
+    Архитектура ProSync:
+    - У каждой системы локальная БД (~/.bach/bach.db)
+    - OneDrive служит транзитным хабом для файлов .bachdb
+    - Синхронизация при старте BACH (pull) и выходе (push)', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwaltet_db_backups_und_prosync_zwischen_systemen', 'cli', 'zh', '管理数据库备份和系统间的 ProSync。
 
-    ProSync-架构：
-    - Jedes System hat eine lokale DB (~/.bach/bach.db)
-    - OneDrive 用作 .bachdb-Dateien 的 Transit-Hub
-    - 同步 BACH 启动（拉）和退出（推）', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+    ProSync 架构：
+    - 每个系统各有一个本地数据库（~/.bach/bach.db）
+    - OneDrive 作为 .bachdb 文件的中转枢纽
+    - 在 BACH 启动（拉取）和退出（推送）时同步', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwenden_sie_bach_pipeline_status', 'cli', 'de', 'Verwenden Sie: bach pipeline status', 0, 'auto_detected', '2026-05-17T03:06:06.197520', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwenden_sie_bach_pipeline_status', 'cli', 'en', 'Verwenden Sie: bach pipeline status', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('verwenden_sie_bach_pipeline_status', 'cli', 'es', 'Verwenden Sie: estado del oleoducto de Bach', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -22545,11 +22545,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('wakeword_mikrofon_nicht_verfuegbar', 'cli', 'ru', '[WakeWord] Микрофон не доступен.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('wakeword_mikrofon_nicht_verfuegbar', 'cli', 'zh', '[WakeWord] Mikrofon nicht 可用。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'de', 'Warmup-Call um Modell in GPU zu laden. Gibt Dauer in Sekunden zurueck.', 0, 'auto_detected', '2026-05-17T03:06:06.251498', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'en', 'Warmup-Call um Modell in GPU zu load. Returns Dauer in Sekunden zurueck.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'es', 'Calentamiento: llame a un modelo en GPU para cargar. Dauer regresa en Sekunden zurueck.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'ja', 'ウォームアップ - ロード中の GPU でモデルを呼び出します。 Sekunden zurueck で Dauer を返します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'en', 'Warmup call to load the model into the GPU. Returns the duration in seconds.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'es', 'Llamada de calentamiento para cargar el modelo en la GPU. Devuelve la duración en segundos.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'ja', 'モデルを GPU に読み込むためのウォームアップ呼び出し。所要時間（秒）を返します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'ru', 'Разминка-вызов модели в графическом процессоре для загрузки. Возвращает Дауэра в Sekunden Zurueck.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'zh', 'GPU 负载中的预热-调用 um Modell。将 Dauer 返回到 Sekunden zurueck。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warmup_call_um_modell_in_gpu_zu_laden_gibt_dauer', 'cli', 'zh', '预热调用以将模型加载到 GPU。返回耗时（秒）。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warn_anonymizer_whitelist_konnte_nicht_geladen_w', 'cli', 'de', '[WARN] Anonymizer Whitelist konnte nicht geladen werden: {e}', 0, 'auto_detected', '2026-05-17T03:06:06.277450', '2026-05-17 01:06:06');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warn_anonymizer_whitelist_konnte_nicht_geladen_w', 'cli', 'en', '[WARN] Anonymizer whitelist konnte nicht loaded werden: {e}', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('warn_anonymizer_whitelist_konnte_nicht_geladen_w', 'cli', 'es', '[ADVERTENCIA] La lista blanca de Anonymizer no está cargada si: {e}', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
@@ -22757,15 +22757,15 @@ bach web-scrape screenshot <url>    Screenshot (braucht selenium)
 bach web-scrape headers <url>       Response-Headers anzeigen
 
 Task: 996', 0, 'auto_detected', '2026-05-17T03:06:06.275256', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('webscrapehandler_browser_steuerung_ersetzt_play', 'cli', 'en', 'WebScrapeHandler - Browser-Steuerung (ersetzt Playwright MCP)
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('webscrapehandler_browser_steuerung_ersetzt_play', 'cli', 'en', 'WebScrapeHandler - Browser Control (replaces Playwright MCP)
  ==============================================================
-bach web-scrape get <url>           HTTP GET, Body zurueckgeben
-bach web-scrape links <url>         Alle Links einer Seite
-bach web-scrape forms <url>         Formular-Felder erkennen
-bach web-scrape screenshot <url>    Screenshot (braucht selenium)
-bach web-scrape headers <url>       Response-Headers anzeigen
+bach web-scrape get <url>           HTTP GET, return body
+bach web-scrape links <url>         All links of a page
+bach web-scrape forms <url>         Detect form fields
+bach web-scrape screenshot <url>    Screenshot (requires selenium)
+bach web-scrape headers <url>       Show response headers
 
-Task: 996', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+Task: 996', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('webscrapehandler_browser_steuerung_ersetzt_play', 'cli', 'es', 'WebScrapeHandler - Configuración del navegador (ersetzt Dramaturgo MCP)
  =================================================================
 bach web-scrape get <url> HTTP GET, cuerpo zurueckgeben
@@ -22827,13 +22827,13 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
     Returns:
         Path (Override aus DB falls vorhanden, sonst Standard)', 0, 'auto_detected', '2026-05-17T03:06:06.229066', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('wie_get_path_aber_pr_ft_zuerst_db_overrides', 'cli', 'en', 'Wie get_path(), aber prüft zuerst DB-Overrides.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('wie_get_path_aber_pr_ft_zuerst_db_overrides', 'cli', 'en', 'Like get_path(), but checks DB overrides first.
 
     Args:
-        name: Pfadname
+        name: Path name
 
     Returns:
-        Path (Override aus DB falls vorhanden, sonst Standard)', 1, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+        Path (override from DB if present, otherwise default)', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('wie_get_path_aber_pr_ft_zuerst_db_overrides', 'cli', 'es', 'Como get_path(), también puede utilizar anulaciones de DB.
 
     Argumentos:
@@ -22919,63 +22919,63 @@ Aktualisiert: 2026-01-31', 0, 'auto_detected', '2026-05-17T03:06:06.184910', '20
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'en', 'Word Template Service
  =====================
 
-Allgemeiner Service for Word-Template-Befuellung via python-docx.
-Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
-Checkbox-Steuerung und Satzbausteine.
+Generic service for filling Word templates via python-docx.
+Supports placeholder replacement, table row filtering,
+checkbox control and text building blocks.
 
-Abhaengigkeit: python-docx (pip install python-docx)
+Dependency: python-docx (pip install python-docx)
 
-Version: 1.1.0 (Tabellen-Support for Förderziele)
-created: 2026-01-27
-updated: 2026-01-31', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+Version: 1.1.0 (table support for Förderziele)
+Created: 2026-01-27
+Updated: 2026-01-31', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'es', 'Servicio de plantillas de Word
- ======================
-
-Servicio completo para la configuración de plantillas de Word a través de python-docx.
-Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
-Checkbox-Steuerung und Satzbausteine.
-
-Configuración: python-docx (pip install python-docx)
-
-Versión: 1.1.0 (Tabellen-Support for Förderziele)
-creado: 2026-01-27
-actualizado: 2026-01-31', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'ja', 'Wordテンプレートサービス
  =====================
 
-python-docx 経由の Word-Template-Befuellung 用の Allgemeiner サービス。
-Unterstuetzt Platzhalter-Ersetzung、Tabellenzeilen-Filterung、
-チェックボックス - Steuerung und Satzbausteine。
+Servicio genérico para rellenar plantillas de Word mediante python-docx.
+Soporta reemplazo de placeholders, filtrado de filas de tablas,
+control de casillas de verificación y bloques de texto.
 
-Abhaengigkeit: python-docx (pip install python-docx)
+Dependencia: python-docx (pip install python-docx)
 
-バージョン: 1.1.0 (Tabellen-Förderziele のサポート)
+Versión: 1.1.0 (soporte de tablas para Förderziele)
+Creado: 2026-01-27
+Actualizado: 2026-01-31', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'ja', 'Word テンプレートサービス
+ =====================
+
+python-docx による Word テンプレート入力のための汎用サービスです。
+プレースホルダー置換、テーブル行のフィルタリング、
+チェックボックス制御、文章ブロックをサポートします。
+
+依存関係: python-docx (pip install python-docx)
+
+バージョン: 1.1.0（Förderziele のテーブル対応）
 作成日: 2026-01-27
-更新日: 2026-01-31', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'ru', 'Служба шаблонов слов
+更新日: 2026-01-31', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'ru', 'Служба шаблонов Word
  =====================
 
-Сервис Allgemeiner для Word-Template-Befuellung через python-docx.
-Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
-Флажок-Steuerung und Satzbausteine.
+Универсальный сервис для заполнения шаблонов Word через python-docx.
+Поддерживает замену плейсхолдеров, фильтрацию строк таблиц,
+управление чекбоксами и текстовые блоки.
 
-Abhaengigkeit: python-docx (pip install python-docx)
+Зависимость: python-docx (pip install python-docx)
 
-Версия: 1.1.0 (Tabellen-поддержка Förderziele)
-создано: 27.01.2026
-обновлено: 31 января 2026 г.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'zh', 'Word模板服务
+Версия: 1.1.0 (поддержка таблиц для Förderziele)
+Создано: 2026-01-27
+Обновлено: 2026-01-31', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('word_template_service_allge', 'cli', 'zh', 'Word 模板服务
  =====================
 
-通过 python-docx 提供 Word-Template-Befuellung 的 Allgemeiner 服务。
-Unterstuetzt Platzhalter-Ersetzung, Tabellnzeilen-Filterung,
-复选框-Steuerung 和Satzbausteine。
+通过 python-docx 填充 Word 模板的通用服务。
+支持占位符替换、表格行过滤、
+复选框控制和文本模块。
 
-Abhaengigkeit：python-docx (pip install python-docx)
+依赖：python-docx (pip install python-docx)
 
-版本：1.1.0（Tabellen-Förderziele 支持）
-创建时间：2026-01-27
-更新时间：2026-01-31', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+版本：1.1.0（支持 Förderziele 表格）
+创建：2026-01-27
+更新：2026-01-31', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_format_validator', 'cli', 'de', 'Workflow Format-Validator
  =========================
 Prueft Workflow-Dateien auf konsistentes Format.
@@ -23160,18 +23160,18 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 
         Returns:
             0 = SUCCESS', 0, 'auto_detected', '2026-05-17T03:06:06.182893', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'en', 'Shows aktuellen Seal-status.
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'en', 'Shows the current seal status.
 
         Returns:
-            0 = SUCCESS', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+            0 = SUCCESS', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'es', 'Muestra el estado del sello actual.
 
         Devoluciones:
             0 = ÉXITO', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'ja', 'aktuellen シールのステータスを表示します。
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'ja', '現在の Seal ステータスを表示します。
 
         戻り値:
-            0 = 成功', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+            0 = SUCCESS', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_aktuellen_seal_status_returns', 'cli', 'ru', 'Показывает актуальный статус печати.
 
         Возврат:
@@ -23211,7 +23211,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_daemon_status', 'cli', 'ru', 'Показывает статус демона.', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_daemon_status', 'cli', 'zh', '显示守护进程状态。', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'de', 'Zeigt den aktuellen Status an.', 0, 'auto_detected', '2026-05-17T03:06:06.182893', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'en', 'Shows den aktuellen status an.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'en', 'Shows the current status.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'es', 'Muestra el estado actual de la guarida.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'ja', 'デン・アクチュエレン・ステータスを示します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('zeigt_den_aktuellen_status_an', 'cli', 'ru', 'Показывает актуальный статус.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
@@ -24966,7 +24966,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'en', 'created die workflow_tuev table und synchronisiert mit Dateisystem.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'es', 'Creó la tabla flowwork_tuev y la sincronizó con el sistema de fechas.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'ja', 'workflow_tuev テーブルとデータシステムの同期を作成しました。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'ru', 'создал таблицу workflow_tuev и синхронизировал ее с системой Datei.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'ru', 'Создаёт таблицу workflow_tuev и синхронизирует её с файловой системой.', 1, 'manual_qa_1317', '2026-05-17T07:01:15.980267', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_die_workflow_tuev_tabelle_und_synchronisi', 'gui', 'zh', '创建了工作流程_tuev 表并与数据系统同步。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_ein_anonymisierungsprofil', 'gui', 'de', 'Erstellt ein Anonymisierungsprofil.', 0, 'auto_detected', '2026-02-02T03:38:26.252708', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('erstellt_ein_anonymisierungsprofil', 'gui', 'en', 'Creates an anonymization profile.', 0, 'waterfall_swarm', '2026-03-06 19:52:36', '2026-03-06 19:52:36');
@@ -25317,9 +25317,9 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_imap_presets_fuer_bekannte_provider_zurueck', 'gui', 'ru', 'Возвращает предустановки IMAP для известных провайдеров.', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_imap_presets_fuer_bekannte_provider_zurueck', 'gui', 'zh', '返回已知提供商的 IMAP 预设。', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'de', 'Gibt Jobs zurueck, die in den naechsten 60 Sekunden faellig sind.', 0, 'auto_detected', '2026-05-17T03:06:06.284962', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'en', 'Returns Jobs zurueck, die in den naechsten 60 Sekunden faellig sind.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'es', 'Devuelve Jobs zurueck, die in den naechsten 60 Sekunden faellig sind.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'ja', '戻りジョブ zurueck、den naechsten 60 Sekunden faellig sind で死ぬ。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'en', 'Returns jobs that are due within the next 60 seconds.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'es', 'Devuelve los trabajos que vencen en los próximos 60 segundos.', 1, 'manual_qa_1317', '2026-05-17T06:51:57.361081', '2026-09-16T11:28:30.072531');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'ja', '今後 60 秒以内に期限が来るジョブを返します。', 1, 'manual_qa_1317', '2026-05-17T07:04:20.383002', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'ru', 'Возвращает Джобса после того, как он умрет в течение 60 секунд.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_jobs_zurueck_die_in_den_naechsten_60_sekunde', 'gui', 'zh', '返回乔布斯祖鲁克，死于 den naechsten 60 Sekunden faellig sind。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('gibt_zur_ck_ob_der_watcher_l_uft', 'gui', 'de', 'Gibt zurück ob der Watcher läuft.', 0, 'auto_detected', '2026-02-02T03:38:26.252190', NULL);
@@ -25737,11 +25737,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status', 'gui', 'ru', 'Возвращает текущий статус демона.', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status', 'gui', 'zh', '返回当前守护进程状态。', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'de', 'Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken.', 0, 'auto_detected', '2026-05-17T03:06:06.282937', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'en', 'Liefert aktuellen daemon-status mit Job-Statistiken und Runtime-Metriken.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'en', 'Returns the current daemon status with job statistics and runtime metrics.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'es', 'Active el estado del demonio con estadísticas de trabajo y mediciones de tiempo de ejecución.', 0, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'ja', 'ジョブ統計とランタイムメトリケンを含むデーモンステータスを取得します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'ru', 'Активируется статус демона с параметрами Job-Statistiken и Runtime-Metriken.', 0, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'zh', 'Liefert aktuellen daemon-status mit Job-Statistiken 和 Runtime-Metriken。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_aktuellen_daemon_status_mit_job_statistike', 'gui', 'zh', '返回当前守护进程状态，包含作业统计和运行时指标。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_ati_statistiken_inkl_tages_z_hler', 'gui', 'de', 'Liefert ATI-Statistiken inkl. Tages-Zähler.', 0, 'auto_detected', '2026-02-02T03:38:26.252708', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_ati_statistiken_inkl_tages_z_hler', 'gui', 'en', 'Returns ATI statistics including daily counter.', 0, 'waterfall_swarm', '2026-03-06 19:52:36', '2026-03-06 19:52:36');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('liefert_ati_statistiken_inkl_tages_z_hler', 'gui', 'es', 'Devuelve estadísticas de ATI, incluido el contador diario.', 0, 'google_auto', '2026-05-17T06:08:46.131662', '2026-05-17T06:08:46.131662');
@@ -26421,11 +26421,11 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pid_exists_status', 'gui', 'ru', 'PID существует: {статус[', 0, 'google_auto', '2026-05-17T06:24:37.729914', '2026-05-17T06:24:37.729914');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pid_exists_status', 'gui', 'zh', 'PID 存在：{状态[', 0, 'google_auto', '2026-05-17T06:40:24.434869', '2026-05-17T06:40:24.434869');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'de', 'Prüft ob Bridge-Daemon läuft.', 0, 'auto_detected', '2026-05-17T03:06:06.280920', '2026-05-17 01:06:06');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'en', 'Prüft ob Bridge-daemon läuft.', 0, 'mixed_auto', '2026-05-17T04:38:01.903621', '2026-05-17T04:38:01.903621');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'en', 'Checks if the Bridge daemon is running.', 1, 'manual_qa_1317', '2026-05-17T04:38:01.903621', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'es', 'Comprueba si el daemon de Bridge está en ejecución.', 1, 'google_auto', '2026-05-17T06:51:57.361081', '2026-05-17T06:51:57.361081');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'ja', 'Bridge デーモンを終了します。', 0, 'google_auto', '2026-05-17T07:04:20.383002', '2026-05-17T07:04:20.383002');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'ru', 'Проверяет, работает ли демон Bridge.', 1, 'google_auto', '2026-05-17T07:01:15.980267', '2026-05-17T07:01:15.980267');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'zh', 'Prüft ob Bridge-daemon läuft。', 0, 'google_auto', '2026-05-17T07:11:17.069268', '2026-05-17T07:11:17.069268');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_bridge_daemon_l_uft', 'gui', 'zh', '检查 Bridge 守护进程是否正在运行。', 1, 'manual_qa_1317', '2026-05-17T07:11:17.069268', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_dateiinhalt_sich_ge_ndert_hat', 'gui', 'de', 'Prüft ob Dateiinhalt sich geändert hat.', 0, 'auto_detected', '2026-02-02T03:38:26.252708', NULL);
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_dateiinhalt_sich_ge_ndert_hat', 'gui', 'en', 'Checks whether file content has changed.', 0, 'waterfall_swarm', '2026-03-06 19:52:15', '2026-03-06 19:52:15');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('pr_ft_ob_dateiinhalt_sich_ge_ndert_hat', 'gui', 'es', 'Comprueba si el contenido del archivo ha cambiado.', 0, 'google_auto', '2026-05-17T06:00:34.349852', '2026-05-17T06:00:34.349852');
@@ -36864,119 +36864,119 @@ NOTES
 - Automatically generated from the docstring
 - Questions: bach tools show agent_cli', 0, 'manual', '2026-05-17T18:08:07.912548', '2026-05-17T18:08:07.912548');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('tools/agent_cli', 'help_doc', 'es', 'BACH Tool: agent_cli
---------------------------------------------------
-Generiert: 2026-01-23 10:36
-Quelle: tools/agent_cli.py
+ ==================================================
+Generado: 2026-01-23 10:36
+Fuente: tools/agent_cli.py
 
-BESCHREIBUNG
+DESCRIPCIÓN
 ----------------------------------------
 BACH Agent CLI v1.0.0
----------------------
+ =====================
 
-CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+CLI-Tool para administrar agentes y expertos de BACH.
 
 Features:
-- Agenten auflisten und aktivieren
-- Experten anzeigen
-- User-Ordner initialisieren
-- Datenbank-Schema anwenden
+- Listar y activar agentes
+- Mostrar expertos
+- Inicializar carpeta de usuario
+- Aplicar esquema de base de datos
 
 Usage:
-    python agent_cli.py list                    # Alle Agenten
-    python agent_cli.py experts                 # Alle Experten
-    python agent_cli.py info <agent>            # Agent-Details
-    python agent_cli.py init <agent>            # User-Ordner erstellen
-    python agent_cli.py setup-db                # Datenbank initialisieren
-    python agent_cli.py status                  # System-Status
+    python agent_cli.py list                    # Todos los agentes
+    python agent_cli.py experts                 # Todos los expertos
+    python agent_cli.py info <agent>            # Detalles del agente
+    python agent_cli.py init <agent>            # Crear carpeta de usuario
+    python agent_cli.py setup-db                # Inicializar base de datos
+    python agent_cli.py status                  # Estado del sistema
 
 Autor: BACH System
-Datum: 2026-01-20
+Fecha: 2026-01-20
 
-VERWENDUNG
+USO
 ----------------------------------------
 python bach.py tools run agent_cli [args]
-oder direkt: python tools/agent_cli.py [args]
+o directamente: python tools/agent_cli.py [args]
 
-HINWEISE
+NOTAS
 ----------------------------------------
-- Automatisch generiert aus Docstring
-- Bei Fragen: bach tools show agent_cli', 0, 'filesystem-import-20260823', '2026-08-23 07:28:21', '2026-08-23 07:28:21');
+- Generado automáticamente a partir del docstring
+- Preguntas: bach tools show agent_cli', 1, 'manual_qa_1317', '2026-08-23 07:28:21', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('tools/agent_cli', 'help_doc', 'ja', 'BACH Tool: agent_cli
---------------------------------------------------
-Generiert: 2026-01-23 10:36
-Quelle: tools/agent_cli.py
+ ==================================================
+生成日時: 2026-01-23 10:36
+ソース: tools/agent_cli.py
 
-BESCHREIBUNG
+説明
 ----------------------------------------
 BACH Agent CLI v1.0.0
----------------------
+ =====================
 
-CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+BACH エージェントと専門家を管理するための CLI ツール。
 
-Features:
-- Agenten auflisten und aktivieren
-- Experten anzeigen
-- User-Ordner initialisieren
-- Datenbank-Schema anwenden
+機能:
+- エージェントの一覧表示と有効化
+- 専門家の表示
+- ユーザーフォルダーの初期化
+- データベーススキーマの適用
 
 Usage:
-    python agent_cli.py list                    # Alle Agenten
-    python agent_cli.py experts                 # Alle Experten
-    python agent_cli.py info <agent>            # Agent-Details
-    python agent_cli.py init <agent>            # User-Ordner erstellen
-    python agent_cli.py setup-db                # Datenbank initialisieren
-    python agent_cli.py status                  # System-Status
+    python agent_cli.py list                    # すべてのエージェント
+    python agent_cli.py experts                 # すべての専門家
+    python agent_cli.py info <agent>            # エージェントの詳細
+    python agent_cli.py init <agent>            # ユーザーフォルダーを作成
+    python agent_cli.py setup-db                # データベースを初期化
+    python agent_cli.py status                  # システム状態
 
-Autor: BACH System
-Datum: 2026-01-20
+作成者: BACH System
+日付: 2026-01-20
 
-VERWENDUNG
+使用方法
 ----------------------------------------
 python bach.py tools run agent_cli [args]
-oder direkt: python tools/agent_cli.py [args]
+または直接: python tools/agent_cli.py [args]
 
-HINWEISE
+注意事項
 ----------------------------------------
-- Automatisch generiert aus Docstring
-- Bei Fragen: bach tools show agent_cli', 0, 'filesystem-import-20260823', '2026-08-23 07:28:21', '2026-08-23 07:28:21');
+- Docstring から自動生成
+- 質問は: bach tools show agent_cli', 1, 'manual_qa_1317', '2026-08-23 07:28:21', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('tools/agent_cli', 'help_doc', 'ru', 'BACH Tool: agent_cli
---------------------------------------------------
-Generiert: 2026-01-23 10:36
-Quelle: tools/agent_cli.py
+ ==================================================
+Сгенерировано: 2026-01-23 10:36
+Источник: tools/agent_cli.py
 
-BESCHREIBUNG
+ОПИСАНИЕ
 ----------------------------------------
 BACH Agent CLI v1.0.0
----------------------
+ =====================
 
-CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+CLI-инструмент для управления агентами и экспертами BACH.
 
-Features:
-- Agenten auflisten und aktivieren
-- Experten anzeigen
-- User-Ordner initialisieren
-- Datenbank-Schema anwenden
+Возможности:
+- Список и активация агентов
+- Показ экспертов
+- Инициализация пользовательской папки
+- Применение схемы базы данных
 
 Usage:
-    python agent_cli.py list                    # Alle Agenten
-    python agent_cli.py experts                 # Alle Experten
-    python agent_cli.py info <agent>            # Agent-Details
-    python agent_cli.py init <agent>            # User-Ordner erstellen
-    python agent_cli.py setup-db                # Datenbank initialisieren
-    python agent_cli.py status                  # System-Status
+    python agent_cli.py list                    # Все агенты
+    python agent_cli.py experts                 # Все эксперты
+    python agent_cli.py info <agent>            # Детали агента
+    python agent_cli.py init <agent>            # Создать папку пользователя
+    python agent_cli.py setup-db                # Инициализировать базу данных
+    python agent_cli.py status                  # Статус системы
 
-Autor: BACH System
-Datum: 2026-01-20
+Автор: BACH System
+Дата: 2026-01-20
 
-VERWENDUNG
+ИСПОЛЬЗОВАНИЕ
 ----------------------------------------
 python bach.py tools run agent_cli [args]
-oder direkt: python tools/agent_cli.py [args]
+или напрямую: python tools/agent_cli.py [args]
 
-HINWEISE
+ЗАМЕТКИ
 ----------------------------------------
-- Automatisch generiert aus Docstring
-- Bei Fragen: bach tools show agent_cli', 0, 'filesystem-import-20260823', '2026-08-23 07:28:21', '2026-08-23 07:28:21');
+- Автоматически сгенерировано из docstring
+- Вопросы: bach tools show agent_cli', 1, 'manual_qa_1317', '2026-08-23 07:28:21', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('tools/agent_cli', 'help_doc', 'zh', '巴赫工具：agent_cli
 --------------------------------------------------
 生成时间：2026-01-23 10:36
@@ -43797,7 +43797,7 @@ INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, 
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_two_expert_pipeline', 'skills', 'zh', '工作流程：根文档审核（两位专家管道）', 0, 'google_auto', '2026-05-17T10:02:23.078896', '2026-05-17T10:02:23.078896');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'de', 'Workflow: Root-Docs-Review (Zwei-Experten-Pipeline)', 1, 'manual', '2026-05-17T08:56:39.179250', '2026-05-17T08:56:39.179250');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'en', 'Workflow: Root Docs Review (Two-Expert Pipeline)', 0, 'google_auto', '2026-05-17T08:56:39.179250', '2026-05-17T08:56:39.179250');
-INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'es', 'Workflow: Root-Docs-Review (Zwei-Experten-Pipeline)', 1, 'google_auto', '2026-05-17T09:20:57.594245', '2026-05-17T09:20:57.594245');
+INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'es', 'Flujo de trabajo: revisión de documentos raíz (canalización de dos expertos)', 1, 'manual_qa_1317', '2026-05-17T09:20:57.594245', '2026-09-16T11:28:30.072531');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'ja', 'ワークフロー: ルートドキュメントのレビュー (2 人の専門家によるパイプライン)', 0, 'google_auto', '2026-05-17T09:50:31.586908', '2026-05-17T09:50:31.586908');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'ru', 'Рабочий процесс: проверка корневых документов (конвейер с двумя экспертами)', 0, 'google_auto', '2026-05-17T09:38:49.928794', '2026-05-17T09:38:49.928794');
 INSERT OR REPLACE INTO languages_translations (key, namespace, language, value, is_verified, source, created_at, updated_at) VALUES ('workflow_root_docs_review_zwei_experten_pipeline', 'skills', 'zh', '工作流程：根文档审核（两位专家管道）', 0, 'google_auto', '2026-05-17T10:02:23.078896', '2026-05-17T10:02:23.078896');

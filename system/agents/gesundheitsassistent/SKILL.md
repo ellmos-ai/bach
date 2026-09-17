@@ -144,7 +144,7 @@ Tabellen in bach.db:
 - bach_experts (Gesundheitsverwalter, Psycho-Berater)
 - agent_expert_mapping (Zuordnung)
 
-Tabellen in user.db (Gesundheitsverwalter):
+Tabellen in bach.db (Gesundheitsverwalter):
 
 - health_contacts (Aerzte, Institutionen)
 - health_diagnoses (Diagnosen mit ICD-10)
@@ -153,7 +153,7 @@ Tabellen in user.db (Gesundheitsverwalter):
 - health_documents (Befunde, Berichte)
 - health_appointments (Termine)
 
-Tabellen in user.db (Psycho-Berater):
+Tabellen in bach.db (Psycho-Berater):
 
 - psycho_sessions (Sitzungsprotokolle)
 - psycho_observations (Hypothesen, Muster)

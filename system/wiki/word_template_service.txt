@@ -1,14 +1,42 @@
+# Portabilitaet: BACH (System-spezifisch)
+# Zuletzt validiert: 2026-09-17 (Buddha/BACH wiki-author, Vollrevision Task #1327)
+# Status: Aktuell - Vollrevision nach Modus-C-Stichprobe 2026-09-17 (4/12 korrekt);
+#         saemtliche Abschnitte gegen Code v1.1.0 neu verifiziert, 7 Fehler behoben
+#         (falsche Methoden-Namen, Phantom-vMerge-Sektion, Namespace-Typo)
+# Naechste Pruefung: 2027-03-17 (regulaeres Intervall wiederhergestellt)
+# Quellen: [code:hub/_services/document/word_template_service.py v1.1.0],
+#          [PyPI: python-docx 1.2.0], [MS Learn: Checked Class, DocumentFormat.OpenXml.Office2010.Word]
+
 WORDTEMPLATESERVICE - TECHNISCHE REFERENZ
 ==========================================
 
-Stand: 2026-01-27
-Status: Produktiv (v1.1)
+Stand: 2026-09-17 (Code v1.1.0, Erstellt 2026-01-27, Aktualisiert 2026-01-31)
+Status: Produktiv
 
-Der WordTemplateService fuellt Word-Vorlagen mit Daten aus einer
-JSON-Struktur. Er ist ein allgemeiner BACH-Service, der vom
-Foerderbericht-System genutzt wird.
+Der WordTemplateService fuellt Word-Vorlagen (.docx) mit Daten aus
+Python-Strukturen via python-docx. Er ist ein allgemeiner BACH-Service
+und wird vom ReportWorkflowService der Foerderbericht-Pipeline genutzt
+(hub/_services/document/report_workflow_service.py, Z.94 + Z.1594).
 
 Datei: hub/_services/document/word_template_service.py
+Abhaengigkeit: python-docx (pip install python-docx)
+
+
+TYPISCHER ABLAUF
+=================
+
+Es gibt KEINE Methode fill_template(). Laden und Speichern erfolgen
+explizit ueber zwei getrennte Aufrufe:
+
+    svc = WordTemplateService()
+    doc = svc.load_template("vorlage.docx")
+    svc.replace_placeholders(doc, {"{{NAME}}": "Max Mustermann"})
+    svc.filter_table_rows(doc.tables[2], keep_column=0,
+                          keep_values=["D350", "D710"])
+    svc.set_checkbox(doc, "Einzelfoerderung", checked=True)
+    svc.save(doc, "bericht.docx")
+
+save() legt fehlende Zielverzeichnisse automatisch an (mkdir parents).
 
 
 PLATZHALTER-SYSTEM
@@ -17,17 +45,28 @@ PLATZHALTER-SYSTEM
 Platzhalter in der Word-Vorlage haben das Format: {{NAME}}
 
   Beispiele:
-    {{NAME}}                 → "Felix Bergmann"
-    {{GEBURTSDATUM}}         → "22.07.2016"
-    {{SACHBEARBEITER}}       → "Frau Hoffmann"
-    {{DIAGNOSEN}}            → Diagnose-Text
+    {{NAME}}                 -> "Felix Bergmann"
+    {{GEBURTSDATUM}}         -> "22.07.2016"
+    {{SACHBEARBEITER}}       -> "Frau Hoffmann"
+    {{DIAGNOSEN}}            -> Diagnose-Text
 
   Regeln:
   - Doppelte geschweifte Klammern: {{ und }}
   - Grossbuchstaben mit Unterstrichen
-  - Platzhalter koennen in Paragraphen ODER Tabellenzellen stehen
-  - Ein Platzhalter kann ueber mehrere Runs verteilt sein
-    (Word fragmentiert Text intern in Runs)
+  - Die Keys im data-Dict muessen die KLAMMERN enthalten:
+      {"{{NAME}}": "Max Mustermann"}
+    Auch reine Text-Suchmuster ohne Klammern sind erlaubt
+    (replace_placeholders ersetzt beliebigen Text, z.B.
+     "Vorname und Nachname" -> "Max M.")
+
+  Wo wird ersetzt (replace_placeholders durchlaeuft alle 4 Ebenen):
+  - Alle Paragraphen des Bodys via XML-Iteration ueber w:p
+    (erfasst auch Textboxen, die doc.paragraphs NICHT findet)
+  - Alle w:t-Textelemente direkt (erfasst SDT/Content-Control-Inhalte)
+  - Tabellen inkl. darin verschachtelter Inhalte
+  - Kopf- und Fusszeilen aller Sectionen
+
+  Rueckgabewert: Anzahl der durchgefuehrten Ersetzungen.
 
 
 RUN-FRAGMENTIERUNG
@@ -40,157 +79,214 @@ Word speichert Text nicht als zusammenhaengenden String, sondern als
   Run 1: "{{NA"
   Run 2: "ME}}"
 
-Der Service erkennt dies und fuegt Runs zusammen:
+Der Service erkennt dies und fuehrt Runs zusammen (Modul-Hilfsfunktion
+_replace_in_paragraph):
   1. Alle Runs eines Paragraphen zu einem String verketten
-  2. Platzhalter im Gesamtstring suchen
-  3. Ersetzung durchfuehren
-  4. Ergebnis in den ersten Run schreiben, restliche Runs leeren
+  2. Suchtext im Gesamtstring finden
+  3. Liegt der Text in EINEM Run: direkte Ersetzung in diesem Run
+     (Formatierung aller anderen Runs bleibt unberuehrt)
+  4. Sonst: Ergebnis in den ersten Run schreiben, restliche Runs leeren
+     (die Formatierung des ersten Runs gewinnt)
 
 
 TABELLEN-VERARBEITUNG
 =====================
 
-DYNAMISCHE FOERDERZIEL-TABELLEN
----------------------------------
-Die Vorlage enthaelt eine Foerderziele-Tabelle mit Platzhalter-Zeilen:
+Es gibt vier Tabellen-Ansaetze im Service:
 
-  | ICF-Code | Zielformulierung | Ist-Stand | Erreicht |
-  |----------|------------------|-----------|----------|
-  | {{Z1_C}} | {{Z1_ZIEL}}      | {{Z1_IST}}| {{Z1_E}} |
-  | {{Z2_C}} | {{Z2_ZIEL}}      | {{Z2_IST}}| {{Z2_E}} |
+A) ZEILEN-FILTERUNG: filter_table_rows(table, keep_column, keep_values,
+   header_rows=1, keep_section_headers=True) -> int
+   Entfernt Zeilen, deren Wert in Spalte keep_column (0-basiert) NICHT
+   in keep_values steht. Vergleich: strip() + upper() auf beiden Seiten.
+     - header_rows: Kopfzeilen werden nie geloescht (Standard: 1)
+     - Leere Zelle in der Filterspalte = Kapitel-Header-Zeile; wird
+       bei keep_section_headers=True (Standard) behalten
+     - Loeschen von hinten nach vorn (Index-Stabilitaet)
+     - Rueckgabe: Anzahl geloeschter Zeilen
 
-Der Generator:
-  1. Fuellt vorhandene Platzhalter-Zeilen mit Daten
-  2. Entfernt ueberzaehlige Platzhalter-Zeilen
-  3. Fuegt bei Bedarf neue Zeilen hinzu (Zeile klonen)
+B) VORLAGENZEILEN-KLONEN: fill_table_rows(table, data_rows, column_mapping,
+   template_row_index=1, clear_template=True) -> int
+   Fuer Tabellen mit variabler Zeilenzahl (z.B. Foerderziele):
+     - data_rows: Liste von Dicts, z.B.
+         [{"icf_code": "D350", "ist_stand": "...", "erreicht": "2"}]
+     - column_mapping: Dict-Key -> Spaltenindex,
+         z.B. {"icf_code": 0, "ist_stand": 2, "erreicht": 3}
+     - Die Vorlagezeile (template_row_index, Standard 1) wird per
+       XML-Deep-Copy fuer jede Datenzeile geklont und direkt dahinter
+       eingefuegt; Text landet im ersten Run der Zielzelle
+       (Formatierung der Vorlage bleibt erhalten)
+     - clear_template=True entfernt die Vorlagezeile danach
+     - Rueckgabe: Anzahl eingefuegter Zeilen
 
+C) FOERDERZIEL-SPEZIALISIERUNG: fill_foerderziele_table(doc,
+   foerderziele, table_index=0) -> int
+   Erkennt Spalten AUTOMATISCH ueber Header-Keywords (kleingeschrieben):
+     "icf" oder "code"                    -> icf_code
+     "ziel" UND "formulierung"            -> zielformulierung
+     "ist", "stand" oder "beschreibung"   -> ist_stand
+     "erreicht" oder "bewertung"         -> erreicht
+     "grund"                             -> grund_nichterreichung
+   Werte-Mapping fuer erreicht: 1 -> "nicht erreicht",
+   2 -> "teilweise erreicht", 3 -> "erreicht".
+   Ohne Treffer: Fallback-Reihenfolge icf_code/zielformulierung/
+   ist_stand/erreicht auf Spalten 0-3. Delegiert an fill_table_rows.
 
-ICF-BEREICHS-FILTERUNG (3-PHASEN-ALGORITHMUS)
------------------------------------------------
-Inaktive ICF-Bereiche werden aus dem Dokument entfernt:
+D) ICF-ZEILEN-PLATZHALTER: fill_icf_placeholders_and_cleanup(table,
+   foerderziele, header_rows=1) -> Tuple[int, int]
+   Template-Format pro Zeile (EINFACHE geschweifte Klammern —
+   bewusst anders als {{NAME}}):
+     ICF-Code | Kapitel | {CODE-Ziel} | {CODE-Ist} | {CODE-E} | {CODE-G}
+     Beispiel: D350 | Konversation | {D350-Ziel} | {D350-Ist} | {D350-E} | {D350-G}
+   Logik:
+     - Pro Foerderziel werden {CODE-Ziel}, {CODE-Ist}, {CODE-E}, {CODE-G}
+       gefuellt; erreicht: 1->(1), 2->(2), 3->(3);
+       grund_nichterreichung: 1->(1), 2->(2), 3->(3), 4->(4)
+     - Der ICF-Code in Spalte 0 bestimmt das Mapping (strip+upper)
+     - Zeilen mit danach noch unguellten {xxx}-Platzhaltern werden
+       geloescht (von hinten); Header-Zeilen bleiben
+     - Rueckgabe: (Anzahl Ersetzungen, Anzahl geloeschter Zeilen)
 
-  Phase 1: UEBERSCHRIFT FINDEN
-    Suche nach Bereichsnamen in der Tabelle (z.B. "Mobilitaet").
-    Identifiziere die Zeile mit der Bereichs-Ueberschrift.
+   HINWEIS vMerge: Der Service behandelt KEINE vertikal zusammen-
+   gefuehrten Zellen (vMerge). Es existiert keine vMerge-Logik im Code
+   (verifiziert 2026-09-17). Vorlagen fuer diesen Service duerfen
+   vMerge nicht verwenden; das Loeschen von Zeilen wuerde die
+   restart-Zelle unbeeindruckt lassen.
 
-  Phase 2: INHALTSZEILEN IDENTIFIZIEREN
-    Ab der Ueberschrift alle folgenden Zeilen sammeln,
-    bis die naechste Bereichs-Ueberschrift oder das Tabellenende
-    erreicht wird.
-
-  Phase 3: ZEILEN ENTFERNEN
-    Alle identifizierten Zeilen (Ueberschrift + Inhalt) entfernen.
-    Von unten nach oben loeschen, damit Indizes stabil bleiben.
-
-  WICHTIG: vMerge-Zellen (vertikal zusammengefuegt) muessen
-  beruecksichtigt werden — sonst bleiben leere Zellen stehen.
-
-
-VMERGE-BEHANDLUNG
-=================
-
-Word-Tabellen koennen vertikal zusammengefuegte Zellen haben (vMerge).
-Diese bestehen aus:
-  - Einer "restart"-Zelle (Beginn der Zusammenfuehrung)
-  - Mehreren "continue"-Zellen (Fortsetzung, visuell unsichtbar)
-
-Beim Loeschen von Zeilen:
-  - Wenn eine "continue"-Zelle in einer zu loeschenden Zeile liegt,
-    muss geprueft werden ob die "restart"-Zelle oberhalb auch
-    geloescht wird
-  - Sonst entsteht ein korruptes Dokument
-
-Der Service loest dies, indem er alle vMerge-Attribute aus Zellen
-entfernt, bevor er Zeilen loescht.
+E) ZELLEN-/ZEILEN-HILFSMETHODEN:
+   - set_cell_text(table, row_index, col_index, text,
+     preserve_formatting=True) -> bool
+     Schreibt Text in eine Zelle; bei preserve_formatting=True (Standard)
+     wird der Text in den ersten Run geschrieben, Rest-Runs und weitere
+     Paragraphen der Zelle geleert; sonst cell.text (Formatierung weg).
+   - find_table_row_by_text(table, search_text, column=0) -> int|None
+     Findet Zeilenindex ueber exakten (case-insensitiven) Zellvergleich
+     in der angegebenen Spalte.
+   - remove_table_row(table, row_index) -> bool
+     Bounds-geprueftes Entfernen einer Zeile.
+   - get_table_data(table) -> List[List[str]]
+     Tabelleninhalt als 2D-Liste.
 
 
 CHECKBOX-HANDLING (SDT-ELEMENTE)
 ================================
 
 Word-Checkboxen sind als Structured Document Tags (SDT) im XML
-gespeichert. python-docx bietet KEINEN direkten Zugriff darauf.
+gespeichert. python-docx bietet (Stand 1.2.0) KEINEN direkten Zugriff
+auf Content Controls. Der Service manipuliert das XML direkt.
 
-Der Service manipuliert das XML direkt:
+WICHTIG: set_checkbox(doc, label_contains, checked) sucht ausschliess-
+lich in TABELLENZELLEN — Checkboxen in freien Paragraphen werden NICHT
+gefunden. label_contains ist Teiltext des Zelleninhalts (Zelle wird per
+_get_cell_text gelesen). Pro Treffer-Zelle laufen zwei Mechanismen:
 
-  Namespace: w14 = "http:/schemas.microsoft.com/office/word/2010/wordml"
-  Element:   <w14:checkbox>
-               <w14:checked w14:val="0"/>  ← 0=unchecked, 1=checked
-             </w14:checkbox>
+  Methode 1 - Word Content Control (SDT/w14:checkbox):
+    Namespace: w14 = "http://schemas.microsoft.com/office/word/2010/wordml"
+    Element:   <w14:checkbox>
+                 <w14:checked w14:val="0"/>  <- 0=unchecked, 1=checked
+               </w14:checkbox>
+    Zugriff:
+    1. SDT-Container in der Zelle iterieren (cell._element, w:sdt)
+    2. In sdtPr das w14:checkbox-Element suchen
+    3. w14:checked-Attribut w14:val auf "1"/"0" setzen
+    4. Visuelles Symbol im sdtContent aktualisieren (w:t: ☐ <-> ☒)
 
-  Zugriff:
-  1. Paragraph → XML-Element (paragraph._element)
-  2. XPath-Suche nach SDT-Containern
-  3. w14:checked Attribut setzen
-  4. Visuelles Symbol aktualisieren (☐ → ☒)
+  Methode 2 - Einfache Unicode-Checkboxen (Fallback):
+    Ersetzt ☐ (\u2610) bzw. ☒ (\u2612) direkt im Run-Text.
 
-  WICHTIG: Das visuelle Symbol (Unicode-Zeichen im Run) muss
-  ZUSAETZLICH zum XML-Attribut aktualisiert werden, da manche
-  Word-Versionen nur das Symbol anzeigen.
+  WICHTIG: Das visuelle Symbol (Unicode-Zeichen im Run) muss ZUSAETZLICH
+  zum XML-Attribut aktualisiert werden, da manche Word-Versionen nur das
+  Symbol anzeigen. Rueckgabe: Anzahl geaenderter Checkboxen.
+
+  Parameter heisst label_contains (nicht checkbox_name).
 
 
-METHODEN-REFERENZ
-=================
+TEXTBAUSTEINE (SATZBAUSTEINE)
+=============================
+
+  activate_textblock(doc, marker, replacement_text) -> bool
+    Ersetzt einen Marker-Paragraphen (z.B. "[MOBILITAET]") durch indi-
+    vidualisierten Text. Sucht in Paragraphen und Tabellenzellen.
+
+  remove_textblock(doc, marker, remove_paragraph=True) -> bool
+    Entfernt den Marker; remove_paragraph=True entfernt den gesamten
+    Paragraphen aus dem XML-Baum, False nur den Marker-Text.
+
+
+METHODEN-REFERENZ (vollstaendig, Stand v1.1.0)
+==============================================
 
 class WordTemplateService:
 
-  fill_template(template_path, data_dict, output_path)
-    Hauptmethode: Fuellt alle Platzhalter und speichert.
+  load_template(template_path) -> Document
+    Laedt die Vorlage; FileNotFoundError, wenn Pfad fehlt.
 
-  replace_placeholders(doc, data_dict)
-    Ersetzt {{PLATZHALTER}} in Paragraphen und Tabellen.
+  replace_placeholders(doc, data) -> int
+    Textersetzung im gesamten Dokument (siehe PLATZHALTER-SYSTEM).
 
-  fill_table(doc, table_name, rows_data)
-    Fuellt eine benannte Tabelle mit Zeilendaten.
+  filter_table_rows(table, keep_column, keep_values,
+                    header_rows=1, keep_section_headers=True) -> int
 
-  filter_icf_sections(doc, active_sections)
-    Entfernt inaktive ICF-Bereiche aus der Tabelle.
+  set_checkbox(doc, label_contains, checked) -> int
 
-  set_checkbox(doc, checkbox_name, checked)
-    Setzt eine SDT-Checkbox auf checked/unchecked.
+  set_cell_text(table, row_index, col_index, text,
+                preserve_formatting=True) -> bool
 
-  clone_row(table, source_row_idx)
-    Klont eine Tabellenzeile fuer dynamische Inhalte.
+  find_table_row_by_text(table, search_text, column=0) -> int|None
 
-  remove_row(table, row_idx)
-    Entfernt eine Tabellenzeile (vMerge-sicher).
+  activate_textblock(doc, marker, replacement_text) -> bool
+
+  remove_textblock(doc, marker, remove_paragraph=True) -> bool
+
+  remove_table_row(table, row_index) -> bool
+
+  get_table_data(table) -> List[List[str]]
+
+  fill_icf_placeholders_and_cleanup(table, foerderziele,
+                                    header_rows=1) -> (int, int)
+
+  fill_table_rows(table, data_rows, column_mapping,
+                  template_row_index=1, clear_template=True) -> int
+
+  fill_foerderziele_table(doc, foerderziele, table_index=0) -> int
+
+  save(doc, output_path) -> Path
+    Speichert; legt Zielverzeichnis an; gibt Pfad zurueck.
+
+Nicht vorhandene (aber frueher hier dokumentierte) Methoden:
+  fill_template, fill_table, filter_icf_sections, clone_row, remove_row
+  — diese existieren im Code NICHT. Die Nachfolger sind oben benannt.
+
+
+CLI-INTERFACE
+=============
+
+  python word_template_service.py <template.docx> [--info]
+    --info zeigt Dokumentstruktur (Tabellen, Platzhalter).
+    Minimales CLI nur fuer manuelle Tests.
 
 
 FEHLERBEHEBUNG
 ==============
 
-  "Platzhalter nicht gefunden"
-    → Pruefen ob der Platzhalter in der Vorlage ueber
-      mehrere Runs verteilt ist (Word-Formatierung)
-    → Vorlage oeffnen, Platzhalter neu eintippen (ohne Formatwechsel)
+  "Platzhalter wird nicht ersetzt"
+    -> Key im data-Dict muss die KLAMMERN enthalten: "{{NAME}}"
+    -> Pruefen, ob der Platzhalter ueber mehrere Runs verteilt ist
+       (run-Fragmentierung; der Service behandelt dies, aber ein
+       Test mit --info hilft)
+    -> Vorlage oeffnen, Platzhalter neu eintippen (ohne Formatwechsel)
 
   "Checkbox aendert sich nicht"
-    → SDT-Element im XML pruefen
-    → Sowohl w14:checked ALS AUCH das visuelle Symbol aendern
+    -> set_checkbox durchsucht NUR Tabellenzellen: Checkbox und
+       Label muessen in derselben Tabellenzelle stehen
+    -> SDT-Element im XML pruefen (w14:checkbox in sdtPr)
+    -> Bei Unicode-Checkboxen: exakte Zeichen ☐ (\u2610)/☒ (\u2612)
 
-  "Leere Zeilen nach Filterung"
-    → vMerge-Zellen nicht korrekt behandelt
-    → Alle vMerge-Attribute vor dem Loeschen entfernen
+  "Tabelle wird nicht korrekt gefuellt"
+    -> fill_foerderziele_table: Header-Schreibweise pruefen
+       (Erkennung laeuft kleingeschrieben gegen Keywords)
+    -> fill_table_rows: column_mapping muss Dict-Key UND Spaltenindex
+       korrekt mappen (0-basiert)
 
-  "Dokument korrupt nach Bearbeitung"
-    → Zeilen von unten nach oben loeschen (Index-Stabilitaet)
-    → Keine Zeilen loeschen, die vMerge-restart fuer andere sind
-
-
-EINSCHRAENKUNGEN
-================
-
-  - Bilder in Platzhaltern werden nicht unterstuetzt
-  - Kopf-/Fusszeilen werden nicht durchsucht
-  - Verschachtelte Tabellen: nur erste Ebene
-  - Formatierung geht beim Run-Merge teilweise verloren
-    (erster Run bestimmt die Formatierung)
-  - SDT-Checkboxen: Nur Word 2010+ Format (w14 Namespace)
-
-
-SIEHE AUCH
-==========
-
-  wiki/foerderbericht_system.txt      Systemarchitektur
-  wiki/word_automation.txt            Word-Automatisierung allgemein
-  hub/_services/document/               Service-Dateien
-  skills/_templates/                       Word-Vorlagen
+  "Dokument wirkt nach Zeilenloeschung kaputt"
+    -> vMerge-Zellen im Template? Der Service hat KEINE vMerge-Logik;
+       zusammengefuehrte Zellen vermeiden

@@ -24,7 +24,7 @@ Ein Anthropic-kompatibler Skill ist ein Ordner mit folgender Struktur:
 
   my-skill/
   +-- SKILL.md              # Hauptdefinition (Pflicht)
-  +-- scripts/              # Ausführbare Skripte (optional)
+  +-- tools/              # Ausführbare Skripte (optional)
   |   +-- setup.sh
   |   +-- run.py
   +-- references/           # Referenz-Dokumentation (optional)
@@ -89,7 +89,7 @@ effizient zu nutzen:
     Enthält alle Regeln, Workflows und Anweisungen.
 
   Stufe 3 -- Bundled Resources (on demand)
-    Dateien aus references/, scripts/ und assets/.
+    Dateien aus references/, tools/ und assets/.
     Werden nur geladen, wenn der Skill sie explizit anfordert
     oder das LLM sie für die aktuelle Aufgabe benötigt.
 
@@ -124,7 +124,7 @@ BACH kann Anthropic-kompatible Skills direkt scaffolden:
 
 Dieser Befehl nutzt intern skill_init.py und erstellt:
 - SKILL.md mit korrektem Frontmatter
-- scripts/ Ordner (leer)
+- tools/ Ordner (leer)
 - references/ Ordner (leer)
 - assets/ Ordner (leer)
 
@@ -147,7 +147,7 @@ VERGLEICH: BACH-INTERN VS ANTHROPIC-KOMPATIBEL
   Typ-Feld            type (Pflicht)           -- (nicht vorhanden)
   Version             version (Pflicht)        metadata.version (opt.)
   Abhängigkeiten     dependencies (Pflicht)   -- (nicht formalisiert)
-  Tools               Im Skill-Ordner          scripts/
+  Tools               Im Skill-Ordner          tools/
   Doku                Im Skill-Ordner          references/
   Statische Dateien   data/ oder assets/       assets/
   Workflows           _workflows/ oder lokal   In SKILL.md Body
@@ -183,7 +183,7 @@ portierbar). Claude Code Agents sind optional und nicht portierbar.
 
 Beim Export von BACH-Agenten:
   - Sub-Agent-Definitionen -> references/
-  - Orchestrierungs-Code -> scripts/
+  - Orchestrierungs-Code -> tools/
   - Optional: .claude/agents/<name>.md für Claude Code Nutzer
 
 
