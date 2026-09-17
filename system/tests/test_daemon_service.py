@@ -542,14 +542,18 @@ class TestDaemonLifecycle:
 
 class TestOneDrivePauseResume:
     def test_pause_returns_true_on_non_windows(self):
-        with patch("gui.daemon_service.sys") as mock_sys:
-            mock_sys.platform = "darwin"
+        manager = MagicMock()
+        manager.pause.return_value = {"onedrive": True}
+        with patch("hub._services.cloud.get_cloud_manager", return_value=manager):
             assert DaemonService.pause_onedrive() is True
+        manager.pause.assert_called_once_with("onedrive")
 
     def test_resume_returns_true_on_non_windows(self):
-        with patch("gui.daemon_service.sys") as mock_sys:
-            mock_sys.platform = "linux"
+        manager = MagicMock()
+        manager.resume.return_value = {"onedrive": True}
+        with patch("hub._services.cloud.get_cloud_manager", return_value=manager):
             assert DaemonService.resume_onedrive() is True
+        manager.resume.assert_called_once_with("onedrive")
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -23,8 +23,8 @@ OPERACIONES
   bach daily-agent briefing --dry-run   Vista previa de solo lectura
   bach daily-agent summary              Generar resumen de la tarde
   bach daily-agent config               Listar módulos de sesión informativa
-  bach daily-agent config routinika_briefing --projection=<ruta-absoluta>
-                                        Guardar la ruta del consumidor Routinika
+  bach daily-agent config routinika_briefing --manifest=<ruta-absoluta> --auth-refs-file=<ruta-absoluta>
+                                        Guardar la ruta de tránsito autenticada
   bach daily-agent modules              Alias para configuración
   bach daily-agent toggle <modul>       Módulo Activar/desactivar
 
@@ -45,8 +45,8 @@ EJEMPLOS
   bach daily-agent start --model=opus   Inicia con modelo 'opus'
   bach daily-agent status               Muestra PID y hora de inicio
   bach daily-agent briefing             Genera resumen con módulos activos
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        Verifica una proyección cerrada sin escribir
+  bach daily-agent briefing --routinika-manifest=C:\transit\routinika.sqlite-snapshot.json --routinika-receipt --dry-run
+                                        Lee una instantánea privada vinculada al hash
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Muestra tareas completadas hoy
   bach daily-agent stop                 Detiene agente + guarda resumen

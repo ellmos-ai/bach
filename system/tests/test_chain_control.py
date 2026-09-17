@@ -24,6 +24,7 @@ from llmauto.modes.chain import (  # noqa: E402
     _import_scheduler_operator_steer,
     show_status,
 )
+from llmauto.modes import chain as chain_module  # noqa: E402
 
 
 class TestChainControlState:
@@ -64,6 +65,7 @@ class TestChainControlState:
         assert state.get_status() == "READY"
 
     def test_scheduler_operator_steer_env_is_imported_into_chain_queue(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(chain_module, "LOG_DIR", tmp_path / "logs")
         state = ChainState("demo", tmp_path)
         monkeypatch.setenv(
             "BACH_SCHEDULER_OPERATOR_STEER",

@@ -619,14 +619,14 @@ class TestComputeGate:
         return runtime, backend, asyncio.run
 
     def test_active_lock_prevents_the_model_load(self):
-        runtime, backend, run = self._run(lambda: True)
+        runtime, backend, run = self._run(lambda _backend: True)
         with pytest.raises(ComputeLocked):
             run(runtime.process("Aufgabe", "idle-worker"))
         assert backend.calls == 0, "Backend darf bei aktivem Lock nicht gerufen werden"
         assert "idle-worker" not in runtime.sessions, "kein Turn, kein Transkript-Eintrag"
 
     def test_free_lock_behaves_exactly_as_before(self):
-        runtime, backend, run = self._run(lambda: False)
+        runtime, backend, run = self._run(lambda _backend: False)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
         assert backend.calls == 1
 
@@ -637,7 +637,7 @@ class TestComputeGate:
 
     def test_skip_compute_gate_allows_model_load(self):
         """User-authorisierte Telegram-Nachrichten umgehen das Compute-Gate."""
-        runtime, backend, run = self._run(lambda: True)
+        runtime, backend, run = self._run(lambda _backend: True)
         assert run(runtime.process("Aufgabe", "user-chat", skip_compute_gate=True)) == "Echte Antwort"
         assert backend.calls == 1
 
@@ -786,6 +786,106 @@ def test_control_api_does_not_report_failed_answers_as_ok():
     )
     assert '{"ok": True, "answer": answer}' not in src
     assert 'not isinstance(answer, FailedAnswer)' in src
+
+
+def test_context_handoff_uses_ollama_backend_limit(monkeypatch):
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    runtime = ChatRuntime(OllamaBackend())
+    runtime.handoff_percent = 75
+    context_limit = runtime._context_limit_for_backend(runtime.backend)
+
+    assert context_limit == 4096
+    assert runtime._context_voll(
+        {"prompt_tokens": 3071}, context_limit=context_limit
+    ) is False
+    assert runtime._context_voll(
+        {"prompt_tokens": 3072}, context_limit=context_limit
+    ) is True
+
+
+def test_context_handoff_switches_backend_limits_between_turns():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class ContextBackend:
+        manages_own_tools = False
+
+        def __init__(self, limit):
+            self.limit = limit
+            self.calls = 0
+
+        def get_default_model(self):
+            return "test-model"
+
+        def get_context_limit(self):
+            return self.limit
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return [
+                {"content": "Zwischenstand", "prompt_tokens": 3072},
+                {"content": "RESUME: Weiterarbeiten"},
+                {"content": "Ergebnis", "prompt_tokens": 1},
+            ][self.calls - 1]
+
+    short = ContextBackend(4096)
+    long = ContextBackend(8192)
+    runtime = ChatRuntime(short)
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "kurz")) == "Ergebnis"
+    runtime.backend = long
+    assert asyncio.run(runtime.process("Aufgabe", "lang")) == "Zwischenstand"
+    assert short.calls == 3
+    assert long.calls == 1
+
+
+def test_context_handoff_keeps_backend_limit_snapshot_during_turn():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class SnapshotBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = 0
+            self.runtime = None
+
+        def get_default_model(self):
+            return "test-model"
+
+        def get_context_limit(self):
+            return 4096
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                self.runtime.backend = _AnsweringBackend()
+                return {"content": "Zwischenstand", "prompt_tokens": 3072}
+            if self.calls == 2:
+                return {"content": "RESUME: Weiterarbeiten"}
+            return {"content": "Ergebnis", "prompt_tokens": 1}
+
+    backend = SnapshotBackend()
+    runtime = ChatRuntime(backend)
+    backend.runtime = runtime
+    runtime.context_limit = 32768
+    runtime.handoff_percent = 75
+
+    assert asyncio.run(runtime.process("Aufgabe", "snapshot")) == "Ergebnis"
+    assert backend.calls == 3
 
 
 class TestFackelPreference:
@@ -956,4 +1056,3 @@ class TestFackelPreference:
         assert '"fackel_preference": get_fackel_preference()' in src
         assert 'app.add_handler(CommandHandler("fackel", cmd_fackel))' in src
         assert 'setFackel' in src
-

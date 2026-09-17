@@ -15,6 +15,7 @@ Verwendung:
 """
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -24,6 +25,10 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+from hub._services.limits import limit
+
+
+log = logging.getLogger(__name__)
 
 
 def _probe_model_api(
@@ -134,17 +139,42 @@ class OllamaBackend(ModelBackend):
         self._models_cache: list[str] = []
         self._models_cache_time: float = 0
 
+    def get_context_limit(self) -> int:
+        """Return the same context cap that is sent to Ollama as ``num_ctx``."""
+        return self.num_ctx
+
+    async def _lebt(self, client, model: str) -> bool:
+        """Prüfe billig, ob Ollama und das ausgewählte Modell noch leben."""
+        try:
+            r = await client.get(
+                f"{self.base_url}/api/ps",
+                timeout=limit("BACH_LLM_PING_TIMEOUT"),
+            )
+            geladen = [m.get("name", "") for m in (r.json() or {}).get("models", [])]
+        except Exception:
+            return False
+        if not geladen:
+            log.info("Ollama erreichbar, aber kein Modell geladen - lädt vermutlich")
+            return True
+        if any(g == model or g.startswith(model.split(":")[0]) for g in geladen):
+            return True
+        log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
+        return False
+
     async def chat(self, messages, tools=None, think=True, model=None):
         import httpx
+
         try:
             from hub.compute_lock import get_effective_keep_alive
             effective_ka = get_effective_keep_alive(default=self.keep_alive)
         except ImportError:
             effective_ka = self.keep_alive
+
+        selected_model = model or self.default_model
         payload = {
-            "model": model or self.default_model,
+            "model": selected_model,
             "messages": messages,
-            "stream": False,
+            "stream": True,
             "think": think,
             "keep_alive": effective_ka,
             # Einige Modelle veröffentlichen sehr große Trainingskontexte. Ohne
@@ -154,34 +184,129 @@ class OllamaBackend(ModelBackend):
         if tools:
             payload["tools"] = tools
 
-        timeout = self.request_timeout * (1.5 if think else 1)
-        async with httpx.AsyncClient() as client:
-            try:
-                r = await client.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=timeout,
-                )
-            except httpx.TimeoutException as exc:
-                raise RuntimeError(
-                    f"Ollama-Zeitüberschreitung nach {timeout:g} Sekunden"
-                ) from exc
-            r.raise_for_status()
-            resp = r.json()
+        idle = limit("BACH_LLM_IDLE_TIMEOUT")
+        grace = limit("BACH_LLM_IDLE_GRACE")
+        total_cap = limit("BACH_LLM_TOTAL_CAP")
+        content_parts: list[str] = []
+        tool_calls: list = []
+        last_message: dict = {}
+        prompt_tokens = None
+        started = time.time()
+        last_activity = started
+        probes = 0
+        completed = False
 
-        if resp.get("error"):
-            raise RuntimeError(f"Ollama-Fehler: {resp['error']}")
-        msg = resp.get("message", {})
-        content = msg.get("content", "")
+        def aborted(error: str) -> dict:
+            content = "".join(content_parts)
+            raw_message = dict(last_message or {"role": "assistant"})
+            raw_message["content"] = content
+            if tool_calls:
+                raw_message["tool_calls"] = list(tool_calls)
+            return {
+                "content": content,
+                "tool_calls": list(tool_calls) or None,
+                "raw_message": raw_message,
+                "prompt_tokens": prompt_tokens,
+                "error": error,
+            }
+
+        read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
+        timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
+            try:
+                async with client.stream(
+                    "POST", f"{self.base_url}/api/chat", json=payload
+                ) as response:
+                    response.raise_for_status()
+                    lines = response.aiter_lines().__aiter__()
+                    while True:
+                        try:
+                            line = await lines.__anext__()
+                        except StopAsyncIteration:
+                            break
+                        except httpx.ReadTimeout as exc:
+                            timeout_error = (
+                                f"{type(exc).__name__}: {exc}".rstrip(": ")
+                            )
+                            # Ein echter HTTPX-Iterator ist nach ReadTimeout
+                            # beendet. Ihn mit ``continue`` erneut zu lesen
+                            # liefert nur EOF und verliert die Timeout-Ursache.
+                            # Das verbleibende Grace-Budget wird deshalb hier
+                            # begrenzt ueber /api/ps ausgewertet; fortsetzen
+                            # laesst sich der abgebrochene Response-Stream nicht.
+                            while probes < grace:
+                                now = time.time()
+                                if total_cap > 0 and (now - started) > total_cap:
+                                    return aborted(
+                                        f"{timeout_error}; Gesamtdeckel "
+                                        f"{total_cap}s erreicht"
+                                    )
+                                if not await self._lebt(client, selected_model):
+                                    break
+                                probes += 1
+                                last_activity = now
+                                log.info(
+                                    "Ollama-Stream ReadTimeout, Modell lebt "
+                                    "(%d/%d Grace-Pruefungen)",
+                                    probes,
+                                    grace,
+                                )
+                            return aborted(timeout_error)
+
+                        now = time.time()
+                        if line.strip():
+                            last_activity = now
+                            probes = 0
+                            try:
+                                chunk = json.loads(line)
+                            except ValueError:
+                                continue
+                            if chunk.get("error"):
+                                raise RuntimeError(f"Ollama-Fehler: {chunk['error']}")
+                            message = chunk.get("message") or {}
+                            if message:
+                                last_message = message
+                                if message.get("content"):
+                                    content_parts.append(message["content"])
+                                if message.get("tool_calls"):
+                                    tool_calls.extend(message["tool_calls"])
+                            if chunk.get("prompt_eval_count") is not None:
+                                prompt_tokens = chunk["prompt_eval_count"]
+                            if chunk.get("done"):
+                                completed = True
+                                break
+
+                        if total_cap > 0 and (now - started) > total_cap:
+                            return aborted(f"Gesamtdeckel {total_cap}s erreicht")
+                        if (now - last_activity) > idle:
+                            if probes < grace and await self._lebt(client, selected_model):
+                                probes += 1
+                                last_activity = now
+                                continue
+                            return aborted(
+                                f"Ollama antwortet seit {idle}s nicht und meldet "
+                                "unser Modell nicht mehr"
+                            )
+            except httpx.HTTPError as exc:
+                return aborted(f"{type(exc).__name__}: {exc}".rstrip(": "))
+
+        if not completed:
+            return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
+
+        content = "".join(content_parts)
         if not think and "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
-        tool_calls = msg.get("tool_calls")
         if not content and not tool_calls:
             raise RuntimeError("Ollama lieferte eine leere Antwort")
+        raw_message = dict(last_message or {"role": "assistant"})
+        raw_message["content"] = content
+        if tool_calls:
+            raw_message["tool_calls"] = tool_calls
         return {
             "content": content,
-            "tool_calls": tool_calls,
-            "raw_message": msg,
+            "tool_calls": tool_calls or None,
+            "raw_message": raw_message,
+            "prompt_tokens": prompt_tokens,
         }
 
     def list_models(self) -> list[str]:

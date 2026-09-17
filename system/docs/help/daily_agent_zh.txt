@@ -23,8 +23,8 @@ DAILY AGENT - 具有持久会话的自治日常代理
   bach daily-agent briefing --dry-run   只读简报预览
   bach daily-agent summary              生成晚间摘要
   bach daily-agent config               列出简报模块
-  bach daily-agent config routinika_briefing --projection=<绝对路径>
-                                        保存 Routinika 消费者路径
+  bach daily-agent config routinika_briefing --manifest=<绝对路径> --auth-refs-file=<绝对路径>
+                                        保存经过身份验证的传输路径
   bach daily-agent modules              配置别名
   bach daily-agent toggle <modul>       模块开关
 
@@ -45,8 +45,8 @@ DAILY AGENT - 具有持久会话的自治日常代理
   bach daily-agent start --model=opus   以模型“opus”启动
   bach daily-agent status               显示 PID 和开始时间
   bach daily-agent briefing             使用活动模块生成简报
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        验证关闭的投影且不写入
+  bach daily-agent briefing --routinika-manifest=C:\transit\routinika.sqlite-snapshot.json --routinika-receipt --dry-run
+                                        仅读取与哈希绑定的私有快照
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              显示今天完成的任务
   bach daily-agent stop                 停止代理 + 保存摘要

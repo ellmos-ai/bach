@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
-"""Read-only BACH consumer for the ratified Routinika reminder projection.
+"""Read-only BACH consumer for the ratified MediPlaner reminder projection.
 
-The allowlist is pinned to sqlite-transit-sync contract C1 at
-``fd19d5e6717c1b51950dc521bd41763967d21739`` (contract blob
-``6033191c84d450b5c490b9ef4aa3e2ec4c5ba138``).  This module only verifies and
-reads a closed projection.  It never publishes, copies, merges, migrates, or
-advances federation state.
+The exact allowlist is pinned to sqlite-transit-sync contract C1 at commit
+``1d2cf604efdc68a876672adf391c9fe8f5a90089`` (contract blob
+``128f905c5fa9c52197c3fb6255fb53493e6e0edf``). This module verifies and
+reads one closed projection. It never publishes, copies, merges, migrates,
+schedules transport, or advances federation state.
 """
 
 from __future__ import annotations
@@ -27,18 +27,21 @@ from .projection_transport_auth import (
 )
 
 
-CONTRACT_ID = "org.ellmos.routinika.reminder-projection"
+CONTRACT_ID = "org.ellmos.mediplaner.reminder-projection"
 CONTRACT_VERSION = "1.0.0"
-PUBLISHER_COMPONENT = "routinika-projection-adapter"
+PUBLISHER_COMPONENT = "mediplaner-v5-projection-adapter"
 CONSUMER_ID = "bach-reminder-consumer"
 DEFAULT_MINIMUM_OFFLINE_SECONDS = 30 * 24 * 60 * 60
-CONTRACT_SOURCE_COMMIT = "fd19d5e6717c1b51950dc521bd41763967d21739"
-CONTRACT_SOURCE_BLOB = "6033191c84d450b5c490b9ef4aa3e2ec4c5ba138"
+CONTRACT_SOURCE_COMMIT = "1d2cf604efdc68a876672adf391c9fe8f5a90089"
+CONTRACT_SOURCE_BLOB = "128f905c5fa9c52197c3fb6255fb53493e6e0edf"
 
 _OPAQUE_REF = re.compile(r"^[0-9a-f]{32,64}$")
 _SAFE_PARTICIPANT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-_ACTIVE_STATES = frozenset({"due", "overdue"})
-_ALL_STATES = _ACTIVE_STATES | {"completed", "skipped", "cancelled"}
+_ACTIVE_MEDICATION_STATES = frozenset({"due", "overdue"})
+_ALL_MEDICATION_STATES = _ACTIVE_MEDICATION_STATES | {"suppressed", "cancelled"}
+_ACTIVE_WARNING_BANDS = frozenset({"attention", "critical", "unknown"})
+_ALL_WARNING_BANDS = _ACTIVE_WARNING_BANDS | {"none"}
+_RECORD_TYPES = frozenset({"medication_due", "inventory_warning"})
 
 # name, SQLite type, NOT NULL, primary-key position
 _EXPECTED_SCHEMA = {
@@ -50,11 +53,20 @@ _EXPECTED_SCHEMA = {
         ("generated_at", "TEXT", True, 0),
         ("source_checkpoint", "INTEGER", True, 0),
     ),
-    "routine_due": (
+    "medication_due": (
         ("record_ref", "TEXT", True, 1),
         ("due_at", "TEXT", True, 0),
         ("window_end_at", "TEXT", True, 0),
+        ("reminder_kind", "TEXT", True, 0),
         ("state", "TEXT", True, 0),
+        ("record_version", "INTEGER", True, 0),
+        ("source_checkpoint", "INTEGER", True, 0),
+        ("publisher_instance", "TEXT", True, 0),
+    ),
+    "inventory_warning": (
+        ("record_ref", "TEXT", True, 1),
+        ("warning_band", "TEXT", True, 0),
+        ("event_at", "TEXT", True, 0),
         ("record_version", "INTEGER", True, 0),
         ("source_checkpoint", "INTEGER", True, 0),
         ("publisher_instance", "TEXT", True, 0),
@@ -71,12 +83,12 @@ _EXPECTED_SCHEMA = {
 }
 
 
-class RoutinikaProjectionError(ValueError):
+class MediplanerProjectionError(ValueError):
     """The closed projection does not satisfy the pinned consumer contract."""
 
 
 @dataclass(frozen=True, slots=True)
-class RoutinikaDueRecord:
+class MedicationDueRecord:
     record_ref: str
     due_at: str
     window_end_at: str
@@ -85,36 +97,45 @@ class RoutinikaDueRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class RoutinikaProjection:
+class InventoryWarningRecord:
+    record_ref: str
+    warning_band: str
+    event_at: str
+    record_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class MediplanerProjection:
     publisher_instance: str
     generated_at: str
     source_checkpoint: int
     database_name: str
     database_sha256: str
     row_counts: dict[str, int]
-    due_records: tuple[RoutinikaDueRecord, ...]
+    due_records: tuple[MedicationDueRecord, ...]
+    inventory_warnings: tuple[InventoryWarningRecord, ...]
     read_only: bool = True
     contract_id: str = CONTRACT_ID
     contract_version: str = CONTRACT_VERSION
 
 
-def read_routinika_projection(
+def read_mediplaner_projection(
     *,
     manifest_path: str | Path,
     transport_auth: dict[str, Any],
     minimum_offline_seconds: int = DEFAULT_MINIMUM_OFFLINE_SECONDS,
     previous_checkpoint: int | None = None,
     secret_resolver: Any | None = None,
-) -> RoutinikaProjection:
+) -> MediplanerProjection:
     """Authenticate transit bytes and read only their private immutable snapshot."""
     try:
         with authenticated_projection_snapshot(
             manifest_path,
             transport_auth,
-            expected_namespace="routinika-reminder-v1",
+            expected_namespace="mediplaner-reminder-v1",
             secret_resolver=secret_resolver,
         ) as authenticated:
-            return _read_routinika_projection_database(
+            return _read_mediplaner_projection_database(
                 authenticated.path,
                 minimum_offline_seconds=minimum_offline_seconds,
                 previous_checkpoint=previous_checkpoint,
@@ -122,52 +143,52 @@ def read_routinika_projection(
                 expected_sha256=authenticated.sha256,
             )
     except ProjectionTransportAuthError as exc:
-        raise RoutinikaProjectionError(str(exc)) from exc
+        raise MediplanerProjectionError(str(exc)) from exc
 
 
-def read_legacy_unauthenticated_routinika_projection(
+def read_legacy_unauthenticated_mediplaner_projection(
     database: str | Path,
     *,
     minimum_offline_seconds: int = DEFAULT_MINIMUM_OFFLINE_SECONDS,
     previous_checkpoint: int | None = None,
-) -> RoutinikaProjection:
+) -> MediplanerProjection:
     """Explicit test/migration-only verifier; never used by the BACH consumer."""
-    return _read_routinika_projection_database(
+    return _read_mediplaner_projection_database(
         database,
         minimum_offline_seconds=minimum_offline_seconds,
         previous_checkpoint=previous_checkpoint,
     )
 
 
-def _read_routinika_projection_database(
+def _read_mediplaner_projection_database(
     database: str | Path,
     *,
     minimum_offline_seconds: int,
     previous_checkpoint: int | None,
     database_name: str | None = None,
     expected_sha256: str | None = None,
-) -> RoutinikaProjection:
+) -> MediplanerProjection:
     """Verify already-bound bytes; callers choose authenticated or explicit legacy."""
     if type(minimum_offline_seconds) is not int or minimum_offline_seconds < 0:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "minimum_offline_seconds muss eine nicht negative Ganzzahl sein."
         )
     if previous_checkpoint is not None and (
         type(previous_checkpoint) is not int or previous_checkpoint < 0
     ):
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "previous_checkpoint muss eine nicht negative Ganzzahl sein."
         )
 
     path = _closed_regular_database(Path(database))
     before_hash = _sha256(path)
     if expected_sha256 is not None and before_hash != expected_sha256:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "Privater Snapshot stimmt nicht mit dem authentifizierten Hash überein."
         )
     connection: sqlite3.Connection | None = None
     try:
-        encoded_path = quote(path.resolve().as_posix(), safe="/:")
+        encoded_path = quote(path.as_posix(), safe="/:")
         connection = sqlite3.connect(
             f"file:{encoded_path}?mode=ro&immutable=1", uri=True
         )
@@ -175,14 +196,15 @@ def _read_routinika_projection_database(
         connection.execute("PRAGMA query_only = ON")
         quick_check = connection.execute("PRAGMA quick_check").fetchone()
         if quick_check is None or quick_check[0] != "ok":
-            raise RoutinikaProjectionError(
+            raise MediplanerProjectionError(
                 f"SQLite quick_check fehlgeschlagen: {quick_check!r}"
             )
         _verify_schema(connection)
         metadata_rows = connection.execute(
             "SELECT * FROM projection_metadata"
         ).fetchall()
-        routine_rows = connection.execute("SELECT * FROM routine_due").fetchall()
+        medication_rows = connection.execute("SELECT * FROM medication_due").fetchall()
+        warning_rows = connection.execute("SELECT * FROM inventory_warning").fetchall()
         tombstone_rows = connection.execute(
             "SELECT * FROM projection_tombstones"
         ).fetchall()
@@ -190,19 +212,23 @@ def _read_routinika_projection_database(
         publisher, generated_at, checkpoint = _verify_metadata(
             metadata_rows, previous_checkpoint=previous_checkpoint
         )
-        due_records = _verify_routines(
-            routine_rows, publisher=publisher, checkpoint=checkpoint
+        due_records = _verify_medications(
+            medication_rows, publisher=publisher, checkpoint=checkpoint
+        )
+        warnings = _verify_warnings(
+            warning_rows, publisher=publisher, checkpoint=checkpoint
         )
         _verify_tombstones(
             tombstone_rows,
-            routine_rows,
+            medication_rows,
+            warning_rows,
             publisher=publisher,
             checkpoint=checkpoint,
             minimum_offline_seconds=minimum_offline_seconds,
         )
     except sqlite3.Error as exc:
-        raise RoutinikaProjectionError(
-            f"Routinika-Projektion konnte nicht verifiziert werden: {exc}"
+        raise MediplanerProjectionError(
+            f"MediPlaner-Projektion konnte nicht verifiziert werden: {exc}"
         ) from exc
     finally:
         if connection is not None:
@@ -210,11 +236,11 @@ def _read_routinika_projection_database(
 
     after_hash = _sha256(path)
     if after_hash != before_hash:
-        raise RoutinikaProjectionError(
-            "Routinika-Projektion hat sich während der read-only Prüfung verändert."
+        raise MediplanerProjectionError(
+            "MediPlaner-Projektion hat sich während der read-only Prüfung verändert."
         )
 
-    return RoutinikaProjection(
+    return MediplanerProjection(
         publisher_instance=publisher,
         generated_at=generated_at,
         source_checkpoint=checkpoint,
@@ -222,30 +248,47 @@ def _read_routinika_projection_database(
         database_sha256=after_hash,
         row_counts={
             "projection_metadata": len(metadata_rows),
-            "routine_due": len(routine_rows),
+            "medication_due": len(medication_rows),
+            "inventory_warning": len(warning_rows),
             "projection_tombstones": len(tombstone_rows),
         },
-        due_records=tuple(
-            sorted(due_records, key=lambda row: (row.due_at, row.record_ref))
+        due_records=tuple(sorted(due_records, key=lambda row: (row.due_at, row.record_ref))),
+        inventory_warnings=tuple(
+            sorted(warnings, key=lambda row: (row.event_at, row.record_ref))
         ),
     )
 
 
-def format_routinika_briefing(
-    projection: RoutinikaProjection, *, include_receipt: bool = False
+def format_mediplaner_briefing(
+    projection: MediplanerProjection, *, include_receipt: bool = False
 ) -> str:
-    """Render only due/overdue opaque records plus optional receipt metadata."""
-    parts = [f"\nROUTINIKA-FÄLLIGKEITEN ({len(projection.due_records)}):"]
+    """Render only actionable opaque records plus optional receipt metadata."""
+    parts = [f"\nMEDIPLANER-FÄLLIGKEITEN ({len(projection.due_records)}):"]
     state_labels = {"due": "fällig", "overdue": "überfällig"}
     for row in projection.due_records[:10]:
-        due = _display_utc(row.due_at)
-        window_end = _display_utc(row.window_end_at)
         parts.append(
-            f"  - Routine {row.record_ref[:12]}…: {state_labels[row.state]} "
-            f"({due}; Fenster bis {window_end})"
+            f"  - Medikament {row.record_ref[:12]}…: {state_labels[row.state]} "
+            f"({_display_utc(row.due_at)}; Fenster bis {_display_utc(row.window_end_at)})"
         )
     if len(projection.due_records) > 10:
         parts.append(f"  - … und {len(projection.due_records) - 10} weitere")
+
+    parts.append(f"\nBESTANDSWARNUNGEN ({len(projection.inventory_warnings)}):")
+    warning_labels = {
+        "attention": "beachten",
+        "critical": "kritisch",
+        "unknown": "unbekannt",
+    }
+    for row in projection.inventory_warnings[:10]:
+        parts.append(
+            f"  - Bestand {row.record_ref[:12]}…: {warning_labels[row.warning_band]} "
+            f"(Stand {_display_utc(row.event_at)})"
+        )
+    if len(projection.inventory_warnings) > 10:
+        parts.append(
+            f"  - … und {len(projection.inventory_warnings) - 10} weitere"
+        )
+
     if include_receipt:
         counts = ",".join(
             f"{name}:{count}" for name, count in projection.row_counts.items()
@@ -267,18 +310,18 @@ def _closed_regular_database(path: Path) -> Path:
         attributes = getattr(candidate.lstat(), "st_file_attributes", 0)
         resolved = candidate.resolve(strict=True)
     except OSError as exc:
-        raise RoutinikaProjectionError(
-            f"Routinika-Projektion ist keine lesbare reguläre Datei: {candidate}"
+        raise MediplanerProjectionError(
+            f"MediPlaner-Projektion ist keine lesbare reguläre Datei: {candidate}"
         ) from exc
     reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
     if candidate.is_symlink() or bool(attributes & reparse) or not resolved.is_file():
-        raise RoutinikaProjectionError(
-            "Routinika-Projektion muss eine direkte reguläre Datei sein."
+        raise MediplanerProjectionError(
+            "MediPlaner-Projektion muss eine direkte reguläre Datei sein."
         )
     sidecars = sorted(item.name for item in resolved.parent.glob(f"{resolved.name}-*"))
     if sidecars:
-        raise RoutinikaProjectionError(
-            f"Routinika-Projektion ist nicht geschlossen; Sidecars vorhanden: {sidecars}"
+        raise MediplanerProjectionError(
+            f"MediPlaner-Projektion ist nicht geschlossen; Sidecars vorhanden: {sidecars}"
         )
     return resolved
 
@@ -293,7 +336,7 @@ def _verify_schema(connection: sqlite3.Connection) -> None:
     }
     expected_tables = set(_EXPECTED_SCHEMA)
     if actual_tables != expected_tables:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "Tabellen-Allowlist verletzt; "
             f"extra={sorted(actual_tables - expected_tables)}, "
             f"fehlend={sorted(expected_tables - actual_tables)}"
@@ -304,14 +347,14 @@ def _verify_schema(connection: sqlite3.Connection) -> None:
         "OR (type = 'index' AND sql IS NOT NULL)"
     ).fetchall()
     if unexpected:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             f"Nicht erlaubte SQLite-Objekte: {[tuple(row) for row in unexpected]}"
         )
 
     for table, expected_columns in _EXPECTED_SCHEMA.items():
         actual = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
         if len(actual) != len(expected_columns):
-            raise RoutinikaProjectionError(
+            raise MediplanerProjectionError(
                 f"Spalten-Allowlist für {table} verletzt."
             )
         for row, expected in zip(actual, expected_columns, strict=True):
@@ -323,7 +366,7 @@ def _verify_schema(connection: sqlite3.Connection) -> None:
                 or row[4] is not None
                 or int(row[5]) != primary_key
             ):
-                raise RoutinikaProjectionError(
+                raise MediplanerProjectionError(
                     f"Spalten-Allowlist für {table}.{name} verletzt."
                 )
 
@@ -332,7 +375,7 @@ def _verify_metadata(
     rows: list[sqlite3.Row], *, previous_checkpoint: int | None
 ) -> tuple[str, str, int]:
     if len(rows) != 1:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "projection_metadata muss genau eine Zeile enthalten."
         )
     row = rows[0]
@@ -343,70 +386,96 @@ def _verify_metadata(
     }
     for column, value in expected.items():
         if row[column] != value:
-            raise RoutinikaProjectionError(
+            raise MediplanerProjectionError(
                 f"Metadatenfeld {column} entspricht nicht dem Vertrag."
             )
     publisher = _participant(row["publisher_instance"], "publisher_instance")
     if publisher == CONSUMER_ID:
-        raise RoutinikaProjectionError("Loop-Guard hat den eigenen Consumer abgewiesen.")
+        raise MediplanerProjectionError("Loop-Guard hat den eigenen Consumer abgewiesen.")
     generated_at = row["generated_at"]
     _utc_timestamp(generated_at, "projection_metadata.generated_at")
     checkpoint = _integer(row["source_checkpoint"], "source_checkpoint", minimum=0)
     if previous_checkpoint is not None and checkpoint <= previous_checkpoint:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             "Projektions-Checkpoint ist nicht neuer als der Consumer-Checkpoint."
         )
     return publisher, generated_at, checkpoint
 
 
-def _verify_routines(
+def _verify_medications(
     rows: list[sqlite3.Row], *, publisher: str, checkpoint: int
-) -> list[RoutinikaDueRecord]:
+) -> list[MedicationDueRecord]:
     due_records = []
     for index, row in enumerate(rows):
-        ref = _opaque_ref(row["record_ref"], f"routine_due[{index}].record_ref")
-        due = _utc_timestamp(row["due_at"], f"routine_due[{index}].due_at")
+        ref = _opaque_ref(row["record_ref"], f"medication_due[{index}].record_ref")
+        due = _utc_timestamp(row["due_at"], f"medication_due[{index}].due_at")
         window_end = _utc_timestamp(
-            row["window_end_at"], f"routine_due[{index}].window_end_at"
+            row["window_end_at"], f"medication_due[{index}].window_end_at"
         )
         if window_end < due:
-            raise RoutinikaProjectionError(
-                f"Ungültiges Fälligkeitsfenster in routine_due[{index}]."
+            raise MediplanerProjectionError(
+                f"Ungültiges Fälligkeitsfenster in medication_due[{index}]."
+            )
+        if row["reminder_kind"] != "medication-due":
+            raise MediplanerProjectionError(
+                f"Unzulässiger reminder_kind in medication_due[{index}]."
             )
         state_value = row["state"]
-        if not isinstance(state_value, str) or state_value not in _ALL_STATES:
-            raise RoutinikaProjectionError(
-                f"Unzulässiger Zustand in routine_due[{index}]."
+        if not isinstance(state_value, str) or state_value not in _ALL_MEDICATION_STATES:
+            raise MediplanerProjectionError(
+                f"Unzulässiger state in medication_due[{index}]."
             )
         version = _integer(
-            row["record_version"], f"routine_due[{index}].record_version", minimum=1
+            row["record_version"], f"medication_due[{index}].record_version", minimum=1
         )
         _matching_provenance(row, publisher=publisher, checkpoint=checkpoint)
-        if state_value in _ACTIVE_STATES:
+        if state_value in _ACTIVE_MEDICATION_STATES:
             due_records.append(
-                RoutinikaDueRecord(
-                    record_ref=ref,
-                    due_at=row["due_at"],
-                    window_end_at=row["window_end_at"],
-                    state=state_value,
-                    record_version=version,
-                )
+                MedicationDueRecord(ref, row["due_at"], row["window_end_at"], state_value, version)
             )
     return due_records
 
 
+def _verify_warnings(
+    rows: list[sqlite3.Row], *, publisher: str, checkpoint: int
+) -> list[InventoryWarningRecord]:
+    warnings = []
+    for index, row in enumerate(rows):
+        ref = _opaque_ref(row["record_ref"], f"inventory_warning[{index}].record_ref")
+        band = row["warning_band"]
+        if not isinstance(band, str) or band not in _ALL_WARNING_BANDS:
+            raise MediplanerProjectionError(
+                f"Unzulässiger warning_band in inventory_warning[{index}]."
+            )
+        _utc_timestamp(row["event_at"], f"inventory_warning[{index}].event_at")
+        version = _integer(
+            row["record_version"], f"inventory_warning[{index}].record_version", minimum=1
+        )
+        _matching_provenance(row, publisher=publisher, checkpoint=checkpoint)
+        if band in _ACTIVE_WARNING_BANDS:
+            warnings.append(InventoryWarningRecord(ref, band, row["event_at"], version))
+    return warnings
+
+
 def _verify_tombstones(
     rows: list[sqlite3.Row],
-    routine_rows: list[sqlite3.Row],
+    medication_rows: list[sqlite3.Row],
+    warning_rows: list[sqlite3.Row],
     *,
     publisher: str,
     checkpoint: int,
     minimum_offline_seconds: int,
 ) -> None:
-    active = {row["record_ref"]: row for row in routine_rows}
+    active = {
+        ("medication_due", row["record_ref"]): row for row in medication_rows
+    }
+    active.update(
+        {("inventory_warning", row["record_ref"]): row for row in warning_rows}
+    )
     for index, row in enumerate(rows):
-        if row["record_type"] != "routine_due":
-            raise RoutinikaProjectionError(
+        record_type = row["record_type"]
+        if record_type not in _RECORD_TYPES:
+            raise MediplanerProjectionError(
                 f"Unzulässiger record_type in projection_tombstones[{index}]."
             )
         ref = _opaque_ref(
@@ -425,12 +494,12 @@ def _verify_tombstones(
         )
         _matching_provenance(row, publisher=publisher, checkpoint=checkpoint)
         if (retained - deleted).total_seconds() < minimum_offline_seconds:
-            raise RoutinikaProjectionError(
+            raise MediplanerProjectionError(
                 "Tombstone-Aufbewahrung deckt das Offline-Intervall nicht ab."
             )
-        active_row = active.get(ref)
+        active_row = active.get((record_type, ref))
         if active_row is not None and active_row["record_version"] <= version:
-            raise RoutinikaProjectionError(
+            raise MediplanerProjectionError(
                 "Tombstone kollidiert mit einer gleich alten oder älteren aktiven Zeile."
             )
 
@@ -439,26 +508,26 @@ def _matching_provenance(
     row: sqlite3.Row, *, publisher: str, checkpoint: int
 ) -> None:
     if row["publisher_instance"] != publisher:
-        raise RoutinikaProjectionError("Publisher-Provenienz stimmt nicht überein.")
+        raise MediplanerProjectionError("Publisher-Provenienz stimmt nicht überein.")
     if row["source_checkpoint"] != checkpoint:
-        raise RoutinikaProjectionError("Quell-Checkpoint stimmt nicht überein.")
+        raise MediplanerProjectionError("Quell-Checkpoint stimmt nicht überein.")
 
 
 def _participant(value: Any, label: str) -> str:
     if not isinstance(value, str) or _SAFE_PARTICIPANT.fullmatch(value) is None:
-        raise RoutinikaProjectionError(f"{label} enthält unsichere Zeichen.")
+        raise MediplanerProjectionError(f"{label} enthält unsichere Zeichen.")
     return value
 
 
 def _opaque_ref(value: Any, label: str) -> str:
     if not isinstance(value, str) or _OPAQUE_REF.fullmatch(value) is None:
-        raise RoutinikaProjectionError(f"{label} ist keine opake Hex-Referenz.")
+        raise MediplanerProjectionError(f"{label} ist keine opake Hex-Referenz.")
     return value
 
 
 def _integer(value: Any, label: str, *, minimum: int) -> int:
     if type(value) is not int or value < minimum:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             f"{label} muss eine Ganzzahl ab {minimum} sein."
         )
     return value
@@ -466,11 +535,11 @@ def _integer(value: Any, label: str, *, minimum: int) -> int:
 
 def _utc_timestamp(value: Any, label: str) -> datetime:
     if not isinstance(value, str):
-        raise RoutinikaProjectionError(f"{label} muss ein UTC-Zeitstempel sein.")
+        raise MediplanerProjectionError(f"{label} muss ein UTC-Zeitstempel sein.")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise RoutinikaProjectionError(
+        raise MediplanerProjectionError(
             f"{label} muss ein ISO-8601-UTC-Zeitstempel sein."
         ) from exc
     if (
@@ -478,7 +547,7 @@ def _utc_timestamp(value: Any, label: str) -> datetime:
         or parsed.utcoffset() is None
         or parsed.utcoffset().total_seconds() != 0
     ):
-        raise RoutinikaProjectionError(f"{label} muss UTC verwenden.")
+        raise MediplanerProjectionError(f"{label} muss UTC verwenden.")
     return parsed
 
 
