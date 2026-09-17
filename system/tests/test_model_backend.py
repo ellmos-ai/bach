@@ -100,6 +100,79 @@ def test_ollama_chat_hides_disabled_thinking(monkeypatch):
     assert result["content"] == "OK"
 
 
+@pytest.mark.parametrize("use_override", [False, True])
+def test_glm_cloud_rejects_disabled_thinking_before_http(monkeypatch, use_override):
+    def fail_client(**_kwargs):
+        pytest.fail("GLM think=false must not reach Ollama")
+
+    monkeypatch.setattr(httpx, "AsyncClient", fail_client)
+    backend = OllamaBackend(
+        default_model="qwen3:4b" if use_override else "glm-5.3:cloud"
+    )
+    selected = "glm-5.3:cloud" if use_override else None
+
+    with pytest.raises(RuntimeError, match="benötigt think=true"):
+        asyncio.run(
+            backend.chat([{"role": "user", "content": "CLOUD_OK"}],
+                         think=False, model=selected)
+        )
+
+
+@pytest.mark.parametrize("invalid_think", [0, 1, None, "invalid", "high"])
+def test_glm_cloud_rejects_unverified_thinking_values_before_http(
+    monkeypatch, invalid_think
+):
+    def fail_client(**_kwargs):
+        pytest.fail("Unverified GLM think value must not reach Ollama")
+
+    monkeypatch.setattr(httpx, "AsyncClient", fail_client)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+
+    with pytest.raises(RuntimeError, match="think=true"):
+        asyncio.run(
+            backend.chat(
+                [{"role": "user", "content": "CLOUD_OK"}], think=invalid_think
+            )
+        )
+
+
+def test_glm_cloud_thinking_enabled_keeps_separate_answer(monkeypatch):
+    requests = []
+    response = _FakeResponse({"message": {
+        "role": "assistant",
+        "content": "CLOUD_OK",
+        "thinking": "interner Überlegungstext",
+    }})
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response, requests)
+    )
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+
+    result = asyncio.run(
+        backend.chat([{"role": "user", "content": "CLOUD_OK"}], think=True)
+    )
+
+    assert requests[0]["json"]["model"] == "glm-5.3:cloud"
+    assert requests[0]["json"]["think"] is True
+    assert result["content"] == "CLOUD_OK"
+
+
+def test_kimi_cloud_disabled_thinking_remains_allowed(monkeypatch):
+    requests = []
+    response = _FakeResponse({"message": {"content": "CLOUD_OK"}})
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response, requests)
+    )
+    backend = OllamaBackend(default_model="kimi-k3:cloud")
+
+    result = asyncio.run(
+        backend.chat([{"role": "user", "content": "CLOUD_OK"}], think=False)
+    )
+
+    assert requests[0]["json"]["think"] is False
+    assert result["content"] == "CLOUD_OK"
+
+
 @pytest.mark.parametrize("payload", [
     {"message": {"content": ""}},
     {"status": "ok"},

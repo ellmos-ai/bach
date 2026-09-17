@@ -66,6 +66,42 @@ def control_module(monkeypatch, tmp_path):
             sys.modules[module_name] = previous_module
 
 
+def test_clear_api_returns_error_status_when_durable_clear_fails(control_module, monkeypatch):
+    def fail_clear(*_args, **_kwargs):
+        raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden")
+
+    monkeypatch.setattr(control_module.runtime, "clear_session", fail_clear)
+    handler = control_module.ControlHandler.__new__(control_module.ControlHandler)
+    handler.path = "/api/clear"
+    monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+    monkeypatch.setattr(handler, "_read_body", lambda: {"chat_id": "gui-web"})
+    replies = []
+    monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+
+    handler.do_POST()
+
+    assert replies == [({"ok": False, "chat_id": "gui-web",
+                        "error": "Chat-Persistenz konnte nicht gelöscht werden"}, 503)]
+
+
+def test_telegram_clear_reports_failure_without_success_claim(control_module, monkeypatch):
+    def fail_clear(*_args, **_kwargs):
+        raise RuntimeError("Chat-Persistenz konnte nicht gelöscht werden")
+
+    monkeypatch.setattr(control_module.runtime, "clear_session", fail_clear)
+    reply = AsyncMock()
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=123),
+        message=SimpleNamespace(reply_text=reply),
+    )
+
+    asyncio.run(control_module.cmd_clear(update, None))
+
+    reply.assert_awaited_once()
+    assert "bleibt erhalten" in reply.await_args.args[0]
+    assert "archiviert" not in reply.await_args.args[0]
+
+
 def test_backend_inventory_marks_selected_unreachable_backend(control_module, monkeypatch):
     backend = OllamaBackend(default_model="qwen3:4b")
     monkeypatch.setattr(

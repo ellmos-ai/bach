@@ -26,7 +26,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 log = logging.getLogger("bach.compute_lock")
 
@@ -596,10 +596,8 @@ def set_fackel_preference(
 
     # Dual persistence: also save to slots_config.json
     try:
-        from hub._services.chat.slots_config import load_slots_config, save_slots_config
-        cfg = load_slots_config()
-        cfg["fackel_preference"] = pref_norm
-        save_slots_config(cfg)
+        from hub._services.chat.slots_config import update_fackel_preference
+        update_fackel_preference(pref_norm)
     except Exception as e:
         log.warning("Could not persist fackel preference to slots_config: %s", e)
         if not file_saved:
@@ -609,4 +607,3 @@ def set_fackel_preference(
     _record_fackel_activity(alt, pref_norm, quelle, str(f))
 
     return pref_norm
-

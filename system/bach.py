@@ -16,8 +16,6 @@ Usage:
 
 import os
 import sys
-import email
-import email.parser
 import json
 import re
 import subprocess
@@ -197,7 +195,7 @@ def _handle_fs(sub_cmd, args):
         snapshot_count = len(list(snapshots_dir.glob("*.orig"))) if snapshots_dir.exists() else 0
         print("[FS] Filesystem Protection Status")
         print(f"  Snapshots: {snapshot_count} Dateien")
-        print(f"  Befehle: bach fs check, bach fs heal, bach dist snapshot")
+        print("  Befehle: bach fs check, bach fs heal, bach dist snapshot")
     elif sub_cmd == "classify":
         if not args:
             print("Usage: bach fs classify <path>")
@@ -866,6 +864,7 @@ SESSION:
   --startup              Komplettes Startprotokoll
   --shutdown [note]      Session beenden
   --status               Schnelle System-Uebersicht
+  --init-slots            Fehlende Slot-Konfiguration explizit initialisieren
 
 TASKS:
   task add "Titel"       Task hinzufuegen
@@ -1090,6 +1089,20 @@ def main():
     # enden, damit selbst ein langsamer OneDrive-Transit die CLI nicht blockiert.
     if cli_args and cli_args[0] in {"--version", "-V"}:
         print(f"BACH {_read_bach_version()}")
+        return 0
+
+    # Never bootstrap missing worker restrictions as a side effect of a
+    # normal chat/read/startup. Recovery requires this explicit operator call.
+    if cli_args == ["--init-slots"]:
+        from hub._services.chat.slots_config import (
+            DEFAULT_SLOTS_FILE, initialize_slots_config,
+        )
+        try:
+            initialize_slots_config()
+        except Exception as exc:
+            print(f"Slot-Konfiguration nicht initialisiert: {exc}", file=sys.stderr)
+            return 1
+        print(f"Slot-Konfiguration bereit: {DEFAULT_SLOTS_FILE}")
         return 0
 
     # Keine Argumente oder Top-Level-Help. Die allgemeine Hilfe ist bewusst
