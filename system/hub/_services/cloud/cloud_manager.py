@@ -126,6 +126,8 @@ class OneDriveAdapter(CloudAdapter):
     def pause(self) -> bool:
         if not self.is_running():
             return True
+        if os.environ.get("BACH_TEST_MODE") == "1":
+            raise RuntimeError("OneDrive process control is disabled in BACH test mode")
         try:
             if sys.platform == "win32":
                 exe = self._find_win_exe()
@@ -153,6 +155,8 @@ class OneDriveAdapter(CloudAdapter):
         return False
 
     def resume(self) -> bool:
+        if os.environ.get("BACH_TEST_MODE") == "1":
+            raise RuntimeError("OneDrive process control is disabled in BACH test mode")
         try:
             if sys.platform == "win32":
                 exe = self._find_win_exe()

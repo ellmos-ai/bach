@@ -49,8 +49,11 @@ except ImportError:
 # Pfade
 DAEMON_DIR = Path(__file__).parent
 BACH_DIR = DAEMON_DIR.parent
-DATA_DIR = BACH_DIR / "data"
-LOG_DIR = BACH_DIR / "data" / "logs"
+RUNTIME_ROOT = Path(
+    os.environ.get("BACH_RUNTIME_DIR", BACH_DIR)
+).expanduser().resolve(strict=False)
+DATA_DIR = RUNTIME_ROOT / "data"
+LOG_DIR = DATA_DIR / "logs"
 DAEMON_PID_FILE = DATA_DIR / "daemon.pid"
 CONTROL_DIR = DATA_DIR / "scheduler_control"
 SCHEDULER_PAUSE_FILE = CONTROL_DIR / "scheduler.pause.json"
@@ -629,13 +632,19 @@ class DaemonService:
         Returns:
             dict mit killed, errors, pid_file_removed
         """
-        import psutil
-
         result = {
             "killed": [],
             "errors": [],
             "pid_file_removed": False
         }
+
+        if os.environ.get("BACH_TEST_MODE") == "1":
+            result["errors"].append(
+                "Host-Prozesssteuerung ist im BACH-Testmodus deaktiviert"
+            )
+            return result
+
+        import psutil
 
         # 1. PID-File pruefen und Prozess beenden
         if DAEMON_PID_FILE.exists():
