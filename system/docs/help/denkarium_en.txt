@@ -9,7 +9,13 @@ denkarium -- logbook + thought collector
 
 DESCRIPTION
 ============
-The pensieve handler manages two modes for notes and reflections:
+The pensieve handler manages two modes for notes and reflections.
+
+IMPORTANT: The Denkarium is the user's (Lukas) personal notebook. It is NOT
+meant as a notebook/scratchpad for agents — agents instead use `bach memory`
+(facts/lessons) and session reports. An agent writes to the Denkarium only on
+explicit request from the user.
+
 
   denkarium Free thoughts, ideas and reflections (can be flexibly categorized)
   logbuch Chronological diary with sidereal time marking

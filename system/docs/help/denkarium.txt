@@ -9,7 +9,13 @@ denkarium -- Logbuch + Gedanken-Sammler
 
 BESCHREIBUNG
 ============
-Der Denkarium-Handler verwaltet zwei Modi für Notizen und Reflexionen:
+Der Denkarium-Handler verwaltet zwei Modi für Notizen und Reflexionen.
+
+WICHTIG: Das Denkarium ist das persönliche Notizbuch des Users (Lukas).
+Es ist NICHT als Notizbuch/Scratchpad für Agenten gedacht — Agenten nutzen
+stattdessen `bach memory` (Fakten/Lektionen) und Session-Berichte. Ein Agent
+schreibt in den Denkarium nur auf ausdrücklichen Wunsch des Users.
+
 
   denkarium  Freie Gedanken, Ideen und Reflexionen (flexibel kategorisierbar)
   logbuch    Chronologisches Tagebuch mit Sternzeit-Markierung

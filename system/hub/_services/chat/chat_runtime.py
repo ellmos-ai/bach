@@ -1331,7 +1331,7 @@ FULL-MODUS (nur nach /mode full bestätigt):
 - write_file — Dateien schreiben
 
 BACH-HANDLER (alle via bach_command nutzbar):
-- denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler und Logbuch
+- denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler/Logbuch (persönliches Notizbuch des Users — NICHT als Agenten-Notizbuch; dafür mem/bach memory)
 - calendar list/add/today/week — Termine und Kalender
 - contact list/search/show — Kontaktverwaltung
 - routine list/add/complete — Routinen und Gewohnheiten
@@ -1357,7 +1357,7 @@ REGELN:
 - Nutze edit_file zum Bearbeiten von Dateien (suchen/ersetzen)
 - Nutze recycle zum Löschen — verschiebt in den Papierkorb statt endgültig zu löschen
 - Nutze weather für Wetterabfragen
-- Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will
+- Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will (das ist SEIN persönliches Notizbuch — nutze es NICHT als dein eigenes Notizbuch; für Agenten-Erinnerungen: mem/bach memory)
 - Nutze calendar, wenn der User nach Terminen fragt oder welche anlegen will
 - Nutze contact, wenn der User Kontakte sucht oder anzeigen will
 - Nutze routine, wenn der User nach Routinen oder Gewohnheiten fragt

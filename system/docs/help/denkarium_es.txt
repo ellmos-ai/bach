@@ -9,7 +9,9 @@ denkarium -- cuaderno de bitácora + recopilador de pensamientos
 
 DESCRIPCIÓN
 ============
-El manejador del pensadero gestiona dos modos para notas y reflexiones:
+El manejador del pensadero gestiona dos modos para notas y reflexiones.
+
+NOTA: El Denkarium es el cuaderno personal del usuario (Lukas). NO es un cuaderno/pizarra para agentes — los agentes usan `bach memory` (hechos/lecciones) y reportes de sesión. Un agente escribe en él solo a petición explícita del usuario.
 
   denkarium Pensamientos, ideas y reflexiones libres (se pueden clasificar de forma flexible)
   logbuch Diario cronológico con marca de tiempo sideral
