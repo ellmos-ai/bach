@@ -2,6 +2,16 @@
 
 ## Offene Aufgaben
 
+### ✅ [BACH-TEST-01] Testisolation für Runtime-Dateien und Prozesssteuerung
+- **Ziel:** Pytest-Läufe dürfen weder Runtime-Zustand in den Checkout schreiben noch reale Cloud- oder Systemprozesse beenden.
+- **Quelle:** `[Ticket: T-20260915-107799375]` `[Vorfall: OneDrive.exe /shutdown aus test_daemon_service.py]`
+- **Akzeptanzkriterien (DoD):** Runtime-Pfade liegen in einem temporären Sitzungsordner; Schreibversuche in geschützte Checkout-Pfade und reale Prozessbeendigungen werden zentral blockiert; CLI-Kindprozesse erben dieselbe Isolation.
+- **Prüfweg:** siehe `system/tests/README.md`; fokussierte Tätergruppe und anschließend vollständige Suite ausführen, danach Checkout-Artefakte und OneDrive-Prozess prüfen.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+- **Erledigt:** 2026-09-15 – Pfad-Seams, Audit-/Subprozess-Guard und Regressionstests ergänzt; konkrete Alt-Schreiber isoliert.
+
 ### [BACH-AGENT-PID-01] Agent-Stop gegen PID-Wiederverwendung absichern (OC-B-Gate)
 - **Ziel:** `agent stop` darf niemals einen fremden Prozess nur wegen einer wiederverwendeten PID beenden. Die PID-Identität muss beim Start gespeichert und vor Status/Stop konsistent geprüft werden; Altdateien ohne verifizierbare Identität brauchen einen fail-closed oder explizit geprüften Migrationspfad.
 - **Quelle:** `[OC-B: T-20260818-903104603; unabhängiger Review von BACH PR #65 am 2026-09-15]` — `system/hub/agent_launcher.py::_stop_agent` liest die PID direkt, während `AgentProcessRegistry.is_running` Identitätsabweichungen erkennt und PID-Dateien entfernen kann. BACHs heutige Startdateien enthalten keinen `process_identity`-Anker.

@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-12 | **Version:** 4.3.63 | **Review:** 2026-09-12 (Task #1225)
+**Stand:** 2026-09-16 | **Version:** 4.3.63 | **Review:** 2026-09-16 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -18,6 +18,35 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.63 bleibt aktiv)* |
+
+## Review 2026-09-16 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Task-DB-Bereinigung abgeschlossen:** Die zehn verbliebenen Test-Spam-Tasks
+  #1166–#1175 („ich teste ob du antwortest…“) wurden endgültig in der Live-Datenbank
+  als erledigt (`done`) markiert. Die offene Task-Liste wurde von 21 auf 11 bereinigt.
+  Aktiver Fokus verbleibt auf den realen Aufgaben: MODULRUECKTRANSFER Stufen 6–8
+  (#1222–#1224), OPS-RUN-001 (#1118) und Sandbox Stufe 2 (#1071).
+- **Agent Doctor & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten erfolgreich durchgeführt.
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien).
+- **Regressionstest-Suite 100% grün:**
+  - Core-Suite (123 Tests: `test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_smoke.py`): 123/123 bestanden mit strenger `~/.bach`-Isolation.
+  - Modulrücktransfer-Suite (161 Tests: `test_accounts_via_accounts_core.py`, `test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_scheduler_provider.py`, `test_transit_sync_provider_wiring.py`): 161/161 bestanden nach Präzisierung des isolierten Backend-Error Fail-Soft-Tests in `test_hook_provider_wiring.py`.
+- **System- & Dokumentations-Wartung:**
+  - Dokumentations-Prüfung: 2.106 Dokumente analysiert, 0 Dokumente veraltet (>60 Tage).
+  - Memory-Hygiene: Working Memory analysiert (157 Einträge, 0 abgelaufene `is_active`-Bereinigungen nötig), Decay-Prüfung durchgeführt.
+  - Registry-Health: `system/bach.py --maintain registry check` meldet 0 Issues, Status `healthy: true`.
+- **OpenClaw Competitive Watch (Stand v2026.9.2):**
+  - Abgleich mit OpenClaw Stable `v2026.9.2` (Release 2026-09-05):
+    - *Reaktive Chat- & Dashboard-Performance:* Auslagerung langlebiger Transkripte und I/O-Ladevorgänge aus dem Haupt-Event-Loop.
+    - *Restart-Resilienz für Agenten-Antworten:* Aktive, gequeuete und delegierte Antworten überstehen Gateway-Restarts ohne Marker-Verlust; Fortführungshinweise bleiben über Compaction hinweg erhalten.
+    - *Dynamische Konfiguration:* Laufzeit-Neuladen von Agent-, Model- und Tool-Parametern ohne Gateway-Neustart.
+    - *GPT-6 Astra Integration:* Asynchrone Tool-Aufrufe, WebSocket-gestütztes Active Steering und orchestrale `/think ultra`-Steuerung.
+    - *Datensicherheit:* Backup-Erhalt bei NUL-Bytes und Härtung gegen defekte Archiv-Header.
+  - *Relevanz für BACH:* Bestätigt den BACH-Fokus auf Session-Resilienz und unterbrechungsfreie Task-Delegation (analog zu OPS-RUN-001 / Task #1118). Relevante architektonische Impulse für BACH sind die Entlastung des I/O-Busses bei wachsenden Transkripten sowie verbesserte Compaction-Erholung für langlebige Agenten-Konversationen.
 
 ## Review 2026-09-11 (Task #1126)
 

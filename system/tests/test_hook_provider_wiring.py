@@ -245,6 +245,7 @@ class TestExternalMemoryHook:
                 raise RuntimeError("kaputt")
 
         hook.backend = Boomer()
+        hook._states["chat-err"] = hook._mod["SessionState"](session_start_shown=True)
         assert hook.hook_context("deployment", "chat-err") is None
 
     def test_contract_violation_fails_closed(self, monkeypatch, clean_env):

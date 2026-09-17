@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
@@ -19,6 +21,15 @@ def _init_base(tmp_path):
     (base / "agents" / "_experts").mkdir(parents=True)
     (base / "plugins").mkdir(parents=True)
     return base
+
+
+@pytest.fixture(autouse=True)
+def _isolate_capability_audit_log(tmp_path, monkeypatch):
+    """Keep the process-global capability manager out of source runtime data."""
+    from core.capabilities import capability_manager
+
+    isolated_system = tmp_path / "capability-system"
+    monkeypatch.setattr(capability_manager, "_base_path", isolated_system)
 
 
 def test_plugin_load_blocks_code_injection_patterns(tmp_path):
