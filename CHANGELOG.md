@@ -8,6 +8,19 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Authentifizierter Projektions-Preflight (T-20260915-486495819):**
+  MediPlaner- und Routinika-Transitmanifeste werden vor jedem SQLite-Zugriff
+  über geheimnisfreie OS-Keyring-Referenzen, HMAC, Dateigröße und SHA-256
+  fail-closed geprüft. Der normale Consumer akzeptiert keinen direkten
+  unauthentifizierten Datenbankpfad mehr. Nach dem Transit-Preflight werden die
+  verifizierten Bytes erneut gegen Größe und Hash gebunden und ausschließlich
+  aus einem privaten unveränderlichen Snapshot gelesen; ein adversarialer
+  Austausch zwischen Prüfung und SQLite-Read schlägt fehl. Auth-, Transport-,
+  Replay- und Commitfehler schreiben keinen Consumer-Checkpoint. Abhängigkeit:
+  reproduzierbarer Pin auf den gemergten `sqlite-transit-sync`-Commit
+  `d1509e5f25bbd35e6658d2889b9bfb9f1ff9b573`. Module und Scheduler bleiben
+  standardmäßig deaktiviert; Live-Daten und Cutover sind nicht freigegeben.
+
 - **Read-only MediPlaner-Consumer (T-20260822-624075478):** Der Daily Agent kann
   die ratifizierte `org.ellmos.mediplaner.reminder-projection@1.0.0` optional
   als deaktiviertes Briefing-Modul lesen. Der Consumer prüft eine exakte

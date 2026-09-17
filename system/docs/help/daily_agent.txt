@@ -23,10 +23,10 @@ OPERATIONEN
   bach daily-agent briefing --dry-run   Read-only Briefing-Vorschau
   bach daily-agent summary              Abend-Zusammenfassung generieren
   bach daily-agent config               Briefing-Module listen
-  bach daily-agent config mediplaner_briefing --projection=<absoluter-pfad>
-                                        MediPlaner-Consumerpfad speichern
-  bach daily-agent config routinika_briefing --projection=<absoluter-pfad>
-                                        Routinika-Consumerpfad speichern
+  bach daily-agent config mediplaner_briefing --manifest=<absoluter-pfad> --auth-refs-file=<absoluter-pfad>
+                                        Authentifizierten Transitpfad speichern
+  bach daily-agent config routinika_briefing --manifest=<absoluter-pfad> --auth-refs-file=<absoluter-pfad>
+                                        Authentifizierten Transitpfad speichern
   bach daily-agent modules              Alias für config
   bach daily-agent toggle <modul>       Modul ein-/ausschalten
 
@@ -48,10 +48,8 @@ BEISPIELE
   bach daily-agent start --model=opus   Startet mit Modell 'opus'
   bach daily-agent status               Zeigt PID und Start-Zeit
   bach daily-agent briefing             Generiert Briefing mit aktiven Modulen
-  bach daily-agent briefing --mediplaner-projection=C:\staging\mediplaner.sqlite --mediplaner-receipt --dry-run
-                                        Prüft eine geschlossene Projektion ohne Schreibzugriff
-  bach daily-agent briefing --routinika-projection=C:\staging\routinika.sqlite --routinika-receipt --dry-run
-                                        Prüft eine geschlossene Projektion ohne Schreibzugriff
+  bach daily-agent briefing --mediplaner-manifest=C:\transit\mediplaner.sqlite-snapshot.json --dry-run
+                                        Liest nur einen privaten hashgebundenen Snapshot
   bach daily-agent toggle news_briefing Deaktiviert News-Modul
   bach daily-agent summary              Zeigt heute erledigte Tasks
   bach daily-agent stop                 Stoppt Agent + speichert Summary
@@ -76,10 +74,16 @@ mediplaner_briefing: Exakt erlaubte, opake Medikamenten-Fälligkeiten und
                     SQLite-Projektion; standardmäßig deaktiviert. Reale Läufe
                     speichern den Consumer-Checkpoint in der BACH-Konfiguration;
                     Dry-runs schreiben nichts.
+                    Für Transitpfade werden nur OS-Schlüsselbund-Referenzen
+                    gespeichert; HMAC, Dateigröße und SHA-256 werden vor dem
+                    Öffnen von SQLite geprüft.
 routinika_briefing: Exakt erlaubte, opake Fälligkeiten aus einer geschlossenen
                     Routinika-v1-SQLite-Projektion; standardmäßig deaktiviert.
                     Reale Läufe speichern den Consumer-Checkpoint; Dry-runs
                     schreiben nichts.
+                    Ein konfiguriertes Transit-Manifest wird fail-closed
+                    authentifiziert; Secretwerte sind in der Konfiguration
+                    verboten.
 weather_briefing:   Versucht weather_service (Koordinaten hardcodiert auf 0,0)
 calendar_briefing:  Heutige Termine aus assistant_calendar (5 nächste Events)
 
@@ -91,6 +95,9 @@ FEHLERBEHANDLUNG
 - Briefing-Module ignorieren stille DB-Fehler (z.B. wenn news_items nicht existiert)
 - Eine aktive/ausdrücklich angegebene MediPlaner- oder Routinika-Projektion schlägt bei
   Vertrags-, Provenienz- oder Geschlossenheitsfehlern geschlossen fehl.
+- Authentifizierte Transitpfade schlagen bei fehlendem Keyring, unbekanntem
+  Schlüssel/Sender, Manipulation, fehlendem Manifest/Snapshot oder Sidecars
+  vor dem SQLite-Zugriff fehl; der Consumer-Checkpoint bleibt unverändert.
 - stop speichert Summary AUCH wenn Agent bereits tot ist
 
 
