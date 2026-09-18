@@ -24,7 +24,12 @@ ProcessFn = Callable[[str, str], str]
 
 
 def _is_failed_answer(answer: object) -> bool:
-    """Erkennt den provider-neutralen FailedAnswer-Marker ohne BACH-Import."""
+    """Recognise the provider-neutral failure marker without a BACH import.
+
+    ``SuccessfulAnswer`` deliberately overrides this legacy text probe, so a
+    legitimate answer with the historical prefix remains fileable while a
+    plain legacy failure stays fail-closed.
+    """
     return isinstance(answer, str) and answer.startswith(FAILED_ANSWER_PREFIX)
 
 
@@ -57,7 +62,7 @@ def pending_orders(
 
 
 def file_reply(conn: sqlite3.Connection, order: dict, answer: str) -> int:
-    """Speichert eine erfolgreiche Antwort; Fehler lassen den Auftrag offen."""
+    """Speichert nur erfolgreiche Antworten; Fehler lassen den Auftrag offen."""
     if _is_failed_answer(answer):
         return 0
     subject = order.get("subject") or order.get("body", "")[:60]
@@ -99,8 +104,8 @@ def run_once(
                     order["id"],
                 )
                 continue
-            file_reply(conn, order, answer)
-            answered += 1
+            if file_reply(conn, order, answer):
+                answered += 1
         return answered
     finally:
         conn.close()

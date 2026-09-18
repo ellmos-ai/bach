@@ -21,6 +21,7 @@ from typing import Iterable
 CHAT_SNAPSHOT_TYPE = "chat-transcript.v1"
 CHAT_SESSION_PREFIX = "chat-runtime:v1:"
 _ALLOWED_ROLES = frozenset({"system", "user", "assistant", "tool"})
+_ALLOWED_ANSWER_STATUSES = frozenset({"success", "failed"})
 
 
 class ChatSessionStoreError(RuntimeError):
@@ -67,10 +68,16 @@ class SQLiteChatSessionStore:
             content = item.get("content", "")
             if role not in _ALLOWED_ROLES or not isinstance(content, str):
                 raise ChatSessionStoreError("chat transcript entry has invalid role/content")
-            normalised.append({
+            normalised_item = {
                 "role": role,
                 "content": content[:self.max_content_chars],
-            })
+            }
+            # Additive transcript metadata; old snapshots without this key
+            # remain valid and are handled by ChatRuntime's legacy fallback.
+            answer_status = item.get("answer_status")
+            if role == "assistant" and answer_status in _ALLOWED_ANSWER_STATUSES:
+                normalised_item["answer_status"] = answer_status
+            normalised.append(normalised_item)
 
         if len(normalised) <= self.max_messages:
             return normalised
