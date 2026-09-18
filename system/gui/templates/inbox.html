@@ -972,7 +972,7 @@
                     document.getElementById('mount-alias').value = '';
                     loadMounts();
                 } else {
-                    alert('Fehler: ' + data.output);
+                    alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
                 }
             } catch (e) { alert('API Fehler'); }
         }
@@ -983,7 +983,7 @@
                 const res = await fetch(`/api/mounts/${alias}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.success) loadMounts();
-                else alert('Fehler: ' + data.output);
+                else alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
             } catch (e) { alert('API Fehler'); }
         }
 
@@ -991,8 +991,12 @@
             try {
                 const res = await fetch('/api/mounts/restore', { method: 'POST' });
                 const data = await res.json();
-                alert(data.output);
-                loadMounts();
+                if (data.success) {
+                    alert(data.message || data.output || 'Mounts wiederhergestellt');
+                    loadMounts();
+                } else {
+                    alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
+                }
             } catch (e) { alert('API Fehler'); }
         }
 
