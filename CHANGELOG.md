@@ -272,6 +272,35 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **Help-Forensik countdown.txt (Task #1332, 2026-09-18):** Vollpruefung von
+  docs/help/countdown.txt gegen Implementierung (system/tools/time_system.py,
+  system/hub/time.py). Funktionalitaet komplett bestaetigt (start/stop/pause/
+  resume/list, --after-Trigger, Persistenz data/.countdown_state — Struktur exakt
+  identisch; Live-Test inkl. Cleanup). Korrekturen: (1) Dauer-Formate MM:SS und
+  Xs/Xm/Xh waren implementiert, aber nur HH:MM:SS dokumentiert → DAUER-FORMATE-
+  Sektion ergänzt (VERBESSERUNG); (2) Auto-Start-Kurzform "bach countdown <Dauer>"
+  (v1.1.84) dokumentiert; (3) AUSGABE-FORMAT an Realitaet angepasst ("'name'
+  gestartet:", "Aktive Countdowns:", Warnung "name: MM:SS [!]" statt "[!] name:
+  Nur noch"); (4) toter Verweis auf nicht existierende docs/CONCEPT_time_system.md
+  entfernt (betroffen: auch beat_*, clock_zh — Follow-up-Task #1335); (5) Status
+  v1.1.83 → v1.1.84, Validierung 2026-09-18 gesetzt (war seit 2026-08-08 faellig).
+  Bericht: system/logs/help_forensic/REPORT_2026-09-18_countdown.md. Offen:
+  Uebersetzungen countdown_en/es/ja/ru/zh nachziehen (Follow-up-Task #1336).
+
+- **Tote CONCEPT_time-Verweise bereinigt (Task #1335, 2026-09-18):** Ausgehend von der
+  Help-Forensik countdown.txt (#1332) wurden saemtliche toten Verweise auf die nicht
+  existierenden Dateien docs/CONCEPT_time_system.md und docs/_archive/con4_CONCEPT_time_
+  system_90.md (docs/_archive/ existiert nicht) aus den Help-Dateien entfernt. Betroffen
+  waren 17 Dateien: beat_*.txt (de/en/es/ja/ru/zh), clock_*.txt (de/en/es/ja/ru/zh) und
+  countdown_en/es/ja/ru/zh (countdown.txt bereits in #1332 bereinigt). Ersetzt durch je
+  zwei Zeilen am Dateiende (sprachspezifisch): echte Quellenangabe (system/tools/
+  time_system.py mit Modul: TimeManager fuer beat, ClockModule fuer clock, CountdownModule
+  fuer countdown; system/hub/time.py als Handler) plus kurzer Hinweis mit Forensik-
+  Referenz. Verifikation: grep ueber alle 1125 Help-Dateien — keine Siehe-/See-/Ver-/
+  参照-/См.-/请参阅-Verweise auf CONCEPT_time mehr vorhanden. Nebenbefund (nicht Scope,
+  an #1334/#1336 gemeldet): 41 weitere Help-Dateien verweisen generisch auf CONCEPT-Doku;
+  beat/clock-Familien tragen noch Status "Implementiert (v1.1.83)".
+
 - **user.db-Doku-Konsolidierung nachgezogen (Nebenbefund aus Anschlussanalyse #1321, 2026-09-17):**
   Die v1.1.84-Konsolidierung (Task 772, "user.db in bach.db") war im Code vollstaendig
   umgesetzt, aber 6 Dokumentstellen beschrieben noch Tabellen "in user.db" — inklusive

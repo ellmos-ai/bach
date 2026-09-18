@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
 # Version: 1.0.0
-# Zuletzt validiert: 2026-02-08
-# Nächste Prüfung: 2026-08-08
+# Zuletzt validiert: 2026-09-18 (Help-Forensik, Task #1332)
+# Nächste Prüfung: 2027-03-18
 
 COUNTDOWN - Countdown mit Trigger
 ==================================
@@ -11,20 +11,34 @@ Countdown-Timer der bei Ablauf optional einen Befehl ausführt.
 CLI-BEFEHLE
 -----------
 
-  bach countdown start <name> HH:MM:SS              Countdown starten
-  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
+  bach countdown start <name> <Dauer>               Countdown starten
+  bach countdown start <name> <Dauer> --after "cmd"  Mit Trigger-Befehl
+  bach countdown <Dauer>                            Kurzform: startet als "timer" (v1.1.84)
   bach countdown stop <name>                         Countdown abbrechen
   bach countdown list                                Aktive Countdowns
   bach countdown pause <name>                        Pausieren
   bach countdown resume <name>                       Fortsetzen
 
+DAUER-FORMATE
+-------------
+
+  HH:MM:SS   z.B. 01:00:00 = 1 Stunde
+  MM:SS     z.B. 25:00 = 25 Minuten
+  Xs/Xm/Xh  z.B. 90s, 25m, 2h (Kurzform)
+
 AUSGABE-FORMAT
 --------------
 
-  Normal:  [COUNTDOWN] session: 45:12 verbleibend
-  Warnung: [!] session: Nur noch 04:58!
+  Start:      [COUNTDOWN] 'name' gestartet: 01:00:00
+  Pausieren:  [COUNTDOWN] 'name' pausiert (45:12 verbleibend)
+  Fortsetzen: [COUNTDOWN] 'name' fortgesetzt (45:12 verbleibend)
+  Stop:       [COUNTDOWN] 'name' abgebrochen
 
-Warnung erscheint bei < 5 Minuten verbleibend.
+  List:       [COUNTDOWN] Aktive Countdowns:
+                name: 45:12                 (normal)
+                name: 04:58 [!]             (Warnung, bei < 5 Minuten)
+                name: ABGELAUFEN!
+                name: 19:45 (PAUSIERT)
 
 PERSISTENZ
 ----------
@@ -64,8 +78,9 @@ BEISPIELE
 
   # Status prüfen
   bach countdown list
-  -> session: 45:12 verbleibend
-  -> focus:   19:45 verbleibend (PAUSIERT)
+  -> [COUNTDOWN] Aktive Countdowns:
+  ->   session: 45:12
+  ->   focus:   19:45 (PAUSIERT)
 
 TRIGGER (--after)
 -----------------
@@ -104,5 +119,8 @@ Countdown ist Teil des Zeit-Systems:
   --help beat     Unified Zeit-Anzeige
 
 ---
-Version: 1.0 | Status: Implementiert (v1.1.83)
-Siehe: docs/CONCEPT_time_system.md
+Version: 1.1 | Status: Implementiert (v1.1.84)
+Quelle: system/tools/time_system.py (CountdownModule), system/hub/time.py (Handler)
+Hinweis: Verweis auf docs/CONCEPT_time_system.md entfernt - Datei existiert nicht
+(Forensik 2026-09-18, Task #1332). Zugehoerige Hilfe: --help clock, --help timer,
+--help between, --help beat (siehe ZUSAMMENSPIEL oben).

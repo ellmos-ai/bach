@@ -104,4 +104,5 @@ TRIGGER (--after)
 
 ---
 版本：1.0 |状态：已实施 (v1.1.83)
-请参阅：docs/CONCEPT_time_system.md
+来源: system/tools/time_system.py (CountdownModule), system/hub/time.py (处理器)
+注: 已移除指向 docs/CONCEPT_time_system.md 的引用 - 文件不存在 (2026-09-18, 任务 #1335)
