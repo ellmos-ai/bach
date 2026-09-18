@@ -36,12 +36,15 @@ from hub._services.chat.slots_config import (
     update_slot,
 )
 from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, FailedAnswer
+from hub._services.chat import telegram_chat
 from hub._services.chat.telegram_chat import (
     _apply_slot_to_session,
     _get_or_create_backend,
     _resolve_slot_for_chat,
     _snapshot_chat_backend,
     ControlHandler,
+    WorkerBindingError,
+    legacy_worker_binding,
 )
 
 
@@ -306,6 +309,35 @@ class TestSlotsConfigCRUD:
 
         slot = get_slot("buddha_always_on", path=str(cfg_file))
         assert slot["current_activity"] == "Task #99 ausgeführt"
+
+    def test_activity_uses_worker_id_only_with_duplicate_names(self, tmp_path):
+        cfg_file = tmp_path / "duplicate_names.json"
+        initialize_slots_config(str(cfg_file))
+        first = add_worker({
+            "id": "worker-twin-a",
+            "name": "Twin",
+            "type": "persistent",
+        }, path=str(cfg_file))
+        second = add_worker({
+            "id": "worker-twin-b",
+            "name": "Twin",
+            "type": "persistent",
+        }, path=str(cfg_file))
+
+        record_activity("Twin", "name-only activity", path=str(cfg_file))
+        by_name = load_slots_config(str(cfg_file))["dynamic_workers"]
+        assert all(w.get("current_activity") != "name-only activity" for w in by_name)
+        assert all(
+            not any(h.get("activity") == "name-only activity" for h in w.get("history", []))
+            for w in by_name
+        )
+
+        record_activity(first["id"], "id-only activity", path=str(cfg_file))
+        by_id = load_slots_config(str(cfg_file))["dynamic_workers"]
+        first_after = next(w for w in by_id if w["id"] == first["id"])
+        second_after = next(w for w in by_id if w["id"] == second["id"])
+        assert first_after["current_activity"] == "id-only activity"
+        assert second_after.get("current_activity") != "id-only activity"
 
 
 class TestTelegramSlotMapping:
@@ -585,6 +617,47 @@ class TestTelegramSlotMapping:
         }, path=str(cfg_file))
         assert "Du bist Buddha" in worker_with_sys["system_prompt"]
         assert "Recherchiere die Logs" in worker_with_sys["system_prompt"]
+
+    def test_worker_binding_is_fail_closed_and_legacy_is_explicit(self, tmp_path):
+        cfg_file = tmp_path / "worker_binding.json"
+        cfg = load_slots_config(str(cfg_file))
+        cfg["dynamic_workers"] = [{
+            "id": "worker-registered",
+            "name": "Twin",
+            "backend": "ollama",
+            "model": "known-model",
+        }]
+
+        with patch.object(telegram_chat, "load_slots_config", return_value=cfg):
+            with pytest.raises(WorkerBindingError, match="nicht registriert"):
+                _resolve_slot_for_chat("worker-unregistered")
+            assert _resolve_slot_for_chat("worker-registered")["id"] == "worker-registered"
+            assert _resolve_slot_for_chat("Twin")["id"] == "buddha_chat"
+
+            with legacy_worker_binding("worker-legacy-1"):
+                legacy_slot = _resolve_slot_for_chat("worker-legacy-1")
+                assert legacy_slot["id"] == "buddha_always_on"
+                with pytest.raises(WorkerBindingError, match="nicht registriert"):
+                    _resolve_slot_for_chat("worker-legacy-other")
+
+    def test_legacy_session_binding_is_explicit_and_scoped(self, tmp_path):
+        cfg_file = tmp_path / "legacy_binding.json"
+        cfg = load_slots_config(str(cfg_file))
+        session = ChatSession()
+        backend = MagicMock()
+        worker_source = Path(telegram_chat.__file__).with_name("worker.py").read_text(encoding="utf-8")
+        assert worker_source.count("with tc.legacy_worker_binding(chat_id):") == 2
+
+        with patch.object(telegram_chat, "load_slots_config", return_value=cfg), \
+             patch.object(telegram_chat, "_orig_get_session", return_value=session), \
+             patch.object(telegram_chat, "_get_or_create_backend", return_value=backend):
+            with pytest.raises(WorkerBindingError, match="nicht registriert"):
+                telegram_chat._patched_get_session("worker-legacy-1")
+            with legacy_worker_binding("worker-legacy-1"):
+                bound = telegram_chat._patched_get_session("worker-legacy-1")
+                assert bound.backend is backend
+            with pytest.raises(WorkerBindingError, match="nicht registriert"):
+                telegram_chat._patched_get_session("worker-legacy-1")
 
 
 class TestPromptTemplates:
@@ -1157,6 +1230,66 @@ class TestControlHandlerEndpoints:
         assert "ROLLE: EXPERTE (TASK-DIVIDER)" in p
         assert "decompose" in p or "Zerlegung" in p or "Teilpakete" in p
         assert "Zerlege Großaufgabe #42" in p
+
+    def test_api_chat_rejects_unregistered_worker_before_dispatch(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
+        cfg_file = tmp_path / "api_binding.json"
+        cfg = load_slots_config(str(cfg_file))
+        handler = object.__new__(ControlHandler)
+        handler.headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "Content-Type": "application/json",
+            "Content-Length": "30",
+            "Authorization": "Bearer test-control-token",
+        }
+        handler.wfile = MagicMock()
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+
+        with patch.object(telegram_chat, "load_slots_config", return_value=cfg), \
+             patch.object(telegram_chat, "get_worker_slot", return_value={}), \
+             patch.object(telegram_chat, "get_slot", return_value={}), \
+             patch.object(telegram_chat, "runtime") as fake_runtime:
+            handler.path = "/api/chat"
+            with patch.object(handler, "_read_body", return_value={"prompt": "must not dispatch", "chat_id": "worker-unregistered"}), \
+                 patch.object(handler, "_json") as mock_json:
+                handler.do_POST()
+                assert mock_json.call_count == 1
+                args = mock_json.call_args.args
+                response, http_status = args[0], args[1] if len(args) > 1 else 200
+
+        assert http_status == 503
+        assert response["ok"] is False
+        assert "nicht registriert" in response["error"]
+        fake_runtime.get_session.assert_not_called()
+        fake_runtime.process.assert_not_called()
+
+    def test_snapshot_binds_registered_worker_by_canonical_id(self, tmp_path):
+        cfg_file = tmp_path / "api_valid_binding.json"
+        cfg = load_slots_config(str(cfg_file))
+        worker = {
+            "id": "worker-canonical",
+            "name": "Twin",
+            "backend": "ollama",
+            "model": "canonical-model",
+        }
+        cfg["dynamic_workers"] = [worker]
+        fake_runtime = MagicMock()
+        fake_runtime.get_session.return_value = ChatSession()
+        fake_runtime.backend = MagicMock()
+        selected_backend = MagicMock()
+
+        with patch.object(telegram_chat, "runtime", fake_runtime), \
+             patch.object(telegram_chat, "get_worker_slot", return_value=worker), \
+             patch.object(telegram_chat, "get_slot", return_value=worker), \
+             patch.object(telegram_chat, "load_slots_config", return_value=cfg), \
+             patch.object(telegram_chat, "_get_or_create_backend", return_value=selected_backend):
+            bound_backend, model = _snapshot_chat_backend(worker["id"])
+
+        assert bound_backend is selected_backend
+        assert model == "canonical-model"
+        fake_runtime.get_session.assert_called_once_with(worker["id"])
 
     def test_api_workers_stop_endpoint(self, tmp_path, monkeypatch):
         monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")

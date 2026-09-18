@@ -653,7 +653,7 @@ def record_activity(
         cfg["slots"][source]["current_activity"] = activity
     else:
         for w in cfg.get("dynamic_workers", []):
-            if w.get("id") == source or w.get("name") == source:
+            if w.get("id") == source:
                 w["current_activity"] = activity
                 w.setdefault("history", []).insert(0, entry)
                 w["history"] = w["history"][:20]
