@@ -91,6 +91,7 @@ from hub._services.chat.chat_runtime import (
     ChatRuntime,
     ComputeLocked,
     FailedAnswer,
+    SuccessfulAnswer,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.chat.control_auth import (
@@ -3218,6 +3219,8 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     text = str(answer or "").strip()
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
+    if isinstance(answer, SuccessfulAnswer):
+        return {"ok": True, "answer": text}, 200
     if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
