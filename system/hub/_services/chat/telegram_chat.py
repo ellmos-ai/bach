@@ -21,13 +21,14 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
 import json
 import logging
 import os
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
@@ -36,6 +37,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 import tempfile
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -141,17 +143,272 @@ log = logging.getLogger("bach.telegram_chat")
 
 _ACTIVE_WORKER_THREADS: Dict[str, threading.Thread] = {}
 
+_WORKER_CONTROL_LOCK = threading.RLock()
+
+
+@dataclass
+class _WorkerControl:
+    """Generation-bound cooperative cancellation state for one worker run."""
+
+    worker_id: str
+    generation: str = field(default_factory=lambda: uuid.uuid4().hex)
+    stop_event: threading.Event = field(default_factory=threading.Event)
+    done_event: threading.Event = field(default_factory=threading.Event)
+    thread: Optional[threading.Thread] = None
+    stop_status: Optional[str] = None
+    stop_activity: str = "Manuell gestoppt"
+    requested_at: Optional[str] = None
+    receipt: Optional[Dict[str, Any]] = None
+
+
+# A blocking runtime cannot be killed safely from a control/API thread. The
+# endpoint waits only this long for cooperative completion and otherwise
+# reports a pending revocation instead of claiming success.
+_WORKER_STOP_WAIT_SECONDS = 2.0
+_WORKER_CONTROLS: Dict[str, _WorkerControl] = {}
+
+
+def _thread_is_alive(thread: Optional[threading.Thread]) -> bool:
+    """Return a conservative liveness result for a registered thread."""
+    if thread is None:
+        return False
+    probe = getattr(thread, "is_alive", None)
+    if not callable(probe):
+        return True
+    try:
+        return bool(probe())
+    except Exception:
+        return True
+
+
+def _worker_terminal_status(worker: Dict[str, Any], requested_status: Optional[str] = None) -> str:
+    if requested_status in ("paused", "idle"):
+        return requested_status
+    return "completed" if worker.get("type") == "once" else "idle"
+
+
+def _worker_receipt(
+    control: Optional[_WorkerControl],
+    worker_id: str,
+    *,
+    confirmed: bool,
+    final_status: str,
+    outcome: str,
+    status_persisted: bool = True,
+) -> Dict[str, Any]:
+    requested_at = control.requested_at if control else None
+    return {
+        "kind": "worker-revocation",
+        "worker_id": worker_id,
+        "generation": control.generation if control else None,
+        "requested_at": requested_at,
+        "confirmed_at": datetime.now(timezone.utc).isoformat() if confirmed else None,
+        "confirmed": confirmed,
+        "thread_alive": not confirmed,
+        "final_status": final_status if confirmed else "stopping",
+        "outcome": outcome,
+        "status_persisted": status_persisted,
+    }
+
+
+def _record_worker_activity(
+    control: _WorkerControl,
+    activity: str,
+    status: str = "ok",
+    details: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Record activity only while this generation still owns the worker."""
+    with _WORKER_CONTROL_LOCK:
+        if _WORKER_CONTROLS.get(control.worker_id) is not control or control.stop_event.is_set():
+            return False
+        record_activity(control.worker_id, activity, status, details)
+        return True
+
+
+def _update_worker_slot(
+    control: _WorkerControl,
+    updates: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Prevent a stale/cancelled generation from changing worker state."""
+    with _WORKER_CONTROL_LOCK:
+        if _WORKER_CONTROLS.get(control.worker_id) is not control or control.stop_event.is_set():
+            return None
+        return update_slot(control.worker_id, updates)
+
+
+def _write_revocation_receipt(
+    control: _WorkerControl,
+    worker: Dict[str, Any],
+    *,
+    outcome: str,
+) -> Dict[str, Any]:
+    """Persist the terminal stop/pause state and its auditable receipt."""
+    with _WORKER_CONTROL_LOCK:
+        if control.receipt and control.receipt.get("confirmed"):
+            return control.receipt
+
+        final_status = control.stop_status or _worker_terminal_status(worker)
+        current_control = _WORKER_CONTROLS.get(control.worker_id)
+        if current_control is not None and current_control is not control:
+            receipt = _worker_receipt(
+                control,
+                control.worker_id,
+                confirmed=True,
+                final_status=final_status,
+                outcome=f"{outcome}-stale-generation",
+                status_persisted=False,
+            )
+            control.receipt = receipt
+            return receipt
+
+        status_persisted = True
+        try:
+            update_slot(control.worker_id, {
+                "status": final_status,
+                "current_activity": control.stop_activity,
+            })
+        except Exception:
+            status_persisted = False
+            log.exception("Worker %s konnte Revocation-Status nicht speichern", control.worker_id)
+
+        receipt = _worker_receipt(
+            control,
+            control.worker_id,
+            confirmed=True,
+            final_status=final_status,
+            outcome=outcome,
+            status_persisted=status_persisted,
+        )
+        control.receipt = receipt
+        try:
+            record_activity(
+                control.worker_id,
+                control.stop_activity,
+                "ok" if status_persisted else "error",
+                {"receipt": receipt},
+            )
+        except Exception:
+            log.exception("Worker %s konnte Revocation-Receipt nicht protokollieren", control.worker_id)
+        return receipt
+
+
+def _active_worker_control(worker_id: str) -> tuple[Optional[_WorkerControl], Optional[threading.Thread]]:
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        thread = control.thread if control else _ACTIVE_WORKER_THREADS.get(worker_id)
+        return control, thread
+
+
+def _request_worker_revocation(
+    worker_id: str,
+    worker: Dict[str, Any],
+    *,
+    requested_status: Optional[str] = None,
+    activity: str = "Manuell gestoppt",
+) -> tuple[bool, Dict[str, Any], Dict[str, Any], int]:
+    """Request stop/pause and report success only after thread termination."""
+    final_status = _worker_terminal_status(worker, requested_status)
+    control, thread = _active_worker_control(worker_id)
+
+    if control is None and _thread_is_alive(thread):
+        # A live thread without a control token is from an older/unknown
+        # generation. It cannot be revoked or safely declared finished.
+        receipt = _worker_receipt(
+            None,
+            worker_id,
+            confirmed=False,
+            final_status=final_status,
+            outcome="unverifiable-live-thread",
+        )
+        return False, worker, receipt, 409
+
+    if control is None:
+        receipt = _worker_receipt(
+            None,
+            worker_id,
+            confirmed=True,
+            final_status=final_status,
+            outcome="no-live-thread",
+        )
+        with _WORKER_CONTROL_LOCK:
+            updated = update_slot(worker_id, {
+                "status": final_status,
+                "current_activity": activity,
+            })
+            try:
+                record_activity(worker_id, activity, "ok", {"receipt": receipt})
+            except Exception:
+                log.exception("Worker %s konnte Revocation-Receipt nicht protokollieren", worker_id)
+        return True, updated, receipt, 200
+
+    with _WORKER_CONTROL_LOCK:
+        if not control.stop_event.is_set():
+            control.stop_status = final_status
+            control.stop_activity = activity
+            control.requested_at = datetime.now(timezone.utc).isoformat()
+            control.stop_event.set()
+        elif control.stop_status is None:
+            control.stop_status = final_status
+
+    # join() is only a bounded proof attempt. is_alive() is the authoritative
+    # result because Thread.join() itself returns None.
+    if thread is not None and thread is not threading.current_thread() and _thread_is_alive(thread):
+        try:
+            thread.join(timeout=_WORKER_STOP_WAIT_SECONDS)
+        except RuntimeError:
+            log.exception("Worker %s konnte nicht auf das Ende warten", worker_id)
+
+    # Re-check liveness while holding the same lock used by the worker's
+    # terminal write. This avoids reporting success before the terminal write.
+    with _WORKER_CONTROL_LOCK:
+        thread_alive = _thread_is_alive(thread)
+        if thread_alive:
+            receipt = _worker_receipt(
+                control,
+                worker_id,
+                confirmed=False,
+                final_status=final_status,
+                outcome="revocation-pending",
+            )
+            control.receipt = receipt
+            updated = update_slot(worker_id, {
+                "status": "stopping",
+                "current_activity": f"Beendigung angefordert ({activity})",
+            })
+            try:
+                record_activity(
+                    worker_id,
+                    f"Beendigung angefordert ({activity})",
+                    "pending",
+                    {"receipt": receipt},
+                )
+            except Exception:
+                log.exception("Worker %s konnte Pending-Receipt nicht protokollieren", worker_id)
+            return False, updated, receipt, 409
+
+        # A terminated worker has completed its finally block before is_alive()
+        # becomes false, so its confirmed receipt is available here.
+        receipt = control.receipt
+        if not receipt or not receipt.get("confirmed"):
+            receipt = _write_revocation_receipt(control, worker, outcome="revocation-confirmed")
+        updated = get_worker_slot(worker_id)
+        return bool(receipt.get("confirmed") and receipt.get("status_persisted", True)), updated, receipt, 200
+
 def _active_worker_ids() -> set[str]:
     """Return set of currently running worker IDs, pruning dead threads."""
-    dead = []
+    dead: list[tuple[str, threading.Thread]] = []
     active = set()
-    for wid, th in list(_ACTIVE_WORKER_THREADS.items()):
-        if th.is_alive():
+    with _WORKER_CONTROL_LOCK:
+        items = list(_ACTIVE_WORKER_THREADS.items())
+    for wid, th in items:
+        if _thread_is_alive(th):
             active.add(wid)
         else:
-            dead.append(wid)
-    for wid in dead:
-        _ACTIVE_WORKER_THREADS.pop(wid, None)
+            dead.append((wid, th))
+    with _WORKER_CONTROL_LOCK:
+        for wid, th in dead:
+            if _ACTIVE_WORKER_THREADS.get(wid) is th:
+                _ACTIVE_WORKER_THREADS.pop(wid, None)
     return active
 
 
@@ -3805,7 +4062,17 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if not new_status:
                     new_status = "paused" if w.get("status") != "paused" else "idle"
                 if new_status in ("paused", "idle"):
-                    _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+                    confirmed, updated, receipt, response_status = _request_worker_revocation(
+                        worker_id,
+                        w,
+                        requested_status=new_status,
+                        activity=f"Worker {new_status}",
+                    )
+                    response = {"ok": confirmed, "worker": updated, "receipt": receipt}
+                    if not confirmed:
+                        response["error"] = "Worker-Ende noch nicht nachgewiesen"
+                    self._json(response, response_status)
+                    return
                 updated = update_slot(worker_id, {"status": new_status})
                 record_activity(worker_id, f"Worker Status: {new_status}", "ok")
                 self._json({"ok": True, "worker": updated})
@@ -3818,18 +4085,28 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "id erforderlich"}, 400)
                 return
             try:
-                _ACTIVE_WORKER_THREADS.pop(worker_id, None)
                 w = get_worker_slot(worker_id)
-                next_st = "completed" if (w and w.get("type") == "once") else "idle"
-                updated = update_slot(worker_id, {"status": next_st, "current_activity": "Manuell gestoppt"})
-                record_activity(worker_id, f"Worker gestoppt: {worker_id}", "ok")
-                self._json({"ok": True, "worker": updated})
+                if not w:
+                    self._json({"error": "Worker nicht gefunden"}, 404)
+                    return
+                confirmed, updated, receipt, response_status = _request_worker_revocation(
+                    worker_id,
+                    w,
+                    activity="Manuell gestoppt",
+                )
+                response = {"ok": confirmed, "worker": updated, "receipt": receipt}
+                if not confirmed:
+                    response["error"] = "Worker-Ende noch nicht nachgewiesen"
+                self._json(response, response_status)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
+            if not worker_id:
+                self._json({"error": "id erforderlich"}, 400)
+                return
             try:
                 w = get_worker_slot(worker_id)
             except Exception as exc:
@@ -3838,11 +4115,46 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not w or w.get("id") != worker_id:
                 self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 return
+            with _WORKER_CONTROL_LOCK:
+                existing_control = _WORKER_CONTROLS.get(worker_id)
+                existing_thread = (
+                    existing_control.thread
+                    if existing_control is not None
+                    else _ACTIVE_WORKER_THREADS.get(worker_id)
+                )
+                if _thread_is_alive(existing_thread):
+                    existing_status = (
+                        "stopping"
+                        if existing_control is not None and existing_control.stop_event.is_set()
+                        else "running"
+                    )
+                    response = {
+                        "ok": False,
+                        "status": existing_status,
+                        "error": "Worker läuft bereits" if existing_status == "running" else "Worker-Beendigung läuft",
+                    }
+                    if existing_control is not None and existing_control.receipt:
+                        response["receipt"] = existing_control.receipt
+                    self._json(response, 409)
+                    return
+                if _WORKER_CONTROLS.get(worker_id) is existing_control:
+                    _WORKER_CONTROLS.pop(worker_id, None)
+                if _ACTIVE_WORKER_THREADS.get(worker_id) is existing_thread:
+                    _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+            control = _WorkerControl(worker_id)
+
             def _run_worker_job():
-                _ACTIVE_WORKER_THREADS[worker_id] = threading.current_thread()
+                worker_error = None
                 try:
-                    update_slot(worker_id, {"status": "running", "current_activity": "Starte Routine..."})
-                    record_activity(worker_id, f"Worker gestartet: {w.get('name')}", "running")
+                    if control.stop_event.is_set():
+                        return
+                    _update_worker_slot(control, {"status": "running", "current_activity": "Starte Routine..."})
+                    _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
+                    if control.stop_event.is_set():
+                        return
+                    _snapshot_chat_backend(worker_id)
+                    if control.stop_event.is_set():
+                        return
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
@@ -3866,11 +4178,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                     run_count = 0
 
                     while True:
+                        if control.stop_event.is_set():
+                            break
                         run_count += 1
 
                         # Worker-State prüfen: wurde er pausiert oder gelöscht?
                         current_slot = get_worker_slot(worker_id)
-                        if not current_slot or current_slot.get("status") in ("paused", "idle"):
+                        if not current_slot or current_slot.get("status") in ("paused", "idle", "stopping"):
                             log.info(f"Worker {worker_id} pausiert oder beendet.")
                             break
 
@@ -3883,8 +4197,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                                     exp_dt = exp_dt.replace(tzinfo=timezone.utc)
                                 if datetime.now(timezone.utc) >= exp_dt:
                                     log.info(f"Worker {worker_id} TTL abgelaufen.")
-                                    update_slot(worker_id, {"status": "expired", "current_activity": "Ablaufzeit erreicht (Beendet)"})
-                                    record_activity(worker_id, "Worker TTL abgelaufen", "ok")
+                                    _update_worker_slot(control, {"status": "expired", "current_activity": "Ablaufzeit erreicht (Beendet)"})
+                                    _record_worker_activity(control, "Worker TTL abgelaufen", "ok")
                                     return
                             except Exception:
                                 pass
@@ -3895,6 +4209,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                             worker_id, worker_slot=current_slot
                         )
 
+                        if control.stop_event.is_set():
+                            break
                         loop = asyncio.new_event_loop()
                         ans = ""
                         try:
@@ -3904,66 +4220,100 @@ class ControlHandler(BaseHTTPRequestHandler):
                         finally:
                             loop.close()
 
+                        if control.stop_event.is_set():
+                            break
                         ans_str = str(ans)
                         # FailedAnswer is a str subclass and may also be
                         # restored as plain text after persistence. Neither
                         # form may complete a once-worker or be logged as ok.
                         if FailedAnswer.looks_like(ans):
-                            update_slot(worker_id, {
+                            _update_worker_slot(control, {
                                 "status": "error",
                                 "current_activity": ans_str[:120],
                             })
-                            record_activity(
-                                worker_id, f"Block {run_count}: {ans_str[:55]}",
+                            _record_worker_activity(
+                                control,
+                                f"Block {run_count}: {ans_str[:55]}",
                                 "error",
                             )
                             return
-                        record_activity(worker_id, f"Block {run_count}: {ans_str[:55]}", "ok")
+                        if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
+                            break
 
                         # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen
                         if current_slot.get("type") == "once" and not exp_str:
-                            update_slot(worker_id, {"status": "completed", "current_activity": "Abgeschlossen"})
+                            _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
                             break
 
                         # Wenn keine TTL gesetzt ist (unbegrenzt) und Task abgeschlossen wurde:
                         if not exp_str:
-                            update_slot(worker_id, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
+                            _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
                         # TTL ist aktiv (noch in der Zukunft):
                         # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff
                         is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
                         if is_max_turns:
-                            update_slot(worker_id, {
+                            if _update_worker_slot(control, {
                                 "status": "running",
                                 "current_activity": f"Rundenübergabe (Block {run_count + 1} startet)..."
-                            })
+                            }) is None:
+                                break
                             prompt_to_run = (
                                 "Fortsetzung nach Rundenübergabe: Du hast dein bisheriges Tool-Budget erreicht. "
                                 "Führe die angefangene Aufgabe nun nahtlos fort und schließe sie ab."
                             )
-                            time.sleep(2)
+                            if control.stop_event.wait(2):
+                                break
                         else:
                             # Task abgeschlossen, aber TTL läuft noch -> Warte kurz und ziehe nächsten Task
-                            update_slot(worker_id, {
+                            if _update_worker_slot(control, {
                                 "status": "running",
                                 "current_activity": f"Aufgabe fertig. Suche nächste Aufgabe (Lauf {run_count + 1})..."
-                            })
-                            time.sleep(12)
+                            }) is None:
+                                break
+                            if control.stop_event.wait(12):
+                                break
                             prompt_to_run = "Prüfe offene Tasks in BACH und bearbeite die nächste wichtige offene Aufgabe autonom."
 
-                    next_status = "completed" if current_slot.get("type") == "once" else "idle"
-                    update_slot(worker_id, {"status": next_status, "current_activity": "Abgeschlossen"})
+                    if control.stop_event.is_set():
+                        return
+                    latest_slot = get_worker_slot(worker_id)
+                    if not latest_slot or latest_slot.get("status") in ("paused", "idle", "completed", "expired", "stopping"):
+                        return
+                    next_status = _worker_terminal_status(latest_slot)
+                    _update_worker_slot(control, {"status": next_status, "current_activity": "Abgeschlossen"})
                 except Exception as exc:
+                    worker_error = exc
                     log.error(f"Worker {worker_id} Fehler: {exc}")
-                    update_slot(worker_id, {"status": "error", "current_activity": f"Fehler: {exc}"})
-                    record_activity(worker_id, f"Fehler: {exc}", "error")
+                    if not control.stop_event.is_set():
+                        _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
+                        _record_worker_activity(control, f"Fehler: {exc}", "error")
                 finally:
-                    _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+                    if control.stop_event.is_set():
+                        _write_revocation_receipt(
+                            control,
+                            w,
+                            outcome=(
+                                "revocation-confirmed-after-error"
+                                if worker_error is not None
+                                else "revocation-confirmed"
+                            ),
+                        )
+                    with _WORKER_CONTROL_LOCK:
+                        registered_thread = _ACTIVE_WORKER_THREADS.get(worker_id)
+                        if registered_thread is threading.current_thread() or registered_thread is control.thread:
+                            _ACTIVE_WORKER_THREADS.pop(worker_id, None)
+                        if _WORKER_CONTROLS.get(worker_id) is control:
+                            _WORKER_CONTROLS.pop(worker_id, None)
+                        control.done_event.set()
 
             th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
-            _ACTIVE_WORKER_THREADS[worker_id] = th
-            th.start()
+            with _WORKER_CONTROL_LOCK:
+                control.thread = th
+                _WORKER_CONTROLS[worker_id] = control
+                _ACTIVE_WORKER_THREADS[worker_id] = th
+                th.start()
             self._json({"ok": True, "message": f"Worker {worker_id} gestartet"})
 
         elif path == "/api/activity":

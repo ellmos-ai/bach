@@ -3,6 +3,7 @@
 multi-backend slot assignment, and activity dashboard.
 """
 
+import asyncio
 import importlib
 import json
 import os
@@ -968,7 +969,7 @@ class TestControlHandlerEndpoints:
         monkeypatch.setattr(control, "update_slot",
                             lambda _id, change: updates.append(change) or worker)
         monkeypatch.setattr(control, "record_activity",
-                            lambda _id, message, status: activities.append(status))
+                            lambda _id, message, status, details=None: activities.append(status))
         monkeypatch.setattr(control, "_snapshot_chat_backend",
                             lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
 
@@ -1183,6 +1184,7 @@ class TestControlHandlerEndpoints:
 
         with patch("hub._services.chat.telegram_chat.get_worker_slot", return_value={"id": wid, "type": "persistent"}), \
              patch("hub._services.chat.telegram_chat.update_slot", return_value={"id": wid, "status": "idle"}) as mock_upd, \
+             patch("hub._services.chat.telegram_chat.record_activity"), \
              patch.object(handler, "_read_body", return_value={"id": wid}), \
              patch.object(handler, "_json") as mock_json:
             handler.do_POST()
@@ -1190,3 +1192,158 @@ class TestControlHandlerEndpoints:
             mock_json.assert_called_once()
             res = mock_json.call_args[0][0]
             assert res.get("ok") is True
+            assert res["receipt"]["confirmed"] is True
+
+    @pytest.mark.parametrize(
+        ("route", "requested_status", "expected_status", "expected_activity"),
+        [
+            ("/api/workers/stop", None, "idle", "Manuell gestoppt"),
+            ("/api/workers/toggle", "paused", "paused", "Worker paused"),
+        ],
+    )
+    def test_worker_revocation_waits_for_block_and_keeps_terminal_state(
+        self, tmp_path, monkeypatch, route, requested_status, expected_status, expected_activity
+    ):
+        """A blocked TTL run must not be reported stopped before it exits."""
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
+        from hub._services.chat import telegram_chat
+
+        cfg_file = tmp_path / "revocation_slots.json"
+        initialize_slots_config(str(cfg_file))
+        worker = add_worker({
+            "name": "Blocked-TTL-Worker",
+            "type": "persistent",
+            "ttl_seconds": 60,
+        }, path=str(cfg_file))
+        worker_id = worker["id"]
+
+        class BlockingRuntime:
+            def __init__(self):
+                self.started = threading.Event()
+                self.release = threading.Event()
+                self.calls = 0
+
+            async def process(self, *args, **kwargs):
+                self.calls += 1
+                self.started.set()
+                while not self.release.is_set():
+                    await asyncio.sleep(0.005)
+                return "fake block complete"
+
+        fake_runtime = BlockingRuntime()
+        handler = object.__new__(ControlHandler)
+        handler.headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "Content-Type": "application/json",
+            "Content-Length": "30",
+            "Authorization": "Bearer test-control-token",
+        }
+        handler.wfile = MagicMock()
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+
+        def slot_get(wid):
+            return get_worker_slot(wid, path=str(cfg_file))
+
+        def slot_update(wid, updates):
+            return update_slot(wid, updates, path=str(cfg_file))
+
+        def activity(source, text, status="ok", details=None):
+            return record_activity(source, text, status, details, path=str(cfg_file))
+
+        with telegram_chat._WORKER_CONTROL_LOCK:
+            telegram_chat._ACTIVE_WORKER_THREADS.clear()
+            telegram_chat._WORKER_CONTROLS.clear()
+
+        worker_thread = None
+        try:
+            with patch.object(telegram_chat, "runtime", fake_runtime), \
+                 patch.object(telegram_chat, "get_worker_slot", side_effect=slot_get), \
+                 patch.object(telegram_chat, "update_slot", side_effect=slot_update), \
+                 patch.object(telegram_chat, "record_activity", side_effect=activity), \
+                 patch.object(telegram_chat, "_snapshot_chat_backend", return_value=("fake", "fake-model")), \
+                 patch.object(telegram_chat, "_WORKER_STOP_WAIT_SECONDS", 0.05):
+                handler.path = "/api/workers/run"
+                with patch.object(handler, "_read_body", return_value={"id": worker_id}), \
+                     patch.object(handler, "_json") as run_json:
+                    handler.do_POST()
+                    run_response, run_status = run_json.call_args.args[0], (
+                        run_json.call_args.args[1] if len(run_json.call_args.args) > 1 else 200
+                    )
+                assert run_status == 200
+                assert run_response["ok"] is True
+                assert fake_runtime.started.wait(1)
+                with telegram_chat._WORKER_CONTROL_LOCK:
+                    worker_thread = telegram_chat._ACTIVE_WORKER_THREADS[worker_id]
+                assert worker_thread.is_alive()
+
+                request = {"id": worker_id}
+                if requested_status:
+                    request["status"] = requested_status
+                handler.path = route
+                with patch.object(handler, "_read_body", return_value=request), \
+                     patch.object(handler, "_json") as revoke_json:
+                    handler.do_POST()
+                    revoke_response, revoke_status = revoke_json.call_args.args[0], (
+                        revoke_json.call_args.args[1] if len(revoke_json.call_args.args) > 1 else 200
+                    )
+
+                assert revoke_status == 409
+                assert revoke_response["ok"] is False
+                assert revoke_response["receipt"]["confirmed"] is False
+                assert revoke_response["receipt"]["thread_alive"] is True
+                assert revoke_response["receipt"]["final_status"] == "stopping"
+                assert slot_get(worker_id)["status"] == "stopping"
+                assert fake_runtime.calls == 1
+
+                handler.path = "/api/workers/run"
+                with patch.object(handler, "_read_body", return_value={"id": worker_id}), \
+                     patch.object(handler, "_json") as run_again_json:
+                    handler.do_POST()
+                    run_again, run_again_status = run_again_json.call_args.args[0], (
+                        run_again_json.call_args.args[1]
+                        if len(run_again_json.call_args.args) > 1 else 200
+                    )
+                assert run_again_status == 409
+                assert run_again["ok"] is False
+                assert run_again["status"] == "stopping"
+                assert fake_runtime.calls == 1
+
+                fake_runtime.release.set()
+                worker_thread.join(2)
+                assert not worker_thread.is_alive()
+                assert fake_runtime.calls == 1
+                assert slot_get(worker_id)["status"] == expected_status
+                assert slot_get(worker_id)["current_activity"] == expected_activity
+
+                confirmed_entries = [
+                    item for item in get_activity_history(path=str(cfg_file))
+                    if item.get("details", {}).get("receipt", {}).get("confirmed") is True
+                ]
+                assert confirmed_entries
+                receipt = confirmed_entries[0]["details"]["receipt"]
+                assert receipt["worker_id"] == worker_id
+                assert receipt["final_status"] == expected_status
+                assert receipt["thread_alive"] is False
+                assert receipt["status_persisted"] is True
+
+                handler.path = route
+                with patch.object(handler, "_read_body", return_value=request), \
+                     patch.object(handler, "_json") as confirmed_json:
+                    handler.do_POST()
+                    confirmed_response, confirmed_status = confirmed_json.call_args.args[0], (
+                        confirmed_json.call_args.args[1]
+                        if len(confirmed_json.call_args.args) > 1 else 200
+                    )
+                assert confirmed_status == 200
+                assert confirmed_response["ok"] is True
+                assert confirmed_response["receipt"]["confirmed"] is True
+                assert fake_runtime.calls == 1
+        finally:
+            fake_runtime.release.set()
+            if worker_thread is not None:
+                worker_thread.join(2)
+            with telegram_chat._WORKER_CONTROL_LOCK:
+                telegram_chat._ACTIVE_WORKER_THREADS.clear()
+                telegram_chat._WORKER_CONTROLS.clear()
