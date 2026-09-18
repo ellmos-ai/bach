@@ -28,6 +28,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -130,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
     from hub._services.chat.task_runner import offene_tasks, markiere_erledigt
+    from hub._services.agents_heart import begin_assignment, finish_assignment
     from hub._services import fackel
     from hub._services.chat import telegram_chat as tc
 
@@ -164,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"Modell {modell or '(Vorgabe)'}")
 
     erledigt_gesamt = 0
+    agent_instance_id = f"worker-{uuid.uuid4().hex}"
     while True:
         still = chat_still_seit(db)
         offen = offene_tasks(db, args.category)
@@ -231,6 +234,48 @@ def main(argv: list[str] | None = None) -> int:
                 session.model = modell
             runtime.goal = t["title"]
 
+            # Die Modellwahl bleibt unverändert: hier wird nur der tatsächlich
+            # aktive Backend-/Modellwert für die Besetzungsquittung gelesen.
+            active_backend = getattr(session, "backend", None) or runtime.backend
+            try:
+                from hub._services.llm.model_backend import backend_identifier
+                backend_id = backend_identifier(active_backend)
+            except (ImportError, AttributeError):
+                backend_id = ""
+            backend_id = backend_id or getattr(active_backend, "backend_id", "")
+            backend_id = backend_id or type(active_backend).__name__
+            model_id = session.model or modell
+            if not model_id:
+                model_id = getattr(active_backend, "get_default_model", lambda: "")()
+
+            try:
+                assignment = begin_assignment(
+                    role_id="hintergrund_worker",
+                    mode=args.mode,
+                    agent_instance_id=agent_instance_id,
+                    backend_id=backend_id,
+                    model_id=model_id,
+                    slot_id="buddha_always_on",
+                    task_id=t["id"],
+                    session_id=chat_id,
+                    initiated_by=f"worker:{args.category}",
+                )
+            except Exception as assignment_error:
+                # Claim ohne belegbare Besetzung darf nicht in eine Ausführung
+                # übergehen. Den Task freigeben und fail-closed weiterlaufen.
+                _log(workdir, f"Task #{t['id']} Besetzungsprüfung fehlgeschlagen: {assignment_error}")
+                try:
+                    subprocess.run(
+                        [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except Exception as re:
+                    _log(workdir, f"Task #{t['id']} Release-Fehler nach Besetzungsprüfung: {re}")
+                if args.einmal:
+                    return 1
+                time.sleep(max(5, args.takt))
+                continue
+
             auftrag = [f"AUFGABE (Task #{t['id']}): {t['title']}"]
             if t.get("description"):
                 auftrag.append(t["description"])
@@ -248,11 +293,27 @@ def main(argv: list[str] | None = None) -> int:
                     _log(workdir, f"Fackel steht auf 'ollama' - pausiere Rechenjobs ({paused_jobs}) fuer Inferenz")
 
             t0 = time.time()
+            antwort = ""
+            interrupted = False
+            process_error: Exception | None = None
             try:
                 antwort = asyncio.run(runtime.process("\n\n".join(auftrag), chat_id, skip_compute_gate=True))
             except KeyboardInterrupt:
+                interrupted = True
+                _log(workdir, "unterbrochen")
+            except Exception as e:
+                _log(workdir, f"    FEHLER: {e!r}")
+                process_error = e
+            finally:
                 if paused_jobs:
-                    resume_compute_jobs(paused_jobs)
+                    try:
+                        resume_compute_jobs(paused_jobs)
+                        _log(workdir, f"Rechenjobs ({paused_jobs}) fortgesetzt")
+                    except Exception as re:
+                        _log(workdir, f"Rechenjobs ({paused_jobs}) konnten nicht fortgesetzt werden: {re}")
+
+            dauer = round(time.time() - t0)
+            if interrupted:
                 try:
                     subprocess.run(
                         [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
@@ -262,12 +323,17 @@ def main(argv: list[str] | None = None) -> int:
                     _log(workdir, f"Task #{t['id']} Release-Fehler bei Abbruch: {re}")
                 state_schreiben(bach_cli, args.category,
                                 f"Task #{t['id']} unterbrochen nach "
-                                f"{round(time.time()-t0)}s. Gebautes liegt in {workdir}.")
+                                f"{dauer}s. Gebautes liegt in {workdir}.")
+                try:
+                    finish_assignment(
+                        assignment, status="interrupted", result="keyboard_interrupt"
+                    )
+                except Exception as ae:
+                    _log(workdir, f"Task #{t['id']} Endeprotokoll fehlgeschlagen: {ae}")
                 _log(workdir, "unterbrochen - Stand geschrieben")
                 return 130
-            except Exception as e:
-                _log(workdir, f"    FEHLER: {e!r}")
-                antwort = ""
+
+            if process_error is not None:
                 try:
                     subprocess.run(
                         [sys.executable, bach_cli, "task", "release", str(t["id"]), "--by", f"worker:{args.category}"],
@@ -275,18 +341,40 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except Exception as re:
                     _log(workdir, f"Task #{t['id']} Release-Fehler nach Fehler: {re}")
-            finally:
-                if paused_jobs:
-                    resume_compute_jobs(paused_jobs)
-                    _log(workdir, f"Rechenjobs ({paused_jobs}) fortgesetzt")
+                state_schreiben(
+                    bach_cli,
+                    args.category,
+                    f"Task #{t['id']} nach {dauer}s mit Fehler nicht fertig. "
+                    f"Gebautes liegt in {workdir}.",
+                )
+                try:
+                    finish_assignment(
+                        assignment,
+                        status="error",
+                        result="runtime_error",
+                        reason=type(process_error).__name__,
+                    )
+                except Exception as ae:
+                    _log(workdir, f"Task #{t['id']} Endeprotokoll fehlgeschlagen: {ae}")
+                if args.einmal:
+                    return 0
+                continue
 
-            dauer = round(time.time() - t0)
             fertig = "FERTIG" in (antwort or "").upper()[:300]
             _log(workdir, f"    {dauer}s, {'FERTIG' if fertig else 'offen'}")
 
-            if fertig and markiere_erledigt(bach_cli, t["id"]):
+            erledigt = False
+            if fertig:
+                try:
+                    erledigt = bool(markiere_erledigt(bach_cli, t["id"]))
+                except Exception as me:
+                    _log(workdir, f"    #{t['id']} Abschlussmarkierung fehlgeschlagen: {me}")
+
+            if erledigt:
                 erledigt_gesamt += 1
                 _log(workdir, f"    #{t['id']} abgehakt")
+                assignment_status = "completed"
+                assignment_result = "task_done"
             else:
                 # Der Stand gehoert in die DB, weil man ihm den Dateien nicht
                 # ansieht: dass versucht wurde und woran es lag.
@@ -300,6 +388,17 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except Exception as re:
                     _log(workdir, f"Task #{t['id']} Release-Fehler: {re}")
+                assignment_status = "error" if fertig else "released"
+                assignment_result = "completion_mark_failed" if fertig else "not_finished"
+
+            try:
+                finish_assignment(
+                    assignment,
+                    status=assignment_status,
+                    result=assignment_result,
+                )
+            except Exception as ae:
+                _log(workdir, f"Task #{t['id']} Endeprotokoll fehlgeschlagen: {ae}")
 
             if args.max_tasks and erledigt_gesamt >= args.max_tasks:
                 _log(workdir, f"{erledigt_gesamt} Pakete erledigt - Ende")

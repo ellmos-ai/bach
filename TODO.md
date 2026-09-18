@@ -2,48 +2,9 @@
 
 ## Offene Aufgaben
 
-### [BACH-CHAT-ERR-01] Gemeldete Backend-Abbrüche in allen Chat-Pfaden als Fehler verbuchen
-- **Ziel:** Auch Backends mit `manages_own_tools=True` dürfen ein Ergebnisdict mit `error` nicht als erfolgreiche Teilantwort oder History `ok=true` melden.
-- **Quelle:** `[Ticket: T-20260915-960653188]` `[PR: #67 und #69]` `[USMC-Lesson: 99]`
-- **Status:** Providerlose Regression am #67-Alt-Head rot; `FailedAnswer`-Fix 9db1133 und Integration 15b10e8 gepusht, 202 fokussierte Tests grün. Neue Heads und echter Host-/HTTP-Pfad sind noch nicht abgenommen.
-- **Akzeptanzkriterien (DoD):** Unabhängiger Re-Review der neuen Heads; Antwort und persistierte History bleiben bei gemeldetem Abbruch fehlgeschlagen, Teilinhalt nur Abbruchkontext; zulässiger Mac-/HTTP-Receipt ohne Produktiv-Opt-in; danach Main-Merge.
-- **Priorität:** high
-
-### [BACH-TEST-BOOT-01] Private Slot-Konfiguration vor strikten API-Integrationstests initialisieren
-- **Ziel:** Der sichere pytest-Pfad aus Testisolations-PR #63 muss die private `slots_config.json` vor Control-API-Tests auch auf Disk bootstrappen. BACH-Module dürfen nicht vor conftest/Env-Isolation importiert werden.
-- **Quelle:** `[Ticket: T-20260915-107799375]` `[PR: #63]` `[USMC-Lesson: 98]`
-- **Nachweis:** Synthetischer Audit-Checkout #69 + #63: ohne Bootstrap 304 bestanden und 8 strikte API-Tests rot; ausschließlich im Audit-Worktree ergänzter Temp-Bootstrap ergab 312 bestandene Tests und grünen Home-/Checkout-Wächter. Keine Änderung am gesperrten #63-Worktree.
-- **Akzeptanzkriterien (DoD):** Lock-Eigner ergänzt Temp-Bootstrap, Regression und README im #63-Branch; kanonischer Repo-Root-Testpfad ist grün und schreibt weder in `~/.bach` noch in Checkout-Runtime; PR-Review, Merge und erneuter Integrationslauf folgen.
-
-### ✅ [BACH-TEST-01] Testisolation für Runtime-Dateien und Prozesssteuerung
-- **Ziel:** Pytest-Läufe dürfen weder Runtime-Zustand in den Checkout schreiben noch reale Cloud- oder Systemprozesse beenden.
-- **Quelle:** `[Ticket: T-20260915-107799375]` `[Vorfall: OneDrive.exe /shutdown aus test_daemon_service.py]`
-- **Akzeptanzkriterien (DoD):** Runtime-Pfade liegen in einem temporären Sitzungsordner; Schreibversuche in geschützte Checkout-Pfade und reale Prozessbeendigungen werden zentral blockiert; CLI-Kindprozesse erben dieselbe Isolation.
-- **Prüfweg:** siehe `system/tests/README.md`; fokussierte Tätergruppe und anschließend vollständige Suite ausführen, danach Checkout-Artefakte und OneDrive-Prozess prüfen.
-- **Aufwand:** medium
-- **Reichweite:** local
-- **Priorität:** high
-- **Erledigt:** 2026-09-15 – Pfad-Seams, Audit-/Subprozess-Guard und Regressionstests ergänzt; konkrete Alt-Schreiber isoliert.
-
-### [BACH-AGENT-PID-01] Agent-Stop gegen PID-Wiederverwendung absichern (OC-B-Gate)
-- **Ziel:** `agent stop` darf niemals einen fremden Prozess nur wegen einer wiederverwendeten PID beenden. Die PID-Identität muss beim Start gespeichert und vor Status/Stop konsistent geprüft werden; Altdateien ohne verifizierbare Identität brauchen einen fail-closed oder explizit geprüften Migrationspfad.
-- **Quelle:** `[OC-B: T-20260818-903104603; unabhängiger Review von BACH PR #65 am 2026-09-15]` — `system/hub/agent_launcher.py::_stop_agent` liest die PID direkt, während `AgentProcessRegistry.is_running` Identitätsabweichungen erkennt und PID-Dateien entfernen kann. BACHs heutige Startdateien enthalten keinen `process_identity`-Anker.
-- **Akzeptanzkriterien (DoD):** Wiederverwendete PID und Identitätsabweichung stoppen keinen Prozess; Status-, JSON- und Stop-Zugänge stimmen überein; Stop-Dry-run meldet denselben Guard; Alt-PID-Verhalten ist ausdrücklich geregelt; Tests prüfen Windows- und Unix-Pfade ohne echten Agentenstart. Erst danach Opt-in-Seam auf einem Host aktivieren und Lifecycle/Parity nachweisen.
-- **Prüfweg:** gezielte Agent-Handler-/Provider-Tests, echter Modul-Pin/Host-Smoke und unabhängiger Review; kein lokales Ollama.
-- **Stand 2026-09-15:** BACH-seitiger PID-/Erzeugungszeit-Guard und fail-closed Altdatei-Verhalten im OC-B-Arbeitszweig umgesetzt. Unabhängiger Review des ersten Nachtrags fand weitere Lücken (Unix-Kinder, Start ohne Identitätsanker, mutierende Status/Dry-run-Bereinigung, Registry-PID-Substitution); sie wurden mit read-only Modul-Probe und BACH-Nachbesserung adressiert. 144 gezielte BACH-Tests und 70 Modul-Tests bestanden, 1 Modul-Test übersprungen. Re-Review hat weitere Hochrisiko-Reste festgestellt, siehe unten. Kein Aktivierungs- oder Release-Claim.
-- **Re-Review 2026-09-15:** Hochrisiko-Rest: Spawn kann bei fehlender Birth-Erfassung einen unkontrollierbaren Prozess hinterlassen; parallele Starts überschreiben Belege mangels exklusivem Claim. Unix-Stop erfasst nur eine Kind-Momentaufnahme und löscht den Beleg ohne Abschlussnachweis; JSON-Status kann Dateiname/Record-Name verwechseln. Diese Punkte sind vor Produktiv-Opt-in/Release zu reparieren und mit Race-/Lifecycle-Tests zu belegen. Der separate Modul-Stop hat zusätzlich einen nackten PID-Signalpfad (agent-launcher TODO OC-B-PID-02).
-- **Nachbesserung 2026-09-15:** BACHs Handler-Start/Stop nutzen jetzt einen nativen Claim pro technischem Namen; Status/Stop verweigern ein PID-File, dessen `name` nicht zum Dateinamen passt. 147 gezielte Agent-/Provider-Tests bestanden. Der direkte Modul-Stop wurde im PR #2 identitätsgebunden nachgebessert; dort lesen Statusmethoden Belege inzwischen ohne Bereinigung. Rest-HOCH: Birth-Erfassung nach Spawn ohne kontrollierte Rückführung, enger psutil-Signal-/PID-Reuse-Race ohne OS-Handle, dynamische Kinder/Abschlussnachweis, echter Host-Lifecycle und Ocean-Parität. Kein Release-Claim.
-- **Umsetzungsvertrag 2026-09-15:** `docs/architecture/OC-B-OWNED-SPAWN-STOP-GATE.md` definiert den gesperrten Provider-Spawn, einen gehaltenen OS-/Supervisor-Prozessbezug, belegtes Prozessbaum-Ende und die Host-/Paritäts-Prüfmatrix. Der aktuelle Birth-Failure-Test belegt keinen kontrollierten Abbruch; erst entsprechende neue Tests plus Implementierung können dieses Gate schließen.
-- **Gated-Spawn-Nachtrag 2026-09-15:** Windows-`start.bat` und Unix-Python-Starter warten providerlos auf einen eindeutigen atomar freigegebenen Marker, nachdem `process_create_time` und PID-Beleg geschrieben sind. Birth-Fehler/Abfrageausnahme beenden den noch providerlosen Starter ohne Marker; unbestätigtes Ende bleibt `unverified`. Ein früher Pipe-Handshake wurde verworfen, weil er der interaktiven Windows-CLI einen geschlossenen Standardeingang vererben konnte. Harmlose Windows-Headless-Gate- und integrierte Handler-Tests bestanden, Unix-Gate-Tests sind auf diesem Windows-Host übersprungen. **Nicht geschlossen:** fremdakteursfeste Freigabe, interaktiver Windows-New-Console-/Unix-Host-Smoke, Gate-Ack, OS-gehaltener Stop-/Baum-Fence und BACH/Modul/Ocean-Parität.
-- **Aufwand:** medium
-- **Reichweite:** local
-- **Priorität:** high
-
-
-### [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
+### ✅ [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende.
 - **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Claim-Ticket: T-20260913-709822598, PR #59]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`
-- **Nachzertifizierter Teilstand:** PR #59/2cfda653 ist gemergt; `worker.py` nutzt `bach task claim` vor dem Start, `chat_tray.py` nutzt den claim-aware API-Pfad. Im isolierten Audit bestanden 14 Tests einschließlich zweier konkurrierender Claimants. Dies belegt den Code-Seam, nicht einen produktiven Doppelstarter-Receipt; Rollenrecht, `assignment_id`, Besetzungsprotokoll und Host-Abnahme fehlen weiter.
 - **Akzeptanzkriterien (DoD):**
   - Der Claim ist atomar: ein Test mit zwei gleichzeitigen Beanspruchern derselben Aufgabe führt zu genau einer Ausführung.
   - `system/hub/_services/chat/worker.py` beansprucht vor dem Start, statt `offen[0]` ungeprüft zu nehmen.
@@ -54,7 +15,9 @@
 - **Aufwand:** medium
 - **Reichweite:** local
 - **Priorität:** high
-- **Hinweis:** Der erste Claim-Seam ist umgesetzt. Die Schritte 5 bis 7 (Vertragsfelder an der Rolle, Zuteilung verdrahten, Cockpit) bleiben an die dokumentierte Nutzerentscheidung `BH-2026-09-13-A` und deren konkrete Freigabegrenzen gebunden.
+- **Hinweis:** Erster Schritt des Programms. Die Schritte 5 bis 7 (Vertragsfelder an der Rolle, Zuteilung verdrahten, Cockpit) bleiben bis zur Nutzerentscheidung `BH-2026-09-13-A` gesperrt.
+- **Erledigt:** 2026-09-14 – `agents_heart.py` legt den versionierten Rechtevertrag und Assignment-Seam; `worker.py` claimt vor dem Start und schreibt korrelierte Start-/Endereignisse; bestehende Aktivitätsfelder bleiben flach verfügbar. Verifiziert mit 58 fokussierten Tests, `py_compile`, Ruff und `git diff --check`.
+
 
 ### ✅ [BACH-HOOK-01] Hook-Prompt anpassen: Empfehlung für `bach_api.db` statt hartem Block
 - **Ziel:** Den Hook-Prompt / DB-Guard-Prompt so anpassen, dass Agenten aktiv `bach_api.db` empfohlen wird, anstatt nur blockiert zu werden.
