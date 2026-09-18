@@ -146,3 +146,20 @@ class TestEmailCancel:
         handler, _ = email_env
         ok, msg = handler.handle("cancel", [])
         assert ok is False
+
+
+class TestEmailSecuritySeam:
+    @patch.object(EmailHandler, "_get_sender")
+    def test_confirm_autonomous_rejected(self, mock_get_sender, email_env):
+        handler, _ = email_env
+        mock_sender = MagicMock()
+        mock_sender.confirm_and_send.return_value = (
+            False,
+            "Sicherheits-Gate aktiv: Autonomer Direktversand via SMTP/API ist deaktiviert",
+        )
+        mock_get_sender.return_value = mock_sender
+
+        ok, msg = handler.handle("confirm", ["1", "--by", "autonomous_agent"])
+        assert ok is False
+        assert "Sicherheits-Gate aktiv" in msg
+        mock_sender.confirm_and_send.assert_called_once_with(1, confirmed_by="autonomous_agent")

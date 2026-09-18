@@ -63,6 +63,15 @@ if str(_SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_ROOT))
 from hub.bach_paths import BACH_DB
 
+try:
+    from .imap_draft import ImapDraftSeam, ImapDraftError
+except (ImportError, ValueError):
+    try:
+        from imap_draft import ImapDraftSeam, ImapDraftError
+    except ImportError:
+        ImapDraftSeam = None
+        ImapDraftError = RuntimeError
+
 # ============ PFADE ============
 
 SERVICE_DIR = Path(__file__).parent.resolve()
@@ -204,6 +213,15 @@ class EmailSender:
             conn.close()
             return False, (f"Entwurf #{draft_id} hat Status '{row['status']}' "
                           f"(nur 'draft' kann gesendet werden)")
+
+        # Sicherheits-Gate (T-20260917-346776822): Kein autonomer Direktversand fuer Agenten
+        if confirmed_by not in ("user", "test", "human_interactive"):
+            conn.close()
+            return False, (
+                "Sicherheits-Gate aktiv: Autonomer Direktversand via SMTP/API ist "
+                "gemaess Sicherheitsrichtlinie (T-20260917-346776822) deaktiviert. "
+                "Entwuerfe verbleiben im Entwurfsordner und muessen manuell bestaetigt werden."
+            )
 
         # Gmail API Service holen
         service = self._get_service()
@@ -365,3 +383,38 @@ class EmailSender:
         if not success:
             return False, msg
         return self.confirm_and_send(draft_id, confirmed_by="test")
+
+    def append_to_imap(self, draft_id: int, host: str, username: str, password: str,
+                       port: int = 993, folder: Optional[str] = None) -> Tuple[bool, str]:
+        """Uebertraegt einen gespeicherten Entwurf via IMAP APPEND in die Mailbox."""
+        if ImapDraftSeam is None:
+            return False, "IMAP Drafts Seam ist nicht verfuegbar."
+
+        conn = sqlite3.connect(str(USER_DB))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM email_drafts WHERE id = ?", (draft_id,)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            return False, f"Entwurf #{draft_id} nicht gefunden"
+
+        seam = ImapDraftSeam(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            use_ssl=True,
+        )
+        return seam.append_draft(
+            to=row['recipient'],
+            subject=row['subject'],
+            body=row['body'],
+            sender=row['sender_email'],
+            folder=folder,
+            cc=row['cc'],
+            bcc=row['bcc'],
+            body_html=row['body_html'],
+            attachment_path=row['attachment_path'] if 'attachment_path' in row.keys() else None,
+        )
