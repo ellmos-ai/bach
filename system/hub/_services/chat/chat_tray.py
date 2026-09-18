@@ -28,6 +28,8 @@ for _p in (_system_dir, _root_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from hub._services.chat.control_auth import get_control_api_auth_header
+
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
     HAS_RECURRING = True
@@ -119,6 +121,7 @@ class BACHTray:
     def __init__(self, host="127.0.0.1", port=8081):
         self.host = host
         self.base_url = f"http://{host}:{port}"
+        self.control_api_auth_header = get_control_api_auth_header()
         self.gui_url = f"http://{host}:8000"
         self.ollama_url = f"http://{host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
@@ -161,11 +164,15 @@ class BACHTray:
     # --- API ---
 
     def _api(self, method, path, body=None, base=None, timeout=8):
-        url = (base or self.base_url) + path
+        target_base = base or self.base_url
+        url = target_base + path
         data = json.dumps(body).encode() if body else None
+        headers = {"Content-Type": "application/json"} if data else {}
+        if self.control_api_auth_header and target_base == self.base_url:
+            headers["Authorization"] = self.control_api_auth_header
         req = urllib.request.Request(
             url, data=data, method=method,
-            headers={"Content-Type": "application/json"} if data else {},
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:

@@ -1063,9 +1063,14 @@ class TestControlHandlerEndpoints:
             assert res.get("chat_id") == "gui-web"
             assert "messages" in res
 
-    def test_post_prompts_crud(self):
+    def test_post_prompts_crud(self, monkeypatch):
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         handler = ControlHandler.__new__(ControlHandler)
-        handler.headers = {"Origin": "http://127.0.0.1:8000", "Content-Type": "application/json"}
+        handler.headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "Content-Type": "application/json",
+            "Authorization": "Bearer test-control-token",
+        }
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()
@@ -1152,7 +1157,8 @@ class TestControlHandlerEndpoints:
         assert "decompose" in p or "Zerlegung" in p or "Teilpakete" in p
         assert "Zerlege Großaufgabe #42" in p
 
-    def test_api_workers_stop_endpoint(self, tmp_path):
+    def test_api_workers_stop_endpoint(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         from hub._services.chat.telegram_chat import ControlHandler
         from hub._services.chat.slots_config import add_worker, update_slot, get_slot
         cfg_file = tmp_path / "test_slots.json"
@@ -1163,7 +1169,12 @@ class TestControlHandlerEndpoints:
         update_slot(wid, {"status": "running"}, path=str(cfg_file))
 
         handler = object.__new__(ControlHandler)
-        handler.headers = {"Origin": "http://127.0.0.1:8000", "Content-Type": "application/json", "Content-Length": "30"}
+        handler.headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "Content-Type": "application/json",
+            "Content-Length": "30",
+            "Authorization": "Bearer test-control-token",
+        }
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()

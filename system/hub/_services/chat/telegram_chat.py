@@ -93,6 +93,10 @@ from hub._services.chat.chat_runtime import (
     FailedAnswer,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
+from hub._services.chat.control_auth import (
+    get_control_api_token,
+    is_control_api_authorized,
+)
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
     add_worker,
@@ -1615,9 +1619,22 @@ function toast(msg) {
   t.textContent = msg; t.style.display = 'block';
   setTimeout(() => t.style.display = 'none', 2000);
 }
+function controlTokenForWrite() {
+  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  if (!token) {
+    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
+    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+  }
+  return token.trim();
+}
 async function api(method, path, body) {
   try {
-    const opts = {method, headers: {'Content-Type': 'application/json'}};
+    const headers = {'Content-Type': 'application/json'};
+    if (method !== 'GET' && method !== 'HEAD') {
+      const token = controlTokenForWrite();
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+    }
+    const opts = {method, headers};
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(API + path, opts);
     return await r.json();
@@ -2378,10 +2395,22 @@ function toast(msg) {
   t.style.display = 'block';
   setTimeout(() => { t.style.display = 'none'; }, 2800);
 }
+function controlTokenForWrite() {
+  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  if (!token) {
+    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
+    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+  }
+  return token.trim();
+}
 
 async function api(method, path, body = null) {
   try {
     const opts = { method, headers: {} };
+    if (method !== 'GET' && method !== 'HEAD') {
+      const token = controlTokenForWrite();
+      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    }
     if (body) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
@@ -3246,10 +3275,15 @@ def _is_loopback_origin(origin: str) -> bool:
 def _control_bind_host() -> str:
     bind_host = os.environ.get("BACH_CONTROL_HOST", "127.0.0.1").strip()
     allow_remote = os.environ.get("BACH_CONTROL_ALLOW_REMOTE", "").strip().lower() in ("1", "true", "yes", "on")
-    if not allow_remote and not _is_loopback_host(bind_host):
-        raise ValueError(
-            "Control API darf ohne authentifizierten Ingress nur an Loopback binden"
-        )
+    if not _is_loopback_host(bind_host):
+        if not allow_remote:
+            raise ValueError(
+                "Control API darf ohne authentifizierten Ingress nur an Loopback binden"
+            )
+        if not get_control_api_token():
+            raise ValueError(
+                "Control API benötigt für Remote-Bind ein konfiguriertes Bearer-Token"
+            )
     return bind_host
 
 
@@ -3279,7 +3313,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def _json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode()
@@ -3313,11 +3347,20 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return {}
         return {}
 
-    def _allow_json_post(self) -> bool:
+    def _allow_control_request(self) -> bool:
+        if not is_control_api_authorized(self.headers):
+            self._json({"error": "Control-API-Token erforderlich oder ungültig"}, 401)
+            return False
+
         origin = str(self.headers.get("Origin") or "").strip()
         host = str(self.headers.get("Host") or "").strip()
         if origin and not _is_allowed_origin(origin, host):
             self._json({"error": "Fremd-Origin nicht erlaubt"}, 403)
+            return False
+        return True
+
+    def _allow_json_post(self) -> bool:
+        if not self._allow_control_request():
             return False
 
         content_type = str(self.headers.get("Content-Type") or "")
@@ -3954,6 +3997,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
 
     def do_DELETE(self):
+        if not self._allow_control_request():
+            return
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         if path == "/api/workers":

@@ -122,6 +122,10 @@ SYSTEM TRAY
   Sicherheitsgrenze: Remotezugriff benötigt eine ausdrückliche
   Authentifizierungsentscheidung. Die Control-API darf nicht ungeschützt
   auf 0.0.0.0 veröffentlicht werden.
+  Schreibende Control-API-Anfragen benötigen zusätzlich
+  Authorization: Bearer <Token>. Das Token kommt aus
+  BACH_CONTROL_API_TOKEN oder aus dem OS-Schlüsselbund unter
+  bach_control_api_token.
 
 
 DATEIEN
@@ -167,6 +171,7 @@ KONFIGURATION
     LM_STUDIO_URL            LM Studio URL (default: http://localhost:1234/v1)
     LM_STUDIO_MODEL          LM Studio Modell überschreiben (default: auto)
     BACH_CONTROL_PORT        Control API Port (default: 8081)
+    BACH_CONTROL_API_TOKEN   Bearer-Token für schreibende Control-API-Anfragen
     BACH_HOST                Default-Host für Tray/GUI (z. B. bach-server.local)
     BACH_NO_BROWSER          =1: Browser nicht automatisch öffnen (Remote-GUI)
     ANTHROPIC_API_KEY        Für claude-api Backend
