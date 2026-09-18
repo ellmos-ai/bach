@@ -21,6 +21,7 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -896,6 +897,16 @@ class AgentsExporter:
         lines.append("- Keine Duplikate erzeugen")
         lines.append("- Flexibel auf User-Korrekturen reagieren")
         lines.append("")
+        lines.append("## Mess- und Arbeitsgrundlage für Änderungen")
+        lines.append("")
+        lines.append("Für jede Messung und jede Bearbeitung wird ein frischer Worktree von `origin/<default>` angelegt:")
+        lines.append("")
+        lines.append("```bash")
+        lines.append("git worktree add <path> -b <branch> origin/<default>")
+        lines.append("```")
+        lines.append("")
+        lines.append("Im Arbeitsbaum des Hauptklons wird weder gemessen noch gebaut. Der Hauptklon kann einen alten Feature-Branch ausgecheckt haben und dadurch einen veralteten Stand zeigen. Der Lock bleibt im Hauptklon (auflösbar über `git rev-parse --git-common-dir`), die Arbeit findet im frischen Worktree statt.")
+        lines.append("")
         lines.append("---")
         lines.append("")
         lines.append("## Nutzung")
@@ -965,6 +976,12 @@ def main() -> int:
         output_dir=args.output,
         dry_run=args.dry_run,
     )
+    # Keep captured CLI output UTF-8 on Windows as well as on POSIX.  Without
+    # this, a redirected stdout may use the active Windows code page and emit
+    # German umlauts as non-UTF-8 bytes, breaking callers that explicitly
+    # decode the exporter contract as UTF-8.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     print(message)
     return 0 if success else 1
 
