@@ -301,6 +301,25 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   an #1334/#1336 gemeldet): 41 weitere Help-Dateien verweisen generisch auf CONCEPT-Doku;
   beat/clock-Familien tragen noch Status "Implementiert (v1.1.83)".
 
+- **Dokumentations-Frische: 18 veraltete Dateien verifiziert & aktualisiert (Task #1334, 2026-09-18):**
+  `bach --maintain docs report` (2109 gepruefte Dokumente) meldete 18 Dokumente >60 Tage
+  (alle exakt 67 Tage — Bulk-mtime vom 2026-07-12). Verifikationsmethodik: Git-Delta-Analyse
+  (kein Commit seit 2026-07-12 in agents/, hub/_services/, skills/_services/ — der
+  beschriebene Code ist seither stabil), inhaltliche Stichproben (help-/wiki-SKILL,
+  test-agent: plausibel, referenzierte Workflows verifiziert existent) und Referenz-Audit
+  ueber alle 18 Dateien. Zwei tote Verweise gefunden und gefixt (gleiche Klasse wie #1335):
+  (1) agents/_experts/bewerbungsexperte/SKILL.md verwies auf nicht existierendes
+  docs/CONCEPT_Bewerbungsexperte.md → ersetzt durch das real existierende CONCEPT.md im
+  Agent-Ordner (Rename-Nachfolger); (2) skills/_services/README.md verwies auf nicht
+  existierendes docs/SKILL_ARCHITECTURE.md → ersetzt durch system/ARCHITECTURE.md
+  (deckt Skill-System-Bereich Arbeitsablaeufe/Registry ab). Danach YAML-Feld
+  `updated: 2026-09-18` in allen 18 Dateien gesetzt (13 mit Header per grep bestätigt).
+  Abschlussverifikation per Report-Neulauf: Veraltete 18 → **0**, ungültige Pfade 0,
+  Vorschläge 0. Berichte: system/logs/Doc_Update_Report_2026-09-18_05-47.md (Ausgang)
+  und _05-48.md (nach Fix, verifiziert). Nebenbefund (nicht Scope): 428 "Fehlende
+  Sektionen" — strukturelles Template-Thema der SKILL.md-Dateien, zur Separatbehandlung
+  als eigener Task vorgemerkt.
+
 - **user.db-Doku-Konsolidierung nachgezogen (Nebenbefund aus Anschlussanalyse #1321, 2026-09-17):**
   Die v1.1.84-Konsolidierung (Task 772, "user.db in bach.db") war im Code vollstaendig
   umgesetzt, aber 6 Dokumentstellen beschrieben noch Tabellen "in user.db" — inklusive

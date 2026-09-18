@@ -28,4 +28,4 @@ Services können z.B. sein:
 ## Siehe auch
 
 - `hub/_services/`: Handler-bezogene Service-Beschreibungen
-- `docs/SKILL_ARCHITECTURE.md`: Skill-System Architektur
+- `ARCHITECTURE.md`: Skill-System Architektur (Bereich Arbeitsablaeufe/Registry)

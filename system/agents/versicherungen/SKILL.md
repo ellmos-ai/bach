@@ -4,7 +4,7 @@ version: 1.1.0
 type: agent
 author: Gemini
 created: 2026-01-25
-updated: 2026-02-04
+updated: 2026-09-18
 anthropic_compatible: true
 status: active
 
