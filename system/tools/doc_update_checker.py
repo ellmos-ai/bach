@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: doc_update_checker
-Version: 1.1.0
+Version: 1.2.1
 Author: BACH Team
 Created: 2026-02-04
-Updated: 2026-09-17
+Updated: 2026-09-18
 Anthropic-Compatible: True
 
 Description:
@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __author__ = "BACH Team"
 
 
@@ -92,7 +92,7 @@ VERSION_PATTERN = re.compile(r"[vV]?(\d+\.\d+\.\d+)")
 class DocUpdateChecker:
     """Dateibasierte Dokumentationsprüfung für BACH."""
 
-    VERSION = "1.2.0"
+    VERSION = "1.2.1"
 
     def __init__(self, db_path: Optional[Path] = None, base_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path is not None else DB_FILE
@@ -353,59 +353,99 @@ class DocUpdateChecker:
         if not full_path.exists():
             return issues
 
-        required_sections = {
-            "skill": ["## Übersicht", "## CLI-Befehle", "## Dateien"],
-            "readme": ["## Installation", "## Usage"],
-            "guide": ["## Einleitung", "## Schritte"],
-        }
-
         doc_type = doc.get("doc_type", "")
-        if doc_type not in required_sections:
-            return issues
-
-        # Service-SKILLs (hub/_services/) folgen der Service-Konvention
-        # (Zweck/Beschreibung/Uebersicht + API/Verwendung + Abhaengigkeiten),
-        # nicht der Agenten-Konvention (CLI-Befehle, Dateien): Die meisten
-        # Services haben gar kein CLI. Erwartet wird daher mindestens eine
-        # Zweck-Sektion; der Rest bleibt der Service-eigenen Struktur
-        # ueberlassen (Vorlage: hub/_services/help/SKILL.md, vgl. Task #1325,
-        # 2026-09-17).
-        if doc_type == "skill" and doc.get("path", "").startswith("hub/_services/"):
-            try:
-                content = full_path.read_text(encoding="utf-8")
-            except OSError:
-                return issues
-            if not any(
-                s in content
-                for s in ("## Zweck", "## Beschreibung", "## Übersicht")
-            ):
-                issues.append(
-                    {
-                        "doc_path": doc["path"],
-                        "doc_type": doc_type,
-                        "missing_section": "## Zweck (Service-Konvention: Zweck/Beschreibung/Uebersicht)",
-                        "auto_fixable": False,
-                    }
-                )
-            return issues
+        doc_path = doc.get("path", "")
 
         try:
             content = full_path.read_text(encoding="utf-8")
         except OSError:
             return issues
 
-        for section in required_sections[doc_type]:
-            pattern = section.replace("## ", "").lower()
-            if pattern not in content.lower():
+        # --- Sektions-Konventionen (Klassifikation Task #1337, 2026-09-18) ---
+        # Sektionspruefung nur dort, wo eine Konvention gelebt wird.
+        # Evidenz Report 2026-09-18 05:48 (428 Befunde, alle False-Positives):
+        #   - README-Template (Installation/Usage) traf auf 0/124 Dateien:
+        #     Wiki-README.txt sind kuratierte Inhaltsartikel (vgl. Alters-
+        #     Exemption Task #1323), interne Ordner-READMEs sind Ueberblicks-
+        #     Doku. Die Konvention gilt nur fuer die Root-README (echte
+        #     Software-README des Gesamtsystems).
+        #   - Guide-Template (Einleitung/Schritte) traf auf 0/97 Dateien:
+        #     Workflows (SCHRITT N), Personas, Architektur-Doku usw. folgen
+        #     eigenen etablierten Strukturen -> kein Sektions-Check.
+        #   - Agent-SKILLs erfuellten das exakte Template (Uebersicht/
+        #     CLI-Befehle/Dateien) 0/12-mal, haben aber ausnahmslos YAML-
+        #     Frontmatter-Beschreibungen (Anthropic-SKILL-Format,
+        #     anthropic_compatible: true). Gelebte Konvention = description
+        #     im Frontmatter; Heading-Diversitaet (ASCII-Banner-Stil,
+        #     KERNKOMPETENZEN, LEISTUNGSKATALOG, ...) ist etabliert.
+
+        if doc_type == "skill" and doc_path.startswith("hub/_services/"):
+            # Service-Konvention (Task #1325, Vorlage: hub/_services/help/
+            # SKILL.md): mindestens eine Zweck-Sektion. Zusaetzlich akzeptierte
+            # aequivalente Headings (Task #1337): Funktionen/Features/Module.
+            if not any(
+                s in content
+                for s in (
+                    "## Zweck",
+                    "## Beschreibung",
+                    "## Übersicht",
+                    "## Funktionen",
+                    "## Features",
+                    "## Module",
+                )
+            ):
                 issues.append(
                     {
-                        "doc_path": doc["path"],
+                        "doc_path": doc_path,
                         "doc_type": doc_type,
-                        "missing_section": section,
+                        "missing_section": "## Zweck (Service-Konvention: Zweck/Beschreibung/Uebersicht/Funktionen/Features/Module)",
                         "auto_fixable": False,
                     }
                 )
+            return issues
 
+        if doc_type == "skill" and doc_path.startswith("agents/"):
+            # Agenten-SKILLs: gelebte Konvention ist das Anthropic-SKILL-
+            # Format: YAML-Frontmatter mit nicht-leerer description
+            # (min. 30 Zeichen). Die Heading-Struktur bleibt dem jeweiligen
+            # Agent ueberlassen (bewusste Stilverbreite, Task #1337).
+            m = re.search(
+                r"^description:[ \t]*(?:([>|][^\n]*\n(?:[ \t]+[^\n]*\n)+)|([^\n]+))",
+                content,
+                re.M,
+            )
+            desc = ((m.group(1) or "") + (m.group(2) or "")).strip() if m else ""
+            if len(desc) < 30:
+                issues.append(
+                    {
+                        "doc_path": doc_path,
+                        "doc_type": doc_type,
+                        "missing_section": "YAML description (Anthropic-SKILL-Format, min. 30 Zeichen)",
+                        "auto_fixable": False,
+                    }
+                )
+            return issues
+
+        if doc_type == "readme" and doc_path in ("README.md", "README.de.md"):
+            # Nur die Root-README ist eine klassische Software-README
+            # (Installation/Usage). Interne Ordner-READMEs sind Ueberblicks-
+            # Doku ohne diese Konvention (Task #1337).
+            for section in ("## Installation", "## Usage"):
+                pattern = section.replace("## ", "").lower()
+                if pattern not in content.lower():
+                    issues.append(
+                        {
+                            "doc_path": doc_path,
+                            "doc_type": doc_type,
+                            "missing_section": section,
+                            "auto_fixable": False,
+                        }
+                    )
+            return issues
+
+        # guide-Dokumente und interne READMEs: keine Sektions-Checks
+        # (eigene Kuratierungsstrukturen, 0/97 bzw. 0/116 Treffer,
+        # Report 2026-09-18, Task #1337).
         return issues
 
     def _generate_suggestions(self, results: Dict) -> List[Dict]:

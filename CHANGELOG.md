@@ -272,6 +272,31 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **Sektions-Pruefung kalibriert: 428 False-Positives aufgeloest, 0 echte Luecken
+  (Task #1337, 2026-09-18):** Vollstaendige Klassifikation der 428 gemeldeten
+  "fehlenden Sektionen" (236 Dateien) aus dem Doku-Frische-Report: ALLE 428 sind
+  Template-False-Positives, keine echte Inhaltsluecke. Evidenz: README-Template
+  (Installation/Usage) traf auf 0/124 Dateien — Wiki-README.txt sind kuratierte
+  Inhaltsartikel (gleiche Klasse wie die Alters-Exemption #1323), interne
+  Ordner-READMEs sind Ueberblicks-Doku; Guide-Template (Einleitung/Schritte) traf
+  auf 0/97 Dateien — Workflows (SCHRITT N), Personas, Architektur-Doku usw.
+  haben eigene etablierte Strukturen; Agent-SKILLs erfuellten das exakte
+  Uebersicht/CLI-Befehle/Dateien-Template 0/12-mal, haben aber ausnahmslos
+  YAML-Frontmatter-Beschreibungen (Anthropic-SKILL-Format, alle 12 verifiziert,
+  109-355 Zeichen). Fix (bewusst KEIN blindes Ergaenzen von Sektionen, nur
+  Kalibrierung von tools/doc_update_checker.py v1.2.0→v1.2.1): (1) README-
+  Sektionscheck nur noch fuer Root-README (echte Software-README), (2) Guide-
+  Template entfernt (0/97 Treffer), (3) Agenten-SKILLs: Pruefung auf YAML
+  description >=30 Zeichen statt Heading-Zwang (Stilverbreite ASCII-Banner vs.
+  ##-Headings ist etabliert), (4) Service-Zweck-Liste um gelebte Aequivalente
+  ergaenzt (Funktionen/Features/Module; 16/16 Services bestehen). Verifikation:
+  Report logs/Doc_Update_Report_2026-09-18_05-56.md — Veraltet 0, Ungueltige
+  Pfade 0, Fehlende Sektionen 0 (vorher 428). Negativtest per Fehlerinjektion
+  im isolierten Temp-Baum: skelettartiger Agenten-SKILL ohne description,
+  Service ohne Zweck-Heading und Root-README ohne Installation/Usage werden
+  weiterhin erkannt (4/4 Befunde, Negativkontrollen unbeanstandet) — die Pruefung
+  bleibt scharf fuer echte kuenftige Verstoesse.
+
 - **Help-Forensik countdown.txt (Task #1332, 2026-09-18):** Vollpruefung von
   docs/help/countdown.txt gegen Implementierung (system/tools/time_system.py,
   system/hub/time.py). Funktionalitaet komplett bestaetigt (start/stop/pause/
