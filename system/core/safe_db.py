@@ -84,12 +84,14 @@ class SafeDB:
         self._schema_cache: dict[str, list[str]] = {}
         self._hooks = None
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, read_only: bool = False) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
+        if read_only:
+            conn.execute("PRAGMA query_only = ON")
         return conn
 
     def _get_columns(self, conn: sqlite3.Connection, table: str) -> list[str]:
@@ -209,7 +211,7 @@ class SafeDB:
             Liste von Dicts
         """
         self._validate_table(table)
-        conn = self._connect()
+        conn = self._connect(read_only=True)
         try:
             if columns:
                 self._validate_columns(conn, table, columns)

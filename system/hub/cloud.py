@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Tuple, List, Optional
 from hub.base import BaseHandler
 from hub._services.cloud.cloud_manager import get_cloud_manager
+from core.network_lock import (
+    SingleFlightLock,
+    SingleFlightLockError,
+    get_lock_info,
+    is_locked,
+)
 
 
 class CloudHandler(BaseHandler):
@@ -35,12 +41,20 @@ class CloudHandler(BaseHandler):
     def target_file(self) -> Path:
         return self.base_path / "data"
 
+    @property
+    def lock_dir(self) -> Path:
+        """Verzeichnis fuer den Single-Flight Network Lock."""
+        path = self.target_file
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def get_operations(self) -> dict:
         return {
             "status": "Status aller erkannten Cloud-Dienste anzeigen",
             "pause": "Sync pausieren (Standard: alle, optional: <provider> [-t SEK])",
             "resume": "Sync fortsetzen (Standard: alle, optional: <provider>)",
             "toggle": "Sync zwischen Pause und Aktiv umschalten",
+            "lock-status": "Status des Single-Flight Network Locks anzeigen",
             "help": "Hilfe anzeigen",
         }
 
@@ -55,6 +69,8 @@ class CloudHandler(BaseHandler):
             return self._resume(args, dry_run)
         elif op == "toggle":
             return self._toggle(args, dry_run)
+        elif op == "lock-status":
+            return self._lock_status(args)
         elif op == "help":
             return self._help()
         else:
@@ -62,6 +78,8 @@ class CloudHandler(BaseHandler):
 
     def _status(self, args: List[str]) -> Tuple[bool, str]:
         status = self.manager.get_status()
+        lock_info = get_lock_info(self.lock_dir)
+        status["single_flight_lock"] = lock_info
         if "--json" in args or "-j" in args:
             return True, json.dumps(status, indent=2, ensure_ascii=False)
 
@@ -70,11 +88,20 @@ class CloudHandler(BaseHandler):
             f"Plattform:          {status['platform']}",
             f"Aktive Provider:    {status['active_providers_count']}",
             f"Pausierte Provider: {status['paused_providers_count']}",
+        ]
+        if lock_info:
+            lines.append(
+                f"Single-Flight Lock: AKTIV (Host: {lock_info.get('machine')}, "
+                f"PID: {lock_info.get('pid')}, Op: {lock_info.get('operation')})"
+            )
+        else:
+            lines.append("Single-Flight Lock: Frei (Keine parallele Übertragung)")
+        lines.extend([
             "",
             "Provider-Details:",
             f"{'Provider':<15} {'Installiert':<12} {'Laeuft':<10} {'Status':<15}",
             "-" * 55,
-        ]
+        ])
 
         for key, p in status["providers"].items():
             inst_str = "Ja" if p["installed"] else "Nein"
@@ -91,7 +118,12 @@ class CloudHandler(BaseHandler):
         if dry_run:
             return True, f"[Dry-Run] Wuerde Cloud-Sync pausieren (Provider: {provider or 'alle'}, Timeout: {timeout}s)"
 
-        results = self.manager.pause(provider, timeout_seconds=timeout)
+        try:
+            with SingleFlightLock(self.lock_dir, operation=f"cloud_pause_{provider or 'all'}"):
+                results = self.manager.pause(provider, timeout_seconds=timeout)
+        except SingleFlightLockError as err:
+            return False, f"Single-Flight Lock aktiv: Parallele Operation wird ausgefuehrt ({err})"
+
         if not results:
             return True, "Keine aktiven Cloud-Dienste zum Pausieren gefunden."
 
@@ -103,7 +135,12 @@ class CloudHandler(BaseHandler):
         if dry_run:
             return True, f"[Dry-Run] Wuerde Cloud-Sync fortsetzen (Provider: {provider or 'alle'})"
 
-        results = self.manager.resume(provider)
+        try:
+            with SingleFlightLock(self.lock_dir, operation=f"cloud_resume_{provider or 'all'}"):
+                results = self.manager.resume(provider)
+        except SingleFlightLockError as err:
+            return False, f"Single-Flight Lock aktiv: Parallele Operation wird ausgefuehrt ({err})"
+
         if not results:
             return True, "Keine pausierten Cloud-Dienste vorhanden (oder Dienste laufen bereits)."
 
@@ -115,10 +152,31 @@ class CloudHandler(BaseHandler):
         if dry_run:
             return True, f"[Dry-Run] Wuerde Cloud-Sync umschalten (Provider: {provider or 'alle'})"
 
-        res = self.manager.toggle(provider)
+        try:
+            with SingleFlightLock(self.lock_dir, operation=f"cloud_toggle_{provider or 'all'}"):
+                res = self.manager.toggle(provider)
+        except SingleFlightLockError as err:
+            return False, f"Single-Flight Lock aktiv: Parallele Operation wird ausgefuehrt ({err})"
+
         status = self.manager.get_status()
         state = "PAUSIERT" if status["has_paused_sync"] else "AKTIV"
         return True, f"Cloud-Sync Status ist nun: {state}"
+
+    def _lock_status(self, args: List[str]) -> Tuple[bool, str]:
+        info = get_lock_info(self.lock_dir)
+        if "--json" in args or "-j" in args:
+            return True, json.dumps(info or {}, indent=2, ensure_ascii=False)
+        if not info:
+            return True, f"Single-Flight Lock ist frei ({self.lock_dir / 'transfer-attempt.json'})."
+        return True, (
+            f"Single-Flight Lock ist AKTIV:\n"
+            f"  Datei:     {self.lock_dir / 'transfer-attempt.json'}\n"
+            f"  Host:      {info.get('machine')}\n"
+            f"  PID:       {info.get('pid')}\n"
+            f"  Operation: {info.get('operation')}\n"
+            f"  Erstellt:  {info.get('created_at')}\n"
+            f"  Ablauf:    {info.get('expires_at')}"
+        )
 
     def _parse_args(self, args: List[str]) -> Tuple[Optional[str], int]:
         provider = None
@@ -148,4 +206,5 @@ class CloudHandler(BaseHandler):
             "  bach cloud pause [provider] [-t SEC]  Pausiert Cloud-Sync mit Timeout (Standard: 300s)\n"
             "  bach cloud resume [provider]          Setzt Cloud-Sync fort\n"
             "  bach cloud toggle [provider]          Schaltet zwischen Pause und Resume um\n"
+            "  bach cloud lock-status [--json]       Zeigt Status des Single-Flight Network Locks\n"
         )

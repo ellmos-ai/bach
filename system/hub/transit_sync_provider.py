@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+from core.network_lock import SingleFlightLock
+
 EXTERNAL_MODULE = "sqlite_transit_sync"
 EXTERNAL_DIST = "sqlite-transit-sync"
 ROLLBACK_ENV_VAR = "BACH_USE_EXTERNAL_TRANSITSYNC"
@@ -176,8 +178,10 @@ class ExternalTransitSyncEngine:
 
     def push(self) -> str:
         """Publish one verified snapshot of the local DB. Returns its name."""
-        snapshot = self._sync.push()
-        return snapshot.path.name
+        transit_dir = Path(self._config.transit)
+        with SingleFlightLock(transit_dir, operation="transit_push"):
+            snapshot = self._sync.push()
+            return snapshot.path.name
 
     def pull(self) -> Tuple[int, list]:
         """Merge every pending verified snapshot in deterministic order.
@@ -192,16 +196,19 @@ class ExternalTransitSyncEngine:
 
     def sync(self) -> Tuple[bool, str]:
         """Full cycle: pull pending snapshots, then push the local state."""
-        changed, names = self.pull()
-        snapshot_name = self.push()
-        if names:
-            message = (
-                f"TransitSync: {changed} Zeilen aus {len(names)} Snapshot(s) "
-                f"gemergt, Push: {snapshot_name}"
-            )
-        else:
-            message = f"TransitSync: nichts ausstehend, Push: {snapshot_name}"
-        return True, message
+        transit_dir = Path(self._config.transit)
+        with SingleFlightLock(transit_dir, operation="transit_sync"):
+            changed, names = self.pull()
+            snapshot = self._sync.push()
+            snapshot_name = snapshot.path.name
+            if names:
+                message = (
+                    f"TransitSync: {changed} Zeilen aus {len(names)} Snapshot(s) "
+                    f"gemergt, Push: {snapshot_name}"
+                )
+            else:
+                message = f"TransitSync: nichts ausstehend, Push: {snapshot_name}"
+            return True, message
 
     def cleanup(self, keep_days: int = 7, keep_per_node: int = 10,
                 dry_run: bool = True) -> dict:

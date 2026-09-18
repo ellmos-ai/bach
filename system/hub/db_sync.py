@@ -347,7 +347,12 @@ class DBSyncManager:
             except Exception as e:
                 return False, f"TransitSync Push fehlgeschlagen ({e})"
             return True, f"TransitSync Push: {snapshot_name}"
-        backup_path = self.create_backup_if_needed()
+        try:
+            from core.network_lock import SingleFlightLock, SingleFlightLockError
+            with SingleFlightLock(self.transit_dir, operation="prosync_push"):
+                backup_path = self.create_backup_if_needed()
+        except SingleFlightLockError as e:
+            return False, f"ProSync Push durch Single-Flight Lock blockiert ({e})"
         if backup_path:
             return True, f"ProSync Push: {backup_path.name}"
         return True, "ProSync Push: Bereits heute gepusht"
@@ -547,6 +552,7 @@ class DBSyncManager:
             local.row_factory = sqlite3.Row
             remote = sqlite3.connect(str(staged_backup))
             remote.row_factory = sqlite3.Row
+            remote.execute("PRAGMA query_only = ON")
 
             timestamped_tables = self._discover_timestamped_tables(local)
             print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")

@@ -87,44 +87,72 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
-    def connect(self):
-        """Context Manager fuer DB-Verbindung mit WAL und FK."""
+    def connect(self, read_only: bool = False):
+        """Context Manager fuer DB-Verbindung mit WAL und FK.
+
+        Wenn read_only=True gesetzt ist, wird die Verbindung ueber
+        PRAGMA query_only = ON gegen jegliche Mutationen, Trigger-Writes
+        oder versehentliche SQLi-Schreibversuche auf SQLite-Engine-Ebene hart
+        abgesichert (NemoFold-Muster).
+        """
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")  # 30 Sekunden in Millisekunden
+        if read_only:
+            conn.execute("PRAGMA query_only = ON")
         try:
             yield conn
-            conn.commit()
+            if not read_only:
+                conn.commit()
         except Exception:
-            conn.rollback()
+            if not read_only:
+                conn.rollback()
             raise
         finally:
             conn.close()
 
-    def execute(self, sql: str, params: tuple = ()) -> list:
+    @contextmanager
+    def connect_readonly(self):
+        """Context Manager fuer explizite Read-Only DB-Verbindung mit PRAGMA query_only = ON."""
+        with self.connect(read_only=True) as conn:
+            yield conn
+
+    def execute(self, sql: str, params: tuple = (), read_only: bool = False) -> list:
         """Fuehrt SQL aus und gibt Ergebnis als list[dict] zurueck."""
-        with self.connect() as conn:
+        with self.connect(read_only=read_only) as conn:
             cursor = conn.execute(sql, params)
             if sql.strip().upper().startswith("SELECT"):
                 return [dict(row) for row in cursor.fetchall()]
             return []
 
-    def execute_one(self, sql: str, params: tuple = ()) -> Optional[dict]:
+    def execute_read(self, sql: str, params: tuple = ()) -> list:
+        """Fuehrt Lese-SQL mit PRAGMA query_only = ON aus und gibt list[dict] zurueck."""
+        return self.execute(sql, params, read_only=True)
+
+    def execute_one(self, sql: str, params: tuple = (), read_only: bool = False) -> Optional[dict]:
         """Fuehrt SQL aus und gibt erste Zeile zurueck."""
-        results = self.execute(sql, params)
+        results = self.execute(sql, params, read_only=read_only)
         return results[0] if results else None
 
-    def execute_scalar(self, sql: str, params: tuple = ()):
+    def execute_one_read(self, sql: str, params: tuple = ()) -> Optional[dict]:
+        """Fuehrt Lese-SQL mit PRAGMA query_only = ON aus und gibt erste Zeile zurueck."""
+        return self.execute_one(sql, params, read_only=True)
+
+    def execute_scalar(self, sql: str, params: tuple = (), read_only: bool = False):
         """Fuehrt SQL aus und gibt einzelnen Wert zurueck."""
-        with self.connect() as conn:
+        with self.connect(read_only=read_only) as conn:
             row = conn.execute(sql, params).fetchone()
             return row[0] if row else None
 
+    def execute_scalar_read(self, sql: str, params: tuple = ()):
+        """Fuehrt Lese-SQL mit PRAGMA query_only = ON aus und gibt einzelnen Wert zurueck."""
+        return self.execute_scalar(sql, params, read_only=True)
+
     def execute_write(self, sql: str, params: tuple = ()) -> int:
         """Fuehrt INSERT/UPDATE/DELETE aus, gibt lastrowid zurueck."""
-        with self.connect() as conn:
+        with self.connect(read_only=False) as conn:
             cursor = conn.execute(sql, params)
             return cursor.lastrowid
 
@@ -319,32 +347,34 @@ class Database:
 
     def table_exists(self, name: str) -> bool:
         """Prueft ob Tabelle existiert."""
-        result = self.execute_scalar(
+        result = self.execute_scalar_read(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
             (name,)
         )
-        return result > 0
+        return bool(result and result > 0)
 
     def tables(self) -> list:
         """Gibt alle Tabellennamen zurueck."""
-        rows = self.execute(
+        rows = self.execute_read(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
         return [r["name"] for r in rows]
 
     def row_count(self, table: str) -> int:
         """Gibt Zeilenanzahl einer Tabelle zurueck."""
-        return self.execute_scalar(f"SELECT COUNT(*) FROM [{table}]") or 0
+        return self.execute_scalar_read(f"SELECT COUNT(*) FROM [{table}]") or 0
 
 
-def get_db_connection(db_path: Path) -> sqlite3.Connection:
+def get_db_connection(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
     """
     Erstellt SQLite-Connection mit optimalen Einstellungen.
 
     Fixes BUG-HQ5-B-001: Database Lock durch fehlende Timeouts.
+    NemoFold-Muster: PRAGMA query_only = ON bei read_only=True.
 
     Args:
         db_path: Pfad zur Datenbank
+        read_only: Falls True, schuetzt PRAGMA query_only = ON die Verbindung
 
     Returns:
         Konfigurierte SQLite-Connection
@@ -354,10 +384,18 @@ def get_db_connection(db_path: Path) -> sqlite3.Connection:
         - WAL-Mode (Write-Ahead Logging)
         - Foreign Keys aktiviert
         - 30s Busy-Timeout (für concurrent access)
+        - PRAGMA query_only = ON (wenn read_only=True)
     """
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")  # 30 Sekunden
+    if read_only:
+        conn.execute("PRAGMA query_only = ON")
     return conn
+
+
+def get_readonly_db_connection(db_path: Path) -> sqlite3.Connection:
+    """Erstellt eine dedizierte Read-Only Connection mit PRAGMA query_only = ON."""
+    return get_db_connection(db_path, read_only=True)
