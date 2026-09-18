@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes, claim_task_atomic
+from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
 from gui.config import settings
 from gui.console import mount_console
 
@@ -417,6 +417,8 @@ class TaskUpdate(BaseModel):
 
     depends_on: Optional[str] = None
     changed_by: Optional[str] = None
+    # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
+    allow_reopen: Optional[bool] = False
 
 
 
@@ -1715,8 +1717,15 @@ async def update_task(task_id: int, update: TaskUpdate):
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
 
-        if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
-            did_update = True
+        try:
+            # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von
+            # gate-geparkten Tasks -- Reopen ohne allow_reopen wird blockiert.
+            if apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                        changed_by=changed_by,
+                                        allow_reopen=bool(update.allow_reopen)):
+                did_update = True
+        except GateReopenBlocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
         if did_update:
             conn.commit()

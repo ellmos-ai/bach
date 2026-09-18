@@ -75,11 +75,15 @@ class FailedAnswer(str):
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
-    from hub.task_audit import apply_task_field_changes
+    from hub.task_audit import apply_task_field_changes, GateReopenBlocked
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
     RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
     apply_task_field_changes = None
+
+    class GateReopenBlocked(Exception):
+        """Fallback, wenn hub.task_audit nicht importierbar ist (kein Guard, aber
+        die except-Zweige in update_task muessen GateReopenBlocked fangen koennen)."""
 
 
 # --- Sicherheit ---
@@ -588,8 +592,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             return "Keine Felder zum Aktualisieren angegeben"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if apply_task_field_changes is not None:
-                            apply_task_field_changes(conn, tid, dict(existing), updates,
-                                                      changed_by="chat-runtime", now=now)
+                             # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
+                             # Der Terminal-Park-Guard im Choke-Point blockiert einen
+                             # Reopen auf open|pending|in_progress fuer einen gate-geparkten
+                             # Task. Das Agent-Tool darf den Task NICHT resurrektieren
+                             # (Fail-Closed) -- stattdessen klare Meldung, damit der
+                             # Operator bei Bedarf via CLI `reopen`/`unblock` (allow_reopen)
+                             # oder GUI explicit wieder oeffnet.
+                            try:
+                                apply_task_field_changes(conn, tid, dict(existing), updates,
+                                                          changed_by="chat-runtime", now=now)
+                            except GateReopenBlocked as exc:
+                                conn.rollback()
+                                return f"[WARN] Task #{tid} ist terminal geparkt (Gate-Haltefrist) -- Reopen blockiert: {exc}. Fuer einen bewussten Reopen `bach task reopen {tid}` (oder unblock) nutzen."
                         else:
                             updates["updated_at"] = now
                             set_str = ", ".join(f"{k}=?" for k in updates.keys())

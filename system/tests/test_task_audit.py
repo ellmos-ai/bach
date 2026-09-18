@@ -27,6 +27,7 @@ from hub.task_audit import (
     COMPLETED_STATUSES,
     IN_PROGRESS_STATUSES,
     apply_task_field_changes,
+    GateReopenBlocked,
 )
 
 
@@ -239,3 +240,76 @@ class TestClearFields:
 
     def test_clearable_columns_are_the_timestamp_columns(self):
         assert CLEARABLE_COLUMNS == frozenset({"started_at", "completed_at"})
+
+
+class TestTerminalParkGuard:
+    """T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): der generische
+    Choke-Point darf einen terminal-geparkten Task NICHT per Reopen auf
+    open|pending|in_progress zuruecksetzen -- SOFERN nicht allow_reopen=True.
+    Marker sind spiegelbildlich zu chat_tray's _is_terminal_parked."""
+
+    @staticmethod
+    def _park_conn():
+        c = sqlite3.connect(":memory:")
+        c.row_factory = sqlite3.Row
+        c.executescript(
+            """
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY, title TEXT, status TEXT DEFAULT 'open',
+                priority TEXT DEFAULT 'P3', started_at TEXT, completed_at TEXT,
+                updated_at TEXT, claimed_by TEXT, claimed_at TEXT, due_date TEXT);
+            CREATE TABLE task_history (
+                id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, action TEXT NOT NULL,
+                field_changed TEXT, old_value TEXT, new_value TEXT,
+                changed_by TEXT DEFAULT 'user', changed_at TEXT NOT NULL);
+            """
+        )
+        c.commit()
+        return c
+
+    @staticmethod
+    def _row(**over):
+        c = dict(id=1, title="T", status="open", priority="P2", started_at=None,
+                 completed_at=None, updated_at=None, claimed_by=None,
+                 claimed_at=None, due_date=None)
+        c.update(over)
+        return c
+
+    @pytest.mark.parametrize("new_status", ["open", "pending", "in_progress"])
+    def test_blocked_status_blocks_reopen(self, new_status):
+        c = self._park_conn()
+        with pytest.raises(GateReopenBlocked):
+            apply_task_field_changes(c, 1, self._row(status="blocked"),
+                                    {"status": new_status}, now="T1")
+
+    def test_future_due_date_blocks_reopen(self):
+        c = self._park_conn()
+        with pytest.raises(GateReopenBlocked):
+            apply_task_field_changes(c, 1,
+                self._row(status="open", due_date="2099-01-01T00:00:00"),
+                {"status": "pending"}, now="2026-09-16T00:00:00")
+
+    def test_claimed_in_progress_blocks_reopen(self):
+        c = self._park_conn()
+        with pytest.raises(GateReopenBlocked):
+            apply_task_field_changes(c, 1,
+                self._row(status="in_progress", claimed_by="idle-worker"),
+                {"status": "open"}, now="T1")
+
+    def test_allow_reopen_bypasses_guard(self):
+        c = self._park_conn()
+        changed = apply_task_field_changes(c, 1, self._row(status="blocked"),
+            {"status": "pending"}, now="T1", allow_reopen=True)
+        assert changed is True
+
+    def test_done_transition_not_blocked(self):
+        c = self._park_conn()
+        changed = apply_task_field_changes(c, 1, self._row(status="blocked"),
+            {"status": "done"}, now="T1")
+        assert changed is True
+
+    def test_unparked_task_reopen_allowed(self):
+        c = self._park_conn()
+        changed = apply_task_field_changes(c, 1, self._row(status="open"),
+            {"status": "pending"}, now="T1")
+        assert changed is True

@@ -77,7 +77,7 @@ sys.path.insert(0, str(BACH_ROOT))
 # gebauten Pfad zeigte still auf die veraltete Repo-/Cloud-Kopie
 # (test_db_path_central, T-20260901-202368596). sys.path steht oben bereits.
 from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
-from hub.task_audit import apply_task_field_changes
+from hub.task_audit import apply_task_field_changes, GateReopenBlocked
 BACH_DB = str(_PATHS_DB)
 
 try:
@@ -228,6 +228,8 @@ class TaskUpdate(BaseModel):
     # analog zu TaskUpdate.changed_by im GUI-Server. Externe API-Clients identifizieren
     # sich damit; ohne Angabe greift der Default "headless-api" (siehe update_task).
     changed_by: Optional[str] = None
+    # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
+    allow_reopen: Optional[bool] = False
 
 class MemoryWrite(BaseModel):
     content: str
@@ -307,7 +309,7 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
             raise HTTPException(404, "Task nicht gefunden")
         existing_row = dict(existing)
 
-        field_values = update.model_dump(exclude_none=True, exclude={"changed_by"})
+        field_values = update.model_dump(exclude_none=True, exclude={"changed_by", "allow_reopen"})
         if not field_values:
             raise HTTPException(400, "Keine Felder zum Aktualisieren")
 
@@ -317,9 +319,15 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         changed_by = update.changed_by or "headless-api"
 
-        if apply_task_field_changes(conn, task_id, existing_row, field_values,
-                                     changed_by=changed_by, now=now):
-            conn.commit()
+        try:
+            # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von
+             # gate-geparkten Tasks -- Reopen ohne allow_reopen wird blockiert.
+            if apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                        changed_by=changed_by, now=now,
+                                        allow_reopen=bool(update.allow_reopen)):
+                conn.commit()
+        except GateReopenBlocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
         return {"id": task_id, "updated": True}
     finally:
