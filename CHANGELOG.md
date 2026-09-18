@@ -320,6 +320,26 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   Sektionen" — strukturelles Template-Thema der SKILL.md-Dateien, zur Separatbehandlung
   als eigener Task vorgemerkt.
 
+- **Wiki-Autor: Neuer Artikel schadenmanagement.txt (Task #1331, 2026-09-18):**
+  Agent `versicherungen` (v1.1.0) ausgewaehlt (kein Wiki-Author-Log-Eintrag, Domain
+  unbedeckt). Gap-Analyse des Ordners wiki/finanzen_versicherungen/ (9 Bestandsartikel):
+  Kernkompetenz 3 des Agenten (Schadensmanagement: Meldung, Ansprueche, Eskalation) hatte
+  keinerlei Wiki-Unterfuetterung → Prioritaet HOCH. Web-Recherche ausschliesslich gegen
+  Primärquellen (live verifiziert 2026-09-18): § 31 VVG (Auskunftspflicht), § 14 VVG
+  (Faelligkeit + Abschlagszahlungen ab 1 Monat nach Anzeige + Unwirksamkeit des
+  Verzugszins-Ausschlusses), § 195 BGB (Verjaehrung 3 Jahre), Versicherungsombudsmann
+  (VSBG-Schlichtungsstelle, verbindliche Entscheidung bis 10.000 EUR Beschwerdewert,
+  darueber Empfehlung). Zwei verbreitete Missverstaendnisse per Gesetzestext korrigiert
+  und im Artikel als Warnung dokumentiert: (1) § 12 VVG regelt NICHT die Verjaehrung
+  (dort steht die Versicherungsperiode; die 2-Jahres-Regel war VVG 1908), (2) Ombudsmann-
+  Hoechstbetrag ist 10.000 EUR (nicht veraltete 100.000 EUR). Neuer Artikel
+  schadenmanagement.txt (5-Phasen-Ablauf, Obliegenheiten, 3-Stufen-Eskalationsplan,
+  Fristen-Schnellreferenz, BACH-Integration mit Mapping auf die Agent-Kompetenz,
+  Haftungshinweis), Ordner-Index _index.txt ergaenzt. Report:
+  logs/wiki_author/REPORT_2026-09-18_versicherungen_schadenmanagement.md.
+  Offene Folgeluecken dokumentiert: Kuendigungsfristen/Sonderkuendigungsrecht (M),
+  Gutachterwesen (N), Bestandsartikel-Pruefungen teils ueberfaellig.
+
 - **user.db-Doku-Konsolidierung nachgezogen (Nebenbefund aus Anschlussanalyse #1321, 2026-09-17):**
   Die v1.1.84-Konsolidierung (Task 772, "user.db in bach.db") war im Code vollstaendig
   umgesetzt, aber 6 Dokumentstellen beschrieben noch Tabellen "in user.db" — inklusive
