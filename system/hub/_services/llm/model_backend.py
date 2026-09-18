@@ -14,13 +14,16 @@ Verwendung:
     # result = {'content': '...', 'tool_calls': [...] or None}
 """
 import asyncio
+import errno
 import json
 import logging
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -914,6 +917,20 @@ class CLIBackend(ModelBackend):
     async def chat(self, messages, tools=None, think=True, model=None):
         prompt = self._messages_to_prompt(messages)
         response = await self._run_cli(prompt, model=model)
+        if isinstance(response, dict):
+            content = response.get("content", "")
+            error = response.get("error")
+            raw_message = {"content": content}
+            if error:
+                raw_message["error"] = error
+            result = {
+                "content": content,
+                "tool_calls": None,
+                "raw_message": raw_message,
+            }
+            if error:
+                result["error"] = error
+            return result
         return {
             "content": response,
             "tool_calls": None,
@@ -935,7 +952,7 @@ class CLIBackend(ModelBackend):
                 parts.append(f"[Vorherige Antwort]\n{content}")
         return "\n\n".join(parts)
 
-    async def _run_cli(self, prompt: str, model: str = None) -> str:
+    async def _run_cli(self, prompt: str, model: str = None) -> str | dict[str, str]:
         model = model or self.default_model
         preset = self.KNOWN_CLIS.get(self.cli_name, self.KNOWN_CLIS["claude"])
 
@@ -964,63 +981,318 @@ class CLIBackend(ModelBackend):
             None, lambda: self._run_subprocess(cmd, prompt, env, creation_flags)
         )
 
-        if response and not response.startswith("Fehler:"):
+        if isinstance(response, str) and response and not response.startswith("Fehler:"):
             self._session_active = True
 
         return response
 
-    def _run_subprocess(self, cmd: list, prompt: str, env: dict,
-                        creation_flags: int) -> str:
+    def _run_subprocess(
+        self, cmd: list, prompt: str, env: dict, creation_flags: int
+    ) -> str | dict[str, str]:
+        """Run a CLI with bounded, cross-platform pipe monitoring.
+
+        ``select`` cannot reliably monitor subprocess pipes on Windows.  The
+        pipe readers therefore run in daemon threads while this thread polls
+        their event queue and the process.  A blocked reader can never hold
+        the timeout loop hostage; killing the process and bounded waits then
+        close the failure path with the output collected so far.
+        """
+        proc = None
+        stdout_data: list[bytes] = []
+        stderr_data: list[bytes] = []
+        events: queue.Queue = queue.Queue()
+        reader_threads: list[threading.Thread] = []
+        writer_threads: list[threading.Thread] = []
+        wait_thread: threading.Thread | None = None
+
+        stdout_done = False
+        stderr_done = False
+        process_returncode: int | None = None
+        output_error: BaseException | None = None
+        input_error: BaseException | None = None
+        process_wait_error: BaseException | None = None
+        process_wait_started = False
+        process_wait_deadline: float | None = None
+        stream_drain_deadline: float | None = None
+        stopped = False
+
+        try:
+            inactivity_timeout = float(self.timeout)
+        except (TypeError, ValueError):
+            inactivity_timeout = 300.0
+        if not inactivity_timeout > 0:
+            inactivity_timeout = 300.0
+
+        def as_bytes(chunk: object) -> bytes:
+            if isinstance(chunk, bytes):
+                return chunk
+            if isinstance(chunk, bytearray):
+                return bytes(chunk)
+            return str(chunk).encode("utf-8", errors="replace")
+
+        def read_stream(name: str, stream) -> None:
+            if stream is None:
+                events.put((name, "eof", None))
+                return
+            try:
+                read1 = getattr(stream, "read1", None)
+                while True:
+                    # BufferedReader.read1 returns available data without
+                    # waiting for the complete 4096-byte request.  The
+                    # fallback remains isolated in this reader thread for
+                    # simple test doubles and non-buffered streams.
+                    chunk = (
+                        read1(4096)
+                        if callable(read1)
+                        else stream.read(4096)
+                    )
+                    if not chunk:
+                        break
+                    events.put((name, "data", as_bytes(chunk)))
+            except Exception as exc:  # pipe implementations vary by platform
+                events.put((name, "error", exc))
+            finally:
+                events.put((name, "eof", None))
+
+        def write_stdin(stream) -> None:
+            try:
+                stream.write(prompt.encode("utf-8"))
+                stream.close()
+            except Exception as exc:
+                events.put(("stdin", "error", exc))
+            else:
+                events.put(("stdin", "done", None))
+
+        def wait_for_process() -> None:
+            try:
+                returncode = proc.wait(timeout=10)
+            except subprocess.TimeoutExpired as exc:
+                events.put(("process", "timeout", exc))
+            except Exception as exc:
+                events.put(("process", "error", exc))
+            else:
+                events.put(("process", "done", returncode))
+
+        def close_stream(stream) -> None:
+            if stream is None:
+                return
+
+            def close_in_background() -> None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+            # Pipe close can itself block on some platforms.  It is cleanup
+            # only, so never let it hold the caller's timeout path hostage.
+            threading.Thread(
+                target=close_in_background,
+                name="bach-cli-pipe-closer",
+                daemon=True,
+            ).start()
+
+        def stop_process() -> None:
+            """Kill once, reap with bounded waits, and unblock stdin."""
+            nonlocal stopped
+            if stopped or proc is None:
+                return
+            stopped = True
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+            except Exception:
+                pass
+            # A writer thread may still be blocked in write(); closing stdin
+            # is best-effort and deliberately happens before the bounded reap.
+            close_stream(getattr(proc, "stdin", None))
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=1)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        def consume_events() -> None:
+            nonlocal stdout_done, stderr_done, process_returncode
+            nonlocal output_error, input_error, process_wait_error
+            nonlocal stream_drain_deadline, last_activity
+            while True:
+                try:
+                    name, kind, payload = events.get_nowait()
+                except queue.Empty:
+                    return
+                if name == "stdout":
+                    if kind == "data":
+                        stdout_data.append(payload)
+                        last_activity = time.monotonic()
+                    elif kind == "error" and output_error is None:
+                        output_error = payload
+                    elif kind == "eof":
+                        stdout_done = True
+                elif name == "stderr":
+                    if kind == "data":
+                        stderr_data.append(payload)
+                    elif kind == "eof":
+                        stderr_done = True
+                elif name == "stdin" and kind == "error" and input_error is None:
+                    input_error = payload
+                elif name == "process":
+                    if kind == "done":
+                        process_returncode = payload
+                        stream_drain_deadline = time.monotonic() + 1.0
+                    elif kind == "timeout" and process_wait_error is None:
+                        process_wait_error = payload
+                    elif kind == "error" and process_wait_error is None:
+                        process_wait_error = payload
+
+        def partial_output() -> str:
+            return b"".join(stdout_data).decode("utf-8", errors="replace").strip()
+
+        def stderr_output() -> str:
+            return b"".join(stderr_data).decode("utf-8", errors="replace").strip()
+
+        def failure(message: str) -> dict[str, str]:
+            detail = stderr_output()[:1000]
+            error = f"{message}. {detail}" if detail else message
+            return {"content": partial_output(), "error": error}
+
+        def error_message(prefix: str, exc: BaseException) -> str:
+            if isinstance(exc, BrokenPipeError) or getattr(exc, "errno", None) == errno.EPIPE:
+                return "Broken pipe"
+            detail = f"{type(exc).__name__}: {exc}".rstrip(": ")
+            return f"{prefix}: {detail}"
+
+        def abort(message: str) -> dict[str, str]:
+            stop_process()
+            drain_deadline = time.monotonic() + 0.25
+            while time.monotonic() < drain_deadline:
+                consume_events()
+                if stdout_done and stderr_done:
+                    break
+                time.sleep(0.01)
+            consume_events()
+            result = failure(message)
+            close_stream(getattr(proc, "stdout", None))
+            close_stream(getattr(proc, "stderr", None))
+            for thread in reader_threads + writer_threads:
+                thread.join(timeout=0.05)
+            if wait_thread is not None:
+                wait_thread.join(timeout=0.05)
+            return result
+
         try:
             proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, env=env, cwd=self.cwd,
                 creationflags=creation_flags,
             )
-            if proc.poll() is not None:
-                stderr = proc.stderr.read().decode("utf-8", errors="replace")[:500]
-                return f"Fehler: CLI beendet (exit={proc.returncode}). {stderr}"
-
-            try:
-                proc.stdin.write(prompt.encode("utf-8"))
-                proc.stdin.close()
-            except BrokenPipeError:
-                stderr = proc.stderr.read().decode("utf-8", errors="replace")[:500]
-                return f"Fehler: Broken pipe. {stderr}"
-
-            stdout_data = []
-            last_activity = time.time()
-            inactivity_timeout = self.timeout if self.timeout > 0 else 300
-
-            while True:
-                try:
-                    chunk = proc.stdout.read(4096)
-                    if not chunk:
-                        break
-                    stdout_data.append(chunk)
-                    last_activity = time.time()
-                except Exception:
-                    break
-                if time.time() - last_activity > inactivity_timeout:
-                    proc.kill()
-                    return "Fehler: Inaktivitäts-Timeout"
-
-            proc.wait(timeout=10)
-            result = b"".join(stdout_data).decode("utf-8", errors="replace").strip()
-
-            if proc.returncode != 0 and not result:
-                stderr = proc.stderr.read().decode("utf-8", errors="replace")[:1000]
-                return f"Fehler: CLI exit {proc.returncode}. {stderr}"
-
-            return result or "(keine Antwort)"
-
         except FileNotFoundError:
-            return f"Fehler: CLI '{cmd[0]}' nicht gefunden. Installieren?"
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            return "Fehler: Timeout"
-        except Exception as e:
-            return f"Fehler: {e}"
+            return {
+                "content": "",
+                "error": f"CLI '{cmd[0]}' nicht gefunden. Installieren?",
+            }
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}".rstrip(": ")
+            return {"content": "", "error": f"CLI-Fehler: {detail}"}
+
+        for name, stream in (
+            ("stdout", getattr(proc, "stdout", None)),
+            ("stderr", getattr(proc, "stderr", None)),
+        ):
+            thread = threading.Thread(
+                target=read_stream,
+                args=(name, stream),
+                name=f"bach-cli-{name}-reader",
+                daemon=True,
+            )
+            thread.start()
+            reader_threads.append(thread)
+
+        last_activity = time.monotonic()
+        initial_returncode = proc.poll()
+        if initial_returncode is not None:
+            process_returncode = initial_returncode
+            stream_drain_deadline = time.monotonic() + 1.0
+        elif getattr(proc, "stdin", None) is not None:
+            thread = threading.Thread(
+                target=write_stdin,
+                args=(proc.stdin,),
+                name="bach-cli-stdin-writer",
+                daemon=True,
+            )
+            thread.start()
+            writer_threads.append(thread)
+
+        while True:
+            consume_events()
+            now = time.monotonic()
+
+            if output_error is not None:
+                return abort(error_message("CLI-Ausgabe fehlgeschlagen", output_error))
+            if input_error is not None:
+                return abort(error_message("CLI-Eingabe fehlgeschlagen", input_error))
+            if process_wait_error is not None:
+                if isinstance(process_wait_error, subprocess.TimeoutExpired):
+                    return abort("Timeout")
+                return abort(error_message("CLI-Wait fehlgeschlagen", process_wait_error))
+
+            if process_returncode is None:
+                observed_returncode = proc.poll()
+                if observed_returncode is not None:
+                    process_returncode = observed_returncode
+                    stream_drain_deadline = now + 1.0
+
+            if (
+                stdout_done
+                and process_returncode is None
+                and not process_wait_started
+            ):
+                process_wait_started = True
+                process_wait_deadline = now + 10.0
+                wait_thread = threading.Thread(
+                    target=wait_for_process,
+                    name="bach-cli-process-waiter",
+                    daemon=True,
+                )
+                wait_thread.start()
+
+            if process_returncode is None and not stdout_done:
+                if now - last_activity >= inactivity_timeout:
+                    return abort("Inaktivitäts-Timeout")
+            elif process_returncode is not None:
+                if stream_drain_deadline is None:
+                    stream_drain_deadline = now + 1.0
+                if (stdout_done and stderr_done) or now >= stream_drain_deadline:
+                    break
+            elif process_wait_deadline is not None and now >= process_wait_deadline:
+                return abort("Timeout")
+
+            time.sleep(0.01)
+
+        consume_events()
+        if process_returncode != 0:
+            result: str | dict[str, str] = failure(
+                f"CLI exit {process_returncode}"
+            )
+        else:
+            result_text = partial_output()
+            result = result_text if result_text else failure("Leere Antwort")
+
+        close_stream(getattr(proc, "stdin", None))
+        close_stream(getattr(proc, "stdout", None))
+        close_stream(getattr(proc, "stderr", None))
+        for thread in reader_threads + writer_threads:
+            thread.join(timeout=0.05)
+        if wait_thread is not None:
+            wait_thread.join(timeout=0.05)
+        return result
 
     def list_models(self) -> list[str]:
         preset = self.KNOWN_CLIS.get(self.cli_name, {})
