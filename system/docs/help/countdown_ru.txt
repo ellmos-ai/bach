@@ -1,6 +1,7 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Version: 1.0.0
+# Last validated: 2026-09-18 (Help forensics sync, task #1336)
+# Next review: 2027-03-18
 
 ОБРАТНЫЙ СЧЕТ — Обратный отсчет с триггером
 ==================================
@@ -10,20 +11,34 @@
 КОМАНДЫ CLI
 -----------
 
-  bach countdown start <name> HH:MM:SS              Начать обратный отсчет
-  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
-  bach countdown stop <name>                         Отменить обратный отсчет
-  bach countdown list                                Активный обратный отсчет
-  bach countdown pause <name>                        Пауза
-  bach countdown resume <name>                       Возобновить
+  bach countdown start <name> <длительность>            Начать обратный отсчет
+  bach countdown start <name> <длительность> --after "cmd" С командой-триггером
+  bach countdown <длительность>                         Краткая форма: запускается как "timer" (v1.1.84)
+  bach countdown stop <name>                            Отменить обратный отсчет
+  bach countdown list                                   Активный обратный отсчет
+  bach countdown pause <name>                           Пауза
+  bach countdown resume <name>                          Возобновить
+
+ФОРМАТЫ ДЛИТЕЛЬНОСТИ
+-------------
+
+  HH:MM:SS   напр. 01:00:00 = 1 час
+  MM:SS      напр. 25:00 = 25 минут
+  Xs/Xm/Xh   напр. 90s, 25m, 2h (краткая форма)
 
 ФОРМАТ ВЫХОДА
 --------------
 
-  Обычный: сеанс [ОБРАТНЫЙ СЧЕТ]: осталось 45:12.
-  Предупреждение: [!] сеанс: осталось всего 04:58!
+  Запуск:     [COUNTDOWN] «name» запущен: 01:00:00
+  Пауза:      [COUNTDOWN] «name» на паузе (осталось 45:12)
+  Продолжить: [COUNTDOWN] «name» возобновлен (осталось 45:12)
+  Стоп:       [COUNTDOWN] «name» отменен
 
-Предупреждение появляется, когда остается < 5 минут.
+  Список:     [COUNTDOWN] Активные обратные отсчеты:
+                name: 45:12                 (обычный)
+                name: 04:58 [!]             (предупреждение, если осталось < 5 минут)
+                name: ИСТЕК!
+                name: 19:45 (ПАУЗА)
 
 PERSISTENCY
 ----------
@@ -32,12 +47,12 @@ PERSISTENCY
 
   Содержание:
   {
-    "обратный отсчет": {
-      "сессия": {
+    "countdowns": {
+      "session": {
         "end_time": "2026-01-30T15:00:00",
-        "after_command": "выключение 'Time at'",
-        «приостановлено»: ложь,
-        «remaining_on_pause»: ноль
+        "after_command": "shutdown 'Время вышло'",
+        "paused": false,
+        "remaining_on_pause": null
       }
     }
   }
@@ -45,17 +60,17 @@ PERSISTENCY
 ПРИМЕРЫ
 ---------
 
-  # Обратный отсчет сеанса на 1 час 
+  # Обратный отсчет сеанса на 1 час
   bach countdown start session 01:00:00
-  -> Начался «сеанс» обратного отсчета: 01:00:00
+  -> Обратный отсчет 'session' запущен: 01:00:00
 
   # С автоматическим выключением
   bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
-  -> По истечении срока его действия выполняется «bach --shutdown 'Сессия завершена'» 
+  -> По истечении срока его действия выполняется «bach --shutdown 'Сессия завершена'»
 
   # Таймер Помидора (25 минут)
   bach countdown start focus 00:25:00
-  -> Начался обратный отсчет «фокуса»: 00:25:00
+  -> Обратный отсчет 'focus' запущен: 00:25:00
 
   # Пауза и возобновление
   bach countdown pause focus
@@ -63,17 +78,18 @@ PERSISTENCY
 
   # Проверить статус
   bach countdown list
-  -> сеанс: осталось 45:12
-  -> фокус: осталось 19:45 (ПАУЗА)
+  -> [COUNTDOWN] Активные обратные отсчеты:
+  ->   session: 45:12
+  ->   focus:   19:45 (ПАУЗА)
 
 TRIGGER (--after)
 -----------------
 
 Команда --after выполняется по истечении срока ее действия:
 
-  --after «shutdown 'Time at'» Завершить сеанс
-  --after "msg send user 'Break!" Отправить сообщение
-  --after «задача выполнена 123» Отметить задачу как выполненную
+  --after "shutdown 'Время вышло'"    Завершить сеанс
+  --after "msg send user 'Перерыв!'"  Отправить сообщение
+  --after "task done 123"             Отметить задачу как выполненную
 
 При выполнении команда записывается в очередь.
 Следующий вызов CLI выполнит его (или демон).
@@ -85,11 +101,11 @@ USECASES
      bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
      -> Автоматическое завершение сеанса через 2 часа
 
-  2. ТЕХНИКА ПОМОДОРО
+  2. ТЕХНИКА ПОМИДОРО
      bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
      -> Напоминание о паузе через 25 минут
 
-  3. НАПОМИНАНИЕ О СРОКОМ СРОКА 
+  3. НАПОМИНАНИЕ О СРОКЕ
      bach countdown start deadline 04:00:00
      -> Предупреждение через < 5 минут, затем действуйте вручную
 
@@ -97,12 +113,15 @@ INTERPLAY
 -------------
 
 Обратный отсчет является частью системы времени:
-  --help clock Отображение времени
-  --help таймер секундомер
-  --help между проверками
-  --help победить Единое отображение времени
+  --help clock    Отображение времени
+  --help timer    Секундомер
+  --help between  Проверки between
+  --help beat     Единое отображение времени
 
 ---
-Версия: 1.0 | Статус: Реализовано (v1.1.83)
-Источник: system/tools/time_system.py (CountdownModule), system/hub/time.py (обработчик).
-Примечание: Ссылка на docs/CONCEPT_time_system.md удалена - файл не существует (18.09.2026, задача #1335).
+Версия: 1.1 | Статус: Реализовано (v1.1.84)
+Источник: system/tools/time_system.py (CountdownModule), system/hub/time.py (обработчик)
+Примечание: Ссылка на docs/CONCEPT_time_system.md удалена - файл не существует
+(18.09.2026, задача #1335). Связанная справка: --help clock, --help timer,
+--help between, --help beat (см. INTERPLAY выше). Синхронизировано с немецким
+оригиналом (18.09.2026, задача #1336).

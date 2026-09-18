@@ -272,6 +272,28 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Docs
 
+- **Countdown-Help-Sprachvarianten synchronisiert (Task #1336, 2026-09-18):**
+  Die 5 Sprachvarianten countdown_en/es/ja/ru/zh.txt wurden 1:1 mit der in
+  Task #1332 forensisch verifizierten deutschen Quelle countdown.txt
+  synchronisiert: (1) Header um Version 1.0.0 ergaenzt, Validierungsdatum
+  2026-09-18 gesetzt, naechste Pruefung 2027-03-18 wie Quelle; (2) neue
+  Sektion Dauer-Formate (HH:MM:SS, MM:SS, Xs/Xm/Xh) in allen 5 Sprachen;
+  (3) Auto-Start-Kurzform "bach countdown <Dauer>" (v1.1.84) ergaenzt;
+  (4) AUSGABE-FORMAT auf die live-verifizierte Form korrigiert (Start/Pause/
+  Resume/Stop/List, Warnmarker hinten "[!]", ABGELAUFEN/EXPIRADO);
+  (5) Footer v1.1.83 auf v1.1.84 aktualisiert inkl. Quellenangabe und
+  Verweisen auf --help clock/timer/between/beat. Zusaetzlich gefundene und
+  mitbehebte faktische Fehler der maschinellen Uebersetzung (gleiche Klasse
+  wie #1332/#1335: Doku widerspricht Implementierung): uebersetzte
+  JSON-Keys der Persistenz-Datei ("sesion"/«сессия»/"倒计时" -> literale
+  "countdowns"/"session"-Keys), uebersetzte CLI-Literale (--después de,
+  --ayuda reloj, --ヘルプタイマー, --帮助计时器, --helpbeat, --help победить
+  -> --after/--help clock/timer/between/beat), uebersetzte Countdown-Namen
+  in Beispielen ('sesion'/'セッション'/«сеанс»/"会话" -> 'session'/'focus'),
+  es "datos/" -> "data/", defekte Anfuehrungszeichen. Verifikation: git diff
+  betrifft exakt die 5 Dateien (+240/−147), v1.1.84 in allen 5 vorhanden,
+  0 Rest-Treffer der alten Ausgabe-/Flag-Muster.
+
 - **Sektions-Pruefung kalibriert: 428 False-Positives aufgeloest, 0 echte Luecken
   (Task #1337, 2026-09-18):** Vollstaendige Klassifikation der 428 gemeldeten
   "fehlenden Sektionen" (236 Dateien) aus dem Doku-Frische-Report: ALLE 428 sind
