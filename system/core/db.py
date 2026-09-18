@@ -87,21 +87,34 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
-    def connect(self):
-        """Context Manager fuer DB-Verbindung mit WAL und FK."""
+    def connect(self, readonly: bool = False):
+        """Context Manager fuer DB-Verbindung mit WAL und FK (oder PRAGMA query_only bei readonly=True)."""
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")  # 30 Sekunden in Millisekunden
-        try:
+        if readonly:
+            conn.execute("PRAGMA query_only = ON")
+            try:
+                yield conn
+            finally:
+                conn.close()
+        else:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    @contextmanager
+    def connect_readonly(self):
+        """Context Manager fuer strikt schreibgeschuetzte DB-Verbindungen (Gate G08: PRAGMA query_only = ON)."""
+        with self.connect(readonly=True) as conn:
             yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     def execute(self, sql: str, params: tuple = ()) -> list:
         """Fuehrt SQL aus und gibt Ergebnis als list[dict] zurueck."""
