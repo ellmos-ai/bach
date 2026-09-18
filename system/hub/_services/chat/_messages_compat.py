@@ -19,7 +19,13 @@ log = logging.getLogger("hub._services.chat._messages_compat")
 
 DEFAULT_RECIPIENTS = ("ollama", "buddha", "bach")
 POLL_SECONDS = 30.0
+FAILED_ANSWER_PREFIX = "Backend-Fehler: "
 ProcessFn = Callable[[str, str], str]
+
+
+def _is_failed_answer(answer: object) -> bool:
+    """Erkennt den provider-neutralen FailedAnswer-Marker ohne BACH-Import."""
+    return isinstance(answer, str) and answer.startswith(FAILED_ANSWER_PREFIX)
 
 
 def pending_orders(
@@ -51,7 +57,9 @@ def pending_orders(
 
 
 def file_reply(conn: sqlite3.Connection, order: dict, answer: str) -> int:
-    """Speichert ``answer`` als Inbox-Antwort zu ``order``; gibt die Reply-ID zurueck."""
+    """Speichert eine erfolgreiche Antwort; Fehler lassen den Auftrag offen."""
+    if _is_failed_answer(answer):
+        return 0
     subject = order.get("subject") or order.get("body", "")[:60]
     cur = conn.execute(
         """
@@ -84,6 +92,12 @@ def run_once(
                 answer = process(order.get("body", ""), f"msg-{order['id']}")
             except Exception as exc:  # noqa: BLE001 - polling darf nicht sterben
                 log.warning("Auftragsnachricht #%s nicht beantwortet: %s", order["id"], exc)
+                continue
+            if _is_failed_answer(answer):
+                log.warning(
+                    "Auftragsnachricht #%s nicht beantwortet (error_class=provider_failure)",
+                    order["id"],
+                )
                 continue
             file_reply(conn, order, answer)
             answered += 1

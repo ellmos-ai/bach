@@ -592,6 +592,19 @@ class _AbortingBackend:
                 "error": "Ollama antwortet seit 120s nicht"}
 
 
+class _ManagedResultBackend:
+    manages_own_tools = True
+
+    def __init__(self, result):
+        self.result = result
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, **kwargs):
+        return self.result
+
+
 class TestComputeGate:
     """Ein Modell-Load darf laufende Rechenjobs nicht in den Swap draengen.
 
@@ -763,6 +776,34 @@ class TestFailedAnswer:
         answer = self._process(_RaisingBackend(RuntimeError("kaputt")))
         assert isinstance(answer, str)
         assert answer.startswith("Backend-Fehler:")
+
+    @pytest.mark.parametrize(
+        ("result", "expected_failure"),
+        [
+            pytest.param(
+                {"error": "Ollama antwortet seit 120s nicht", "content": "Teil"},
+                True,
+                id="error-dict",
+            ),
+            pytest.param({}, True, id="empty-result"),
+            pytest.param({"content": None}, True, id="invalid-content"),
+            pytest.param({"content": "Echte Antwort"}, False, id="normal-answer"),
+        ],
+    )
+    def test_managed_tools_result_contract(self, result, expected_failure):
+        """Managed backends must not turn failed results into success state."""
+        import asyncio
+
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        chat_id = f"managed-result-{expected_failure}-{id(result)}"
+        runtime = ChatRuntime(_ManagedResultBackend(result))
+        answer = asyncio.run(runtime.process("Aufgabe", chat_id))
+
+        assert isinstance(answer, FailedAnswer) is expected_failure
+        assistant_message = runtime.history(chat_id)[-1]
+        assert assistant_message["content"] == answer
+        assert assistant_message["ok"] is (not expected_failure)
 
     def test_history_marks_a_reloaded_failure_although_the_type_is_gone(self):
         """Nach einem Neustart traegt das Transkript nur noch Text.
