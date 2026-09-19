@@ -168,9 +168,9 @@ graph TD
     D --> B
     
     style D fill:#FFD700
-    
-    Note: Circular Dependency (Tools ↔ Registry)
 ```
+
+*Note: Circular Dependency (Tools ↔ Registry)*
 
 **Metrics:**
 - Depth (max layers): 5
