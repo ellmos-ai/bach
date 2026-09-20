@@ -446,6 +446,46 @@
         .send-btn:active { transform: scale(0.94); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+        /* ── Microphone / Voice Transcription ── */
+        .mic-btn {
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .mic-btn:hover { background: var(--bg-elevated); border-color: var(--border-hover); }
+        .mic-btn:active { transform: scale(0.94); }
+
+        .mic-btn.recording {
+            background: #e5484d;
+            border-color: #e5484d;
+            color: #fff;
+            animation: mic-pulse 1.1s ease-in-out infinite;
+        }
+
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.55); }
+            50% { box-shadow: 0 0 0 8px rgba(229, 72, 77, 0); }
+        }
+
+        .voice-interim {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            padding: 2px 16px 0;
+            min-height: 16px;
+            font-style: italic;
+        }
+
         .empty-state {
             flex: 1;
             display: flex;
@@ -765,8 +805,10 @@
                     <span></span><span></span><span></span>
                 </div>
 
-                <div class="chat-input-area">
-                    <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
+                <div class="voice-interim" id="voice-interim"></div>
+            <div class="chat-input-area">
+                    <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe" hidden>🎙</button>
+                      <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
                     <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
                 </div>
             </div>
@@ -1169,6 +1211,95 @@
         });
 
         inputEl.addEventListener('input', autoResize);
+
+        // ── Voice Input (Browser-Mittel / Web Speech API) ──
+        (function initVoiceInput() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const micBtn = document.getElementById('mic-btn');
+            const interimEl = document.getElementById('voice-interim');
+            if (!SR) {
+                if (micBtn) micBtn.hidden = true; // nicht unterstützt -> Button ausblenden
+                return;
+            }
+            if (!micBtn) return;
+            micBtn.hidden = false;
+
+            const rec = new SR();
+            rec.continuous = false;
+            rec.interimResults = true;
+            rec.lang = 'de-DE';
+            let listening = false;
+            let baseText = '';
+
+            function setListening(on) {
+                listening = on;
+                micBtn.classList.toggle('recording', on);
+                micBtn.textContent = on ? '■' : '🎙';
+                micBtn.title = on ? 'Aufnahme stoppen' : 'Sprache eingeben (Transkription)';
+                micBtn.setAttribute('aria-label', micBtn.title);
+            }
+
+            rec.onstart = function() {
+                baseText = inputEl.value ? inputEl.value + (inputEl.value.trim() ? ' ' : '') : '';
+                setListening(true);
+                showToast('🎙 Höre zu …');
+            };
+
+            rec.onresult = function(ev) {
+                let interim = '';
+                let final = '';
+                for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                    const t = ev.results[i][0].transcript;
+                    if (ev.results[i].isFinal) final += t;
+                    else interim += t;
+                }
+                if (interim) interimEl.textContent = '„' + baseText + interim + '“';
+                else interimEl.textContent = '';
+                if (final) {
+                    const chunk = baseText + final;
+                    inputEl.value = chunk.trim();
+                    autoResize();
+                    interimEl.textContent = '';
+                    inputEl.focus();
+                }
+            };
+
+            rec.onerror = function(ev) {
+                setListening(false);
+                interimEl.textContent = '';
+                if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed')
+                    showToast('Mikrofon-Zugriff verweigert', 3500);
+                else if (ev.error === 'no-speech')
+                    showToast('Keine Sprache erkannt', 2500);
+                else if (ev.error !== 'aborted')
+                    showToast('Spracherkennungsfehler: ' + ev.error, 3000);
+            };
+
+            rec.onend = function() {
+                setListening(false);
+                interimEl.textContent = '';
+            };
+
+            micBtn.addEventListener('click', function() {
+                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
+                if (listening) {
+                    rec.stop();
+                } else {
+                    try {
+                        baseText = '';
+                        rec.start();
+                    } catch (e) { /* schon gestartet -> ignorieren */ }
+                }
+            });
+
+            // Tab-Shortcut: Tab umschaltet Aufnahme (Shift+Tab lässt Standard-Verhalten)
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab' && !e.shiftKey && e.target === inputEl) {
+                    e.preventDefault();
+                    micBtn.click();
+                }
+            });
+        })();
 
         async function refreshStatus() {
             try {
