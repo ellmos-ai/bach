@@ -99,3 +99,12 @@ def test_python_child_forces_guard_into_grandchild_environment():
 
     assert result.returncode != 0
     assert "host process control blocked in test child" in result.stderr
+
+
+def test_destructive_process_reason_allows_script_arguments_with_options():
+    assert conftest._destructive_process_reason(["python", "system/bach.py", "--status"]) is None
+    assert conftest._destructive_process_reason(["python", "system/bach.py", "--memory", "status"]) is None
+    assert conftest._destructive_process_reason(["python", "system/bach.py", "scheduler", "status", "--json"]) is None
+    assert conftest._destructive_process_reason("python system/bach.py --status") is None
+    assert conftest._destructive_process_reason("python system/bach.py --memory status") is None
+

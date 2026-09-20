@@ -135,13 +135,24 @@ def _destructive_process_reason(command):
     unguarded_python = re.compile(
         r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
         r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
-        r"[^\r\n;&|]*?-[a-z]*[eis][a-z]*(?:\s|$)",
+        r"(?:-[a-df-hj-rt-z0-9]+\s+)*(?<!-)-(?:[a-df-hj-rt-z0-9]*[eis][a-z0-9]*)(?:\s|$)",
         re.IGNORECASE,
     )
     if unguarded_python.search(rendered):
         return "Python child without inherited safety guard"
     if executable_name.startswith("python") and isinstance(command, (list, tuple)):
-        if any(str(part) in {"-E", "-I", "-S"} for part in command[1:]):
+        options = []
+        for part in command[1:]:
+            s = str(part)
+            if s in {"-c", "-m"}:
+                break
+            if not s.startswith("-") or s == "-":
+                break
+            options.append(s)
+        if any(
+            not opt.startswith("--") and any(c in "eEisIS" for c in opt[1:])
+            for opt in options
+        ):
             return "Python child without inherited safety guard"
     if "onedrive" in executable_lower and "/shutdown" in lowered:
         return "OneDrive shutdown"
