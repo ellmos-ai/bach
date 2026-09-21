@@ -198,7 +198,7 @@ class WorkingMemoryCleanup:
 
 
 class TestDecay:
-    def test_decay_all(self, handler, monkeypatch):
+    def test_decay_all_defaults_to_dry_run(self, handler, monkeypatch):
         mock_decay = MagicMock()
         mock_decay.run_decay.return_value = "Decay: 3 Facts, 2 Lessons, 1 Working"
 
@@ -210,7 +210,7 @@ class TestDecay:
         assert ok is True
         assert "Decay" in output
         mock_decay.run_decay.assert_called_once_with(
-            facts=True, lessons=True, working=True, dry_run=False
+            facts=True, lessons=True, working=True, dry_run=True
         )
 
     def test_decay_facts_only(self, handler, monkeypatch):
@@ -224,7 +224,36 @@ class TestDecay:
         ok, output = handler.handle("decay", ["--facts"])
         assert ok is True
         mock_decay.run_decay.assert_called_once_with(
-            facts=True, lessons=False, working=False, dry_run=False
+            facts=True, lessons=False, working=False, dry_run=True
+        )
+
+    def test_decay_apply_is_explicit(self, handler, monkeypatch):
+        mock_decay = MagicMock()
+        mock_decay.run_decay.return_value = "Decay applied"
+        mock_module = MagicMock()
+        mock_module.MemoryDecay.return_value = mock_decay
+        _install_local_tool_mock(handler, monkeypatch, "memory_decay", mock_module)
+
+        ok, output = handler.handle("decay", ["--apply"])
+
+        assert ok is True
+        assert "applied" in output
+        mock_decay.run_decay.assert_called_once_with(
+            facts=True, lessons=True, working=True, dry_run=False
+        )
+
+    def test_decay_global_dry_run_wins_over_apply(self, handler, monkeypatch):
+        mock_decay = MagicMock()
+        mock_decay.run_decay.return_value = "DRY-RUN"
+        mock_module = MagicMock()
+        mock_module.MemoryDecay.return_value = mock_decay
+        _install_local_tool_mock(handler, monkeypatch, "memory_decay", mock_module)
+
+        ok, _ = handler.handle("decay", ["--apply"], dry_run=True)
+
+        assert ok is True
+        mock_decay.run_decay.assert_called_once_with(
+            facts=True, lessons=True, working=True, dry_run=True
         )
 
     def test_decay_dry_run(self, handler, monkeypatch):

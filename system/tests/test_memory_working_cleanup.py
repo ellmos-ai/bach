@@ -3,6 +3,7 @@
 
 import sqlite3
 import sys
+import importlib.util
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,9 +28,13 @@ def _create_db(db_path: Path) -> None:
             type TEXT,
             content TEXT,
             priority INTEGER,
+            tags TEXT,
             created_at TEXT,
+            updated_at TEXT,
             expires_at TEXT,
-            is_active INTEGER
+            is_active INTEGER,
+            created_by_session_id TEXT,
+            updated_by_session_id TEXT
         )
         """
     )
@@ -49,6 +54,19 @@ def _insert_note(db_path: Path, days_old: int, content: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def _apply_archive_migration(db_path: Path) -> None:
+    migration_path = (
+        SYSTEM_ROOT / "data" / "schema" / "migrations"
+        / "042_archived_memory_source_record.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_042_archive", migration_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with sqlite3.connect(db_path) as conn:
+        module.run_migration(conn)
 
 
 def test_analyze_stats_classifies_entries(tmp_path):
@@ -112,6 +130,193 @@ def test_cleanup_alias_delegates_to_cleanup_soft(monkeypatch, tmp_path):
     assert success is True
     assert message == "ok"
     assert calls == [False]
+
+
+def test_archive_defaults_to_dry_run_and_preserves_source(tmp_path):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _apply_archive_migration(db_path)
+    _insert_note(db_path, 40, "bleibt erhalten")
+
+    success, message = cleanup_module.WorkingMemoryCleanup(db_path).archive(days=30)
+
+    assert success is True
+    assert "[DRY-RUN]" in message
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM archived_memory").fetchone()[0] == 0
+
+
+def test_archive_restore_is_lossless_and_atomic(tmp_path):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _apply_archive_migration(db_path)
+    created_at = (datetime.now() - timedelta(days=45)).isoformat()
+    original = (
+        17,
+        "context",
+        "Umlaute: äöü",
+        7,
+        '["alpha","beta"]',
+        created_at,
+        "2026-08-08T08:08:08",
+        "2026-08-09T09:09:09",
+        0,
+        "session-create",
+        "session-update",
+    )
+    columns = (
+        "id, type, content, priority, tags, created_at, updated_at, expires_at, "
+        "is_active, created_by_session_id, updated_by_session_id"
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            f"INSERT INTO memory_working ({columns}) VALUES ({','.join('?' * 11)})",
+            original,
+        )
+
+    cleanup = cleanup_module.WorkingMemoryCleanup(db_path)
+    success, message = cleanup.archive(days=30, dry_run=False)
+    assert success is True, message
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 0
+        archive_id, source_record = conn.execute(
+            "SELECT archive_id, source_record FROM archived_memory"
+        ).fetchone()
+        assert '"priority":7' in source_record
+        assert '"tags":"[\\"alpha\\",\\"beta\\"]"' in source_record
+        assert '"is_active":0' in source_record
+
+    success, message = cleanup.restore(archive_id, dry_run=False)
+    assert success is True, message
+
+    with sqlite3.connect(db_path) as conn:
+        restored = conn.execute(
+            f"SELECT {columns} FROM memory_working WHERE id = 17"
+        ).fetchone()
+        assert restored == original
+        assert conn.execute("SELECT COUNT(*) FROM archived_memory").fetchone()[0] == 0
+        log = conn.execute(
+            "SELECT archive_table, archive_id, target_id, success FROM restore_log"
+        ).fetchone()
+        assert log == ("archived_memory", archive_id, 17, 1)
+
+
+def test_restore_collision_keeps_archive_and_source_unchanged(tmp_path):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _apply_archive_migration(db_path)
+    _insert_note(db_path, 40, "original")
+    cleanup = cleanup_module.WorkingMemoryCleanup(db_path)
+    assert cleanup.archive(days=30, dry_run=False)[0] is True
+
+    with sqlite3.connect(db_path) as conn:
+        archive_id, original_id = conn.execute(
+            "SELECT archive_id, original_id FROM archived_memory"
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO memory_working (id, type, content, created_at, is_active) "
+            "VALUES (?, 'note', 'collision', CURRENT_TIMESTAMP, 1)",
+            (original_id,),
+        )
+
+    success, message = cleanup.restore(archive_id, dry_run=False)
+
+    assert success is False
+    assert "bereits belegt" in message
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT content FROM memory_working").fetchone()[0] == "collision"
+        assert conn.execute("SELECT COUNT(*) FROM archived_memory").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("days", [0, -1])
+def test_archive_rejects_nonpositive_days_without_mutation(tmp_path, days):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _apply_archive_migration(db_path)
+    _insert_note(db_path, 40, "protected")
+
+    success, message = cleanup_module.WorkingMemoryCleanup(db_path).archive(
+        days=days, dry_run=False
+    )
+
+    assert success is False
+    assert "größer als 0" in message
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM archived_memory").fetchone()[0] == 0
+
+
+def test_archive_without_lossless_schema_fails_before_delete(tmp_path):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _insert_note(db_path, 40, "protected")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE archived_memory (archive_id INTEGER PRIMARY KEY, "
+            "original_id INTEGER, memory_type TEXT NOT NULL)"
+        )
+
+    success, message = cleanup_module.WorkingMemoryCleanup(db_path).archive(
+        days=30, dry_run=False
+    )
+
+    assert success is False
+    assert "source_record fehlt" in message
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 1
+
+
+def test_fresh_schema_roundtrip_preserves_null_provenance_with_active_session(tmp_path):
+    db_path = tmp_path / "fresh.db"
+    schema = (SYSTEM_ROOT / "data" / "schema" / "schema.sql").read_text(
+        encoding="utf-8"
+    )
+    old = (datetime.now() - timedelta(days=45)).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(schema)
+        conn.execute(
+            "INSERT INTO memory_sessions (session_id, started_at) VALUES (?, ?)",
+            ("active-session", datetime.now().isoformat()),
+        )
+        conn.execute(
+            """
+            INSERT INTO memory_working
+                (id, type, content, priority, tags, created_at, updated_at,
+                 expires_at, is_active, created_by_session_id, updated_by_session_id)
+            VALUES (17, 'context', 'historisch', 4, '["tag"]', ?, ?, NULL, 0,
+                    NULL, NULL)
+            """,
+            (old, old),
+        )
+        # Der Provenienz-Trigger fuellt beim normalen Insert die aktive Session.
+        # Fuer den Test stellen wir den tatsaechlich archivierten Altzustand her.
+        conn.execute(
+            """
+            UPDATE memory_working
+            SET created_by_session_id = NULL, updated_by_session_id = NULL
+            WHERE id = 17
+            """
+        )
+
+    cleanup = cleanup_module.WorkingMemoryCleanup(db_path)
+    assert cleanup.archive(days=30, dry_run=False)[0] is True
+    with sqlite3.connect(db_path) as conn:
+        archive_id = conn.execute(
+            "SELECT archive_id FROM archived_memory WHERE original_id = 17"
+        ).fetchone()[0]
+
+    success, message = cleanup.restore(archive_id, dry_run=False)
+    assert success is True, message
+    with sqlite3.connect(db_path) as conn:
+        provenance = conn.execute(
+            """
+            SELECT created_by_session_id, updated_by_session_id
+            FROM memory_working WHERE id = 17
+            """
+        ).fetchone()
+        assert provenance == (None, None)
 
 
 if __name__ == "__main__":

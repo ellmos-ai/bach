@@ -78,7 +78,7 @@ class MemoryDecay:
         facts: bool = True,
         lessons: bool = True,
         working: bool = True,
-        dry_run: bool = False,
+        dry_run: bool = True,
     ) -> str:
         """Run available decay steps and report unsupported surfaces as no-ops."""
         parts = []
@@ -93,7 +93,7 @@ class MemoryDecay:
         prefix = "[DRY-RUN] " if dry_run else ""
         return prefix + "Memory Decay: " + ", ".join(parts)
 
-    def _archive_working(self, dry_run: bool = False) -> str:
+    def _archive_working(self, dry_run: bool = True) -> str:
         """Echter Archiv-Step fuer Working Memory (Task #1313, Option B).
 
         Ruft WorkingMemoryCleanup.archive() auf (reversibler Move nach

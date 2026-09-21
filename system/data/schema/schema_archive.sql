@@ -78,7 +78,9 @@ CREATE TABLE IF NOT EXISTS archived_memory (
     created_at TIMESTAMP,
     -- Archive-Metadaten
     archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    archive_reason TEXT  -- 'decay', 'duplicate', 'obsolete', 'consolidated'
+    archive_reason TEXT,  -- 'decay', 'duplicate', 'obsolete', 'consolidated'
+    -- Vollstaendiger Quelldatensatz fuer verlustfreien Working-Memory-Restore
+    source_record TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_archived_memory_type ON archived_memory(memory_type);
