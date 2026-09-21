@@ -44,6 +44,7 @@ class WorkingMemoryCleanup:
                 expires_at,
                 is_active
             FROM memory_working
+            WHERE is_active = 1
             ORDER BY created_at DESC
             """
         )
@@ -201,6 +202,102 @@ ALTER-VERTEILUNG:
         """Rueckwaertskompatibler Alias fuer bestehende Startup-/Handler-Aufrufe."""
         return self.cleanup_soft(dry_run=dry_run)
 
+    def archive(self, days: int = 30, dry_run: bool = True) -> tuple[bool, str]:
+        """Archiviert alte Eintraege per reversibler Move in archived_memory.
+
+        (Task #1313, Option B: echter Archive-Step statt Soft-Delete.)
+
+        Design-Entscheidungen (minimal-invasiv, sicher):
+          - Schwelle 30 Tage (konsistent zu den akzeptierten Manuellaeufen 04.04./16.09.)
+          - reversibler MOVE (INSERT archived_memory + DELETE memory_working), kein Loeschen
+          - Kollisionscheck: original_id darf nicht bereits in archived_memory (memory_type='working')
+          - atomare Transaktion mit Rowcount-Asserts; bei Mismatch rollback
+          - wird NICHT im Startup aufgerufen und loescht nicht aktiv -> nur auf expliciten
+            Aufruf (CLI `archive --apply` oder `bach mem decay`). set_expires_retroactive
+            bleibt UNBERUEHRT.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # archived_memory muss existieren (Schema aus data/schema/schema_archive.sql)
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='archived_memory'"
+        )
+        if cursor.fetchone() is None:
+            conn.close()
+            return False, "archived_memory-Tabelle fehlt (schema_archive.sql nicht angewendet)"
+
+        cutoff = "julianday('now') - julianday(created_at) > ?"
+        cursor.execute(
+            f"""
+            SELECT id, type, content, tags, created_at
+            FROM memory_working
+            WHERE {cutoff}
+              AND id NOT IN (
+                  SELECT original_id FROM archived_memory WHERE memory_type='working'
+              )
+            ORDER BY created_at
+            """,
+            (days,),
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            conn.close()
+            return True, (
+                f"Keine Eintraege > {days} Tage zum Archivieren "
+                f"(alle aktuell oder bereits archiviert)"
+            )
+
+        if dry_run:
+            ids = [r[0] for r in rows]
+            conn.close()
+            return True, (
+                f"[DRY-RUN] Wuerde {len(rows)} Eintraege > {days} Tage "
+                f"(id {min(ids)}..{max(ids)}) nach archived_memory verschieben"
+            )
+
+        reason = f"auto-archived after {days} days"
+        data = [
+            (wid, wtype, content, created_at, reason)
+            for (wid, wtype, content, _tags, created_at) in rows
+        ]
+        try:
+            cursor.executemany(
+                """
+                INSERT INTO archived_memory
+                    (original_id, memory_type, category, key, content,
+                     created_at, archived_at, archive_reason)
+                VALUES (?, 'working', ?, NULL, ?, ?, CURRENT_TIMESTAMP, ?)
+                """,
+                data,
+            )
+            archived_count = cursor.rowcount
+            cursor.execute(
+                "DELETE FROM memory_working WHERE id IN ("
+                + ",".join("?" * len(rows))
+                + ")",
+                [r[0] for r in rows],
+            )
+            deleted_count = cursor.rowcount
+            if archived_count != len(rows) or deleted_count != len(rows):
+                conn.rollback()
+                conn.close()
+                return False, (
+                    f"Rowcount-Mismatch: archiviert {archived_count}, "
+                    f"geloescht {deleted_count} von {len(rows)} -> rollback"
+                )
+            conn.commit()
+        except sqlite3.Error as e:
+            conn.rollback()
+            conn.close()
+            return False, f"Archiv-Fehler: {e}"
+        conn.close()
+        return True, (
+            f"{archived_count} Eintraege > {days} Tage nach archived_memory "
+            f"verschoben (reversibel, reason='{reason}')"
+        )
+
 
 def print_analysis(stats: dict) -> None:
     """Druckt Analyse-Ergebnisse mit aeltesten Eintraegen."""
@@ -254,6 +351,21 @@ def main() -> None:
         print(msg)
         if not success:
             sys.exit(1)
+    elif cmd == "archive":
+        # Task #1313 (Option B): reversibler Move nach archived_memory.
+        # Sicherheit: Standard ist DRY-RUN; nur mit --apply wird ausgefuehrt.
+        days = 30
+        for i, a in enumerate(sys.argv):
+            if a == "--days" and i + 1 < len(sys.argv):
+                try:
+                    days = int(sys.argv[i + 1])
+                except ValueError:
+                    pass
+        apply_now = "--apply" in sys.argv
+        success, msg = cleanup.archive(days=days, dry_run=not apply_now)
+        print(msg)
+        if not success:
+            sys.exit(1)
     else:
         print("Usage: python memory_working_cleanup.py <command> [--dry-run]")
         print("")
@@ -261,6 +373,7 @@ def main() -> None:
         print("  analyze          Analysiere memory_working Eintraege")
         print("  set-expires      Setze Expires rueckwirkend")
         print("  cleanup          Soft delete expired Eintraege")
+        print("  archive [--apply]  Reversibel alte Eintraege > 30d nach archived_memory (Standard: dry-run)")
         sys.exit(1)
 
 

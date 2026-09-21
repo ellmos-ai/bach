@@ -4,7 +4,7 @@ version: 0.2.0
 type: agent
 author: Gemini
 created: 2025-12-29
-updated: 2026-02-04
+updated: 2026-09-17
 anthropic_compatible: true
 status: active
 
@@ -18,7 +18,7 @@ dependencies:
   workflows: []
 
 description: >
-  Autonomer Software-Entwicklungs-Agent für RecludOS. Verwaltet Projekte,
+  Autonomer Software-Entwicklungs-Agent fuer BACH. Verwaltet Projekte,
   bearbeitet Tasks, analysiert und generiert Code. Integriert
   Entwicklungsschleife Advanced für KI-gestützte Entwicklung.
 ---
@@ -289,7 +289,7 @@ DATENSTRUKTUREN
 INTEGRATION
 -----------
 
-[Mit RecludOS Skills]
+[Mit BACH Skills]
 
 ============================================================
 CODING-TOOLS NUTZEN (PHASE 2)

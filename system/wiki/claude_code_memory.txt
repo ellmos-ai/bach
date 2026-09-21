@@ -1,219 +1,185 @@
 # Portabilitaet: SYSTEM
-# Zuletzt validiert: 2026-02-16 (Claude Code Opus)
-# Naechste Pruefung: 2026-06-01
-# Quellen: Claude Code System-Prompt, ~/.claude/ Verzeichnisanalyse
+# Grund: Enthaelt lokale Pfadkonzepte und Maschinen-bezogene Beobachtungen
+# Zuletzt validiert: 2026-09-16 (Claude/BACH wiki-author)
+# Naechste Pruefung: 2027-03-16
+# Quellen: docs.anthropic.com/en/docs/claude-code/memory, lokale Verzeichnisanalyse
 
 CLAUDE CODE MEMORY-ARCHITEKTUR
 ==============================
 
-Stand: 2026-02-16
+Stand: 2026-09-16 (vorher 2026-02-16)
+
+HISTORIE
+--------
+2026-02-16: Erste Version (Verzeichnisanalyse Windows-System, 42 Projekte)
+2026-09-16: Vollstaendige Ueberarbeitung. Auto Memory ist offizielles
+             Feature; MEMORY.md ist jetzt INDEX; Scope wird aus dem
+             Git-Repository abgeleitet (offizielle Doku + lokale Pruefung).
 
 WAS IST DAS MEMORY-SYSTEM?
 ---------------------------
-Claude Code hat ein persistentes Auto-Memory-System, das Wissen ueber
-Sessions hinweg speichert. Jede Claude Code Instanz laedt beim Start
-automatisch die MEMORY.md ihres Projekts in den System-Prompt.
+Claude Code hat zwei komplementaere Memory-Systeme, die beide bei jedem
+Session-Start geladen werden:
 
-WICHTIG: Das Memory ist NICHT global -- es ist projekt-basiert.
-Jedes Arbeitsverzeichnis hat seine eigene, isolierte Memory.
+  1. CLAUDE.md-Dateien: Instruktionen, die DU schreibst
+     (Projekt-Struktur, Konventionen, Regeln)
+  2. AUTO MEMORY: Notizen, die CLAUDE selbst schreibt
+     (Learnings aus Korrekturen und Praeferenzen des Users)
 
-VERZEICHNISSTRUKTUR
--------------------
-  ~/.claude/
-  ├── .mcp.json                              # MCP-Server Config
-  ├── projects/                              # Projekt-Memories
-  │   ├── C--Users-User/                     # Projekt: Home-Verzeichnis
-  │   │   └── memory/
-  │   │       ├── MEMORY.md                  # Haupt-Memory (IMMER geladen)
-  │   │       ├── mcmc-server.md             # Detail-Datei (bei Bedarf)
-  │   │       └── debugging.md              # Themen-Datei (bei Bedarf)
-  │   │
-  │   ├── C--Users-User-OneDrive-KI-AI-BACH/
-  │   │   └── memory/
-  │   │       ├── MEMORY.md                  # BACH-spezifisch (190 Zeilen)
-  │   │       └── sqlite_gotchas.md          # Ausgelagertes Detail
-  │   │
-  │   ├── C--Users-User-OneDrive-Forschung/
-  │   │   └── memory/
-  │   │       └── MEMORY.md                  # Forschungs-spezifisch
-  │   │
-  │   └── ... (42+ weitere Projektverzeichnisse)
-  │
-  └── teams/                                 # Team-Konfigurationen
-      └── {team-name}/config.json
+Auto Memory ist seit 2026 ein offizielles, dokumentiertes Feature.
+Claude entscheidet proaktiv, was sich zu merken lohnt (nicht jede
+Session wird gespeichert). Statusmeldungen wie "Saved 2 memories"
+zeigen aktive Speicherungen an.
 
-Der Verzeichnisname wird aus dem Arbeitsverzeichnis abgeleitet:
-  %ONEDRIVE_AI_ROOT%  -->  C--Users-User-OneDrive-KI-AI
+VERZEICHNISSTRUKTUR (OFFIZIELLER STAND 2026-09)
+-----------------------------------------------
+  ~/.claude/projects/<project>/memory/
+  ├── MEMORY.md           # INDEX: eine Zeile pro Memory, in JEDE Session geladen
+  ├── user_role.md         # Topic-Datei (eine pro Memory-Thema)
+  ├── feedback_testing.md  # weitere Topic-Dateien
+  └── ...
 
-WIE MEMORY.md FUNKTIONIERT
----------------------------
-1. AUTOMATISCH GELADEN: Die MEMORY.md des aktuellen Arbeitsverzeichnisses
-   wird bei JEDEM Gespraech in den System-Prompt injiziert
-   (als "user's private global instructions for all projects")
+WICHTIGE SCOPE-REGEL (GEAENDERT seit Feb 2026):
+  - <project> wird aus dem GIT-REPOSITORY abgeleitet
+  - Alle Worktrees UND Subdirectories des gleichen Repos teilen
+    sich EINEN Auto-Memory-Ordner (Silo-Problem geloest!)
+  - Ausserhalb eines Git-Repos: Projekt-Root wird verwendet
+  - Auto Memory ist machine-local (kein Sync zwischen Maschinen)
 
-2. NICHT KOMPRIMIERT: MEMORY.md wird nie komprimiert, aber:
-   -> Nach Zeile 200 wird ABGESCHNITTEN (Truncation, nicht Kompression)
-   -> Deshalb MUSS sie kompakt bleiben
-   -> Detail-Dateien auslagern und per Verweis referenzieren
+VERZEICHNIS-ABLEITUNG
+---------------------
+  /Users/lukas/services/bach/.git  (Git-Root)
+  -->  -Users-lukas-services-bach/memory/
+  (auch wenn claude in .../bach/system/ gestartet wird!)
 
-3. MANUELLE PFLEGE: Claude schreibt/editiert die Datei selbst
-   mit Write/Edit-Tools basierend auf System-Prompt-Regeln
+  Eigener Name moeglich: CLAUDE_CODE_PROJECT_DIR_NAME=<name>
+  (erfordert Claude Code v2.1.234+)
 
-4. DETAIL-DATEIEN (z.B. sqlite_gotchas.md, mcmc-server.md):
-   -> Werden NICHT automatisch geladen
-   -> Muessen explizit per Read-Tool gelesen werden
-   -> Deshalb: Kurzverweis in MEMORY.md, Details in separater Datei
+WIE MEMORY FUNKTIONIERT
+----------------------
+1. MEMORY.md = INDEX:
+   - Erste 200 Zeilen ODER 25 KB (je nachdem, was zuerst erreicht wird)
+     werden bei jedem Gespraechsstart geladen
+   - Alles darueber hinaus wird NICHT geladen (Truncation)
+   - Claude Code mahnt bei Schreibvorgang nahe am Limit an:
+     "eine Zeile pro Eintrag, Details in Topic-Dateien auslagern,
+      veraltete Eintraege mergen/loeschen"
+
+2. TOPIC-DATEIEN (z.B. feedback_sudo_notty_daemon.md):
+   - Werden beim Start NICHT geladen
+   - Claude liest sie on demand per Read-Tool, wenn noetig
+   - Bei YAML-Frontmatter: Claude Code schreibt automatisch ein
+     'modified'-Feld (ISO-8601) als Aktualitaetsmarker
+     (erfordert v2.1.214+)
+
+3. RETENTION-SCHUTZ:
+   - Session-Transcripts werden nach cleanupPeriodDays geloescht
+   - Memory-Dateien sind VON DIESES BEREINIGUNG AUSGENOMMEN
+   - MEMORY.md und Topic-Dateien bleiben bis zur manuellen/
+     Claude-gesteuerten Aenderung bestehen
+
+4. SUBAGENTS:
+   - Auto Memory der Haupt-Konversation wird NICHT in Subagents geladen
+     (Ausnahme: fork erbt Parent-System-Prompt)
+   - Subagents koennen EIGENE Auto Memory pflegen (subagent 'memory'-Feld)
+
+EINSTELLUNGEN & STEUERUNG
+------------------------
+  ~/.claude/settings.json:
+    "autoMemoryEnabled": true|false   # Auto Memory an/aus (Default: an)
+
+  Umgebungsvariablen:
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY=1   # Auto Memory deaktivieren
+
+  Custom-Speicherort:
+    "autoMemoryDirectory": "~/mein-memory-dir"  in settings.json
+    (absoluter Pfad oder ~/ - wird in allen Settings-Scopes gelesen)
+
+  In-Session-Befehle:
+    /memory   # Dateien browsen/editieren, Auto-Memory-Toggle,
+              # Memory-Ordner oeffnen
+    /context  # zeigt, welche Dateien in DIE Session geladen wurden
 
 WAS MEMORY SPEICHERN SOLL
 --------------------------
-  JA (speichern):
+  JA (speichert Claude selbst):
+    - Korrekturen und Praeferenzen des Users ("immer so machen...")
     - Stabile Patterns und Konventionen (mehrfach bestaetigt)
-    - Architektur-Entscheidungen, wichtige Pfade
-    - User-Praeferenzen (Sprache, Workflow, Tools)
     - Loesungen fuer wiederkehrende Probleme
-    - Explizite User-Wuensche ("merke dir immer...")
 
   NEIN (nicht speichern):
     - Session-spezifischer Kontext (aktuelle Task-Details)
-    - Unvollstaendige/unverifiziete Informationen
     - Duplikate von CLAUDE.md-Inhalten
     - Spekulative Schlussfolgerungen
 
-SESSION-SPEZIFISCHES WISSEN
-----------------------------
-Geht beim Session-Ende VERLOREN. Es gibt keinen persistenten
-Session-Speicher. Jede neue Session startet nur mit:
+MEMORY vs. CLAUDE.md (OFFIZIELLE GEGENUEBERSTELLUNG)
+-----------------------------------------------------
+                          CLAUDE.md            Auto Memory
+  Schreibt                Du                    Claude
+  Inhalt                  Instruktionen/Regeln  Learnings/Patterns
+  Scope                   Projekt, User, Org    Pro Git-Repository
+                                                (Worktrees/Subdirs teilen)
+  Laden                   Jede Session          Jede Session
+                                                (200 Zeilen/25KB-Index)
+  Groesse                 bis 4 MiB voll geladen 200 Zeilen/25KB-Index
+                          (groessere: uebersprungen)  + Topic-Dateien on demand
+  Zweck                   Verhalten lenken     Aus Korrekturen lernen
 
-  1. MEMORY.md (injiziert in System-Prompt)
-  2. CLAUDE.md (Projekt-Instruktionen, falls vorhanden)
-  3. Konversations-Kontext (wird bei Context-Limit KOMPRIMIERT)
-
-Konversations-Kompression:
-  - Das System komprimiert aeltere Nachrichten automatisch
-  - Nur wenn der Context nahe am Limit ist
-  - Komprimierung betrifft Gespraechsverlauf, NICHT Memory-Dateien
-  - Nach Session-Ende: alles weg (ausser explizit in Memory geschrieben)
-
-MEMORY vs. CLAUDE.md
----------------------
-  MEMORY.md                          CLAUDE.md
-  ─────────                          ─────────
-  Pfad: ~/.claude/projects/*/memory/ Pfad: im Arbeitsverzeichnis
-  Von Claude selbst geschrieben      Vom User/Team gepflegt
-  Dynamisch (waechst mit Erfahrung)  Statisch (Projekt-Regeln)
-  Lessons Learned, Erkenntnisse      Instruktionen, Verbote, Standards
-  Projekt-spezifisch                 Vererbbar (Parent -> Child)
-  Max 200 Zeilen (Truncation)        Kein hartes Limit
-
-  CLAUDE.md Vererbung:
-    C:\Users\User\CLAUDE.md           -> Gilt fuer ALLE Projekte
-    C:\Users\User\Projekt\CLAUDE.md   -> Gilt fuer Projekt + Unterordner
-
-DAS SILO-PROBLEM
------------------
-Jedes Projekt-Memory ist isoliert. Lessons Learned aus einem Projekt
-sind in einem anderen UNSICHTBAR:
-
-  Projekt A: "OneDrive lockt Dateien"     <- nur hier bekannt
-  Projekt B: "PYTHONIOENCODING=utf-8"     <- nur hier bekannt
-  Projekt C: "NUL-Dateien vermeiden"      <- nur hier bekannt
-
-Loesungsansaetze:
-
-  1. GLOBALE CLAUDE.md im Home-Verzeichnis
-     -> C:\Users\User\CLAUDE.md
-     -> Wird von ALLEN Instanzen geladen die in ~ oder darunter arbeiten
-     -> Ideal fuer: System-Regeln, User-Praeferenzen, Windows-Hinweise
-
-  2. HOME-MEMORY als Hub
-     -> C--Users-User/memory/MEMORY.md als zentraler Index
-     -> Verweist auf Detail-Dateien und andere Projekt-Memories
-     -> Enthaelt "Master Lessons Learned" (cross-project)
-
-  3. BRIEFING-DATEIEN fuer Instanz-Uebergabe
-     -> Dedizierte .md Dateien im Memory-Verzeichnis
-     -> Enthalten alles was eine neue Instanz wissen muss
-     -> Beispiel: mcmc-server.md (Server-Zugangsdaten + Status)
-
-MEMORY.md ALS KOMMUNIKATIONSKANAL (Entdeckung 2026-02-17)
----------------------------------------------------------
-Wenn eine laufende Claude-Instanz MEMORY.md aendert, erhaelt eine andere
-laufende Instanz (im selben Projekt-Verzeichnis) automatisch eine
-System-Injection mit dem Diff:
-
-  <system-reminder>
-  MEMORY.md was modified, either by the user or by a linter.
-  Here are the relevant changes...
-  </system-reminder>
-
-Das bedeutet:
-  - MEMORY.md ist ein Shared Blackboard fuer parallele Instanzen
-  - Aenderungen werden SOFORT sichtbar (Push, kein Polling)
-  - Instanz A kann Instanz B informieren indem sie MEMORY.md editiert
-  - Funktioniert NUR zwischen Instanzen im selben Projekt-Verzeichnis
-
-Potenzielle Nutzung:
-  - Multi-Instanz-Koordination (wer arbeitet woran)
-  - Status-Updates zwischen parallelen Claude-Sessions
-  - BACH Bridge-Daemon als Nachrichtenkanal
-
-INJEKTIONS-MECHANISMEN (vollstaendig, Stand 2026-02-17)
--------------------------------------------------------
-Folgende Events loesen System-Injections bei Claude Code aus:
-
-  1. Session-Start      CLAUDE.md + MEMORY.md komplett injiziert
-  2. Datei-Aenderung    CLAUDE.md/MEMORY.md → Diff wird injiziert
-  3. Umgebungsinfos     Plattform, Shell, OS, Modell, Working Dir
-  4. Datum              currentDate wird injiziert
-  5. Skills             Verfuegbare Skills als <system-reminder>
-  6. Hooks              user-prompt-submit-hook Output
-  7. Kontext-Kompression  Bei Limit: aeltere Nachrichten komprimiert
-  8. Tool-Ergebnisse    Koennen <system-reminder>-Tags enthalten
-
-BEST PRACTICES
---------------
-  1. MEMORY.md unter 200 Zeilen halten (Truncation-Limit!)
-  2. Details in separate .md Dateien auslagern
-  3. Index-Abschnitt am Ende von MEMORY.md pflegen
-  4. Cross-Projekt Lessons in Home-Memory oder CLAUDE.md
-  5. Sensible Daten (Keys, Tokens) NICHT in CLAUDE.md
-     (wird ggf. in Git committed), besser in MEMORY.md
-  6. Bei Multi-Instanz-Szenarien: Briefing-Dateien erstellen
-
-BEISPIEL: OPTIMALE MEMORY-STRUKTUR
------------------------------------
-  ~/.claude/projects/C--Users-User/memory/
-  ├── MEMORY.md                # Kompakter Index + Master Lessons (<200 Zeilen)
-  ├── mcmc-server.md           # Detailwissen: Server-Zugang + Status
-  ├── debugging.md             # Wiederkehrende Debugging-Patterns
-  └── patterns.md              # Architektur- und Code-Patterns
-
-  ~/CLAUDE.md                  # Globale Regeln fuer ALLE Instanzen
-                               # (Windows-Verhalten, Sprache, Encoding)
-
-WARTUNG
--------
-  - Regelmaessig pruefen ob Eintraege noch aktuell sind
-  - Veraltete Eintraege entfernen statt markieren
-  - Nach groesseren Projekten: Lessons Learned extrahieren
-  - Bei neuem Rechner: Memory-Verzeichnis mitkopieren
+CLAUDE.MD-LADE-REIHENFOLGE (vom breitesten zum spezifischsten Scope):
+  1. Managed Policy    /Library/Application Support/ClaudeCode/CLAUDE.md (macOS)
+  2. User             ~/.claude/CLAUDE.md
+  3. Projekt          ./CLAUDE.md oder ./.claude/CLAUDE.md
+  4. Lokal            ./CLAUDE.local.md (in .gitignore!)
+  Parent-Verzeichnisse: beim Launch. Unterverzeichnisse: on demand.
+  NEU: .claude/rules/ fuer path-spezifische Regeln; AGENTS.md wird
+  ebenfalls unterstuetzt. /init (CLAUDE_CODE_NEW_INIT=1) generiert
+  CLAUDE.md interaktiv (Skills, Hooks, Regeln mit vorschlagen).
 
 BEKANNTE EIGENHEITEN
 ---------------------
-  - Projektname-Mapping: Sonderzeichen werden zu "-"
-    %ONEDRIVE_AI_ROOT%  ->  C--Users-User-OneDrive-KI-AI
-  - Gleiches Arbeitsverzeichnis = gleiche Memory (auch verschiedene Sessions)
-  - Memory wird NUR geladen wenn `claude` im passenden Verzeichnis gestartet wird
-  - Unterverzeichnisse erben NICHT die Memory des Parent-Verzeichnisses
-    (anders als CLAUDE.md, die vererbt!)
+  - Gleicher Git-Repo-Root = gleiche Memory (auch verschiedene
+    Arbeitsverzeichnisse/Worktrees im Repo)
+  - Memory wird NUR geladen, wenn claude im passenden Kontext startet
+  - Legacy: Aeltere Claude-Code-Versionen leiteten <project> aus dem
+    Arbeitsverzeichnis ab; dadurch existieren historische Projektordner
+    parallel (siehe lokale Beobachtung)
+  - /memory zeigt auch NICHT existierende CLAUDE.md-Eintraege an
+    (Anlegung per Auswahl moeglich)
+
+LOKALE BEOBACHTUNG (DIESES SYSTEM, 16.09.2026)
+----------------------------------------------
+  ~/.claude/projects/ enthaelt 4 Projektordner:
+    -Users-lukas/                       # Home (kein Git-Repo)
+    -Users-lukas-services-bach/         # BACH Git-Root
+    -Users-lukas-services-bach-system/  # Legacy (vor Git-Ableitung)
+    -private-tmp/
+
+  Home-Memory:
+    -Users-lukas/MEMORY.md              # Index, 3 Zeilen
+    -Users-lukas/memory/feedback_sudo_notty_daemon.md   # Topic-Datei
+
+  ABWEICHUNG: Auf dieser Installation liegt der MEMORY.md-Index DIREKT
+  im Projektordner (-Users-lukas/MEMORY.md), die Topic-Datei dagegen im
+  memory/-Ordner. Offizielle Doku: beides in memory/. Moegliche Ursache:
+  aeltere lokale Claude-Code-Version oder verschobener Index (Stand
+  28.05.). Bei der naechsten Pruefung verifizieren, ob der Index nach
+  memory/ migriert wurde.
+
+  BACH-Repo (-Users-lukas-services-bach/memory/): derzeit leer.
+  Bei Session-Starts in bach/ oder bach/system/ wird dieser Ordner
+  genutzt (Git-Root-Ableitung). autoMemoryEnabled: true ist aktiv.
 
 BACH-KONTEXT
 ------------
 Fuer BACH ist das Memory-System besonders relevant:
-  - BACH hat ~42 verschiedene Projektverzeichnisse
-  - Jedes mit eigener Memory (teils reichhaltig: 190 Zeilen)
-  - Wissen-Silos zwischen BACH-Dev, Forschung, MCP etc.
-  - Home-Memory als Hub-Loesung empfohlen
+  - ALT (Feb 2026, Windows): ~42 isolierte Projekt-Memories,
+    Wissen-Silos zwischen BACH-Dev, Forschung, MCP etc.
+  - NEU (Sep 2026, Mac): BACH ist EIN Git-Repo --> alle BACH-Starts
+    teilen sich EINEN Memory-Ordner. Die Silo-Problematik ist durch
+    die Git-Root-Ableitung vom System geloest.
+  - Home-Memory (~ohne Git-Repo) bleibt separat (Projekt-Root-Ableitung)
+  - Fuer einheitliches Memory ueber mehrere Repos: CLAUDE_CODE_PROJECT_DIR_NAME
+    oder autoMemoryDirectory verwenden (alle Starts in einen Ordner lenken)
 
 SIEHE AUCH
 ----------

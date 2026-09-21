@@ -88,10 +88,30 @@ class MemoryDecay:
         if lessons:
             parts.append("Lessons: 0 decayed (no confidence surface)")
         if working:
-            parts.append("Working: 0 decayed (handled by working cleanup)")
+            parts.append(self._archive_working(dry_run=dry_run))
 
         prefix = "[DRY-RUN] " if dry_run else ""
         return prefix + "Memory Decay: " + ", ".join(parts)
+
+    def _archive_working(self, dry_run: bool = False) -> str:
+        """Echter Archiv-Step fuer Working Memory (Task #1313, Option B).
+
+        Ruft WorkingMemoryCleanup.archive() auf (reversibler Move nach
+        archived_memory, 30-Tage-Schwelle). Erreichbar ueber `bach mem decay`
+        bzw. run_decay(working=True) -- NICHT im Startup, NICHT automatisch.
+        set_expires_retroactive bleibt unberuehrt.
+        """
+        import os
+        import sys
+        tdir = os.path.dirname(os.path.abspath(__file__))
+        if tdir not in sys.path:
+            sys.path.insert(0, tdir)
+        try:
+            from memory_working_cleanup import WorkingMemoryCleanup
+            ok, msg = WorkingMemoryCleanup(self.db_path).archive(days=30, dry_run=dry_run)
+            return f"Working: {msg}" if ok else f"Working-Archiv-Fehler: {msg}"
+        except Exception as e:
+            return f"Working: Archiv-Step uebersprungen ({e})"
 
     @staticmethod
     def _table_exists(conn: sqlite3.Connection, table: str) -> bool:

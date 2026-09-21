@@ -23,7 +23,7 @@ Anthropic 兼容技能是具有以下结构的文件夹：
 
   我的技能/
   +-- SKILL.md # 主要定义（必填）
-  +-- scripts/ # 可执行脚本（可选）
+  +-- tools/ # 可执行脚本（可选）
   |   +-- setup.sh
   |   +-- 运行.py
   +--references/ # 参考文档（可选）
@@ -88,7 +88,7 @@ SKILL.MD -- YAML-FRONTMATTER
     包含所有规则、工作流程和说明。
 
   第 3 级——捆绑资源（按需）
-    来自references/、scripts/和assets/的文件。
+    来自references/、tools/和assets/的文件。
     仅在技能明确要求时才加载
     或者 LLM 需要它们来完成当前任务。
 
@@ -146,7 +146,7 @@ BACH Anthropic 标准的内部方面
   Type 字段类型（必填）--（不可用）
   版本 version（强制）metadata.version（可选）
   Dependency 依赖关系（强制）--（未正式化）
-  工具 在技能文件夹scripts/中
+  工具 在技能文件夹tools/中
   技能文件夹中的文档引用/
   静态文件data/或assets/assets/
   工作流程 _workflows/ 或本地 在 SKILL.md 正文中

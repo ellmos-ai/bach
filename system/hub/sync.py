@@ -99,7 +99,7 @@ class SyncHandler(BaseHandler):
         """Skills von Dateisystem in DB synchronisieren (inkl. Discovery)."""
         results = ["[SYNC SKILLS]", "=" * 50]
         
-        stats = {"synced": 0, "unchanged": 0, "new": 0, "missing": 0, "errors": 0}
+        stats = {"synced": 0, "unchanged": 0, "new": 0, "missing": 0, "errors": 0, "cleaned": 0}
         
         try:
             conn = self._get_connection()
@@ -124,8 +124,19 @@ class SyncHandler(BaseHandler):
                     file_hash = self._compute_hash(content)
                     description = self._extract_description(content)
                     
-                    cursor.execute("SELECT id, content_hash FROM skills WHERE name = ? OR path = ?", (name, rel_path))
+                    # 2-Stufen-Match (Fix 2026-09-16): Der alte Name-OR-Path-Match
+                    # traf ALLE Eintraege mit gleichem stem und liess fetchone()
+                    # zwischen Duplikat-Eintraegen oszillieren (Hash-Update-Loop).
+                    # Stufe 1: exakter Pfad-Match. Stufe 2: Name-Match nur fuer
+                    # gepflegte Eintraege ohne Pfadbindung. Verschiebungen werden
+                    # ueber den Zombie-Cleanup des Syncs aufgeloest (neu + tot).
+                    cursor.execute("SELECT id, content_hash FROM skills WHERE path = ?", (rel_path,))
                     row = cursor.fetchone()
+                    if not row:
+                        cursor.execute(
+                            "SELECT id, content_hash FROM skills WHERE name = ? AND (path IS NULL OR path = '')",
+                            (name,))
+                        row = cursor.fetchone()
                     
                     if row:
                         skill_id, db_hash = row
@@ -154,6 +165,31 @@ class SyncHandler(BaseHandler):
                     stats["errors"] += 1
                     results.append(f"  [ERROR] {name}: {str(e)}")
             
+            # Zombie-Cleanup (SELF-CHECK 2026-09-16): Sync legte Eintraege an,
+            # loeschte aber nie -> DB akkumulierte 89% tote Pfade (1687/1890).
+            # Dateisystem ist autoritativ (SQ044): Eintraege mit totem Pfad
+            # entfernen. Guards nach Lesson #187 (Massenloeschung verhindern).
+            rows = cursor.execute(
+                "SELECT id, path FROM skills WHERE path IS NOT NULL AND path != ''"
+            ).fetchall()
+            if rows:
+                dead_ids = [rid for rid, p in rows if not (self.base_path / p).exists()]
+                if not (self.base_path / "skills").exists():
+                    # Guard 1: base_path muss gueltig sein (BACH_ROOT-Assert)
+                    stats["errors"] += 1
+                    results.append(f"  [ERROR] Cleanup uebersprungen: base_path ungueltig ({self.base_path})")
+                elif len(dead_ids) == len(rows) and len(rows) > 10:
+                    # Guard 2: 100% tote Pfeile deutet auf Pfad-Fehler (DB unveraendert)
+                    stats["errors"] += 1
+                    results.append(f"  [ERROR] Cleanup uebersprungen: {len(dead_ids)}/{len(rows)} Pfade tot - vermutlich falscher base_path")
+                elif dead_ids:
+                    if not dry_run:
+                        cursor.executemany("DELETE FROM skills WHERE id = ?", [(i,) for i in dead_ids])
+                        stats["cleaned"] = len(dead_ids)
+                        results.append(f"  [CLEANUP] {len(dead_ids)} verwaiste Eintraege entfernt (toter Pfad)")
+                    else:
+                        results.append(f"  [CLEANUP] (dry-run) {len(dead_ids)} verwaiste Eintraege wuerden entfernt")
+            
             if not dry_run:
                 conn.commit()
             conn.close()
@@ -161,14 +197,17 @@ class SyncHandler(BaseHandler):
         except Exception as e:
             return False, f"DB-Fehler: {str(e)}"
         
-        results.append(f"\nStatus: {stats['synced']} aktualisiert, {stats['new']} neu, {stats['unchanged']} OK")
+        status_line = f"\nStatus: {stats['synced']} aktualisiert, {stats['new']} neu, {stats['unchanged']} OK"
+        if stats["cleaned"]:
+            status_line += f", {stats['cleaned']} bereinigt"
+        results.append(status_line)
         return True, "\n".join(results)
     
     def _sync_tools(self, dry_run: bool = False, force: bool = False) -> tuple:
         """Tools von Dateisystem in DB synchronisieren."""
         results = ["[SYNC TOOLS]", "=" * 50]
         
-        stats = {"synced": 0, "unchanged": 0, "new": 0, "errors": 0}
+        stats = {"synced": 0, "unchanged": 0, "new": 0, "errors": 0, "cleaned": 0}
         
         try:
             conn = self._get_connection()
@@ -189,8 +228,19 @@ class SyncHandler(BaseHandler):
                     file_hash = self._compute_hash(content)
                     description = self._extract_description(content)
                     
-                    cursor.execute("SELECT id, content_hash FROM tools WHERE name = ?", (tool_name,))
+                    # 2-Stufen-Match (Fix 2026-09-16): analog skills-Sync.
+                    # Der alte Name-OR-Path-Match traf ALLE Eintraege mit
+                    # gleichem stem (Duplikat-Stems in verschiedenen Ordnern),
+                    # fetchone() oszillierte zwischen Eintraegen. Stufe 1:
+                    # exakter Pfad-Match. Stufe 2: Name-Match nur fuer
+                    # gepflegte Eintraege ohne Pfadbindung.
+                    cursor.execute("SELECT id, content_hash FROM tools WHERE path = ?", (rel_path,))
                     row = cursor.fetchone()
+                    if not row:
+                        cursor.execute(
+                            "SELECT id, content_hash FROM tools WHERE name = ? AND (path IS NULL OR path = '')",
+                            (tool_name,))
+                        row = cursor.fetchone()
                     
                     if row:
                         tool_id, db_hash = row
@@ -219,6 +269,30 @@ class SyncHandler(BaseHandler):
                     stats["errors"] += 1
                     results.append(f"  [ERROR] {tool_name}: {str(e)}")
             
+            # Zombie-Cleanup analog skills (SELF-CHECK 2026-09-16:
+            # 70/498 tools-Eintraege mit totem Pfad, gleiche Ursache:
+            # Sync fuegt ein, loescht aber nie). Guards nach Lesson #187.
+            rows = cursor.execute(
+                "SELECT id, path FROM tools WHERE path IS NOT NULL AND path != ''"
+            ).fetchall()
+            if rows:
+                dead_ids = [rid for rid, p in rows if not (self.base_path / p).exists()]
+                if not (self.base_path / "tools").exists():
+                    # Guard 1: base_path muss gueltig sein (BACH_ROOT-Assert)
+                    stats["errors"] += 1
+                    results.append(f"  [ERROR] Cleanup uebersprungen: base_path ungueltig ({self.base_path})")
+                elif len(dead_ids) == len(rows) and len(rows) > 10:
+                    # Guard 2: 100% tote Pfeile deutet auf Pfad-Fehler (DB unveraendert)
+                    stats["errors"] += 1
+                    results.append(f"  [ERROR] Cleanup uebersprungen: {len(dead_ids)}/{len(rows)} Pfade tot - vermutlich falscher base_path")
+                elif dead_ids:
+                    if not dry_run:
+                        cursor.executemany("DELETE FROM tools WHERE id = ?", [(i,) for i in dead_ids])
+                        stats["cleaned"] = len(dead_ids)
+                        results.append(f"  [CLEANUP] {len(dead_ids)} verwaiste Eintraege entfernt (toter Pfad)")
+                    else:
+                        results.append(f"  [CLEANUP] (dry-run) {len(dead_ids)} verwaiste Eintraege wuerden entfernt")
+            
             if not dry_run:
                 conn.commit()
             conn.close()
@@ -226,7 +300,10 @@ class SyncHandler(BaseHandler):
         except Exception as e:
             return False, f"DB-Fehler: {str(e)}"
         
-        results.append(f"\nStatus: {stats['synced']} aktualisiert, {stats['new']} neu, {stats['unchanged']} OK")
+        status_line = f"\nStatus: {stats['synced']} aktualisiert, {stats['new']} neu, {stats['unchanged']} OK"
+        if stats["cleaned"]:
+            status_line += f", {stats['cleaned']} bereinigt"
+        results.append(status_line)
         return True, "\n".join(results)
     
     def _status(self) -> tuple:

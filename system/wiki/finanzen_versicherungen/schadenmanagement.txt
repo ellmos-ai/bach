@@ -1,0 +1,159 @@
+# Portabilitaet: UNIVERSAL
+# Zuletzt validiert: 2026-09-18 (Claude/BACH wiki-author, Web-Recherche Primärquellen)
+# Naechste Pruefung: 2027-09-18
+# Quellen: gesetze-im-internet.de (VVG §§ 14, 31; BGB § 195), versicherungsombudsmann.de
+
+SCHADENMANAGEMENT
+=================
+
+Wissensbasis für den Agenten `versicherungen` (Kompetenz 3:
+Schadensmanagement). Beschreibt den Ablauf vom Schadensfall bis zur
+Durchsetzung von Ansprüchen, inklusive Eskalation bei Ablehnung.
+
+Stand: 2026-09-18 · Alle Paragraphen am Gesetzestext verifiziert.
+
+
+DIE 5 PHASEN DER SCHADENREGULIERUNG
+===================================
+
+  PHASE 1: SOFORTMASSNAHMEN (Tag 0)
+  ---------------------------------
+    - Schaden begrenzen (Schadensminderungspflicht)
+    - Beweise sichern: Fotos, Zeugen, Skizze
+    - Bei Straftaten (Diebstahl, Vandalismus):
+      Polizei-Anzeige UNVERZÜGLICH, Aktenzeichen dokumentieren
+      (bei Hausrat/Diebstahl meist Voraussetzung für Regulierung)
+
+  PHASE 2: SCHADENANZEIGE (unverzüglich)
+  --------------------------------------
+    - "Unverzüglich" = ohne schuldhaftes Zögern
+    - Sparte beachten: Haftpflicht → unverzüglich + KEIN
+      Schuldeingeständnis gegenüber Dritten (Vorbehalt!)
+    - Hausrat → meist 1 Woche laut Versicherungsbedingungen
+      (ABHB) prüfen
+    - Form: Online, App, Telefon — Nachweisbarkeit sichern
+      (Protokoll: Datum, Uhrzeit, Vorgangsnummer)
+
+  PHASE 3: DOKUMENTATION & AUSKUNFT (§ 31 VVG)
+  --------------------------------------------
+    Der Versicherer darf JEDE Auskunft verlangen, die zur
+    Feststellung des Versicherungsfalls oder des Umfangs seiner
+    Leistungspflicht erforderlich ist (§ 31 Abs. 1 VVG).
+    Belege, deren Beschaffung zumutbar ist, können verlangt
+    werden.
+    → Rechnungen, Fotos, Gutachten strukturiert einreichen;
+      bei Drittansprüchen gilt § 31 Abs. 2 auch für den Dritten.
+
+  PHASE 4: PRÜFUNG & REGULIERUNG (§ 14 VVG)
+  -----------------------------------------
+    - Geldleistung ist FÄLLIG mit Beendigung der Erhebungen
+      (§ 14 Abs. 1 VVG)
+    - WICHTIG: Erhebungen länger als 1 Monat nach Anzeige
+      offen → Versicherungsnehmer kann ABSCHLAGSZAHLUNGEN in
+      Höhe des voraussichtlichen Mindestbetrags verlangen
+      (§ 14 Abs. 2 VVG)
+    - Frist gehemmt, solange Erhebungen wegen Verschuldens des
+      Versicherungsnehmers blockiert sind
+    - Verzugszinsen-Ausschluss im Vertrag ist UNWIRKSAM
+      (§ 14 Abs. 3 VVG)
+
+  PHASE 5: ENTSCHEIDUNG
+  ---------------------
+    a) Regulierung → prüfen ob vollständig & plausibel
+    b) Ablehnung/Kürzung → ESKALATION (siehe unten)
+       Schriftliche Ablehnung mit Begründung verlangen!
+
+
+OBLIEGENHEITEN (RISIKO KENNEN)
+==============================
+
+    Verletzung vertraglicher Obliegenheiten (z.B. verspätete
+    Anzeige, vorzeitiges Schuldanerkenntnis, fehlende Polizei-
+    anzeige, falsche Auskünfte) kann die Leistung schmälern
+    oder ausschließen — insbesondere wenn die Verletzung
+    kausal für den Schaden/Prüfungsumfang ist.
+    → Agent-Empfehlung: nie Angaben "ins Blaue" machen,
+      nur Verifiziertes schriftlich bestätigen.
+
+
+ESKALATION BEI ABLEHNUNG (STUFENPLAN)
+=====================================
+
+  STUFE 1: Interne Beschwerde
+    Ablehnung schriftlich prüfen lassen; Widerspruch mit
+    Belegen; Frist der Verjährung im Blick behalten.
+
+  STUFE 2: Versicherungsombudsmann (außergerichtlich)
+    - Anerkannte Verbraucherschlichtungsstelle nach VSBG
+    - Kostenlos für Verbraucher
+    - Verbindliche Entscheidung bis Beschwerdewert
+      10.000 EUR (darüber nur Empfehlung)
+      [verifiziert 2026-09-18, versicherungsombudsmann.de]
+    - Ombudsfrau prüft nach "Recht und Gesetz" wie ein
+      Gericht, ist aber neutral (keine Vertretung)
+    - Verbraucher NICHT an die Entscheidung gebunden —
+      Gang zum Gericht bleibt jederzeit offen
+    - Achtung: Versicherer unterliegen der Entscheidung
+      bis 10.000 EUR
+
+  STUFE 3: Gericht
+    - Bei hohem Streitwert: anwaltliche Prüfung
+    - Prüfen: deckt die RECHTSSCHUTZversicherung das
+      Verfahren? (Schriftliche Deckungszusage einholen)
+
+
+VERJÄHRUNG (HÄUFIGE FALLE!)
+===========================
+
+    Regelmäßige Verjährungsfrist: 3 JAHRE (§ 195 BGB)
+    Fristbeginn: mit Kenntnis, spätestens Jahresende
+    (§§ 199 BGB regelmäßige Regeln)
+
+    ACHTUNG VERWECHSLUNGSRISIKO:
+    § 12 VVG ist NICHT die Verjährung — dort steht nur die
+    Versicherungsperiode (Jahreszeitraum für Prämien).
+    Die alte 2-Jahres-Regel des VVG 1908 gilt nicht mehr;
+    heute BGB-Regelung. [verifiziert 2026-09-18]
+
+
+FRISTEN-SCHNELLREFERENZ
+======================
+
+    +-------------------------------+------------------------------+
+    | Anlass                        | Frist/Regel                  |
+    +-------------------------------+------------------------------+
+    | Schadenanzeige (allgemein)    | unverzüglich                 |
+    | Haftpflicht-Schuld            | KEIN Anerkenntnis           |
+    | Diebstahl (Hausrat etc.)      | sofortige Polizeianzeige     |
+    | Hausrat-Anzeige laut ABHB    | meist 1 Woche pruefen       |
+    | Abschlagszahlung verlangbar   | 1 Monat nach Anzeige (§14)  |
+    | Verjährung                    | 3 Jahre (§ 195 BGB)          |
+    | Ombudsmann verbindlich bis    | 10.000 EUR                   |
+    +-------------------------------+------------------------------+
+
+
+BACH-INTEGRATION
+================
+
+    Agent `versicherungen` — Mapping auf Kernkompetenz 3:
+
+    - MELDUNG    → Phase 1-2 dieses Artikels (Checkliste für
+                   Erstaufnahme: Was, wann, wo, Zeugen,
+                   Polizei-Aktenzeichen, Fotos)
+    - ANSPRÜCHE  → Phase 3-4 (§§ 31, 14 VVG): prüfen ob Schaden
+                   unter Bedingungen gedeckt; Fälligkeit und
+                   Abschlagsrecht überwachen
+    - ESKALATION → Stufenplan; bei Ablehnung: Begründung prüfen,
+                   interne Beschwerde → Ombudsmann → Gericht;
+                   Fristen-Tabelle überwachen (Verjährung!)
+
+    Verwandte BACH-Artikel:
+    - versicherungen_uebersicht.txt (Sparten & Pflichten)
+    - versicherungen_privat.txt / _beruflich.txt (Deckung)
+    - bedarfsanalyse_versicherungen.txt (vor Vertragsschluss)
+
+
+HAFTUNGSHINWEIS
+===============
+    Wissensvermittlung, keine Rechtsberatung.
+    Bei konkreten Streitwerten: Fachberater/Anwalt konsultieren.

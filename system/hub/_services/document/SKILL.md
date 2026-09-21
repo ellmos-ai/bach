@@ -29,7 +29,7 @@ Dieser Service integriert die Kern-Funktionalitäten der "DokuZentrum" Suite in 
 
 ## Architektur
 
-Die Module liegen in `skills/_services/document/`:
+Die Module liegen in `hub/_services/document/`:
 
 - `pdf_service.py`
 - `ocr_service.py`

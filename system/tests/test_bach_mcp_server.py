@@ -167,3 +167,78 @@ def test_cli_does_not_print_empty_server_status(monkeypatch, capsys):
 
     assert bach_cli.main() == 0
     assert capsys.readouterr().out == ""
+
+
+def test_mcp_server_imports_real_mcp_despite_hub_shadow(monkeypatch):
+    """Regressionsschutz gegen sys.path-Shadowing (Task #1284).
+
+    In der Vollsuite kann ein frueherer Test (z. B. tests/test_portable_agents.py)
+    system/hub auf sys.path legen. Dann loest ein Top-Level "import mcp" auf
+    system/hub/mcp.py statt auf das echte mcp-Paket auf -- der Sub-Import
+    "mcp.server.fastmcp" in tools/mcp_server.py scheitert mit
+    "attempted relative import with no known parent package".
+
+    Der Test stellt beide Verschattungsarten her (hub-Verzeichnis auf sys.path
+    UND sys.modules['mcp'] = hub/mcp.py ohne __path__) und prueft, dass der
+    shadow-proof Import-Pfad von tools/mcp_server.py (``mmod._import_fastmcp``)
+    trotzdem das echte mcp-Paket laedt. Wir rufen gezielt die Import-Hilfsfunktion
+    auf, statt das komplette Modul im vergifteten Zustand neu auszufuehren --
+    letzteres ziehe unbeabsichtigt andere hub/tools.py-Relative-Imports (eine
+    eigene Verschattungsklasse, ausserhalb des mcp-Scopes) in den Test und
+    mache ihn nicht deterministisch.
+    """
+    hub_dir = SYSTEM_ROOT / "hub"
+    assert (hub_dir / "mcp.py").exists(), "Voraussetzung: system/hub/mcp.py"
+
+    # Sauberer Import im ungegiffteten Zustand (im Volllauf laeuft der Modul-
+    # Import genau einmal und ist dann gecached). _import_fastmcp ist die
+    # eigentliche shadow-proof Logik und laesst sich isoliert ueberpruefen.
+    import tools.mcp_server as mmod
+
+    original_path = list(sys.path)
+    saved_mcp = sys.modules.get("mcp")
+    hub_mcp = importlib.import_module("hub.mcp")
+    saved_hub_name = hub_mcp.__name__
+
+    def _poison():
+        # (1) hub-Verzeichnis an den Anfang von sys.path
+        if str(hub_dir) not in sys.path:
+            sys.path.insert(0, str(hub_dir))
+        # (2) sys.modules['mcp'] mit hub/mcp.py (kein Package) verseuchen
+        hub_mcp.__name__ = "mcp"
+        sys.modules["mcp"] = hub_mcp
+
+    def _restore():
+        sys.path[:] = original_path
+        for key in list(sys.modules):
+            if key == "mcp" or key.startswith("mcp."):
+                del sys.modules[key]
+        if saved_mcp is not None:
+            sys.modules["mcp"] = saved_mcp
+        # Leckage vermeiden: geteiltes hub.mcp-Objekt ruecksetzen
+        hub_mcp.__name__ = saved_hub_name
+
+    try:
+        _poison()
+        # Sanity: Verschattung ist tatsaechlich aktiv (kein echtes Package)
+        assert not hasattr(sys.modules["mcp"], "__path__"), (
+            "Poison nicht aktiv: mcp hat ein __path__"
+        )
+
+        FastMCP = mmod._import_fastmcp()
+
+        real_mcp = sys.modules["mcp"]
+        assert hasattr(real_mcp, "__path__"), (
+            "mcp wurde als echtes Package geladen (mit __path__), "
+            "nicht als schattierendes hub/mcp.py"
+        )
+        assert "site-packages" in real_mcp.__file__, (
+            f"mcp sollte aus dem venv/site-packages kommen, ist aber: "
+            f"{real_mcp.__file__}"
+        )
+
+        from mcp.server.fastmcp import FastMCP as RealFastMCP
+
+        assert FastMCP is RealFastMCP
+    finally:
+        _restore()

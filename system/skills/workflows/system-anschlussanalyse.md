@@ -1,7 +1,7 @@
 # System-Anschlussanalyse: Integration & Konsistenz
 
-**Version:** 1.0  
-**Stand:** 2026-01-22  
+**Version:** 2.0  
+**Stand:** 2026-09-16  
 **Kategorie:** Wartung, Qualitätssicherung
 
 ---
@@ -14,8 +14,8 @@ Dieser Workflow prüft BACH auf unverbundene Systembereiche, Inkonsistenzen und 
 ┌─────────────────────────────────────────────────────────┐
 │         ANSCHLUSSANALYSE (5 Schritte)                   │
 ├─────────────────────────────────────────────────────────┤
-│  1. Dokumentations-Scan (Help vs. Code vs. DB)          │
-│  2. Handler-Vollständigkeit prüfen                      │
+│  1. Dokumentations-Scan (Help vs. Handler vs. Services) │
+│  2. Registry-Vollständigkeit prüfen (Auto-Discovery)    │
 │  3. Cross-Referenzen validieren                         │
 │  4. Doppelstrukturen identifizieren                     │
 │  5. Integrations-Tasks erstellen                        │
@@ -23,64 +23,105 @@ Dieser Workflow prüft BACH auf unverbundene Systembereiche, Inkonsistenzen und 
 ```
 
 **Dauer:** 15-30 Minuten  
-**Empfohlene Häufigkeit:** Monatlich oder nach größeren Änderungen
+**Empfohlene Häufigkeit:** Monatlich oder nach größeren Änderungen  
+**Recurring-Task:** `integration_check` (30 Tage) in `hub/_services/recurring/config.json`
+
+---
+
+## Architektur-Kontext (Stand 2026-09)
+
+Seit BACH v2.0 ist das CLI **registry-basiert** – es gibt KEINE statische Handler-Map mehr:
+
+```
+bach.py (CLI-Entry)
+   └─> core/app.py (App.get_handler)
+         └─> core/registry.py (HandlerRegistry)
+               ├─ Auto-Discovery: hub/*.py  → BaseHandler-Subklassen
+               ├─ COMMAND_ALIASES: core/aliases.py (mem → memory, etc.)
+               └─ Handler-Instanzen
+                     └─> Logik in hub/_services/* (Service-Layer)
+```
+
+**Wichtige Punkte:**
+- **Handler-Layer:** `hub/*.py` – jede Datei mit `BaseHandler`-Subklasse (aus `hub/base.py`) wird automatisch registriert.
+- **Service-Layer:** `hub/_services/*` – Service-Implementierungen (chat, llm, newspaper, recurring, scheduling, weather, wiki, ...), von Handlern importiert. Viele Services haben ein eigenes `SKILL.md`.
+- **Kein `elif`-Command-Routing, kein `_import_handler`, kein `KNOWN_COMMANDS`** – diese Patterns existieren nur noch im Archiv: `hub/_archive/DEPRECATED_hub.py`. Legacy-Backup des alten CLIs: `bach_legacy.py`.
+- **Did-you-mean:** Bei unbekannten Befehlen schlägt `registry.suggest()` Alternativen vor.
+- **Hot-Reload:** `registry.reload()` erlaubt Handler-Neuerkennung ohne Neustart.
+- **Help-Doku:** `docs/help/*.txt` (plus Sprachvarianten `_en`, `_es`, `_ja`, `_ru`, `_zh`).
 
 ---
 
 ## Schritt 1: Dokumentations-Scan
 
-**Zweck:** Prüfen ob Help-Texte, Code und DB konsistent sind
+**Zweck:** Prüfen ob Help-Texte, Handler und Services konsistent sind
 
 ### Prüfpunkte
 
-| Quelle | Prüfung | Befehl |
-|--------|---------|--------|
-| skills/docs/help/*.txt | Alle Handler dokumentiert? | `dir docs\docs\docs\help\*.txt` |
-| hub/handlers/*.py | Alle Handler haben Help? | `dir hub\handlers\*.py` |
-| bach.py | Alle Subcommands in KNOWN_COMMANDS? | Zeile ~855 |
-| practices.txt | REGELWERK-INDEX vollständig? | `--help practices` |
+| Quelle | Prüfung | Wie |
+|--------|---------|-----|
+| `docs/help/*.txt` | Alle Handler dokumentiert? | Verzeichnis-Listing vs. Registry |
+| `hub/*.py` | Alle Handler haben eine Help-Datei? | BaseHandler-Subklassen zählen |
+| `hub/_services/*/SKILL.md` | Services beschrieben? | Service-Verzeichnisse prüfen |
+| `docs/help/practices.txt` | REGELWERK-INDEX vollständig? | `bach --help practices` |
+| `core/aliases.py` | Aliase dokumentiert (z.B. `mem` → `memory`)? | Alias-Tabelle prüfen |
 
 ### Checkliste
 
 ```
-□ Jeder Handler hat eine skills/docs/help/*.txt Datei
+□ Jeder Handler in hub/*.py hat eine docs/help/*.txt Datei
+□ Jeder Service in hub/_services/* hat ein SKILL.md (oder bewusst nicht)
 □ REGELWERK-INDEX verweist auf alle relevanten Themen
 □ Keine verwaisten Help-Dateien ohne Handler
+□ COMMAND_ALIASES mit CLI-Doku abgeglichen
 ```
 
 ---
 
-## Schritt 2: Handler-Vollständigkeit
+## Schritt 2: Registry-Vollständigkeit
 
-**Zweck:** CLI-Routing auf Lücken prüfen
+**Zweck:** Auto-Discovery auf Lücken prüfen
 
-### Bekannte Patterns
+### Aktuelles Routing (v2.0, registry-basiert)
 
 ```python
-# In bach.py gibt es zwei Routing-Pfade:
-
-# 1. Mit -- (Handler-basiert)
-if arg.startswith('--'):
-    handler = get_handler(profile_name)
-
-# 2. Ohne -- (Subcommand)
-elif command == "partner":
-    handler = get_handler("partner")
+# bach.py: beide Wege laufen über die Registry (core/registry.py)
+# 1. Mit --:   bach --memory facts read
+# 2. Ohne --:  bach mem facts read   (Alias via core/aliases.py)
+handler = app.get_handler(name)   # App aus core/app.py
 ```
+
+Es gibt KEINE manuelle Registrierung mehr: Ein neuer Handler wird allein durch
+eine `BaseHandler`-Subklasse in `hub/*.py` sichtbar.
+
+### Registry-Regeln (core/registry.py)
+
+| Regel | Details |
+|-------|---------|
+| Discovery | Scannt `hub/*.py` (top-level, ohne `_`-Präfix) |
+| profile_name | 1. `profile_name`-Property → 2. `_profile_name`-Attribut → 3. Klassennamen (`XxxHandler` → `xxx`) → 4. Dateiname |
+| Multi-Handler-Dateien | Mehrere Handler pro Datei möglich (z.B. `time.py` mit 5 Handlern) |
+| Host-Conflict-Kopien | `name-HOST.py`-Kopien werden ignoriert (kanonische Datei gewinnt) |
+| Aliase | `COMMAND_ALIASES` aus `core/aliases.py`, nach Discovery angewendet |
 
 ### Prüfung
 
 ```bash
-# Handler in get_handler() registriert?
-grep -n "lambda.*_import_handler" bach.py
+# Registry lädt alle Handler ohne Fehler/Warnungen?
+python bach.py --startup            # Registry wird beim Start discoveriert
 
-# Subcommand elif-Block vorhanden?
-grep -n "elif command ==" bach.py
+# Handler-Anzahl plausibel?
+# → Registry-Watcher: bach --maintain registry
+
+# Defekte Handler-Dateien finden (WARN-Zeilen im Startup-Log)
+# Registry loggt: "[WARN] Handler <datei>: <fehler>" bei Import-Fehlern
 ```
 
 ### Ziel
 
-Alle Handler sollten BEIDE Wege unterstützen (mit und ohne --).
+- Jede Handler-Datei in `hub/*.py` importiert sauber (keine `[WARN]`-Zeilen).
+- Jeder Befehl ist über BEIDE Wege erreichbar: `bach --<handler>` und `bach <handler>` (bzw. Alias).
+- Bei unbekanntem Befehl erscheint eine Did-you-mean-Ausgabe (`registry.suggest()`).
 
 ---
 
@@ -92,21 +133,30 @@ Alle Handler sollten BEIDE Wege unterstützen (mit und ohne --).
 
 | Problem | Beispiel | Lösung |
 |---------|----------|--------|
-| Alter Pfad | `recludOS/` statt `BACH/` | `--maintain heal` |
-| Fehlende Referenz | skills/docs/help/x.txt erwähnt nicht existierende Datei | Korrigieren |
-| Doppelte Doku | Info in skills/docs/help/*.txt UND in DB | Konsolidieren |
+| Alter Pfad | `skills/docs/help/*` statt `docs/help/*` | Referenz korrigieren |
+| Obsoleter Befehl | `--maintain heal`, `--maintain integration` | Ersetzt/entfernt – Doku aktualisieren |
+| Fehlende Referenz | Help-Datei erwähnt nicht existierende Datei | Korrigieren |
+| Doppelte Doku | Info in `docs/help/*.txt` UND in DB | Konsolidieren |
+| Veraltete Patterns | `elif command ==`, `_import_handler` | Nur noch in `hub/_archive/` – Doku umschreiben |
 
 ### Befehle
 
 ```bash
-# Pfad-Konsistenz
-bach --maintain heal --dry-run
+# Registry-Konsistenz (tools/maintenance/registry_watcher.py)
+bach --maintain registry
 
-# Registry-Konsistenz
-bach --maintain registry check
+# Skill-Health (tools/maintenance/skill_health_monitor.py)
+bach --maintain skills
 
-# Skill-Konsistenz
-bach --maintain skills check
+# BACH-Gesamtstatus
+bach --maintain health
+
+# Registry-Health-Reports (automatisch, JSON)
+# → logs/registry_health_*.json (Registry vs. Dateisystem-Abgleich)
+
+# HINWEIS: 'bach --maintain heal' ist VERALTET.
+# Pfade werden zentral über hub/bach_paths.py aufgelöst,
+# Path-Healer separat: bach --help tools/path_healer
 ```
 
 ---
@@ -115,13 +165,14 @@ bach --maintain skills check
 
 **Zweck:** Parallele Systeme erkennen und zusammenführen
 
-### Bekannte Doppelstrukturen
+### Bekannte Doppelstrukturen (bewusst gepflegt)
 
 | Bereich | Struktur A | Struktur B | Empfehlung |
 |---------|------------|------------|------------|
-| Lessons | skills/docs/help/lessons.txt (statisch) | memory_lessons DB (dynamisch) | Help verweist auf DB |
+| Lessons | `docs/help/lessons.txt` (statisch) | memory_lessons DB (dynamisch) | Help verweist auf DB |
 | Facts | memory_facts DB | config.json | DB für dynamisch, JSON für statisch |
-| Befehle | `mem` Kurzform | `--memory` Handler | Beide behalten, dokumentieren |
+| Befehle | `bach mem` (Alias) | `bach --memory` (Handler) | Beide behalten, Aliase in `core/aliases.py` dokumentieren |
+| CLI-Layer | `bach.py` (v2.0) | `bach_legacy.py` (Backup) | Legacy nur als Referenz, nicht erweitern |
 
 ### Prüffragen
 
@@ -129,6 +180,8 @@ bach --maintain skills check
 □ Gibt es zwei Orte für die gleiche Information?
 □ Welcher ist die "Single Source of Truth"?
 □ Kann einer auf den anderen verweisen statt duplizieren?
+□ Gibt es Archiv-/Backup-Kopien, die fälschlich weitergepflegt werden?
+  (→ nur hub/_archive/ und *.bak-* zählen als Archiv)
 ```
 
 ---
@@ -141,72 +194,83 @@ bach --maintain skills check
 
 | Kategorie | Präfix | Beispiel |
 |-----------|--------|----------|
-| Dokumentation | DOC_ | DOC_007: Help-Datei fehlt |
-| Integration | INTEG_ | INTEG_001: Handler nicht verknüpft |
-| Migration | MIG_ | MIG_003: Alte Pfade korrigieren |
+| Dokumentation | DOC | DOC: Help-Datei für Handler X fehlt |
+| Integration | INTEG | INTEG: Service Y nicht mit Handler verknüpft |
+| Migration | MIG | MIG: Alte Pfade in Doku korrigieren |
 
 ### Befehl
 
 ```bash
-bach task add "[INTEG] Handler X braucht elif-Block in bach.py" --priority P3
+bach task add "DOC: Help-Datei für Handler X fehlt" --priority P3 --category DOC
+bach task add "INTEG: Service Y in _services ohne SKILL.md" --priority P3
 ```
 
 ---
 
 ## Automatisierung
 
-### Option A: Als Recurring Task
+### Option A: Als Recurring Task (AKTIV)
 
-```bash
-bach --recurring add integration_check \
-    --interval 30d \
-    --action "bach --maintain registry && bach --maintain skills" \
-    --assignee BACH
+Der Recurring-Task `integration_check` existiert bereits in
+`hub/_services/recurring/config.json` (alle 30 Tage, P3):
+
+```json
+"integration_check": {
+    "enabled": true,
+    "interval_days": 30,
+    "target": "tasks",
+    "task_text": "Anschlussanalyse: bach --maintain registry + skills. Workflow: skills/workflows/system-anschlussanalyse.md"
+}
 ```
 
-### Option B: In Startup integrieren (Quick-Check)
+### Option B: In Startup integriert (Quick-Check)
 
-Bereits implementiert in `--startup`:
+Bereits implementiert in `bach --startup`:
 - Directory Scan ✅
-- Registry Watcher ✅
+- Registry-Watcher ✅
 - Skill Health ✅
 
-### Option C: Dedizierter Maintain-Befehl
+### Option C: Registry-Health-Report (automatisch)
 
-```bash
-# NEU: Vollständige Anschlussanalyse
-bach --maintain integration [--dry-run]
-```
+`bach --maintain registry` bzw. der Startup-Check erzeugt JSON-Reports:
+`logs/registry_health_*.json` – Registry-Einträge vs. Dateisystem
+(erwartete Pfade vs. tatsächliche Pfade, inkl. Skill-Workflows).
 
 ---
 
-## Ergebnisse dieser Session (2026-01-22)
+## Historie
 
-### Gefundene Inkonsistenzen
+### 2026-09-16 (Update, v2.0)
 
-1. **CLI-Syntax:** `--partner` funktionierte, `partner` nicht → **GELÖST** (elif-Block hinzugefügt)
-2. **Did-you-mean:** Fehlte bei unbekannten Befehlen → **GELÖST** (`_suggest_command()`)
-3. **CLI-Dokumentation:** skills/docs/help/cli.txt fehlte → **GELÖST** (erstellt)
-4. **REGELWERK-INDEX:** CLI-Syntax fehlte → **GELÖST** (ergänzt)
+- Workflow auf registry-basierte Architektur (BACH v2.0) umgeschrieben.
+- Obsolete Patterns entfernt: `hub/handlers/*.py`, `elif command ==`,
+  `_import_handler`, `KNOWN_COMMANDS` (nur noch in `hub/_archive/DEPRECATED_hub.py`).
+- Help-Pfade korrigiert: `skills/docs/help/*` → `docs/help/*`.
+- `--maintain heal` als VERALTET markiert, `--maintain integration`
+  (war nie implementiert) entfernt.
+- Recurring-Task `integration_check` dokumentiert.
+- **Offene Fundstellen außerhalb dieses Workflows:**
+  `skills/workflows/cli-aenderung-checkliste.md` referenziert noch
+  `bach --maintain integration` und `skills/docs/help/cli.txt` → nachpflegen.
 
-### Erstellte Artefakte
+### 2026-01-22 (Erstfassung, v1.0)
 
-- `skills/docs/help/cli.txt` - CLI-Konventionen
-- `_suggest_command()` in bach.py - Did-you-mean Funktion
-- Lesson #34, #35 - CLI-Dokumentation
-- Dieser Workflow
+Gefunden und gelöst: CLI-Syntax `partner` (elif-Block), Did-you-mean
+(`_suggest_command()`), `docs/help/cli.txt` erstellt, REGELWERK-INDEX ergänzt.
 
 ---
 
 ## Schnell-Checkliste
 
 ```
-□ skills/docs/help/*.txt ↔ hub/handlers/*.py Abgleich
-□ bach.py KNOWN_COMMANDS aktuell
-□ practices.txt REGELWERK-INDEX vollständig
-□ --maintain heal --dry-run ohne Fehler
-□ --maintain registry check OK
+□ docs/help/*.txt ↔ hub/*.py Handler-Abgleich
+□ hub/_services/* Services: SKILL.md vorhanden oder bewusst verzichtet
+□ core/aliases.py Aliase dokumentiert
+□ bach --startup ohne [WARN]-Zeilen
+□ bach --maintain registry OK (logs/registry_health_*.json fehlerfrei)
+□ bach --maintain skills OK
 □ Keine Doppelstrukturen oder dokumentiert
+□ Keine Doku-Verweise auf obsolete Patterns (_archive, bach_legacy)
 □ Integrations-Tasks erstellt
 ```
 
@@ -216,9 +280,8 @@ bach --maintain integration [--dry-run]
 
 - `skills/workflows/system-mapping.md` - Feature-Erfassung
 - `skills/workflows/system-synopse.md` - System-Übersicht
-- `skills/docs/help/maintain.txt` - Wartungs-Tools
-- `skills/docs/help/practices.txt` - Best Practices Index
-
----
-
-*Erstellt: 2026-01-22 | Anlass: Partner-System Integration*
+- `docs/help/maintain.txt` - Wartungs-Tools
+- `docs/help/practices.txt` - Regelwerk-Index
+- `docs/help/cli.txt` - CLI-Konventionen
+- `core/registry.py` - Handler-Registry (Auto-Discovery)
+- `core/aliases.py` - Command-Aliase

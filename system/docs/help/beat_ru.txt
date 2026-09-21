@@ -106,4 +106,5 @@ BEAT - Единое отображение времени
 
 ---
 Версия: 1.0 | Статус: Реализовано (v1.1.83)
-См.: docs/_archive/con4_CONCEPT_time_system_90.md.
+Источник: system/tools/time_system.py (TimeManager), system/hub/time.py (обработчик).
+Примечание: Ссылка на docs/_archive/con4_CONCEPT_time_system_90.md удалена - файл не существует (18.09.2026, задача #1335).

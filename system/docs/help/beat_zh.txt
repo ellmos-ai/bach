@@ -106,4 +106,5 @@ CLI 命令
 
 ---
 版本：1.0 |状态：已实施 (v1.1.83)
-请参阅：docs/_archive/con4_CONCEPT_time_system_90.md
+来源: system/tools/time_system.py (TimeManager), system/hub/time.py (处理器)
+注: 已移除指向 docs/_archive/con4_CONCEPT_time_system_90.md 的引用 - 文件不存在 (2026-09-18, 任务 #1335)

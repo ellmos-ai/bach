@@ -4,7 +4,7 @@ version: 1.2.0
 type: agent
 author: BACH Team
 created: 2026-01-22
-updated: 2026-02-04
+updated: 2026-09-18
 anthropic_compatible: true
 status: active
 

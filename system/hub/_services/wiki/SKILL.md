@@ -4,7 +4,7 @@ version: 2.0.0
 type: service
 author: BACH Team
 created: 2026-01-24
-updated: 2026-02-06
+updated: 2026-09-18
 anthropic_compatible: true
 status: active
 

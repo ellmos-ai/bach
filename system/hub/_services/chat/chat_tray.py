@@ -84,6 +84,68 @@ PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
 TRAY_LOCK_FILE = Path.home() / ".bach" / "chat_tray.lock"
 
 
+def _is_terminal_parked(task) -> bool:
+    """Fuer den idle-worker terminal (nicht neu aufziehbar), wenn der Task
+    erledigt (completed_at), geparkt (status='blocked') oder an eine zukuenftige
+    due_date gebunden ist. Ohne jeden dieser Marker greift der alte
+    completed_at-Einzelzweig unveraendert (Rueckwaerts-kompatibel).
+
+    T-20260912-1240loop / #1235 4x-Claim / #1293 Option A: der Terminal-Waechter
+    pruefte nur completed_at, sodass geparkte Gate-Tasks (kein completed_at, da
+    NICHT fertig) nach 300s-Client-Timeout auf 'open' zurueckgesetzt und erneut
+    claimt wurden (Resurrektions-Loop).
+    """
+    if not isinstance(task, dict):
+        return False
+    if task.get("completed_at"):
+        return True
+    if task.get("status") == "blocked":
+        return True
+    # 5. Pfad (T-20260915-1235loop): due_date kann beim Claim-Zyklus auf None
+    # gesetzt werden (reopen/clear_fields). claimed_by ist der robuste Marker
+    # fuer "in Bearbeitung" — auch wenn due_date verloren geht.
+    if task.get("claimed_by") and task.get("status") in ("in_progress", "blocked"):
+        return True
+    due = task.get("due_date")
+    if due:
+        try:
+            from datetime import datetime as _dt
+            d = _dt.fromisoformat(str(due).replace("Z", ""))
+            if d.tzinfo is not None:
+                d = d.replace(tzinfo=None)
+            return d > _dt.now()
+        except Exception:
+            return False
+    return False
+
+
+def _pending_fields(pending):
+    """Felder des idle_pending-Tupels inkl. exakter Send-chat_id (#1303).
+
+    Der Send-Pfad (_process_idle_task) schickt den Task-Prompt an
+    'idle-{role_id}-{task_id}'; der Settle-Pfad (_settle_pending_task) pollte
+    vor #1303 hartkodiert 'idle-task-{task_id}' -- eine chat_id, an die NIE
+    gesendet wurde. Jede Idle-Session >300s Client-Timeout endete so als
+    "ohne Antwort oder Transkript" (PATH A), obwohl die Antwort im
+    Transkript der echten Send-chat_id lag (Evidenz: chat_tray.py.bak-universal
+    -- vorm Universal-Worker-Refaktor nutzten BEIDE Pfade einheitlich
+    'idle-task-{id}', der Refaktor aenderte nur den Send-Pfad).
+
+    Neu: das Tupel traegt die Send-chat_id als 4. Element. Rueckgabe:
+    (task_id, seit, title, chat_id). Legacy-Tupel (2/3 Elemente, nur waehrend
+    des Deploy-Fensters moeglich) fallen defensiv auf den alten Praefix
+    zurueck.
+    """
+    if not pending:
+        return None, 0.0, "", ""
+    p = tuple(pending)
+    if len(p) >= 4:
+        return p[0], p[1], p[2], p[3]
+    if len(p) >= 3:
+        return p[0], p[1], p[2], f"idle-task-{p[0]}"
+    return p[0], p[1], f"Task #{p[0]}", f"idle-task-{p[0]}"
+
+
 def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     """Return an open, exclusively locked handle -- or None if another tray holds it.
 
@@ -153,7 +215,7 @@ class BACHTray:
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
-        self.idle_pending = None   # (task_id, seit) nach Client-Timeout
+        self.idle_pending = None   # (task_id, seit, title, chat_id) nach Client-Timeout (#1303)
         self._recurring_tick = 0
 
         self.max_status_failures = 3
@@ -524,18 +586,25 @@ class BACHTray:
         if not self.idle_pending:
             return True
 
-        if len(self.idle_pending) >= 3:
-            task_id, seit, title = self.idle_pending[0], self.idle_pending[1], self.idle_pending[2]
-        else:
-            task_id, seit = self.idle_pending[0], self.idle_pending[1]
-            title = f"Task #{task_id}"
-        task_chat_id = f"idle-task-{task_id}"
+        # #1303: chat_id aus dem Tupel (exakt wie beim Senden), nicht mehr
+        # hartkodiert 'idle-task-{id}' -- sonst sind Antworten >300s unauffindbar
+        task_id, seit, title, task_chat_id = _pending_fields(self.idle_pending)
         hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
         messages = (hist or {}).get("messages", [])
         answer = next((m for m in messages if m.get("role") == "assistant"), None)
 
         if answer is None:
             if not messages or (time.time() - seit >= self.PENDING_TTL):
+                # Terminal-Waechter fuer PATH A (Client-Timeout ohne Antwort): auch hier
+                # darf ein geparkter Task (blocked / future due_date) NICHT auf 'open'
+                # zurueckgesetzt werden -- sonst Resurrektions-Loop (T-20260912-1240loop
+                # / #1235 4x-Claim / #1293 Option A). Gleicher Guard wie Antwort-Pfad L580
+                # und Scan-Pfad L648. Gleicher _is_terminal_parked-Helfer (8/8 getestet).
+                task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+                if _is_terminal_parked(task_now):
+                    print(f"[Idle] Task #{task_id} terminal (blocked/due_date); kein open-Reset (PATH A)")
+                    self.idle_pending = None
+                    return True
                 print(f"[Idle] Task #{task_id} ohne Antwort oder Transkript; auf open zurueckgesetzt")
                 self._api("PUT", f"/api/tasks/{task_id}", {"status": "open", "changed_by": "idle-worker"}, base=self.gui_url)
                 self.idle_pending = None
@@ -554,8 +623,8 @@ class BACHTray:
           # erneut -> Resurrektions-Loop bei operator-geblockten TO-DECIDE-Tasks,
           # deren Antwort nie sauber FERTIG+ok wird (300s-Client-Timeout).
         task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
-        if task_now and task_now.get("completed_at"):
-            print(f"[Idle] Task #{task_id} traegt completed_at; bleibt terminal, kein open-Reset")
+        if _is_terminal_parked(task_now):
+            print(f"[Idle] Task #{task_id} terminal (completed_at/blocked/due_date); kein open-Reset")
             self.idle_pending = None
             return True
         if (ist_fertig or not ist_unvollstaendig) and answer.get("ok", True):
@@ -622,6 +691,12 @@ class BACHTray:
              # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
              # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
              # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
+            if _is_terminal_parked(task) and not task.get("completed_at"):
+                  # geparkt (blocked / future due_date), aber NICHT erledigt ->
+                  # unbehandelt verlassen (nicht 'done' setzen, nicht claimen)
+                  # -- Fix #1235 4x-Claim / #1293 Option A
+                print(f"[Idle] Task #{task.get('id')} geparkt; idle-worker verlaesst unbehandelt")
+                return
             if task.get("completed_at"):
                 tid = task.get("id")
                 print(f"[Idle] Task #{tid} traegt completed_at; terminal -> auf 'done' gesetzt, verlaesst open-Pool")
@@ -689,7 +764,9 @@ class BACHTray:
             }, timeout=300)
 
             if result is None:
-                self.idle_pending = (task_id, time.time(), title)
+                # #1303: chat_id mitvormerken, damit _settle_pending_task die
+                # echte Send-chat_id (idle-{role}-{id}) pollen kann
+                self.idle_pending = (task_id, time.time(), title, task_chat_id)
                 print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
             elif result.get("compute_locked"):
                 # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht

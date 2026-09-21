@@ -180,3 +180,66 @@ selbe Import-Löschung, die in (4) dokumentiert war; der Fix ist im Baum (HEAD `
 - **Status Task #1253:** weiterhin open/BLOCKED auf Operator-Host-Lauf, aber **Pin-Blockade behoben**
   (kein `5e64e07`-Checkout nötig mehr). #1243/#1235 verbleiben OPEN („Erst bei Parität gilt Gätung
   vor Ablösung" — Parität ist jetzt grün, aber Windows-Gegenprobe noch offen).
+
+## Re-Verifizierung Gate 2 (6) — 2026-09-15 03:2X — BACH qwen3.8:27b-mlx (Task #1251, WATCH)
+Watch-Refresh (keine neue Operator-Evidenz eingetroffen): Prämisse „grüner Windows-Lauf auf
+`WORKSTATION-LG`" **nach wie vor NICHT erfüllt** → **KEIN Green-Flip, KEIN Gate-MET, #1243 bleibt OPEN.**
+
+- **HEAD-Drift seit (5):** `60d9888` → `18541f5` (branch `main`, 15+ Commits, inkl. Code-Commits
+  `18541f5`/`38bf0d1`/`76e291e` an `system/`/`mcp` — nicht mehr „docs-only").
+- **macOS-Paritätsvoraussetzung (live, aktuell):** 5 Dateien Stufen 2/3/5/7
+  (`test_scheduler_provider` + `_wiring` + `test_accounts_via_accounts_core` +
+  `test_explorer_provider_wiring` + `test_transit_sync_provider_wiring`) am **aktuellen HEAD `18541f5`**
+  (venv `/Users/lukas/.venvs/bach`, python3.12) → **110 passed in 2.61 s**. Notwendige Voraussetzung lebt
+  weiter (nicht hinreichend). Der „grüne Pin" rückt vom (5)-Wert `60d9888` auf **`18541f5`** fort;
+  Operator abgleicht per `git rev-parse --short HEAD` (kein fester Checkout).
+- **Blocker unverändert (4/4):**
+    (1) Evidenz-Vorlage #1253/#1250 **unbesetzt** (`WORKSTATION-LG HEAD: ______`, `pytest: ______ passed`,
+     Zeitstempel leer).
+    (2) `WORKSTATION-LG` **nicht erreichbar**: `~/.ssh/known_hosts` ohne `WORKSTATION-LG`-Eintrag,
+     `~/.ssh/config`/`colima` inkludieren nur `colima`; Connector-Suche = nur ha/signal/telegram/slack/
+     whatsapp (kein `WORKSTATION-LG`-Connector/Sync-Pipe). Delegation an Claude/Codex bringt keine
+     Host-Erreichbarkeit (gleiche Umgebung).
+    (3) `MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12 §1` Spalte „Windows-Gegenprobe" Stufen 2/3/5/7 =
+     **⬜/❌ offen** (unverändert).
+    (4) Gate-Matrix Zeile 2 `Windows-Gegenprobe` = **❌ UNMET** (unverändert).
+- **Entscheidung:** Gate 2 **bleibt UNMET**. Zertifikat-Spalte **bleibt ⬜**. #1243/#1235 **bleiben OPEN**
+  („Erst bei Parität gilt Gätung vor Ablösung"). **Keine Fälschung** — kein simulierter Windows-Pass,
+  kein vorzeitiger Green-Flip.
+- **Nächster Schritt (Operator auf WORKSTATION-LG/PowerShell):** 5 Dateien an
+  `git rev-parse --short HEAD` (aktuell `18541f5`, pin-konform abgleichen; Erwartung **110 passed**)
+  → Evidenz in Vorlage #1253 eintragen → ZERTIFIKAT §1 `Windows-Gegenprobe` ⬜→✅ (Stufen 2/3/5/7)
+  → Gate-Matrix Zeile 2 UNMET→MET → dann #1243 (und erst danach #1235) schließbar.
+- **Status Task #1251:** **WATCH OPEN** — Endkontrolle (3) gültig, kein Operator-Input seit (5);
+  Gate korrekt OFFEN. Neu auslösen, sobald Evidenz in #1253 eingetragen ist.
+
+## Re-Verifizierung Gate 2 (7) — 2026-09-15 03:45 — BACH qwen3.8:27b-mlx (Task #1251, WATCH)
+Watch-Refresh 7 (keine neue Operator-Evidenz eingetroffen): Prämisse „grüner Windows-Lauf auf
+`WORKSTATION-LG`" **nach wie vor NICHT erfüllt** → **KEIN Green-Flip, KEIN Gate-MET, #1243 bleibt OPEN.**
+
+- **HEAD-Drift seit (6):** `4a21210` (selber Refresh 6-Commit, branch `main`) — **kein neuer Code-Commit**
+  seit (6); grüner Pin bleibt `18541f5` (letzter Code-Commit), `4a21210` ist docs-only.
+- **macOS-Paritätsvoraussetzung (live, aktuell):** 5 Dateien Stufen 2/3/5/7
+  (`test_scheduler_provider` + `_wiring` + `test_accounts_via_accounts_core` +
+  `test_explorer_provider_wiring` + `test_transit_sync_provider_wiring`) am **aktuellen HEAD `4a21210`**
+  (venv `/Users/lukas/.venvs/bach`, python3.12) → **110 passed in 2.50 s**. Notwendige Voraussetzung lebt
+  weiter (nicht hinreichend). Grüner Pin = `18541f5` (letzte Code-Änderung), Operator abgleicht per
+  `git rev-parse --short HEAD` (kein fester Checkout nötig).
+- **Blocker unverändert (4/4):**
+    (1) Evidenz-Vorlage #1253/#1250 **unbesetzt** (`WORKSTATION-LG HEAD: ______`, `pytest: ______ passed`,
+     Zeitstempel leer).
+    (2) `WORKSTATION-LG` **nicht erreichbar**: `~/.ssh/known_hosts` ohne `WORKSTATION-LG`-Eintrag
+     (nur `167.233.172.110` = colima + `github.com`), `~/.ssh/config` = nur `github.com`; Connector-Liste
+     = ha/signal/telegram/slack/whatsapp/imessage/discord (kein `WORKSTATION-LG`-Connector/Sync-Pipe).
+    (3) `MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12 §1` Spalte „Windows-Gegenprobe" Stufen 2/3/5/7 =
+     **⬜/❌ offen** (unverändert).
+    (4) Gate-Matrix Zeile 2 `Windows-Gegenprobe` = **❌ UNMET** (unverändert).
+- **Entscheidung:** Gate 2 **bleibt UNMET**. Zertifikat-Spalte **bleibt ⬜**. #1243/#1235 **bleiben OPEN**
+  („Erst bei Parität gilt Gätung vor Ablösung"). **Keine Fälschung** — kein simulierter Windows-Pass,
+  kein vorzeitiger Green-Flip.
+- **Nächster Schritt (Operator auf WORKSTATION-LG/PowerShell):** 5 Dateien an
+  `git rev-parse --short HEAD` (pin-konform abgleichen; Erwartung **110 passed**)
+  → Evidenz in Vorlage #1253 eintragen → ZERTIFIKAT §1 `Windows-Gegenprobe` ⬜→✅ (Stufen 2/3/5/7)
+  → Gate-Matrix Zeile 2 UNMET→MET → dann #1243 (und erst danach #1235) schließbar.
+- **Status Task #1251:** **WATCH OPEN** — Endkontrolle (3) gültig, kein Operator-Input seit (5);
+  Gate korrekt OFFEN. Neu auslösen, sobald Evidenz in #1253 eingetragen ist.

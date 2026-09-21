@@ -1,0 +1,35 @@
+# Portabilität: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-09-17
+
+TELEMETRIE (OPS-TELEM-001)
+=========================
+
+bach telemetry   - Low-cardinality, privacy-first Zaehler
+
+
+BESCHREIBUNG
+============
+
+Erfasst aggregierte Zaehler mit validierten Labels.
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+Privacy: Es werden NUR aggregierte Zaehler gespeichert --
+keine Payloads, Prompts, Pfade oder Nutzerdaten.
+Opt-Out: BACH_TELEMETRY_DISABLED=1
+
+
+BEFEHLE
+=======
+
+bach telemetry report [days]      Zaehler der letzten N Tage (Default 7)
+bach telemetry status              Erfassungs-/Schema-Status
+bach telemetry reset --confirm    Alle Zaehler loeschen
+
+
+QUELLE
+======
+
+Handler: hub/telemetry.py (TelemetryHandler, v1.0.0)
+Einfuehrung: OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

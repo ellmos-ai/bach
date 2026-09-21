@@ -107,4 +107,5 @@ SIEHE AUCH
 
 ---
 Version: 1.0 | Status: Implementiert (v1.1.83)
-Siehe: docs/_archive/con4_CONCEPT_time_system_90.md
+Quelle: system/tools/time_system.py (TimeManager), system/hub/time.py (Handler)
+Hinweis: Verweis auf docs/_archive/con4_CONCEPT_time_system_90.md entfernt - Datei existiert nicht (Forensik 2026-09-18, Task #1335)

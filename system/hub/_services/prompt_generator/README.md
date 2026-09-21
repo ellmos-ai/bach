@@ -19,7 +19,7 @@ systemweites Prompt-Management mit folgenden Features:
 ## Architektur
 
 ```
-skills/_services/prompt_generator/
+hub/_services/prompt_generator/
 ├── README.md              # Diese Datei
 ├── config.json            # Konfiguration (Intervall, Sperrzeiten, etc.)
 ├── prompt_generator.py    # Hauptlogik (Prompt bauen, Session triggern)
@@ -51,7 +51,7 @@ skills/_services/prompt_generator/
 |------------|-------|-----------|
 | **Prompt-Generator** | Prompts erstellen/senden | Diesen Service |
 | **Daemon (Wartung)** | Shell-Jobs ausfuehren | gui/api/daemon_api.py |
-| **Recurring** | Task-Erinnerungen | skills/_services/recurring/ |
+| **Recurring** | Task-Erinnerungen | hub/_services/recurring/ |
 
 ## Migration von ATI
 

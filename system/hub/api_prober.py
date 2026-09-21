@@ -51,7 +51,11 @@ class ApiProberHandler(BaseHandler):
         config -- Konfiguration anzeigen
     """
 
-    profile_name = "api-prober"
+    @property
+    def profile_name(self) -> str:
+        # Effektiver Registry-Name (vorher: totes Klassen-Attribut "api-prober",
+        # das nie griff — Registry fiel auf Klassennamen zurueck. Task #1321)
+        return "apiprober"
 
     @property
     def target_file(self) -> Path:

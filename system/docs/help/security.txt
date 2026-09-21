@@ -1,0 +1,35 @@
+# Portabilität: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-09-17
+
+SECURITY
+========
+
+bach security   - Statischer Sicherheits-Scan fuer BACH
+
+
+BESCHREIBUNG
+============
+
+Scannt BACH-eigene Code-Pfade auf gefaehrliche Muster und erzeugt
+einen kategorisierten Report. Verwendet das Capability-System
+(core.capabilities) fuer die eigentliche Pattern-Erkennung.
+
+Standard-Pfade: tools, skills, hub, core, scripts, bin
+Letzter Report: security_scan_latest.json
+
+
+BEFEHLE
+=======
+
+bach security scan                Scannt Standard-Pfade
+bach security scan tools/         Scannt bestimmtes Verzeichnis
+bach security scan --json         JSON-Report
+bach security scan --dry-run      Zeigt was gescannt wuerde
+bach security status              Letzten Report anzeigen
+
+
+QUELLE
+======
+
+Handler: hub/security.py (SecurityHandler)

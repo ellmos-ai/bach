@@ -186,6 +186,12 @@ def test_waechter_bleibt_gruen_wenn_nur_ein_fremder_dienst_schreibt(tmp_path):
     (heim / ".bach" / "chat_tray.log").write_text("start\n", encoding="utf-8")
 
     # Fremder Schreiber: kein Kind des Testlaufs, Name wie ein BACH-Dienst.
+    # #1304: Tick-Intervall 0.01s statt 0.1s -- das Guard-Messfenster im
+    # Kindprozess (Fixture-Setup bis Teardown: Collection+Test, ca. 0.04-0.1s)
+    # war kuerzer als das Tick-Intervall; fiel zufaellig KEIN Tick ins Fenster,
+    # war changed==[] -> still gruen ohne Meldung -> Flaky-Fail (reproduzierbar
+    # im Testverbund, Systemlast verschiebt die Fensterphase). Mit 0.01s fallen
+    # immer 4-10 Ticks ins Fenster; die mtime-Aenderung ist garantiert sichtbar.
     schreiber_py = tmp_path / "chat_tray.py"
     schreiber_py.write_text(
         "import sys, time\n"
@@ -193,12 +199,25 @@ def test_waechter_bleibt_gruen_wenn_nur_ein_fremder_dienst_schreibt(tmp_path):
         "ende = time.time() + 60\n"
         "while time.time() < ende:\n"
         "    open(ziel, 'a', encoding='utf-8').write('tick\\n')\n"
-        "    time.sleep(0.1)\n",
+        "    time.sleep(0.01)\n",
         encoding="utf-8",
     )
 
     testdatei = tmp_path / "test_faesst_nichts_an.py"
-    testdatei.write_text("def test_still():\n    assert True\n", encoding="utf-8")
+    testdatei.write_text(
+        "import time\n"
+        "def test_still():\n"
+        "    # #1304: Das Guard-Messfenster (Fixture-Setup bis Teardown) ist von\n"
+        "    # Natur aus kurz (Collection + Testlauf, oft <0.1s). Ohne diese\n"
+        "    # Pause kann das Fenster zufaellig ZWISCHEN zwei Ticks des\n"
+        "    # fremden Schreibers liegen -> changed==[] -> still gruen ohne\n"
+        "    # Meldung -> Flaky-Fail (beobachtet: Solo ~30 %, Verbund reproduzierbar).\n"
+        "    # 0.3s Fenster + 0.01s Tick-Intervall = garantiert >20 Ticks im\n"
+        "    # Fenster: die mtime-Aenderung ist deterministisch sichtbar.\n"
+        "    time.sleep(0.3)\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
 
     repo = Path(__file__).resolve().parents[2]
     umgebung = dict(os.environ)

@@ -100,6 +100,11 @@ def _import_fastmcp():
     original_path = list(sys.path)
     shadow_module = sys.modules.get("mcp")
     shadow_file = getattr(shadow_module, "__file__", None)
+    saved_mcp_modules = {
+        key: value
+        for key, value in sys.modules.items()
+        if key == "mcp" or key.startswith("mcp.")
+    }
 
     def shadows_sdk(entry: str) -> bool:
         try:
@@ -108,14 +113,28 @@ def _import_fastmcp():
             return False
 
     sys.path[:] = [entry for entry in original_path if not shadows_sdk(entry)]
-    if shadow_file and Path(shadow_file).resolve() == hub_mcp:
-        sys.modules.pop("mcp", None)
+    shadowed = (
+        shadow_module is not None
+        and (
+            not hasattr(shadow_module, "__path__")
+            or (shadow_file and Path(shadow_file).resolve() == hub_mcp)
+        )
+    )
+    if shadowed:
+        # A cached real submodule with a removed/poisoned parent can make
+        # import_module() return successfully without restoring sys.modules
+        # ["mcp"].  Purge the complete chain so Python rebuilds one coherent
+        # external package hierarchy.
+        for key in saved_mcp_modules:
+            sys.modules.pop(key, None)
 
     try:
         return importlib.import_module("mcp.server.fastmcp").FastMCP
     except Exception:
-        if shadow_module is not None:
-            sys.modules["mcp"] = shadow_module
+        for key in list(sys.modules):
+            if key == "mcp" or key.startswith("mcp."):
+                sys.modules.pop(key, None)
+        sys.modules.update(saved_mcp_modules)
         raise
     finally:
         sys.path[:] = original_path

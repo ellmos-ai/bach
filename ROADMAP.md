@@ -671,9 +671,14 @@ kein Feature-Sync mehr). BACH soll den Umgang mit dem Modul prüfen und seinen F
   MODULRUECKTRANSFER-Plan Stufe 2 scharfgeschaltet (BACH-Task 1218; Rollback
   `BACH_TEST_ADAPTER=native`, Regressionstests + Live-Nachweis). Die frühere
   Task-Referenz #1181 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
-- **Doku-Nachlauf (offen, Task-Referenz #1182 obsolet):** Die externe, noch auf „vorbereitet" stehende
-  `clutch/docs/BACH_MIGRATION.md` ist im kanonischen Modul-Repo weiterhin auf diesen
-  Ist-Stand nachzuziehen (neue Task-ID erforderlich).
+- **Doku-Nachlauf (Stand 2026-09-16: ERLEDIGT, BACH-Task 1228):** Die
+  `clutch/docs/BACH_MIGRATION.md` steht im kanonischen Modul-Bus
+  (`.TOPICS/.AI/.MODULES/.ORCHESTRATION/clutch/docs/`) und im lokalen Klon
+  (`ellmos-ai/clutch`) auf dem Ist-Stand „ABGESCHLOSSEN“ (Cutover 2026-07-22,
+  BACH-Task 1150); eine „vorbereitet“-Fassung existiert nicht mehr. Das Dokument
+  bleibt als interne Doku bewusst nicht oeffentlich (clutch-.gitignore: interne
+  Planungs-/Migrationsdocs mit BACH-Pfaden/Refs). Die frühere Task-Referenz
+  #1182 ist obsolet (ID inzwischen mit einem GUI-Task belegt).
 
 ---
 
@@ -940,7 +945,7 @@ Backend-Fallback-Semantik zu BACHs Multi-Partner-Architektur passt.
 | SEC-PLUGIN-003 | Fail-closed Tool-Setup-Checks | DONE | Plugin-Manifeste mit `shell`-/`desktop`-/`mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge vor Runtime-Code, und bestehende Claude Hook-/MCP-Config-JSONs werden vor Setup-Schreibzugriffen fail-closed validiert |
 | SANDBOX-002 | Subprocess-Isolation | TEILWEISE | Capabilities/Allowlist (DONE): fail-closed Shell-Allowlist, DB-Persistenz, policy/allow/deny Ops, 72 Tests. Ressourcenlimit (offen, OS-spezifisch) |
 | API-SURFACE-001 | Agent-/Prompt-API-Parität | DONE | `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt`; Agenten-Usecase per Regressionstest abgesichert |
-| OPS-TELEM-001 | Low-cardinality Telemetrie | OFFEN | OpenTelemetry-inspiriert, aber lokal/privacy-first: Model-Calls, Tool-Loops, Agentenstarts und Fehler ohne sensible Payloads messen |
+| OPS-TELEM-001 | Low-cardinality Telemetrie | DONE | Implementiert 2026-09-16 (Task #1315): `core/telemetry.py` + Migration 041 + Handler `bach telemetry report/status/reset`. Counter: agent_starts/model_calls/tool_calls mit Label-Allowlist + Regex-Validierung (Fallback "other"), outcome ok/error/dummy/timeout, Tages-Aggregation, Serien-Cap 200/Tag, fail-silent, Opt-Out BACH_TELEMETRY_DISABLED=1. Hooks: AgentRuntime (_instantiate), Launcher (route), CLI Direct Execute (bach.py), Ollama (_ask). Keine Payloads/Prompts/Nutzerdaten |
 | OPS-I18N-001 | i18n-Drift-Report & Layout-aware Scan | DONE | `bach lang report` prüft Manifest/Locale-Artefakte, liefert Fundstellen mit Datei/Zeile/Typ und scannt das aktuelle Layout inklusive HTML/JS/Markdown auf harte DE-Copy; `bach lang scan --namespace gui` nutzt jetzt dieselben gefilterten GUI-Fundstellen wie der Report, aktueller GUI-Live-Befund: 166 eindeutige Strings bei 253 Fundstellen und 0 offenen Einträgen (2026-06-12) |
 | OPS-PATH-001 | Strukturierte Pfadoberfläche | DONE | `bach path` liefert kanonische System-/Workspace-/DB-Pfade, JSON-Ausgaben, Resolve-/Validate-Helfer und DB-Overrides für Operatoren, API und Automationen |
 | OPS-CACHE-001 | Workspace-scoped Runtime-Cache-Invalidierung | DONE | `core.agent_runtime` trennt Registries jetzt pro `base_path`, lädt Agent-Module isoliert und invalidiert gecachte Instanzen automatisch bei Code-/Config-Änderungen |

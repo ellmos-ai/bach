@@ -1,113 +1,177 @@
 # CLI-Änderungs-Checkliste
 
-**Version:** 1.0  
-**Stand:** 2026-01-22  
+> **Zweck:** Alle Schritte zum Einfügen oder Ändern eines CLI-Befehls unter der
+> Registry-Architektur v2.0 (Handler implementieren, Alias, Help-Datei, Test).
+> Auto-Discovery macht manuelle Registrierung in bach.py überflüssig.
+
+**Version:** 2.0
+**Stand:** 2026-09-16
 **Kategorie:** Wartung, Entwicklung
 
 ---
 
 ## Übersicht
 
-Dieser Workflow beschreibt alle Schritte die nötig sind wenn ein neuer CLI-Befehl eingeführt oder ein bestehender geändert wird.
+Dieser Workflow beschreibt alle Schritte, die nötig sind, wenn ein neuer CLI-Befehl
+eingeführt oder ein bestehender geändert wird.
+
+**Wichtig seit bach.py v2.0 (Registry-Architektur):**
+Befehle werden NICHT mehr manuell in bach.py registriert. Die `HandlerRegistry`
+(core/registry.py) entdeckt Handler automatisch (Auto-Discovery). Der klassische
+Registrierungsschritt entfällt damit komplett.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  NEUER CLI-BEFEHL: CHECKLISTE (6 Schritte)              │
+│  NEUER CLI-BEFEHL: CHECKLISTE (5 Schritte)              │
 ├─────────────────────────────────────────────────────────┤
-│  1. Handler implementieren (hub/handlers/)              │
-│  2. In bach.py registrieren                             │
-│  3. Help-Datei erstellen (skills/docs/help/*.txt)                   │
-│  4. KNOWN_COMMANDS aktualisieren                        │
-│  5. SKILL.md Befehlsübersicht aktualisieren             │
-│  6. Test: --help und Funktion prüfen                    │
+│  1. Handler implementieren (hub/<name>.py)              │
+│  2. Alias festlegen (optional, core/aliases.py)         │
+│  3. Help-Datei erstellen (docs/help/<name>.txt)         │
+│  4. Verwandte Doku prüfen                               │
+│  5. Test: Discovery + Operationen + Did-you-mean        │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **Dauer:** 10-30 Minuten je nach Komplexität
 
+### Architektur-Kontext (Dispatch-Kette)
+
+```
+bach.py (CLI)
+  → core/app.py (App-Container)
+    → core/registry.py (HandlerRegistry, Auto-Discovery)
+      → hub/<name>.py (Handler, BaseHandler-Subklasse)
+        → hub/_services/* (Service-Layer, optional)
+```
+
 ---
 
 ## Schritt 1: Handler implementieren
 
-**Ort:** `hub/handlers/<name>.py`
+**Ort:** `hub/<name>.py`
+
+Die Registry scannt `hub/*.py` (Dateien mit `_`-Präfix werden ignoriert) und
+lädt automatisch alle BaseHandler-Subklassen. Die Datei muss NICHT importiert
+oder registriert werden.
 
 ### Vorlage
 
 ```python
 """Handler für <name> Funktionen."""
-from hub.handlers.base import BaseHandler
+from pathlib import Path
+from typing import List, Tuple
+
+from hub.base import BaseHandler
+
 
 class <Name>Handler(BaseHandler):
-    def handle(self, args: list) -> tuple:
-        if not args:
-            return self._show_help()
-        
-        operation = args[0].lower()
-        
-        if operation == "list":
-            return self._list(args[1:])
-        elif operation == "add":
-            return self._add(args[1:])
-        else:
-            return False, f"Unbekannte Operation: {operation}"
-    
-    def _show_help(self) -> tuple:
-        return True, "Nutzung: bach <name> [operation]"
-    
-    def _list(self, args: list) -> tuple:
-        # Implementierung
-        return True, "Liste..."
+    """<Kurzbeschreibung>."""
+
+    @property
+    def profile_name(self) -> str:
+        return "<name>"
+
+    @property
+    def target_file(self) -> Path:
+        return self.base_path / "data" / "<name>.json"
+
+    def get_operations(self) -> dict:
+        return {
+            "list": "Einträge auflisten",
+            "add": "Eintrag hinzufügen",
+            "status": "Status anzeigen",
+        }
+
+    def handle(self, operation: str, args: List[str],
+               dry_run: bool = False) -> Tuple[bool, str]:
+        if operation in (None, "", "help"):
+            return True, self._usage()
+        ops = self.get_operations()
+        if operation not in ops:
+            return False, (f"Unbekannte Operation: {operation}. "
+                           f"Verfügbar: {', '.join(ops)}")
+        # ... Implementierung, Rückgabe: (success, message)
+        return True, "OK"
+
+    def _usage(self) -> str:
+        ops = self.get_operations()
+        lines = [f"<name> - Nutzung:", ""]
+        lines += [f"  bach <name> {op:<12} {desc}" for op, desc in ops.items()]
+        return "\n".join(lines)
 ```
 
-### Checkliste
+### Registry-Regeln (core/registry.py)
+
+Der `profile_name` wird in dieser Reihenfolge ermittelt:
+1. `profile_name`-Property direkt an der Klasse (empfohlen, siehe Vorlage)
+2. Klassen-Attribut `_profile_name`
+3. Heuristik: `TaskHandler` → `task` (Klassenname ohne `Handler`, lowercase)
+4. Fallback: Dateiname ohne Endung
+
+**Wichtige Randbedingungen:**
 
 ```
-□ Klasse von BaseHandler ableiten
-□ handle() Methode implementiert
-□ Operationen als Untermethoden
-□ Hilfe bei leeren Args
-□ Fehlerbehandlung
+□ Klasse von BaseHandler ableiten (hub/base.py)
+□ Alle 4 abstrakten Member implementiert:
+    profile_name, target_file, get_operations(), handle()
+□ handle() erhält die Operation DIREKT (nicht args[0] parsen!)
+□ Dateiname OHNE _-Präfix (sonst wird sie vom Discovery ignoriert)
+□ Multi-Handler-Dateien erlaubt (mehrere Handler-Klassen in einer
+  Datei, z.B. hub/time.py mit clock/timer/countdown/between/beat)
+□ NIEMALS als <name>-HOST.py speichern (Host-Conflict-Kopien
+  werden vom Registry-Discovery mit [WARN] ignoriert)
+□ BaseHandler dual-init-kompatibel: __init__ NICHT überschreiben
+  ohne super().__init__(base_path_or_app) aufzurufen
 ```
 
 ---
 
-## Schritt 2: In bach.py registrieren
+## Schritt 2: Alias festlegen (optional)
 
-**Ort:** `bach.py` (zwei Stellen!)
+**Ort:** `core/aliases.py`
 
-### A) Handler-Import (get_handler Funktion)
+Ein neuer Befehl ist nach dem Erstellen von `hub/<name>.py` sofort
+verfügbar (`bach <name>` UND `bach --<name>`). Manuelle Registrierung
+in bach.py ist NICHT mehr nötig.
+
+Nur wenn eine **Kurzform** gewünscht ist (wie `mem` → `memory`):
 
 ```python
-# In get_handler() ca. Zeile 800-900:
-handler_imports = {
+# core/aliases.py, COMMAND_ALIASES:
+COMMAND_ALIASES = {
     # ... bestehende ...
-    "<name>": lambda: _import_handler("<name>", "<Name>Handler"),
+    "<kurz>": "<name>",  # NEU HINZUFÜGEN
 }
 ```
 
-### B) Subcommand elif-Block
+Optional Default-Operation (falls `bach <name>` ohne Argument eine
+sinnvolle Standard-Aktion haben soll):
 
 ```python
-# In main() ca. Zeile 1000-1100:
-elif command == "<name>":
-    handler = get_handler("<name>")
-    if handler:
-        return handler.handle(args[2:])
+# core/aliases.py, DEFAULT_OPERATIONS:
+DEFAULT_OPERATIONS = {
+    # ... bestehende ...
+    "<name>": "list",  # NEU HINZUFÜGEN
+}
 ```
 
 ### Checkliste
 
 ```
-□ Handler in handler_imports registriert
-□ elif-Block für Subcommand ohne --
-□ Beide Varianten funktionieren: bach <name> UND bach --<name>
+□ Alias nur bei Bedarf (Vollname ist automatisch verfügbar)
+□ Alias in COMMAND_ALIASES eingetragen (kein Duplikat-Ziel)
+□ DEFAULT_OPERATIONS ergänzt, falls sinnvoll
+□ Keine Änderung an bach.py erforderlich!
 ```
 
 ---
 
 ## Schritt 3: Help-Datei erstellen
 
-**Ort:** `skills/docs/help/<name>.txt`
+**Ort:** `docs/help/<name>.txt`
+
+Sprachvarianten optional: `<name>_en.txt`, `<name>_es.txt`,
+`<name>_ja.txt`, `<name>_ru.txt`, `<name>_zh.txt`.
 
 ### Vorlage
 
@@ -135,7 +199,7 @@ BEISPIELE
 
 TECHNISCHE DETAILS
 ------------------
-  Handler: hub/handlers/<name>.py
+  Handler: hub/<name>.py
   DB-Tabelle: (falls relevant)
   Config: (falls relevant)
 
@@ -148,93 +212,75 @@ SIEHE AUCH
 ### Checkliste
 
 ```
-□ Datei in skills/docs/help/<name>.txt erstellt
-□ Alle Operationen dokumentiert
+□ Datei in docs/help/<name>.txt erstellt (NICHT skills/docs/help/!)
+□ Alle Operationen aus get_operations() dokumentiert
 □ Beispiele vorhanden
 □ SIEHE AUCH verweist auf relevante Themen
+□ Optional: Sprachvarianten (_en etc.) angelegt
 ```
 
 ---
 
-## Schritt 4: KNOWN_COMMANDS aktualisieren
+## Schritt 4: Verwandte Doku prüfen
 
-**Ort:** `bach.py` ca. Zeile 855
+**Hinweis:** Eine zentrale SKILL.md-Befehlsübersicht existiert nicht mehr
+(obsolet seit dem Umstieg auf skills/). Stattdessen:
 
-```python
-KNOWN_COMMANDS = [
-    # Subcommands (ohne --)
-    "task", "mem", "backup", "restore", "dist", "partner",
-    "gui", "daemon", "scan", "lesson", "wiki", "tools",
-    "msg", "steuer", "ati", "abo", "ocr", "data",
-    "<name>",  # NEU HINZUFÜGEN
-    
-    # Handler (mit --)
-    "--help", "--startup", "--shutdown", ...
-]
+```
+□ skills/workflows/ durchsuchen: Referenziert ein Workflow diesen
+  Befehl oder eine veraltete Konvention? → ggf. aktualisieren
+□ Bei Namens-/Pfad-Konflikten: docs/help/cli.txt und
+  docs/help/naming.txt konsultieren
+□ Recurring-Tasks (hub/_services/recurring/config.json) prüfen,
+  falls ein Task den Befehl automatisiert verwenden soll
 ```
 
-### Zweck
-
-- Did-you-mean Funktion findet ähnliche Befehle
-- Vollständige Befehlsliste für Dokumentation
+Verwandte Workflows in `skills/workflows/` (z.B.
+`system-anschlussanalyse.md`, `cli-aenderung-checkliste.md` selbst)
+konsolidieren statt duplizieren.
 
 ---
 
-## Schritt 5: SKILL.md aktualisieren
-
-**Ort:** `SKILL.md` Befehlsübersicht
-
-### Relevante Sektionen
-
-1. **Hauptübersicht** (ca. Zeile 50-150):
-   ```markdown
-   ## <Kategorie>
-   ```bash
-   bach <name> list     # Beschreibung
-   bach <name> add      # Beschreibung
-   ```
-
-2. **Version erhöhen** (Header):
-   ```markdown
-   **Version:** 1.1.XX (was +1)
-   ```
-
-### Checkliste
-
-```
-□ Befehl in passende Kategorie eingetragen
-□ Version in SKILL.md erhöht
-□ Changelog in SKILL.md ergänzt (falls major)
-```
-
----
-
-## Schritt 6: Test
+## Schritt 5: Test
 
 ### Manuelle Tests
 
 ```bash
-# Help funktioniert?
+# 1. Discovery: Wird der Handler gefunden?
+bach --maintain registry          # Registry-Watcher (Konsistenz)
+
+# 2. Help funktioniert?
 bach --help <name>
 
-# Beide Varianten?
+# 3. Beide Varianten?
 bach <name> list
 bach --<name> list
 
-# Did-you-mean bei Tippfehler?
-bach <nam> list  # Sollte "<name>" vorschlagen
+# 4. Did-you-mean bei Tippfehler?
+bach <nam> list                   # Sollte "<name>" vorschlagen
+                                  # (Registry.suggest() übernimmt das)
 
-# Operationen funktionieren?
+# 5. Operationen funktionieren?
 bach <name> add "Test"
 bach <name> status
+
+# 6. Unbekannte Operation abgefangen?
+bach <name> unsinn                # → "Unbekannte Operation: ..."
 ```
 
-### Automatischer Test (optional)
+### Hilfreiche Wartungs-Befehle
 
 ```bash
-# Konsistenz-Check
-bach --maintain registry check
+bach --maintain docs              # Docs-Check (Pfad-Referenzen)
+bach --maintain skills            # Skill-Health-Monitor
+bach --maintain skill-help <name> # Help-Datei aus SKILL-Doku generieren
+bach --maintain workflows         # Workflow-Validator
 ```
+
+**Veraltet (nicht mehr verwenden):** `--maintain heal` (ersetzt durch
+`--maintain health` bzw. `--maintain registry`), `--maintain integration`
+(wurde nie implementiert – Konsistenzprüfung läuft jetzt über
+`--maintain registry` und den Recurring-Task `integration_check`, 30 Tage).
 
 ---
 
@@ -244,49 +290,74 @@ bach --maintain registry check
 NEUER CLI-BEFEHL: <name>
 ========================
 
-□ hub/handlers/<name>.py erstellt
-□ bach.py: handler_imports erweitert
-□ bach.py: elif-Block für Subcommand
-□ skills/docs/help/<name>.txt erstellt
-□ KNOWN_COMMANDS in bach.py ergänzt
-□ SKILL.md Befehlsübersicht aktualisiert
-□ SKILL.md Version erhöht
+□ hub/<name>.py erstellt (BaseHandler-Subklasse)
+□ profile_name + target_file + get_operations() + handle() implementiert
+□ KEINE Registrierung in bach.py nötig (Auto-Discovery)
+□ Alias in core/aliases.py ergänzt (nur falls Kurzform gewünscht)
+□ DEFAULT_OPERATIONS ergänzt (falls Default-Aktion sinnvoll)
+□ docs/help/<name>.txt erstellt
+□ Verwandte skills/workflows/ geprüft/ggf. aktualisiert
+□ Test: bach --maintain registry
 □ Test: bach --help <name>
-□ Test: bach <name> [operation]
-□ Test: bach --<name> [operation]
-□ Test: Tippfehler -> Did-you-mean
+□ Test: bach <name> [operation] UND bach --<name> [operation]
+□ Test: Tippfehler -> Did-you-mean (Registry.suggest())
 ```
 
 ---
 
 ## Automatisierung
 
+### Verfügbare Werkzeuge
+
+1. **Skill-Generator** (Skill-Strukturen, NICHT Handler-Boilerplate):
+   ```bash
+   bach --maintain generate <name> [PROFIL] [zielordner]
+   # Profile: MICRO, LIGHT, STANDARD, EXTENDED
+   # Siehe: tools/skill_generator.py
+   ```
+
+2. **Konsistenz-Check (Registry-Watcher):**
+   ```bash
+   bach --maintain registry
+   ```
+   → Prüft Handler-Registry und Discovery-Konsistenz
+
+3. **Help-Datei-Generator:**
+   ```bash
+   bach --maintain skill-help <name>
+   ```
+   → Generiert docs/help/*.txt aus Skill-Doku
+
+4. **Recurring-Task `integration_check`** (30 Tage):
+   → Führt `skills/workflows/system-anschlussanalyse.md` aus;
+   deckt veraltete Referenzen auf (wie diese Checkliste).
+
 ### Mögliche Verbesserungen
 
-1. **Generator-Script:**
-   ```bash
-   bach --maintain generate handler <name>
-   ```
-   → Erstellt Boilerplate für Handler + Help
-
-2. **Konsistenz-Check:**
-   ```bash
-   bach --maintain integration
-   ```
-   → Prüft Help ↔ Handler Abgleich
-
-3. **Pre-Commit Hook:**
-   → Warnt wenn Handler ohne Help commited wird
+- Pre-Commit Hook: Warnt, wenn Handler ohne Help-Datei committet wird
+- `--maintain registry --strict`: Fail wenn Discovery-Warnungen auftreten
 
 ---
 
 ## Siehe auch
 
 - `skills/workflows/system-anschlussanalyse.md` - Allgemeine Konsistenz
-- `skills/docs/help/cli.txt` - CLI-Konventionen
-- `skills/docs/help/coding.txt` - Coding-Standards
-- `skills/docs/help/naming.txt` - Namenskonventionen
+- `docs/help/cli.txt` - CLI-Konventionen
+- `docs/help/coding.txt` - Coding-Standards
+- `docs/help/naming.txt` - Namenskonventionen
+- `core/registry.py` - HandlerRegistry (Auto-Discovery, Quellcode)
+- `core/aliases.py` - COMMAND_ALIASES und DEFAULT_OPERATIONS
+- `hub/base.py` - BaseHandler-Interface
 
 ---
 
-*Erstellt: 2026-01-22 | Anlass: Standardisierung CLI-Entwicklung*
+## Historie
+
+| Version | Datum | Änderung |
+|---------|-------|----------|
+| 1.0 | 2026-01-22 | Erstellt (elif-basierte Architektur, hub/handlers/, KNOWN_COMMANDS, SKILL.md) |
+| 2.0 | 2026-09-16 | Umgestellt auf Registry-Architektur v2.0: Auto-Discovery statt bach.py-Registrierung, hub/<name>.py statt hub/handlers/, Help-Pfad docs/help/ statt skills/docs/help/, SKILL.md- und KNOWN_COMMANDS-Schritte entfernt, --maintain integration (nie implementiert) durch --maintain registry ersetzt (Task 1310, Anschluss an Task 1309) |
+
+---
+
+*Erstellt: 2026-01-22 | Update: 2026-09-16 (Task 1310) | Anlass: Umstieg auf Registry-Architektur v2.0*

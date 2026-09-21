@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes, claim_task_atomic
+from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
 from gui.config import settings
 from gui.console import mount_console
 
@@ -183,6 +183,7 @@ CHAT_CONTROL_PATHS = {
     "status", "backends", "models", "chat", "backend", "model", "mode",
     "think", "max_tool_rounds", "readiness",
     "clear", "fork", "history", "sessions", "session",
+    "transcribe",
 }
 
 
@@ -417,6 +418,8 @@ class TaskUpdate(BaseModel):
 
     depends_on: Optional[str] = None
     changed_by: Optional[str] = None
+    # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
+    allow_reopen: Optional[bool] = False
 
 
 
@@ -1715,8 +1718,15 @@ async def update_task(task_id: int, update: TaskUpdate):
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
 
-        if apply_task_field_changes(conn, task_id, existing_row, field_values, changed_by=changed_by):
-            did_update = True
+        try:
+            # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von
+            # gate-geparkten Tasks -- Reopen ohne allow_reopen wird blockiert.
+            if apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                        changed_by=changed_by,
+                                        allow_reopen=bool(update.allow_reopen)):
+                did_update = True
+        except GateReopenBlocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
         if did_update:
             conn.commit()
@@ -4360,7 +4370,14 @@ async def chat_control_proxy(control_path: str, request: Request):
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
-    timeout = _chat_proxy_timeout() if control_path == "chat" else 8.0
+    # Task #1338: STT kann das Whisper-Modell nachladen (einmalig ~Minuten) —
+    # daher ein deutlich hoeherer Timeout als fuer Status-/Steuerpfade.
+    if control_path == "chat":
+        timeout = _chat_proxy_timeout()
+    elif control_path == "transcribe":
+        timeout = 600.0
+    else:
+        timeout = 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             upstream_headers = {}

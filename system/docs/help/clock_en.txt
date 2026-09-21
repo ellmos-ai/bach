@@ -66,4 +66,5 @@ All time functions are summarized via `bach beat`.
 
 ---
 Version: 1.0 | Status: Implemented (v1.1.83)
-See: docs/CONCEPT_time_system.md
+Source: system/tools/time_system.py (ClockModule), system/hub/time.py (handler)
+Note: Reference to docs/CONCEPT_time_system.md removed - file does not exist (forensics 2026-09-18, task #1335)

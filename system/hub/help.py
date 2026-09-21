@@ -17,6 +17,20 @@ from .base import BaseHandler
 from .lang import get_lang, t
 
 
+# Topic-Aliase: Registry-Handler-Name -> Help-Datei-Basisname (Modulname).
+# Haelt `bach --help <handler>` synchron mit der Handler-Registry, wenn die
+# zugehoerige Help-Datei unter dem Modulnamen gefuehrt wird.
+# Erweitert 2026-09-17 (Anschlussanalyse, Task #1321).
+TOPIC_ALIASES = {
+    "api": "apibook",               # ApiBookHandler (hub/apibook.py)
+    "apiprober": "api_prober",      # ApiProberHandler (hub/api_prober.py)
+    "dbsync": "db_sync",           # DBSyncHandler (hub/db_sync.py)
+    "healthcheck": "health",       # HealthCheckHandler (hub/health.py)
+    "msg": "messages",             # MessagesHandler (hub/messages.py)
+    "shared_mem": "shared_memory", # SharedMemoryHandler (hub/shared_memory.py)
+}
+
+
 class HelpHandler(BaseHandler):
     """Handler fuer --help <topic>"""
 
@@ -120,6 +134,10 @@ class HelpHandler(BaseHandler):
         """
         # Normalisieren: Backslash zu Slash, Leerzeichen zu Underscore
         topic = topic.lower().replace("\\", "/").replace("-", "_").replace(" ", "_")
+
+        # Topic-Alias anwenden (Handler-Name -> Modul-Help-Datei)
+        if "/" not in topic:
+            topic = TOPIC_ALIASES.get(topic, topic)
 
         # Pfad aufbauen
         if "/" in topic:

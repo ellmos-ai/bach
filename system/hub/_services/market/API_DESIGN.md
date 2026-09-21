@@ -38,7 +38,7 @@ analysis = market.analyze("AAPL", metrics=["rsi", "macd", "sma"])
 ### 1.2 Service-Klasse Implementation
 
 ```python
-# skills/_services/market/__init__.py
+# hub/_services/market/__init__.py
 
 from .data_provider import DataProvider
 from .database import Database

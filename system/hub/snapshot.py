@@ -182,7 +182,7 @@ class SnapshotHandler(BaseHandler):
 
         Semantik (nicht-destruktiv, idempotent):
             - Working Memory: fehlende Eintraege aus dem Snapshot werden als neue,
-            aktive memory_working-Rows (type='restore_snapshot') zurueckgeschrieben.
+            aktive memory_working-Rows (type='note', CHECK-konform) zurueckgeschrieben.
             Identische aktive Eintraege werden uebersprungen (kein Duplikat).
             - Tasks: vorhandene Tasks mit der gesicherten ID, die NICHT mehr offen
             sind, werden reaktiviert (status='pending'); fehlende Tasks werden als

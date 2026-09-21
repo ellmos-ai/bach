@@ -48,8 +48,8 @@ VERFUEGBARE ARTIKEL
 
   skills_board.txt         Skills Board (GUI Manager)
                            - Management von Agenten & Skills
-                           - 5-stufige Hierarchie
-                           - Backend-Sync
+                           - 5 Entity-Typen (Agent/Expert/Skill/Service/Workflow)
+                           - JSON-Datenquelle, Datei-Editing, Task-Delegation
 
   gemini.txt               Google Gemini KI-Modelle
                            - Gemini 3 Pro Features
@@ -63,10 +63,10 @@ VERFUEGBARE ARTIKEL
                            - BACH-Integration
 
   claude_code_memory.txt   Claude Code Memory-Architektur [SYSTEM]
-                           - Persistentes Auto-Memory-System
-                           - Projekt-basierte Isolation (Silo-Problem)
-                           - MEMORY.md vs. CLAUDE.md vs. Detail-Dateien
-                           - Best Practices, Truncation (200 Zeilen)
+                           - Auto Memory (offizielles Feature 2026)
+                           - MEMORY.md als Index, Topic-Dateien on demand
+                           - Scope: Git-Repository (Worktrees/Subdirs teilen)
+                           - Limits: 200 Zeilen/25KB, Settings & Steuerung
                            - Cross-Projekt Lessons Learned
 
   mcp.txt                  Model Context Protocol (Standard)
@@ -149,6 +149,15 @@ VERFUEGBARE ARTIKEL
   github_einfuehrung.txt   Git und GitHub Grundlagen
   github_konventionen.txt  Standard-Dateien und Namensregeln
   ai_portable.txt          AI-Portable lokale KI-Tools (RAG, ICF)
+  word_template_service.txt  WordTemplateService (Technische Referenz)
+                           - Word-Vorlagen mit JSON-Daten befuellen
+                           - Checkbox/SDT-Handling, ICF-Tabellenfilterung
+                           - Status: Aktuell (Vollrevision 2026-09-17, Task #1327)
+
+  word_automation.txt      Word-Berichtsvorlagen mit LLM automatisieren
+                           - Methodenvergleich (Copilot, python-docx, n8n, Pandoc)
+                           - Platzhalter-Syntax, Prompt-Design, BACH-Integration
+                           - Status: Ungeprueft (indiziert 2026-09-17)
 
   PAEDAGOGIK & FOERDERUNG (NEU 2026-01-24)
   ----------------------------------------

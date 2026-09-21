@@ -400,7 +400,7 @@ GET /api/bach-agents Lista de agentes de Bach
 
 API HEADLESS (Puerto 8001) - Acceso programático
 -----------------------------------------------------
-Propósito: API REST pura sin HTML, para scripts/programas
+Propósito: API REST pura sin HTML, para tools/programas
 
 Auth:
   - Localhost (127.0.0.1, ::1, localhost): No se requiere autenticación (modo de confianza)

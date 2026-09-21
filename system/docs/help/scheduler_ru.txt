@@ -1,13 +1,13 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-09-12
+# Next review: 2027-03-12
 # Следующий экзамен: 15 ноября 2026 г.
-# Ресурсы: [hub/scheduler.py, gui/daemon_service.py, Scheduler_jobs, Scheduler_runs]
+# Ресурсы: [hub/scheduler.py, hub/scheduler_provider.py, gui/daemon_service.py, Scheduler_jobs, Scheduler_runs, scheduler_external]
 
 SCHEDULER — фоновые задания и служба планировщика
 ----------------------------------------------------
 
-ДАТА: 28 февраля 2026 г.
+ДАТА: 12 сентября 2026 г.
 
 Примечание: `bach Scheduler ...` — это новое имя планировщика.
 Старая команда `bach daemon ...` по-прежнему доступна в качестве псевдонима.
@@ -23,8 +23,6 @@ SCHEDULER — фоновые задания и служба планировщи
 Планировщик автоматически приостанавливает синхронизацию OneDrive во время работы.
 чтобы избежать конфликтов синхронизации.
 
-См.: docs/CONCEPT_daemon_policy.md
-
 КОМАНДЫ CLI (планировщик Баха)
 -----------------------------
 
@@ -38,6 +36,7 @@ SCHEDULER — фоновые задания и служба планировщи
   run <ID> Запуск отдельных заданий вручную
   журналы [N] Показать последние записи журнала (по умолчанию: 20)
   jobs --json Задания планировщика с расчетным статусом JSON
+  external ... Внешний планировщик ellmos (см. ниже)
 
 SESSION-SYSTEM
 --------------
@@ -61,6 +60,28 @@ SESSION-SYSTEM
   Пример с операторским управлением:
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session status --json
+
+ВНЕШНИЙ ПЛАНИРОВЩИК (ellmos-scheduler)
+-------------------------------------
+  Стык провайдера (MODULRUECKTRANSFER шаг 3): `hub/scheduler_provider.py`
+  связывает BACH с внешним модулем `ellmos-scheduler`. Устаревший
+  планировщик остаётся нетронутым как отказоустойчивый (fail-closed) откат.
+
+  external status              Показать состояние адаптера/провайдера
+  external status --json       Состояние в формате JSON
+  external jobs                 Список заданий во внешнем хранилище состояний
+  external verify              Предмиграция устаревших заданий только для чтения (пробный прогон)
+  external verify --apply      Идемпотентно принять устаревшие задания
+  external verify --json       Ответ в формате JSON
+
+  - Внешнее хранилище состояний изолировано в data/scheduler_external/
+    (происхождение `bach:<ID>`); устаревшее хранилище заданий никогда не изменяется.
+  - Задания с простыми именами команд без исполняемого файла в PATH пропускаются
+    при verify и документируются с указанием причины (преобразование argv перед --apply).
+  - Откат: BACH_USE_EXTERNAL_SCHEDULER=0 отключает связку;
+    `bach scheduler doctor` сообщает состояние провайдера и подсказку по откату.
+  - Отказоустойчивость (fail-closed): внешние команды без установленного модуля
+    выдают явную ошибку вместо тихого перехода на устаревшее хранилище.
 
 ТИПЫ ЗАДАНИЙ
 ---------
@@ -130,7 +151,6 @@ GUI
 СМОТРИ ТАКЖЕ
 ----------
   bach --help daemon           Старая документация (псевдоним)
-docs/CONCEPT_daemon_policy.md Политики планировщика
   bach --help connector        Система соединителей (очередь, повтор)
   bach --help maintain         Инструменты обслуживания
   bach --help backup           Система резервного копирования

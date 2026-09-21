@@ -135,12 +135,30 @@ class Launcher:
         # 1. Prüfe: Gibt es Agent-Delegation?
         if command in self.AGENT_DELEGATIONS:
             agent_name = self.AGENT_DELEGATIONS[command]
-            return self._delegate_to_agent(
+            result = self._delegate_to_agent(
                 agent_name, operation, args, source, user, dry_run
             )
+        else:
+            # 2. Fallback: Direct Execute über Handler
+            result = self._execute_direct(command, operation, args, dry_run)
 
-        # 2. Fallback: Direct Execute über Handler
-        return self._execute_direct(command, operation, args, dry_run)
+        # OPS-TELEM-001: gerouteten Befehl zaehlen (low-cardinality, fail-silent)
+        self._telemetry_tool_call(command, result, dry_run)
+        return result
+
+    def _telemetry_tool_call(self, command: str,
+                             result: Optional[Tuple[bool, str]],
+                             dry_run: bool) -> None:
+        """OPS-TELEM-001: Tool-/Befehls-Routing zaehlen (ohne Payloads)."""
+        try:
+            if dry_run:
+                return
+            from core.telemetry import increment
+            success = bool(result and result[0])
+            increment("tool_calls", outcome="ok" if success else "error",
+                      tool=command)
+        except Exception:
+            pass
 
     def _delegate_to_agent(self,
                           agent_name: str,

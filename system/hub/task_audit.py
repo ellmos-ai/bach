@@ -52,6 +52,73 @@ ALLOWED_COLUMNS = frozenset({
 # -> 'pending' soll completed_at wieder loeschen).
 CLEARABLE_COLUMNS = frozenset({"started_at", "completed_at", "claimed_by", "claimed_at"})
 
+# Status, auf die ein terminal-geparkter Task NICHT wieder gesetzt werden darf
+# (T-20260916-1330 / #1235 Resurrektion-Bypass). 'open'/'pending'/'in_progress'
+# sind die claimbaren Stati, auf die ein API-Reopen den Task wieder zuruecksetzt.
+CLAIMABLE_OPENING_STATUSES = frozenset({"open", "pending", "in_progress"})
+
+
+class GateReopenBlocked(Exception):
+    """Fail-Closed-Guard (T-20260916-1330 / #1235 Resurrektion-Bypass).
+
+    `apply_task_field_changes` ist der generische Choke-Point fuer ALLE
+    Task-Updates (GUI/Headless/CLI/Chat). Ohne Guard konnte ein beliebiger
+    API-Aufruf (PUT /api/tasks/{id} mit status=open|pending|in_progress) einen
+    gate-geparkten Task wieder claimbar setzen -- dann greift der Terminal-
+    Waechter in chat_tray (_is_terminal_parked, 5. Pfad claimed_by+in_progress)
+    nicht mehr, weil claimed_by beim Reopen gecleart wird (Resurrektion).
+
+    Ein Reopen auf einen claimbaren Status wird auf einem terminal-geparkten
+    Task blockiert, SOFERN nicht explizit allow_reopen=True uebergeben wird.
+    """
+
+
+def _is_terminal_parked(existing_row: Mapping[str, Any], now: Optional[str] = None) -> bool:
+    """Fail-Closed Terminal-Park-Pruefung -- spiegelbildlich zu chat_tray's
+    _is_terminal_parked (T-20260912-1240loop / #1235 4x-Claim / #1293 Option A),
+    hier aber als Guard im API-Choke-Point. Ein Task gilt als terminal geparkt
+    (nicht via API wieder aufziehbar), wenn EINER dieser Gate-Marker gesetzt ist:
+
+      - status == 'blocked'
+      - due_date liegt in der Zukunft (Gate-Haltefrist, z.B. G1/G2/G5 -> 2026-10-12)
+      - claimed_by ist gesetzt UND status in ('in_progress', 'blocked')
+
+    Absichtlich NICHT aufgenommen: completed_at -- ein 'done'/'completed'-Task
+    darf per Operator legitim wieder geoeffnet werden (kein Gate-Park). Das
+    haelt die Blast-Radius klein und vermeidet das Blockieren legitimer
+    Unfinish-Reopens.
+    """
+    if not isinstance(existing_row, Mapping):
+        return False
+    if existing_row.get("status") == "blocked":
+        return True
+    if existing_row.get("claimed_by") and existing_row.get("status") in ("in_progress", "blocked"):
+        return True
+    due = existing_row.get("due_date")
+    if due:
+        try:
+            from datetime import datetime as _dt
+            d = _dt.fromisoformat(str(due).replace("Z", ""))
+            if d.tzinfo is not None:
+                d = d.replace(tzinfo=None)
+            ref = datetime.now()
+            if now:
+                try:
+                    raw = str(now).strip()
+                    if raw.endswith("Z") or raw.endswith("z"):
+                        raw = raw[:-1] + "+00:00"
+                    if " " in raw and "T" not in raw:
+                        raw = raw.replace(" ", "T")
+                    ref = datetime.fromisoformat(raw)
+                    if ref.tzinfo is not None:
+                        ref = ref.replace(tzinfo=None)
+                except Exception:
+                    ref = datetime.now()
+            return d > ref
+        except Exception:
+            return False
+    return False
+
 
 def _iso_now(dt: Optional[datetime | str] = None) -> str:
     """Erzeugt oder normalisiert einen ISO-Zeitstempel MIT Mikrosekunden (%Y-%m-%dT%H:%M:%S.%f).
@@ -86,6 +153,7 @@ def apply_task_field_changes(
     changed_by: str = "api",
     now: Optional[str] = None,
     clear_fields: Iterable[str] = (),
+    allow_reopen: bool = False,
 ) -> bool:
     """Schreibt das UPDATE auf `tasks` plus die zugehoerigen `task_history`-
     Zeilen. Committet NICHT selbst -- der Aufrufer bleibt fuer Transaktions-
@@ -110,6 +178,26 @@ def apply_task_field_changes(
     zurueck, ohne die DB anzufassen).
     """
     now = _iso_now(now)
+
+    # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): Terminal-Park-
+    # Guard im generischen Choke-Point. Ohne ihn konnte jeder API-Aufruf einen
+    # gate-geparkten Task per Status-Change wieder claimbar setzen, worauf der
+    # Terminal-Waechter in chat_tray nicht mehr greift (claimed_by gecleart).
+    new_status = field_values.get("status")
+    if (
+        not allow_reopen
+        and new_status in CLAIMABLE_OPENING_STATUSES
+        and new_status != existing_row.get("status")
+        and _is_terminal_parked(existing_row, now)
+    ):
+        raise GateReopenBlocked(
+            f"Task #{task_id} ist terminal geparkt "
+            f"(status={existing_row.get('status')!r}, "
+            f"due_date={existing_row.get('due_date')!r}, "
+            f"claimed_by={existing_row.get('claimed_by')!r}); "
+            f"Reopen auf '{new_status}' ist blockiert. Fuer einen bewussten "
+            f"Operator-Reopen allow_reopen=True uebergeben."
+        )
 
     updates = []
     values = []

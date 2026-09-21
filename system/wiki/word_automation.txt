@@ -1,3 +1,11 @@
+# Portabilitaet: UNIVERSAL (Methodenvergleich, tool-agnostisch) mit BACH-Integration
+# Zuletzt validiert: 2026-09-17 (Buddha/BACH wiki-author: nur Metadaten/Indizierung, Inhalte ungeprueft)
+# Status: Ungeprueft - Artikel war unindiziert (Nebenbefund Tasks #1318/#1327), also
+#         unsichtbar fuer Fristpruefungen; am 2026-09-17 indiziert und in den Pruefzyklus aufgenommen
+# Naechste Pruefung: 2026-09-21 (naechster regulaerer wiki_author-Lauf, Modus A)
+# Quellen: [web: github.com/tfriedel/claude-office-skills, n8n.io, make.com (Recherche 2026-01-24)],
+#          siehe Artikel-Sektion QUELLEN
+
 WORD-BERICHTSVORLAGEN MIT LLM AUTOMATISIEREN
 ============================================
 

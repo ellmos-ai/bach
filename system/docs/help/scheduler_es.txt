@@ -1,13 +1,13 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-09-12
+# Next review: 2027-03-12
 # Próximo examen: 2026-11-15
-# Recursos: [hub/scheduler.py, gui/daemon_service.py, Scheduler_jobs, Scheduler_runs]
+# Recursos: [hub/scheduler.py, hub/scheduler_provider.py, gui/daemon_service.py, Scheduler_jobs, Scheduler_runs, scheduler_external]
 
 SCHEDULER - trabajos en segundo plano y servicio de programación
 ----------------------------------------------------
 
-FECHA: 2026-02-28
+FECHA: 2026-09-12
 
 Nota: `bach Scheduler...` es el nuevo nombre para el programador.
 El antiguo comando `bach daemon ...` todavía está disponible como alias.
@@ -23,8 +23,6 @@ activado si es necesario.
 El programador pausa automáticamente la sincronización de OneDrive durante la operación
 para evitar conflictos de sincronización.
 
-Ver: docs/CONCEPT_daemon_policy.md
-
 CLI COMMANDS (programador de bach)
 -----------------------------
 
@@ -38,6 +36,7 @@ CLI COMMANDS (programador de bach)
   ejecutar <ID> Ejecutar trabajos individuales manualmente
   logs [N] Mostrar las últimas entradas del registro (predeterminado: 20)
   jobs --json Trabajos del programador con estado calculado como JSON
+  external ... Planificador externo de ellmos (ver abajo)
 
 SESSION-SYSTEM
 --------------
@@ -61,6 +60,28 @@ SESSION-SYSTEM
   Ejemplo con control de operador:
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session status --json
+
+PLANIFICADOR EXTERNO (ellmos-scheduler)
+-------------------------------------
+  Seam de proveedor (MODULRUECKTRANSFER paso 3): `hub/scheduler_provider.py`
+  conecta BACH con el módulo externo `ellmos-scheduler`. El planificador
+  heredado permanece intacto como fallback fail-closed.
+
+  external status              Mostrar estado del adaptador/proveedor
+  external status --json       Estado como JSON
+  external jobs                 Listar trabajos en el almacén de estado externo
+  external verify              Pre-migrar trabajos heredados solo lectura (ensayo)
+  external verify --apply      Adoptar trabajos heredados de forma idempotente
+  external verify --json       Respuesta como JSON
+
+  - El almacén de estado externo está aislado en data/scheduler_external/
+    (procedencia `bach:<ID>`); el almacén de trabajos heredado nunca se modifica.
+  - Los trabajos con nombres de comando simples sin ejecutable en PATH se omiten
+    durante verify y se documentan con motivo (conversión argv antes de --apply).
+  - Rollback: BACH_USE_EXTERNAL_SCHEDULER=0 desactiva la conexión;
+    `bach scheduler doctor` informa el estado del proveedor y el rollback.
+  - Fail-closed: los comandos externos sin el módulo instalado producen
+    un error claro en lugar de caer silenciosamente al almacén heredado.
 
 TIPOS DE TRABAJO
 ---------
@@ -130,7 +151,6 @@ son equivalentes:
 VER TAMBIÉN
 ----------
   bach --help daemon           Documentación anterior (alias)
-docs/CONCEPT_daemon_policy.md Políticas del programador
   bach --help connector        Sistema conector (cola, reintento)
   bach --help maintain         Herramientas de mantenimiento
   bach --help backup           Sistema de respaldo
