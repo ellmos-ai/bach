@@ -195,6 +195,15 @@ _STT_LOCK = threading.Lock()
 _STT_SINGLETON: Optional[VoiceSTT] = None
 
 
+def _validated_transcribe_suffix(filename: str) -> Optional[str]:
+    """Return an internal suffix constant matching the requested filename."""
+    requested_suffix = os.path.splitext(filename)[1].lower()
+    for allowed_suffix in TRANSCRIBE_SUFFIXES:
+        if requested_suffix == allowed_suffix:
+            return allowed_suffix
+    return None
+
+
 def _stt_singleton() -> Optional[VoiceSTT]:
     """Prozessweiter VoiceSTT-Cache — haelt das Whisper-Modell im RAM."""
     global _STT_SINGLETON
@@ -225,8 +234,8 @@ def transcribe_b64_payload(body: dict) -> Tuple[dict, int]:
 
     if not audio_b64 or not isinstance(audio_b64, str):
         return {"ok": False, "error": "audio_b64 (Base64) erforderlich"}, 400
-    suffix = os.path.splitext(filename)[1].lower()
-    if suffix not in TRANSCRIBE_SUFFIXES:
+    safe_suffix = _validated_transcribe_suffix(filename)
+    if safe_suffix is None:
         return {
             "ok": False,
             "error": "Nicht erlaubter Dateityp (erlaubt: " + ", ".join(sorted(TRANSCRIBE_SUFFIXES)) + ")",
@@ -235,22 +244,22 @@ def transcribe_b64_payload(body: dict) -> Tuple[dict, int]:
     try:
         raw = base64.b64decode(audio_b64, validate=False)
     except (binascii.Error, ValueError) as e:
-        return {"ok": False, "error": f"Ungueltige Base64-Daten: {e}"}, 400
+        return {"ok": False, "error": f"Ungültige Base64-Daten: {e}"}, 400
     if not raw:
         return {"ok": False, "error": "Audiodatei ist leer"}, 400
     if len(raw) > MAX_TRANSCRIBE_BYTES:
-        return {"ok": False, "error": "Audiodatei zu gross (max. 25 MB)"}, 413
+        return {"ok": False, "error": "Audiodatei zu groß (max. 25 MB)"}, 413
 
     stt = _stt_singleton()
     if stt is None:
-        return {"ok": False, "error": "Kein STT-Engine verfuegbar"}, 503
+        return {"ok": False, "error": "Kein STT-Engine verfügbar"}, 503
     available, engine = stt.is_available()
     if not available:
         return {"ok": False, "error": engine}, 503
 
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=safe_suffix, delete=False) as tmp:
             tmp.write(raw)
             tmp_path = tmp.name
         text = stt.transcribe_file(tmp_path, language=language)

@@ -30,6 +30,7 @@ import pytest
 from hub._services.voice import voice_stt
 from hub._services.voice.voice_stt import (
     MAX_TRANSCRIBE_BYTES,
+    TRANSCRIBE_SUFFIXES,
     transcribe_b64_payload,
 )
 
@@ -50,7 +51,7 @@ class FakeSTT:
     def is_available(self):
         if self.available:
             return True, self.engine
-        return False, "Kein STT-Engine verfuegbar (Fake)"
+        return False, "Kein STT-Engine verfügbar (Fake)"
 
     def transcribe_file(self, path, language="de"):
         self.calls.append((path, language))
@@ -111,12 +112,65 @@ class TestTranscribePayload:
         assert "Nicht erlaubter Dateityp" in payload["error"]
         assert fake_stt.calls == []
 
+    @pytest.mark.parametrize("suffix", sorted(TRANSCRIBE_SUFFIXES))
+    def test_each_allowlisted_suffix_is_accepted(self, fake_stt, suffix):
+        payload, status = transcribe_b64_payload(
+            _payload(filename="sprachmemo" + suffix.upper())
+        )
+        assert status == 200
+        assert payload["ok"] is True
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "../../tmp/sprachmemo.mp3/../../payload.exe",
+            r"..\..\Windows\Temp\sprachmemo.wav\..\payload.ps1",
+            "sprachmemo.mp3::$DATA",
+        ],
+    )
+    def test_pathlike_filename_with_forbidden_ending_is_rejected(
+        self, fake_stt, filename
+    ):
+        payload, status = transcribe_b64_payload(_payload(filename=filename))
+        assert status == 415
+        assert payload["ok"] is False
+        assert fake_stt.calls == []
+
+    @pytest.mark.parametrize(
+        ("filename", "expected_suffix"),
+        [
+            ("../../tmp/attacker-controlled.MP3", ".mp3"),
+            (r"..\..\Windows\Temp\attacker-controlled.WAV", ".wav"),
+        ],
+    )
+    def test_pathlike_filename_uses_internal_suffix_and_cleans_up(
+        self, fake_stt, monkeypatch, filename, expected_suffix
+    ):
+        suffixes = []
+        original = voice_stt.tempfile.NamedTemporaryFile
+
+        def tracked_tempfile(*args, **kwargs):
+            suffixes.append(kwargs.get("suffix"))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            voice_stt.tempfile, "NamedTemporaryFile", tracked_tempfile
+        )
+        payload, status = transcribe_b64_payload(_payload(filename=filename))
+
+        assert status == 200
+        assert payload["ok"] is True
+        assert suffixes == [expected_suffix]
+        assert fake_stt.calls
+        assert not os.path.exists(fake_stt.calls[0][0])
+
     def test_invalid_base64_rejected(self, fake_stt):
         # Laenge % 4 == 1 ist auch mit validate=False garantiert ungueltig.
         payload, status = transcribe_b64_payload(
             {"audio_b64": "abcde", "filename": "a.mp3"}
         )
         assert status == 400
+        assert "Ungültige Base64-Daten" in payload["error"]
         assert fake_stt.calls == []
 
     def test_empty_audio_rejected(self, fake_stt):
@@ -127,6 +181,7 @@ class TestTranscribePayload:
         big = b"x" * (MAX_TRANSCRIBE_BYTES + 1)
         payload, status = transcribe_b64_payload(_payload(data=big))
         assert status == 413
+        assert "zu groß" in payload["error"]
         assert fake_stt.calls == []
 
     def test_stt_unavailable_returns_503(self, monkeypatch):
@@ -134,6 +189,7 @@ class TestTranscribePayload:
         payload, status = transcribe_b64_payload(_payload())
         assert status == 503
         assert payload["ok"] is False
+        assert "verfügbar" in payload["error"]
 
     def test_engine_error_string_maps_to_500(self, fake_stt):
         fake_stt.text = "[Fehler: Modell kaputt]"
@@ -160,6 +216,21 @@ class TestTranscribePayload:
         assert status == 200
         assert seen_paths, "STT wurde nicht aufgerufen"
         assert not os.path.exists(seen_paths[0]), "Temp-Datei nicht aufgeraeumt"
+
+    def test_temp_file_cleaned_up_when_transcription_raises(self, fake_stt):
+        seen_paths = []
+
+        def fail(path, language="de"):
+            seen_paths.append(path)
+            raise RuntimeError("kaputt")
+
+        fake_stt.transcribe_file = fail
+        payload, status = transcribe_b64_payload(_payload())
+
+        assert status == 500
+        assert payload["ok"] is False
+        assert seen_paths, "STT wurde nicht aufgerufen"
+        assert not os.path.exists(seen_paths[0]), "Temp-Datei nicht aufgeräumt"
 
 
 # ===================================================================
