@@ -423,11 +423,13 @@ class SetupHandler(BaseHandler):
             str(npm_path or "nicht gefunden")
         ))
 
-        # DB-Verzeichnis beschreibbar
-        db_dir = self.base_path / "data"
+        # Kanonisches Runtime-DB-Verzeichnis beschreibbar. Der Quellbaum ist
+        # kein Laufzeit-Speicherort; insbesondere darf ein Preflight in einem
+        # frischen Checkout nicht still system/data anlegen.
+        db_dir = self._canonical_db.parent
         db_dir.mkdir(parents=True, exist_ok=True)
         db_writable = os.access(str(db_dir), os.W_OK)
-        checks.append(("data/ beschreibbar", db_writable, str(db_dir)))
+        checks.append(("DB-Verzeichnis beschreibbar", db_writable, str(db_dir)))
 
         # Speicherplatz (>100MB frei)
         usage = shutil.disk_usage(str(self.base_path))

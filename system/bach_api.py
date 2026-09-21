@@ -316,7 +316,14 @@ class _TaskProxy(_DBBackedProxy):
         if not success:
             raise BachAPIError(message)
 
-        match = re.search(r"Task\s+(\d+)\s+erstellt", str(message))
+        # Lokale Handler antworten mit "Task 41 erstellt", der optionale
+        # Rheingold-Lead mit "Task #1340 via <endpoint> erstellt". Beide sind
+        # erfolgreiche, stabile Antworten und muessen dieselbe ID liefern.
+        match = re.search(
+            r"\bTask\s+#?(\d+)\b.*?\berstellt\b",
+            str(message),
+            flags=re.IGNORECASE,
+        )
         if match:
             task_data = self.show(int(match.group(1)))
         else:
