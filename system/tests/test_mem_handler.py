@@ -155,6 +155,42 @@ class TestWorking:
         assert ok is True
         mock_cleanup.set_expires_retroactive.assert_called_once_with(dry_run=False)
 
+    @pytest.mark.parametrize(
+        "args", [
+            ["archive", "--apply", "--dry-run"],
+            ["archive", "--dry-run", "--apply"],
+        ]
+    )
+    def test_working_archive_dry_run_wins_over_apply(self, handler, monkeypatch, args):
+        mock_cleanup = MagicMock()
+        mock_cleanup.archive.return_value = (True, "preview")
+        mock_module = MagicMock()
+        mock_module.WorkingMemoryCleanup.return_value = mock_cleanup
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
+
+        ok, _ = handler.handle("working", args)
+
+        assert ok is True
+        mock_cleanup.archive.assert_called_once_with(days=30, dry_run=True)
+
+    @pytest.mark.parametrize(
+        "args", [
+            ["restore", "7", "--apply", "--dry-run"],
+            ["restore", "7", "--dry-run", "--apply"],
+        ]
+    )
+    def test_working_restore_dry_run_wins_over_apply(self, handler, monkeypatch, args):
+        mock_cleanup = MagicMock()
+        mock_cleanup.restore.return_value = (True, "preview")
+        mock_module = MagicMock()
+        mock_module.WorkingMemoryCleanup.return_value = mock_cleanup
+        _install_local_tool_mock(handler, monkeypatch, "memory_working_cleanup", mock_module)
+
+        ok, _ = handler.handle("working", args)
+
+        assert ok is True
+        mock_cleanup.restore.assert_called_once_with(7, dry_run=True)
+
     def test_working_unknown_subop(self, handler, monkeypatch):
         mock_module = MagicMock()
         mock_module.WorkingMemoryCleanup.return_value = MagicMock()

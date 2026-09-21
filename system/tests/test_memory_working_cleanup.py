@@ -203,6 +203,83 @@ def test_archive_restore_is_lossless_and_atomic(tmp_path):
         assert log == ("archived_memory", archive_id, 17, 1)
 
 
+def test_archive_locks_before_snapshot_so_concurrent_update_cannot_be_lost(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "working.db"
+    _create_db(db_path)
+    _apply_archive_migration(db_path)
+    _insert_note(db_path, 40, "snapshot")
+    real_connect = sqlite3.connect
+    concurrent = {"attempted": False, "blocked": False}
+
+    class CursorProxy:
+        def __init__(self, cursor):
+            self._cursor = cursor
+            self._sql = ""
+
+        def execute(self, sql, parameters=()):
+            self._sql = sql
+            self._cursor.execute(sql, parameters)
+            return self
+
+        def executemany(self, sql, parameters):
+            self._sql = sql
+            self._cursor.executemany(sql, parameters)
+            return self
+
+        def fetchone(self):
+            return self._cursor.fetchone()
+
+        def fetchall(self):
+            rows = self._cursor.fetchall()
+            if "FROM memory_working" in self._sql and not concurrent["attempted"]:
+                concurrent["attempted"] = True
+                try:
+                    with real_connect(db_path, timeout=0) as other:
+                        other.execute(
+                            "UPDATE memory_working SET content='newer' WHERE id=1"
+                        )
+                except sqlite3.OperationalError as exc:
+                    concurrent["blocked"] = "locked" in str(exc).lower()
+            return rows
+
+        @property
+        def rowcount(self):
+            return self._cursor.rowcount
+
+        def __iter__(self):
+            return iter(self._cursor)
+
+    class ConnectionProxy:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def cursor(self):
+            return CursorProxy(self._connection.cursor())
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+    monkeypatch.setattr(
+        cleanup_module.sqlite3,
+        "connect",
+        lambda *args, **kwargs: ConnectionProxy(real_connect(*args, **kwargs)),
+    )
+
+    success, message = cleanup_module.WorkingMemoryCleanup(db_path).archive(
+        days=30, dry_run=False
+    )
+
+    assert success is True, message
+    assert concurrent == {"attempted": True, "blocked": True}
+    with real_connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 0
+        assert '"content":"snapshot"' in conn.execute(
+            "SELECT source_record FROM archived_memory"
+        ).fetchone()[0]
+
+
 def test_restore_collision_keeps_archive_and_source_unchanged(tmp_path):
     db_path = tmp_path / "working.db"
     _create_db(db_path)
@@ -266,6 +343,46 @@ def test_archive_without_lossless_schema_fails_before_delete(tmp_path):
     assert "source_record fehlt" in message
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM memory_working").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "method", "identifier"),
+    [
+        ("archive", "archive", None),
+        ("restore", "restore", "7"),
+    ],
+)
+@pytest.mark.parametrize(
+    "flags", [["--apply", "--dry-run"], ["--dry-run", "--apply"]]
+)
+def test_cli_dry_run_wins_over_apply(
+    tmp_path, monkeypatch, command, method, identifier, flags
+):
+    db_path = tmp_path / "working.db"
+    db_path.touch()
+    calls = []
+
+    def fake_archive(self, days=30, dry_run=True):
+        calls.append(("archive", days, dry_run))
+        return True, "ok"
+
+    def fake_restore(self, archive_id, dry_run=True):
+        calls.append(("restore", archive_id, dry_run))
+        return True, "ok"
+
+    monkeypatch.setenv("BACH_DB", str(db_path))
+    monkeypatch.setattr(cleanup_module.WorkingMemoryCleanup, "archive", fake_archive)
+    monkeypatch.setattr(cleanup_module.WorkingMemoryCleanup, "restore", fake_restore)
+    argv = ["memory_working_cleanup.py", command]
+    if identifier is not None:
+        argv.append(identifier)
+    argv.extend(flags)
+    monkeypatch.setattr(sys, "argv", argv)
+
+    cleanup_module.main()
+
+    assert calls[0][0] == method
+    assert calls[0][-1] is True
 
 
 def test_fresh_schema_roundtrip_preserves_null_provenance_with_active_session(tmp_path):

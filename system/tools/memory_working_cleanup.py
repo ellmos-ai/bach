@@ -209,6 +209,11 @@ ALTER-VERTEILUNG:
             return False, "days muss größer als 0 sein"
 
         conn = sqlite3.connect(self.db_path)
+        if not dry_run:
+            # Reserviert den Writer-Slot vor dem Kandidatensnapshot. Sonst
+            # koennte ein zweiter Writer die gelesene Zeile vor unserem DELETE
+            # aendern und diese neuere Version wuerde verloren gehen.
+            conn.execute("BEGIN IMMEDIATE")
         cursor = conn.cursor()
 
         cursor.execute(
@@ -323,6 +328,10 @@ ALTER-VERTEILUNG:
             return False, "archive_id muss größer als 0 sein"
 
         conn = sqlite3.connect(self.db_path)
+        if not dry_run:
+            # Kollisionscheck, Restore und Archivloeschung bilden einen
+            # konsistenten Snapshot und eine einzige Schreibtransaktion.
+            conn.execute("BEGIN IMMEDIATE")
         cursor = conn.cursor()
         try:
             archive_columns = {
@@ -502,7 +511,7 @@ def main() -> None:
         if days <= 0:
             print("[ERROR] --days muss größer als 0 sein")
             sys.exit(1)
-        apply_now = "--apply" in sys.argv
+        apply_now = "--apply" in sys.argv and "--dry-run" not in sys.argv and "-n" not in sys.argv
         success, msg = cleanup.archive(days=days, dry_run=not apply_now)
         print(msg)
         if not success:
@@ -517,7 +526,7 @@ def main() -> None:
         except ValueError:
             print("[ERROR] archive_id muss eine positive Ganzzahl sein")
             sys.exit(1)
-        apply_now = "--apply" in sys.argv
+        apply_now = "--apply" in sys.argv and "--dry-run" not in sys.argv and "-n" not in sys.argv
         success, msg = cleanup.restore(archive_id, dry_run=not apply_now)
         print(msg)
         if not success:

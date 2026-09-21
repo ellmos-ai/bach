@@ -148,7 +148,11 @@ class MemHandler(BaseHandler):
                 return success, msg
 
             elif sub_op == "archive":
-                apply_now = "--apply" in sub_args and not dry_run
+                apply_now = (
+                    "--apply" in sub_args
+                    and "--dry-run" not in sub_args
+                    and not dry_run
+                )
                 days = 30
                 if "--days" in sub_args:
                     index = sub_args.index("--days")
@@ -168,7 +172,11 @@ class MemHandler(BaseHandler):
                     archive_id = int(positional[0])
                 except ValueError:
                     return False, "archive_id muss eine positive Ganzzahl sein"
-                apply_now = "--apply" in sub_args and not dry_run
+                apply_now = (
+                    "--apply" in sub_args
+                    and "--dry-run" not in sub_args
+                    and not dry_run
+                )
                 return cleanup.restore(archive_id, dry_run=not apply_now)
 
             else:
