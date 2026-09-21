@@ -4,11 +4,12 @@ Der Live-Pfad `~/services/bach` konsumiert `origin/main` und darf lokale Worker-
 
 ## Ablauf
 
-1. `system/bin/harvest-local-commits.sh --status` holt `origin/main` und zeigt Divergenz sowie den deterministischen Zielbranch.
-2. `--run` verlangt `main`, einen sauberen Arbeitsbaum, das erwartete GitHub-Repository und eine gültige `gh`-Anmeldung.
-3. Bei lokalen Commits pusht das Skript `HEAD` ohne Force auf `mac/<host>-<datum>-<sha>`.
-4. Es verwendet einen vorhandenen PR für denselben Commit erneut oder eröffnet einen Draft-PR gegen `main`.
-5. Der abschließende `gh pr view`-Readback muss Branch und Basis bestätigen. Das JSONL-Receipt liegt unter `~/Library/Logs/bach/git-harvester.jsonl`.
+1. Vor jedem Fetch prüft der kanonische `lock_scan.py --check-dir --strict` den Checkout und alle Eltern bis `$HOME`. Ein fehlender Scanner, ein Lock, ein User-Hold oder ein unbekannter Zustand blockiert den Lauf.
+2. `system/bin/harvest-local-commits.sh --status` holt danach `origin/main` und zeigt Divergenz sowie den deterministischen Zielbranch.
+3. `--run` verlangt `main`, einen sauberen Arbeitsbaum, das erwartete GitHub-Repository und eine gültige `gh`-Anmeldung.
+4. Bei lokalen Commits pusht das Skript ausschließlich die vorab erfasste vollständige Commit-ID ohne Force auf `mac/<host>-<vollständige-commit-id>`. Der Branch bleibt für denselben Commit auch an späteren Tagen gleich.
+5. Ein vorhandener offener Draft-PR mit exakt dieser Head-ID wird wiederverwendet. Ein bereits gemergter PR ist ein erfolgreicher No-op; ein ungemergt geschlossener PR blockiert.
+6. Der abschließende `gh pr view`-Readback muss `OPEN`, Draft-Status, Branch, Basis und Head-ID bestätigen. Das JSONL-Receipt liegt unter `~/Library/Logs/bach/git-harvester.jsonl`.
 
 Der PR braucht die unabhängige Prüfung nach D-20260902-002. Merge, Dienstneustart und Rückführung des Mac auf `origin/main` bleiben getrennte Schritte.
 
