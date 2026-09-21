@@ -39,10 +39,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   `hub/daemon.py` = dokumentierter Dauer-Kompat-Wrapper). Feststellung:
   Archivierung der Fallback-Pfade derzeit kontraindiziert (Haltefrist §1.3 nicht
   abgelaufen, Pfade sind Rollback-Ziele der Env-Schalter §4.1,
-  Windows-Gegenproben §4.3 offen) → Folgetask TRANSFER-09 (#1235) mit Gates.
+  Windows-Gegenproben §4.3 offen) → Folgetask TRANSFER-09 (#1340) mit Gates.
   **Befund B1:** assistant-core-Checkout auf mac-studio nicht pin-konform
   (v0.1.0 statt 444a1fff/v0.2.0; fetch braucht interaktive Credentials) →
-  Fix-Task #1236. Zertifikat: `docs/architecture/MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12.md`.
+  Fix-Task #1341. Zertifikat: `docs/architecture/MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12.md`.
 
 - **TRANSFER-07: sqlite-transit-sync Replikations-Seam (Task #1223, MODULRUECKTRANSFER
   Stufe 7):** Neuer Provider-Seam `system/hub/transit_sync_provider.py` nach
@@ -80,6 +80,23 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   Help-Docs `docs/help/sandbox.txt` v1.1.0.
 
 ### Fixed
+
+- **Setup-Preflight respektiert den kanonischen Runtime-Pfad:**
+  `bach setup preflight` prüft das Elternverzeichnis der über `BACH_DB`
+  aufgelösten Datenbank und legt nicht mehr still `system/data` im
+  Quell-Checkout an. Die Windows-Gegenprobe deckte den Pfaddrift über den
+  Source-Runtime-Write-Guard auf; ein Regressionstest pinnt den kanonischen
+  DB-Pfad.
+
+- **BACH-Taskstatus nachzertifiziert:** Die im Code und Zertifikat bereits
+  abgeschlossenen Tasks #1071 und #1219–#1224 wurden nach Windows-Gegenprobe
+  auf `done` gesetzt. Die verbleibenden Archivierungs- und Pin-Gates laufen
+  unter #1340 (TRANSFER-09, frühestens 2026-10-12) und #1341 (assistant-core).
+
+- **Strukturierte Task-API erkennt Rheingold-Erfolg:** `task.add()` akzeptiert
+  neben der lokalen Antwort `Task N erstellt` jetzt auch die erfolgreiche
+  Lead-Antwort `Task #N via … erstellt`. Ein remote angelegter Task wird damit
+  nicht mehr fälschlich als „erstellt, aber nicht wiedergefunden“ gemeldet.
 
 - **MCP-SDK-Import gegen BACH-Handler-Shadowing gehaertet (Task #1284):**
   `system/tools/mcp_server.py` blendet beim SDK-Import gezielt den Legacy-

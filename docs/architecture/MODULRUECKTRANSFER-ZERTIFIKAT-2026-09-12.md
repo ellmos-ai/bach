@@ -3,7 +3,20 @@
 > **Dokument-ID:** `MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12`
 > **Erstellt:** 2026-09-12 auf `mac-studio` (Task 1224 / Stufe 8, Abschlussprüfung)
 > **Plan-Referenz:** `MODULRUECKTRANSFER-PLAN-2026-09-11`
-> **Ergebnis:** 7/8 Module pin-konform zertifiziert. **Archivierung von Fallback-Pfaden derzeit KONTRAINDIZIERT** (Begründung §3). Folgetask: TRANSFER-09.
+> **Ergebnis:** 7/8 Module pin-konform zertifiziert. **Archivierung von Fallback-Pfaden derzeit KONTRAINDIZIERT** (Begründung §3). Folgetasks: TRANSFER-09 #1340 und assistant-core-Pin #1341.
+
+## Nachzertifizierung 2026-09-21 auf WORKSTATION-LG
+
+- Kombinierte Sandbox-/Modulrücktransfer-Regressionssuite: **175 bestanden,
+  9 übersprungen**. Die übersprungenen Fälle sind kein Ersatz für die noch
+  offenen echten Provider- und Multi-Host-Läufe.
+- `test_notify_via_assistant_core.py`: **4/4 bestanden** auf diesem Host.
+- Der Lauf deckte einen Preflight-Pfaddrift auf: `SetupHandler._preflight`
+  wollte `system/data` im Quell-Checkout anlegen. Der Fix verwendet das
+  kanonische Runtime-DB-Verzeichnis und ist durch einen Regressionstest
+  abgesichert.
+- Die Prüfaufgaben #1071 und #1219–#1224 sind nach Evidenzabgleich in der
+  Live-Task-DB geschlossen. Die verbleibenden Gates sind #1340 und #1341.
 
 ---
 

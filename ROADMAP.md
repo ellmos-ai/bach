@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-16 | **Version:** 4.3.63 | **Review:** 2026-09-16 (Daily Care & Dev Check)
+**Stand:** 2026-09-21 | **Version:** 4.3.64 | **Review:** 2026-09-21 (Windows-Nachzertifizierung)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -17,7 +17,24 @@
 | Weitere abgeschlossene Blöcke | [→ ## Weitere abgeschlossene Bloecke (ehemals Prio 1-3)](#weitere-abgeschlossene-bloecke-ehemals-prio-1-3) |
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
-| Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.63 bleibt aktiv)* |
+| Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-09-21 (Windows-Nachzertifizierung)
+
+- **Task-DB mit dem zertifizierten Stand versöhnt:** Die bereits im Code, Changelog
+  und Modulrücktransfer-Zertifikat abgeschlossenen Tasks #1071 und #1219–#1224
+  wurden nach erneuter Gegenprobe von `pending` auf `done` gesetzt.
+- **Windows-Regressionsnachweis:** Die kombinierte Sandbox-/Modulrücktransfer-Suite
+  ist auf WORKSTATION-LG mit 175 bestandenen und 9 plattform- bzw.
+  verfügbarkeitsbedingt übersprungenen Tests grün; der assistant-core-Notify-Pfad
+  besteht zusätzlich 4/4 Tests. Das ersetzt noch keinen echten 3-Host-Lauf.
+- **Preflight-Pfaddrift behoben:** `bach setup preflight` prüft und erzeugt jetzt
+  das kanonische Runtime-DB-Verzeichnis (`~/.bach`) statt `system/data` im
+  Quell-Checkout. Ein Regressionstest schützt diese Trennung.
+- **Offene Gates explizit fortgeführt:** TRANSFER-09 ist als Task #1340 mit
+  frühestem Termin 2026-10-12 angelegt. Der hostübergreifende assistant-core-Pin
+  ist separat Task #1341. Die Archivierung bleibt bis zum Ablauf der Haltefrist,
+  zum echten 3-Host-Nachweis und zu allen Live-Provider-Gegenproben gesperrt.
 
 ## Review 2026-09-16 (Daily Care & Dev Check)
 

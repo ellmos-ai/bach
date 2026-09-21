@@ -48,6 +48,28 @@ def test_structured_task_add_forwards_due_date_keyword(monkeypatch):
     assert created["due_date"] == "2026-09-15"
 
 
+def test_structured_task_add_accepts_rheingold_lead_success(monkeypatch):
+    proxy = _TaskProxy("task")
+    monkeypatch.setattr(
+        proxy,
+        "raw",
+        lambda operation, *args: (
+            True,
+            "[OK] Task #1340 via Rheingold-Lead (http://lead.invalid) erstellt: Folgeaufgabe",
+        ),
+    )
+    monkeypatch.setattr(
+        proxy,
+        "show",
+        lambda task_id: {"id": task_id, "title": "Folgeaufgabe"},
+    )
+
+    created = proxy.add("Folgeaufgabe")
+
+    assert created["id"] == 1340
+    assert "Rheingold-Lead" in created["_message"]
+
+
 @pytest.mark.parametrize(
     "args",
     [

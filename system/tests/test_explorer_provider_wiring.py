@@ -301,12 +301,16 @@ def test_render_topology_evidence_lines():
 def test_preflight_contains_audit_and_topology():
     from hub.setup import SetupHandler
 
-    ok, output = SetupHandler(BACH_ROOT)._preflight([])
+    handler = SetupHandler(BACH_ROOT)
+    ok, output = handler._preflight([])
     assert "System- & Topologie-Audit:" in output
     assert "Port 8000" in output and "Port 8081" in output
     assert "Zombie-Prozesse" in output
     assert "Topologie-Scan" in output
     assert "Pre-Flight Checks:" in output  # Basis-Checks unveraendert
+    assert "DB-Verzeichnis beschreibbar" in output
+    assert str(handler._canonical_db.parent) in output
+    assert str(BACH_ROOT / "data") not in output
 
 
 def test_preflight_topology_disabled_under_rollback(monkeypatch):

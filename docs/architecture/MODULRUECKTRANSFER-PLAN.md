@@ -299,7 +299,19 @@ Agent-Handler nicht und Ocean-Parität ist hierdurch nicht bewiesen.
   Rollback-Ziele der sechs Env-Schalter (§4.1) — Verschiebung zerstoerte die
   Reversibilitaet; Windows-Gegenproben (§4.3, Stufen 2/3/5/7) und der echte
   3-Host-Lauf (Stufe 7 Nachlauf) fehlen; B1 offen.
-- **Auslagerung:** ARCHIVIERUNG + Gates → **Task TRANSFER-09** (s. Zertifikat §5).
+- **Auslagerung:** ARCHIVIERUNG + Gates → **Task TRANSFER-09 #1340**
+  (s. Zertifikat §5); hostübergreifender assistant-core-Pin → **Task #1341**.
+
+### Nachzertifizierung WORKSTATION-LG (2026-09-21)
+
+- Sandbox- und Modulrücktransfer-Regressionssuite: **175 bestanden, 9
+  übersprungen**; die übersprungenen Fälle bleiben Live-/Provider-Gates und
+  werden nicht als Plattformfreigabe umgedeutet.
+- `test_notify_via_assistant_core.py`: **4/4 bestanden** auf WORKSTATION-LG.
+- Dabei gefundener und behobener Pfaddrift: `bach setup preflight` verwendet
+  nun das kanonische Runtime-DB-Verzeichnis statt `system/data` im Checkout.
+- Die Zertifizierungsprüfung #1224 ist damit auch in der Live-Task-DB
+  geschlossen. Archivierung bleibt bis #1340 und #1341 gesperrt.
 
 ---
 
