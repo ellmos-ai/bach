@@ -183,6 +183,7 @@ CHAT_CONTROL_PATHS = {
     "status", "backends", "models", "chat", "backend", "model", "mode",
     "think", "max_tool_rounds", "readiness",
     "clear", "fork", "history", "sessions", "session",
+    "transcribe",
 }
 
 
@@ -4367,7 +4368,14 @@ async def chat_control_proxy(control_path: str, request: Request):
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
-    timeout = _chat_proxy_timeout() if control_path == "chat" else 8.0
+    # Task #1338: STT kann das Whisper-Modell nachladen (einmalig ~Minuten) —
+    # daher ein deutlich hoeherer Timeout als fuer Status-/Steuerpfade.
+    if control_path == "chat":
+        timeout = _chat_proxy_timeout()
+    elif control_path == "transcribe":
+        timeout = 600.0
+    else:
+        timeout = 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             status_response = await client.get(f"{base_url}/status")

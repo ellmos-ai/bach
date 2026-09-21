@@ -3585,6 +3585,17 @@ class ControlHandler(BaseHTTPRequestHandler):
             finally:
                 os.environ.pop("BACH_DELEGATION_DEPTH", None)
 
+        elif path == "/api/transcribe":
+            # Task #1338: Audio-Transkription im Buddha-Chat (Base64-in-JSON).
+            # Domaenenlogik: hub/_services/voice/voice_stt.py::transcribe_b64_payload
+            try:
+                from hub._services.voice.voice_stt import transcribe_b64_payload
+            except ImportError:
+                self._json({"ok": False, "error": "Voice-Service nicht verfuegbar"}, 503)
+                return
+            response, status = transcribe_b64_payload(body)
+            self._json(response, status)
+
         elif path == "/api/clear":
             chat_id = body.get("chat_id", "gui-web")
             archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")

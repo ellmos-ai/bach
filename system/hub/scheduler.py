@@ -705,10 +705,13 @@ class SchedulerHandler(BaseHandler):
             # Im Hintergrund starten
             if sys.platform == 'win32':
                 # Windows: START /B verwenden
+                # (CREATE_NO_WINDOW ist eine Windows-only-Konstante von
+                #  subprocess — auf Unix-Hosts fehlt sie, daher portable
+                #  absichern; Verhalten unter Windows unveraendert.)
                 subprocess.Popen(
                     ['pythonw', str(self.daemon_script), 'start'],
                     cwd=str(self.base_path),
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 )
             else:
                 # Unix: nohup verwenden

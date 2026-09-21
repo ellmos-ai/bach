@@ -25,10 +25,10 @@ SOFTWARE.
 
 """
 Tool: voice_service
-Version: 1.1.0
+Version: 1.2.0
 Author: BACH Team
 Created: 2026-02-08
-Updated: 2026-02-15
+Updated: 2026-09-21
 Anthropic-Compatible: True
 
 Description:
@@ -43,6 +43,10 @@ Description:
     - speak_to_file(): Text als MP3/OGG/WAV exportieren
     - Piper-TTS Support fuer hochwertige deutsche Stimmen
     - Multi-Engine-Support (auto-select bestes verfuegbares TTS)
+
+    NEU in 1.2.0:
+    - transcribe_b64_payload(): Audio-Transkription fuer Chat-/API-Endpunkte
+      (Base64-in-JSON, fail-closed, lokal) — Task #1338 "Audio im Buddha-Chat"
 
 Dependencies (alle optional):
     pip install openai-whisper   # STT Option 1
@@ -60,6 +64,9 @@ import os
 import json
 import threading
 import time
+import base64
+import binascii
+import tempfile
 from pathlib import Path
 from typing import Optional, Tuple, Callable
 
@@ -170,6 +177,97 @@ class VoiceSTT:
             return " ".join(text_parts).strip()
         except Exception as e:
             return f"[Fehler: {e}]"
+
+
+# ---------------------------------------------------------------------------
+# Chat-STT-Payload (Audio-Datei als Base64 in JSON) — Endpunkt-Logik (Task #1338)
+# ---------------------------------------------------------------------------
+
+#: Erlaubte Audio-Container fuer den Chat-Transkriptions-Pfad (Whisper/ffmpeg).
+TRANSCRIBE_SUFFIXES = {
+    ".ogg", ".oga", ".opus", ".mp3", ".m4a", ".mp4",
+    ".aac", ".wav", ".flac", ".webm",
+}
+#: Obergrenze fuer dekodierte Audiodaten (Roh-Bytes, vor Transkription).
+MAX_TRANSCRIBE_BYTES = 25 * 1024 * 1024
+
+_STT_LOCK = threading.Lock()
+_STT_SINGLETON: Optional[VoiceSTT] = None
+
+
+def _stt_singleton() -> Optional[VoiceSTT]:
+    """Prozessweiter VoiceSTT-Cache — haelt das Whisper-Modell im RAM."""
+    global _STT_SINGLETON
+    if _STT_SINGLETON is None:
+        with _STT_LOCK:
+            if _STT_SINGLETON is None:
+                _STT_SINGLETON = VoiceSTT()
+    return _STT_SINGLETON
+
+
+def transcribe_b64_payload(body: dict) -> Tuple[dict, int]:
+    """Verarbeitet einen Chat-STT-Payload: {audio_b64, filename, language?}.
+
+    Fail-closed und lokal (kein Netzzugriff): dekodiert die Base64-Audio-
+    daten in eine Temp-Datei, transkribiert via VoiceSTT (Whisper/Vosk) und
+    liefert ({"ok": True, "text": ..., "engine": ...}, 200) bzw.
+    ({"ok": False, "error": ...}, 400/413/415/500/503).
+
+    Wird vom ControlHandler (POST /api/transcribe) aufgerufen und kann
+    direkt aus Tests oder anderen Frontends genutzt werden.
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "JSON-Objekt erforderlich"}, 400
+
+    audio_b64 = body.get("audio_b64")
+    filename = str(body.get("filename", "")).strip().lower()
+    language = str(body.get("language", "de")).strip() or "de"
+
+    if not audio_b64 or not isinstance(audio_b64, str):
+        return {"ok": False, "error": "audio_b64 (Base64) erforderlich"}, 400
+    suffix = os.path.splitext(filename)[1].lower()
+    if suffix not in TRANSCRIBE_SUFFIXES:
+        return {
+            "ok": False,
+            "error": "Nicht erlaubter Dateityp (erlaubt: " + ", ".join(sorted(TRANSCRIBE_SUFFIXES)) + ")",
+        }, 415
+
+    try:
+        raw = base64.b64decode(audio_b64, validate=False)
+    except (binascii.Error, ValueError) as e:
+        return {"ok": False, "error": f"Ungueltige Base64-Daten: {e}"}, 400
+    if not raw:
+        return {"ok": False, "error": "Audiodatei ist leer"}, 400
+    if len(raw) > MAX_TRANSCRIBE_BYTES:
+        return {"ok": False, "error": "Audiodatei zu gross (max. 25 MB)"}, 413
+
+    stt = _stt_singleton()
+    if stt is None:
+        return {"ok": False, "error": "Kein STT-Engine verfuegbar"}, 503
+    available, engine = stt.is_available()
+    if not available:
+        return {"ok": False, "error": engine}, 503
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
+        text = stt.transcribe_file(tmp_path, language=language)
+    except Exception as e:
+        return {"ok": False, "error": f"Transkription fehlgeschlagen: {e}"}, 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    text = (text or "").strip()
+    if not text or text.startswith("[Fehler"):
+        detail = text if text else "Keine Sprache erkannt"
+        return {"ok": False, "error": detail}, 500
+    return {"ok": True, "text": text, "engine": engine}, 200
 
 
 class VoiceTTS:

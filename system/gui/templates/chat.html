@@ -808,6 +808,8 @@
                 <div class="voice-interim" id="voice-interim"></div>
             <div class="chat-input-area">
                     <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe" hidden>🎙</button>
+                    <input type="file" id="audio-file-input" accept="audio/*,.ogg,.oga,.opus,.mp3,.m4a,.mp4,.aac,.wav,.flac,.webm" hidden>
+                    <button class="mic-btn" id="audio-btn" title="Audio-Datei transkribieren (lokal, Whisper)" aria-label="Audiodatei transkribieren">🎧</button>
                       <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
                     <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
                 </div>
@@ -1134,6 +1136,15 @@
             }
         }
 
+        function loadLibraryDraft() {
+            const draft = BachChatDraft.consume();
+            if (draft === null) return;
+
+            inputEl.value = draft;
+            autoResize();
+            inputEl.focus();
+        }
+
         async function send() {
             const text = inputEl.value.trim();
             if (!text || sending || !backendAvailable) return;
@@ -1298,6 +1309,64 @@
                     e.preventDefault();
                     micBtn.click();
                 }
+            });
+        })();
+
+        // ── Audio-Datei-Transkription (serverseitig, Whisper — Task #1338) ──
+        (function initAudioUpload() {
+            const audioBtn = document.getElementById('audio-btn');
+            const fileInput = document.getElementById('audio-file-input');
+            if (!audioBtn || !fileInput) return;
+            let busy = false;
+
+            function setBusy(on) {
+                busy = on;
+                audioBtn.textContent = on ? '⏳' : '🎧';
+                audioBtn.disabled = on;
+                audioBtn.title = on ? 'Transkription läuft …' : 'Audio-Datei transkribieren (lokal, Whisper)';
+            }
+
+            audioBtn.addEventListener('click', function() {
+                if (busy) { showToast('Transkription läuft noch …'); return; }
+                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', function() {
+                const file = fileInput.files && fileInput.files[0];
+                fileInput.value = '';
+                if (!file || busy) return;
+                setBusy(true);
+                showToast('🎧 Transkribiere „' + file.name + '“ …', 4000);
+                const reader = new FileReader();
+                reader.onload = async function() {
+                    try {
+                        const b64 = String(reader.result).split(',')[1] || '';
+                        const resp = await fetch(CHAT_API + '/transcribe', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ audio_b64: b64, filename: file.name })
+                        });
+                        const data = await resp.json();
+                        if (data.ok && data.text) {
+                            inputEl.value = (inputEl.value ? inputEl.value.trim() + ' ' : '') + data.text.trim();
+                            autoResize();
+                            showToast('🎧 Transkript eingefügt — prüfen und senden', 3500);
+                            inputEl.focus();
+                        } else {
+                            showToast('Transkription fehlgeschlagen: ' + (data.error || data.detail || 'Unbekannter Fehler'), 6000);
+                        }
+                    } catch (e) {
+                        showToast('Transkriptionsfehler: ' + e.message, 6000);
+                    } finally {
+                        setBusy(false);
+                    }
+                };
+                reader.onerror = function() {
+                    setBusy(false);
+                    showToast('Datei konnte nicht gelesen werden', 4000);
+                };
+                reader.readAsDataURL(file);
             });
         })();
 
@@ -1516,6 +1585,7 @@
         loadWebSessions().then(() => {
             loadHistory();
         });
+        loadLibraryDraft();
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

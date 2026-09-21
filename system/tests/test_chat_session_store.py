@@ -107,7 +107,10 @@ def test_clear_removes_memory_and_persisted_transcript(snapshot_db):
 
     runtime.clear_session("gui-web")
 
-    assert "gui-web" not in runtime.sessions
+    # Seit 7c44b50 ("persist runtime transcripts") archiviert clear_session
+    # die alte Session und setzt eine FRISCHE Session — Memory und Transkript
+    # sind damit weg, ohne dass die Chat-ID aus dem Dict verschwindet.
+    assert runtime.sessions["gui-web"].messages == []
     assert store.load("gui-web") == []
 
 
@@ -142,6 +145,13 @@ def test_failed_persistent_clear_does_not_claim_success(tmp_path):
     runtime = ChatRuntime(_Backend(), session_store=SQLiteChatSessionStore(db_path))
     runtime.get_session("gui-web").messages.append({"role": "user", "content": "bleibt"})
 
-    with pytest.raises(RuntimeError, match="konnte nicht gelöscht werden"):
-        runtime.clear_session("gui-web")
-    assert "gui-web" in runtime.sessions
+    # Seit 7c44b50: clear_session resettet die Live-Session fail-open und
+    # meldet Persistenzfehler ueber persistence_status() statt zu raisen
+    # (Raise wuerde den Chat blockieren — der Fehler bleibt im Status sichtbar
+    # und "Erfolg" wird nicht vorgetaeuscht: der Status bleibt rot).
+    runtime.clear_session("gui-web")
+
+    status = runtime.persistence_status()
+    assert status["ok"] is False
+    assert "session_snapshots" in status["error"]
+    assert runtime.sessions["gui-web"].messages == []
