@@ -8,11 +8,12 @@ bach mem working cleanup        Cleanup abgelaufener Einträge
 bach mem working set-expires    Setze Expires für alte Einträge
 bach mem working analyze        Analysiere und kategorisiere Einträge
 
-bach mem decay                  Memory-Decay ausführen (Facts/Lessons/Working)
+bach mem decay                  Memory-Decay als Vorschau (Facts/Lessons/Working)
 bach mem decay --facts          Nur Facts Decay
 bach mem decay --lessons        Nur Lessons Decay
 bach mem decay --working        Nur Working Memory Decay
 bach mem decay --dry-run        Vorschau ohne DB-Änderungen
+bach mem decay --apply          Memory-Decay explizit ausführen
 
 Teil von SQ043: Working Memory Cleanup + Memory Decay (Runde 30C)
 Referenz: BACH_Dev/docs/MEMORY_WORKING_CLEANUP_KONZEPT.md
@@ -146,8 +147,43 @@ class MemHandler(BaseHandler):
                 success, msg = cleanup.set_expires_retroactive(dry_run=dry)
                 return success, msg
 
+            elif sub_op == "archive":
+                apply_now = (
+                    "--apply" in sub_args
+                    and "--dry-run" not in sub_args
+                    and not dry_run
+                )
+                days = 30
+                if "--days" in sub_args:
+                    index = sub_args.index("--days")
+                    if index + 1 >= len(sub_args):
+                        return False, "--days erwartet eine positive Ganzzahl"
+                    try:
+                        days = int(sub_args[index + 1])
+                    except ValueError:
+                        return False, "--days erwartet eine positive Ganzzahl"
+                return cleanup.archive(days=days, dry_run=not apply_now)
+
+            elif sub_op == "restore":
+                positional = [arg for arg in sub_args if not arg.startswith("--")]
+                if not positional:
+                    return False, "restore erwartet eine archive_id"
+                try:
+                    archive_id = int(positional[0])
+                except ValueError:
+                    return False, "archive_id muss eine positive Ganzzahl sein"
+                apply_now = (
+                    "--apply" in sub_args
+                    and "--dry-run" not in sub_args
+                    and not dry_run
+                )
+                return cleanup.restore(archive_id, dry_run=not apply_now)
+
             else:
-                return False, f"Unbekannte working-Operation: {sub_op}\n\nVerfügbar: status, analyze, cleanup, set-expires"
+                return False, (
+                    f"Unbekannte working-Operation: {sub_op}\n\n"
+                    "Verfügbar: status, analyze, cleanup, set-expires, archive, restore"
+                )
 
         except Exception as e:
             return False, f"Fehler bei Working Memory Cleanup: {e}"
@@ -164,7 +200,9 @@ class MemHandler(BaseHandler):
             decay = MemoryDecay(db_path)
 
             # Parse Argumente
-            dry = "--dry-run" in args or dry_run
+            # Destruktiver Decay ist nur mit explizitem --apply erlaubt.
+            # Ein globaler Dry-Run hat Vorrang vor dem lokalen Apply-Flag.
+            dry = "--apply" not in args or "--dry-run" in args or dry_run
             facts_only = "--facts" in args
             lessons_only = "--lessons" in args
             working_only = "--working" in args

@@ -4,7 +4,7 @@ version: 1.0.0
 type: expert
 author: Claude
 created: 2026-02-04
-updated: 2026-02-04
+updated: 2026-09-18
 anthropic_compatible: true
 status: active
 

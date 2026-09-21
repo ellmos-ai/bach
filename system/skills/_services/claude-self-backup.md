@@ -176,16 +176,16 @@ Beispiel:
 
 ```bash
 # Vollautomatisches Backup
-python scripts/auto_backup_orchestrator.py
+python tools/auto_backup_orchestrator.py
 
 # Simulation (nur Status prüfen, keine Änderungen)
-python scripts/auto_backup_orchestrator.py --dry-run
+python tools/auto_backup_orchestrator.py --dry-run
 
 # Testmodus (1MB Dummy-Transfer zum Testen)
-python scripts/auto_backup_orchestrator.py --test
+python tools/auto_backup_orchestrator.py --test
 
 # Ohne Watchdog
-python scripts/auto_backup_orchestrator.py --no-watchdog
+python tools/auto_backup_orchestrator.py --no-watchdog
 ```
 
 ### Modi-Flags Erklärung
@@ -267,7 +267,7 @@ Existiert sie noch → Backup wurde unterbrochen!
 ### Manuelles Aufräumen
 
 ```bash
-python scripts/backup_watchdog.py --cleanup-now
+python tools/backup_watchdog.py --cleanup-now
 ```
 
 ## FritzBox-Konfiguration

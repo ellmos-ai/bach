@@ -86,3 +86,56 @@ Keine Fälschung: Eine eigene `NotificationService`-Implementierung wäre NICHT 
   `ssh-keygen -t ed25519 -C <host>` (falls kein Key), Key hochladen, dann Skript lokal ausführen.
 - **Abnahme**: GRÜN auf ALLEN 3 Hosts -> `task done 1236`.
 - **KEIN FÄLSCHEN**: Eigene NotificationService NICHT nachbauen (nicht pin-konform).
+
+---
+## STATUS 2026-09-15 04:42 (Task #1248, Re-Verifikation) — weiterhin OPERATOR-BLOCKED, alles vorbereitet
+- **SSH-Key NICHT registriert**: `ssh -T git@github.com` -> `Permission denied (publickey)` (exit 255).
+  Key `macstudio-transfer` (`~/.ssh/id_ed25519.pub`) stimmt 1:1 mit Task-Key ueberein, ist aber
+  weiterhin nicht auf github.com aktiv. -> **ein Operator-Schritt je Host** bleibt (Browser).
+- **Transfer-Skript intakt & fail-fast korrekt**: `system/bin/transfer-assistant-core-444a1ff.sh --dry-run`
+  laeuft sauber, prueft SSH-Auth, bricht bei fehlender Registrierung ab (EXIT=1), taetigt KEINE
+  Repo-Änderung. Ready-to-Run-Skript ist also vorbereitet; nur die Key-Registrierung fehlt.
+- **Repo unangetastet**: `~/services/assistant-core` @ `ccadcf9` (v0.1.0), Remote noch HTTPS.
+  Kein Checkout, kein Push, kein Fälschen erfolgt — korrekt (Gate nicht erfuellbar ohne echten Key).
+- **Entscheidung #1240/#1247 = Option A (SSH-Key, dauerhaft) gilt unverändert.**
+- **Operator-Ein-Schritt je Host** (nur dies fehlt):
+  1. Browser: `~/.ssh/id_ed25519.pub` auf https://github.com/settings/ssh/new hochladen
+     (Titel je Host, z.B. `macstudio-transfer`, `WORKSTATION-LG-transfer`, `ASUS-GEI-transfer`).
+  2. `ssh -T git@github.com` -> `Hi <user>! You've successfully authenticated`.
+  3. `cd ~/services/bach && bash system/bin/transfer-assistant-core-444a1ff.sh`
+     (idempotent, fail-fast, Backup-Bundle, kein Push) -> GRÜN.
+- **Nur MacStudio verifizierbar hier**: WORKSTATION-LG / ASUS-GEI sind nicht erreichbar -> dort lokal
+  Key ggf. `ssh-keygen -t ed25519 -C <host>-transfer` erzeugen, hochladen, Skript lokal ausführen.
+- **Abnahme (Gate TRANSFER-09)**: GRÜN auf ALLEN 3 Hosts -> `task done 1236`.
+- **NICHT tun**: NotificationService fälschen (bricht Pin 444a1ff) / git push / erzwungener Checkout.
+
+## STATUS 2026-09-15 04:46 (Task #1248, Re-Verifikation #2) — OPERATOR-BLOCKED, kein lokaler Fix moeglich (definitiv belegt)
+- **Key wird offeriert, aber von GitHub abgelehnt** (entscheidend): `ssh -vT git@github.com` zeigt
+  `Offering public key: /Users/lukas/.ssh/id_ed25519 ED25519 SHA256:cFv6MMm+ziHLURAKxsTkorFsyqa2DbFoXqYFv64dUdk
+  explicit agent` -> anschliessend `git@github.com: Permission denied (publickey)`. Der Key ist also korrekt
+  geladen (ssh-agent) und korrekt offeriert (~/.ssh/config: `Host github.com` -> `IdentitiesOnly yes`,
+  `IdentityFile ~/.ssh/id_ed25519`), wird aber von github.com abgelehnt => **der Key ist schlicht nicht im
+  GitHub-Account registriert**. Damit ist JEDER lokale Fix (agent/config/key laden) ausgeschlossen.
+- **Option B (PAT) ebenfalls blockiert**: kein `gh`-auth (`You are not logged into any GitHub hosts`),
+  kein `~/.netrc`, kein globaler `credential.helper`, kein keychain-Eintrag für github.com. Kein
+  Credential verfügbar, um den Key via API hochladen oder PAT zu speichern.
+- **Zustand unverändert**: `ssh -T` -> `Permission denied`; assistant-core @ `ccadcf9`, Remote HTTPS;
+  `transfer-assistant-core-444a1ff.sh --dry-run` bricht sauber an SSH-Schranke ab (EXIT=1), Repo unangetastet.
+- **Fazit**: Gate TRANSFER-09 NICHT von BACH erreichbar. EIN Operator-Schritt je Host (Browser-Upload des
+  .pub nach https://github.com/settings/ssh/new) ist der einzig fehlende Baustein. Nach Upload: Skript
+  lokal ausfuehren -> GRUEN -> `task done 1236`. BACH wartet (Task #1248 = open, operator-blocked).
+
+---
+## [LOOP-GUARD 05:28] DEFINITIVER Fix — idle-worker-Claim-Loop gebrochen
+- **Wurzelursache:** task_manage(action='update', status='blocked') hat den Status NICHT gesetzt;
+  der idle-worker hat #1248 05:11 erneut auf in_progress gepickt. (claim_task_atomic schliesst
+  'blocked' korrekt aus [task_audit.py:198 'status NOT IN (done,completed,cancelled,blocked)'],
+  aber der update-Pfad hielt 'blocked' nicht -> Claim-Loop.)
+- **Fix:** #1248 DIREKT in ~/.bach/bach.db auf status='blocked', claimed_by=NULL gesetzt +
+  task_history-Eintrag (changed_by='idle-worker-guard').
+- **Verifiziert:** SELECT -> (1248,'blocked',NULL); idle-worker-Pick-Check
+  (status IN pending/open/in_progress) = 0 => 'NEIN (blocked)'. Loop gebrochen.
+- **#1236 bleibt 'open'** (Gate NICHT erfuehlt -> NICHT vorsorglich geschlossen).
+- **WIEDERAUFNAHME:** #1248 -> 'open' setzen, sobald Operator Key-Upload bestaetigt;
+  dann auf MacStudio: ssh -T, bash system/bin/transfer-assistant-core-444a1ff.sh,
+  Verifikation (git rev-parse 444a1ff + 3 grune Pytests), GRUEN auf allen 3 Hosts -> task done 1236.

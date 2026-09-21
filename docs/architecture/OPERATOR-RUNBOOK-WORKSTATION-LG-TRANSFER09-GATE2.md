@@ -44,6 +44,23 @@ Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller m
 > `b529218`), aktueller main-HEAD `60d9888` = 110 passed (stabil). Der Operator kann den
 > **aktuellen main-HEAD** verwenden (pin-konform abgleichen), NICHT `git checkout 5e64e07` mehr.
 > Die EIGENTLICHE Windows-Gegenprobe auf `WORKSTATION-LG` bleibt Operator-Evidenz.
+> **Drift-robuster Hinweis (Re-Run mac-studio, BACH qwen3.8:27b-mlx):** Der Paritätsnachweis
+> (110 passed, ~2.6–3.7 s) gilt NICHT nur für `60d9888`, sondern fortlaufend für den
+> **aktuellen main-HEAD** — die Commits seit `60d9888` sind **docs-only** (keine Code-/Teständerung),
+> daher bleibt die 5-Datei-Parität grün. Der Operator führt die Gegenprobe am **jeweiligen aktuellen
+> main-HEAD** aus und trägt genau diesen `git rev-parse --short HEAD`-Wert in die Evidenz ein
+> (kein festes Checkout, kein `5e64e07`/`60d9888`-Pin nötig). Erwartung: **110 passed**.
+
+> **Frisch-Re-Verifizierung 2026-09-17 21:5X (BACH qwen3.8:27b-mlx, mac-studio):** Seit Refresh 10
+> (#1251, `ace2568`, 2026-09-15) ist Code-Drift eingetreten (`ace2568` → `8825f73`, v.a. docs-only:
+> Translations/Help/Telemetrie), daher war ein Refresh gerechtfertigt. Live-Lauf der 5-Datei-Parität
+> am **aktuellen main-HEAD `8825f73`** (venv `/Users/lukas/.venvs/bach`): **110 passed, 1 warning**
+> in ~10,8 s. Der frühere „1 error" ist bestätigt transientes `~/.bach`-SHM-Artefakt (conftest-Teardown,
+> fremde BACH-Dienste PID 30288/31904/32354/41063/92080) — **nicht** Paritätsfall, jetzt nur Warning.
+> => macOS-Ersatznachweis bleibt grün und drift-robust. Die **EIGENTLICHE Windows-Gegenprobe auf
+> `WORKSTATION-LG` ist unverändert offen** (Host nicht lokal erreichbar, Delegation bringt nichts —
+> gleiche Umgebung). **KEIN Green-Flip, KEINE Fälschung** — ZERTIFIKAT §1 Spalte „Windows-Gegenprobe"
+> und Gate-Matrix Zeile 2 bleiben `⬜/❌`, bis der Operator den Live-Lauf liefert.
 
 ---
 

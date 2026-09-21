@@ -103,7 +103,7 @@ Full API documentation: http://127.0.0.1:8000/docs (Swagger)
 
 HEADLESS API (Port 8001) - Programmatic Access
 ----------------------------------------------
-Purpose: Pure REST API without HTML, for scripts/programs
+Purpose: Pure REST API without HTML, for tools/programs
 
 Auth:
   - Localhost: No auth needed (trust mode)

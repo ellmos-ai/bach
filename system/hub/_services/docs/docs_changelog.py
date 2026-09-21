@@ -37,9 +37,16 @@ Verwendung:
 
 Log-Speicherort:
   logs/docs/YYYY-MM_docs_changes.json
+
+Git-Fallback (v1.1):
+  Wenn das manuelle Log leer ist, leiten show/report Aenderungen
+  automatisch aus der Git-Historie ab (letzte 30 Tage, docs/help + wiki).
+  Manuelles Loggen via "log" hat weiterhin Vorrang.
 """
 
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -141,17 +148,135 @@ def log_batch(changes: List[Dict]) -> int:
     return count
 
 
+# ============ GIT-FALLBACK (v1.1) ============
+
+GIT_FALLBACK_DAYS = 30
+
+GIT_ACTION_MAP = {
+    "A": "created",
+    "C": "created",
+    "M": "updated",
+    "D": "deleted",
+    "R": "moved",
+    "T": "updated",
+}
+
+
+def _git_repo_prefix() -> Optional[str]:
+    """
+    Relativer Pfad vom Git-Repo-Root zu BACH_DIR ('' wenn identisch).
+
+    Returns:
+        '' wenn BACH_DIR == Repo-Root, sonst Praefix wie 'system',
+        oder None wenn BACH_DIR ausserhalb eines Git-Repos liegt.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(BACH_DIR), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        repo_root = Path(result.stdout.strip()).resolve()
+        bach = BACH_DIR.resolve()
+        if bach == repo_root:
+            return ""
+        if repo_root in bach.parents:
+            return str(bach.relative_to(repo_root))
+    except (ValueError, OSError):
+        pass
+    return None
+
+
+def git_fallback_entries(days: int = GIT_FALLBACK_DAYS) -> List[Dict]:
+    """
+    Leitet Changelog-Eintraege aus der Git-Historie ab (Fallback-Quelle).
+
+    Additiv: Wird nur genutzt, wenn das manuelle Log leer ist.
+    Liest git log --since=<days> -- docs/help wiki im BACH_DIR.
+
+    Args:
+        days: Zeitfenster in Tagen (Standard 30)
+
+    Returns:
+        Liste von Entries im gleichen Format wie das manuelle Log
+        (chronologisch, aelteste zuerst), bei Fehlern eine leere Liste.
+    """
+    if _git_repo_prefix() is None:
+        return []
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(BACH_DIR), "log",
+             f"--since={days} days ago",
+             "--name-status",
+             "--pretty=format:%h|%ad|%an|%s",
+             "--date=short",
+             "--", "docs/help", "wiki"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+
+    prefix = _git_repo_prefix() or ""
+    header_re = re.compile(r"^[0-9a-f]{7,40}\|")
+    status_re = re.compile(r"^([A-Z]\d*)\t(.+)$")
+
+    entries: List[Dict] = []
+    commit = None  # (timestamp, author, subject)
+
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        if header_re.match(line):
+            parts = line.split("|", 3)
+            if len(parts) >= 4:
+                commit = (parts[1], parts[2], parts[3])
+            continue
+        match = status_re.match(line)
+        if match and commit:
+            status, rest = match.group(1), match.group(2)
+            action = GIT_ACTION_MAP.get(status[0], "updated")
+            # Rename (R100\told\tnew): neue Datei dokumentieren
+            file_path = rest.split("\t")[-1] if status[0] == "R" else rest
+            if prefix and file_path.startswith(prefix + "/"):
+                file_path = file_path[len(prefix) + 1:]
+            entries.append({
+                "timestamp": f"{commit[0]}T00:00:00",
+                "file": file_path,
+                "action": action,
+                "description": commit[2],
+                "author": commit[1],
+                "source": "git",
+            })
+
+    # Chronologisch wie das manuelle Log: aelteste zuerst
+    entries.reverse()
+    return entries
+
+
 # ============ REPORTS ============
 
 def show_recent(count: int = 10) -> List[Dict]:
-    """Zeigt die letzten N Aenderungen."""
+    """Zeigt die letzten N Aenderungen (git-Fallback, wenn Log leer)."""
     log_data = load_log()
     entries = log_data.get("entries", [])
+    source = "Log"
+
+    if not entries:
+        entries = git_fallback_entries()
+        source = f"git-Fallback (letzte {GIT_FALLBACK_DAYS} Tage)"
 
     recent = entries[-count:] if entries else []
     recent.reverse()  # Neueste zuerst
 
-    print(f"[DOCS] Letzte {len(recent)} Aenderungen:")
+    print(f"[DOCS] Letzte {len(recent)} Aenderungen ({source}):")
     print("-" * 60)
 
     for entry in recent:
@@ -167,9 +292,14 @@ def show_recent(count: int = 10) -> List[Dict]:
 
 
 def generate_report() -> str:
-    """Generiert einen Monatsbericht."""
+    """Generiert einen Monatsbericht (git-Fallback, wenn Log leer)."""
     log_data = load_log()
     entries = log_data.get("entries", [])
+    source_label = "Manuelles Log"
+
+    if not entries:
+        entries = git_fallback_entries()
+        source_label = f"Git-Fallback (letzte {GIT_FALLBACK_DAYS} Tage)"
 
     if not entries:
         return "Keine Aenderungen im aktuellen Monat."
@@ -208,6 +338,7 @@ def generate_report() -> str:
 
 ## Zusammenfassung
 
+- Quelle: {source_label}
 - Gesamte Aenderungen: {len(entries)}
 - Betroffene Dateien: {len(files_changed)}
 - Neue Dateien: {stats['created']}

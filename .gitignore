@@ -62,6 +62,9 @@ id_ed25519.*
 
 # === SYSTEM LAUFZEIT-DATEN ===
 /system/data/.clock_state
+/system/data/.*_state*
+/system/data/*.lock
+/system/data/*.json.*bak*
 /system/data/.injector_cooldowns
 /system/data/.prompt_manager.lock
 /system/data/*.clock_state
@@ -106,6 +109,22 @@ id_ed25519.*
 /system/data/temp/
 /system/data/explorer_state/
 /system/data/trash/
+/system/system/
+
+# === MAC-RUNTIME- UND ÜBERSETZUNGS-PFLEGERESTE ===
+/exports/translations/backup_*.json
+/exports/translations/report_*.json
+/exports/translations/restore_*.sql
+/system/exports/translations/analyze_quality_*.json
+/system/exports/translations/backup_*.json
+/system/exports/translations/fix_*.json
+/system/exports/translations/helpdoc_llm_cache.json
+/system/exports/translations/report_*.json
+/system/exports/translations/restore_*.sql
+/system/exports/translations/review_*.txt
+/system/logs/backup/
+/system/logs/wartungsbericht_*.md
+*.bak[0-9]-*
 
 # === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
@@ -133,6 +152,7 @@ __pycache__/
 *.pyd
 .Python
 .cache/
+/.testtmp/
 *.log
 *.bak-*
 nul

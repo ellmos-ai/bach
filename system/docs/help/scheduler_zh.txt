@@ -1,13 +1,13 @@
 # Portability: SYSTEM
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-09-12
+# Next review: 2027-03-12
 # 下次考试：2026-11-15
-# 资源：[hub/scheduler.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs]
+# 资源：[hub/scheduler.py、hub/scheduler_provider.py、gui/daemon_service.py、scheduler_jobs、scheduler_runs、scheduler_external]
 
 SCHEDULER - 后台作业和调度程序服务
 ----------------------------------------------------
 
-日期：2026-02-28
+日期：2026-09-12
 
 注意：“bach Scheduler ...”是调度程序的新名称。
 旧命令“bach daemon ...”仍可用作别名。
@@ -23,8 +23,6 @@ SCHEDULER - 后台作业和调度程序服务
 调度程序在操作期间自动暂停 OneDrive 同步
 以避免同步冲突。
 
-请参阅：docs/CONCEPT_daemon_policy.md
-
 CLI 命令（bach 调度程序）
 -----------------------------
 
@@ -38,6 +36,7 @@ CLI 命令（bach 调度程序）
   run <ID> 手动运行单个作业
   logs [N] 显示最新日志条目（默认值：20）
   jobs --json 计算状态为 JSON 的调度程序作业
+  external ... 外部 ellmos 调度程序（见下文）
 
 SESSION-SYSTEM
 --------------
@@ -61,6 +60,28 @@ SESSION-SYSTEM
   操作员控制示例：
     bach scheduler session steer --profile ati "Bitte heute nur Health-Checks und Docs anfassen."
     bach scheduler session status --json
+
+外部调度程序 (ellmos-scheduler)
+-------------------------------------
+  提供者接缝（MODULRUECKTRANSFER 第 3 步）：`hub/scheduler_provider.py`
+  将 BACH 与外部模块 `ellmos-scheduler` 连接。旧版调度程序保持不变，
+  作为故障关闭（fail-closed）回退。
+
+  external status              显示适配器/提供者状态
+  external status --json       状态为 JSON
+  external jobs                 列出外部状态存储中的作业
+  external verify              只读预迁移旧版作业（试运行）
+  external verify --apply      以幂等方式接管旧版作业
+  external verify --json       响应为 JSON
+
+  - 外部状态存储隔离于 data/scheduler_external/
+    （来源 `bach:<ID>`）；旧版作业存储永远不会被修改。
+  - verify 时，PATH 中无可执行文件的裸命令名作业会被跳过
+    并注明原因（--apply 前进行 argv 转换）。
+  - 回滚：BACH_USE_EXTERNAL_SCHEDULER=0 禁用连接；
+    `bach scheduler doctor` 报告提供者状态和回滚提示。
+  - 故障关闭（fail-closed）：未安装模块时，外部命令产生
+    明确错误，而不是静默回退到旧版存储。
 
 作业类型
 ---------
@@ -130,7 +151,6 @@ ALIAS: bach daemon ...
 另请参阅
 ----------
   bach --help daemon           旧文档（别名）
-docs/CONCEPT_daemon_policy.md 调度程序策略
   bach --help connector        连接器系统（队列、重试）
   bach --help maintain         维护工具
   bach --help backup           备份系统

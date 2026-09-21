@@ -37,7 +37,12 @@ from ._services.task_schema import (
     ensure_task_claim_columns,
     task_has_claim_columns,
 )
-from .task_audit import apply_task_field_changes, claim_task_atomic, release_claim
+from .task_audit import (
+    apply_task_field_changes,
+    claim_task_atomic,
+    release_claim,
+    GateReopenBlocked,
+)
 
 from .rheingold import (
     is_rheingold_lead,
@@ -818,9 +823,16 @@ class TaskHandler(BaseHandler):
 
                 # T-20260906-382894453 (Folge von T-20260906-833218904): auch hier
                 # jetzt ueber die geteilte Funktion, statt roher SQL ohne task_history.
+                # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): _unblock
+                # ist die explizite Operator-Reopen-Aktion (auditiert per
+                # changed_by='cli-task') -- deshalb allow_reopen=True, damit der
+                # Terminal-Park-Guard hier nicht den legitimen Unblock-Intent blockiert.
+                # Die eigentliche Bypass-Flaeche (externer API-Aufruf ohne allow_reopen)
+                # bleibt per Default Fail-Closed.
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
                 apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
-                                          changed_by="cli-task", now=now)
+                                          changed_by="cli-task", now=now,
+                                          allow_reopen=True)
 
                 results.append(f"[OK] Task {task_id} entblockt")
 
@@ -849,9 +861,13 @@ class TaskHandler(BaseHandler):
                 # verschwinden -- clear_fields deckt genau das ab (Erweiterung von
                 # apply_task_field_changes fuer diesen Fall).
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                 # T-20260916-1330: _reopen ist wie _unblock die explizite Operator-
+                 # Aktion (auditiert) -> allow_reopen=True, damit der Terminal-Park-
+                 # Guard den bewussten Reopen nicht falsch blockiert.
                 apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
                                           clear_fields=("completed_at",),
-                                          changed_by="cli-task", now=now)
+                                          changed_by="cli-task", now=now,
+                                          allow_reopen=True)
 
                 results.append(f"[OK] Task {task_id} wieder geoeffnet")
 

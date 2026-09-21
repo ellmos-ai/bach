@@ -165,7 +165,7 @@ Tabellen in bach.db:
 - bach_experts (untergeordnete Experten)
 - agent_expert_mapping (Zuordnung)
 
-Tabellen in user.db:
+Tabellen in bach.db (seit v1.1.84 konsolidiert):
 
 - steuer_posten (Steuer-Agent)
 - (Foerderplaner nutzt externe Datenquellen)

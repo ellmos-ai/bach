@@ -23,7 +23,7 @@ Una habilidad compatible con Anthropic es una carpeta con la siguiente estructur
 
   mi-habilidad/
   +-- SKILL.md # Definición principal (obligatoria)
-  +-- scripts/ # Scripts ejecutables (opcional)
+  +-- tools/ # Scripts ejecutables (opcional)
   |   +-- configuración.sh
   |   +-- ejecutar.py
   +-- referencias/ # Documentación de referencia (opcional)
@@ -88,7 +88,7 @@ para usar eficientemente:
     Contiene todas las reglas, flujos de trabajo e instrucciones.
 
   Nivel 3: recursos combinados (bajo demanda)
-    Archivos de referencias/, scripts/ y activos/.
+    Archivos de referencias/, tools/ y activos/.
     Sólo se cargan si la habilidad los solicita explícitamente.
     o el LLM los necesita para la tarea actual.
 
@@ -123,7 +123,7 @@ BACH puede crear directamente habilidades compatibles con Anthropic:
 
 Este comando usa internamente Skill_init.py y crea:
 - SKILL.md con texto frontal correcto
-- scripts/carpeta (vacía)
+- tools/carpeta (vacía)
 - referencias/carpeta (vacía)
 - activos/carpeta (vacía)
 
@@ -146,7 +146,7 @@ Aspecto interno al estándar BACH Antrópico
   Tipo de campo (obligatorio) -- (no disponible)
   Versión versión (obligatoria) metadata.version (opc.)
   Dependencias dependencias (obligatorias) -- (no formalizadas)
-  Herramientas En la carpeta de habilidades scripts/
+  Herramientas En la carpeta de habilidades tools/
   Documentación en la carpeta de habilidades referencias/
   Archivos estáticos datos/o activos/activos/
   Flujos de trabajo _workflows/ o localmente en SKILL.md Cuerpo
@@ -182,7 +182,7 @@ portátil). Los agentes de Claude Code son opcionales y no portátiles.
 
 Al exportar agentes BACH:
   - Definiciones de subagentes -> referencias/
-  - Código de orquestación -> scripts/
+  - Código de orquestación -> tools/
   - Opcional: .claude/agents/<nombre>.md para usuarios de Claude Code
 
 

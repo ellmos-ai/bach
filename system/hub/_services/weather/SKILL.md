@@ -1,3 +1,13 @@
+---
+name: weather
+version: 1.0.0
+type: service
+description: Wetter-Service - aktuelle Wetterdaten fuer beliebige GPS-Koordinaten via wttr.in (kostenlos, kein API-Key)
+author: BACH System
+updated: 2026-02-18
+status: active
+---
+
 # BACH Weather Service
 
 **Version:** 1.0

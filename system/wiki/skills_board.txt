@@ -1,69 +1,134 @@
-# Portabilitaet: UNIVERSAL
-# Zuletzt validiert: 2026-01-28 (Gemini)
-# Naechste Pruefung: 2026-07-28
-# Quellen: [code:gui/static/js/skills-board.js], [db:bach.db]
+# Portabilitaet: BACH (System-spezifisch)
+# Zuletzt validiert: 2026-09-16 (Buddha/BACH wiki-author, Modus B)
+# Naechste Pruefung: 2027-03-16
+# Quellen: [code:gui/static/js/skills-board.js], [code:gui/server.py L5486-5712], [code:gui/templates/agents-board.html], [data:data/skills_hierarchy.json], [code:tools/migration/migrate_skills_hierarchy.py], [db:bach.db (bach_agents/bach_experts)]
 
 SKILLS BOARD - GUI HIERARCHIE MANAGER
 =====================================
 
-Stand: 2026-01-28
+Stand: 2026-09-16
 
 WAS IST DAS SKILLS BOARD?
 -------------------------
-Das Skills Board ist die zentrale grafische Oberflaeche im BACH-Dashboard zur Verwaltung der Kompetenz-Hierarchie. Es visualisiert und steuert die Beziehungen zwischen Agenten, Experten und deren Faahigkeiten.
+Das Skills Board ist die grafische Oberflaeche im BACH-Dashboard zur
+Verwaltung der Kompetenz-Hierarchie. Es visualisiert und steuert die
+Beziehungen zwischen Agenten, Experten und deren Faehigkeiten.
+
+Erreichbar unter den Routes `/skills-board` und `/agents-board`
+(festen Nav-Eintrag im Dashboard, Teil der Default-Favoriten).
 
 STRUKTUR & HIERARCHIE
 ---------------------
-Das System basiert auf einer 5-stufigen Hierarchie (Farbcodes im UI):
+Das Board kennt 5 Entity-Typen (Taxonomie, Farbcodes via CSS-Klassen
+in agents-board.html):
 
 1. [ROT]    AGENT     (Boss/Kopf)
-   Verantwortlich fuer einen Bereich (z.B. "Bueroassistent"). Hat ein Dashboard und koordiniert Experten.
+   Verantwortlich fuer einen Bereich (z.B. "Bueroassistent"). Hat ein
+   Dashboard und koordiniert Experten. (CSS: .type-agent -> --error)
 
 2. [GRUEN]  EXPERT    (Spezialist)
-   Fachexperte unter einem Agenten (z.B. "Steuer-Agent"). Besitzt spezifisches Domain-Wissen.
+   Fachexperte unter einem Agenten (z.B. "Steuer-Agent").
+   (CSS: .type-expert -> --success)
 
-3. [BLAU]   SKILL     (Faehigkeit/Verb)
-   Aktion, die ausgefuehrt werden kann (z.B. "Recherche", "Datei speichern", "Email senden").
+3. [BLAU]   SKILL     (Faehigkeit)
+   Aktion, die ausgefuehrt werden kann (z.B. "Recherche").
+   (CSS: .type-skill -> --accent-blue)
 
-4. [DUNKELBLAU] SERVICE (Dienst)
-   Hintergrund-Dienst oder Tool (z.B. "Scanner", "Daemon", "Mail-Sync").
+4. [BLAU]   SERVICE   (Dienst)
+   Hintergrund-Dienst/Tool (z.B. Scanner, Daemon, Mail-Sync).
+   (CSS: .type-service -> --accent-blue - gleiche Farbe wie SKILL)
 
-5. [LILA]   WORKFLOW  (Ablauf)
-   Definierte Kette von Aufgaben oder Standard-Prozedur (z.B. "Projekt-Aufnahme").
+5. [AKZENT] WORKFLOW  (Ablauf)
+   Definierte Kette von Aufgaben oder Standard-Prozedur.
+   (CSS: .type-workflow -> --accent)
+
+Die Zuordnungen (welcher Expert/Skill/Service/Workflow gehoert zu
+welchem Agent) stehen im Abschnitt "assignments" der JSON.
 
 DATENHALTUNG
 ------------
-Die Daten kommen aus zwei Quellen, die synchron gehalten werden muessen:
+**1. data/skills_hierarchy.json - Datenquelle des GUI (Source of Truth
+fuer das Board):**
+   - `items`: 5 Kategorien (agents, experts, skills, services,
+     workflows), je Item: id, name, description, dashboard, status,
+     path_hint
+   - `assignments`: Zuweisungen pro Agent
+   - `_meta.last_updated`: Zeitstempel (wird bei jedem PUT erneuert)
+   - GET `/api/skills-board/hierarchy` liest, PUT schreibt diese Datei.
+     Die GUI liest NICHT aus der Datenbank.
 
-1. **bach.db (SQLite)**
-   - Tabelle `bach_agents`: Stammdaten der Agenten (Name, Typ, Dashboard-Link).
-   - Tabelle `bach_experts`: Stammdaten der Experten und Zuordnung zu Agenten.
-   - *Dies ist die Source of Truth fuer Existenz und Stammdaten.*
+**2. bach.db - Tabellen bach_agents / bach_experts:**
+   - Werden von anderen Tools genutzt (tools/agents/agent_cli.py,
+     agents_export.py, schwarm/specialist.py, maintenance/
+     registry_watcher.py, rezeptbuch.py, mcp_server.py).
+   - NICHT Bestandteil des Board-Renderings; eine automatische
+     Synchronisierung mit der JSON besteht nicht.
 
-2. **data/skills_hierarchy.json**
-   - Speichert die Frontend-Struktur, Anzeigereihenfolge und visuelle Zuordnungen.
-   - Enthaelt auch Zuweisungen von Skills, Services und Workflows zu Agenten (die nicht in der DB als Relation stehen).
-   - *Wird fuer das Rendering des Boards genutzt.*
+**3. Migration (vorbereitet, Stand 2026-01-29):**
+   - tools/migration/migrate_skills_hierarchy.py migriert die JSON
+     nach bach.db in die Tabellen hierarchy_types, hierarchy_items,
+     hierarchy_assignments.
+   - Diese Tabellen werden vom GUI-Server bislang NICHT gelesen
+     (DB-Backend vorbereitet, JSON bleibt aktiv).
 
-3. **skills/ Ordner**
-   - Enthaelt die textbasierte Definition (Prompts/Anweisungen) fuer die KI.
+**4. Quelldateien (textbasierte Definitionen):**
+   Aufloesung ueber path_hint bzw. resolve_skill_file() (server.py):
+   - Agent    -> agents/            (z.B. agents/bueroassistent.txt)
+   - Expert   -> agents/_experts/
+   - Service  -> hub/_services/
+   - Workflow -> skills/workflows/
+   - Skill    -> skills/
+   - Template -> skills/_templates/
 
 FUNKTIONEN
 ----------
-- **Drag & Drop**: Skills und Experten koennen Agenten zugewiesen werden.
-- **Team Flow**: Visueller Builder, um Agenten und Skills zu einer Arbeitskette (Workflow) zu verknuepfen.
-- **Task Delegation**: Direktes Erstellen von Tasks fuer spezifische Agenten aus dem Board.
-- **Filter**: Ansicht nach Typ (nur Agenten, nur Skills etc.).
-- **Edit**: Bearbeiten von Beschreibungen und Namen direkt im UI.
+- **Drag & Drop**: Skills, Experten, Services und Workflows koennen
+  Agenten per Drag & Drop zugewiesen werden.
+- **Team Flow**: Visueller Builder pro Agent, um Agenten und Skills
+  zu einer Arbeitskette zu verknuepfen (BOARD_005, Save-Button).
+- **Task Delegation**: "+ Task erstellen" pro Agent - Formular mit
+  Beschreibung, Prioritaet und Vorlagen-Chips; legt einen Task an mit
+  Titel "[AgentName] <Kurzfassung>" und Feld delegated_to=<agent-id>.
+- **Filter**: Ansicht nach Typ filtern (setupFilters).
+- **Edit**: Namen/Beschreibungen direkt im UI aendern; ZUSATZLICH
+  direktes Datei-Editing: GET/PUT /api/skills-board/item-file liefert
+  bzw. speichert die Quelldatei (.md/.txt/.py) eines Items.
+- **Vollbild**: Vollbild-Modus des Boards (toggleFullscreen).
 
 SYSTEM-INTEGRATION
 ------------------
-- **Frontend**: `gui/static/js/skills-board.js`
-- **Backend**: `gui/server.py` Endpoints `/api/skills-board/hierarchy`
-- **Sync**: `fix_skills_hierarchy.py` (Script zur Bereinigung/Sync der JSON mit der DB)
+- **Frontend**: gui/static/js/skills-board.js
+- **Templates**: gui/templates/agents-board.html (primaer),
+  skills-board.html (Fallback)
+- **Routes**: GET /skills-board, GET /agents-board (beide dienen
+  agents-board.html)
+- **API**: GET/PUT /api/skills-board/hierarchy,
+  GET/PUT /api/skills-board/item-file
+- **Migration**: tools/migration/migrate_skills_hierarchy.py
+  (JSON -> bach.db, optional --dry-run)
+
+HISTORIE
+--------
+- 2026-01-28: Ursprungsversion (Gemini). Damals: Sync-Script
+  fix_skills_hierarchy.py, DB (bach_agents/bach_experts) als
+  "Source of Truth", Definitionen im skills/-Ordner.
+- 2026-09-16: Vollpruefung (Buddha). fix_skills_hierarchy.py existiert
+  nicht mehr (ersetzt durch migrate_skills_hierarchy.py, 2026-01-29);
+  JSON ist alleinige GUI-Datenquelle; neue item-file-Endpoints ermoeg-
+  lichen direktes Datei-Editing; Quelldateien liegen in agents/
+  bzw. hub/_services/, nicht in skills/; broken Referenz
+  skills/AGENT_KONVENTION.md ersetzt durch agents/README.md.
+
+QUELLEN
+-------
+[1] gui/static/js/skills-board.js - Frontend-Logik
+[2] gui/server.py (L5486-5712) - resolve_skill_file + Board-API
+[3] gui/templates/agents-board.html - Template + CSS-Typ-Farben
+[4] data/skills_hierarchy.json - Datenstruktur (items/assignments)
+[5] tools/migration/migrate_skills_hierarchy.py - JSON->DB-Migration
 
 SIEHE AUCH
 ----------
-wiki/handbuch.txt        Uberblick ueber BACH
-wiki/gemini.txt          Partner-Agent Dokumentation
-skills/AGENT_KONVENTION.md    Technische Richtline fuer Agenten-Files
+wiki/handbuch.txt            Ueberblick ueber BACH
+wiki/gemini.txt              Partner-Agent Dokumentation
+agents/README.md             Agenten-System: Hierarchie & Struktur

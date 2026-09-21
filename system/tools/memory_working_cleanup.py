@@ -16,6 +16,7 @@ Teil von SQ043: Memory-DB & Partner-Vernetzung
 Referenz: BACH_Dev/docs/MEMORY_WORKING_CLEANUP_KONZEPT.md
 """
 
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -44,6 +45,7 @@ class WorkingMemoryCleanup:
                 expires_at,
                 is_active
             FROM memory_working
+            WHERE is_active = 1
             ORDER BY created_at DESC
             """
         )
@@ -201,6 +203,274 @@ ALTER-VERTEILUNG:
         """Rueckwaertskompatibler Alias fuer bestehende Startup-/Handler-Aufrufe."""
         return self.cleanup_soft(dry_run=dry_run)
 
+    def archive(self, days: int = 30, dry_run: bool = True) -> tuple[bool, str]:
+        """Move old entries atomically while preserving the complete source row."""
+        if days <= 0:
+            return False, "days muss größer als 0 sein"
+
+        conn = sqlite3.connect(self.db_path)
+        if not dry_run:
+            # Reserviert den Writer-Slot vor dem Kandidatensnapshot. Sonst
+            # koennte ein zweiter Writer die gelesene Zeile vor unserem DELETE
+            # aendern und diese neuere Version wuerde verloren gehen.
+            conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='archived_memory'"
+        )
+        if cursor.fetchone() is None:
+            conn.close()
+            return False, "archived_memory-Tabelle fehlt (schema_archive.sql nicht angewendet)"
+
+        archive_columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(archived_memory)")
+        }
+        if "source_record" not in archive_columns:
+            conn.close()
+            return False, (
+                "archived_memory.source_record fehlt "
+                "(Migration 042_archived_memory_source_record.py nicht angewendet)"
+            )
+
+        working_columns = [
+            row[1] for row in cursor.execute("PRAGMA table_info(memory_working)")
+        ]
+        if "id" not in working_columns:
+            conn.close()
+            return False, "memory_working.id fehlt"
+        select_columns = ", ".join(f'"{name}"' for name in working_columns)
+        cutoff = "julianday('now') - julianday(created_at) > ?"
+        cursor.execute(
+            f"""
+            SELECT {select_columns}
+            FROM memory_working
+            WHERE {cutoff}
+              AND NOT EXISTS (
+                  SELECT 1 FROM archived_memory
+                  WHERE memory_type='working'
+                    AND original_id = memory_working.id
+              )
+            ORDER BY created_at
+            """,
+            (days,),
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            conn.close()
+            return True, (
+                f"Keine Eintraege > {days} Tage zum Archivieren "
+                f"(alle aktuell oder bereits archiviert)"
+            )
+
+        if dry_run:
+            id_index = working_columns.index("id")
+            ids = [row[id_index] for row in rows]
+            conn.close()
+            return True, (
+                f"[DRY-RUN] Wuerde {len(rows)} Eintraege > {days} Tage "
+                f"(id {min(ids)}..{max(ids)}) nach archived_memory verschieben"
+            )
+
+        reason = f"auto-archived after {days} days"
+        records = [dict(zip(working_columns, row)) for row in rows]
+        data = [
+            (
+                record["id"],
+                record.get("type"),
+                record.get("content"),
+                record.get("created_at"),
+                reason,
+                json.dumps(record, ensure_ascii=False, separators=(",", ":")),
+            )
+            for record in records
+        ]
+        try:
+            cursor.executemany(
+                """
+                INSERT INTO archived_memory
+                    (original_id, memory_type, category, key, content,
+                     created_at, archived_at, archive_reason, source_record)
+                VALUES (?, 'working', ?, NULL, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+                """,
+                data,
+            )
+            archived_count = cursor.rowcount
+            cursor.execute(
+                "DELETE FROM memory_working WHERE id IN ("
+                + ",".join("?" * len(rows))
+                + ")",
+                [record["id"] for record in records],
+            )
+            deleted_count = cursor.rowcount
+            if archived_count != len(rows) or deleted_count != len(rows):
+                conn.rollback()
+                conn.close()
+                return False, (
+                    f"Rowcount-Mismatch: archiviert {archived_count}, "
+                    f"geloescht {deleted_count} von {len(rows)} -> rollback"
+                )
+            conn.commit()
+        except (sqlite3.Error, TypeError, ValueError) as exc:
+            conn.rollback()
+            conn.close()
+            return False, f"Archiv-Fehler: {exc}"
+        conn.close()
+        return True, (
+            f"{archived_count} Eintraege > {days} Tage nach archived_memory "
+            f"verschoben (reversibel, reason='{reason}')"
+        )
+
+    def restore(self, archive_id: int, dry_run: bool = True) -> tuple[bool, str]:
+        """Restore one Working Memory entry atomically from its complete source row."""
+        if archive_id <= 0:
+            return False, "archive_id muss größer als 0 sein"
+
+        conn = sqlite3.connect(self.db_path)
+        if not dry_run:
+            # Kollisionscheck, Restore und Archivloeschung bilden einen
+            # konsistenten Snapshot und eine einzige Schreibtransaktion.
+            conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+        try:
+            archive_columns = {
+                row[1] for row in cursor.execute("PRAGMA table_info(archived_memory)")
+            }
+            if "source_record" not in archive_columns:
+                return False, (
+                    "archived_memory.source_record fehlt "
+                    "(Migration 042_archived_memory_source_record.py nicht angewendet)"
+                )
+
+            row = cursor.execute(
+                """
+                SELECT original_id, source_record
+                FROM archived_memory
+                WHERE archive_id = ? AND memory_type = 'working'
+                """,
+                (archive_id,),
+            ).fetchone()
+            if row is None:
+                return False, f"Working-Memory-Archiv {archive_id} nicht gefunden"
+            original_id, source_record = row
+            if not source_record:
+                return False, (
+                    f"Working-Memory-Archiv {archive_id} ist ein Legacy-Eintrag "
+                    "ohne verlustfreien source_record"
+                )
+
+            try:
+                record = json.loads(source_record)
+            except (TypeError, json.JSONDecodeError) as exc:
+                return False, f"Ungültiger source_record in Archiv {archive_id}: {exc}"
+            if not isinstance(record, dict) or record.get("id") != original_id:
+                return False, f"source_record in Archiv {archive_id} passt nicht zu original_id"
+
+            working_columns = {
+                item[1] for item in cursor.execute("PRAGMA table_info(memory_working)")
+            }
+            unknown_columns = set(record) - working_columns
+            if unknown_columns:
+                return False, (
+                    "memory_working-Schema kann Archiv nicht verlustfrei aufnehmen: "
+                    + ", ".join(sorted(unknown_columns))
+                )
+            if "id" not in record:
+                return False, f"source_record in Archiv {archive_id} hat keine id"
+            if cursor.execute(
+                "SELECT 1 FROM memory_working WHERE id = ?", (original_id,)
+            ).fetchone():
+                return False, f"memory_working.id {original_id} ist bereits belegt"
+
+            if dry_run:
+                return True, (
+                    f"[DRY-RUN] Wuerde Working-Memory-Archiv {archive_id} "
+                    f"als id {original_id} wiederherstellen"
+                )
+
+            columns = list(record)
+            quoted_columns = ", ".join(f'"{name}"' for name in columns)
+            placeholders = ", ".join("?" for _ in columns)
+            cursor.execute(
+                f"INSERT INTO memory_working ({quoted_columns}) VALUES ({placeholders})",
+                [record[name] for name in columns],
+            )
+            if cursor.rowcount != 1:
+                raise sqlite3.IntegrityError("Restore-Insert hat keine Zeile erzeugt")
+
+            # INSERT-Provenienz-Trigger duerfen historische NULL-/Session-Werte
+            # nicht auf die aktuelle Session umschreiben. Nur tatsaechlich vom
+            # Trigger veraenderte Felder werden normalisiert. updated_by wird
+            # separat zuletzt gesetzt: Der AFTER UPDATE-Trigger sieht dadurch
+            # einen abweichenden Altwert und ueberschreibt die Historie nicht.
+            current = cursor.execute(
+                f"SELECT {quoted_columns} FROM memory_working WHERE id = ?",
+                (original_id,),
+            ).fetchone()
+            mismatched = [
+                name
+                for name, current_value in zip(columns, current)
+                if current_value != record[name] and name != "id"
+            ]
+            normal_columns = [
+                name for name in mismatched if name != "updated_by_session_id"
+            ]
+            assignments = ", ".join(f'"{name}" = ?' for name in normal_columns)
+            if assignments:
+                cursor.execute(
+                    f"UPDATE memory_working SET {assignments} WHERE id = ?",
+                    [record[name] for name in normal_columns] + [original_id],
+                )
+                if cursor.rowcount != 1:
+                    raise sqlite3.IntegrityError(
+                        "Restore-Normalisierung hat keine Zeile aktualisiert"
+                    )
+            if mismatched and "updated_by_session_id" in record:
+                cursor.execute(
+                    "UPDATE memory_working SET updated_by_session_id = ? WHERE id = ?",
+                    (record["updated_by_session_id"], original_id),
+                )
+
+            restored = cursor.execute(
+                f"SELECT {quoted_columns} FROM memory_working WHERE id = ?",
+                (original_id,),
+            ).fetchone()
+            if restored != tuple(record[name] for name in columns):
+                raise sqlite3.IntegrityError(
+                    "Restore-Normalisierung konnte Quelldatensatz nicht exakt herstellen"
+                )
+
+            if cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='restore_log'"
+            ).fetchone():
+                cursor.execute(
+                    """
+                    INSERT INTO restore_log
+                        (archive_table, archive_id, target_db, target_id, success, notes)
+                    VALUES ('archived_memory', ?, ?, ?, 1, 'working-memory restore')
+                    """,
+                    (archive_id, str(self.db_path), original_id),
+                )
+
+            cursor.execute(
+                "DELETE FROM archived_memory WHERE archive_id = ? AND memory_type = 'working'",
+                (archive_id,),
+            )
+            if cursor.rowcount != 1:
+                raise sqlite3.IntegrityError("Restore-Archivloeschung hat keine Zeile entfernt")
+            conn.commit()
+        except (sqlite3.Error, TypeError, ValueError) as exc:
+            conn.rollback()
+            return False, f"Restore-Fehler: {exc}"
+        finally:
+            conn.close()
+
+        return True, (
+            f"Working-Memory-Archiv {archive_id} verlustfrei als id {original_id} "
+            "wiederhergestellt"
+        )
+
 
 def print_analysis(stats: dict) -> None:
     """Druckt Analyse-Ergebnisse mit aeltesten Eintraegen."""
@@ -254,6 +524,40 @@ def main() -> None:
         print(msg)
         if not success:
             sys.exit(1)
+    elif cmd == "archive":
+        # Task #1313 (Option B): reversibler Move nach archived_memory.
+        # Sicherheit: Standard ist DRY-RUN; nur mit --apply wird ausgefuehrt.
+        days = 30
+        for i, a in enumerate(sys.argv):
+            if a == "--days" and i + 1 < len(sys.argv):
+                try:
+                    days = int(sys.argv[i + 1])
+                except ValueError:
+                    print("[ERROR] --days erwartet eine positive Ganzzahl")
+                    sys.exit(1)
+        if days <= 0:
+            print("[ERROR] --days muss größer als 0 sein")
+            sys.exit(1)
+        apply_now = "--apply" in sys.argv and "--dry-run" not in sys.argv and "-n" not in sys.argv
+        success, msg = cleanup.archive(days=days, dry_run=not apply_now)
+        print(msg)
+        if not success:
+            sys.exit(1)
+    elif cmd == "restore":
+        positional = [a for a in sys.argv[2:] if not a.startswith("--")]
+        if not positional:
+            print("[ERROR] restore erwartet eine archive_id")
+            sys.exit(1)
+        try:
+            archive_id = int(positional[0])
+        except ValueError:
+            print("[ERROR] archive_id muss eine positive Ganzzahl sein")
+            sys.exit(1)
+        apply_now = "--apply" in sys.argv and "--dry-run" not in sys.argv and "-n" not in sys.argv
+        success, msg = cleanup.restore(archive_id, dry_run=not apply_now)
+        print(msg)
+        if not success:
+            sys.exit(1)
     else:
         print("Usage: python memory_working_cleanup.py <command> [--dry-run]")
         print("")
@@ -261,6 +565,8 @@ def main() -> None:
         print("  analyze          Analysiere memory_working Eintraege")
         print("  set-expires      Setze Expires rueckwirkend")
         print("  cleanup          Soft delete expired Eintraege")
+        print("  archive [--apply]  Reversibel alte Eintraege > 30d nach archived_memory (Standard: dry-run)")
+        print("  restore ID [--apply]  Archivierten Working-Memory-Eintrag wiederherstellen")
         sys.exit(1)
 
 

@@ -51,7 +51,7 @@ Der Nutzer erhaelt exakt das, was der Entwickler auf GitHub
 bereitgestellt hat.
 
 Skills sind primaer Instruktions-Sets (Markdown-Dokumente), kein
-ausfuehrbarer Code. Die Ausnahme bildet der scripts/-Ordner, der
+ausfuehrbarer Code. Die Ausnahme bildet der tools/-Ordner, der
 ausfuehrbare Skripte enthalten kann. Das LLM interpretiert die
 Anweisungen aus der SKILL.md und nutzt seine eigenen Tools
 (Bash, Read, Edit etc.) zur Umsetzung.

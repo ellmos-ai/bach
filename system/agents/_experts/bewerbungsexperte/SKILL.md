@@ -4,7 +4,7 @@ version: 1.0.0
 type: expert
 author: BACH Team
 created: 2026-01-25
-updated: 2026-02-04
+updated: 2026-09-18
 anthropic_compatible: true
 status: active
 
@@ -120,7 +120,7 @@ VALUES
 ## SIEHE AUCH
 
 - skills/workflows/cv-generierung.md - Detaillierter Workflow
-- docs/CONCEPT_Bewerbungsexperte.md - Vollstaendiges Konzept
+- CONCEPT.md - Vollstaendiges Konzept (im Agent-Ordner)
 
 ---
 Status: AKTIV

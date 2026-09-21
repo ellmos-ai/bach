@@ -4,7 +4,7 @@ version: 1.0.0
 type: agent
 author: Gemini
 created: 2025-12-31
-updated: 2026-02-04
+updated: 2026-09-17
 anthropic_compatible: true
 status: active
 
@@ -24,7 +24,7 @@ description: >
 ---
 # Research Agent
 
-> **Version:** 1.0.0 | **Status:** active | **Erstellt:** 2025-12-31 | **Aktualisiert:** 2026-01-22
+> **Version:** 1.0.0 | **Status:** active | **Erstellt:** 2025-12-31 | **Aktualisiert:** 2026-09-17
 
 ## Überblick
 

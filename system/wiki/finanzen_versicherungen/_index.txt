@@ -29,6 +29,10 @@ ARTIKEL IN DIESEM ORDNER
     versicherungen_uebersicht.txt
       → Alle Versicherungsarten, Pflicht-Kennzeichnung
 
+    schadenmanagement.txt
+      → Schadenregulierung Ablauf (5 Phasen), §§ 14/31 VVG,
+        Eskalation Ombudsmann, Verjaehrung 3 Jahre
+
     versicherungen_privat.txt
       → Private Absicherung (Haftpflicht, BU, etc.)
 

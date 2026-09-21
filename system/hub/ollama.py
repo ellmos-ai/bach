@@ -126,6 +126,15 @@ class OllamaHandler(BaseHandler):
         
         return True, "\n".join(results)
     
+    def _telemetry_model_call(self, model: str, success: bool) -> None:
+        """OPS-TELEM-001: Modell-Aufruf zaehlen (low-cardinality, fail-silent)."""
+        try:
+            from core.telemetry import increment
+            increment("model_calls", outcome="ok" if success else "error",
+                      model=model)
+        except Exception:
+            pass
+
     def _ask(self, args: list, dry_run: bool = False) -> tuple:
         """Anfrage an Ollama senden."""
         # Model aus args extrahieren
@@ -155,6 +164,7 @@ class OllamaHandler(BaseHandler):
         
         try:
             response = self.client.generate(prompt, model=model)
+            self._telemetry_model_call(model, bool(getattr(response, "success", False)))
             if response.success:
                 results.append("  Antwort:")
                 results.append("-" * 50)
@@ -173,6 +183,7 @@ class OllamaHandler(BaseHandler):
         except ImportError:
             results.append("  [FEHLER] OllamaClient nicht verfuegbar")
         except Exception as e:
+            self._telemetry_model_call(model, False)
             results.append(f"  Fehler: {e}")
         
         return True, "\n".join(results)

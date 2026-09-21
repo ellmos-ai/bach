@@ -27,11 +27,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Neue Handler
 
-- **NEU:** `AgentLauncherHandler` (`hub/handlers/agent_launcher.py`)
+- **NEU:** `AgentLauncherHandler` (`hub/agent_launcher.py`)
   - Befehl: `bach agent`
   - Startet, stoppt und verwaltet Agent-Ausfuehrungen
   - Unterstuetzt llmauto-Ketten und direkte Agent-Runs
-- **NEU:** `PromptHandler` (`hub/handlers/prompt.py`)
+- **NEU:** `PromptHandler` (`hub/prompt.py`)
   - Befehl: `bach prompt`
   - CRUD fuer prompt_templates und prompt_boards
   - Operationen: list, add, edit, delete, show, board-create, board-add, board-list
@@ -602,8 +602,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Hinzugefuegt
 
 - **PORT_006:** MarketService Klasse implementiert (Task 412)
-  - `skills/_services/market/__init__.py` - MarketService Klasse erstellt
-  - `skills/_services/market/config.py` - Konfiguration fuer Market-Service
+  - `hub/_services/market/__init__.py` - MarketService Klasse erstellt
+  - `hub/_services/market/config.py` - Konfiguration fuer Market-Service
   - Agent-Zugriff auf Market-Daten ermoeglicht
   - Roadmap Phase 5.2 PORT_006 erledigt
 
@@ -613,7 +613,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Hinzugefuegt
 
-- **PORT_003b:** `skills/_services/household/schema_household.sql` erstellt
+- **PORT_003b:** `hub/_services/household/schema_household.sql` erstellt
   - 8 Tabellen: products, scan_log, shopping_list, clients, medications, medication_entries, medication_log
   - 3 Views: v_household_low_stock, v_household_medication_status, v_household_client_plan
   - Kombiniert HausLagerist (Inventory) + MediPlaner (Health) in einem Schema
@@ -656,7 +656,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
   - `update_timestamps()` als no-op markiert (Alters-Check direkt per mtime)
   - `bach --maintain docs` funktioniert wieder (65 Dokumente gefunden)
 
-- **BUG-008:** Task-Titel Sanitization in `hub/handlers/task.py`
+- **BUG-008:** Task-Titel Sanitization in `hub/task.py`
   - Neue Methode `_sanitize_title()` entfernt unbalancierte Anfuehrungszeichen
   - Normalisiert mehrfache Leerzeichen
   - Verhindert defekte Titel wie `"JSON_001` in der DB
@@ -669,7 +669,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **TOKEN_001:** Auto-Shutdown Warnung bei 95%+ Token-Verbrauch
   - `skills/tools/token_monitor.py` neue Funktion `check_emergency_shutdown()`
-  - `hub/handlers/startup.py` ruft Emergency-Check bei Startup auf
+  - `hub/startup.py` ruft Emergency-Check bei Startup auf
   - Visuelle Notfall-Box bei kritischem Token-Budget
   - Roadmap Phase 4.2 als erledigt markiert
 
@@ -686,7 +686,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ### Geaendert
 
 - **JSON_001-003 Migration:** Partner-System auf reine DB-Nutzung umgestellt
-  - `hub/handlers/partner.py` handle() liest jetzt aus DB statt JSON
+  - `hub/partner.py` handle() liest jetzt aus DB statt JSON
   - `skills/tools/maintenance/registry_watcher.py` partner_registry.json aus EXPECTED_JSON_FILES entfernt
   - `data/partners/partner_registry.json` nach `_archive/deprecated/` verschoben
   - Fallback auf JSON nur wenn DB leer (Hybrid-Schutz)

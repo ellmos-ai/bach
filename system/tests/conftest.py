@@ -22,6 +22,7 @@ Testmodule die betroffenen Module importieren. Die Suite erzwingt ihre privaten
 Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 """
 
+import atexit
 import os
 import re
 import subprocess
@@ -408,6 +409,15 @@ def _guard_production_bach_dir():
         ]
     fail, meldung = _classify_home_writes(_OWN_HOME_WRITES, changed, foreign)
     if meldung and not fail:
+        # pytest >= 9 zeigt UserWarnings aus dem Teardown einer Session-Scoped-
+        # Fixture nicht mehr in der Warnungs-Summary an (gemessen: 9.0.3,
+        # #1304); ein print waehrend des Teardowns faellt in die fd-Capture.
+        # Selbst atexit+print(file=sys.stderr) stirbt, weil pytest die globalen
+        # Stream-OBJEKTE vor dem Interpreter-Exit schliesst ("I/O operation on
+        # closed file"). Robuster Kanal: os.write direkt auf fd 2 -- der
+        # Deskriptor selbst bleibt bis Prozessende offen. Sichtbar im Terminal
+        # UND im Subprozess-Output (test_home_guard_attribution #1304).
+        atexit.register(os.write, 2, f"[Home-Guard] {meldung}\n".encode("utf-8", "replace"))
         warnings.warn(meldung, stacklevel=1)
     assert not fail, meldung
 

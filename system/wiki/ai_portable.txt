@@ -44,7 +44,7 @@ VERZEICHNISSTRUKTUR
   │   ├── rpg.txt        RPG-Spielleiter Prompt
   │   └── foerderung.txt Foerderplan-Prompt
   │
-  ├── scripts/
+  ├── tools/
   │   ├── fill_icf_template.py  ICF-Berichte generieren
   │   ├── coding_mode.py        Code-Assistent
   │   ├── rpg_mode.py           RPG-Modus
@@ -105,10 +105,10 @@ MODI / SPEZIALISIERUNGEN
 INSTALLATION / SETUP
 --------------------
   # Windows
-  powershell scripts\setup_portable.ps1
+  powershell tools\setup_portable.ps1
 
   # Linux/Mac
-  bash scripts/setup_portable.sh
+  bash tools/setup_portable.sh
 
   # Manuell
   python -m venv venv

@@ -106,4 +106,5 @@ CLI コマンド
 
 ---
 バージョン: 1.0 |ステータス: 実装済み (v1.1.83)
-参照: docs/_archive/con4_CONCEPT_time_system_90.md
+出典: system/tools/time_system.py (TimeManager), system/hub/time.py (ハンドラ)
+注: docs/_archive/con4_CONCEPT_time_system_90.md への参照を削除 - ファイルが存在しない (2026-09-18, タスク #1335)

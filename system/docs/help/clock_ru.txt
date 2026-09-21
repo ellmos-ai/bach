@@ -66,4 +66,5 @@ INTERPLAY
 
 ---
 Версия: 1.0 | Статус: Реализовано (v1.1.83)
-См.: документы/CONCEPT_time_system.md.
+Источник: system/tools/time_system.py (ClockModule), system/hub/time.py (обработчик).
+Примечание: Ссылка на docs/CONCEPT_time_system.md удалена - файл не существует (18.09.2026, задача #1335).

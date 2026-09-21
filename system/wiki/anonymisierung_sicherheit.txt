@@ -163,7 +163,7 @@ TECHNISCHE DETAILS
     python-docx     Word-Dokumente (pip install python-docx)
 
   Dateien:
-    skills/_services/document/anonymizer_service.py  Hauptmodul
+    hub/_services/document/anonymizer_service.py  Hauptmodul
     agents/_experts/report_generator/generator.py    ExportPipeline
 
 

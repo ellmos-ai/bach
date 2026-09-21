@@ -1660,8 +1660,14 @@ def test_context_handoff_keeps_backend_limit_snapshot_during_turn():
 
 
 class TestFackelPreference:
-    def test_default_fackel_is_compute(self, tmp_path):
+    def test_default_fackel_is_compute(self, tmp_path, monkeypatch):
         from hub.compute_lock import get_fackel_preference
+        # Hermetisch gegen den Live-Zustand (Commit 00ffff8): Der tertiary-Fallback
+        # auf slots_config.json wird neutralisiert, sonst haengt dieser Test an der
+        # betreibergesetzten Fackel-Praferenz (aktuell 'ollama') und ist nicht
+        # deterministisch. Der Schwester-Test unten patcht load_slots_config ebenso.
+        import hub._services.chat.slots_config as sc
+        monkeypatch.setattr(sc, "load_slots_config", lambda *a, **k: {})
         nonexistent = str(tmp_path / "nonexistent_fackel.json")
         assert get_fackel_preference(nonexistent) == "compute"
 

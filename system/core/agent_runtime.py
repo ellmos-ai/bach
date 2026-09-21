@@ -364,6 +364,7 @@ class AgentRegistry:
                 module = self._load_module_from_path(module_path)
                 if hasattr(module, class_name):
                     agent_class = getattr(module, class_name)
+                    self._telemetry_agent_start(name_base, "ok")
                     return agent_class(config)
             except ImportError:
                 continue
@@ -371,7 +372,16 @@ class AgentRegistry:
         # Fallback: DummyAgent
         print(f"[AgentRegistry] No implementation found for '{config.name}', using DummyAgent",
               file=sys.stderr)
+        self._telemetry_agent_start(name_base, "dummy")
         return DummyAgent(config)
+
+    def _telemetry_agent_start(self, agent_name: str, outcome: str) -> None:
+        """OPS-TELEM-001: Agentenstart zaehlen (low-cardinality, fail-silent)."""
+        try:
+            from core.telemetry import increment
+            increment("agent_starts", outcome=outcome, agent=agent_name)
+        except Exception:
+            pass
 
     def _agent_name_base(self, name: str) -> str:
         """Normalisiert technische Agentennamen fuer Modul-/Klassensuche."""

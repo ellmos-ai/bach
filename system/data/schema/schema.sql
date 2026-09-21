@@ -175,6 +175,34 @@ CREATE TABLE IF NOT EXISTS memory_sessions (
         continuation_context TEXT
     , dist_type INTEGER DEFAULT 0, is_compressed INTEGER DEFAULT 0, partner_id TEXT DEFAULT 'user');
 
+CREATE TABLE IF NOT EXISTS archived_memory (
+    archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,
+    memory_type TEXT NOT NULL,
+    category TEXT,
+    key TEXT,
+    content TEXT,
+    created_at TIMESTAMP,
+    archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    archive_reason TEXT,
+    source_record TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_archived_memory_type ON archived_memory(memory_type);
+CREATE INDEX IF NOT EXISTS idx_archived_memory_date ON archived_memory(archived_at);
+
+CREATE TABLE IF NOT EXISTS restore_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archive_table TEXT NOT NULL,
+    archive_id INTEGER NOT NULL,
+    restored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    restored_by TEXT DEFAULT 'user',
+    target_db TEXT,
+    target_id INTEGER,
+    success INTEGER DEFAULT 1,
+    notes TEXT
+);
+
 -- Memory provenance is intentionally additive.  Old entries remain unknown;
 -- new inserts and updates inherit the currently active BACH session below.
 CREATE TRIGGER IF NOT EXISTS trg_memory_working_session_provenance_insert

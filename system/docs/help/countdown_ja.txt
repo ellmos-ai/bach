@@ -1,6 +1,7 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Version: 1.0.0
+# Last validated: 2026-09-18 (Help forensics sync, task #1336)
+# Next review: 2027-03-18
 
 COUNTDOWN - トリガーによるカウントダウン
 ==================================
@@ -10,20 +11,34 @@ COUNTDOWN - トリガーによるカウントダウン
 CLI コマンド
 -----------
 
-  bach countdown start <name> HH:MM:SS              カウントダウンの開始
-  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
-  bach countdown stop <name>                         カウントダウンのキャンセル
-  bach countdown list                                アクティブなカウントダウン
-  bach countdown pause <name>                        一時停止
+  bach countdown start <name> <duration>              カウントダウンの開始
+  bach countdown start <name> <duration> --after "cmd" トリガーコマンド付き
+  bach countdown <duration>                           短縮形: "timer" として開始 (v1.1.84)
+  bach countdown stop <name>                          カウントダウンのキャンセル
+  bach countdown list                                 アクティブなカウントダウン
+  bach countdown pause <name>                         一時停止
   bach countdown resume <name>                       再開
+
+期間形式
+-------------
+
+  HH:MM:SS   例: 01:00:00 = 1時間
+  MM:SS      例: 25:00 = 25分
+  Xs/Xm/Xh   例: 90s, 25m, 2h (短縮形)
 
 出力形式
 --------------
 
-  通常: [COUNTDOWN] セッション: 残り 45:12
-  警告: [!] セッション: 残り 04:58 だけです!
+  開始:       [COUNTDOWN] 'name' を開始しました: 01:00:00
+  一時停止:   [COUNTDOWN] 'name' を一時停止しました (残り 45:12)
+  再開:       [COUNTDOWN] 'name' を再開しました (残り 45:12)
+  停止:       [COUNTDOWN] 'name' をキャンセルしました
 
-残り 5 分未満になると警告が表示されます。
+  一覧:       [COUNTDOWN] アクティブなカウントダウン:
+                name: 45:12                 (通常)
+                name: 04:58 [!]             (警告、残り 5 分未満)
+                name: 期限切れ!
+                name: 19:45 (一時停止)
 
 永続性
 ----------
@@ -32,11 +47,11 @@ CLI コマンド
 
   内容:
   {
-    「カウントダウン」: {
-      「セッション」: {
+    "countdowns": {
+      "session": {
         "end_time": "2026-01-30T15:00:00",
-        "after_command": "シャットダウン '時刻'",
-        「一時停止」: false、
+        "after_command": "shutdown '時間切れ'",
+        "paused": false,
         "remaining_on_pause": null
       }
     }
@@ -47,7 +62,7 @@ CLI コマンド
 
   #1 時間セッションのカウントダウン
   bach countdown start session 01:00:00
-  -> カウントダウン「セッション」が開始されました: 01:00:00
+  -> カウントダウン 'session' が開始されました: 01:00:00
 
   # 自動シャットダウンあり
   bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
@@ -55,7 +70,7 @@ CLI コマンド
 
   # ポモドーロ タイマー (25 分)
   bach countdown start focus 00:25:00
-  -> カウントダウン「フォーカス」が開始されました: 00:25:00
+  -> カウントダウン 'focus' が開始されました: 00:25:00
 
   # 一時停止と再開
   bach countdown pause focus
@@ -63,17 +78,18 @@ CLI コマンド
 
   # ステータスを確認します
   bach countdown list
-  -> セッション: 残り 45:12
-  -> フォーカス: 残り 19:45 (一時停止)
+  -> [COUNTDOWN] アクティブなカウントダウン:
+  ->   session: 45:12
+  ->   focus:   19:45 (一時停止)
 
 トリガー (--after)
 -----------------
 
- --after コマンドは有効期限が切れると実行されます:
+--after コマンドは有効期限が切れると実行されます:
 
-  --after "shutdown 'Time at'" セッションを終了します
-  --after "msg send user 'Break!'" メッセージを送信します
-  --after "タスク完了 123" タスクを完了としてマークします
+  --after "shutdown '時間切れ'"          セッションを終了します
+  --after "msg send user '休憩!'"        メッセージを送信します
+  --after "task done 123"               タスクを完了としてマークします
 
 実行されると、コマンドはキューに書き込まれます。
 次の CLI 呼び出しによって、それ (またはデーモン) が実行されます。
@@ -97,11 +113,14 @@ USECASES
 -------------
 
 カウントダウンは時間システムの一部です:
-  --help Clock 時間表示
-  --ヘルプタイマーストップウォッチ
-  -- チェック間のヘルプ
-  --help beat 統一時刻表示
+  --help clock    時間表示
+  --help timer    ストップウォッチ
+  --help between  between チェック
+  --help beat     統一時刻表示
 
 ---
-バージョン: 1.0 |ステータス: 実装済み (v1.1.83)
-参照: docs/CONCEPT_time_system.md
+バージョン: 1.1 | ステータス: 実装済み (v1.1.84)
+出典: system/tools/time_system.py (CountdownModule), system/hub/time.py (ハンドラ)
+注記: docs/CONCEPT_time_system.md への参照を削除 - ファイルが存在しません
+(2026-09-18, タスク #1335)。関連ヘルプ: --help clock, --help timer, --help between,
+--help beat (上記のインタープレイを参照)。ドイツ語版と同期 (2026-09-18, タスク #1336)。

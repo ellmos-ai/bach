@@ -196,11 +196,15 @@ def _managed_backend_answer(result: Any) -> str:
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
-    from hub.task_audit import apply_task_field_changes
+    from hub.task_audit import apply_task_field_changes, GateReopenBlocked
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
     RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
     apply_task_field_changes = None
+
+    class GateReopenBlocked(Exception):
+        """Fallback, wenn hub.task_audit nicht importierbar ist (kein Guard, aber
+        die except-Zweige in update_task muessen GateReopenBlocked fangen koennen)."""
 
 
 # --- Sicherheit ---
@@ -709,8 +713,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             return "Keine Felder zum Aktualisieren angegeben"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if apply_task_field_changes is not None:
-                            apply_task_field_changes(conn, tid, dict(existing), updates,
-                                                      changed_by="chat-runtime", now=now)
+                             # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
+                             # Der Terminal-Park-Guard im Choke-Point blockiert einen
+                             # Reopen auf open|pending|in_progress fuer einen gate-geparkten
+                             # Task. Das Agent-Tool darf den Task NICHT resurrektieren
+                             # (Fail-Closed) -- stattdessen klare Meldung, damit der
+                             # Operator bei Bedarf via CLI `reopen`/`unblock` (allow_reopen)
+                             # oder GUI explicit wieder oeffnet.
+                            try:
+                                apply_task_field_changes(conn, tid, dict(existing), updates,
+                                                          changed_by="chat-runtime", now=now)
+                            except GateReopenBlocked as exc:
+                                conn.rollback()
+                                return f"[WARN] Task #{tid} ist terminal geparkt (Gate-Haltefrist) -- Reopen blockiert: {exc}. Fuer einen bewussten Reopen `bach task reopen {tid}` (oder unblock) nutzen."
                         else:
                             updates["updated_at"] = now
                             set_str = ", ".join(f"{k}=?" for k in updates.keys())
@@ -1651,7 +1666,7 @@ FULL-MODUS (nur nach /mode full bestätigt):
 - write_file — Dateien schreiben
 
 BACH-HANDLER (alle via bach_command nutzbar):
-- denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler und Logbuch
+- denkarium write/read/search/brainstorm/promote/stats — Gedanken-Sammler/Logbuch (persönliches Notizbuch des Users — NICHT als Agenten-Notizbuch; dafür mem/bach memory)
 - calendar list/add/today/week — Termine und Kalender
 - contact list/search/show — Kontaktverwaltung
 - routine list/add/complete — Routinen und Gewohnheiten
@@ -1677,7 +1692,7 @@ REGELN:
 - Nutze edit_file zum Bearbeiten von Dateien (suchen/ersetzen)
 - Nutze recycle zum Löschen — verschiebt in den Papierkorb statt endgültig zu löschen
 - Nutze weather für Wetterabfragen
-- Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will
+- Nutze denkarium, wenn der User Gedanken notieren, im Logbuch schreiben oder brainstormen will (das ist SEIN persönliches Notizbuch — nutze es NICHT als dein eigenes Notizbuch; für Agenten-Erinnerungen: mem/bach memory)
 - Nutze calendar, wenn der User nach Terminen fragt oder welche anlegen will
 - Nutze contact, wenn der User Kontakte sucht oder anzeigen will
 - Nutze routine, wenn der User nach Routinen oder Gewohnheiten fragt

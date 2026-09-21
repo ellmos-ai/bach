@@ -1,6 +1,7 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Version: 1.0.0
+# Last validated: 2026-09-18 (Help forensics sync, task #1336)
+# Next review: 2027-03-18
 
 COUNTDOWN - Countdown with trigger
 ==================================
@@ -10,20 +11,34 @@ Countdown timer that optionally executes a command when it expires.
 CLI COMMANDS
 -----------
 
-  bach countdown start <name> HH:MM:SS              Start countdown
-  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
-  bach countdown stop <name>                         Cancel countdown
-  bach countdown list                                Active countdowns
-  bach countdown pause <name>                        Pause
+  bach countdown start <name> <duration>              Start countdown
+  bach countdown start <name> <duration> --after "cmd" With trigger command
+  bach countdown <duration>                           Short form: starts as "timer" (v1.1.84)
+  bach countdown stop <name>                          Cancel countdown
+  bach countdown list                                 Active countdowns
+  bach countdown pause <name>                         Pause
   bach countdown resume <name>                       Resume
+
+DURATION FORMATS
+-------------
+
+  HH:MM:SS   e.g. 01:00:00 = 1 hour
+  MM:SS      e.g. 25:00 = 25 minutes
+  Xs/Xm/Xh   e.g. 90s, 25m, 2h (short form)
 
 OUTPUT FORMAT
 --------------
 
-  Normal: [COUNTDOWN] session: 45:12 remaining
-  Warning: [!] session: Only 04:58 left!
+  Start:      [COUNTDOWN] 'name' started: 01:00:00
+  Pause:      [COUNTDOWN] 'name' paused (45:12 remaining)
+  Resume:     [COUNTDOWN] 'name' resumed (45:12 remaining)
+  Stop:       [COUNTDOWN] 'name' cancelled
 
-Warning appears when < 5 minutes remain.
+  List:       [COUNTDOWN] Active countdowns:
+                name: 45:12                 (normal)
+                name: 04:58 [!]             (warning, at < 5 minutes)
+                name: EXPIRED!
+                name: 19:45 (PAUSED)
 
 PERSISTENCY
 ----------
@@ -35,7 +50,7 @@ PERSISTENCY
     "countdowns": {
       "session": {
         "end_time": "2026-01-30T15:00:00",
-        "after_command": "shutdown 'Time at'",
+        "after_command": "shutdown 'Time is up'",
         "paused": false,
         "remaining_on_pause": null
       }
@@ -63,17 +78,18 @@ EXAMPLES
 
   # Check status
   bach countdown list
-  -> session: 45:12 remaining
-  -> focus: 19:45 remaining (PAUSED)
+  -> [COUNTDOWN] Active countdowns:
+  ->   session: 45:12
+  ->   focus:   19:45 (PAUSED)
 
 TRIGGER (--after)
 -----------------
 
 The --after command is executed when it expires:
 
-  --after "shutdown 'Time at'" End session
-  --after "msg send user 'Break!'" Send message
-  --after "task done 123" Mark task as completed
+  --after "shutdown 'Time is up'"   End session
+  --after "msg send user 'Break!'"  Send message
+  --after "task done 123"           Mark task as completed
 
 When executed, the command is written to a queue.
 The next CLI call executes it (or the daemon).
@@ -103,5 +119,9 @@ Countdown is part of the time system:
   --help beat Unified time display
 
 ---
-Version: 1.0 | Status: Implemented (v1.1.83)
-See: docs/CONCEPT_time_system.md
+Version: 1.1 | Status: Implemented (v1.1.84)
+Source: system/tools/time_system.py (CountdownModule), system/hub/time.py (handler)
+Note: Reference to docs/CONCEPT_time_system.md removed - file does not exist
+(forensics 2026-09-18, task #1335). Related help: --help clock, --help timer,
+--help between, --help beat (see INTERPLAY above). Synced with German master
+(help forensics 2026-09-18, task #1336).

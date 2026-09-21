@@ -156,6 +156,12 @@ class AnonymProfile:
     # }
     created: str = ""
     version: int = 1
+    # Whitelist fuer Amtspersonen/Sachbearbeiter (Task #801): Namen, die
+    # NICHT anonymisiert werden duerfen. Wird im Profil mitgefuehrt, damit
+    # die Schluessel-Datei (.schluessel.enc) sie ueber Sitzungen hinweg
+    # erhaelt und spaetere Anonymisierungen mit demselben Schluessel
+    # konsistent bleiben.
+    whitelist: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -749,7 +755,10 @@ def encrypt_key_file(profile: AnonymProfile, output_path: str, password: str) ->
         "tarnname": profile.tarnname,
         "fake_geburtsdatum": profile.fake_geburtsdatum,
         "mappings": profile.mappings,
-        "created": profile.created or datetime.now().isoformat()
+        "created": profile.created or datetime.now().isoformat(),
+        # Task #801: Amtspersonen-Whitelist mitspeichern, damit Decrypt +
+        # spaetere Anonymisierungen mit demselben Schluessel sie kennen.
+        "whitelist": profile.whitelist or []
     }
     plaintext = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
@@ -1208,7 +1217,8 @@ class DocumentAnonymizer:
             tarnname=tarnname,
             fake_geburtsdatum=fake_geb,
             mappings=mappings,
-            created=datetime.now().isoformat()
+            created=datetime.now().isoformat(),
+            whitelist=sorted(whitelist_set)  # Task #801: im Profil fuehren
         )
 
     def extract_text_from_file(self, filepath: str) -> str:
@@ -1589,10 +1599,21 @@ class DocumentAnonymizer:
         Sammelt alle Mapping-Paare des Profils und sortiert sie
         laengestens-zuerst (verhindert Teilersetzungen, z.B. Nachname
         innerhalb "Vorname Nachname").
+
+        Task #801: Schluessel auf der Profil-Whitelist (Amtspersonen/
+        Sachbearbeiter) werden als LETZTE Verteidigungslinie gefiltert --
+        selbst wenn doch ein Mapping fuer sie existiert (z.B. durch
+        spaetere Profilanreicherung), werden sie hier NICHT ersetzt.
         """
         all_replacements = {}
         for category in profile.mappings.values():
             all_replacements.update(category)
+        wl_lower = {w.strip().lower() for w in (profile.whitelist or []) if w.strip()}
+        if wl_lower:
+            all_replacements = {
+                k: v for k, v in all_replacements.items()
+                if k.strip().lower() not in wl_lower
+            }
         return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
     def _anonymize_eml(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:

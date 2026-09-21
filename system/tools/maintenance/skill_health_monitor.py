@@ -55,6 +55,17 @@ REQUIRED_SKILL_FIELDS = ["name", "version", "description"]
 # Optionale aber empfohlene Felder
 RECOMMENDED_SKILL_FIELDS = ["last_updated", "author", "dependencies"]
 
+# (Task #1308) Die "potential_skill"-Erkennung (jedes *.md mit Skill-Frontmatter,
+# das nicht SKILL.md heißt) erzeugt massenhaft False-Positives, weil Dokumentations-,
+# Inhalts-, Template- und Service-Dateien ein legitimes YAML-Frontmatter
+# (name/version/description) tragen, aber KEINE fehlbenannten Skill-Definitionen sind.
+# Diese Verzeichnisse/Datei-Namen/Praefixe loesen daher keine potential_skill-Warnung aus.
+POTENTIAL_SKILL_IGNORE_DIRS = {"_templates", "therapie", "workflows", "_services"}
+POTENTIAL_SKILL_IGNORE_NAMES = {
+     "README.md", "CHANGELOG.md", "CONCEPT.md", "DESIGN.md", "README_TEMPLATES.md",
+}
+POTENTIAL_SKILL_IGNORE_PREFIXES = ("TEMPLATE_", "RELEASE-")
+
 # Agent-Pflichtdateien
 AGENT_REQUIRED_FILES = ["manifest.json"]  # oder AGENT.md/ATI.md
 AGENT_RECOMMENDED_FILES = ["README.md", "CHANGELOG.md"]
@@ -138,12 +149,31 @@ class SkillHealthMonitor:
             })
             return
         
-        # Alle SKILL.md Dateien finden
-        for skill_md in self.skills_dir.rglob("SKILL.md"):
-            self.stats["skills_total"] += 1
-            self._validate_skill_md(skill_md)
+        # (SELF-CHECK 2026-09-16) Echte SKILL.md-Standorte scannen (v2.5+ Struktur):
+        # Die SKILL.md-Definitionen liegen NICHT im skills/-Baum, sondern bei den
+        # Agenten (agents/, inkl. agents/_experts/) und Services (hub/_services/)
+        # sowie connectors/. _templates/ wird bewusst nicht gescannt (Vorlage).
+        # agents/rglob deckt agents/_experts mit (keine Doppelzaehlung).
+        SCAN_SOURCES = ("skills", "agents", "hub/_services", "connectors")
+        # (SELF-CHECK 2026-09-16) _vendor/-Unterverzeichnisse enthalten
+        # fremde, unveraenderbare Artefakte (z.B. anthropic_xlsx) - keine
+        # BACH-Skills, daher von der SKILL.md-Validierung ausgeschlossen.
+        VENDOR_IGNORE_PART = "_vendor"
+        seen: set = set()
+        for source in SCAN_SOURCES:
+            src = self.bach_root / source
+            if not src.exists():
+                continue
+            for skill_md in src.rglob("SKILL.md"):
+                if skill_md in seen:
+                    continue
+                if VENDOR_IGNORE_PART in skill_md.parts:
+                    continue
+                seen.add(skill_md)
+                self.stats["skills_total"] += 1
+                self._validate_skill_md(skill_md)
         
-        # Alle *.md Skill-Definitionen (ohne SKILL.md)
+        # Alle *.md Skill-Definitionen (ohne SKILL.md) - nur im skills/-Baum
         for md_file in self.skills_dir.rglob("*.md"):
             if md_file.name == "SKILL.md":
                 continue
@@ -269,9 +299,17 @@ class SkillHealthMonitor:
     
     def _check_potential_skill(self, md_path: Path):
         """Prüft ob eine MD-Datei ein Skill sein könnte."""
-        # Ignoriere bekannte Nicht-Skills
-        ignore_names = ["README.md", "CHANGELOG.md", "CONCEPT.md", "DESIGN.md"]
-        if md_path.name in ignore_names:
+        # (Task #1308) Ignoriere bekannte Nicht-Skills (Name + Praefix) sowie
+        # Dokumentations-/Inhalts-/Template-/Service-Verzeichnisse.
+        if md_path.name in POTENTIAL_SKILL_IGNORE_NAMES:
+            return
+        if any(md_path.name.startswith(pfx) for pfx in POTENTIAL_SKILL_IGNORE_PREFIXES):
+            return
+        try:
+            _rel_parts = md_path.relative_to(self.skills_dir).parts
+        except ValueError:
+            _rel_parts = ()
+        if _rel_parts and _rel_parts[0] in POTENTIAL_SKILL_IGNORE_DIRS:
             return
         
         try:
@@ -381,10 +419,14 @@ class SkillHealthMonitor:
             columns = {row[1] for row in cursor.execute("PRAGMA table_info(skills)").fetchall()}
             active_column = "is_active" if "is_active" in columns else "active"
             cursor.execute(f"SELECT name, path FROM skills WHERE {active_column} = 1")
-            db_skills = {row[0]: row[1] for row in cursor.fetchall()}
+            # (SELF-CHECK 2026-09-16) Liste statt Dict: Der alte Dict-Ansatz
+            # (name -> path) ueberschrieb Eintraege mit gleichem Namen, sodass
+            # bei 1890 aktiven Eintraegen nur ~1053 geprueft wurden und hunderte
+            # Orphans unentdeckt blieben.
+            db_skills = cursor.fetchall()
             
             # Prüfe ob DB-Skills noch existieren
-            for name, path in db_skills.items():
+            for name, path in db_skills:
                 if path:
                     full_path = self.bach_root / path
                     if not full_path.exists():

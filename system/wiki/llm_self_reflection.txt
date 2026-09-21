@@ -79,7 +79,9 @@ BACH-INTEGRATION
 - BACH Memory-System entspricht dem Reflexion Episodic Memory Buffer:
   Lessons Learned und Reflections werden persistent abgelegt und in
   Folge-Sessions als Kontext geladen (verbal reinforcement ueber Zeit)
-- Denkarium/Task-Decompose sind Umgebungs-Feedback fuer Agenten-Runs
+- Denkarium ist das persoenliche Notizbuch des Users (Lukas) — NICHT Agenten-Feedback.
+  Task-Decompose ist dagegen ein Agenten-Mechanismus. Agenten-Feedback gehoert in
+  bach memory / Session-Berichte, NICHT in den Denkarium.
 - Praxistransfer: Beim Delegieren an Claude/Codex liefert exit-code und
   diff das Evaluator-Signal; Self-Refine-Muster = iteratives Prompt-Refining
   mit eigener Kritikrunde vor Abgabe

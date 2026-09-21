@@ -1,6 +1,7 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Version: 1.0.0
+# Last validated: 2026-09-18 (Help forensics sync, task #1336)
+# Next review: 2027-03-18
 
 COUNTDOWN - 带触发器的倒计时
 ==================================
@@ -10,34 +11,48 @@ COUNTDOWN - 带触发器的倒计时
 CLI 命令
 -----------
 
-  bach countdown start <name> HH:MM:SS              开始倒计时
-  bach countdown start <name> HH:MM:SS --after "cmd" Mit Trigger-Befehl
-  bach countdown stop <name>                         取消倒计时
-  bach countdown list                                活动倒计时
-  bach countdown pause <name>                        暂停
+  bach countdown start <name> <duration>              开始倒计时
+  bach countdown start <name> <duration> --after "cmd" 带触发命令
+  bach countdown <duration>                           简写形式：以 "timer" 启动 (v1.1.84)
+  bach countdown stop <name>                          取消倒计时
+  bach countdown list                                 活动倒计时
+  bach countdown pause <name>                         暂停
   bach countdown resume <name>                       恢复
+
+时长格式
+-------------
+
+  HH:MM:SS   例如 01:00:00 = 1小时
+  MM:SS      例如 25:00 = 25分钟
+  Xs/Xm/Xh   例如 90s, 25m, 2h (简写形式)
 
 输出格式
 --------------
 
-  正常：[倒计时]时段：剩余 45:12
-  警告：[!] 会话：仅剩 04:58！
+  启动:       [COUNTDOWN] 'name' 已启动: 01:00:00
+  暂停:       [COUNTDOWN] 'name' 已暂停 (剩余 45:12)
+  恢复:       [COUNTDOWN] 'name' 已恢复 (剩余 45:12)
+  停止:       [COUNTDOWN] 'name' 已取消
 
-剩余时间 < 5 分钟时会出现警告。
+  列表:       [COUNTDOWN] 活动倒计时:
+                name: 45:12                 (正常)
+                name: 04:58 [!]             (警告，剩余 < 5 分钟)
+                name: 已过期!
+                name: 19:45 (已暂停)
 
 持久性
 ----------
 
-  文件：data/.countdown_state
+  文件: data/.countdown_state
 
-  内容：
+  内容:
   {
-    “倒计时”：{
-      “会话”：{
+    "countdowns": {
+      "session": {
         "end_time": "2026-01-30T15:00:00",
-        "after_command": "关闭'时间'",
-        “暂停”：假，
-        “暂停时剩余”：空
+        "after_command": "shutdown '时间到'",
+        "paused": false,
+        "remaining_on_pause": null
       }
     }
   }
@@ -45,17 +60,17 @@ CLI 命令
 示例
 ---------
 
-  #1小时会议倒计时
+  #1小时会话倒计时
   bach countdown start session 01:00:00
-  -> 倒计时“会话”开始：01:00:00
+  -> 倒计时 'session' 已开始: 01:00:00
 
   # 具有自动关闭功能
   bach countdown start session 01:00:00 --after "shutdown 'Session beendet'"
-  -> 当它过期时，执行“bach --shutdown '会话结束'”
+  -> 当它到期时，执行 "bach --shutdown '会话结束'"
 
   # 番茄计时器（25 分钟）
   bach countdown start focus 00:25:00
-  -> 倒计时“焦点”开始：00:25:00
+  -> 倒计时 'focus' 已开始: 00:25:00
 
   # 暂停和恢复
   bach countdown pause focus
@@ -63,17 +78,18 @@ CLI 命令
 
   # 检查状态
   bach countdown list
-  -> 会话：剩余 45:12
-  -> focus: 剩余 19:45 (PAUSED)
+  -> [COUNTDOWN] 活动倒计时:
+  ->   session: 45:12
+  ->   focus:   19:45 (已暂停)
 
 TRIGGER (--after)
 -----------------
 
 --after 命令到期时执行：
 
-  --“关闭‘时间’后”结束会话
-  --after "msg send user 'Break!'" 发送消息
-  --after "task done 123" 将任务标记为已完成
+  --after "shutdown '时间到'"          结束会话
+  --after "msg send user '休息!'"      发送消息
+  --after "task done 123"             将任务标记为已完成
 
 执行时，命令将写入队列。
 下一个 CLI 调用将执行它（或守护进程）。
@@ -85,7 +101,7 @@ TRIGGER (--after)
      bach countdown start session 02:00:00 --after "shutdown 'Limit erreicht'"
      -> 2 小时后会话自动结束
 
-  2.番茄工作法
+  2. 番茄工作法
      bach countdown start focus 00:25:00 --after "msg send user 'Pause machen!'"
      -> 25 分钟后提醒暂停
 
@@ -97,11 +113,14 @@ TRIGGER (--after)
 -------------
 
 倒计时是时间系统的一部分：
-  --help Clock 时间显示
-  --帮助计时器秒表
-  --检查之间的帮助
-  --helpbeat 统一时间显示
+  --help clock    时间显示
+  --help timer    秒表
+  --help between  between 检查
+  --help beat     统一时间显示
 
 ---
-版本：1.0 |状态：已实施 (v1.1.83)
-请参阅：docs/CONCEPT_time_system.md
+版本: 1.1 | 状态: 已实现 (v1.1.84)
+来源: system/tools/time_system.py (CountdownModule), system/hub/time.py (处理器)
+注: 已移除指向 docs/CONCEPT_time_system.md 的引用 - 该文件不存在
+(取证 2026-09-18, 任务 #1335)。相关帮助: --help clock, --help timer,
+--help between, --help beat (见上方 INTERPLAY)。2026-09-18 与德语源同步 (任务 #1336)。

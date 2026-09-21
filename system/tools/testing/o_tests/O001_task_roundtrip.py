@@ -42,7 +42,12 @@ def _finish_result(result: dict, checks_passed: int, total_checks: int, summary:
 
 
 def _is_bach_system(root: Path) -> bool:
-    return (root / "bach.py").is_file() and (root / "hub" / "task.py").is_file()
+     # BACH-Root liegt ueber dem eigentlichen System in system/ (Wrapper bach.py).
+     # Fremde Systeme (z. B. recludOS) koennen hub/ direkt im Root haben -- daher
+     # beide Layouts akzeptieren.
+    root_has_hub = (root / "hub" / "task.py").is_file()
+    system_has_hub = (root / "system" / "hub" / "task.py").is_file()
+    return (root / "bach.py").is_file() and (root_has_hub or system_has_hub)
 
 
 def _create_isolated_task_db(db_path: Path) -> None:
@@ -98,8 +103,12 @@ def _run_bach_task_roundtrip(root: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="bach-o001-") as temp_dir:
         db_path = Path(temp_dir) / "o001_tasks.sqlite3"
         _create_isolated_task_db(db_path)
-        if str(root) not in sys.path:
-            sys.path.insert(0, str(root))
+        # BACH legt das echte System unter system/ ab (Wrapper bach.py im Root).
+        # Der Ordner, der hub/ enthaelt, muss auf sys.path -- sonst schlaegt
+        # `from hub import ...` auf dem BACH-Layout fehl.
+        hub_parent = root / "system" if (root / "system" / "hub" / "task.py").is_file() else root
+        if str(hub_parent) not in sys.path:
+            sys.path.insert(0, str(hub_parent))
         from hub import bach_paths
         from hub.task import TaskHandler
 
