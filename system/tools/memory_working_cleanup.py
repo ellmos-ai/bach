@@ -400,19 +400,46 @@ ALTER-VERTEILUNG:
                 raise sqlite3.IntegrityError("Restore-Insert hat keine Zeile erzeugt")
 
             # INSERT-Provenienz-Trigger duerfen historische NULL-/Session-Werte
-            # nicht auf die aktuelle Session umschreiben. Ein explizites UPDATE
-            # setzt deshalb unmittelbar danach den archivierten Datensatz exakt.
-            value_columns = [name for name in columns if name != "id"]
-            assignments = ", ".join(f'"{name}" = ?' for name in value_columns)
+            # nicht auf die aktuelle Session umschreiben. Nur tatsaechlich vom
+            # Trigger veraenderte Felder werden normalisiert. updated_by wird
+            # separat zuletzt gesetzt: Der AFTER UPDATE-Trigger sieht dadurch
+            # einen abweichenden Altwert und ueberschreibt die Historie nicht.
+            current = cursor.execute(
+                f"SELECT {quoted_columns} FROM memory_working WHERE id = ?",
+                (original_id,),
+            ).fetchone()
+            mismatched = [
+                name
+                for name, current_value in zip(columns, current)
+                if current_value != record[name] and name != "id"
+            ]
+            normal_columns = [
+                name for name in mismatched if name != "updated_by_session_id"
+            ]
+            assignments = ", ".join(f'"{name}" = ?' for name in normal_columns)
             if assignments:
                 cursor.execute(
                     f"UPDATE memory_working SET {assignments} WHERE id = ?",
-                    [record[name] for name in value_columns] + [original_id],
+                    [record[name] for name in normal_columns] + [original_id],
                 )
                 if cursor.rowcount != 1:
                     raise sqlite3.IntegrityError(
                         "Restore-Normalisierung hat keine Zeile aktualisiert"
                     )
+            if mismatched and "updated_by_session_id" in record:
+                cursor.execute(
+                    "UPDATE memory_working SET updated_by_session_id = ? WHERE id = ?",
+                    (record["updated_by_session_id"], original_id),
+                )
+
+            restored = cursor.execute(
+                f"SELECT {quoted_columns} FROM memory_working WHERE id = ?",
+                (original_id,),
+            ).fetchone()
+            if restored != tuple(record[name] for name in columns):
+                raise sqlite3.IntegrityError(
+                    "Restore-Normalisierung konnte Quelldatensatz nicht exakt herstellen"
+                )
 
             if cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='restore_log'"

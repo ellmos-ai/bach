@@ -436,5 +436,53 @@ def test_fresh_schema_roundtrip_preserves_null_provenance_with_active_session(tm
         assert provenance == (None, None)
 
 
+def test_fresh_schema_roundtrip_preserves_historical_provenance_with_active_session(
+    tmp_path,
+):
+    db_path = tmp_path / "fresh.db"
+    schema = (SYSTEM_ROOT / "data" / "schema" / "schema.sql").read_text(
+        encoding="utf-8"
+    )
+    old = (datetime.now() - timedelta(days=45)).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(schema)
+        conn.executemany(
+            "INSERT INTO memory_sessions (session_id, started_at, ended_at) VALUES (?, ?, ?)",
+            [
+                ("source-created", old, old),
+                ("source-updated", old, old),
+                ("active-now", datetime.now().isoformat(), None),
+            ],
+        )
+        conn.execute(
+            """
+            INSERT INTO memory_working
+                (id, type, content, priority, tags, created_at, updated_at,
+                 expires_at, is_active, created_by_session_id, updated_by_session_id)
+            VALUES (17, 'context', 'historisch', 4, '["tag"]', ?, ?, NULL, 1,
+                    'source-created', 'source-updated')
+            """,
+            (old, old),
+        )
+
+    cleanup = cleanup_module.WorkingMemoryCleanup(db_path)
+    assert cleanup.archive(days=30, dry_run=False)[0] is True
+    with sqlite3.connect(db_path) as conn:
+        archive_id = conn.execute(
+            "SELECT archive_id FROM archived_memory WHERE original_id = 17"
+        ).fetchone()[0]
+
+    success, message = cleanup.restore(archive_id, dry_run=False)
+    assert success is True, message
+    with sqlite3.connect(db_path) as conn:
+        provenance = conn.execute(
+            """
+            SELECT created_by_session_id, updated_by_session_id
+            FROM memory_working WHERE id = 17
+            """
+        ).fetchone()
+        assert provenance == ("source-created", "source-updated")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
