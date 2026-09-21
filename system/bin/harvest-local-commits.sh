@@ -156,7 +156,7 @@ if [[ -n "${pr_number}" ]]; then
       echo "[OK] Bestehender Draft-PR #${rb_number}: ${rb_url}"
       exit 0
       ;;
-    *) fail "Unbekannter PR-Status fuer #${rb_number}: ${rb_state}" ;;
+    *) fail "Unbekannter PR-Status für #${rb_number}: ${rb_state}" ;;
   esac
 fi
 
