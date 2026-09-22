@@ -648,6 +648,14 @@ Verfahren zurückholen, keine Fachlogik, Herkunft vermerken — zwei der drei st
 und dürfen nur gelesen werden. Zusatzschritte: (8) Herz herauslösen, (9) OCEAN als zweiter
 Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
 
+> **NACHTRAG [C 2026-09-23, T-20260920-829000873, Entscheidung B vom 21.09.]:** Schritt (9)
+> beschreibt hier noch die Herkunftsrichtung "OCEAN zuerst, BACH brandet um". Die spätere
+> Nutzerrichtung dreht das um: die BACH-stämmige GUI/Tray wird als neutrales Modul herausgelöst
+> und ist die Oberfläche der OCEAN-**Vollausprägung**; BACH konsumiert und brandet sie zurück
+> (Muster wie `assistant-core`/`ellmos-chat`). `ellmos-unified-gui` bleibt als **Lite**-Schale
+> für Teilinstallationen erhalten, kein Nachbau. Details und Folgestufen:
+> `_control-center/_TICKETS/ACTIONABLE/T-20260920-829000873.ASUS-GEI.txt`.
+
 **Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
 Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
 Always-On, Neuer Worker und Verlauf sämtlich vorhanden). Der Mac-Stand ist seit PR #52

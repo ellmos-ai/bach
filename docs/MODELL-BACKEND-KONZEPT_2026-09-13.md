@@ -964,6 +964,16 @@ bekommt. Nur eben als **Ansicht auf dieselben Module**, nicht als Nachbau. Dann 
 schaltet auf ocean-view um" kein Umbau, sondern eine Einstellung — und `D-20260830-002` bleibt
 unangetastet.
 
+> **NACHTRAG [C 2026-09-23, T-20260920-829000873, Entscheidung B vom 21.09.]:** Eine spätere,
+> maßgebliche Nutzeraussage (20.09., Abend) dreht die Herkunftsrichtung um, ohne das Urteil
+> dieses Abschnitts ("kein Nachbau, ein neutrales Modul") zu widerlegen: Nicht OCEAN baut eine
+> Ansicht auf BACHs Modulen nach, sondern die BACH-GUI/-Tray selbst wird das neutrale Modul und
+> damit die Oberfläche der OCEAN-**Vollausprägung**; BACH konsumiert und brandet sie zurück.
+> `ellmos-unified-gui` bleibt **Lite**-Schale für Teilinstallationen. Das ist weiterhin EIN
+> Modul, von beiden importiert — die hier verworfene Zwei-Oberflächen-Drift entsteht dadurch
+> nicht. Betrifft auch §10.7 Schritt (9) unten und `ROADMAP.md` Zusatzschritt (9). Details:
+> `_control-center/_TICKETS/ACTIONABLE/T-20260920-829000873.ASUS-GEI.txt`.
+
 ### 10.6 Rücktransfer aus den drei Schwestersystemen
 
 Der Nutzer nennt FolderHome, NemoFold und SentinelFleet. Gemessen, mit einem wichtigen
@@ -1001,6 +1011,12 @@ Zusätzlich kommen zwei Schritte hinzu, beide **nach** Schritt 4:
 |---|---|---|
 | 8 | **Herz herauslösen** als eigenes Modul (Rollenregister, Backend-Katalog, Zuteilung, Besetzungsprotokoll, Fackel), BACH wird sein erster Konsument | Schritte 1–4, Entscheidung E1 und E5 |
 | 9 | **OCEAN wird zweiter Konsument**, bekommt den schlanken Anzeige-Tray; BACH brandet denselben Tray um | Schritt 8; OCEANs Publikationssperre beachten |
+
+> **NACHTRAG [C 2026-09-23, T-20260920-829000873, Entscheidung B]:** Schritt 9 nennt hier den
+> Tray, nicht die GUI, und die Herkunftsrichtung "OCEAN zuerst, BACH brandet um". Die
+> Nutzerrichtung vom 20.09. gilt für BEIDE (GUI **und** Tray) und dreht die Richtung um:
+> BACH-stämmig extrahiert, OCEAN-Vollausprägung, BACH konsumiert zurück; `unified-gui` bleibt
+> Lite. Siehe §10.5-Nachtrag oben.
 
 Der Rücktransfer aus den drei Schwestersystemen ist kein eigener Schritt, sondern eine
 **Lesepflicht vor** den Schritten 1 und 8: Wer die Zuteilungsgrenze baut, liest vorher
