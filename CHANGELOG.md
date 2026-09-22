@@ -6,6 +6,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Added (vorbereitet, noch nicht aktiv)
+
+- **Gemeinsames Gedächtnisschema BACH = OCEAN, Stufe S1 (T-20260920-823767362):** `system/data/schema/memory_union/` enthält den mit `ellmos-ai/usmc` geteilten Vertrag (`memory_union.py` + `memory_union.contract.json`, byte-identisch, SHA-Pins in `system/tests/test_memory_union.py`) und die Migration `043_memory_union.py`. Sie ergänzt `agent_id`, Namensraum/Sichtbarkeit, `session_id`/`related_to`, `current_task`/`handoff_notes`, `expires_at` und `decay_config` (aus `partner_memory_config`); `memory_working`, `memory_facts` und `context_triggers` werden nur dort neu aufgebaut, wo CHECK/UNIQUE es erzwingen, in einer Transaktion mit Zeilenzahl- und Vertragsprüfung. Bestehende BACH-Schreibpfade (ohne `agent_id`) behalten ihr OR-REPLACE/OR-IGNORE-Verhalten. Gegen eine Kopie der Laptop-`bach.db` gemessen: 0,22 s, alle Zeilen und IDs erhalten, 41 blockierte Trigger erhalten, Views intakt, zweiter Lauf No-op. **Bewusst nicht in `migrations/`**, weil der Runner neue Dateien dort beim nächsten Start jeder Bestands-DB automatisch ausführt; die Aktivierung (und der `schema.sql`-Endstand) gehört zu S2.
+
 ### Fixed
 
 - **Datenbank-Initialisierung & Test-Isolation (`core/db.py`):** `Database.is_empty()` ignoriert neben `_migrations` nun auch die rein operative `telemetry_counters`-Tabelle. Zuvor verhinderte ein vorzeitiger Telemetrie-Zugriff (der `telemetry_counters` via idempotentem `CREATE TABLE IF NOT EXISTS` anlegte), dass `core.app` bei nachfolgenden Bibliothekszugriffen (`bach_api`) die Domain-Tabellen aus `schema.sql` initialisierte und fälschlich von einer unmigrierten Bestands-DB ausging (140/140 Tests in kombinierten Testläufen nun vollständig isoliert und grün).
