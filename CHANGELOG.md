@@ -8,6 +8,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Daily Care & Dev Check (2026-09-22):**
+  - **Upgrade-Repair v3.14.0:** Lokaler Verteilungskatalog repariert und Live-Release `v3.14.0` registriert (`current_release_registered: true`, `repair_recommended: false`, 3 Releases im Katalog).
+  - **OpenClaw-Abgleich auf v2026.9.5 gehoben:** Stable spiegelt Release `2026.9.5` (vom 2026-09-19); relevante Signale für BACH sind Atomic Updates mit Background-Staging und automatischem Rollback, Plugin Hot-Reloading, Conversation Sharing/Archives sowie Specialist Guided Setup.
+  - **Test- & Health-Suite 100% grün:** 123 Core-Regressionstests, 161 Modulrücktransfer-Tests und 4 assistant-core Tests bestanden; 50/50 Usecases fehlerfrei; Agent-Doctors für `ati` und `entwickler` 7/7 grün; 2.110 Dokumente geprüft (0 veraltet >60d); Registry-Health 0 actionable issues.
+  - **Test-Hygiene:** `system/tests/conftest.py` gehärtet gegen Bytecode-Generierung (`sys.dont_write_bytecode = True`) und `.pyc`/`__pycache__` im Runtime-Write-Waechter.
+
 - **Authentifizierter Projektions-Preflight (T-20260915-486495819):**
   MediPlaner- und Routinika-Transitmanifeste werden vor jedem SQLite-Zugriff
   über geheimnisfreie OS-Keyring-Referenzen, HMAC, Dateigröße und SHA-256

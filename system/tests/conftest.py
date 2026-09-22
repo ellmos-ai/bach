@@ -35,6 +35,8 @@ import pytest
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
 os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
 os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
@@ -85,6 +87,8 @@ def _source_runtime_path(path_like):
     try:
         candidate = Path(path_like).resolve(strict=False)
     except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    if candidate.name.endswith(".pyc") or "__pycache__" in candidate.parts:
         return None
     for root in _PROTECTED_SOURCE_RUNTIME_ROOTS:
         try:

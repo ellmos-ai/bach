@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-21 | **Version:** 4.3.64 | **Review:** 2026-09-21 (Windows-Nachzertifizierung)
+**Stand:** 2026-09-22 | **Version:** 4.3.64 | **Review:** 2026-09-22 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -18,6 +18,38 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-09-22 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Upgrade-Status & Release-Katalog-Reparatur (`v3.14.0`):**
+  - Live-Release `v3.14.0` wurde via `bach upgrade repair --version v3.14.0` erfolgreich im lokalen Verteilungskatalog registriert.
+  - `bach upgrade status --json` bestätigt: `current_release_registered: true`, `repair_recommended: false`, 3 registrierte Releases (`v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - Upgrade-Check verifiziert 3.439 Dateien im Distribution-Tree, 0 beschädigt, 0 fehlend.
+- **Task-Audit & Konsistenzprüfung:**
+  - 6 verbliebene Aufgaben im Task-Backlog geprüft: #1061 (T05 Installer E2E) und #1062 (T08 GUI Regression) verbleiben als manuelle Testtickets; #1341 (assistant-core Checkout-Pin) steht 4/4 grün auf Windows (mac-studio Verifikation folgt); #1044 (Mail-Service) und #1118 (Supervisor/Runner) verbleiben pending; #1340 (TRANSFER-09) besitzt strikte Haltefrist bis mindestens 2026-10-12.
+  - Keine unberechtigten Statusverschiebungen.
+- **Agent Doctor & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien).
+- **Regressionstest-Suite 100% grün:**
+  - Core-Suite (123 Tests: `test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_smoke.py`): 123/123 bestanden mit strenger `~/.bach`-Isolation.
+  - Modulrücktransfer-Suite (161 Tests: `test_accounts_via_accounts_core.py`, `test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_scheduler_provider.py`, `test_transit_sync_provider_wiring.py`): 161/161 bestanden.
+  - Assistant-Core Suite: 4/4 Tests (`test_notify_via_assistant_core.py`) grün.
+  - Bytecode-Hygiene in `conftest.py` gehärtet (`sys.dont_write_bytecode = True`, Ausschluss von `.pyc` in Source-Runtime-Write-Guard).
+- **System- & Dokumentations-Wartung:**
+  - Dokumentations-Prüfung (`bach --maintain docs report`): 2.110 Dokumente analysiert, 0 Dokumente veraltet (>60 Tage), 0 ungültige Pfade, 0 fehlende Sektionen.
+  - Memory-Hygiene: Working Memory analysiert (161 Einträge, 0 abgelaufene `is_active`-Bereinigungen nötig).
+  - Registry-Health: `system/bach.py --maintain registry check --json` meldet `healthy: true` (0 actionable issues).
+- **OpenClaw Competitive Watch (Stand v2026.9.5):**
+  - Abgleich mit OpenClaw Stable `v2026.9.5` (Release 2026-09-19):
+    - *Atomic Updates:* Hintergrund-Vorbereitung neuer Versionen mit automatischem Rollback bei Fehlern zur Verhinderung unvollständiger oder gebrochener Installationen.
+    - *Plugin Hot-Reloading:* Dynamisches Neuladen und Aktualisieren von Plugins ohne Gateway-Neustart.
+    - *Conversation Sharing & Archives:* Durchsuchbare Archive vergangener Konversationen und sicheres Teilen von Sitzungen.
+    - *Live Integration & Specialist Guided Setup:* Begleiteter Setup-Assistent für spezialisierte Agenten-Teams sowie erweiterte Browser-Kollaboration.
+  - *Relevanz für BACH:* Bestätigt den Kern von BACHs atomarer Upgrade- und Rollback-Architektur (`bach update apply` / `rollback` / `upgrade repair`), die strikte Trennung von Arbeits- und Runtime-Daten (`~/.bach`) sowie die Spezialisten- und Boss-Expert-Orchestrierung.
 
 ## Review 2026-09-21 (Windows-Nachzertifizierung)
 
