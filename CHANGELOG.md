@@ -6,6 +6,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Datenbank-Initialisierung & Test-Isolation (`core/db.py`):** `Database.is_empty()` ignoriert neben `_migrations` nun auch die rein operative `telemetry_counters`-Tabelle. Zuvor verhinderte ein vorzeitiger Telemetrie-Zugriff (der `telemetry_counters` via idempotentem `CREATE TABLE IF NOT EXISTS` anlegte), dass `core.app` bei nachfolgenden Bibliothekszugriffen (`bach_api`) die Domain-Tabellen aus `schema.sql` initialisierte und fälschlich von einer unmigrierten Bestands-DB ausging (140/140 Tests in kombinierten Testläufen nun vollständig isoliert und grün).
+
 ### Added
 
 - **Daily Care & Dev Check (2026-09-22):**

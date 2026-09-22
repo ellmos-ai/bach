@@ -144,15 +144,16 @@ class Database:
     def is_empty(self) -> bool:
         """True, wenn die DB noch keine Nutzertabellen hat.
 
-        _migrations und sqlite-interne Tabellen zaehlen nicht. Bestands-DBs
-        duerfen init_schema() NICHT erneut bekommen: schema.sql enthaelt
-        CREATE-Statements ohne IF NOT EXISTS und wuerde dort abbrechen.
+        _migrations, telemetry_counters und sqlite-interne Tabellen zaehlen nicht.
+        Bestands-DBs duerfen init_schema() NICHT erneut bekommen: schema.sql
+        enthaelt CREATE-Statements ohne IF NOT EXISTS und wuerde dort abbrechen.
         """
         if not self.db_path.exists() or self.db_path.stat().st_size == 0:
             return True
         count = self.execute_scalar(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
-            "AND name != '_migrations' AND name NOT LIKE 'sqlite_%'"
+            "AND name NOT IN ('_migrations', 'telemetry_counters') "
+            "AND name NOT LIKE 'sqlite_%'"
         )
         return not count
 

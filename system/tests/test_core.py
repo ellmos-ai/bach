@@ -229,6 +229,13 @@ class TestDatabase:
         db.run_migrations()  # legt nur _migrations an
         assert db.is_empty()
 
+    def test_is_empty_ignores_telemetry_counters(self):
+        from core.db import Database
+        from core import telemetry
+        db = Database(self.db_path, self.schema_dir)
+        telemetry.ensure_schema(self.db_path)
+        assert db.is_empty()
+
     def test_baseline_migrations_books_without_executing(self):
         from core.db import Database
         migrations_dir = self.schema_dir / "migrations"
