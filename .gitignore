@@ -125,6 +125,18 @@ id_ed25519.*
 /system/logs/backup/
 /system/logs/wartungsbericht_*.md
 *.bak[0-9]-*
+# Mac-Laufzeitreste (Befund T-20260920-959039332, 2026-09-23)
+/system/data/security_scan_latest.json
+/system/logs/MEMORY_ARCHIVE_*.md
+/system/logs/SELF_CHECK_*.md
+/system/logs/SYNC_FIX_*.md
+/system/tools/exports/
+/system/partners/*/inbox/*
+!/system/partners/*/inbox/.gitkeep
+/system/partners/*/outbox/*
+!/system/partners/*/outbox/.gitkeep
+# Nachzertifizierung: aussortierte Fremddateien bleiben lokal archiviert
+/_archive/
 
 # === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
