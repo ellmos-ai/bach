@@ -135,6 +135,8 @@ id_ed25519.*
 !/system/partners/*/inbox/.gitkeep
 /system/partners/*/outbox/*
 !/system/partners/*/outbox/.gitkeep
+# Nachzertifizierung: aussortierte Fremddateien bleiben lokal archiviert
+/_archive/
 
 # === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
