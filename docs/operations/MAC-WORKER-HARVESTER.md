@@ -17,6 +17,10 @@ Der PR braucht die unabhängige Prüfung nach D-20260902-002. Merge, Dienstneust
 
 Die versionierte Vorlage `system/launchd/com.bach.git-harvester.plist` startet den Lauf täglich um 03:20 Uhr. Erst nach unabhängiger Prüfung und Mac-Rollout wird sie nach `~/Library/LaunchAgents/` kopiert und mit `launchctl bootstrap gui/$(id -u) ...` registriert. Die Vorlage nutzt `$HOME/services/bach`; bei einem anderen Live-Pfad muss der Program-Argument-Eintrag vor der Registrierung angepasst werden.
 
+Auf dem Mac Studio liegt kein `_scripts/lock_scan.py` im OneDrive-Ordner (`OneDrive-Persönlich`); der kanonische Scanner kommt dort aus dem lock-master-Klon. Die registrierte Kopie setzt deshalb `BACH_HARVEST_LOCK_SCAN=$HOME/services/lock-master/lock_scan.py` als `EnvironmentVariables`-Eintrag (gemessen 2026-09-23).
+
+`--run` verlangt einen sauberen Arbeitsbaum einschließlich untracked Dateien. Laufzeitreste stehen deshalb in `.gitignore`; Worker-Berichte (`system/logs/wiki_author/REPORT_*.md`) bewusst nicht, weil der Chat-Tray sie per `git add <datei>` committet und ignorierte Pfade diesen Commit abbrechen würden.
+
 ## Gerettete unversionierte Dateien vom 21. September 2026
 
 - Übernommen: sechs fehlende Service-SKILLs, das tatsächlich archivierte `hq5-test-agent`-Paar und die Whitelist-Erweiterung des Anonymisierers samt Regressionstest.
