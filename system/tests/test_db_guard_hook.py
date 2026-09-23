@@ -3,6 +3,8 @@
 """Regression tests for the BACH DB-Guard Claude Code hook."""
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,11 +15,22 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 HOOK_SCRIPT = SYSTEM_ROOT / "hooks" / "bach-db-guard.sh"
 
 
+def _get_bash() -> str | None:
+    if sys.platform == "win32":
+        git_bash = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
+        if git_bash.exists():
+            return str(git_bash)
+    return shutil.which("bash")
+
+
 def _run_hook(command: str) -> tuple[int, str, str]:
     """Run the hook with the given Bash command as JSON input."""
+    bash_bin = _get_bash()
+    if not bash_bin:
+        pytest.skip("bash executable not available")
     payload = json.dumps({"tool_input": {"command": command}})
     result = subprocess.run(
-        ["bash", str(HOOK_SCRIPT)],
+        [bash_bin, str(HOOK_SCRIPT)],
         input=payload,
         capture_output=True,
         text=True,

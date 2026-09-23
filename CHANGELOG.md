@@ -12,9 +12,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Cross-Platform Test-Härtung (`test_db_guard_hook.py`):** Robuste Auflösung der Git-Bash-Executable auf Windows (`Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"`) analog zu `test_git_harvester.py`. Verhindert Kollisionen mit dem WindowsApps WSL-Bash-Stub und stellt 11/11 bestandene Tests für den DB-Guard-Hook sicher.
 - **Datenbank-Initialisierung & Test-Isolation (`core/db.py`):** `Database.is_empty()` ignoriert neben `_migrations` nun auch die rein operative `telemetry_counters`-Tabelle. Zuvor verhinderte ein vorzeitiger Telemetrie-Zugriff (der `telemetry_counters` via idempotentem `CREATE TABLE IF NOT EXISTS` anlegte), dass `core.app` bei nachfolgenden Bibliothekszugriffen (`bach_api`) die Domain-Tabellen aus `schema.sql` initialisierte und fälschlich von einer unmigrierten Bestands-DB ausging (140/140 Tests in kombinierten Testläufen nun vollständig isoliert und grün).
 
 ### Added
+
+- **Daily Care & Dev Check (2026-09-23):**
+  - **Session Lifecycle & Stale Session Cleanup:** Verwaiste 52h-Session `session_20260921_121554` sauber via `bach.py session end` beendet (Auto-Snapshot `auto_20260923_163539` erstellt), frische Session `session_20260923_163545` (Partner: Gemini) initialisiert.
+  - **OpenClaw-Abgleich (Stand v2026.9.5 LTS):** Aktueller Stand der "gateway-only extended-stable" LTS v2026.9.5 analysiert (Docker Image Pinning zur Absicherung von Produktivumgebungen, fortlaufende Channel-Plugin-Härtungen und Rolling Updates). Relevanz für BACHs Release-Pinning (`distribution_releases` v3.14.0) und Standalone-Isolation bestätigt.
+  - **Test- & Health-Suite 100% grün:** 191 Core-Tests (inkl. `test_core.py`, `test_smoke.py`, `test_self_heal_handlers.py`, `test_memory_working_cleanup.py`, `test_registry_watcher.py`) und 187 Provider-/Wiring-Tests (inkl. `test_accounts_via_accounts_core.py`, `test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_scheduler_provider.py`, `test_transit_sync_provider_wiring.py`, `test_notify_via_assistant_core.py`, `test_bach_mcp_server.py`, `test_db_guard_hook.py`) in 388s ohne Fehler bestanden (gesamt 378 Tests grün).
+  - **Doctors & Governance:** Agent Doctor für `ati` und `entwickler` jeweils 7/7 bestanden (`ready: true`, `can_start: true`); Scheduler Doctor 7/7 bestanden; Maintainer Registry Check 0 Actionable Issues (`healthy: true`); 50/50 Usecases via Dry-Run fehlerfrei durchlaufen; 2.110 Dokumente geprüft (0 veraltet >60d); 162 Working Memory Einträge auditiert.
 
 - **Daily Care & Dev Check (2026-09-22):**
   - **Upgrade-Repair v3.14.0:** Lokaler Verteilungskatalog repariert und Live-Release `v3.14.0` registriert (`current_release_registered: true`, `repair_recommended: false`, 3 Releases im Katalog).

@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-22 | **Version:** 4.3.64 | **Review:** 2026-09-22 (Daily Care & Dev Check)
+**Stand:** 2026-09-23 | **Version:** 4.3.65 | **Review:** 2026-09-23 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -18,6 +18,39 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-09-23 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Bereinigung:**
+  - Verwaiste 52h-Session `session_20260921_121554` ordnungsgemäß heruntergefahren (`bach session end`).
+  - Auto-Snapshot `auto_20260923_163539` erstellt und Continuation-Context gesichert.
+  - Frische Session `session_20260923_163545` für Partner `gemini` im Silent-Modus gestartet.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+- **Task-Audit & Konsistenzprüfung:**
+  - 6 Aufgaben im Task-Backlog unverändert verifiziert (#1061 Installer E2E, #1062 GUI Regression, #1341 assistant-core Checkout-Pin [4/4 grün auf Windows], #1044 Mail-Service, #1118 Supervisor/Runner, #1340 TRANSFER-09 mit Haltefrist bis mindestens 2026-10-12).
+  - Keine unberechtigten Statusverschiebungen.
+- **Agent Doctor & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien).
+- **Testsuiten 100% grün & Cross-Platform Härtung:**
+  - Core-Suite (191 Tests): 191/191 bestanden in 271s (`test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_smoke.py`, `test_core.py`).
+  - Provider- & Modulrücktransfer-Suite (187 Tests): 187/187 bestanden in 116s (`test_accounts_via_accounts_core.py`, `test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_scheduler_provider.py`, `test_transit_sync_provider_wiring.py`, `test_notify_via_assistant_core.py`, `test_bach_mcp_server.py`, `test_db_guard_hook.py`).
+  - Härtung `test_db_guard_hook.py`: Robuste Cross-Platform-Auflösung von `Git/bin/bash.exe` auf Windows integriert (analog zu `test_git_harvester.py`), wodurch 11/11 DB-Guard-Tests auf Windows fehlerfrei laufen.
+- **System- & Dokumentations-Wartung:**
+  - Dokumentations-Prüfung (`bach --maintain docs report`): 2.110 Dokumente analysiert, 0 Dokumente veraltet (>60 Tage), 0 ungültige Pfade, 0 fehlende Sektionen.
+  - Memory-Hygiene: Working Memory analysiert (162 Einträge, 6 <7d, 12 7-14d, 144 >14d, 0 abgelaufene `is_active`-Bereinigungen nötig).
+  - Registry-Health: `system/bach.py --maintain registry check --json` meldet `healthy: true` (0 actionable issues).
+- **OpenClaw Competitive Watch (Stand v2026.9.5 LTS):**
+  - Abgleich mit OpenClaw Stable `v2026.9.5` (Stand 2026-09-23):
+    - *Extended-Stable LTS:* Gateway-only Extended-Stable LTS mit kritischen Security-Patches und Modellsupport.
+    - *Docker Image Pinning:* Klare Empfehlung, Docker-Images auf konkrete Versionen zu pinnen, anstatt unkontrollierte `:latest`-Aktualisierungen zuzulassen.
+    - *Rolling Plugins & Gateways:* Häufige Release-Zyklen für Channel-Plugins bei stabiler Gateway-Basis.
+  - *Relevanz für BACH:* Bestätigt BACHs release-gebundenes Distributionsmodell (`distribution_releases`), strikte Pinnings und Entkopplung von Live-Providern und Quellcode.
 
 ## Review 2026-09-22 (Daily Care & Dev Check)
 
