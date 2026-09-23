@@ -247,6 +247,69 @@ class TestMerge:
         conn.close()
         assert row[0] == "remote_val"
 
+    def test_merge_keeps_newer_foreign_rows_below_local_maximum(self, sync_env):
+        """Regression T-20260923-657419590: Das fruehere Tabellenmaximum
+        verwarf Fremdzeilen, sobald lokal eine juengere Zeile existierte.
+        Fixture wie open-ocean k9_data_newer_local."""
+        m, _, db, transit = sync_env
+        schema = "CREATE TABLE items (id TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(schema)
+        conn.executemany("INSERT INTO items VALUES (?, ?, ?)", [
+            ("shared", "target-older", "2026-08-07T08:00:00Z"),
+            ("target-only", "target-value", "2026-08-09T07:59:00Z"),
+        ])
+        conn.commit()
+        conn.close()
+
+        remote_db = transit / "bach_OTHER_2026-08-08T08-01-00.bachdb"
+        conn = sqlite3.connect(str(remote_db))
+        conn.executescript(schema)
+        conn.executemany("INSERT INTO items VALUES (?, ?, ?)", [
+            ("shared", "source-newer", "2026-08-08T08:00:00Z"),
+            ("source-only", "source-value", "2026-08-08T08:01:00Z"),
+        ])
+        conn.commit()
+        conn.close()
+
+        stats = m.merge_backup(remote_db)
+
+        conn = sqlite3.connect(str(db))
+        rows = conn.execute("SELECT id, value FROM items ORDER BY id").fetchall()
+        conn.close()
+        assert rows == [("shared", "source-newer"), ("source-only", "source-value"),
+                        ("target-only", "target-value")]
+        assert stats["items"] == 2
+
+    def test_merge_keeps_newer_local_row(self, sync_env):
+        m, _, db, transit = sync_env
+        remote_db = transit / "bach_OTHER_2026-05-15T10-00-00.bachdb"
+        conn = sqlite3.connect(str(remote_db))
+        conn.executescript(MINIMAL_SCHEMA)
+        conn.execute("INSERT INTO memory_facts (id, category, key, value, updated_at) "
+                     "VALUES (1, 'system', 'test', 'stale', '2000-01-01T00:00:00')")
+        conn.commit()
+        conn.close()
+
+        m.merge_backup(remote_db)
+
+        conn = sqlite3.connect(str(db))
+        value = conn.execute("SELECT value FROM memory_facts WHERE key = 'test'").fetchone()[0]
+        conn.close()
+        assert value == "value"
+
+    def test_merge_without_module_fails_closed(self, sync_env, monkeypatch):
+        m, _, db, transit = sync_env
+        remote_db = transit / "bach_OTHER_2026-05-15T10-00-00.bachdb"
+        conn = sqlite3.connect(str(remote_db))
+        conn.executescript(MINIMAL_SCHEMA)
+        conn.commit()
+        conn.close()
+        monkeypatch.setitem(sys.modules, "sqlite_transit_sync", None)
+
+        with pytest.raises(RuntimeError, match="sqlite-transit-sync fehlt"):
+            m.merge_backup(remote_db)
+
     def test_merge_no_local_db_copies(self, sync_env):
         m, _, db, transit = sync_env
         db.unlink()

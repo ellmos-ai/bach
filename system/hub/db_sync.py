@@ -50,6 +50,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List, Dict, Optional, Tuple
 
 from .base import BaseHandler
@@ -518,8 +519,10 @@ class DBSyncManager:
         """Merged Remote-Backup in lokale DB mit Timestamp-basierter Strategie.
 
         Strategie:
-        - Tabellen mit timestamp-Spalte: Neuere Zeilen gewinnen (Last-Write-Wins)
-        - INSERT OR REPLACE für maximale Kompatibilität
+        - Tabellen mit timestamp-Spalte: je Primaerschluessel gewinnt die
+          neuere Zeile (Last-Write-Wins, TimestampMergePolicy aus
+          sqlite-transit-sync; dieselbe Semantik wie der TransitSync-Pfad)
+        - Ohne installiertes Modul wird nicht gemergt (RuntimeError)
 
         Args:
             backup_path: Pfad zum Remote-Backup
@@ -551,45 +554,46 @@ class DBSyncManager:
             timestamped_tables = self._discover_timestamped_tables(local)
             print(f"[DB SYNC] {len(timestamped_tables)} Tabellen mit Timestamp-Spalten gefunden")
 
+            # Zeilenweises Last-Write-Wins aus sqlite-transit-sync statt des
+            # frueheren Tabellenmaximums: das Maximum verwarf neuere Fremdzeilen,
+            # sobald lokal irgendeine Zeile juenger war (T-20260923-657419590).
+            # Fehlt das Modul, wird nicht gemergt; das Backup bleibt im Transit.
+            try:
+                from .transit_sync_provider import load_external_transit_sync
+                TimestampMergePolicy = load_external_transit_sync().TimestampMergePolicy
+            except (ImportError, AttributeError) as e:
+                raise RuntimeError(
+                    "sqlite-transit-sync fehlt; zeilenweiser Merge nicht verfuegbar, "
+                    f"Backup bleibt im Transit ({e})"
+                ) from e
+            snapshot = SimpleNamespace(path=backup_path,
+                                       node_id=self._extract_host(backup_path) or "unknown")
+            all_tables = [r[0] for r in local.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+
             stats = {}
 
-            for table, ts_col in timestamped_tables.items():
+            # Tabellenweise, damit eine fehlerhafte Tabelle die anderen nicht
+            # blockiert (wie bisher); ein Savepoint verwirft ihren Teilstand.
+            for table in timestamped_tables:
+                policy = TimestampMergePolicy(
+                    timestamp_columns=("updated_at", "created_at"),
+                    exclude_tables=[t for t in all_tables if t != table],
+                )
                 try:
-                    remote_exists = remote.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                        (table,)
-                    ).fetchone()
-                    if not remote_exists:
-                        continue
-
-                    local_cols = [r[1] for r in local.execute(f"PRAGMA table_info([{table}])").fetchall()]
-                    remote_cols = [r[1] for r in remote.execute(f"PRAGMA table_info([{table}])").fetchall()]
-                    shared = [c for c in local_cols if c in remote_cols]
-
-                    if ts_col not in shared:
-                        continue
-
-                    max_local_ts = local.execute(
-                        f"SELECT COALESCE(MAX([{ts_col}]), '1970-01-01') FROM [{table}]"
-                    ).fetchone()[0]
-
-                    col_list = ', '.join(f'[{c}]' for c in shared)
-                    newer_rows = remote.execute(
-                        f"SELECT {col_list} FROM [{table}] WHERE [{ts_col}] > ?",
-                        (max_local_ts,)
-                    ).fetchall()
-
-                    if newer_rows:
-                        placeholders = ', '.join(['?'] * len(shared))
-                        insert_q = f"INSERT OR REPLACE INTO [{table}] ({col_list}) VALUES ({placeholders})"
-                        for row in newer_rows:
-                            local.execute(insert_q, tuple(row))
-                        stats[table] = len(newer_rows)
-                        print(f"  {table}: {len(newer_rows)} Zeilen")
-
+                    local.execute("SAVEPOINT prosync_table")
+                    report = policy.merge(local, remote, snapshot)
+                    local.execute("RELEASE SAVEPOINT prosync_table")
                 except sqlite3.Error as e:
+                    local.execute("ROLLBACK TO SAVEPOINT prosync_table")
+                    local.execute("RELEASE SAVEPOINT prosync_table")
                     print(f"  FEHLER {table}: {e}")
                     stats[f"{table}_error"] = str(e)
+                    continue
+                changed = report.inserted + report.updated
+                if changed:
+                    stats[table] = changed
+                    print(f"  {table}: {changed} Zeilen")
 
             local.commit()
         finally:
