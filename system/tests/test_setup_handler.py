@@ -477,7 +477,7 @@ class TestPreflight:
 
     def test_preflight_checks_db_dir(self, handler):
         ok, msg = handler._preflight([])
-        assert "data/ beschreibbar" in msg
+        assert "DB-Verzeichnis beschreibbar" in msg or "data/ beschreibbar" in msg
 
 
 class TestSetupCheck:
