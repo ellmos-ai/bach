@@ -17,6 +17,12 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Daily Care & Dev Check (2026-09-24):**
+  - **Session Lifecycle & Stale Session Rollover:** Verwaiste 192h-Session `session_20260916_161820` sauber via `bach.py session end` beendet (Auto-Snapshot `auto_20260924_162147` erstellt), frische Session `session_20260924_162242` (Partner: Gemini) initialisiert.
+  - **OpenClaw-Abgleich (Stand v2026.9.6):** Aktuelle Version `v2026.9.6` (September 2026) analysiert (Managed-Update Outcomes, Work Recovery after Restarts und aggregiertes Usage Reporting). Relevanz für BACHs Release-Pinning (`distribution_releases` v3.14.0), Session-Continuation Context & Task #1118 (OPS-RUN-001) sowie lokales Low-Cardinality Telemetrie-Design (OPS-TELEM-001 / Task #1315) bestätigt.
+  - **Test- & Health-Suite 100% grün:** 191 Core-Tests (inkl. `test_core.py`, `test_smoke.py`, `test_self_heal_handlers.py`, `test_memory_working_cleanup.py`, `test_registry_watcher.py`) in 214s und 187 Provider-/Wiring-Tests (inkl. `test_accounts_via_accounts_core.py`, `test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_scheduler_provider.py`, `test_transit_sync_provider_wiring.py`, `test_notify_via_assistant_core.py`, `test_bach_mcp_server.py`, `test_db_guard_hook.py`) in 108s ohne Fehler bestanden (gesamt 378/378 Tests grün).
+  - **Doctors & Governance:** Agent Doctor für `ati` und `entwickler` jeweils 7/7 bestanden (`ready: true`, `can_start: true`); Maintainer Registry Check 0 Actionable Issues (`healthy: true`); 50/50 Usecases via Dry-Run fehlerfrei durchlaufen (100% verknüpft mit Workflow-Dateien); 2.110 Dokumente geprüft (`Doc_Update_Report_2026-09-24_16-30.md`, 0 veraltet >60d); 164 Working Memory Einträge auditiert.
+
 - **Daily Care & Dev Check (2026-09-23):**
   - **Session Lifecycle & Stale Session Cleanup:** Verwaiste 52h-Session `session_20260921_121554` sauber via `bach.py session end` beendet (Auto-Snapshot `auto_20260923_163539` erstellt), frische Session `session_20260923_163545` (Partner: Gemini) initialisiert.
   - **OpenClaw-Abgleich (Stand v2026.9.5 LTS):** Aktueller Stand der "gateway-only extended-stable" LTS v2026.9.5 analysiert (Docker Image Pinning zur Absicherung von Produktivumgebungen, fortlaufende Channel-Plugin-Härtungen und Rolling Updates). Relevanz für BACHs Release-Pinning (`distribution_releases` v3.14.0) und Standalone-Isolation bestätigt.
