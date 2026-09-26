@@ -88,20 +88,26 @@ def snapshot(db: Path) -> dict:
         conn.close()
 
 
-def diff(before: dict, after: dict) -> list[str]:
-    changes = []
+def diff(before: dict, after: dict) -> tuple[list[str], list[str]]:
+    """(alle Aenderungen, destruktive Aenderungen). Destruktiv = entferntes
+    Objekt oder gesunkene Zeilenzahl -- beides kann Daten kosten."""
+    changes, destructive = [], []
     for key in sorted(set(before["objects"]) | set(after["objects"])):
         kind, name = key
         if key not in before["objects"]:
             changes.append(f"+{kind} {name}")
         elif key not in after["objects"]:
             changes.append(f"-{kind} {name}")
+            destructive.append(f"-{kind} {name}")
         elif before["objects"][key] != after["objects"][key]:
             changes.append(f"~{kind} {name}")
     for name in sorted(set(before["rows"]) & set(after["rows"])):
-        if before["rows"][name] != after["rows"][name]:
-            changes.append(f"rows {name}: {before['rows'][name]} -> {after['rows'][name]}")
-    return changes
+        old, new = before["rows"][name], after["rows"][name]
+        if old != new:
+            changes.append(f"rows {name}: {old} -> {new}")
+            if isinstance(old, int) and isinstance(new, int) and new < old:
+                destructive.append(f"rows {name}: {old} -> {new}")
+    return changes, destructive
 
 
 def _sha256(path: Path) -> str:
@@ -112,7 +118,8 @@ def _other_dbs(root: Path, copy: Path) -> set[Path]:
     return {p for p in root.rglob("*.db") if p != copy}
 
 
-def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = SYSTEM_ROOT) -> dict:
+def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = SYSTEM_ROOT,
+          timeout: float = 300) -> dict:
     source_hash = _sha256(source)
     src = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
     try:
@@ -129,13 +136,19 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
             results = []
             for name in pending:
                 before, other_before = snapshot(copy), _other_dbs(root, copy)
-                proc = subprocess.run(
-                    [sys.executable, "-c", _RUNNER, str(work_migrations / name), str(copy), str(system_root)],
-                    cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
-                    errors="replace", timeout=300, check=False,
-                )
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, "-c", _RUNNER, str(work_migrations / name), str(copy),
+                         str(system_root)],
+                        cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=timeout, check=False,
+                    )
+                except subprocess.TimeoutExpired:
+                    results.append({"migration": name, "status": "fehler",
+                                    "detail": f"Timeout nach {timeout:g} s", "destructive": []})
+                    continue
                 after = snapshot(copy)
-                changes = diff(before, after)
+                changes, destructive = diff(before, after)
                 if proc.returncode != 0:
                     status = "fehler"
                     detail = (proc.stderr.strip().splitlines() or ["?"])[-1]
@@ -149,7 +162,8 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
                     detail = "schrieb eine andere Datei statt BACH_DB"
                 else:
                     status, detail = "wirksam", []
-                results.append({"migration": name, "status": status, "detail": detail})
+                results.append({"migration": name, "status": status, "detail": detail,
+                                "destructive": destructive})
     finally:
         src.close()
     return {
@@ -161,11 +175,12 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0] or None)
     parser.add_argument("--db", required=True, type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--migrations-dir", type=Path, default=MIGRATIONS)
     args = parser.parse_args(argv)
-    report = check(args.db.expanduser())
+    report = check(args.db.expanduser(), migrations_dir=args.migrations_dir)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=1))
         return 0
@@ -178,9 +193,9 @@ def main(argv: list[str] | None = None) -> int:
             detail = r["detail"]
             if isinstance(detail, list):
                 # Loeschungen immer vollstaendig zeigen, nur den Rest kuerzen.
-                drops = [d for d in detail if d.startswith("-")]
-                rest = [d for d in detail if not d.startswith("-")]
-                shown = drops + rest[:6]
+                # Destruktives (Drops, Zeilen-Abnahmen) immer vollstaendig.
+                rest = [d for d in detail if d not in r["destructive"]]
+                shown = r["destructive"] + rest[:6]
                 detail = "; ".join(shown) + (" ..." if len(rest) > 6 else "")
             print(f"  {r['migration']}" + (f"  -- {detail}" if detail else ""))
     return 0
