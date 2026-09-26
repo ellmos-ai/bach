@@ -1729,7 +1729,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         return s
 
     def _get_bach_context(self, text: str) -> str:
-        if not self.injector or not self.memory:
+        # Nur noch der Injektor-Altpfad (heute: Time). Der fruehere Memory-
+        # Schnappschuss (memory("context")) kam nie an -- bach_api liefert ein
+        # Tupel, die str-Pruefung verwarf es still; prompt-bezogenes Gedaechtnis
+        # liefert der MEMORY-HOOK-Block (S3 E6, T-20260920-823767362).
+        if not self.injector:
             return ""
         parts = []
         try:
@@ -1740,12 +1744,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             inj = self.injector.process(text, skip=skip) if skip else self.injector.process(text)
             if inj:
                 parts.append("Kontext:\n" + "\n".join(str(i) for i in inj[:3]))
-        except Exception:
-            pass
-        try:
-            ctx = self.memory("context")
-            if ctx and isinstance(ctx, str) and len(ctx) > 10:
-                parts.append(ctx[:2000])
         except Exception:
             pass
         return "\n\n".join(parts)

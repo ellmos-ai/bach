@@ -469,3 +469,23 @@ class TestInstallationWiring:
         assert "from hub._services.chat import hooks" in src
         hooks_src = (HUB_DIR / "_services" / "chat" / "hooks.py").read_text(encoding="utf-8")
         assert "def fire(" in hooks_src
+
+class TestBachBlockWithoutMemorySnapshot:
+    """S3 E6 (T-20260920-823767362): der Memory-Schnappschuss im Block
+    '--- BACH ---' kam nie an (bach_api.memory('context') liefert ein Tupel,
+    die str-Pruefung verwarf es) und ist gestrichen."""
+
+    def test_bach_context_never_calls_memory(self):
+        from hub._services.chat.chat_runtime import ChatRuntime
+
+        class _Injector:
+            def process(self, text, skip=()):
+                return ["[CLOCK] 12:00"]
+
+        def _memory(*args):
+            raise AssertionError("memory('context') darf nicht mehr aufgerufen werden")
+
+        rt = ChatRuntime.__new__(ChatRuntime)
+        rt.injector, rt.memory = _Injector(), _memory
+        rt._memory_hook = lambda: None
+        assert rt._get_bach_context("hallo") == "Kontext:\n[CLOCK] 12:00"
