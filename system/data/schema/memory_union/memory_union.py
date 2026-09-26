@@ -17,8 +17,13 @@ Die USMC-Umstellung ist opt-in (``USMC_MEMORY_UNION=1`` oder
 auf den ``usmc_*``-Tabellen. Vor dem Umbau einer Datei-DB mit Daten wird eine
 Sicherungskopie geschrieben; Rollback = Kopie zuruecklegen.
 
-Nicht Teil dieser Stufe: Lesson-Provenienz/-Feedback (eigener Vertrag),
-Datenumzug zwischen Hosts, tasks.
+Vertrag v2 (S2): Lesson-Schema v2 (Provenienz, Idempotenz, Feedback,
+Zustellung) gehoert zum gemeinsamen Vertrag -- memory_lessons traegt die
+v2-Spalten, dazu memory_lesson_feedback/_delivery_batches/_deliveries.
+Das Modul ist bewusst eigenstaendig (keine Paket-Imports), damit BACH es
+byte-identisch vendoren kann.
+
+Nicht Teil dieses Moduls: Datenumzug zwischen Hosts, tasks.
 
 Author: Lukas Geiger
 License: MIT
@@ -31,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
-UNION_VERSION = 1
+UNION_VERSION = 2
 UNION_META_KEY = "memory_union"
 CONTRACT_PATH = Path(__file__).with_name("memory_union.contract.json")
 DEFAULT_AGENT = "default"
@@ -47,6 +52,9 @@ UNION_TABLES = (
     "context_triggers",
     "memory_consolidation",
     "decay_config",
+    "memory_lesson_feedback",
+    "memory_lesson_delivery_batches",
+    "memory_lesson_deliveries",
 )
 
 _types = ", ".join(f"'{t}'" for t in WORKING_TYPES)
@@ -130,7 +138,28 @@ CREATE TABLE IF NOT EXISTS memory_lessons (
     agent_id TEXT NOT NULL DEFAULT 'default',
     confidence REAL DEFAULT 1.0,
     namespace TEXT,
-    visibility TEXT
+    visibility TEXT,
+    source_kind TEXT NOT NULL DEFAULT 'legacy',
+    source_key TEXT,
+    episode_key TEXT,
+    source_hash TEXT,
+    event_anchor TEXT,
+    editorial_status TEXT NOT NULL DEFAULT 'legacy',
+    evidence_class TEXT NOT NULL DEFAULT 'unknown',
+    privacy_scope TEXT NOT NULL DEFAULT 'local',
+    sensitive_source INTEGER NOT NULL DEFAULT 0,
+    user_preference INTEGER NOT NULL DEFAULT 0,
+    policy_relevant INTEGER NOT NULL DEFAULT 0,
+    conflict_flag INTEGER NOT NULL DEFAULT 0,
+    mutates_skill INTEGER NOT NULL DEFAULT 0,
+    mutates_workflow INTEGER NOT NULL DEFAULT 0,
+    ingest_payload_hash TEXT,
+    ingest_payload_hash_version INTEGER,
+    helpful_count INTEGER NOT NULL DEFAULT 0,
+    unhelpful_count INTEGER NOT NULL DEFAULT 0,
+    independent_repeat_count INTEGER NOT NULL DEFAULT 0,
+    delivery_failure_count INTEGER NOT NULL DEFAULT 0,
+    last_delivered_at TEXT
 )""",
     "context_triggers": """
 CREATE TABLE IF NOT EXISTS context_triggers (
@@ -185,6 +214,45 @@ CREATE TABLE IF NOT EXISTS decay_config (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )""",
+    "memory_lesson_feedback": """
+CREATE TABLE IF NOT EXISTS memory_lesson_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_id INTEGER NOT NULL REFERENCES memory_lessons(id) ON DELETE CASCADE,
+    feedback_key TEXT NOT NULL,
+    helpful INTEGER CHECK(helpful IS NULL OR helpful IN (0, 1)),
+    independent_repeat INTEGER NOT NULL DEFAULT 0,
+    delivery_failed INTEGER NOT NULL DEFAULT 0,
+    delivery_key TEXT,
+    event_anchor TEXT,
+    payload_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    UNIQUE(feedback_key)
+)""",
+    "memory_lesson_delivery_batches": """
+CREATE TABLE IF NOT EXISTS memory_lesson_delivery_batches (
+    delivery_key TEXT PRIMARY KEY,
+    session_id INTEGER REFERENCES memory_sessions(id) ON DELETE CASCADE,
+    session_key TEXT NOT NULL,
+    delivery_mode TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL
+)""",
+    "memory_lesson_deliveries": """
+CREATE TABLE IF NOT EXISTS memory_lesson_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_id INTEGER NOT NULL REFERENCES memory_lessons(id) ON DELETE CASCADE,
+    delivery_key TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    delivery_mode TEXT NOT NULL,
+    context TEXT,
+    feedback_prompt TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    UNIQUE(lesson_id, delivery_key)
+)""",
 }
 
 INDEX_DDL = tuple(line for line in """
@@ -204,7 +272,12 @@ CREATE INDEX IF NOT EXISTS idx_context_triggers_status ON context_triggers(statu
 CREATE INDEX IF NOT EXISTS idx_consolidation_source ON memory_consolidation(source_table, source_id);
 CREATE INDEX IF NOT EXISTS idx_consolidation_status ON memory_consolidation(status);
 CREATE INDEX IF NOT EXISTS idx_consolidation_weight ON memory_consolidation(weight);
-CREATE INDEX IF NOT EXISTS idx_consolidation_agent ON memory_consolidation(agent_id)
+CREATE INDEX IF NOT EXISTS idx_consolidation_agent ON memory_consolidation(agent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_lessons_source_episode ON memory_lessons(source_key, episode_key) WHERE source_key IS NOT NULL AND episode_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memory_lessons_delivery_selection ON memory_lessons(is_active, editorial_status, privacy_scope);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_feedback_lesson ON memory_lesson_feedback(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_lesson ON memory_lesson_deliveries(lesson_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_batch_order ON memory_lesson_deliveries(delivery_key, id)
 """.strip().replace(";", "").splitlines())
 
 # Provenienz-Trigger aus BACH-Migration 039 (unveraendert uebernommen).
@@ -259,24 +332,38 @@ COMPAT_VIEWS = {
     ),
 }
 
-# usmc_*-Spalten v1 -> memory_*-Spalten. Jede andere Spalte bricht den Umzug ab.
-_V1_COLUMNS = {
+_LESSON_V2_COLUMN_NAMES = (
+    "source_kind", "source_key", "episode_key", "source_hash", "event_anchor",
+    "editorial_status", "evidence_class", "privacy_scope", "sensitive_source",
+    "user_preference", "policy_relevant", "conflict_flag", "mutates_skill",
+    "mutates_workflow", "ingest_payload_hash", "ingest_payload_hash_version",
+    "helpful_count", "unhelpful_count", "independent_repeat_count",
+    "delivery_failure_count", "last_delivered_at",
+)
+
+# usmc_*-Spalten -> gleichnamige memory_*-Spalten. Jede andere Spalte bricht
+# den Umzug ab. Reihenfolge = Kopierreihenfolge (Eltern vor Kindern).
+_LEGACY_COLUMNS = {
     "usmc_facts": ("id", "category", "key", "value", "confidence", "source",
                    "agent_id", "created_at", "updated_at"),
     "usmc_working": ("id", "type", "content", "priority", "tags", "agent_id",
                      "is_active", "created_at", "updated_at"),
     "usmc_lessons": ("id", "category", "severity", "title", "problem", "solution",
                      "agent_id", "is_active", "confidence", "times_shown",
-                     "created_at", "updated_at"),
+                     "created_at", "updated_at", *_LESSON_V2_COLUMN_NAMES),
     "usmc_sessions": ("id", "agent_id", "started_at", "ended_at", "current_task",
                       "handoff_notes"),
+    "usmc_lesson_feedback": ("id", "lesson_id", "feedback_key", "helpful",
+                             "independent_repeat", "delivery_failed", "delivery_key",
+                             "event_anchor", "payload_hash", "agent_id", "created_at"),
+    "usmc_lesson_delivery_batches": ("delivery_key", "session_id", "session_key",
+                                     "delivery_mode", "request_hash", "agent_id",
+                                     "created_at"),
+    "usmc_lesson_deliveries": ("id", "lesson_id", "delivery_key", "session_key",
+                               "delivery_mode", "context", "feedback_prompt",
+                               "payload_hash", "agent_id", "created_at"),
 }
-_TARGET = {
-    "usmc_facts": "memory_facts",
-    "usmc_working": "memory_working",
-    "usmc_lessons": "memory_lessons",
-    "usmc_sessions": "memory_sessions",
-}
+_TARGET = {legacy: "memory_" + legacy[len("usmc_"):] for legacy in _LEGACY_COLUMNS}
 
 
 class UnionMigrationError(RuntimeError):
@@ -310,14 +397,19 @@ def _columns(conn: sqlite3.Connection, table: str):
     return [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
 
 
-def is_union(conn: sqlite3.Connection) -> bool:
+def union_version(conn: sqlite3.Connection) -> int:
+    """0 = nicht vereinigt, sonst die Vertragsversion der Datenbank."""
     try:
         row = conn.execute(
             "SELECT value FROM usmc_meta WHERE key = ?", (UNION_META_KEY,)
         ).fetchone()
     except sqlite3.OperationalError:
-        return False
-    return bool(row) and row[0] == str(UNION_VERSION)
+        return 0
+    return int(row[0]) if row and str(row[0]).isdigit() else 0
+
+
+def is_union(conn: sqlite3.Connection) -> bool:
+    return union_version(conn) > 0
 
 
 def backup_database(db_path: Path) -> Path:
@@ -338,12 +430,16 @@ def apply_union(conn: sqlite3.Connection) -> Dict[str, int]:
     """Stellt eine USMC-Datenbank auf das Vereinigungsschema um.
 
     Kopiert usmc_*-Zeilen mit unveraenderten IDs nach memory_*, ersetzt die
-    usmc_*-Tabellen durch Lese-Views und setzt ``usmc_meta.memory_union``.
-    Alles in einer Transaktion; bei jeder Abweichung Abbruch ohne Mutation.
-    Unbekannte Spalten (z. B. Lesson-Provenienz eines spaeteren Vertrags)
-    brechen ab, statt still verloren zu gehen.
+    Stammtabellen durch Lese-Views, loescht die Lesson-Nebentabellen und
+    setzt ``usmc_meta.memory_union``. Alles in einer Transaktion; bei jeder
+    Abweichung Abbruch ohne Mutation. Unbekannte Spalten brechen ab, statt
+    still verloren zu gehen.
+
+    Eine Datenbank auf Vertrag v1 (usmc_lessons samt Nebentabellen blieb dort
+    real liegen) wird auf v2 hochgezogen: die Lesson-Tabellen wandern nach.
+    Liegen schon Zeilen im Ziel UND in der Quelle, wird abgebrochen.
     """
-    if is_union(conn):
+    if union_version(conn) >= UNION_VERSION:
         return {}
     if conn.in_transaction:
         raise UnionMigrationError("offene Transaktion")
@@ -354,18 +450,26 @@ def apply_union(conn: sqlite3.Connection) -> Dict[str, int]:
             "CREATE TABLE IF NOT EXISTS usmc_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
         # Trigger erst nach dem Kopieren: Altzeilen behalten NULL-Provenienz.
-        create_union_schema(conn, triggers=False)
+        # v2-Spalten vor den Indizes nachziehen (v1-memory_lessons kennt sie nicht).
+        for table in UNION_TABLES:
+            conn.execute(TABLE_DDL[table])
+        for statement in list(_missing_lesson_v2_columns(conn)):
+            conn.execute(statement)
+        for statement in INDEX_DDL:
+            conn.execute(statement)
         for legacy, target in _TARGET.items():
             if _object_type(conn, legacy) != "table":
                 continue
-            extra = set(_columns(conn, legacy)) - set(_V1_COLUMNS[legacy])
+            extra = set(_columns(conn, legacy)) - set(_LEGACY_COLUMNS[legacy])
             if extra:
                 raise UnionMigrationError(
                     f"unmapped-columns {legacy}: {', '.join(sorted(extra))}"
                 )
-            if conn.execute(f"SELECT COUNT(*) FROM {target}").fetchone()[0]:
+            before = conn.execute(f"SELECT COUNT(*) FROM {legacy}").fetchone()[0]
+            existing = conn.execute(f"SELECT COUNT(*) FROM {target}").fetchone()[0]
+            if before and existing:
                 raise UnionMigrationError(f"target-not-empty {target}")
-            cols = [c for c in _V1_COLUMNS[legacy] if c in _columns(conn, legacy)]
+            cols = [c for c in _LEGACY_COLUMNS[legacy] if c in _columns(conn, legacy)]
             col_sql = ", ".join(cols)
             if legacy == "usmc_sessions":
                 conn.execute(
@@ -376,12 +480,14 @@ def apply_union(conn: sqlite3.Connection) -> Dict[str, int]:
                 conn.execute(
                     f"INSERT INTO {target} ({col_sql}) SELECT {col_sql} FROM {legacy}"
                 )
-            before = conn.execute(f"SELECT COUNT(*) FROM {legacy}").fetchone()[0]
             after = conn.execute(f"SELECT COUNT(*) FROM {target}").fetchone()[0]
-            if before != after:
-                raise UnionMigrationError(f"row-count {legacy}: {before} != {after}")
-            copied[legacy] = after
-            conn.execute(f"DROP TABLE {legacy}")
+            if existing + before != after:
+                raise UnionMigrationError(f"row-count {legacy}: {before} != {after - existing}")
+            copied[legacy] = before
+        # Kinder vor Eltern loeschen (Fremdschluessel der Lesson-Nebentabellen).
+        for legacy in reversed(tuple(_TARGET)):
+            if _object_type(conn, legacy) == "table":
+                conn.execute(f"DROP TABLE {legacy}")
         install_provenance_triggers(conn)
         for view, select in COMPAT_VIEWS.items():
             if _object_type(conn, view) is None:
@@ -395,6 +501,17 @@ def apply_union(conn: sqlite3.Connection) -> Dict[str, int]:
         conn.execute("ROLLBACK")
         raise
     return copied
+
+
+def _missing_lesson_v2_columns(conn: sqlite3.Connection):
+    """ALTER-Anweisungen fuer ein memory_lessons, das noch auf Vertrag v1 steht."""
+    have = set(_columns(conn, "memory_lessons"))
+    body = TABLE_DDL["memory_lessons"]
+    for line in body[body.index("(") + 1:body.rindex(")")].splitlines():
+        line = line.strip().rstrip(",")
+        name = line.split()[0] if line else ""
+        if name in _LESSON_V2_COLUMN_NAMES and name not in have:
+            yield f"ALTER TABLE memory_lessons ADD COLUMN {line}"
 
 
 def new_session_key() -> str:
