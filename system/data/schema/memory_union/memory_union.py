@@ -280,25 +280,41 @@ CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_lesson ON memory_lesson_
 CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_batch_order ON memory_lesson_deliveries(delivery_key, id)
 """.strip().replace(";", "").splitlines())
 
-# Provenienz-Trigger aus BACH-Migration 039 (unveraendert uebernommen).
-_ACTIVE_SESSION = (
-    "SELECT session_id FROM memory_sessions "
-    "WHERE ended_at IS NULL ORDER BY started_at DESC, id DESC LIMIT 1"
-)
+# Provenienz-Trigger, gehaertet (S5, T-20260926-539916651): zaehlt nur Sessions mit
+# frischer Aktivitaet (started_at innerhalb der letzten _SESSION_STALENESS_HOURS
+# Stunden) und bevorzugt eine Session mit demselben agent_id wie die neue Zeile.
+# Findet sich keine solche Session, bleibt der Wert NULL statt eine veraltete,
+# fremde Session zuzuordnen -- vorher wurde IMMER die zuletzt gestartete offene
+# Session gewaehlt, egal wie alt (Bug: eine seit Wochen offene Session stempelte
+# jeden neuen Eintrag falsch).
+_SESSION_STALENESS_HOURS = 24
+
+
+def _active_session_subquery(new_agent_column: str) -> str:
+    return (
+        "SELECT session_id FROM memory_sessions "
+        "WHERE ended_at IS NULL "
+        f"AND started_at >= datetime('now', '-{_SESSION_STALENESS_HOURS} hours') "
+        f"ORDER BY (agent_id IS NOT NULL AND agent_id = NEW.{new_agent_column}) DESC, "
+        "started_at DESC, id DESC LIMIT 1"
+    )
+
+
 PROVENANCE_TABLES = ("memory_working", "memory_facts", "memory_lessons")
 
 
 def provenance_trigger_sql(table: str):
     """Die beiden Trigger als Einzelanweisungen (kein executescript: das
     wuerde eine laufende Transaktion implizit committen)."""
+    active_session = _active_session_subquery("agent_id")
     return (f"""
 CREATE TRIGGER IF NOT EXISTS trg_{table}_session_provenance_insert
 AFTER INSERT ON {table}
 WHEN NEW.created_by_session_id IS NULL
 BEGIN
     UPDATE {table}
-    SET created_by_session_id = ({_ACTIVE_SESSION}),
-        updated_by_session_id = ({_ACTIVE_SESSION})
+    SET created_by_session_id = ({active_session}),
+        updated_by_session_id = ({active_session})
     WHERE id = NEW.id;
 END""", f"""
 CREATE TRIGGER IF NOT EXISTS trg_{table}_session_provenance_update
@@ -306,9 +322,13 @@ AFTER UPDATE ON {table}
 WHEN NEW.updated_by_session_id IS OLD.updated_by_session_id
 BEGIN
     UPDATE {table}
-    SET updated_by_session_id = ({_ACTIVE_SESSION})
+    SET updated_by_session_id = ({active_session})
     WHERE id = NEW.id
-      AND EXISTS (SELECT 1 FROM memory_sessions WHERE ended_at IS NULL);
+      AND EXISTS (
+        SELECT 1 FROM memory_sessions
+        WHERE ended_at IS NULL
+          AND started_at >= datetime('now', '-{_SESSION_STALENESS_HOURS} hours')
+      );
 END""")
 
 
