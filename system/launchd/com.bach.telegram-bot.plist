@@ -17,7 +17,7 @@
     <key>BACH_DEFAULT_MODE</key>
     <string>full</string>
     <key>BACH_LLM_IDLE_TIMEOUT</key>
-    <string>300</string>
+    <string>600</string>
     <key>BACH_MAX_TOOL_ROUNDS</key>
     <string>25</string>
     <key>OLLAMA_MODEL</key>
