@@ -28,6 +28,7 @@ Zentrale DB-Verwaltung mit Schema-Datei und Migrationen.
 Nutzt bestehende bach.db, fuegt fehlende Tabellen per IF NOT EXISTS hinzu.
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -77,7 +78,18 @@ def backup_before_migration(db_path, pending) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     tag = Path(names[0]).stem if names else "migration"
     safe_tag = "".join(c if c.isalnum() or c in "-_." else "_" for c in tag)
-    target = db_path.with_name(f"{db_path.name}.premig-{safe_tag}-{key}-{stamp}.bak")
+    base = f"{db_path.name}.premig-{safe_tag}-{key}-{stamp}"
+    # Exklusiv reservieren: zwei Starts in derselben Sekunde duerfen nicht
+    # dieselbe Zieldatei beschreiben (Review #108) -> Zaehler-Suffix.
+    for n in range(1, 100):
+        target = db_path.with_name(f"{base}.bak" if n == 1 else f"{base}-{n}.bak")
+        try:
+            os.close(os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise RuntimeError(f"keine freie Sicherungsdatei fuer {base}")
     src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         dst = sqlite3.connect(str(target))

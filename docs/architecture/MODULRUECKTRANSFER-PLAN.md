@@ -335,7 +335,7 @@ Agent-Handler nicht und Ocean-Parität ist hierdurch nicht bewiesen.
 - **Explizit NICHT in diesem Schritt enthalten:**
   - Kein SnapshotHandler-Wiring (kein Aufruf aus `snapshot.py`).
   - Keine Änderung an create / load / delete / list-Logik.
-  - Kein restore-Änderung.
+  - Keine restore-Änderung.
   - Kein Schema-Change, keine neue Tabelle.
   - Kein legacy double-write.
   - Keine Carrier-Aktivierung.

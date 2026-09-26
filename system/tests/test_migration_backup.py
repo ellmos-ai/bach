@@ -177,3 +177,50 @@ def test_app_starts_normally_when_backup_fails(tmp_path, monkeypatch, capsys):
     assert newest not in {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
     out = capsys.readouterr().out
     assert "Sicherung vor Migration fehlgeschlagen" in out and "Migrationslauf unvollstaendig" in out
+
+
+def _broken(tmp_path):
+    schema = tmp_path / "schema"
+    (schema / "migrations").mkdir(parents=True)
+    (schema / "schema.sql").write_text("CREATE TABLE t (id INTEGER);", encoding="utf-8")
+    (schema / "migrations" / "001_kaputt.sql").write_text("ALTER TABLE fehlt ADD COLUMN x;", encoding="utf-8")
+    db = Database(tmp_path / "bach.db", schema)
+    db.init_schema()
+    return db
+
+
+def test_repro_broken_migration_5_starts_is_capped(tmp_path, monkeypatch):
+    """Repro Review #108: kaputte Migration 5x gestartet -> hoechstens N Sicherungen.
+
+    Mit Wiederverwendungsfenster: genau 1. Ohne Fenster (jeder Start > 10 min
+    auseinander, hier simuliert): gedeckelt auf MIGRATION_BACKUP_KEEP.
+    """
+    db = _broken(tmp_path)
+    for _ in range(5):
+        db.run_migrations()
+    assert len(list(tmp_path.glob("bach.db.premig-*.bak"))) == 1
+    monkeypatch.setattr(core_db, "MIGRATION_BACKUP_REUSE_SECONDS", 0)
+    monkeypatch.setattr(core_db, "MIGRATION_BACKUP_KEEP", 3)
+    for _ in range(5):
+        db.run_migrations()
+    assert len(list(tmp_path.glob("bach.db.premig-*.bak"))) == 3
+
+
+def test_same_second_writes_distinct_files(tmp_path, monkeypatch):
+    db = tmp_path / "bach.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(core_db, "MIGRATION_BACKUP_REUSE_SECONDS", 0)
+
+    class _Frozen(core_db.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 26, 21, 0, 0)
+
+    monkeypatch.setattr(core_db, "datetime", _Frozen)
+    a = core_db.backup_before_migration(db, ["001_a.sql"])
+    b = core_db.backup_before_migration(db, ["001_a.sql"])
+    assert a != b and a.exists() and b.exists()
+    assert b.name.endswith("-2.bak")
