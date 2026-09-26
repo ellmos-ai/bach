@@ -1173,6 +1173,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 # Der Tool-Loop endet normalerweise, sobald das Modell eine Antwort ohne
 # Werkzeugaufruf schickt - es fragt dann zurueck statt weiterzubauen. Im
 # Loop-Mode wird stattdessen automatisch nachgeschoben.
+def ist_fertig(antwort: str | None, fenster: int = 300) -> bool:
+    """FERTIG am Anfang oder am Ende der Antwort.
+
+    Die Auftraege verlangen FERTIG als Abschluss; nur den Anfang zu pruefen
+    liess lange Abschlussberichte als offen gelten.
+    """
+    text = (antwort or "").upper()
+    return "FERTIG" in text[:fenster] or "FERTIG" in text[-fenster:]
+
+
 AUTO_NUDGE = (
     "Weiter. Frage nicht nach und warte nicht auf Bestaetigung - du arbeitest autonom. "
     "Baue oder erledige den naechsten offenen Punkt direkt. "
@@ -2219,7 +2229,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         """
         if self.auto_continue <= 0 or used >= self.auto_continue:
             return None, goal_checked
-        fertig = "FERTIG" in (content or "").upper()[:200]
+        fertig = ist_fertig(content, fenster=200)
         if fertig:
             # Einmal streng gegen das Ziel gegenpruefen, dann ist Schluss.
             if goal_checked or not self.goal:
