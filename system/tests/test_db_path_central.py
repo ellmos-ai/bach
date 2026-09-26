@@ -103,7 +103,6 @@ KNOWN_OFFENDERS = {
     "tools/agents/agent_cli.py",
     "tools/agents/agent_service_integration.py",
     "tools/agents_export.py",
-    "tools/bach_auto_discovery.py",
     "tools/bach_db_viewer.py",
     "tools/bach_text_viewer.py",
     "tools/claude_md_sync.py",
@@ -118,7 +117,6 @@ KNOWN_OFFENDERS = {
     "tools/headless_agent.py",
     "tools/injectors.py",
     "tools/json/json_registry_cleaner.py",
-    "tools/lesson_trigger_generator.py",
     "tools/llmauto/modes/chain.py",
     "tools/maintenance/create_boot_checks.py",
     "tools/maintenance/doc_path_updater.py",
@@ -148,13 +146,9 @@ KNOWN_OFFENDERS = {
     "tools/schwarm/translate_swarm.py",
     "tools/session_analyzer.py",
     "tools/skill_header_gen.py",
-    "tools/theme_packet_generator.py",
     "tools/time_system.py",
-    "tools/tool_auto_discovery.py",
-    "tools/trigger_maintainer.py",
     "tools/unified_search.py",
     "tools/user_console.py",
-    "tools/workflow_trigger_generator.py",
 }
 
 

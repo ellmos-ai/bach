@@ -24,11 +24,18 @@ __author__ = "BACH Team"
 import os
 import sqlite3
 import re
+import sys
 from pathlib import Path
 
 # Pfade
 BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "data" / "bach.db"
+# Kanonische BACH-DB statt system/data/bach.db (dort lag auf dem Laptop eine
+# Geister-DB; T-20260926-363436040).
+_SYSTEM_ROOT = next(p for p in Path(__file__).resolve().parents
+                    if (p / "hub" / "bach_paths.py").exists())
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB as DB_PATH  # noqa: E402
 SKILL_FILE = BASE_DIR / "SKILL.md"
 
 def parse_skill_md():
@@ -98,10 +105,16 @@ def sync_to_db(packets):
             try:
                 # Wir löschen alte Themen-Trigger für dieses Keyword um Updates zu ermöglichen
                 # oder wir prüfen auf source='theme'
+                # Upsert statt INSERT OR REPLACE (T-20260926-363436040): eine
+                # bestehende Zeile behaelt id, is_active (Sichtung 045) und
+                # Nutzungszaehler; Zeilen anderer Quellen bleiben unangetastet.
                 cursor.execute("""
-                    INSERT OR REPLACE INTO context_triggers 
+                    INSERT INTO context_triggers
                     (trigger_phrase, hint_text, source, is_protected)
                     VALUES (?, ?, 'theme', 1)
+                    ON CONFLICT(agent_id, trigger_phrase) DO UPDATE
+                    SET hint_text = excluded.hint_text, updated_at = CURRENT_TIMESTAMP
+                    WHERE context_triggers.source = 'theme'
                 """, (trig, p['hint']))
                 added += 1
             except sqlite3.Error as e:
