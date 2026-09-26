@@ -28,10 +28,12 @@ Injektoren, die dieser Seam nachweislich uebernimmt (handled_injectors, S3 von
 T-20260920-823767362): Strategy (source='strategy', Seed: Migration 044),
 Context (alle uebrigen Quellen als eine Gruppe, nur mit
 BACH_CONTEXT_TRIGGERS_DB=1, Sichtung: Migration 045) und Tool-Warn
-(source='tool_warn', Seed: Migration 046). Die BACH-Schalter
+(source='tool_warn', Seed: Migration 046); im CLI (bach.py _run_injectors)
+zusaetzlich Between (source='between', Seed: Migration 047, geprueft gegen
+'<command> <operation>'). Die BACH-Schalter
 (bach inject toggle, config.json "injectors") gelten weiter: ChatRuntime
 reicht abgeschaltete Injektoren als disabled durch. Rueckweg je Injektor:
-BACH_LEGACY_INJECTORS=strategy,context,tool_warn (kommagetrennt) oder der
+BACH_LEGACY_INJECTORS=strategy,context,tool_warn,between (kommagetrennt) oder der
 Gesamtschalter oben.
 """
 from __future__ import annotations
@@ -82,12 +84,19 @@ LEGACY_INJECTORS_ENV = "BACH_LEGACY_INJECTORS"
 
 #: Injektoren, die der Seam uebernimmt, mit BACHs bisherigem Cooldown in
 #: Sekunden (tools/injectors.py CooldownManager.DEFAULT_COOLDOWNS).
-HOOKER_INJECTORS = {"strategy": 120, "context": 60, "tool_warn": 300}
+HOOKER_INJECTORS = {"strategy": 120, "context": 60, "tool_warn": 300, "between": 180}
+
+#: Nur im CLI-Pfad: Between prueft den Befehl ("task done"), nie einen Prompt.
+CLI_ONLY_INJECTORS = frozenset({"between"})
+
+#: Sitzungszustand des CLI-Pfads (jeder bach-Aufruf ist ein neuer Prozess;
+#: wie data/.injector_cooldowns im Altpfad muessen Cooldowns ueberdauern).
+_CLI_STATE_FILENAME = "memoryhooker_cli_state.json"
 
 #: BACH-Konfigurationsschalter je Injektor (tools/injectors.py InjectorConfig);
 #: Tool-Warn haengt dort am context_injector-Schalter.
 INJECTOR_SWITCHES = {"strategy": "strategy_injector", "context": "context_injector",
-                     "tool_warn": "context_injector"}
+                     "tool_warn": "context_injector", "between": "between_injector"}
 
 #: Context liest context_triggers nur mit diesem Schalter (wie der
 #: ContextInjector in tools/injectors.py, S3 Einheit 2a).
@@ -443,22 +452,8 @@ class ExternalMemoryHook:
             start = self._mod["session_start_message"](self.backend, state)
             if start:
                 parts.append(start)
-            handled = self.handled_injectors() - set(disabled)
-            if handled:
-                cfg = replace(self._config, triggers=replace(
-                    self._config.triggers,
-                    sources=[s for s in self._config.triggers.sources if s in handled]))
-                kwargs = {}
-                fired = []
-                if self._groups_supported:
-                    kwargs["fired"] = fired
-                    if not cli_hints:
-                        kwargs["accept"] = lambda rule: (
-                            rule.source not in CONTEXT_SOURCES
-                            or not _CLI_PATTERN.search(rule.hint))
-                parts.extend(self._evaluate_triggers(prompt, cfg, self.backend, state, **kwargs))
-                self._mark_usage([r.rule_id for r in fired
-                                  if r.source != "strategy" and r.rule_id is not None])
+            handled = self.handled_injectors() - set(disabled) - CLI_ONLY_INJECTORS
+            parts.extend(self._trigger_hints(prompt, state, handled, cli_hints=cli_hints))
             evaluated = self._mod["evaluate_prompt"](prompt, self._config, self.backend, state)
             if evaluated:
                 parts.append(evaluated)
@@ -470,6 +465,51 @@ class ExternalMemoryHook:
         message = "\n\n".join(parts)
         self._audit(chat_id, message)
         return message
+
+    def _trigger_hints(self, text: str, state, keys, cli_hints: bool = True) -> list:
+        """Trigger-Hinweise der Injektoren ``keys`` in Konfigurationsreihenfolge."""
+        if not keys:
+            return []
+        cfg = replace(self._config, triggers=replace(
+            self._config.triggers,
+            sources=[s for s in self._config.triggers.sources if s in keys]))
+        kwargs = {}
+        fired = []
+        if self._groups_supported:
+            kwargs["fired"] = fired
+            if not cli_hints:
+                kwargs["accept"] = lambda rule: (
+                    rule.source not in CONTEXT_SOURCES
+                    or not _CLI_PATTERN.search(rule.hint))
+        hints = self._evaluate_triggers(text, cfg, self.backend, state, **kwargs)
+        # usage_count zaehlte der Altpfad nur fuer den ContextInjector.
+        self._mark_usage([r.rule_id for r in fired
+                          if r.source in CONTEXT_SOURCES and r.rule_id is not None])
+        return list(hints)
+
+    def cli_injections(self, output: str, last_command: str,
+                       disabled: frozenset = frozenset()) -> tuple:
+        """CLI-Pfad (bach.py _run_injectors): (Hinweise zur Ausgabe, Between).
+
+        Wie der Altpfad: Strategy/Context/Tool-Warn pruefen die Befehls-
+        AUSGABE, Between den Befehl selbst. Der Zustand liegt in einer Datei
+        neben der BACH-DB, weil jeder Aufruf ein neuer Prozess ist. Fail-soft.
+        """
+        if not external_memoryhooker_available():
+            return [], []
+        handled = self.handled_injectors() - set(disabled)
+        if not handled:
+            return [], []
+        path = self.backend.db_path.parent / _CLI_STATE_FILENAME
+        try:
+            state = self._mod["SessionState"].load(path)
+            before = self._trigger_hints(output or "", state, handled - CLI_ONLY_INJECTORS)
+            between = self._trigger_hints(last_command or "", state, handled & CLI_ONLY_INJECTORS)
+            state.save(path)
+        except Exception as e:
+            log.warning("memoryhooker CLI-Pfad fehlgeschlagen (fail-soft): %s", e)
+            return [], []
+        return before, between
 
     def _mark_usage(self, rule_ids: list) -> None:
         """usage_count/last_used der gefeuerten Kontext-Regeln (wie der Altpfad).
