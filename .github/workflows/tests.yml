@@ -54,4 +54,5 @@ jobs:
             system/tests/test_update_handler.py \
             system/tests/test_db_path_central.py \
             system/tests/test_cli_startup_observers.py \
+            system/tests/test_consolidation_forget_soft.py \
             system/tests/test_core.py

@@ -152,6 +152,7 @@ class ConsolidationHandler(BaseHandler):
                 output.append(f"    - active:              {by_status.get('active', 0):5}")
                 output.append(f"    - archived:            {by_status.get('archived', 0):5}")
                 output.append(f"    - deleted:             {by_status.get('deleted', 0):5}")
+                output.append(f"    - forgotten:           {by_status.get('forgotten', 0):5}")
                 output.append(f"  Durchschnittl. Gewicht:  {avg_weight:.2f}")
                 output.append(f"  Unter Archiv-Schwelle:   {below_threshold:5}")
             except Exception as e:
@@ -617,7 +618,7 @@ class ConsolidationHandler(BaseHandler):
         return True, "Trigger-Sync abgeschlossen:\n" + "\n".join(results)
 
     def _deactivate_unused(self, dry_run: bool = False) -> tuple:
-        """Deaktiviert oder loescht Eintraege mit sehr geringem Gewicht (v1.1.80)."""
+        """Deaktiviert oder markiert Eintraege mit sehr geringem Gewicht als vergessen (v1.1.80)."""
         with self._get_db() as conn:
             cursor = conn.cursor()
 
@@ -627,28 +628,41 @@ class ConsolidationHandler(BaseHandler):
                 WHERE status = 'active' AND weight < ?
             """, (self.WEIGHT_THRESHOLD_DELETE,))
 
-            to_delete = cursor.fetchall()
+            to_process = cursor.fetchall()
+            deactivated = 0
+            forgotten = 0
+
+            for entry in to_process:
+                if entry['source_table'] == 'memory_facts':
+                    forgotten += 1
+                else:
+                    deactivated += 1
 
             if not dry_run:
                 now = datetime.now().isoformat()
-                for entry in to_delete:
-                    cursor.execute("""
-                        UPDATE memory_consolidation
-                        SET status = 'deleted', updated_at = ?
-                        WHERE id = ?
-                    """, (now, entry['id']))
-
+                for entry in to_process:
                     table = entry['source_table']
-                    if table in ['memory_lessons', 'memory_working']:
-                        cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?",
-                                     (now, entry['source_id']))
-                    elif table == 'memory_facts':
-                        cursor.execute("DELETE FROM memory_facts WHERE id = ?", (entry['source_id'],))
+                    if table == 'memory_facts':
+                        cursor.execute("""
+                            UPDATE memory_consolidation
+                            SET status = 'forgotten', updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['id']))
+                    else:
+                        cursor.execute("""
+                            UPDATE memory_consolidation
+                            SET status = 'deleted', updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['id']))
+
+                        if table in ['memory_lessons', 'memory_working']:
+                            cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?",
+                                         (now, entry['source_id']))
 
                 conn.commit()
 
             prefix = "[DRY-RUN] " if dry_run else ""
-            return True, f"{prefix}[OK] {len(to_delete)} Eintraege geloescht/deaktiviert"
+            return True, f"{prefix}[OK] {deactivated} Eintraege deaktiviert, {forgotten} als vergessen markiert"
 
     def _reclassify(self, args: list, dry_run: bool = False) -> tuple:
         """Korrigiert falsch kategorisierte Eintraege (v1.1.81).

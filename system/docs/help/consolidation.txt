@@ -91,7 +91,7 @@ memory_consolidation (AKTIV, 350+ Einträge):
   weight            REAL        -- Relevanz-Score (0.0-1.0)
   decay_rate        REAL        -- Verfalls-Rate
   threshold         REAL        -- Archivierungs-Schwelle
-  status            TEXT        -- active, archived, deleted
+  status            TEXT        -- active, archived, deleted, forgotten
   consolidated_to   INTEGER     -- ID in memory_context (wenn konsolidiert)
   created_at        TIMESTAMP
   updated_at        TIMESTAMP
@@ -144,7 +144,7 @@ NEUE OPERATIONEN (v1.1.80+)
   forget           Deaktiviert/löscht Einträge mit weight < 0.05
                    - memory_lessons: is_active = 0
                    - memory_working: is_active = 0
-                   - memory_facts: DELETE
+                   - memory_facts: status = 'forgotten' (Fakt bleibt erhalten)
 
   reclassify       Korrigiert falsche Kategorisierungen:
                    - Lesson -> Context (bei hoher Nutzung)
