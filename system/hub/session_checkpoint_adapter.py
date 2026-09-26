@@ -2,9 +2,10 @@
 """K9 adapter: BACH SnapshotHandler -> the neutral session-checkpoint carrier.
 
 Contract: open-ocean/architecture/session-checkpoint-capability.v1.json
-(namespace "bach", 4-field payload: session_id, open_tasks, recent_memory,
-created_at; parity "not-accepted" for every operation -- this module does not
-change SnapshotHandler's create/load/list/delete behaviour).
+(namespace "bach", six-field payload: session_id, open_tasks, recent_memory,
+active_files, token_usage, created_at; parity "not-accepted" for every
+operation -- this module does not change SnapshotHandler's create/load/list/
+delete behaviour).
 
 INACTIVE PREPARATION SEAM, like snapshot_payload.py: not imported by
 SnapshotHandler. It proves the carrier round-trip (create/get/list/delete)
@@ -29,19 +30,15 @@ NAMESPACE = "bach"
 
 
 def _adapter_payload(bach_db_path: Union[str, Path], *, created_at: Optional[str] = None) -> dict:
-    """Reduce SnapshotHandler's 6-field payload to the contract's 4 fields.
+    """Collect BACH's six-field checkpoint payload, unchanged.
 
-    ``active_files`` and ``token_usage`` are BACH-legacy extras not part of
-    the K9 application_adapter contract; they are dropped here, not collected
-    differently.
+    ``collect_snapshot_payload`` already returns exactly the six fields the
+    K9 contract's ``application_adapter.payload_fields`` requires
+    (``session_id``, ``open_tasks``, ``recent_memory``, ``active_files``,
+    ``token_usage``, ``created_at``); this wrapper exists so callers go
+    through the adapter module rather than the collector directly.
     """
-    full = collect_snapshot_payload(bach_db_path, created_at=created_at)
-    return {
-        "session_id": full["session_id"],
-        "open_tasks": full["open_tasks"],
-        "recent_memory": full["recent_memory"],
-        "created_at": full["created_at"],
-    }
+    return collect_snapshot_payload(bach_db_path, created_at=created_at)
 
 
 def _to_legacy_tuple(checkpoint: Checkpoint) -> dict:

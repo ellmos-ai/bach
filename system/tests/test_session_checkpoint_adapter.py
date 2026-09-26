@@ -45,8 +45,11 @@ def test_create_load_roundtrip(store, bach_db):
     assert len(created["payload"]["open_tasks"]) == 10  # capped, mirrors SnapshotHandler
     assert len(created["payload"]["recent_memory"]) == 5
     assert set(created["payload"]) == {
-        "session_id", "open_tasks", "recent_memory", "created_at",
+        "session_id", "open_tasks", "recent_memory",
+        "active_files", "token_usage", "created_at",
     }
+    assert len(created["payload"]["active_files"]) == 10  # capped, mirrors SnapshotHandler
+    assert created["payload"]["token_usage"] == 500
 
     loaded = adapter.load(store, created["id"])
     assert loaded == created
