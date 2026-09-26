@@ -24,7 +24,7 @@ def _sha(path):
 
 
 def _migration():
-    spec = importlib.util.spec_from_file_location("memory_union_043", UNION_DIR / "043_memory_union.py")
+    spec = importlib.util.spec_from_file_location("memory_union_043", SCHEMA_DIR / "migrations" / "043_memory_union.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -63,10 +63,18 @@ def test_vendored_files_match_usmc_pins():
     assert _sha(UNION_DIR / "memory_union.contract.json") == CONTRACT_SHA256
 
 
-def test_not_yet_in_auto_migrations():
-    # Der Runner fuehrt migrations/ auf Bestands-DBs automatisch aus; die
-    # Aktivierung ist bewusst ein eigener Schritt (S2).
-    assert not list((SCHEMA_DIR / "migrations").glob("*memory_union*"))
+def test_active_in_migrations_but_module_stays_outside():
+    # S2: 043 laeuft ueber den Runner; memory_union.py waere dort selbst eine Migration.
+    names = {p.name for p in (SCHEMA_DIR / "migrations").iterdir()}
+    assert "043_memory_union.py" in names
+    assert "memory_union.py" not in names and "memory_union.contract.json" not in names
+
+
+def test_fresh_schema_sql_already_meets_contract(mig):
+    # Frische DBs: init_schema + baseline_migrations bucht 043 ohne Lauf.
+    conn = sqlite3.connect(":memory:")
+    conn.executescript((SCHEMA_DIR / "schema.sql").read_text(encoding="utf-8"))
+    assert mig.mu.describe_schema(conn) == mig.mu.load_contract()["schema"]
 
 
 def test_schema_sql_db_reaches_contract_and_keeps_rows(db, mig):
