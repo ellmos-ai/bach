@@ -1,4 +1,5 @@
 -- Migration 044: Strategy-Injektor als Trigger-Zeilen (S3 von T-20260920-823767362)
+-- BACH-SEED: idempotent
 --
 -- Die sechs Gruppen aus tools/injectors.py StrategyInjector.STRATEGIES als
 -- context_triggers mit source='strategy'. Der memoryhooker-Seam
