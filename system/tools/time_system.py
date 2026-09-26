@@ -809,6 +809,104 @@ class TimeManager:
 
         return "\n".join(lines)
 
+    def timebeat(self) -> Optional[str]:
+        """Timebeat fuer Chat und CLI, falls die Uhr faellig ist, sonst None.
+
+        [CLOCK] + laufende Timer/Countdowns + abgelaufene Countdowns +
+        ungelesene Nachrichten des aktiven Partners. Unveraendert aus
+        tools/injectors.py TimeInjector.check uebernommen (E5 von
+        T-20260920-823767362); TimeInjector delegiert hierher.
+        """
+
+        # 1. Clock Check (TimeManager entscheidet ob Zeit ist)
+        clock_msg = self.clock.check()
+        
+        if clock_msg:
+            # Wenn Clock feuert, bauen wir den vollen Beat
+            # Wir nutzen nicht clock_msg direkt, sondern bauen den 
+            # Context-reichen Beat zusammen.
+            
+            lines = [clock_msg] # "[CLOCK] HH:MM"
+
+            # Timer & Countdown Infos
+            timer_disp = self.timer.get_display()
+            if timer_disp:
+                lines.append(f"[TIMER] {timer_disp}")
+                
+            cd_disp = self.countdown.get_display()
+            if cd_disp:
+                lines.append(f"[COUNTDOWN] {cd_disp}")
+
+            # Abgelaufene Countdowns prüfen
+            expired = self.countdown.check_expired()
+            for name, cmd in expired:
+                lines.append(f"[!] Countdown '{name}' ABGELAUFEN!")
+                if cmd:
+                    lines.append(f"    Trigger: {cmd}")
+
+            # Nachrichten Check (Legacy Feature von TimeInjector)
+            msg_info = self._unread_messages()
+            if msg_info:
+                lines.append(msg_info)
+
+            return "\n".join(lines)
+
+        return None
+
+    def _unread_messages(self) -> Optional[str]:
+        """Prüft ungelesene Nachrichten für den aktiven Partner."""
+        if not self.base_path:
+            return None
+        
+        try:
+            import sqlite3
+            
+            # Aktiven Partner aus partner_presence holen
+            bach_db = self.base_path / "data" / "bach.db"
+            if not bach_db.exists():
+                return None
+            
+            conn = sqlite3.connect(str(bach_db))
+            row = conn.execute("""
+                SELECT partner_name FROM partner_presence 
+                WHERE status = 'online' 
+                ORDER BY clocked_in DESC LIMIT 1
+            """).fetchone()
+            conn.close()
+            
+            if not row:
+                return None
+            
+            partner = row[0]
+            
+            # Ungelesene Nachrichten zählen
+            bach_db = self.base_path / "data" / "bach.db"
+            if not bach_db.exists():
+                return None
+
+            conn = sqlite3.connect(str(bach_db))
+            conn.row_factory = sqlite3.Row
+            msgs = conn.execute("""
+                SELECT id, sender, body FROM messages
+                WHERE status = 'unread' AND recipient = ?
+                ORDER BY created_at DESC LIMIT 3
+            """, (partner,)).fetchall()
+            conn.close()
+            
+            if not msgs:
+                return None
+            
+            # Nachrichten formatieren
+            lines = [f"[NEUE NACHRICHTEN] {len(msgs)} fuer {partner.upper()}:"]
+            for m in msgs[:2]:  # Max 2 anzeigen
+                preview = (m['body'] or '')[:50].replace('\n', ' ')
+                lines.append(f"  [{m['id']}] {m['sender']}: {preview}...")
+            lines.append("  --> bach msg ping --from " + partner)
+            
+            return "\n".join(lines)
+        except Exception:
+            return None
+
     def enable_all(self) -> str:
         """Aktiviert alle Zeit-Anzeigen."""
         self.clock.enable(True)

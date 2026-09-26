@@ -1,0 +1,57 @@
+name: tests
+
+# pytest fuer die Gedaechtnis-/Injektor-Pfade (S2/S3 von T-20260920-823767362)
+# und den Kern. Laeuft ohne Live-DB und ohne Netzwerk-Dienste: conftest.py
+# isoliert BACH_DB & Co. in ein Temp-Verzeichnis.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Volle Historie: tests/test_timebeat_parity.py laedt den Vor-E5-Stand
+          # per 'git show' und wuerde in einem flachen Klon uebersprungen.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Abhaengigkeiten (ohne private ellmos-ai-Pakete)
+        run: |
+          # assistant-core, accounts-core und doc-services sind private Repos und
+          # ohne Token nicht installierbar; die ausgewaehlten Suiten brauchen sie nicht.
+          grep -v -E '^(assistant-core|accounts-core|doc-services) @' requirements.txt > requirements-ci.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt pytest
+
+      - name: pytest (S2/S3 + Kern)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -m pytest -p no:cacheprovider -rA \
+            system/tests/test_injector_parity.py \
+            system/tests/test_context_injector_db.py \
+            system/tests/test_hook_provider_wiring.py \
+            system/tests/test_migration_backup.py \
+            system/tests/test_seed_fresh_db.py \
+            system/tests/test_timebeat_parity.py \
+            system/tests/test_memory_union.py \
+            system/tests/test_memory_readers_union.py \
+            system/tests/test_migration_baseline_check.py \
+            system/tests/test_update_handler.py \
+            system/tests/test_db_path_central.py \
+            system/tests/test_cli_startup_observers.py \
+            system/tests/test_core.py

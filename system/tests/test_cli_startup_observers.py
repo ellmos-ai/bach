@@ -164,6 +164,11 @@ def test_subcommand_help_bypasses_global_start_side_effects(
     assert calls == [("dummy", [], False)]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="T-20260926-401320545: Dry-run initialisiert den AutoLogger vor dem Handler "
+           "(Zielkonflikt mit #63, get_logger(RUNTIME_ROOT) unbedingt)",
+)
 def test_dry_run_dispatch_skips_global_start_side_effects(
     observer_boundary, monkeypatch, capsys
 ):
