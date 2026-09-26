@@ -1,4 +1,5 @@
 -- Migration 046: Tool-Warn-Injektor als Trigger-Zeile (S3 von T-20260920-823767362)
+-- BACH-SEED: idempotent
 --
 -- tools/injectors.py ToolInjector.check_before_create als context_triggers
 -- mit source='tool_warn'. Der memoryhooker-Seam (hub/memory_hook_provider.py)

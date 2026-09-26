@@ -86,6 +86,9 @@ class App:
                     # Migrationen nur buchen ("fake initial"), nie ausfuehren.
                     self._db.init_schema()
                     self._db.baseline_migrations()
+                    # Daten-Seeds (z. B. context_triggers) traegt schema.sql
+                    # nicht; baseline bucht sie nur (T-20260926-244294919).
+                    self._db.apply_seed_migrations()
                 else:
                     # Bestands-DB: NIE automatisch einen Alt-Rueckstand scharf
                     # schalten (Review PR #10 Befund 1; Produktiv-Vorfall

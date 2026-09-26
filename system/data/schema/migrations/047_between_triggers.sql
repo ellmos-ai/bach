@@ -1,4 +1,5 @@
 -- Migration 047: Between-Injektor als Trigger-Zeile (S3 von T-20260920-823767362)
+-- BACH-SEED: idempotent
 --
 -- tools/injectors.py BetweenInjector.check_task_done als context_triggers mit
 -- source='between'. Nur der CLI-Pfad (bach.py _run_injectors) prueft sie, und

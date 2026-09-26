@@ -279,6 +279,36 @@ class Database:
                     (mig_file.name, datetime.now().isoformat())
                 )
 
+    #: Markerzeile fuer reine Daten-Seeds unter den Migrationen (INSERT OR
+    #: IGNORE, idempotent). baseline_migrations bucht sie auf frischen DBs nur;
+    #: apply_seed_migrations fuehrt sie dort zusaetzlich aus (T-20260926-244294919).
+    SEED_MARKER = "-- BACH-SEED: idempotent"
+
+    def apply_seed_migrations(self) -> list:
+        """Fuehrt die als Daten-Seed markierten .sql-Migrationen aus.
+
+        Fuer frische DBs nach init_schema(): schema.sql traegt nur Struktur,
+        keine Datenzeilen. Ohne diesen Schritt fehlten dort z. B. die
+        context_triggers-Seeds (044/046/047) -- BACH bliebe still beim
+        Injektor-Altpfad. Jede Seed-Datei muss idempotent sein. Ein
+        fehlschlagender Seed wird gemeldet, die DB bleibt nutzbar.
+        """
+        migrations_dir = self.schema_dir / "migrations"
+        applied = []
+        if not migrations_dir.exists():
+            return applied
+        for mig_file in sorted(migrations_dir.glob("*.sql")):
+            text = mig_file.read_text(encoding="utf-8")
+            if self.SEED_MARKER not in text.splitlines()[:5]:
+                continue
+            try:
+                with self.connect() as conn:
+                    conn.executescript(text)
+                applied.append(mig_file.name)
+            except sqlite3.Error as e:
+                print(f"  [WARNUNG] Daten-Seed {mig_file.name} fehlgeschlagen: {e}")
+        return applied
+
     def migration_backlog(self) -> list:
         """Ausstehende Migrationen, die AELTER sind als der juengste gebuchte
         Stand — das Kennzeichen einer Bestands-DB ohne Baseline.
