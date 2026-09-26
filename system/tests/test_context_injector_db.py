@@ -97,3 +97,15 @@ def test_sichtung_045_idempotent(tmp_path):
         "bug": "Bugfix-Workflow: skills/workflows/bugfix-protokoll.md",
         "utf-8": "Encoding-Fix: python tools/file_ops/encoding_fixer.py <datei>",
     }
+
+
+def test_broken_db_warns_once_and_falls_back(injector, monkeypatch, caplog):
+    monkeypatch.setenv(injectors.CONTEXT_TRIGGERS_DB_ENV, "1")
+    monkeypatch.setattr(injectors, "_warned", set())
+    injector.write_bytes(b"kein sqlite")
+    with caplog.at_level("WARNING", logger=injectors.__name__):
+        assert CI.check("ein fehler") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["fehler"]
+        CI._cache = None
+        CI.check("ein fehler")
+    warnings = [r for r in caplog.records if "context_triggers lesen" in r.getMessage()]
+    assert len(warnings) == 1 and "DatabaseError" in warnings[0].getMessage()

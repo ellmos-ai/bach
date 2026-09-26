@@ -255,10 +255,18 @@ def test_context_parity_sequence(context_pair):
 
 
 @needs_groups
-def test_context_api_mode_skips_cli_hints_before_selection(context_pair):
+def test_context_gewollte_abweichung_alt_verwirft_neu_waehlt_naechsten_treffer(context_pair):
+    """GEWOLLTE Abweichung (Ticket-Master 2026-09-26), nicht Paritaet: im Chat
+    (api-Modus) verwarf der Altpfad den ersten Treffer, weil er CLI traegt, und
+    zeigte nichts; der Seam ueberspringt ihn vor der Auswahl und liefert den
+    naechsten chat-tauglichen Treffer."""
     _, _, hook = context_pair
     prompt = "fehler bei der ocr"
-    assert mhp._CLI_PATTERN.search(injectors.ContextInjector.check(prompt))  # alt: gefiltert -> leer
+    import bach_api
+    proxy = bach_api._InjectorProxy()
+    proxy.set_mode("api")
+    alt = proxy._filter_cli([injectors.ContextInjector.check(prompt)])
+    assert alt == []  # alt verwirft
     new = _kontext(hook.hook_context(prompt, "api", cli_hints=False))
     assert new == ["[KONTEXT] " + injectors.ContextInjector.CONTEXT_TRIGGERS["ocr"]]
     import bach_api
