@@ -17,17 +17,19 @@ Ende; jede Abweichung rollt komplett zurueck. Bestehende BACH-Schreibpfade
 setzen kein agent_id und landen damit weiter auf demselben Schluessel
 (agent_id = 'default'), OR REPLACE/OR IGNORE verhalten sich unveraendert.
 
-STATUS: bewusst NICHT in migrations/. Der Runner fuehrt dort neue Dateien
-beim naechsten Start jeder Bestands-DB automatisch aus; das waere eine
-Live-Umstellung. Aktivierung (verschieben nach migrations/ und schema.sql-
-Endstand angleichen) ist Teil von S2 des Tickets T-20260920-823767362.
+STATUS: aktiv (S2 von T-20260920-823767362). Laptop und Mac wurden am
+2026-09-26 mit Sicherung und Receipt direkt umgestellt; auf ihnen ist der Lauf
+ein No-op, der die Buchung nachholt. Frische DBs bringt schema.sql bereits auf
+den Vertragsstand (init_schema + baseline_migrations bucht dann nur).
+Das Modul memory_union.py und der Vertrag liegen bewusst in ../memory_union/,
+damit der Runner sie nicht selbst als Migration ausfuehrt.
 """
 
 import importlib.util
 import sqlite3
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parent
+_HERE = Path(__file__).resolve().parent.parent / "memory_union"
 
 
 def _union_module():

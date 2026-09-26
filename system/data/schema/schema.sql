@@ -115,16 +115,19 @@ CREATE TABLE IF NOT EXISTS task_history (
 
 CREATE TABLE IF NOT EXISTS memory_working (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL CHECK(type IN ('scratchpad', 'context', 'loop', 'note')),
+    type TEXT NOT NULL CHECK(type IN ('scratchpad', 'context', 'loop', 'note', 'handoff', 'task')),
     content TEXT NOT NULL,
     priority INTEGER DEFAULT 0,
-    tags TEXT,  -- JSON array
+    tags TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
     is_active INTEGER DEFAULT 1,
     created_by_session_id TEXT REFERENCES memory_sessions(session_id),
-    updated_by_session_id TEXT REFERENCES memory_sessions(session_id)
+    updated_by_session_id TEXT REFERENCES memory_sessions(session_id),
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    session_id TEXT,
+    related_to TEXT
 );
 
 CREATE TABLE IF NOT EXISTS memory_facts (
@@ -132,48 +135,83 @@ CREATE TABLE IF NOT EXISTS memory_facts (
     category TEXT NOT NULL CHECK(category IN ('user', 'project', 'system', 'domain')),
     key TEXT NOT NULL,
     value TEXT NOT NULL,
-    value_type TEXT DEFAULT 'text',  -- 'text', 'json', 'number', 'date'
+    value_type TEXT DEFAULT 'text',
     confidence REAL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
     source TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by_session_id TEXT REFERENCES memory_sessions(session_id),
     updated_by_session_id TEXT REFERENCES memory_sessions(session_id),
-    UNIQUE(category, key)
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    namespace TEXT,
+    visibility TEXT,
+    UNIQUE(agent_id, category, key)
 );
 
 CREATE TABLE IF NOT EXISTS memory_lessons (
-        id INTEGER PRIMARY KEY,
-        category TEXT NOT NULL,
-        severity TEXT DEFAULT 'medium',
-        title TEXT NOT NULL,
-        problem TEXT,
-        solution TEXT NOT NULL,
-        related_tools TEXT,
-        related_files TEXT,
-        trigger_words TEXT,
-        trigger_events TEXT,
-        is_active INTEGER DEFAULT 1,
-        times_shown INTEGER DEFAULT 0,
-        last_shown TEXT,
-        created_at TEXT,
-        updated_at TEXT
-    , dist_type INTEGER DEFAULT 1,
-        created_by_session_id TEXT REFERENCES memory_sessions(session_id),
-        updated_by_session_id TEXT REFERENCES memory_sessions(session_id));
+    id INTEGER PRIMARY KEY,
+    category TEXT NOT NULL,
+    severity TEXT DEFAULT 'medium',
+    title TEXT NOT NULL,
+    problem TEXT,
+    solution TEXT NOT NULL,
+    related_tools TEXT,
+    related_files TEXT,
+    trigger_words TEXT,
+    trigger_events TEXT,
+    is_active INTEGER DEFAULT 1,
+    times_shown INTEGER DEFAULT 0,
+    last_shown TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    dist_type INTEGER DEFAULT 1,
+    created_by_session_id TEXT REFERENCES memory_sessions(session_id),
+    updated_by_session_id TEXT REFERENCES memory_sessions(session_id),
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    confidence REAL DEFAULT 1.0,
+    namespace TEXT,
+    visibility TEXT,
+    source_kind TEXT NOT NULL DEFAULT 'legacy',
+    source_key TEXT,
+    episode_key TEXT,
+    source_hash TEXT,
+    event_anchor TEXT,
+    editorial_status TEXT NOT NULL DEFAULT 'legacy',
+    evidence_class TEXT NOT NULL DEFAULT 'unknown',
+    privacy_scope TEXT NOT NULL DEFAULT 'local',
+    sensitive_source INTEGER NOT NULL DEFAULT 0,
+    user_preference INTEGER NOT NULL DEFAULT 0,
+    policy_relevant INTEGER NOT NULL DEFAULT 0,
+    conflict_flag INTEGER NOT NULL DEFAULT 0,
+    mutates_skill INTEGER NOT NULL DEFAULT 0,
+    mutates_workflow INTEGER NOT NULL DEFAULT 0,
+    ingest_payload_hash TEXT,
+    ingest_payload_hash_version INTEGER,
+    helpful_count INTEGER NOT NULL DEFAULT 0,
+    unhelpful_count INTEGER NOT NULL DEFAULT 0,
+    independent_repeat_count INTEGER NOT NULL DEFAULT 0,
+    delivery_failure_count INTEGER NOT NULL DEFAULT 0,
+    last_delivered_at TEXT
+);
 
 CREATE TABLE IF NOT EXISTS memory_sessions (
-        id INTEGER PRIMARY KEY,
-        session_id TEXT UNIQUE NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        summary TEXT,
-        tasks_completed INTEGER DEFAULT 0,
-        tasks_created INTEGER DEFAULT 0,
-        tokens_used INTEGER,
-        delegation_count INTEGER DEFAULT 0,
-        continuation_context TEXT
-    , dist_type INTEGER DEFAULT 0, is_compressed INTEGER DEFAULT 0, partner_id TEXT DEFAULT 'user');
+    id INTEGER PRIMARY KEY,
+    session_id TEXT UNIQUE NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    summary TEXT,
+    tasks_completed INTEGER DEFAULT 0,
+    tasks_created INTEGER DEFAULT 0,
+    tokens_used INTEGER,
+    delegation_count INTEGER DEFAULT 0,
+    continuation_context TEXT,
+    dist_type INTEGER DEFAULT 0,
+    is_compressed INTEGER DEFAULT 0,
+    partner_id TEXT DEFAULT 'user',
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    current_task TEXT,
+    handoff_notes TEXT
+);
 
 CREATE TABLE IF NOT EXISTS archived_memory (
     archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,7 +352,64 @@ CREATE TABLE IF NOT EXISTS memory_consolidation (
     consolidated_to INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    agent_id TEXT NOT NULL DEFAULT 'default',
     UNIQUE(source_table, source_id)
+);
+
+CREATE TABLE IF NOT EXISTS decay_config (
+    agent_id TEXT PRIMARY KEY,
+    fact_decay_rate REAL DEFAULT 0.01,
+    lesson_decay_rate REAL DEFAULT 0.005,
+    min_confidence REAL DEFAULT 0.2,
+    max_facts INTEGER DEFAULT 1000,
+    max_lessons INTEGER DEFAULT 200,
+    max_sessions INTEGER DEFAULT 500,
+    memory_md_top_facts INTEGER DEFAULT 10,
+    memory_md_top_lessons INTEGER DEFAULT 10,
+    auto_cleanup_enabled INTEGER DEFAULT 1,
+    cleanup_interval_days INTEGER DEFAULT 7,
+    last_cleanup_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS memory_lesson_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_id INTEGER NOT NULL REFERENCES memory_lessons(id) ON DELETE CASCADE,
+    feedback_key TEXT NOT NULL,
+    helpful INTEGER CHECK(helpful IS NULL OR helpful IN (0, 1)),
+    independent_repeat INTEGER NOT NULL DEFAULT 0,
+    delivery_failed INTEGER NOT NULL DEFAULT 0,
+    delivery_key TEXT,
+    event_anchor TEXT,
+    payload_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    UNIQUE(feedback_key)
+);
+
+CREATE TABLE IF NOT EXISTS memory_lesson_delivery_batches (
+    delivery_key TEXT PRIMARY KEY,
+    session_id INTEGER REFERENCES memory_sessions(id) ON DELETE CASCADE,
+    session_key TEXT NOT NULL,
+    delivery_mode TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_lesson_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_id INTEGER NOT NULL REFERENCES memory_lessons(id) ON DELETE CASCADE,
+    delivery_key TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    delivery_mode TEXT NOT NULL,
+    context TEXT,
+    feedback_prompt TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    UNIQUE(lesson_id, delivery_key)
 );
 
 CREATE TABLE IF NOT EXISTS memory_context (
@@ -1659,17 +1754,23 @@ CREATE TABLE IF NOT EXISTS document_index (
     );
 
 CREATE TABLE IF NOT EXISTS context_triggers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trigger_phrase TEXT UNIQUE NOT NULL,
-            hint_text TEXT NOT NULL,
-            source TEXT DEFAULT 'manual',
-            confidence REAL DEFAULT 0.5,
-            usage_count INTEGER DEFAULT 0,
-            last_used TEXT,
-            is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        , is_protected INTEGER DEFAULT 0);
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_phrase TEXT NOT NULL,
+    hint_text TEXT NOT NULL,
+    source TEXT DEFAULT 'manual',
+    confidence REAL DEFAULT 0.5,
+    usage_count INTEGER DEFAULT 0,
+    last_used TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    is_protected INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('unknown', 'blocked', 'approved')),
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    namespace TEXT,
+    expires_at TEXT,
+    UNIQUE(agent_id, trigger_phrase)
+);
 
 CREATE TABLE IF NOT EXISTS languages_config (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -2674,3 +2775,17 @@ CREATE TABLE IF NOT EXISTS delegation_log (
     dry_run   INTEGER DEFAULT 0,             -- 1 = nur simuliert
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Gemeinsames Gedaechtnis BACH = OCEAN (Vertrag memory_union, Migration 043)
+CREATE INDEX IF NOT EXISTS idx_memory_working_agent ON memory_working(agent_id);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_agent ON memory_facts(agent_id);
+CREATE INDEX IF NOT EXISTS idx_memory_lessons_agent ON memory_lessons(agent_id);
+CREATE INDEX IF NOT EXISTS idx_memory_sessions_agent ON memory_sessions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_context_triggers_agent ON context_triggers(agent_id);
+CREATE INDEX IF NOT EXISTS idx_context_triggers_status ON context_triggers(status);
+CREATE INDEX IF NOT EXISTS idx_consolidation_agent ON memory_consolidation(agent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_lessons_source_episode ON memory_lessons(source_key, episode_key) WHERE source_key IS NOT NULL AND episode_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memory_lessons_delivery_selection ON memory_lessons(is_active, editorial_status, privacy_scope);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_feedback_lesson ON memory_lesson_feedback(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_lesson ON memory_lesson_deliveries(lesson_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_batch_order ON memory_lesson_deliveries(delivery_key, id);

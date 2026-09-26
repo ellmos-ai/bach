@@ -21,7 +21,7 @@ from memory_sync import MemoryGenerator
 
 def _migration():
     spec = importlib.util.spec_from_file_location(
-        "memory_union_043", SYSTEM / "data" / "schema" / "memory_union" / "043_memory_union.py")
+        "memory_union_043", SYSTEM / "data" / "schema" / "migrations" / "043_memory_union.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

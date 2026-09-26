@@ -13,7 +13,14 @@ from hub._services.stigmergy.stigmergy_api import StigmergyAPI
 
 def _db(path: Path, union: bool) -> str:
     conn = sqlite3.connect(path)
-    conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+    if union:
+        conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+    else:
+        # Bestands-DB vor 043: memory_working ohne agent_id/session_id/related_to.
+        conn.execute(
+            "CREATE TABLE memory_working (id INTEGER PRIMARY KEY, type TEXT, content TEXT, "
+            "priority INTEGER, tags TEXT, is_active INTEGER, created_at TEXT, updated_at TEXT)")
+        conn.execute("CREATE TABLE memory_sessions (id INTEGER PRIMARY KEY, session_id TEXT, started_at TEXT)")
     conn.execute(
         "CREATE TABLE shared_memory_working (id INTEGER PRIMARY KEY, agent_id TEXT, session_id TEXT, "
         "type TEXT, content TEXT, priority INTEGER, is_active INTEGER, created_at TEXT, updated_at TEXT, "
@@ -21,7 +28,7 @@ def _db(path: Path, union: bool) -> str:
     conn.execute("INSERT INTO memory_sessions (session_id, started_at) VALUES ('s', '2026-09-26')")
     if union:
         spec = importlib.util.spec_from_file_location(
-            "m043", SYSTEM / "data" / "schema" / "memory_union" / "043_memory_union.py")
+            "m043", SYSTEM / "data" / "schema" / "migrations" / "043_memory_union.py")
         mig = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mig)
         mig.run_migration(conn)

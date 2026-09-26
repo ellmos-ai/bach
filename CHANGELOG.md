@@ -6,6 +6,10 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+### Changed
+
+- **Gemeinsames Gedächtnis BACH = OCEAN aktiv (S2, T-20260920-823767362):** `043_memory_union.py` liegt jetzt in `data/schema/migrations/` und läuft über den Runner; Modul und Vertrag bleiben in `data/schema/memory_union/` (sonst wären sie selbst Migrationen). `schema.sql` trägt den Vertragsstand (memory_*, context_triggers, memory_consolidation, decay_config, Lesson-Nebentabellen, Indizes), weil frische DBs per `init_schema` + `baseline_migrations` alle Migrationen nur buchen. Laptop und Mac wurden am 2026-09-26 bereits direkt umgestellt; dort ist der Lauf ein No-op mit Buchung.
+
 ### Fixed
 
 - **Einheitliche FERTIG-Erkennung:** `ist_fertig()` in `chat_runtime` prüft Anfang und Ende der Antwort; der `/auto`-Loop (`_auto_next`) und der Idle-Worker nutzen dieselbe Regel. Vorher las `_auto_next` nur die ersten 200 Zeichen und schob nach einem Abschlussbericht mit FERTIG am Ende weiter an.
