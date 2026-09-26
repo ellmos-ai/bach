@@ -37,5 +37,7 @@ launchctl print gui/$(id -u)/com.bach.chat-tray | grep -E "state =|pid ="
 Gleich für `com.bach.telegram-bot`. Beobachtet am 2026-09-26: `bootout` wirkt
 asynchron; ein sofortiges `bootstrap` meldet dann „5: Input/output error“ und der Dienst
 bleibt geladen, aber gestoppt (`state = not running`). `kickstart -k` startet ihn mit der
-neuen Definition. Danach immer den Zustand und die Umgebung des Prozesses prüfen
+neuen Definition. Beim S2b-Rollout am selben Tag luden `bootstrap`-Aufrufe über SSH die
+Dienste sogar sauber, starteten sie aber nicht (`state = not running` trotz `RunAtLoad`);
+`kickstart -k` ist deshalb nach jedem `bootstrap` Pflicht. Danach immer den Zustand und die Umgebung des Prozesses prüfen
 (`ps eww -o command= -p <pid> | tr ' ' '\n' | grep OLLAMA_NUM_CTX`).
