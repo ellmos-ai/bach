@@ -15,7 +15,7 @@ SCHEMA_DIR = Path(__file__).parent.parent / "data" / "schema"
 UNION_DIR = SCHEMA_DIR / "memory_union"
 
 # Pins identisch zu ellmos-ai/usmc (usmc/memory_union.py + .contract.json).
-MODULE_SHA256 = "59f8282274985c5697e03017911a9c898dbee88d888a65be192edd280c489c72"
+MODULE_SHA256 = "4a882ab16ea95e21921127f0ac1571a589ec96f0d5cdecd79b7ff9953c21ba82"
 CONTRACT_SHA256 = "9eab5303103de3fbd2cdc8eb39e4d246dd50d19ded949764a88a952a75f06739"
 
 
@@ -56,6 +56,16 @@ def db():
     conn.commit()
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def db_with_fresh_provenance_session(db):
+    db.execute(
+        "UPDATE memory_sessions SET started_at = datetime('now', '-1 minute') "
+        "WHERE session_id = 's-offen'"
+    )
+    db.commit()
+    return db
 
 
 def test_vendored_files_match_usmc_pins():
@@ -101,7 +111,8 @@ def test_bach_write_paths_keep_their_semantics(db, mig):
     assert db.execute("SELECT COUNT(*) FROM memory_facts").fetchone() == (2,)
 
 
-def test_provenance_triggers_survive_rebuild(db, mig):
+def test_provenance_triggers_survive_rebuild(db_with_fresh_provenance_session, mig):
+    db = db_with_fresh_provenance_session
     stamp = "SELECT created_by_session_id, updated_by_session_id FROM memory_facts WHERE id = 70"
     before = db.execute(stamp).fetchone()
     mig.run_migration(db)

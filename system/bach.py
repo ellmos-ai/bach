@@ -800,6 +800,12 @@ def _handle_task(sub_cmd, args):
         handler = TaskHandler(SYSTEM_ROOT)
         success, msg = handler.handle(sub_cmd, args)
         print(msg)
+        # T-20260926-620619287: wie der Direct-Execute-Pfad (Z. ~1382) muss
+        # auch der Task-Sonderpfad die Between-Erinnerung ausloesen, sonst
+        # feuert sie fuer 'bach task done' nie. Nicht bei --json (analog
+        # quiet_protocol_mode); MCP ruft TaskHandler direkt, nicht hierueber.
+        if success and msg and "--json" not in args:
+            _run_injectors(msg, f"task {sub_cmd}")
         return 0 if success else 1
     except Exception as e:
         print(f"[ERROR] Task: {e}")
@@ -1161,10 +1167,14 @@ def main():
         print(f"Hilfe fuer '{topic}' nicht verfuegbar.")
         return 1
 
-    # Auch Dry-Runs rufen spaeter den globalen ``cmd``-Shortcut auf. Ohne
-    # explizite Initialisierung faellt dessen Singleton auf den Checkout-Pfad
-    # zurueck, obwohl BACH_RUNTIME_DIR gesetzt ist.
-    get_logger(RUNTIME_ROOT)
+    # T-20260926-401320545: Ein Dry-run ist eine reine Vorschau und darf vor
+    # dem Handler keine echte Startnebenwirkung ausloesen (mkdir/Cleanup in
+    # AutoLogger.__init__). Also weder hier primen noch die spaeteren
+    # ``cmd()``-Shortcut-Aufrufe ausfuehren (dort per dry_run_requested
+    # geschuetzt) -- sonst faellt der Logger-Singleton beim ersten
+    # echten Aufruf auf den Checkout-Pfad zurueck statt BACH_RUNTIME_DIR (#63).
+    if not dry_run_requested:
+        get_logger(RUNTIME_ROOT)
 
     # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
     sync_config = DATA_DIR / "config" / "db_sync_enabled"
@@ -1207,7 +1217,8 @@ def main():
             operation, handler_args = _split_profile_args(profile_name, remaining)
 
             try:
-                cmd(profile_name, [operation] + handler_args)
+                if not dry_run_requested:
+                    cmd(profile_name, [operation] + handler_args)
                 dry_run = "--dry-run" in handler_args or "-n" in handler_args
                 success, message = handler.handle(operation, handler_args, dry_run)
                 print(message)
@@ -1227,7 +1238,10 @@ def main():
 
                 return 0 if success else 1
             except Exception as e:
-                log(f"[ERROR] {e}")
+                if dry_run_requested:
+                    print(f"[ERROR] {e}", file=sys.stderr)
+                else:
+                    log(f"[ERROR] {e}")
                 print(f"[ERROR] {e}")
                 return 1
         else:
@@ -1335,7 +1349,8 @@ def main():
     if use_launcher:
         try:
             from core.launcher import route_command
-            cmd(command, [sub_cmd] + args)
+            if not dry_run_requested:
+                cmd(command, [sub_cmd] + args)
             success, message = route_command(
                 command=command,
                 operation=sub_cmd or "",
@@ -1351,7 +1366,10 @@ def main():
                 _run_injectors(message, f"{command} {sub_cmd}")
             return 0 if success else 1
         except Exception as e:
-            log(f"[ERROR] Launcher: {e}")
+            if dry_run_requested:
+                print(f"[ERROR] Launcher: {e}", file=sys.stderr)
+            else:
+                log(f"[ERROR] Launcher: {e}")
             print(f"[ERROR] Launcher: {e}")
             # Fallback auf Direct Execute
             use_launcher = False
@@ -1364,7 +1382,8 @@ def main():
             _track_activity(arg, json_requested, dry_run_requested)
             operation = sub_cmd or ""
             try:
-                cmd(command, [operation] + args)
+                if not dry_run_requested:
+                    cmd(command, [operation] + args)
                 dry_run = "--dry-run" in args or "-n" in args
                 success, message = handler.handle(operation, args, dry_run)
                 # OPS-TELEM-001: Befehlsausfuehrung zaehlen (fail-silent, ohne Payloads)
@@ -1382,7 +1401,10 @@ def main():
                     _run_injectors(message, f"{command} {operation}")
                 return 0 if success else 1
             except Exception as e:
-                log(f"[ERROR] {e}")
+                if dry_run_requested:
+                    print(f"[ERROR] {e}", file=sys.stderr)
+                else:
+                    log(f"[ERROR] {e}")
                 print(f"[ERROR] {e}")
                 return 1
 

@@ -90,3 +90,6 @@ web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94
 # einem Commit. CI schließt doc-services weiterhin aus (PR #111), der Pin wird dennoch
 # nachgezogen, damit ein lokaler Install nicht ins Leere zeigt.
 doc-services @ git+https://github.com/ellmos-ai/doc-services.git@cdd2f6a7fffdef75e6aeb1b7d7008d384b6ecdc0
+# Session-Checkpoint-Fachkern (S5, T-20260920-823767362): neutraler K9-Carrier fuer
+# hub/session_checkpoint_adapter.py; SnapshotHandler bleibt bis zur Verdrahtung unveraendert.
+session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b89ad135f723c825f64cba8e8fb4d9f8d529b5
