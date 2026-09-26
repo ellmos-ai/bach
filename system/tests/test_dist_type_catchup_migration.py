@@ -13,12 +13,12 @@ MIGRATION = (
     / "data"
     / "schema"
     / "migrations"
-    / "048_migration_002_dist_type_catchup.py"
+    / "049_migration_002_dist_type_catchup.py"
 )
 
 
 def _load_migration():
-    spec = importlib.util.spec_from_file_location("dist_type_catchup_048", MIGRATION)
+    spec = importlib.util.spec_from_file_location("dist_type_catchup_049", MIGRATION)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
