@@ -10,6 +10,7 @@ neu = memoryhooker.triggers.evaluate_triggers ueber BachMemoryBackend auf einer
       Temp-DB mit Vertrags-DDL (memory_union) und Seed-Migration 044.
 """
 import importlib.util
+from dataclasses import replace
 import sqlite3
 import sys
 from datetime import datetime, timedelta
@@ -170,3 +171,113 @@ class TestSeamTakeover:
         conn.close()
         hook = mhp.ExternalMemoryHook(db_path=db, config_path=tmp_path / "none.toml")
         assert hook.handled_injectors() == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Einheit 2b: ContextInjector (Paritaetsbasis = DB-Trigger, Flag an)
+# ---------------------------------------------------------------------------
+
+CONTEXT_PROMPTS = PROMPTS + [
+    "Kannst du mir helfen, meine Steuererklärung vorzubereiten?",
+    "Ich habe einen Arzttermin, was steht an Medikamenten an?",
+    "Der Import der CSV-Datei hat ein Encoding-Problem",
+    "Wie mache ich ein Backup der Datenbank?",
+    "Wir sollten die Wartung durchführen, danach wartung erneut",
+    "shutdown bitte",
+    "Wie geht die Teamarbeit mit Partnern?",
+]
+
+
+def _context_db(path):
+    conn = sqlite3.connect(path)
+    _union_module().create_union_schema(conn)
+    rows = [(phrase, hint, "manual") for phrase, hint in
+            injectors.ContextInjector.CONTEXT_TRIGGERS.items()]
+    rows += [("wartung", "[THEMA-PAKET: Wartung] help maintain", "theme"),
+             ("shutdown", "[THEMA-PAKET: Shutdown] help shutdown", "theme"),
+             ("teamarbeit", "[THEMA-PAKET: Zusammenarbeit] help partners", "theme"),
+             ("inaktiv-lesson", "[LEKTION] x", "lesson")]
+    conn.executemany(
+        "INSERT OR IGNORE INTO context_triggers (trigger_phrase, hint_text, source) VALUES (?,?,?)", rows)
+    conn.execute("UPDATE context_triggers SET is_active = 0 WHERE source = 'lesson'")
+    conn.executescript((SCHEMA_DIR / "migrations" / "044_strategy_triggers.sql").read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+
+
+needs_groups = pytest.mark.skipif(
+    not hasattr(TriggersConfig(), "groups"), reason="memoryhooker ohne Trigger-Gruppen (Pin < be9fefe)")
+
+
+@pytest.fixture
+def context_pair(tmp_path, monkeypatch):
+    """Zwei identische DBs: alt (ContextInjector) und neu (Seam)."""
+    alt, neu = tmp_path / "alt.db", tmp_path / "neu.db"
+    _context_db(alt)
+    _context_db(neu)
+    base = tmp_path / "base"
+    (base / "data").mkdir(parents=True)
+    ci = injectors.ContextInjector
+    monkeypatch.setattr(ci, "base_path", base)
+    monkeypatch.setattr(ci, "_cache", None)
+    monkeypatch.setattr(ci, "_session_triggered", set())
+    monkeypatch.setattr(ci, "_db_path", classmethod(lambda cls: alt))
+    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "1")
+    monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
+    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+    hook = mhp.ExternalMemoryHook(db_path=neu, config_path=tmp_path / "none.toml")
+    hook._config = replace(hook._config, triggers=replace(
+        hook._config.triggers, cooldowns={"strategy": 0, "context": 0}))
+    return alt, neu, hook
+
+
+def _kontext(message):
+    return [line for line in (message or "").splitlines() if line.startswith("[KONTEXT]")]
+
+
+def _usage(db):
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT trigger_phrase, usage_count FROM context_triggers ORDER BY id").fetchall()
+    conn.close()
+    return rows
+
+
+@needs_groups
+def test_context_parity_sequence(context_pair):
+    """Eine Sitzung, alle Prompts: alt == neu je Prompt, Themen einmal, gleiche Zaehler."""
+    alt, neu, hook = context_pair
+    assert hook.handled_injectors() == frozenset({"strategy", "context"})
+    for prompt in CONTEXT_PROMPTS + CONTEXT_PROMPTS:
+        old = injectors.ContextInjector.check(prompt)
+        new = _kontext(hook.hook_context(prompt, "sitzung"))
+        assert new == ([old] if old else []), prompt
+    assert _usage(alt) == _usage(neu)
+
+
+@needs_groups
+def test_context_api_mode_skips_cli_hints_before_selection(context_pair):
+    _, _, hook = context_pair
+    prompt = "fehler bei der ocr"
+    assert mhp._CLI_PATTERN.search(injectors.ContextInjector.check(prompt))  # alt: gefiltert -> leer
+    new = _kontext(hook.hook_context(prompt, "api", cli_hints=False))
+    assert new == ["[KONTEXT] " + injectors.ContextInjector.CONTEXT_TRIGGERS["ocr"]]
+    import bach_api
+    assert mhp._CLI_PATTERN.pattern == bach_api._CLI_PATTERN.pattern
+
+
+@needs_groups
+def test_context_needs_flag_and_legacy_env(context_pair, monkeypatch):
+    _, _, hook = context_pair
+    monkeypatch.setenv(mhp.LEGACY_INJECTORS_ENV, "context")
+    assert hook.handled_injectors() == frozenset({"strategy"})
+    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV)
+    monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV)
+    assert hook.handled_injectors() == frozenset({"strategy"})
+    assert _kontext(hook.hook_context("backup", "ohne-flag")) == []
+
+
+@needs_groups
+def test_context_not_handled_with_old_memoryhooker(context_pair):
+    _, _, hook = context_pair
+    hook._groups_supported = False
+    assert hook.handled_injectors() == frozenset({"strategy"})

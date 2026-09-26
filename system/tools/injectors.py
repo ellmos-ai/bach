@@ -1011,7 +1011,7 @@ class InjectorSystem:
                     self.cooldown.mark_shown("strategy")
 
         # Context Injector (Cooldown: 1 Min)
-        if self.config.is_enabled("context_injector"):
+        if self.config.is_enabled("context_injector") and "context" not in skip:
             if not self.cooldown.is_on_cooldown("context"):
                 ctx = ContextInjector.check(text)
                 if ctx:
