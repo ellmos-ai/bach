@@ -7,7 +7,7 @@ from pathlib import Path
 SYSTEM = Path(__file__).parent.parent
 sys.path.insert(0, str(SYSTEM / "tools"))
 
-from migration_baseline_check import check
+from migration_baseline_check import check, main
 
 
 def test_classifies_pending_migrations_on_a_copy(tmp_path):
@@ -72,4 +72,22 @@ def test_timeout_is_classified_as_fehler(tmp_path):
         "import time\ndef run_migration(conn):\n    time.sleep(30)\n", encoding="utf-8")
     report = check(_source(tmp_path), migrations_dir=migrations, system_root=SYSTEM, timeout=2)
     assert report["results"] == [{"migration": "001_slow.py", "status": "fehler",
-                                  "detail": "Timeout nach 2 s"}]
+                                  "detail": "Timeout nach 2 s", "destructive": []}]
+
+
+def test_row_decrease_is_destructive_and_always_printed(tmp_path, capsys):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    body = "".join(f"CREATE TABLE harmless_{i} (id INTEGER);\n" for i in range(7))
+    (migrations / "001_mixed.sql").write_text(body + "DELETE FROM items;\n", encoding="utf-8")
+    source = _source(tmp_path)
+    conn = sqlite3.connect(source)
+    conn.execute("INSERT INTO items DEFAULT VALUES")
+    conn.commit()
+    conn.close()
+
+    report = check(source, migrations_dir=migrations, system_root=SYSTEM)
+    assert report["results"][0]["destructive"] == ["rows items: 1 -> 0"]
+    main(["--db", str(source), "--migrations-dir", str(migrations)])
+    printed = capsys.readouterr().out
+    assert "rows items: 1 -> 0" in printed

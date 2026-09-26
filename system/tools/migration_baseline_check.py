@@ -88,20 +88,26 @@ def snapshot(db: Path) -> dict:
         conn.close()
 
 
-def diff(before: dict, after: dict) -> list[str]:
-    changes = []
+def diff(before: dict, after: dict) -> tuple[list[str], list[str]]:
+    """(alle Aenderungen, destruktive Aenderungen). Destruktiv = entferntes
+    Objekt oder gesunkene Zeilenzahl -- beides kann Daten kosten."""
+    changes, destructive = [], []
     for key in sorted(set(before["objects"]) | set(after["objects"])):
         kind, name = key
         if key not in before["objects"]:
             changes.append(f"+{kind} {name}")
         elif key not in after["objects"]:
             changes.append(f"-{kind} {name}")
+            destructive.append(f"-{kind} {name}")
         elif before["objects"][key] != after["objects"][key]:
             changes.append(f"~{kind} {name}")
     for name in sorted(set(before["rows"]) & set(after["rows"])):
-        if before["rows"][name] != after["rows"][name]:
-            changes.append(f"rows {name}: {before['rows'][name]} -> {after['rows'][name]}")
-    return changes
+        old, new = before["rows"][name], after["rows"][name]
+        if old != new:
+            changes.append(f"rows {name}: {old} -> {new}")
+            if isinstance(old, int) and isinstance(new, int) and new < old:
+                destructive.append(f"rows {name}: {old} -> {new}")
+    return changes, destructive
 
 
 def _sha256(path: Path) -> str:
@@ -139,10 +145,10 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
                     )
                 except subprocess.TimeoutExpired:
                     results.append({"migration": name, "status": "fehler",
-                                    "detail": f"Timeout nach {timeout:g} s"})
+                                    "detail": f"Timeout nach {timeout:g} s", "destructive": []})
                     continue
                 after = snapshot(copy)
-                changes = diff(before, after)
+                changes, destructive = diff(before, after)
                 if proc.returncode != 0:
                     status = "fehler"
                     detail = (proc.stderr.strip().splitlines() or ["?"])[-1]
@@ -156,7 +162,8 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
                     detail = "schrieb eine andere Datei statt BACH_DB"
                 else:
                     status, detail = "wirksam", []
-                results.append({"migration": name, "status": status, "detail": detail})
+                results.append({"migration": name, "status": status, "detail": detail,
+                                "destructive": destructive})
     finally:
         src.close()
     return {
@@ -171,8 +178,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0] or None)
     parser.add_argument("--db", required=True, type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--migrations-dir", type=Path, default=MIGRATIONS)
     args = parser.parse_args(argv)
-    report = check(args.db.expanduser())
+    report = check(args.db.expanduser(), migrations_dir=args.migrations_dir)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=1))
         return 0
@@ -185,9 +193,9 @@ def main(argv: list[str] | None = None) -> int:
             detail = r["detail"]
             if isinstance(detail, list):
                 # Loeschungen immer vollstaendig zeigen, nur den Rest kuerzen.
-                drops = [d for d in detail if d.startswith("-")]
-                rest = [d for d in detail if not d.startswith("-")]
-                shown = drops + rest[:6]
+                # Destruktives (Drops, Zeilen-Abnahmen) immer vollstaendig.
+                rest = [d for d in detail if d not in r["destructive"]]
+                shown = r["destructive"] + rest[:6]
                 detail = "; ".join(shown) + (" ..." if len(rest) > 6 else "")
             print(f"  {r['migration']}" + (f"  -- {detail}" if detail else ""))
     return 0
