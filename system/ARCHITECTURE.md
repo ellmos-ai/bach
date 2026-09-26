@@ -187,24 +187,9 @@ CLI:
 | `decay` | Relevanz-Abbau ausfuehren | `bach shared-mem decay` |
 | `changes-since` | Delta seit Zeitstempel | `bach shared-mem changes-since 2026-02-28T10:00` |
 
-### USMC Bridge (hub/_services/usmc_bridge.py)
+### USMC und BACH: ein Gedaechtnisschema
 
-```
-  Instanz A (Agent 1)          Instanz B (Agent 2)
-  +-------------------+        +-------------------+
-  | SharedMemory A    |        | SharedMemory B    |
-  |                   | <----- |                   |
-  | USMC Bridge       | -----> | USMC Bridge       |
-  | (local/tcp/file)  |        | (local/tcp/file)  |
-  +-------------------+        +-------------------+
-
-  Transport-Modi:
-  - local:  Gleicher Prozess, direkter Aufruf
-  - file:   JSON-Dateien in partners/shared/ (OneDrive-tauglich)
-  - tcp:    Socket-basiert fuer Netzwerk-Szenarien
-```
-
----
+Die fruehere USMC Bridge (shared_memory_* <-> usmc_*) ist entfernt; sie lief nie. BACH und USMC fuehren dieselben memory_*-Tabellen nach dem gemeinsamen Vertrag `system/data/schema/memory_union/` (T-20260920-823767362).
 
 ## Schnellnavigation (fuer LLMs)
 

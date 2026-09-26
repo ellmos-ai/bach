@@ -17,6 +17,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import sqlite3
+
+def _union_columns(conn, table):
+    """(Sichtbarkeitsfilter, Agent-Ausdruck) fuer memory_* -- vor BACH-Migration 043
+    fehlen visibility/agent_id; dann gilt alles als sichtbar und ohne Agent."""
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    visible = ("(visibility IS NULL OR visibility IN ('shared', 'public'))"
+               if "visibility" in cols else "1=1")
+    agent = "NULLIF(agent_id, 'default')" if "agent_id" in cols else "NULL"
+    return visible, agent
 import re
 
 
@@ -81,13 +90,13 @@ class ClaudeMdSync:
         """Generiert BACH-Block aus DB."""
         conn = sqlite3.connect(self.db_path)
 
-        # STUFE B-2: Shared Memory (Multi-Agent)
-        # Versuche zuerst shared_memory_lessons (visibility='shared' oder 'public')
-        cursor = conn.execute("""
-            SELECT title, solution, severity, trigger_words, agent_id
-            FROM shared_memory_lessons
-            WHERE is_active = 1
-              AND visibility IN ('shared', 'public')
+        # Gemeinsames Gedaechtnis memory_* (T-20260920-823767362); shared_memory_*
+        # ist seit 2026-02 eingefroren. Private Zeilen bleiben draussen.
+        visible, agent = _union_columns(conn, "memory_lessons")
+        cursor = conn.execute(f"""
+            SELECT title, solution, severity, trigger_words, {agent}
+            FROM memory_lessons
+            WHERE is_active = 1 AND {visible}
             ORDER BY
                 CASE severity
                     WHEN 'critical' THEN 1
@@ -101,55 +110,21 @@ class ClaudeMdSync:
         """)
         lessons = cursor.fetchall()
 
-        # Fallback: Wenn keine shared Lessons vorhanden → BACHs eigene memory_lessons
-        if not lessons:
-            cursor = conn.execute("""
-                SELECT title, solution, severity, trigger_words, NULL as agent_id
-                FROM memory_lessons
-                WHERE is_active = 1
-                ORDER BY
-                    CASE severity
-                        WHEN 'critical' THEN 1
-                        WHEN 'high' THEN 2
-                        WHEN 'medium' THEN 3
-                        WHEN 'low' THEN 4
-                        ELSE 5
-                    END,
-                    times_shown DESC
-                LIMIT 10
-            """)
-            lessons = cursor.fetchall()
-
-        # STUFE B-2: Shared Memory Facts (Warnungen)
-        # Versuche zuerst shared_memory_facts (visibility='shared' oder 'public')
-        cursor = conn.execute("""
-            SELECT category, value, agent_id
-            FROM shared_memory_facts
-            WHERE (category LIKE '%warning%' OR category LIKE '%warnung%')
-              AND visibility IN ('shared', 'public')
+        visible, agent = _union_columns(conn, "memory_facts")
+        cursor = conn.execute(f"""
+            SELECT category, value, {agent}
+            FROM memory_facts
+            WHERE (category LIKE '%warning%' OR category LIKE '%warnung%') AND {visible}
             ORDER BY updated_at DESC
             LIMIT 5
         """)
         warnings = cursor.fetchall()
 
-        # Fallback: Wenn keine shared Facts vorhanden → BACHs eigene memory_facts
-        if not warnings:
-            cursor = conn.execute("""
-                SELECT category, value, NULL as agent_id
-                FROM memory_facts
-                WHERE category LIKE '%warning%' OR category LIKE '%warnung%'
-                ORDER BY updated_at DESC
-                LIMIT 5
-            """)
-            warnings = cursor.fetchall()
-
         conn.close()
 
         # Baue BACH-Block
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        # Prüfe ob shared_memory genutzt wurde (agent_id != None)
-        using_shared = any(lesson[4] is not None for lesson in lessons) if lessons else False
-        memory_source = "Shared Memory (Multi-Agent)" if using_shared else "BACH Memory (Legacy)"
+        memory_source = "Gemeinsames Gedaechtnis (memory_*)"
 
         block = [self.MARKER_START]
         block.append(f"\n*Generiert: {timestamp} | Quelle: {memory_source}*\n")
@@ -176,7 +151,7 @@ class ClaudeMdSync:
                     # Kürze Lesson auf eine Zeile
                     lesson_short = lesson_text.split('\n')[0][:120]
                     severity_mark = "🔴" if severity == "critical" else "🟠" if severity == "high" else "🟡" if severity == "medium" else ""
-                    # Agent-Tag hinzufügen wenn shared_memory (agent_id != None)
+                    # Agent-Tag nur fuer Eintraege anderer Agenten (nicht 'default')
                     agent_tag = f" `[{agent_id}]`" if agent_id else ""
                     block.append(f"- {severity_mark} {lesson_short}{agent_tag}".strip())
             block.append("")
@@ -186,7 +161,7 @@ class ClaudeMdSync:
             block.append("## BACH Warnungen\n")
             for category, content, agent_id in warnings:
                 if content:
-                    # Agent-Tag hinzufügen wenn shared_memory (agent_id != None)
+                    # Agent-Tag nur fuer Eintraege anderer Agenten (nicht 'default')
                     agent_tag = f" `[{agent_id}]`" if agent_id else ""
                     block.append(f"- ⚠️ {content[:120]}{agent_tag}")
             block.append("")
@@ -270,16 +245,10 @@ class ClaudeMdSync:
         # DB-Status
         conn = sqlite3.connect(self.db_path)
 
-        # Shared Memory Lessons (Multi-Agent)
-        cursor = conn.execute("""
-            SELECT COUNT(*) FROM shared_memory_lessons
-            WHERE is_active=1 AND visibility IN ('shared', 'public')
-        """)
+        visible, _agent = _union_columns(conn, "memory_lessons")
+        cursor = conn.execute(f"SELECT COUNT(*) FROM memory_lessons WHERE is_active=1 AND {visible}")
         shared_lesson_count = cursor.fetchone()[0]
-
-        # BACH Memory Lessons (Legacy)
-        cursor = conn.execute("SELECT COUNT(*) FROM memory_lessons WHERE is_active=1")
-        bach_lesson_count = cursor.fetchone()[0]
+        bach_lesson_count = 0
 
         conn.close()
 
