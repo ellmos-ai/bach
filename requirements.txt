@@ -89,4 +89,4 @@ web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94
 # ellmos-ai/doc-services-history, neu aufgesetzt als ellmos-ai/doc-services mit genau
 # einem Commit. CI schließt doc-services weiterhin aus (PR #111), der Pin wird dennoch
 # nachgezogen, damit ein lokaler Install nicht ins Leere zeigt.
-doc-services @ git+https://github.com/ellmos-ai/doc-services.git@4b303d6fe90aeae17f805bdda4154bfcd3ad53dc
+doc-services @ git+https://github.com/ellmos-ai/doc-services.git@cdd2f6a7fffdef75e6aeb1b7d7008d384b6ecdc0
