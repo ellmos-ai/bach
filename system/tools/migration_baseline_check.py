@@ -177,7 +177,11 @@ def main(argv: list[str] | None = None) -> int:
         for r in group:
             detail = r["detail"]
             if isinstance(detail, list):
-                detail = "; ".join(detail[:6]) + (" ..." if len(detail) > 6 else "")
+                # Loeschungen immer vollstaendig zeigen, nur den Rest kuerzen.
+                drops = [d for d in detail if d.startswith("-")]
+                rest = [d for d in detail if not d.startswith("-")]
+                shown = drops + rest[:6]
+                detail = "; ".join(shown) + (" ..." if len(rest) > 6 else "")
             print(f"  {r['migration']}" + (f"  -- {detail}" if detail else ""))
     return 0
 
