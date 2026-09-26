@@ -800,6 +800,12 @@ def _handle_task(sub_cmd, args):
         handler = TaskHandler(SYSTEM_ROOT)
         success, msg = handler.handle(sub_cmd, args)
         print(msg)
+        # T-20260926-620619287: wie der Direct-Execute-Pfad (Z. ~1382) muss
+        # auch der Task-Sonderpfad die Between-Erinnerung ausloesen, sonst
+        # feuert sie fuer 'bach task done' nie. Nicht bei --json (analog
+        # quiet_protocol_mode); MCP ruft TaskHandler direkt, nicht hierueber.
+        if success and msg and "--json" not in args:
+            _run_injectors(msg, f"task {sub_cmd}")
         return 0 if success else 1
     except Exception as e:
         print(f"[ERROR] Task: {e}")
