@@ -91,3 +91,22 @@ def test_row_decrease_is_destructive_and_always_printed(tmp_path, capsys):
     main(["--db", str(source), "--migrations-dir", str(migrations)])
     printed = capsys.readouterr().out
     assert "rows items: 1 -> 0" in printed
+
+
+def test_dropped_column_of_surviving_table_is_destructive(tmp_path, capsys):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "001_drop_col.sql").write_text(
+        "ALTER TABLE people ADD COLUMN nick TEXT;\nALTER TABLE people DROP COLUMN secret;\n",
+        encoding="utf-8")
+    source = tmp_path / "source.db"
+    conn = sqlite3.connect(source)
+    conn.execute("CREATE TABLE people (id INTEGER PRIMARY KEY, secret TEXT)")
+    conn.execute("INSERT INTO people (secret) VALUES ('x')")
+    conn.commit()
+    conn.close()
+
+    report = check(source, migrations_dir=migrations, system_root=SYSTEM)
+    assert report["results"][0]["destructive"] == ["-column people.secret"]
+    main(["--db", str(source), "--migrations-dir", str(migrations)])
+    assert "-column people.secret" in capsys.readouterr().out
