@@ -235,8 +235,6 @@ Duplikatgruppen brechen die Aktualisierung sicher ab.
 | Thema | CLI-Befehl | Beschreibung |
 |-------|-----------|--------------|
 | injectors | `bach help injectors` | Injektor-Übersicht (6 Stück) |
-| meta_feedback_injector | `bach help meta_feedback_injector` | Meta-Feedback Injektor |
-| reminder_injector | `bach help reminder_injector` | Erinnerungs-Injektor |
 | context | `bach help context` | Kontext-Injektor |
 | strategic | `bach help strategic` | Strategie-System |
 | problemloesung | `bach help problemloesung` | Problemloesungs-Strategien |

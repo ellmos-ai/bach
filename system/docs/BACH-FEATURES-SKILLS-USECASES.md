@@ -59,7 +59,6 @@
 | **tool_discovery / tool_scanner / tool_registry_boot** | Problem→Tool-Empfehlung, System-Tool-Inventar, Boot-Integration |
 | **hooks** | Event-System mit 17 Lifecycle-Events (before/after startup, command, task, memory, skill) |
 | **injectors / inject** | 5 kognitive Injektoren (Strategy, Context, Time, Between, Tool) mit Cooldown |
-| **reminder_injector / meta_feedback_injector** | Trigger-basierte Erinnerungen + Auto-Erkennung von LLM-Ticks mit Korrektur-Feedback |
 
 ## 5. Code- & Datei-Werkzeuge (`c_*`-Toolchain)
 
