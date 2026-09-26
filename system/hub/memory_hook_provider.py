@@ -25,9 +25,11 @@ der BACH_DB protokolliert (memoryhooker_audit.jsonl).
 WICHTIG: Hooks != Injektoren (core/hooks.py). Der Injector-Pfad
 (ChatRuntime._get_bach_context) bleibt bestehen; er ueberspringt nur die
 Injektoren, die dieser Seam nachweislich uebernimmt (handled_injectors, S3 von
-T-20260920-823767362): heute Strategy, gelesen als source='strategy' aus
-context_triggers (Seed: Migration 044). Rueckweg je Injektor:
-BACH_LEGACY_INJECTORS=strategy (kommagetrennt) oder der Gesamtschalter oben.
+T-20260920-823767362): Strategy (source='strategy', Seed: Migration 044) und
+Context (alle uebrigen Quellen als eine Gruppe, nur mit
+BACH_CONTEXT_TRIGGERS_DB=1, Sichtung: Migration 045). Rueckweg je Injektor:
+BACH_LEGACY_INJECTORS=strategy,context (kommagetrennt) oder der
+Gesamtschalter oben.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from dataclasses import replace
@@ -76,7 +79,23 @@ LEGACY_INJECTORS_ENV = "BACH_LEGACY_INJECTORS"
 
 #: Injektoren, die der Seam uebernimmt, mit BACHs bisherigem Cooldown in
 #: Sekunden (tools/injectors.py CooldownManager.DEFAULT_COOLDOWNS).
-HOOKER_INJECTORS = {"strategy": 120}
+HOOKER_INJECTORS = {"strategy": 120, "context": 60}
+
+#: Context liest context_triggers nur mit diesem Schalter (wie der
+#: ContextInjector in tools/injectors.py, S3 Einheit 2a).
+CONTEXT_TRIGGERS_DB_ENV = "BACH_CONTEXT_TRIGGERS_DB"
+_ON_VALUES = {"1", "true", "yes", "on"}
+
+#: Tabellenquellen, die der ContextInjector als eine Liste las.
+CONTEXT_SOURCES = ["manual", "theme", "lesson", "tool", "workflow", "skill"]
+
+#: CLI-Hinweise, die der Chat im api-Modus nicht zeigt (gleich
+#: bach_api._CLI_PATTERN, dort filtert der Altpfad nach der Auswahl).
+_CLI_PATTERN = re.compile(r'bach\s+\w+|--\w+|python\s+\w+\.py')
+
+
+def _context_triggers_db_on() -> bool:
+    return os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() in _ON_VALUES
 
 
 def _legacy_injectors() -> set:
@@ -337,10 +356,20 @@ class ExternalMemoryHook:
             log.warning("memoryhooker-Config ungueltig (%s), nutze Defaults", e)
             cfg = self._mod["default_config"]()
         triggers = getattr(cfg, "triggers", None)
+        # Gruppen/Praefixe/accept kamen mit memoryhooker be9fefe; aeltere
+        # Staende koennen Context nicht paritaetisch abbilden.
+        self._groups_supported = triggers is not None and hasattr(triggers, "groups")
         if triggers is not None and not triggers.sources:
+            extra = {}
+            if self._groups_supported:
+                extra = dict(
+                    groups={"context": list(CONTEXT_SOURCES), **triggers.groups},
+                    prefixes={"context": "[KONTEXT] ", **triggers.prefixes},
+                    once_per_session=triggers.once_per_session or ["theme"],
+                )
             cfg = replace(cfg, triggers=replace(
                 triggers, sources=list(HOOKER_INJECTORS),
-                cooldowns={**HOOKER_INJECTORS, **triggers.cooldowns}))
+                cooldowns={**HOOKER_INJECTORS, **triggers.cooldowns}, **extra))
         self._config = cfg
 
         self.backend = BachMemoryBackend(db_path=db_path)
@@ -363,18 +392,31 @@ class ExternalMemoryHook:
         if self._evaluate_triggers is None or not external_memoryhooker_available():
             return frozenset()
         legacy = _legacy_injectors()
-        wanted = [s for s in self._config.triggers.sources if s not in legacy]
-        try:
-            return frozenset(rule.source for rule in self.backend.triggers(
-                wanted, agent_id=self._config.triggers.agent_id))
-        except Exception:
-            return frozenset()
+        cfg = self._config.triggers
+        handled = set()
+        for key in cfg.sources:
+            if key in legacy:
+                continue
+            if key == "context" and not (self._groups_supported and _context_triggers_db_on()):
+                continue
+            table_sources = getattr(cfg, "groups", {}).get(key, [key])
+            try:
+                if self.backend.triggers(table_sources, agent_id=cfg.agent_id):
+                    handled.add(key)
+            except Exception:
+                continue
+        return frozenset(handled)
 
-    def hook_context(self, prompt: str, chat_id: str) -> Optional[str]:
+    def hook_context(self, prompt: str, chat_id: str,
+                     cli_hints: bool = True) -> Optional[str]:
         """Liefert MemoryHooker-Kontext fuer einen Prompt oder None.
 
         Ruft session_start_message (einmalig) + evaluate_prompt auf und
         schreibt den Audit-Trail fuer jede tatsaechliche Injektion.
+        cli_hints=False (Chat im api-Modus): Trigger-Hinweise mit CLI-Befehlen
+        werden VOR der Auswahl uebersprungen -- bewusst anders als der
+        Altpfad, der sie nach der Auswahl verwarf und dabei den Cooldown
+        verbrauchte (Positivmessung 2026-09-26).
         """
         if not external_memoryhooker_available():
             return None
@@ -391,7 +433,15 @@ class ExternalMemoryHook:
                 cfg = replace(self._config, triggers=replace(
                     self._config.triggers,
                     sources=[s for s in self._config.triggers.sources if s in handled]))
-                parts.extend(self._evaluate_triggers(prompt, cfg, self.backend, state))
+                kwargs = {}
+                fired = []
+                if self._groups_supported:
+                    kwargs["fired"] = fired
+                    if not cli_hints:
+                        kwargs["accept"] = lambda rule: not _CLI_PATTERN.search(rule.hint)
+                parts.extend(self._evaluate_triggers(prompt, cfg, self.backend, state, **kwargs))
+                self._mark_usage([r.rule_id for r in fired
+                                  if r.source != "strategy" and r.rule_id is not None])
             evaluated = self._mod["evaluate_prompt"](prompt, self._config, self.backend, state)
             if evaluated:
                 parts.append(evaluated)
@@ -403,6 +453,27 @@ class ExternalMemoryHook:
         message = "\n\n".join(parts)
         self._audit(chat_id, message)
         return message
+
+    def _mark_usage(self, rule_ids: list) -> None:
+        """usage_count/last_used der gefeuerten Kontext-Regeln (wie der Altpfad).
+
+        Der einzige Schreibzugriff dieses Seams; das Backend selbst bleibt
+        read-only. Fehler sind nie ein Abbruch.
+        """
+        if not rule_ids:
+            return
+        try:
+            conn = sqlite3.connect(str(self.backend.db_path), timeout=5.0)
+            try:
+                conn.executemany(
+                    "UPDATE context_triggers SET usage_count = usage_count + 1,"
+                    " last_used = datetime('now') WHERE id = ?",
+                    [(rule_id,) for rule_id in rule_ids])
+                conn.commit()
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            log.warning("context_triggers-Nutzung nicht gezaehlt: %s", e)
 
     def _audit(self, chat_id: str, message: str) -> None:
         """JSONL-Audit-Trail fuer jede Kontextinjektion (Plan Stufe 6)."""

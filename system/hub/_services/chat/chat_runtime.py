@@ -1763,7 +1763,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             hook = self._memory_hook()
             if hook is None:
                 return ""
-            return hook.hook_context(text, chat_id) or ""
+            # api-Modus (Telegram): CLI-Hinweise zeigt der Chat nicht.
+            cli_hints = getattr(self.injector, "_mode", "cli") != "api"
+            return hook.hook_context(text, chat_id, cli_hints=cli_hints) or ""
         except Exception:
             return ""
 

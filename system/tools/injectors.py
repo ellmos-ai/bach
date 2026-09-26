@@ -33,6 +33,7 @@ Injektoren die Claude kognitiv entlasten:
 
 v1.1.75: Cooldown-Feature - Injektoren werden nach Anzeige X Min stumm geschaltet
 """
+import logging
 import os
 import re
 import json
@@ -44,6 +45,22 @@ from typing import Dict, List, Optional, Tuple
 #: Schalter fuer den reparierten DB-Pfad des ContextInjectors (S3).
 CONTEXT_TRIGGERS_DB_ENV = "BACH_CONTEXT_TRIGGERS_DB"
 _ON_VALUES = {"1", "true", "yes", "on"}
+
+log = logging.getLogger(__name__)
+_warned: set = set()
+
+
+def _warn_once(where: str, exc: Exception) -> None:
+    """Fail-soft bleibt, aber nie mehr lautlos: je Stelle eine Warnung pro Prozess.
+
+    Ein geschluckter NameError hat den DB-Pfad des ContextInjectors monatelang
+    versteckt (S3 von T-20260920-823767362).
+    """
+    if where in _warned:
+        return
+    _warned.add(where)
+    log.warning("ContextInjector %s fehlgeschlagen (%s: %s) -- Hardcode/ohne Zaehler weiter",
+                where, type(exc).__name__, exc)
 
 
 class InjectorConfig:
@@ -481,8 +498,8 @@ class ContextInjector:
                 # Wenn DB Daten hat, nutzen wir diese
                 cls._cache = {r['trigger_phrase']: {'id': r['id'], 'hint': r['hint_text'], 'source': r['source']} for r in rows}
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            _warn_once("context_triggers lesen", e)
 
         # v1.1.82: Session-Usage laden
         cls._load_session_usage()
@@ -512,8 +529,8 @@ class ContextInjector:
             """, (trigger_id,))
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            _warn_once("usage_count schreiben", e)
 
     @classmethod
     def _load_session_usage(cls):
@@ -1011,7 +1028,7 @@ class InjectorSystem:
                     self.cooldown.mark_shown("strategy")
 
         # Context Injector (Cooldown: 1 Min)
-        if self.config.is_enabled("context_injector"):
+        if self.config.is_enabled("context_injector") and "context" not in skip:
             if not self.cooldown.is_on_cooldown("context"):
                 ctx = ContextInjector.check(text)
                 if ctx:
