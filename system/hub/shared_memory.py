@@ -32,11 +32,20 @@ Architektur:
 
 Status: Basis-Implementation (CRUD für facts, lessons, working)
 """
+import os
 from pathlib import Path
 import sqlite3
 import json
 from datetime import datetime
 from .base import BaseHandler
+
+
+# Gen 2 ist seit 2026-02 eingefroren; schreibende Unteroperationen nur per Rollback.
+LEGACY_ENV = "BACH_SHARED_MEMORY_LEGACY"
+LEGACY_WRITE_SUBOPS = frozenset({
+    "add", "delete", "activate", "deactivate", "run", "current-task",
+    "consolidate", "cleanup", "archive",
+})
 
 
 class SharedMemoryHandler(BaseHandler):
@@ -69,6 +78,14 @@ class SharedMemoryHandler(BaseHandler):
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         """Haupthandler für Shared Memory Operationen."""
+        if (not dry_run and args and args[0] in LEGACY_WRITE_SUBOPS
+                and os.environ.get(LEGACY_ENV) != "1"):
+            return False, (
+                f"shared-mem {operation} {args[0]}: Gen-2-Tabellen (shared_memory_*) sind "
+                "eingefroren. Das gemeinsame Gedaechtnis ist memory_* (T-20260920-823767362): "
+                "'bach mem ...' bzw. 'usmc ...' verwenden. Lesen bleibt moeglich; "
+                f"Rollback: {LEGACY_ENV}=1."
+            )
         if operation == "facts":
             return self._facts(args, dry_run)
         elif operation == "lessons":

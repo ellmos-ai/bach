@@ -7,6 +7,9 @@
 SHARED MEMORY - Multi-Agent Memory-Verwaltung
 ===============================================
 
+STATUS 2026-09-26: Eingefroren. Das gemeinsame Gedaechtnis ist memory_* ('bach mem', 'usmc').
+Schreibende Befehle nur mit BACH_SHARED_MEMORY_LEGACY=1 (Rollback); Lesen bleibt moeglich.
+
 STAND: 2026-02-28
 
 Das Shared Memory System ermöglicht den gemeinsamen Speicherzugriff

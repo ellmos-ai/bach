@@ -4,10 +4,10 @@ stigmergy_api.py — Pheromon-basierte Schwarm-Koordination
 Stigmergy: Agenten kommunizieren indirekt ueber Markierungen in der Umgebung,
 aehnlich wie Ameisen Pheromone hinterlassen.
 
-BACH-Implementierung: shared_memory_working als Pheromon-Traeger
+BACH-Implementierung: memory_working (ab Migration 043, sonst shared_memory_working) als Pheromon-Traeger
 Namespace: 'stigmergy' (gespeichert via tags + related_to)
 
-Mapping auf shared_memory_working Spalten:
+Mapping auf memory_working-Spalten:
     type      = 'note'
     content   = JSON: {namespace, path_id, strength, metadata, agent_id, timestamp}
     tags      = '["stigmergy"]'
@@ -29,13 +29,13 @@ class StigmergyAPI:
     """
     Pheromon-basierte Koordination fuer BACH-Schwarm-Agenten.
 
-    Agenten hinterlassen 'Pheromone' (Markierungen) in shared_memory_working.
+    Agenten hinterlassen 'Pheromone' (Markierungen) in memory_working (vor Migration 043: shared_memory_working).
     Andere Agenten lesen diese und waehlen vielversprechende Pfade.
 
     Konzept aus vernunft_kantian.txt (V009: Self-Extension, Autonomie):
     Ein System das sich selbst koordinieren kann, braucht keine zentrale Steuerung.
 
-    Tabellen-Mapping (shared_memory_working):
+    Tabellen-Mapping (memory_working):
         type       = 'note'
         content    = JSON mit {namespace, path_id, strength, metadata, agent_id, timestamp}
         tags       = '["stigmergy"]'
@@ -44,11 +44,26 @@ class StigmergyAPI:
     """
 
     NAMESPACE = 'stigmergy'
-    TABLE = 'shared_memory_working'
+    LEGACY_TABLE = 'shared_memory_working'
 
     def __init__(self, db_path: str, agent_id: str = 'anonymous'):
         self.db_path = db_path
         self.agent_id = agent_id
+        self.TABLE = self._resolve_table()
+
+    def _resolve_table(self) -> str:
+        """memory_working traegt ab BACH-Migration 043 (gemeinsames Gedaechtnis,
+        T-20260920-823767362) agent_id/session_id/related_to; davor bleibt es
+        bei der eingefrorenen Gen-2-Tabelle."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(memory_working)")}
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return self.LEGACY_TABLE
+        return 'memory_working' if {'agent_id', 'session_id', 'related_to'} <= cols else self.LEGACY_TABLE
 
     def _connect(self) -> sqlite3.Connection:
         """Erstelle eine DB-Verbindung mit Row-Factory."""
@@ -105,8 +120,8 @@ class StigmergyAPI:
             conn = self._connect()
             try:
                 # Pruefen ob schon ein aktives Stigmergy-Pheromon fuer diesen path_id existiert
-                cursor = conn.execute("""
-                    SELECT id FROM shared_memory_working
+                cursor = conn.execute(f"""
+                    SELECT id FROM {self.TABLE}
                     WHERE type = 'note'
                       AND is_active = 1
                       AND tags = ?
@@ -116,15 +131,15 @@ class StigmergyAPI:
 
                 if existing:
                     # Update: Staerke und Metadata aktualisieren
-                    conn.execute("""
-                        UPDATE shared_memory_working
+                    conn.execute(f"""
+                        UPDATE {self.TABLE}
                         SET content = ?, priority = ?, agent_id = ?, updated_at = ?
                         WHERE id = ?
                     """, (content_json, priority, self.agent_id, now, existing['id']))
                 else:
                     # Insert: Neues Pheromon anlegen
-                    conn.execute("""
-                        INSERT INTO shared_memory_working
+                    conn.execute(f"""
+                        INSERT INTO {self.TABLE}
                         (agent_id, session_id, type, content, priority,
                          is_active, created_at, updated_at, tags, related_to)
                         VALUES (?, NULL, 'note', ?, ?, 1, ?, ?, ?, ?)
@@ -151,7 +166,7 @@ class StigmergyAPI:
             sortiert nach strength DESC
 
         SQL:
-            SELECT content, created_at FROM shared_memory_working
+            SELECT content, created_at FROM memory_working
             WHERE type='note' AND is_active=1 AND tags='["stigmergy"]'
               AND related_to LIKE path_prefix || '%'
             ORDER BY priority DESC, updated_at DESC
@@ -162,9 +177,9 @@ class StigmergyAPI:
 
             conn = self._connect()
             try:
-                cursor = conn.execute("""
+                cursor = conn.execute(f"""
                     SELECT content, created_at, updated_at
-                    FROM shared_memory_working
+                    FROM {self.TABLE}
                     WHERE type = 'note'
                       AND is_active = 1
                       AND tags = ?
@@ -217,8 +232,8 @@ class StigmergyAPI:
             conn = self._connect()
             try:
                 # Gesamtzahl aktiver Stigmergy-Pheromone
-                cursor = conn.execute("""
-                    SELECT COUNT(*) as cnt FROM shared_memory_working
+                cursor = conn.execute(f"""
+                    SELECT COUNT(*) as cnt FROM {self.TABLE}
                     WHERE type = 'note' AND is_active = 1 AND tags = ?
                 """, (tags_json,))
                 total = cursor.fetchone()['cnt']
@@ -230,8 +245,8 @@ class StigmergyAPI:
                 to_delete = max(1, int(total * decay_rate))
 
                 # IDs der schwachsten Pheromone ermitteln (niedrigste priority zuerst)
-                cursor = conn.execute("""
-                    SELECT id FROM shared_memory_working
+                cursor = conn.execute(f"""
+                    SELECT id FROM {self.TABLE}
                     WHERE type = 'note' AND is_active = 1 AND tags = ?
                     ORDER BY priority ASC, updated_at ASC
                     LIMIT ?
@@ -244,7 +259,7 @@ class StigmergyAPI:
                 # Deaktivieren statt Loeschen (sichereres Pattern)
                 placeholders = ','.join('?' for _ in ids_to_deactivate)
                 conn.execute(f"""
-                    UPDATE shared_memory_working
+                    UPDATE {self.TABLE}
                     SET is_active = 0, updated_at = ?
                     WHERE id IN ({placeholders})
                 """, [now] + ids_to_deactivate)

@@ -6,6 +6,9 @@
 SHARED MEMORY - Multi-Agent Memory Management
 -----------------------------------------------
 
+STATUS 2026-09-26: Frozen. The shared memory is memory_* ('bach mem', 'usmc').
+Write commands only with BACH_SHARED_MEMORY_LEGACY=1 (rollback); reading still works.
+
 DATE: 2026-02-28
 
 The shared memory system enables shared memory access

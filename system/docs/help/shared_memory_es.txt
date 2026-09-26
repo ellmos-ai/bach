@@ -6,6 +6,9 @@
 MEMORIA COMPARTIDA - Gestión de memoria multiagente
 -----------------------------------------------
 
+ESTADO 2026-09-26: Congelado. La memoria compartida es memory_* ('bach mem', 'usmc').
+Los comandos de escritura solo con BACH_SHARED_MEMORY_LEGACY=1 (rollback); la lectura sigue disponible.
+
 FECHA: 2026-02-28
 
 El sistema de memoria compartida permite el acceso a la memoria compartida
