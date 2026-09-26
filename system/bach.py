@@ -1161,10 +1161,14 @@ def main():
         print(f"Hilfe fuer '{topic}' nicht verfuegbar.")
         return 1
 
-    # Auch Dry-Runs rufen spaeter den globalen ``cmd``-Shortcut auf. Ohne
-    # explizite Initialisierung faellt dessen Singleton auf den Checkout-Pfad
-    # zurueck, obwohl BACH_RUNTIME_DIR gesetzt ist.
-    get_logger(RUNTIME_ROOT)
+    # T-20260926-401320545: Ein Dry-run ist eine reine Vorschau und darf vor
+    # dem Handler keine echte Startnebenwirkung ausloesen (mkdir/Cleanup in
+    # AutoLogger.__init__). Also weder hier primen noch die spaeteren
+    # ``cmd()``-Shortcut-Aufrufe ausfuehren (dort per dry_run_requested
+    # geschuetzt) -- sonst faellt der Logger-Singleton beim ersten
+    # echten Aufruf auf den Checkout-Pfad zurueck statt BACH_RUNTIME_DIR (#63).
+    if not dry_run_requested:
+        get_logger(RUNTIME_ROOT)
 
     # ProSync: Pull bei Start, Push bei Exit (nur wenn aktiviert)
     sync_config = DATA_DIR / "config" / "db_sync_enabled"
@@ -1207,7 +1211,8 @@ def main():
             operation, handler_args = _split_profile_args(profile_name, remaining)
 
             try:
-                cmd(profile_name, [operation] + handler_args)
+                if not dry_run_requested:
+                    cmd(profile_name, [operation] + handler_args)
                 dry_run = "--dry-run" in handler_args or "-n" in handler_args
                 success, message = handler.handle(operation, handler_args, dry_run)
                 print(message)
@@ -1335,7 +1340,8 @@ def main():
     if use_launcher:
         try:
             from core.launcher import route_command
-            cmd(command, [sub_cmd] + args)
+            if not dry_run_requested:
+                cmd(command, [sub_cmd] + args)
             success, message = route_command(
                 command=command,
                 operation=sub_cmd or "",
@@ -1364,7 +1370,8 @@ def main():
             _track_activity(arg, json_requested, dry_run_requested)
             operation = sub_cmd or ""
             try:
-                cmd(command, [operation] + args)
+                if not dry_run_requested:
+                    cmd(command, [operation] + args)
                 dry_run = "--dry-run" in args or "-n" in args
                 success, message = handler.handle(operation, args, dry_run)
                 # OPS-TELEM-001: Befehlsausfuehrung zaehlen (fail-silent, ohne Payloads)
