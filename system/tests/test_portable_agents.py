@@ -63,18 +63,6 @@ try:
 except ImportError:
     _PLAN_AVAILABLE = False
 
-try:
-    from reminder_injector import ReminderInjector
-    _REMINDER_AVAILABLE = True
-except ImportError:
-    _REMINDER_AVAILABLE = False
-
-try:
-    from meta_feedback_injector import MetaFeedbackInjector, DEFAULT_PATTERNS
-    _META_FB_AVAILABLE = True
-except ImportError:
-    _META_FB_AVAILABLE = False
-
 
 # ============================================================
 # 1. Portability Tests (portable_base.py)
@@ -224,85 +212,6 @@ class TestPlanAgent:
         assert isinstance(st, dict)
         assert st["agent"] == "PlanAgent"
         assert "plans_total" in st
-
-
-# ============================================================
-# 2. Injector Tests
-# ============================================================
-
-class TestReminderInjector:
-    """Tests fuer reminder_injector.py"""
-
-    @pytest.mark.skipif(not _REMINDER_AVAILABLE, reason="ReminderInjector not available")
-    def test_reminder_injector_create(self):
-        """Create ReminderInjector with temp JSON fallback, add reminder, verify."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = ReminderInjector(base_path=tmp)
-            result = injector.add_reminder(
-                "Teste immer auf Deutsch",
-                trigger_condition="always",
-                priority=1,
-            )
-            assert isinstance(result, dict)
-            assert result["message"] == "Teste immer auf Deutsch"
-            assert result["trigger_condition"] == "always"
-            assert "id" in result
-
-    @pytest.mark.skipif(not _REMINDER_AVAILABLE, reason="ReminderInjector not available")
-    def test_reminder_injector_inject(self):
-        """Add 'always' reminder, call inject(), verify prompt contains reminder."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = ReminderInjector(base_path=tmp)
-            injector.add_reminder("Deutsch antworten", trigger_condition="always")
-
-            result = injector.inject("Hallo Welt", context={})
-            assert "Deutsch antworten" in result
-            assert "[BACH-REMINDERS]" in result
-            assert "Hallo Welt" in result
-
-    @pytest.mark.skipif(not _REMINDER_AVAILABLE, reason="ReminderInjector not available")
-    def test_reminder_injector_invalid_trigger(self):
-        """Verify invalid trigger raises ValueError."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = ReminderInjector(base_path=tmp)
-            with pytest.raises(ValueError, match="Ungueltiger Trigger"):
-                injector.add_reminder("test", trigger_condition="invalid_type")
-
-
-class TestMetaFeedbackInjector:
-    """Tests fuer meta_feedback_injector.py"""
-
-    @pytest.mark.skipif(not _META_FB_AVAILABLE, reason="MetaFeedbackInjector not available")
-    def test_meta_feedback_injector_create(self):
-        """Create MetaFeedbackInjector, verify default patterns loaded."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = MetaFeedbackInjector(base_path=tmp)
-            patterns = injector._list_patterns(active_only=False)
-            assert isinstance(patterns, list)
-            assert len(patterns) >= 3  # 3 DEFAULT_PATTERNS
-
-    @pytest.mark.skipif(not _META_FB_AVAILABLE, reason="MetaFeedbackInjector not available")
-    def test_meta_feedback_check(self):
-        """Check a response containing emojis, verify pattern detected."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = MetaFeedbackInjector(base_path=tmp)
-            matches = injector.check_response("Hier ist das Ergebnis \U0001F600")
-            assert isinstance(matches, list)
-            assert len(matches) >= 1
-            corrections = [m["correction"] for m in matches]
-            assert any("Emoji" in c for c in corrections)
-
-    @pytest.mark.skipif(not _META_FB_AVAILABLE, reason="MetaFeedbackInjector not available")
-    def test_meta_feedback_inject_corrections(self):
-        """Verify inject_corrections adds block when patterns have hits."""
-        with tempfile.TemporaryDirectory() as tmp:
-            injector = MetaFeedbackInjector(base_path=tmp)
-            # First trigger a pattern to set frequency > 0
-            injector.check_response("Sure, here is the answer \U0001F600")
-            # Now inject should add the correction block
-            result = injector.inject_corrections("Teste prompt")
-            assert "[BACH-META-FEEDBACK]" in result
-            assert "Teste prompt" in result
 
 
 # ============================================================
