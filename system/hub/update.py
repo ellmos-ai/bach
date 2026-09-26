@@ -494,7 +494,7 @@ class UpdateHandler(BaseHandler):
         if not dry_run and self.db_path.exists() and self.db_path.stat().st_size > 0:
             from core.db import backup_before_migration
             try:
-                backup = backup_before_migration(self.db_path, Path(pending[0]).stem)
+                backup = backup_before_migration(self.db_path, pending)
             except Exception as e:
                 lines.append(f"  [!!] Sicherung fehlgeschlagen ({type(e).__name__}: {e}) "
                              "-- keine Migration ausgefuehrt.")
