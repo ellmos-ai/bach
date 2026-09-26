@@ -1748,6 +1748,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         try:
             from hub.memory_hook_provider import get_shared_memory_hook
             db_path = getattr(getattr(self, "memory", None), "db_path", None)
+            # bach_api.memory ist ein Proxy, dessen __getattr__ fuer JEDEN Namen
+            # eine Funktion liefert; nur echte Pfade weitergeben, sonst Default-DB.
+            if not isinstance(db_path, (str, os.PathLike)):
+                db_path = None
             hook = get_shared_memory_hook(db_path=db_path)
             if hook is None:
                 return ""
