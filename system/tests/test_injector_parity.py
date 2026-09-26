@@ -428,3 +428,103 @@ def test_handled_injectors_warns_once(tool_db, seam_env, caplog):
     msgs = [r.getMessage() for r in caplog.records if "nicht lesbar" in r.getMessage()]
     assert len(msgs) == len(mhp.HOOKER_INJECTORS) - 1  # context ohne Flag gar nicht abgefragt
     assert all("OperationalError" in m for m in msgs)
+
+
+# ---------------------------------------------------------------------------
+# Einheit 4: Between + CLI-Pfad bach.py _run_injectors (Planabweichung:
+# memoryhooker statt workflowhooker, Entscheid team-lead 2026-09-26)
+# ---------------------------------------------------------------------------
+
+CLI_STEPS = [  # (Sekunde, Befehls-AUSGABE, '<command> <operation>')
+    (0, "Task 42 erledigt", "task done"),
+    (10, "Fehler: Datei kaputt", "task add"),
+    (20, "Backup erstellt", "backup create"),
+    (100, "OK", "task done"),
+    (181, "Neues Tool angelegt, bitte erstelle Doku", "task done"),
+    (200, "komplex, ich bin blockiert", "status "),
+    (330, "Encoding geprueft, ocr laeuft", "tools run"),
+    (500, "fertig", "task done"),
+]
+
+
+def _cli_db(path):
+    _context_db(path)
+    conn = sqlite3.connect(path)
+    for name in ("046_tool_warn_triggers.sql", "047_between_triggers.sql"):
+        conn.executescript((SCHEMA_DIR / "migrations" / name).read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+
+
+def test_between_seed_matches_legacy(tmp_path):
+    db = tmp_path / "b.db"
+    _cli_db(db)
+    conn = sqlite3.connect(db)
+    phrase, hint = conn.execute(
+        "SELECT trigger_phrase, hint_text FROM context_triggers WHERE source='between'").fetchone()
+    conn.close()
+    assert hint == injectors.BetweenInjector.check_task_done("task done")
+    assert phrase == "done|task done"
+
+
+def _cli_run(monkeypatch, capsys, system, hook, clock, steps):
+    import bach as bach_cli
+    import memoryhooker.triggers as mht
+    monkeypatch.setattr(bach_cli, "_get_injector", lambda: system)
+    monkeypatch.setattr(mhp, "get_shared_memory_hook", lambda *a, **k: hook)
+    monkeypatch.setattr(mht.time, "time", lambda: clock["now"].timestamp())
+    start, out = clock["now"], []
+    for offset, output, command in steps:
+        clock["now"] = start + timedelta(seconds=offset)
+        bach_cli._run_injectors(output, command)
+        out.append(capsys.readouterr().out)
+    clock["now"] = start
+    return out
+
+
+@needs_groups
+def test_cli_path_parity_sequence(tmp_path, monkeypatch, capsys):
+    """Gleiche CLI-Folge (Ausgabe + Befehl, feste Uhr, neuer Prozess je Aufruf
+    ueber Zustandsdatei): alt (reiner Altpfad) == neu (Seam), gleiche usage_count."""
+    alt_db, neu_db = tmp_path / "alt.db", tmp_path / "neu.db"
+    _cli_db(alt_db)
+    _cli_db(neu_db)
+    clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["now"]
+
+    monkeypatch.setattr(injectors, "datetime", _Clock)
+    ci = injectors.ContextInjector
+    monkeypatch.setattr(ci, "_session_triggered", set())
+    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "1")
+    monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
+    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+
+    def system_for(name, db):
+        base = tmp_path / name
+        (base / "data").mkdir(parents=True)
+        (base / "config.json").write_text('{"injectors": {"time_injector": false}}', encoding="utf-8")
+        monkeypatch.setattr(ci, "_cache", None)
+        monkeypatch.setattr(ci, "_db_path", classmethod(lambda cls: db))
+        return injectors.InjectorSystem(base)
+
+    alt = _cli_run(monkeypatch, capsys, system_for("alt", alt_db), None, clock, CLI_STEPS)
+    hook = mhp.ExternalMemoryHook(db_path=neu_db, config_path=tmp_path / "none.toml")
+    assert hook.handled_injectors() == frozenset({"strategy", "context", "tool_warn", "between"})
+    neu = _cli_run(monkeypatch, capsys, system_for("neu", neu_db), hook, clock, CLI_STEPS)
+    assert any("[BETWEEN-TASKS]" in o for o in alt)
+    assert neu == alt
+    assert _usage(alt_db) == _usage(neu_db)
+
+
+@needs_groups
+def test_between_never_in_chat_and_respects_switch(tmp_path, seam_env):
+    db = tmp_path / "b.db"
+    _cli_db(db)
+    hook = mhp.ExternalMemoryHook(db_path=db, config_path=tmp_path / "none.toml")
+    assert "[BETWEEN-TASKS]" not in (hook.hook_context("task done", "chat") or "")
+    before, between = hook.cli_injections("x", "task done", disabled=frozenset({"between"}))
+    assert between == []

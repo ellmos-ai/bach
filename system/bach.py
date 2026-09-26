@@ -128,14 +128,38 @@ def _get_injector():
             pass
     return _injector_system
 
+def _cli_memory_hook(injector):
+    """memoryhooker-Seam fuer den CLI-Pfad (S3 von T-20260920-823767362).
+
+    Liefert (hook, handled): was der Seam uebernimmt, ueberspringt der
+    Altpfad. In BACH abgeschaltete Injektoren bleiben stumm. Fail-soft:
+    ohne Seam laeuft alles wie bisher. Rueckweg: BACH_LEGACY_INJECTORS bzw.
+    BACH_USE_EXTERNAL_MEMORYHOOKS=0.
+    """
+    try:
+        from hub.memory_hook_provider import INJECTOR_SWITCHES, get_shared_memory_hook
+        hook = get_shared_memory_hook()
+        if hook is None:
+            return None, frozenset(), frozenset()
+        off = frozenset(key for key, switch in INJECTOR_SWITCHES.items()
+                        if not injector.config.is_enabled(switch))
+        return hook, hook.handled_injectors() - off, off
+    except Exception:
+        return None, frozenset(), frozenset()
+
+
 def _run_injectors(text: str, last_command: str = ""):
     injector = _get_injector()
     if not injector:
         return
-    injections = injector.process(text)
-    for inj in injections:
+    hook, handled, off = _cli_memory_hook(injector)
+    hooked, between_hooked = (hook.cli_injections(text, last_command, disabled=off)
+                              if handled else ([], []))
+    for inj in hooked + injector.process(text, skip=handled):
         print(f"\n{inj}")
-    if "done" in last_command.lower():
+    for between in between_hooked:
+        print(f"\n{between}")
+    if "between" not in handled and "done" in last_command.lower():
         between = injector.check_between(last_command)
         if between:
             print(f"\n{between}")
