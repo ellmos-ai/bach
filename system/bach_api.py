@@ -842,18 +842,19 @@ class _InjectorProxy:
                 result.append(inj)
         return result
 
-    def process(self, text: str, context: dict = None) -> list:
+    def process(self, text: str, context: dict = None, skip=()) -> list:
         """Verarbeitet Text durch alle aktiven Injektoren.
 
         Args:
             text: Zu analysierender Text (z.B. User-Input, Task-Beschreibung)
             context: Optional - Zusaetzlicher Kontext
+            skip: Injektor-Namen, die ein anderer Pfad uebernimmt (z.B. "strategy")
 
         Returns:
             Liste von Hinweisen (kann leer sein)
         """
         system = self._get_system()
-        injections = system.process(text, context)
+        injections = system.process(text, context, skip=skip)
         return self._filter_cli(injections)
 
     def check_between(self, last_action: str, session_ending: bool = False):

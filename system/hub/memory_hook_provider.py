@@ -23,8 +23,11 @@ Audit-Trail (Plan Stufe 6): Jede Kontextinjektion wird als JSONL-Zeile neben
 der BACH_DB protokolliert (memoryhooker_audit.jsonl).
 
 WICHTIG: Hooks != Injektoren (core/hooks.py). Der Injector-Pfad
-(ChatRuntime._get_bach_context) bleibt unberuehrt; dieser Seam ist reiner
-Hook-Transport.
+(ChatRuntime._get_bach_context) bleibt bestehen; er ueberspringt nur die
+Injektoren, die dieser Seam nachweislich uebernimmt (handled_injectors, S3 von
+T-20260920-823767362): heute Strategy, gelesen als source='strategy' aus
+context_triggers (Seed: Migration 044). Rueckweg je Injektor:
+BACH_LEGACY_INJECTORS=strategy (kommagetrennt) oder der Gesamtschalter oben.
 """
 from __future__ import annotations
 
@@ -67,6 +70,18 @@ _REQUIRED_SYMBOLS = {
 }
 
 _AUDIT_FILENAME = "memoryhooker_audit.jsonl"
+
+#: Rueckweg je Injektor (S3): diese Injektoren bleiben im BACH-Altpfad.
+LEGACY_INJECTORS_ENV = "BACH_LEGACY_INJECTORS"
+
+#: Injektoren, die der Seam uebernimmt, mit BACHs bisherigem Cooldown in
+#: Sekunden (tools/injectors.py CooldownManager.DEFAULT_COOLDOWNS).
+HOOKER_INJECTORS = {"strategy": 120}
+
+
+def _legacy_injectors() -> set:
+    raw = os.environ.get(LEGACY_INJECTORS_ENV, "")
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
 
 def external_memoryhooker_available() -> bool:
@@ -244,6 +259,23 @@ class BachMemoryBackend:
             pass
         return rows
 
+    def triggers(self, sources: list, agent_id: str = "default") -> list:
+        """context_triggers-Regeln der Quellen (read-only, Leseregel im Modul)."""
+        try:
+            from memoryhooker.triggers import read_context_triggers
+        except ImportError:
+            return []
+        if not sources or not self.db_path.exists():
+            return []
+        try:
+            conn = self._ro_conn()
+        except sqlite3.Error:
+            return []
+        try:
+            return read_context_triggers(conn, list(sources), agent_id)
+        finally:
+            conn.close()
+
     @staticmethod
     def _has_column(conn, table: str, column: str) -> bool:
         try:
@@ -279,6 +311,13 @@ class ExternalMemoryHook:
                 f"memoryhooker-Contract verletzt, fehlende Symbole: {missing}"
             )
         self._mod = resolved
+        # Optional (memoryhooker mit Trigger-Injektor): fehlt es, uebernimmt
+        # der Seam keinen Injektor und BACH bleibt beim Altpfad.
+        try:
+            self._evaluate_triggers = importlib.import_module(
+                f"{MEMORYHOOKER_MODULE}.triggers").evaluate_triggers
+        except (ImportError, AttributeError):
+            self._evaluate_triggers = None
 
         cfg = None
         path = Path(config_path).expanduser() if config_path else self._default_config_path(db_path)
@@ -297,6 +336,11 @@ class ExternalMemoryHook:
         except Exception as e:
             log.warning("memoryhooker-Config ungueltig (%s), nutze Defaults", e)
             cfg = self._mod["default_config"]()
+        triggers = getattr(cfg, "triggers", None)
+        if triggers is not None and not triggers.sources:
+            cfg = replace(cfg, triggers=replace(
+                triggers, sources=list(HOOKER_INJECTORS),
+                cooldowns={**HOOKER_INJECTORS, **triggers.cooldowns}))
         self._config = cfg
 
         self.backend = BachMemoryBackend(db_path=db_path)
@@ -309,6 +353,22 @@ class ExternalMemoryHook:
         return base / "memoryhooker.toml"
 
     # -- Hook-Pfad ---------------------------------------------------------
+
+    def handled_injectors(self) -> frozenset:
+        """Injektoren, die dieser Seam gerade wirklich uebernimmt.
+
+        Nur Quellen mit mindestens einer aktiven Regel in context_triggers --
+        fehlt der Seed, bleibt BACH beim Altpfad statt stumm zu werden.
+        """
+        if self._evaluate_triggers is None or not external_memoryhooker_available():
+            return frozenset()
+        legacy = _legacy_injectors()
+        wanted = [s for s in self._config.triggers.sources if s not in legacy]
+        try:
+            return frozenset(rule.source for rule in self.backend.triggers(
+                wanted, agent_id=self._config.triggers.agent_id))
+        except Exception:
+            return frozenset()
 
     def hook_context(self, prompt: str, chat_id: str) -> Optional[str]:
         """Liefert MemoryHooker-Kontext fuer einen Prompt oder None.
@@ -326,6 +386,12 @@ class ExternalMemoryHook:
             start = self._mod["session_start_message"](self.backend, state)
             if start:
                 parts.append(start)
+            handled = self.handled_injectors()
+            if handled:
+                cfg = replace(self._config, triggers=replace(
+                    self._config.triggers,
+                    sources=[s for s in self._config.triggers.sources if s in handled]))
+                parts.extend(self._evaluate_triggers(prompt, cfg, self.backend, state))
             evaluated = self._mod["evaluate_prompt"](prompt, self._config, self.backend, state)
             if evaluated:
                 parts.append(evaluated)

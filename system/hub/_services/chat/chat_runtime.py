@@ -1733,7 +1733,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return ""
         parts = []
         try:
-            inj = self.injector.process(text)
+            # Was der memoryhooker-Seam uebernimmt, liefert er im MEMORY-HOOK-
+            # Block; hier nicht doppelt (S3, Rueckweg BACH_LEGACY_INJECTORS).
+            hook = self._memory_hook()
+            skip = hook.handled_injectors() if hook is not None else frozenset()
+            inj = self.injector.process(text, skip=skip) if skip else self.injector.process(text)
             if inj:
                 parts.append("Kontext:\n" + "\n".join(str(i) for i in inj[:3]))
         except Exception:
@@ -1756,18 +1760,25 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         klemmt der Hook, ist das Ergebnis "" -- der Chat laeuft weiter.
         """
         try:
+            hook = self._memory_hook()
+            if hook is None:
+                return ""
+            return hook.hook_context(text, chat_id) or ""
+        except Exception:
+            return ""
+
+    def _memory_hook(self):
+        """Geteilter memoryhooker-Adapter oder None (fail-soft)."""
+        try:
             from hub.memory_hook_provider import get_shared_memory_hook
             db_path = getattr(getattr(self, "memory", None), "db_path", None)
             # bach_api.memory ist ein Proxy, dessen __getattr__ fuer JEDEN Namen
             # eine Funktion liefert; nur echte Pfade weitergeben, sonst Default-DB.
             if not isinstance(db_path, (str, os.PathLike)):
                 db_path = None
-            hook = get_shared_memory_hook(db_path=db_path)
-            if hook is None:
-                return ""
-            return hook.hook_context(text, chat_id) or ""
+            return get_shared_memory_hook(db_path=db_path)
         except Exception:
-            return ""
+            return None
 
     async def process(self, text: str, chat_id: str, *, backend=None, model=None,
                       skip_compute_gate: bool = False, **kwargs) -> str:

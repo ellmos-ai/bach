@@ -957,9 +957,12 @@ class InjectorSystem:
         self.cooldown = CooldownManager(base_path)  # v1.1.75: Cooldown-Management
         self._tool_reminder_shown = False
 
-    def process(self, text: str, context: dict = None) -> List[str]:
+    def process(self, text: str, context: dict = None, skip=()) -> List[str]:
         """
         Verarbeitet Text durch alle aktiven Injektoren.
+
+        skip: Injektor-Namen, die ein externer Pfad uebernimmt (memoryhooker-
+              Seam, S3 von T-20260920-823767362), z.B. {"strategy"}.
 
         v1.1.75: Mit Cooldown-Pruefung - Injektoren werden nach Anzeige
                  fuer X Minuten stumm geschaltet.
@@ -970,7 +973,7 @@ class InjectorSystem:
         injections = []
 
         # Strategy Injector (Cooldown: 2 Min)
-        if self.config.is_enabled("strategy_injector"):
+        if self.config.is_enabled("strategy_injector") and "strategy" not in skip:
             if not self.cooldown.is_on_cooldown("strategy"):
                 strategy = StrategyInjector.check(text, context)
                 if strategy:
