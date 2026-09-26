@@ -196,12 +196,12 @@ def test_recorded_texts_agree_after_trimming(pdf):
     assert legacy != RECORDED_TEXT, "the raw strings are not identical — trailing newlines differ"
 
 
-def test_core_requirements_pin_doc_services_to_the_verified_private_commit():
+def test_core_requirements_pin_doc_services_to_the_verified_public_commit():
     """The canonical mode must not depend on an undeclared local editable clone."""
     requirements = (SYSTEM_ROOT.parent / "requirements.txt").read_text(encoding="utf-8")
     expected = (
         "doc-services @ git+https://github.com/ellmos-ai/doc-services.git@"
-        "f8506e642d27417e4ed00810aab2fc934aa3e374"
+        "cdd2f6a7fffdef75e6aeb1b7d7008d384b6ecdc0"
     )
 
     assert requirements.count(expected) == 1

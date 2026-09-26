@@ -83,9 +83,13 @@ sqlite-transit-sync @ git+https://github.com/ellmos-ai/sqlite-transit-sync.git@d
 # ist auf PyPI fremd belegt (Vahid Vaezian 1.0, 2018); kein Tag im Repo, 3078116 = max_redirects.
 web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94f6e012645b4af5d7fe9de3e
 # Dokumentextraktions-Fachkern (Einheit 5b, T-20260818-903104603): Der kanonische Seam
-# verlangt für regelbasierte Abnehmer Fließtext. Privates Repo direkt und reproduzierbar
-# per SHA beziehen; PRIVATE.txt bleibt unangetastet, keine Veröffentlichung als Paket.
-doc-services @ git+https://github.com/ellmos-ai/doc-services.git@f8506e642d27417e4ed00810aab2fc934aa3e374
+# verlangt für regelbasierte Abnehmer Fließtext. Direkt per SHA beziehen statt als
+# Paket. Fresh-Start 2026-09-26 (T-20260926-943955506-Folge): das alte Repo trug einen
+# realen lokalen Pfad in einer frühen Commit-Historie; archiviert als privates
+# ellmos-ai/doc-services-history, neu aufgesetzt als ellmos-ai/doc-services mit genau
+# einem Commit. CI schließt doc-services weiterhin aus (PR #111), der Pin wird dennoch
+# nachgezogen, damit ein lokaler Install nicht ins Leere zeigt.
+doc-services @ git+https://github.com/ellmos-ai/doc-services.git@cdd2f6a7fffdef75e6aeb1b7d7008d384b6ecdc0
 # Session-Checkpoint-Fachkern (S5, T-20260920-823767362): neutraler K9-Carrier fuer
 # hub/session_checkpoint_adapter.py; SnapshotHandler bleibt bis zur Verdrahtung unveraendert.
 session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b89ad135f723c825f64cba8e8fb4d9f8d529b5
