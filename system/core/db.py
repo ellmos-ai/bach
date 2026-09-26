@@ -28,6 +28,7 @@ Zentrale DB-Verwaltung mit Schema-Datei und Migrationen.
 Nutzt bestehende bach.db, fuegt fehlende Tabellen per IF NOT EXISTS hinzu.
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -39,17 +40,56 @@ from typing import Optional
 NO_AUTO_MIGRATE_ENV = "BACH_NO_AUTO_MIGRATE"
 
 
-def backup_before_migration(db_path, tag: str) -> Path:
+#: Aufbewahrung der Runner-Sicherungen (nur Muster "<db>.premig-*.bak";
+#: manuelle Sicherungen "<db>.pre-*.bak" bleiben unangetastet).
+MIGRATION_BACKUP_KEEP = 5
+#: Keine neue Sicherung, wenn die juengste fuer dieselbe Pending-Liste juenger
+#: ist -- sonst sichert eine dauerhaft scheiternde Migration bei jedem Start
+#: (CLAUDE.md-Lehre: 240 Backups / 123 GB durch einen Hook ohne Guard).
+MIGRATION_BACKUP_REUSE_SECONDS = 600
+
+
+def _migration_backups(db_path: Path) -> list:
+    return sorted(db_path.parent.glob(f"{db_path.name}.premig-*.bak"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def backup_before_migration(db_path, pending) -> Path:
     """Datierte Sicherung neben der DB vor einer Migrationsrunde.
 
     sqlite-backup-API (WAL-sicher), danach quick_check auf der Kopie. Wirft bei
     jedem Fehler -- ohne belegte Sicherung darf keine Migration laufen
     (T-20260926-958264544: jeder CLI-Start migrierte ungefragt und ungesichert).
+    ``pending``: Dateinamen der ausstehenden Migrationen. Gibt es fuer genau
+    diese Liste eine Sicherung juenger als MIGRATION_BACKUP_REUSE_SECONDS, wird
+    sie wiederverwendet; danach bleiben nur die juengsten
+    MIGRATION_BACKUP_KEEP Runner-Sicherungen erhalten.
     """
+    import hashlib
+    import time
+
     db_path = Path(db_path)
+    names = [Path(str(n)).name for n in pending]
+    key = hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()[:8]
+    now = time.time()
+    for existing in _migration_backups(db_path):
+        if f"-{key}-" in existing.name and now - existing.stat().st_mtime < MIGRATION_BACKUP_REUSE_SECONDS:
+            return existing
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    tag = Path(names[0]).stem if names else "migration"
     safe_tag = "".join(c if c.isalnum() or c in "-_." else "_" for c in tag)
-    target = db_path.with_name(f"{db_path.name}.pre-{safe_tag}-{stamp}.bak")
+    base = f"{db_path.name}.premig-{safe_tag}-{key}-{stamp}"
+    # Exklusiv reservieren: zwei Starts in derselben Sekunde duerfen nicht
+    # dieselbe Zieldatei beschreiben (Review #108) -> Zaehler-Suffix.
+    for n in range(1, 100):
+        target = db_path.with_name(f"{base}.bak" if n == 1 else f"{base}-{n}.bak")
+        try:
+            os.close(os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise RuntimeError(f"keine freie Sicherungsdatei fuer {base}")
     src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         dst = sqlite3.connect(str(target))
@@ -62,6 +102,11 @@ def backup_before_migration(db_path, tag: str) -> Path:
         src.close()
     if not check or check[0] != "ok":
         raise RuntimeError(f"Sicherung {target} fehlerhaft: {check}")
+    for old in _migration_backups(db_path)[MIGRATION_BACKUP_KEEP:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass  # Aufraeumen ist nachrangig; die neue Sicherung steht
     return target
 
 
@@ -360,7 +405,7 @@ class Database:
                    and f.name not in applied]
         if pending and self.db_path.exists() and self.db_path.stat().st_size > 0:
             try:
-                backup = backup_before_migration(self.db_path, pending[0].stem)
+                backup = backup_before_migration(self.db_path, [f.name for f in pending])
             except Exception as e:
                 error = (f"Sicherung vor Migration fehlgeschlagen ({type(e).__name__}: {e}) "
                          f"-- keine Migration ausgefuehrt. Ausstehend: "
