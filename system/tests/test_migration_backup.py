@@ -224,3 +224,43 @@ def test_same_second_writes_distinct_files(tmp_path, monkeypatch):
     b = core_db.backup_before_migration(db, ["001_a.sql"])
     assert a != b and a.exists() and b.exists()
     assert b.name.endswith("-2.bak")
+
+
+def test_no_reuse_after_db_write(tmp_path):
+    """Review #108 / team-lead: nach einer normalen Schreiboperation wird die
+    juengere Sicherung NICHT wiederverwendet, sonst fehlte die Schreibung."""
+    db = tmp_path / "bach.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    conn.commit()
+    conn.close()
+    first = core_db.backup_before_migration(db, ["001_a.sql"])
+    assert core_db.backup_before_migration(db, ["001_a.sql"]) == first  # nichts geschrieben
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()
+    conn.close()
+    later = first.stat().st_mtime + 2
+    os.utime(db, (later, later))  # Dateisystem-Zeitaufloesung ueberbruecken
+    second = core_db.backup_before_migration(db, ["001_a.sql"])
+    assert second != first
+    check = sqlite3.connect(second)
+    assert check.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
+    check.close()
+
+
+def test_wal_write_counts_as_db_write(tmp_path):
+    db = tmp_path / "bach.db"
+    conn = sqlite3.connect(db)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    conn.commit()
+    first = core_db.backup_before_migration(db, ["001_a.sql"])
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()  # bleibt im WAL, Haupt-DB-mtime kann unveraendert sein
+    wal = tmp_path / "bach.db-wal"
+    assert wal.exists()
+    later = first.stat().st_mtime + 2
+    os.utime(wal, (later, later))
+    assert core_db.backup_before_migration(db, ["001_a.sql"]) != first
+    conn.close()
