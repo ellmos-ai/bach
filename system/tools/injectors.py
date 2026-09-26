@@ -33,11 +33,17 @@ Injektoren die Claude kognitiv entlasten:
 
 v1.1.75: Cooldown-Feature - Injektoren werden nach Anzeige X Min stumm geschaltet
 """
+import os
 import re
 import json
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+#: Schalter fuer den reparierten DB-Pfad des ContextInjectors (S3).
+CONTEXT_TRIGGERS_DB_ENV = "BACH_CONTEXT_TRIGGERS_DB"
+_ON_VALUES = {"1", "true", "yes", "on"}
 
 
 class InjectorConfig:
@@ -446,16 +452,31 @@ class ContextInjector:
         
         if not cls.base_path:
             return
-            
-        db_path = cls.base_path / "data" / "bach.db"
+
+        # Bis S3 (T-20260920-823767362) fehlte hier `import sqlite3`: der
+        # NameError wurde unten geschluckt, context_triggers also nie gelesen,
+        # und der Pfad zeigte auf system/data/bach.db statt auf BACH_DB. Der
+        # reparierte DB-Pfad ist das beabsichtigte Verhalten, bleibt aber bis
+        # zur Freigabe hinter BACH_CONTEXT_TRIGGERS_DB=1 (Default aus = Hardcode).
+        if os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() not in _ON_VALUES:
+            cls._load_session_usage()
+            return
+
+        db_path = cls._db_path()
         if not db_path.exists():
             return
-            
+
         try:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
-            # Triggers aus DB laden
-            rows = conn.execute("SELECT id, trigger_phrase, hint_text, source FROM context_triggers WHERE is_active = 1").fetchall()
+            # Triggers aus DB laden (Leseregel wie memoryhooker.triggers)
+            rows = conn.execute(
+                "SELECT id, trigger_phrase, hint_text, source FROM context_triggers"
+                " WHERE is_active = 1 AND source <> 'strategy'"
+                " AND COALESCE(status, 'unknown') <> 'blocked'"
+                " AND (expires_at IS NULL OR expires_at > datetime('now', 'localtime'))"
+                " AND agent_id = 'default' ORDER BY id"
+            ).fetchall()
             if rows:
                 # Wenn DB Daten hat, nutzen wir diese
                 cls._cache = {r['trigger_phrase']: {'id': r['id'], 'hint': r['hint_text'], 'source': r['source']} for r in rows}
@@ -467,11 +488,20 @@ class ContextInjector:
         cls._load_session_usage()
 
     @classmethod
+    def _db_path(cls) -> Path:
+        """Kanonische BACH-DB (hub/bach_paths.py), sonst der alte Ort unter base_path."""
+        try:
+            from hub.bach_paths import BACH_DB
+            return Path(BACH_DB)
+        except Exception:
+            return cls.base_path / "data" / "bach.db"
+
+    @classmethod
     def _mark_usage(cls, trigger_id: int):
         """Aktualisiert usage_count und last_used in der DB (v1.1.81)."""
         if not cls.base_path:
             return
-        db_path = cls.base_path / "data" / "bach.db"
+        db_path = cls._db_path()
         try:
             conn = sqlite3.connect(str(db_path))
             conn.execute("""
