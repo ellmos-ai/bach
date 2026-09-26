@@ -2,7 +2,9 @@
 """Tests for migration 048 session provenance hardening and stale cleanup."""
 
 import importlib.util
+import re
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -28,30 +30,38 @@ def migration():
 def db():
     conn = sqlite3.connect(":memory:")
     conn.executescript((SCHEMA_DIR / "schema.sql").read_text(encoding="utf-8"))
-    conn.executescript(
-        """
-        INSERT INTO memory_sessions
-            (id, session_id, started_at, ended_at, summary, agent_id)
-        VALUES
-            (1, 's-stale', datetime('now', '-48 hours'), NULL, 'legacy', 'target'),
-            (2, 's-fresh-target', datetime('now', '-10 minutes'), NULL, NULL, 'target'),
-            (3, 's-fresh-other', datetime('now', '-1 minute'), NULL, NULL, 'other');
-        """
+    now = datetime.now()
+    conn.executemany(
+        "INSERT INTO memory_sessions "
+        "(id, session_id, started_at, ended_at, summary, agent_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (1, "s-stale", (now - timedelta(hours=30)).isoformat(), None, "legacy", "target"),
+            (2, "s-fresh-target", (now - timedelta(hours=1)).isoformat(), None, None, "target"),
+            (3, "s-fresh-other", (now - timedelta(hours=1)).isoformat(), None, None, "other"),
+            (4, "s-empty-summary", (now - timedelta(hours=30)).isoformat(), None, "", "other"),
+        ],
     )
     conn.commit()
     yield conn
     conn.close()
 
 
-def test_migration_closes_stale_sessions_once_and_keeps_fresh_open(db, migration):
-    migration.run_migration(db)
+def test_python_isoformat_stale_sessions_close_once_and_keep_fresh_open(db, migration):
+    closed_first = migration.run_migration(db)
+    assert closed_first == [(1, "s-stale"), (4, "s-empty-summary")]
     db.commit()
 
     stale_after_first = db.execute(
         "SELECT ended_at, summary FROM memory_sessions WHERE session_id = 's-stale'"
     ).fetchone()
-    assert stale_after_first[0] is not None
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}", stale_after_first[0]
+    )
     assert stale_after_first[1] == "legacy [AUTO-CLOSED: stale]"
+    assert db.execute(
+        "SELECT summary FROM memory_sessions WHERE session_id = 's-empty-summary'"
+    ).fetchone() == (" [AUTO-CLOSED: stale]",)
     assert db.execute(
         "SELECT ended_at FROM memory_sessions WHERE session_id = 's-fresh-target'"
     ).fetchone() == (None,)
@@ -59,7 +69,7 @@ def test_migration_closes_stale_sessions_once_and_keeps_fresh_open(db, migration
         "SELECT ended_at FROM memory_sessions WHERE session_id = 's-fresh-other'"
     ).fetchone() == (None,)
 
-    migration.run_migration(db)
+    assert migration.run_migration(db) == []
     db.commit()
 
     stale_after_second = db.execute(
@@ -80,7 +90,7 @@ def test_migration_reinstalls_hardened_triggers(db, migration):
         "SELECT sql FROM sqlite_master "
         "WHERE type = 'trigger' AND name = 'trg_memory_working_session_provenance_insert'"
     ).fetchone()[0]
-    assert "datetime('now', '-24 hours')" not in old_sql
+    assert "datetime(started_at) >= datetime('now', 'localtime', '-24 hours')" not in old_sql
 
     migration.run_migration(db)
     db.commit()
@@ -89,7 +99,7 @@ def test_migration_reinstalls_hardened_triggers(db, migration):
         "SELECT sql FROM sqlite_master "
         "WHERE type = 'trigger' AND name = 'trg_memory_working_session_provenance_insert'"
     ).fetchone()[0]
-    assert "datetime('now', '-24 hours')" in new_sql
+    assert "datetime(started_at) >= datetime('now', 'localtime', '-24 hours')" in new_sql
     assert "NEW.agent_id" in new_sql
 
     db.execute(

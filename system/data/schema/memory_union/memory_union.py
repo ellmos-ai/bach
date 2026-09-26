@@ -283,6 +283,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_batch_order ON memory_le
 # Provenienz-Trigger, gehaertet (S5, T-20260926-539916651): zaehlt nur Sessions mit
 # frischer Aktivitaet (started_at innerhalb der letzten _SESSION_STALENESS_HOURS
 # Stunden) und bevorzugt eine Session mit demselben agent_id wie die neue Zeile.
+# Beide Seiten des Zeitvergleichs werden ueber datetime(...) normalisiert; die
+# Now-Grenze wird mit 'localtime' an die naive lokale Python-Zeit angepasst.
 # Findet sich keine solche Session, bleibt der Wert NULL statt eine veraltete,
 # fremde Session zuzuordnen -- vorher wurde IMMER die zuletzt gestartete offene
 # Session gewaehlt, egal wie alt (Bug: eine seit Wochen offene Session stempelte
@@ -294,7 +296,7 @@ def _active_session_subquery(new_agent_column: str) -> str:
     return (
         "SELECT session_id FROM memory_sessions "
         "WHERE ended_at IS NULL "
-        f"AND started_at >= datetime('now', '-{_SESSION_STALENESS_HOURS} hours') "
+        f"AND datetime(started_at) >= datetime('now', 'localtime', '-{_SESSION_STALENESS_HOURS} hours') "
         f"ORDER BY (agent_id IS NOT NULL AND agent_id = NEW.{new_agent_column}) DESC, "
         "started_at DESC, id DESC LIMIT 1"
     )
@@ -327,7 +329,7 @@ BEGIN
       AND EXISTS (
         SELECT 1 FROM memory_sessions
         WHERE ended_at IS NULL
-          AND started_at >= datetime('now', '-{_SESSION_STALENESS_HOURS} hours')
+          AND datetime(started_at) >= datetime('now', 'localtime', '-{_SESSION_STALENESS_HOURS} hours')
       );
 END""")
 

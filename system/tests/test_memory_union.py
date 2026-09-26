@@ -15,7 +15,7 @@ SCHEMA_DIR = Path(__file__).parent.parent / "data" / "schema"
 UNION_DIR = SCHEMA_DIR / "memory_union"
 
 # Pins identisch zu ellmos-ai/usmc (usmc/memory_union.py + .contract.json).
-MODULE_SHA256 = "b04fdc1cea3b1f2208e65db68de82bc17e923a2da2955ac47c915e4fa9a928e5"
+MODULE_SHA256 = "4a882ab16ea95e21921127f0ac1571a589ec96f0d5cdecd79b7ff9953c21ba82"
 CONTRACT_SHA256 = "9eab5303103de3fbd2cdc8eb39e4d246dd50d19ded949764a88a952a75f06739"
 
 
