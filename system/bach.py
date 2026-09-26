@@ -1238,7 +1238,10 @@ def main():
 
                 return 0 if success else 1
             except Exception as e:
-                log(f"[ERROR] {e}")
+                if dry_run_requested:
+                    print(f"[ERROR] {e}", file=sys.stderr)
+                else:
+                    log(f"[ERROR] {e}")
                 print(f"[ERROR] {e}")
                 return 1
         else:
@@ -1363,7 +1366,10 @@ def main():
                 _run_injectors(message, f"{command} {sub_cmd}")
             return 0 if success else 1
         except Exception as e:
-            log(f"[ERROR] Launcher: {e}")
+            if dry_run_requested:
+                print(f"[ERROR] Launcher: {e}", file=sys.stderr)
+            else:
+                log(f"[ERROR] Launcher: {e}")
             print(f"[ERROR] Launcher: {e}")
             # Fallback auf Direct Execute
             use_launcher = False
@@ -1395,7 +1401,10 @@ def main():
                     _run_injectors(message, f"{command} {operation}")
                 return 0 if success else 1
             except Exception as e:
-                log(f"[ERROR] {e}")
+                if dry_run_requested:
+                    print(f"[ERROR] {e}", file=sys.stderr)
+                else:
+                    log(f"[ERROR] {e}")
                 print(f"[ERROR] {e}")
                 return 1
 

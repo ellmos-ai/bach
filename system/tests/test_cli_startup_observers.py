@@ -296,3 +296,40 @@ def test_activity_ticks_only_after_handler_acceptance(monkeypatch, tmp_path, cap
         "activity-tick",
         "handled",
     ]
+
+
+def test_dry_run_handler_error_skips_autolog_initialization(
+    observer_boundary, monkeypatch, capsys
+):
+    """Auch der Dry-run-Fehlerpfad darf den Logger nicht initialisieren."""
+
+    class FailingHandler:
+        def handle(self, _operation, _args, dry_run=False):
+            assert dry_run is True
+            raise RuntimeError("handler boom")
+
+    class FailingApp:
+        registry = _DummyRegistry()
+
+        def get_handler(self, name):
+            return FailingHandler() if name == "dummy" else None
+
+    class MarkerLogger:
+        def log(self, _message):
+            (observer_boundary / "autolog").write_text("called", encoding="utf-8")
+
+    monkeypatch.setitem(
+        bach_cli.log.__globals__,
+        "get_logger",
+        lambda *_args, **_kwargs: MarkerLogger(),
+    )
+    monkeypatch.setattr(bach_cli, "_get_app", lambda: FailingApp())
+    monkeypatch.setattr(sys, "argv", ["bach.py", "dummy", "run", "--dry-run"])
+
+    rc = bach_cli.main()
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert list(observer_boundary.iterdir()) == []
+    assert "[ERROR] handler boom" in captured.out
+    assert "[ERROR] handler boom" in captured.err
