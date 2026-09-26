@@ -491,6 +491,15 @@ class UpdateHandler(BaseHandler):
         if not pending:
             return True, "Keine ausstehenden Migrationen."
         lines = [f"{len(pending)} ausstehende Migration(en):"]
+        if not dry_run and self.db_path.exists() and self.db_path.stat().st_size > 0:
+            from core.db import backup_before_migration
+            try:
+                backup = backup_before_migration(self.db_path, Path(pending[0]).stem)
+            except Exception as e:
+                lines.append(f"  [!!] Sicherung fehlgeschlagen ({type(e).__name__}: {e}) "
+                             "-- keine Migration ausgefuehrt.")
+                return False, "\n".join(lines)
+            lines.append(f"  Sicherung: {backup}")
         for mig_name in pending:
             mig_file = self.migrations_dir / mig_name
             if not mig_file.exists():

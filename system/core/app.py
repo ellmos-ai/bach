@@ -29,11 +29,12 @@ Nutzt hub/bach_paths.py fuer Pfade (Single Source of Truth).
 """
 
 import inspect
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
-from .db import Database
+from .db import NO_AUTO_MIGRATE_ENV, Database
 from .hooks import hooks
 from .instance_registry import InstanceRegistry
 from .instance_messaging import InstanceMessaging
@@ -99,6 +100,8 @@ class App:
                             f"baseline [--through NNN]. Betroffen u. a.: "
                             + ", ".join(backlog[:5])
                         )
+                    elif os.environ.get(NO_AUTO_MIGRATE_ENV, "").strip() in ("1", "true", "yes", "on"):
+                        pass  # read-only-Befehl: nur listen, nie migrieren
                     else:
                         applied, error = self._db.run_migrations()
                         if error:

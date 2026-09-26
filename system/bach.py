@@ -1104,6 +1104,11 @@ def main():
             pass
 
     cli_args = sys.argv[1:]
+    # Lesende Update-Befehle duerfen nicht selbst migrieren; 'update migrations
+    # run' migriert ausdruecklich, mit Sicherung (T-20260926-958264544).
+    if cli_args[:1] == ["update"] and (cli_args[1:2] in (["status"], ["check"], ["verify"])
+                                        or cli_args[1:2] == ["migrations"]):
+        os.environ.setdefault("BACH_NO_AUTO_MIGRATE", "1")
     json_requested = "--json" in cli_args
     dry_run_requested = "--dry-run" in cli_args or "-n" in cli_args
     mcp_stdio_requested = sys.argv[1:3] == ["mcp", "serve"]
