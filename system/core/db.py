@@ -72,8 +72,16 @@ def backup_before_migration(db_path, pending) -> Path:
     names = [Path(str(n)).name for n in pending]
     key = hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()[:8]
     now = time.time()
+    # Wiederverwenden nur, wenn die DB seit der Sicherung nicht beschrieben
+    # wurde (Review #108: sonst fehlten normale Schreibvorgaenge im Backup).
+    # Im WAL-Modus landen Schreibvorgaenge zuerst in <db>-wal, deshalb zaehlt
+    # die juengste mtime von DB und WAL.
+    last_write = max(p.stat().st_mtime for p in (db_path, db_path.with_name(db_path.name + "-wal"))
+                     if p.exists())
     for existing in _migration_backups(db_path):
-        if f"-{key}-" in existing.name and now - existing.stat().st_mtime < MIGRATION_BACKUP_REUSE_SECONDS:
+        mtime = existing.stat().st_mtime
+        if (f"-{key}-" in existing.name and now - mtime < MIGRATION_BACKUP_REUSE_SECONDS
+                and last_write <= mtime):
             return existing
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     tag = Path(names[0]).stem if names else "migration"
