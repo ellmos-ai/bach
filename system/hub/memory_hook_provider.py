@@ -25,10 +25,13 @@ der BACH_DB protokolliert (memoryhooker_audit.jsonl).
 WICHTIG: Hooks != Injektoren (core/hooks.py). Der Injector-Pfad
 (ChatRuntime._get_bach_context) bleibt bestehen; er ueberspringt nur die
 Injektoren, die dieser Seam nachweislich uebernimmt (handled_injectors, S3 von
-T-20260920-823767362): Strategy (source='strategy', Seed: Migration 044) und
+T-20260920-823767362): Strategy (source='strategy', Seed: Migration 044),
 Context (alle uebrigen Quellen als eine Gruppe, nur mit
-BACH_CONTEXT_TRIGGERS_DB=1, Sichtung: Migration 045). Rueckweg je Injektor:
-BACH_LEGACY_INJECTORS=strategy,context (kommagetrennt) oder der
+BACH_CONTEXT_TRIGGERS_DB=1, Sichtung: Migration 045) und Tool-Warn
+(source='tool_warn', Seed: Migration 046). Die BACH-Schalter
+(bach inject toggle, config.json "injectors") gelten weiter: ChatRuntime
+reicht abgeschaltete Injektoren als disabled durch. Rueckweg je Injektor:
+BACH_LEGACY_INJECTORS=strategy,context,tool_warn (kommagetrennt) oder der
 Gesamtschalter oben.
 """
 from __future__ import annotations
@@ -79,7 +82,12 @@ LEGACY_INJECTORS_ENV = "BACH_LEGACY_INJECTORS"
 
 #: Injektoren, die der Seam uebernimmt, mit BACHs bisherigem Cooldown in
 #: Sekunden (tools/injectors.py CooldownManager.DEFAULT_COOLDOWNS).
-HOOKER_INJECTORS = {"strategy": 120, "context": 60}
+HOOKER_INJECTORS = {"strategy": 120, "context": 60, "tool_warn": 300}
+
+#: BACH-Konfigurationsschalter je Injektor (tools/injectors.py InjectorConfig);
+#: Tool-Warn haengt dort am context_injector-Schalter.
+INJECTOR_SWITCHES = {"strategy": "strategy_injector", "context": "context_injector",
+                     "tool_warn": "context_injector"}
 
 #: Context liest context_triggers nur mit diesem Schalter (wie der
 #: ContextInjector in tools/injectors.py, S3 Einheit 2a).
@@ -373,6 +381,7 @@ class ExternalMemoryHook:
         self._config = cfg
 
         self.backend = BachMemoryBackend(db_path=db_path)
+        self._warned: set = set()
         self._states: dict[str, Any] = {}
         self.audit_path = self.backend.db_path.parent / _AUDIT_FILENAME
 
@@ -403,12 +412,16 @@ class ExternalMemoryHook:
             try:
                 if self.backend.triggers(table_sources, agent_id=cfg.agent_id):
                     handled.add(key)
-            except Exception:
-                continue
+            except Exception as e:
+                if key not in self._warned:
+                    self._warned.add(key)
+                    log.warning("memoryhooker-Seam: Regeln fuer %s nicht lesbar (%s: %s) -- Altpfad",
+                                key, type(e).__name__, e)
         return frozenset(handled)
 
     def hook_context(self, prompt: str, chat_id: str,
-                     cli_hints: bool = True) -> Optional[str]:
+                     cli_hints: bool = True,
+                     disabled: frozenset = frozenset()) -> Optional[str]:
         """Liefert MemoryHooker-Kontext fuer einen Prompt oder None.
 
         Ruft session_start_message (einmalig) + evaluate_prompt auf und
@@ -416,7 +429,9 @@ class ExternalMemoryHook:
         cli_hints=False (Chat im api-Modus): Trigger-Hinweise mit CLI-Befehlen
         werden VOR der Auswahl uebersprungen -- bewusst anders als der
         Altpfad, der sie nach der Auswahl verwarf und dabei den Cooldown
-        verbrauchte (Positivmessung 2026-09-26).
+        verbrauchte (Positivmessung 2026-09-26). Das gilt nur fuer Kontext-
+        Hinweise; Strategy und Tool-Warn zeigte auch der Altpfad im Chat.
+        disabled: in BACH abgeschaltete Injektoren -- auch hier stumm.
         """
         if not external_memoryhooker_available():
             return None
@@ -428,7 +443,7 @@ class ExternalMemoryHook:
             start = self._mod["session_start_message"](self.backend, state)
             if start:
                 parts.append(start)
-            handled = self.handled_injectors()
+            handled = self.handled_injectors() - set(disabled)
             if handled:
                 cfg = replace(self._config, triggers=replace(
                     self._config.triggers,
@@ -438,7 +453,9 @@ class ExternalMemoryHook:
                 if self._groups_supported:
                     kwargs["fired"] = fired
                     if not cli_hints:
-                        kwargs["accept"] = lambda rule: not _CLI_PATTERN.search(rule.hint)
+                        kwargs["accept"] = lambda rule: (
+                            rule.source not in CONTEXT_SOURCES
+                            or not _CLI_PATTERN.search(rule.hint))
                 parts.extend(self._evaluate_triggers(prompt, cfg, self.backend, state, **kwargs))
                 self._mark_usage([r.rule_id for r in fired
                                   if r.source != "strategy" and r.rule_id is not None])
