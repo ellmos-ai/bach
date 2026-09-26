@@ -34,6 +34,36 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+#: Read-only-Befehle (z. B. ``bach update migrations list``) setzen diesen
+#: Schalter, damit der App-Start nicht selbst migriert (T-20260926-958264544).
+NO_AUTO_MIGRATE_ENV = "BACH_NO_AUTO_MIGRATE"
+
+
+def backup_before_migration(db_path, tag: str) -> Path:
+    """Datierte Sicherung neben der DB vor einer Migrationsrunde.
+
+    sqlite-backup-API (WAL-sicher), danach quick_check auf der Kopie. Wirft bei
+    jedem Fehler -- ohne belegte Sicherung darf keine Migration laufen
+    (T-20260926-958264544: jeder CLI-Start migrierte ungefragt und ungesichert).
+    """
+    db_path = Path(db_path)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_tag = "".join(c if c.isalnum() or c in "-_." else "_" for c in tag)
+    target = db_path.with_name(f"{db_path.name}.pre-{safe_tag}-{stamp}.bak")
+    src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        dst = sqlite3.connect(str(target))
+        try:
+            src.backup(dst)
+            check = dst.execute("PRAGMA quick_check").fetchone()
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    if not check or check[0] != "ok":
+        raise RuntimeError(f"Sicherung {target} fehlerhaft: {check}")
+    return target
+
 
 def dispatch_py_migration(mod, conn, db_path):
     """Ruft den Entry-Point einer .py-Migration auf — gemeinsame Konvention
@@ -295,11 +325,21 @@ class Database:
             applied = {row[0] for row in
                        conn.execute("SELECT filename FROM _migrations").fetchall()}
 
-        for mig_file in sorted(migrations_dir.glob("*")):
-            if mig_file.suffix not in (".sql", ".py") or mig_file.name.startswith("_"):
-                continue
-            if mig_file.name in applied:
-                continue
+        pending = [f for f in sorted(migrations_dir.glob("*"))
+                   if f.suffix in (".sql", ".py") and not f.name.startswith("_")
+                   and f.name not in applied]
+        if pending and self.db_path.exists() and self.db_path.stat().st_size > 0:
+            try:
+                backup = backup_before_migration(self.db_path, pending[0].stem)
+            except Exception as e:
+                error = (f"Sicherung vor Migration fehlgeschlagen ({type(e).__name__}: {e}) "
+                         f"-- keine Migration ausgefuehrt. Ausstehend: "
+                         + ", ".join(f.name for f in pending[:5]))
+                print(f"  [!!] {error}")
+                return applied_now, error
+            print(f"  Sicherung vor Migration: {backup}")
+
+        for mig_file in pending:
             print(f"  Migration: {mig_file.name}")
             try:
                 with self.connect() as conn:
