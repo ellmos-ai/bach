@@ -88,4 +88,4 @@ web-scraper @ git+https://github.com/ellmos-ai/web-scraper.git@3078116fa4d3d9a94
 doc-services @ git+https://github.com/ellmos-ai/doc-services.git@f8506e642d27417e4ed00810aab2fc934aa3e374
 # Session-Checkpoint-Fachkern (S5, T-20260920-823767362): neutraler K9-Carrier fuer
 # hub/session_checkpoint_adapter.py; SnapshotHandler bleibt bis zur Verdrahtung unveraendert.
-session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@e245326
+session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b89ad135f723c825f64cba8e8fb4d9f8d529b5
