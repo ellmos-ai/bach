@@ -18,6 +18,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import sqlite3
+
+def _union_columns(conn, table):
+    """(Sichtbarkeitsfilter, Agent-Ausdruck) fuer memory_* -- vor BACH-Migration 043
+    fehlen visibility/agent_id; dann gilt alles als sichtbar und ohne Agent."""
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    visible = ("(visibility IS NULL OR visibility IN ('shared', 'public'))"
+               if "visibility" in cols else "1=1")
+    agent = "NULLIF(agent_id, 'default')" if "agent_id" in cols else "NULL"
+    return visible, agent
 import re
 
 # SQ039 Integration (Runde 6)
@@ -220,7 +229,7 @@ class MemoryGenerator:
         return status
 
     def get_top_lessons(self, limit: int = 10) -> list[dict]:
-        """Top-Lessons nach Severity sortiert (shared_memory_lessons bevorzugt)."""
+        """Top-Lessons nach Severity sortiert (gemeinsame memory_lessons)."""
         conn = sqlite3.connect(self.db_path)
 
         severity_order = """
@@ -233,30 +242,17 @@ class MemoryGenerator:
             END
         """
 
-        # Bevorzuge shared_memory_lessons (Multi-Agent)
-        try:
-            cursor = conn.execute(f"""
-                SELECT title, problem, solution, severity
-                FROM shared_memory_lessons
-                WHERE is_active = 1
-                  AND visibility IN ('shared', 'public')
-                ORDER BY {severity_order}, created_at DESC
-                LIMIT ?
-            """, (limit,))
-            lessons = cursor.fetchall()
-        except sqlite3.OperationalError:
-            lessons = []
-
-        # Fallback auf legacy memory_lessons
-        if not lessons:
-            cursor = conn.execute(f"""
-                SELECT title, problem, solution, severity
-                FROM memory_lessons
-                WHERE is_active = 1
-                ORDER BY {severity_order}, created_at DESC
-                LIMIT ?
-            """, (limit,))
-            lessons = cursor.fetchall()
+        # shared_memory_* ist seit 2026-02 eingefroren; memory_* ist das gemeinsame
+        # Gedaechtnis (T-20260920-823767362). Private Zeilen bleiben draussen.
+        visible, _agent = _union_columns(conn, "memory_lessons")
+        cursor = conn.execute(f"""
+            SELECT title, problem, solution, severity
+            FROM memory_lessons
+            WHERE is_active = 1 AND {visible}
+            ORDER BY {severity_order}, created_at DESC
+            LIMIT ?
+        """, (limit,))
+        lessons = cursor.fetchall()
 
         result = []
         for row in lessons:
@@ -594,31 +590,18 @@ class DailyLogGenerator:
         return tasks
 
     def _get_new_lessons_today(self) -> list[dict]:
-        """Hole heute erstellte Lessons (shared_memory bevorzugt)."""
+        """Hole heute erstellte Lessons (gemeinsame memory_lessons)."""
         conn = sqlite3.connect(self.db_path)
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # Bevorzuge shared_memory_lessons
-        try:
-            cursor = conn.execute("""
-                SELECT title, solution
-                FROM shared_memory_lessons
-                WHERE DATE(created_at) = ?
-                ORDER BY created_at DESC
-            """, (today,))
-            lessons = cursor.fetchall()
-        except sqlite3.OperationalError:
-            lessons = []
-
-        # Fallback auf legacy
-        if not lessons:
-            cursor = conn.execute("""
-                SELECT title, solution
-                FROM memory_lessons
-                WHERE DATE(created_at) = ?
-                ORDER BY created_at DESC
-            """, (today,))
-            lessons = cursor.fetchall()
+        visible, _agent = _union_columns(conn, "memory_lessons")
+        cursor = conn.execute(f"""
+            SELECT title, solution
+            FROM memory_lessons
+            WHERE DATE(created_at) = ? AND {visible}
+            ORDER BY created_at DESC
+        """, (today,))
+        lessons = cursor.fetchall()
 
         result = [{'title': row[0], 'solution': row[1]} for row in lessons]
         conn.close()
