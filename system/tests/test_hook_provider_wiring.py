@@ -26,6 +26,7 @@ Voraussetzung: die Module sind im Test-Venv installiert
 (requirements.txt-Pins memoryhooker/workflowhooker).
 """
 import ast
+import re
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -489,3 +490,44 @@ class TestBachBlockWithoutMemorySnapshot:
         rt.injector, rt.memory = _Injector(), _memory
         rt._memory_hook = lambda: None
         assert rt._get_bach_context("hallo") == "Kontext:\n[CLOCK] 12:00"
+
+
+class TestAfterTaskDoneInterceptorVisibility:
+    """T-20260926-764838557: HookRegistry.emit ersetzt last_interceptor_results
+    bei jedem Aufruf. 'task done' emittiert erst after_task_done (in
+    hub/task.py), danach app.py after_command. Reproduktion end-to-end ueber
+    den echten App->TaskHandler-Pfad (core/app.py:execute, hub/task.py:_done),
+    mit einem echten Interceptor auf der geteilten HookRegistry."""
+
+    def test_after_task_done_message_survives_after_command(self, tmp_path, monkeypatch):
+        import hub.bach_paths as bach_paths
+        from core.app import App
+        from core.hooks import hooks
+
+        fresh = tmp_path / "bach.db"
+        monkeypatch.setattr(bach_paths, "BACH_DB", fresh)
+        app = App(SYSTEM_DIR)
+
+        calls = []
+
+        def interceptor(event, ctx):
+            calls.append(event)
+            if event == "after_task_done":
+                return "GATE: Task-Abschluss-Hinweis"
+            return None
+
+        assert hooks.register_interceptor(interceptor, name="test-gate")
+        try:
+            ok, msg = app.execute("task", "add", ["Testaufgabe"])
+            assert ok, msg
+            match = re.search(r"Task (\d+)", msg)
+            assert match, f"Task-ID nicht aus '{msg}' extrahierbar"
+            task_id = match.group(1)
+
+            calls.clear()
+            ok, msg = app.execute("task", "done", [task_id])
+            assert ok, msg
+            assert "GATE: Task-Abschluss-Hinweis" in msg
+            assert calls == ["before_command", "after_task_done", "after_command"]
+        finally:
+            hooks._interceptors = [e for e in hooks._interceptors if e["name"] != "test-gate"]
