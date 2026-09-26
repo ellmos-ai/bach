@@ -520,6 +520,30 @@ def test_cli_path_parity_sequence(tmp_path, monkeypatch, capsys):
     assert _usage(alt_db) == _usage(neu_db)
 
 
+def test_task_done_runs_injectors(monkeypatch):
+    """T-20260926-620619287: 'bach task done' lief am INLINE_COMMANDS-Sonderpfad
+    _handle_task, der _run_injectors nie aufrief -- Between feuerte fuer Tasks nie."""
+    import bach as bach_cli
+
+    class _FakeHandler:
+        def __init__(self, root):
+            pass
+
+        def handle(self, operation, args, dry_run=False):
+            return True, "Task 42 erledigt"
+
+    calls = []
+    monkeypatch.setattr(bach_cli, "_run_injectors", lambda msg, cmd: calls.append((msg, cmd)))
+    monkeypatch.setattr("hub.task.TaskHandler", _FakeHandler)
+
+    assert bach_cli._handle_task("done", ["42"]) == 0
+    assert calls == [("Task 42 erledigt", "task done")]
+
+    calls.clear()
+    bach_cli._handle_task("done", ["42", "--json"])
+    assert calls == []
+
+
 @needs_groups
 def test_between_never_in_chat_and_respects_switch(tmp_path, seam_env):
     db = tmp_path / "b.db"
