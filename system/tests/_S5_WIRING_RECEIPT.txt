@@ -1,0 +1,3 @@
+Datum: 2026-09-26
+Befehl: pytest system/tests/test_session_checkpoint_provider.py system/tests/test_snapshot_handler.py system/tests/test_snapshot_payload.py system/tests/test_session_checkpoint_adapter.py -q
+Letzte Ausgabezeile: 43 passed in 19.88s

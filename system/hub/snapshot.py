@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
+from . import session_checkpoint_provider
 
 
 class SnapshotHandler(BaseHandler):
@@ -157,6 +158,13 @@ class SnapshotHandler(BaseHandler):
             conn.commit()
             conn.close()
 
+            checkpoint_result = session_checkpoint_provider.checkpoint_after_create(
+                self.db_path,
+                self.db_path.parent,
+                name=snapshot_name,
+                source_ref=f"bach-snapshot:{snapshot_name}",
+            )
+
             out = [
                 "[OK] Snapshot '" + snapshot_name + "' erstellt",
                 "  Session: " + str(session_id),
@@ -165,6 +173,10 @@ class SnapshotHandler(BaseHandler):
                 "Files: " + str(len(active_files)),
                 "  context_hash: " + str(context_hash) + " | tokens: " + str(token_usage),
             ]
+            if checkpoint_result.get("enabled") and "checkpoint" in checkpoint_result:
+                out.append(
+                    "  checkpoint: " + str(checkpoint_result["checkpoint"]["id"]) + " (carrier)"
+                )
             return True, "\n".join(out)
 
         except Exception as e:
