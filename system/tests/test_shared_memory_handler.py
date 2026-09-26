@@ -161,6 +161,12 @@ def _seed_shared(conn):
     conn.commit()
 
 
+@pytest.fixture(autouse=True)
+def _legacy_writes_enabled(monkeypatch):
+    """Die Bestandstests pruefen die Gen-2-Logik selbst -> Rollback-Pfad aktiv."""
+    monkeypatch.setenv("BACH_SHARED_MEMORY_LEGACY", "1")
+
+
 @pytest.fixture
 def smem_env(tmp_path, monkeypatch):
     """Shared memory env with tables and seed data."""
@@ -1005,3 +1011,14 @@ class TestChanges:
         assert "Facts" in msg
         assert "Lessons" in msg
         assert "Working Memory" in msg
+
+
+def test_gen2_writes_are_refused_without_rollback_env(smem_env, monkeypatch):
+    monkeypatch.delenv("BACH_SHARED_MEMORY_LEGACY")
+    handler = SharedMemoryHandler(smem_env[0])
+    ok, msg = handler.handle("facts", ["add", "k", "v"])
+    assert not ok and "BACH_SHARED_MEMORY_LEGACY=1" in msg
+    ok, _ = handler.handle("facts", ["list"])
+    assert ok
+    ok, _ = handler.handle("facts", ["add", "k", "v"], dry_run=True)
+    assert ok
