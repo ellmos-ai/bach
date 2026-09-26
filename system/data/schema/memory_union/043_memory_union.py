@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""BACH-Seite des gemeinsamen Gedaechtnisschemas BACH = OCEAN (S1).
+"""BACH-Seite des gemeinsamen Gedaechtnisschemas BACH = OCEAN (S1, Vertrag v2 aus S2).
 
 Bringt die BACH-Gedaechtnistabellen auf den Vereinigungsvertrag, den USMC
 und BACH teilen (``memory_union.py`` + ``memory_union.contract.json``,
@@ -9,6 +9,9 @@ Additiv, wo SQLite es erlaubt (ALTER ADD COLUMN: memory_sessions,
 memory_lessons, memory_consolidation). Neu aufgebaut nur, wo ein Constraint
 sich nicht nachtraeglich aendern laesst: memory_working (CHECK um handoff/task
 erweitert), memory_facts und context_triggers (UNIQUE jetzt mit agent_id).
+Vertrag v2 bringt Lesson-Schema v2: memory_lessons bekommt die Provenienz-,
+Idempotenz-, Feedback- und Zustellspalten additiv, memory_lesson_feedback,
+memory_lesson_delivery_batches und memory_lesson_deliveries entstehen neu.
 Alles in einer Transaktion mit Zeilenzahlpruefung und Vertragsvergleich am
 Ende; jede Abweichung rollt komplett zurueck. Bestehende BACH-Schreibpfade
 setzen kein agent_id und landen damit weiter auf demselben Schluessel
@@ -38,6 +41,8 @@ mu = _union_module()
 
 ADDITIVE_TABLES = ("memory_sessions", "memory_lessons", "memory_consolidation")
 REBUILD_TABLES = ("memory_working", "memory_facts", "context_triggers")
+NEW_TABLES = ("decay_config", "memory_lesson_feedback", "memory_lesson_delivery_batches",
+              "memory_lesson_deliveries")
 
 
 class MemoryUnionError(RuntimeError):
@@ -158,7 +163,8 @@ def run_migration(conn=None):
             _add_missing_columns(conn, table)
         for table in REBUILD_TABLES:
             _rebuild(conn, table)
-        conn.execute(mu.TABLE_DDL["decay_config"])
+        for table in NEW_TABLES:
+            conn.execute(mu.TABLE_DDL[table])
         _copy_partner_config(conn)
         for statement in mu.INDEX_DDL:
             conn.execute(statement)

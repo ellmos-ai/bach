@@ -15,8 +15,8 @@ SCHEMA_DIR = Path(__file__).parent.parent / "data" / "schema"
 UNION_DIR = SCHEMA_DIR / "memory_union"
 
 # Pins identisch zu ellmos-ai/usmc (usmc/memory_union.py + .contract.json).
-MODULE_SHA256 = "229c53eb476517c7294b2030a8cd71de420f9fd80b1ba9995c7074c276f3c200"
-CONTRACT_SHA256 = "d3b5d051924cd19b18c6e891b462d2cbfc46fd69e21feccd9e5439b348f0d851"
+MODULE_SHA256 = "59f8282274985c5697e03017911a9c898dbee88d888a65be192edd280c489c72"
+CONTRACT_SHA256 = "9eab5303103de3fbd2cdc8eb39e4d246dd50d19ded949764a88a952a75f06739"
 
 
 def _sha(path):
@@ -100,6 +100,37 @@ def test_provenance_triggers_survive_rebuild(db, mig):
     assert db.execute(stamp).fetchone() == before
     db.execute("INSERT INTO memory_facts (category, key, value) VALUES ('user', 'neu', 'x')")
     assert db.execute("SELECT created_by_session_id FROM memory_facts WHERE key = 'neu'").fetchone() == ("s-offen",)
+
+
+def test_lessons_gain_v2_contract_and_side_tables(db, mig):
+    mig.run_migration(db)
+    assert db.execute(
+        "SELECT title, source_kind, editorial_status, helpful_count FROM memory_lessons WHERE id = 90"
+    ).fetchone() == ("T", "legacy", "legacy", 0)
+    db.execute("PRAGMA foreign_keys = ON")
+    db.execute(
+        "INSERT INTO memory_lesson_feedback (lesson_id, feedback_key, helpful, payload_hash, created_at) "
+        "VALUES (90, 'f-1', 1, 'h', 't0')"
+    )
+    db.execute(
+        "INSERT INTO memory_lesson_delivery_batches VALUES ('d-1', 6, 's-offen', 'explicit', 'h', 'default', 't0')"
+    )
+    db.execute(
+        "INSERT INTO memory_lesson_deliveries (lesson_id, delivery_key, session_key, delivery_mode, "
+        "feedback_prompt, payload_hash, created_at) VALUES (90, 'd-1', 's-offen', 'explicit', 'p', 'h', 't0')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO memory_lesson_feedback (lesson_id, feedback_key, payload_hash, created_at) "
+            "VALUES (999, 'f-2', 'h', 't0')"
+        )
+    # Idempotenter Lesson-Schluessel wie in USMC.
+    db.execute("UPDATE memory_lessons SET source_key = 'src', episode_key = 'ep' WHERE id = 90")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO memory_lessons (category, title, solution, source_key, episode_key) "
+            "VALUES ('g', 'T2', 'S2', 'src', 'ep')"
+        )
 
 
 def test_idempotent(db, mig):
