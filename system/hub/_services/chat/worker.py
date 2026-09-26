@@ -87,6 +87,13 @@ def chat_still_seit(db: str) -> float | None:
     return None
 
 
+def ist_fertig(antwort: str | None) -> bool:
+    """Der Auftrag verlangt FERTIG am Ende der Antwort; frueher wurde nur der
+    Anfang geprueft, lange Abschlussberichte galten dann als offen."""
+    text = (antwort or "").upper()
+    return "FERTIG" in text[:300] or "FERTIG" in text[-300:]
+
+
 def state_schreiben(bach_cli: str, category: str, text: str) -> bool:
     """Stand ueber die BACH-CLI ablegen, nicht per Direktschreibzugriff."""
     try:
@@ -364,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
                 continue
 
-            fertig = "FERTIG" in (antwort or "").upper()[:300]
+            fertig = ist_fertig(antwort)
             _log(workdir, f"    {dauer}s, {'FERTIG' if fertig else 'offen'}")
 
             erledigt = False
