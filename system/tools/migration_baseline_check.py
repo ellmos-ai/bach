@@ -112,7 +112,8 @@ def _other_dbs(root: Path, copy: Path) -> set[Path]:
     return {p for p in root.rglob("*.db") if p != copy}
 
 
-def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = SYSTEM_ROOT) -> dict:
+def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = SYSTEM_ROOT,
+          timeout: float = 300) -> dict:
     source_hash = _sha256(source)
     src = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
     try:
@@ -129,11 +130,17 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
             results = []
             for name in pending:
                 before, other_before = snapshot(copy), _other_dbs(root, copy)
-                proc = subprocess.run(
-                    [sys.executable, "-c", _RUNNER, str(work_migrations / name), str(copy), str(system_root)],
-                    cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
-                    errors="replace", timeout=300, check=False,
-                )
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, "-c", _RUNNER, str(work_migrations / name), str(copy),
+                         str(system_root)],
+                        cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=timeout, check=False,
+                    )
+                except subprocess.TimeoutExpired:
+                    results.append({"migration": name, "status": "fehler",
+                                    "detail": f"Timeout nach {timeout:g} s"})
+                    continue
                 after = snapshot(copy)
                 changes = diff(before, after)
                 if proc.returncode != 0:
@@ -161,7 +168,7 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0] or None)
     parser.add_argument("--db", required=True, type=Path)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
