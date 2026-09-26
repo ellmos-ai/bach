@@ -76,21 +76,23 @@ def snapshot(db: Path) -> dict:
         objects = {(t, n): " ".join((s or "").split())
                    for t, n, s in conn.execute(
                        "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")}
-        rows = {}
+        rows, columns = {}, {}
         for (kind, name) in objects:
             if kind == "table":
                 try:
                     rows[name] = conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
                 except sqlite3.Error:
                     rows[name] = None
-        return {"objects": objects, "rows": rows}
+                columns[name] = [r[1] for r in conn.execute(f'PRAGMA table_info("{name}")')]
+        return {"objects": objects, "rows": rows, "columns": columns}
     finally:
         conn.close()
 
 
 def diff(before: dict, after: dict) -> tuple[list[str], list[str]]:
     """(alle Aenderungen, destruktive Aenderungen). Destruktiv = entferntes
-    Objekt oder gesunkene Zeilenzahl -- beides kann Daten kosten."""
+    Objekt, entfernte Spalte einer weiter bestehenden Tabelle oder gesunkene
+    Zeilenzahl -- alles kann Daten kosten."""
     changes, destructive = [], []
     for key in sorted(set(before["objects"]) | set(after["objects"])):
         kind, name = key
@@ -101,6 +103,11 @@ def diff(before: dict, after: dict) -> tuple[list[str], list[str]]:
             destructive.append(f"-{kind} {name}")
         elif before["objects"][key] != after["objects"][key]:
             changes.append(f"~{kind} {name}")
+    for name in sorted(set(before["columns"]) & set(after["columns"])):
+        for column in before["columns"][name]:
+            if column not in after["columns"][name]:
+                changes.append(f"-column {name}.{column}")
+                destructive.append(f"-column {name}.{column}")
     for name in sorted(set(before["rows"]) & set(after["rows"])):
         old, new = before["rows"][name], after["rows"][name]
         if old != new:
