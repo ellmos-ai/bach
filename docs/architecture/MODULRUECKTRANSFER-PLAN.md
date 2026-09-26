@@ -320,3 +320,28 @@ Agent-Handler nicht und Ocean-Parität ist hierdurch nicht bewiesen.
 1. **Jeder Schritt reversibel:** Jede Änderung muss sich durch das Umlegen eines Env-Schalters (z. B. `BACH_USE_EXTERNAL_SCHEDULER=0`) sofort auf den internen Codepfad zurückstellen lassen.
 2. **Kein Datenverlust:** Migrationen von Tabellen berühren niemals Produktivbestände ohne automatischen Snapshot nach `~/.bach/backups/`.
 3. **Plattformparität:** Alle Änderungen werden vor dem Release auf Windows (`WORKSTATION-LG`) und macOS (`mac-studio`) gegengeprüft.
+
+### 2026-09-21 — Read-only session-checkpoint payload collector
+
+- **Neu:** `system/hub/snapshot_payload.py` — rein lesender Collector für 6 Felder
+  (`session_id`, `open_tasks`, `recent_memory`, `active_files`, `token_usage`,
+  `created_at`). Öffnet SQLite via `mode=ro` URI; optionale Tabellen
+  `files_truth` / `monitor_tokens` per `try/except OperationalError` → `[]` bzw.
+  `None`. Limits: 10 Tasks, 5 Memory-Einträge, 10 Dateien. `created_at`
+  injizierbar (Default: ISO-Timestamp).
+- **Tests:** `system/tests/test_snapshot_payload.py` — 13 Tests (5 Klassen),
+  alle grün. Abdeckung: Feldanzahl/Äquivalenz, Limits/Sortierung, fehlende
+  optionale Tabellen, read-only-Verhalten (keine Byte-Änderung), Timestamp-Seam.
+- **Explizit NICHT in diesem Schritt enthalten:**
+  - Kein SnapshotHandler-Wiring (kein Aufruf aus `snapshot.py`).
+  - Keine Änderung an create / load / delete / list-Logik.
+  - Kein restore-Änderung.
+  - Kein Schema-Change, keine neue Tabelle.
+  - Kein legacy double-write.
+  - Keine Carrier-Aktivierung.
+  - Kein Parity-Claim.
+- **Hinweis Ocean-Checkpoint-Datei:** Die frühere 4-Felder/display-only
+  Beschreibung ist veraltet; aktueller Stand: 6 Felder, load-restoriert
+  Tasks + Memory.
+- **Neutrales Repo** `ba54a2a960c4b176ed06bd0baef2feb32212a84f` wird durch
+  diesen Commit **nicht** geändert.
