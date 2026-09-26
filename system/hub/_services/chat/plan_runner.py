@@ -107,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
 
     bach = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(bach))
-    db = args.db or str(bach / "data" / "bach.db")
+    from hub.bach_paths import BACH_DB  # nie selbst bauen (test_db_path_central)
+    db = args.db or str(BACH_DB)
 
     workdir = Path(args.workdir).expanduser().resolve() if args.workdir else Path.cwd()
     workdir.mkdir(parents=True, exist_ok=True)
