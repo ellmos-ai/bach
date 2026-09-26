@@ -172,3 +172,10 @@ if __name__ == "__main__":
             print(f"FEHL  {name}: {e}")
     print(f"\n{'ALLE GRUEN' if not fails else str(fails) + ' FEHLGESCHLAGEN'}")
     sys.exit(1 if fails else 0)
+
+
+def test_fertig_am_ende_eines_langen_berichts_beendet_den_loop():
+    r = _runtime()
+    r.auto_continue = 3
+    bericht = "Ich habe alle Punkte umgesetzt und geprueft. " * 20 + "\nFERTIG"
+    assert r._auto_next(bericht, 0, False)[0] is None

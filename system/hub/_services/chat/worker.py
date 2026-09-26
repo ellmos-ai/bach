@@ -32,6 +32,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from hub._services.chat.chat_runtime import ist_fertig
+
 #: Sessions des Backends selbst - ihre Speicherung ist KEINE Chat-Aktivitaet.
 #: Ohne diese Unterscheidung wuerde sich der Worker durch seine eigene Arbeit
 #: dauerhaft selbst zurueckhalten.
@@ -85,13 +87,6 @@ def chat_still_seit(db: str) -> float | None:
             ts = ts.replace(tzinfo=timezone.utc)
         return (datetime.now(timezone.utc) - ts).total_seconds()
     return None
-
-
-def ist_fertig(antwort: str | None) -> bool:
-    """Der Auftrag verlangt FERTIG am Ende der Antwort; frueher wurde nur der
-    Anfang geprueft, lange Abschlussberichte galten dann als offen."""
-    text = (antwort or "").upper()
-    return "FERTIG" in text[:300] or "FERTIG" in text[-300:]
 
 
 def state_schreiben(bach_cli: str, category: str, text: str) -> bool:

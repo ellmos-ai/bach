@@ -134,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             _log(workdir, f"Kontextdatei nicht lesbar: {e}")
 
     from hub._services.chat import telegram_chat as tc
+    from hub._services.chat.chat_runtime import ist_fertig
 
     runtime = tc.runtime
     runtime.max_tool_rounds = 0
@@ -178,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         dauer = round(time.time() - t0)
-        fertig = "FERTIG" in (antwort or "").upper()[:300]
+        fertig = ist_fertig(antwort)
         _log(workdir, f"    {dauer}s, {'FERTIG' if fertig else 'offen'}, "
                       f"{len(antwort or '')} Zeichen Antwort")
         if fertig and markiere_erledigt(bach_cli, t["id"]):

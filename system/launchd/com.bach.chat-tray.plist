@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bach.chat-tray</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>mkdir -p "$HOME/Library/Logs/bach"; cd "$HOME/services/bach/system" || exit 1; export PATH="$HOME/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" PYTHONPATH="$HOME/services/bach/system"; exec "$HOME/.venvs/bach/bin/python" hub/_services/chat/chat_tray.py --port 8081 &gt;&gt;"$HOME/Library/Logs/bach/chat-tray.log" 2&gt;&gt;"$HOME/Library/Logs/bach/chat-tray.err.log"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BACH_IDLE_WORKER</key>
+    <string>1</string>
+    <key>PYTHONIOENCODING</key>
+    <string>utf-8</string>
+    <key>OLLAMA_NUM_CTX</key>
+    <string>16384</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+</dict>
+</plist>

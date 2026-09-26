@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bach.telegram-bot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>mkdir -p "$HOME/Library/Logs/bach"; cd "$HOME/services/bach/system" || exit 1; export PATH="$HOME/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" PYTHONPATH="$HOME/services/bach/system"; exec "$HOME/.venvs/bach/bin/python" hub/_services/chat/telegram_chat.py &gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.log" 2&gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.err.log"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BACH_CONTROL_HOST</key>
+    <string>127.0.0.1</string>
+    <key>BACH_DEFAULT_MODE</key>
+    <string>full</string>
+    <key>BACH_LLM_IDLE_TIMEOUT</key>
+    <string>300</string>
+    <key>BACH_MAX_TOOL_ROUNDS</key>
+    <string>25</string>
+    <key>OLLAMA_MODEL</key>
+    <string>qwen3.8:27b-mlx</string>
+    <key>PYTHONIOENCODING</key>
+    <string>utf-8</string>
+    <key>OLLAMA_NUM_CTX</key>
+    <string>16384</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+</dict>
+</plist>
