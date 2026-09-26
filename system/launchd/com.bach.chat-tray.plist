@@ -18,6 +18,8 @@
     <string>utf-8</string>
     <key>OLLAMA_NUM_CTX</key>
     <string>16384</string>
+    <key>BACH_LLM_IDLE_TIMEOUT</key>
+    <string>600</string>
   </dict>
   <key>KeepAlive</key>
   <true/>
