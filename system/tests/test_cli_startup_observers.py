@@ -3,6 +3,7 @@
 """Regressionen für side-effect-freie beobachtende CLI-Aufrufe."""
 
 import atexit
+import subprocess
 import sys
 import time
 import types
@@ -333,3 +334,35 @@ def test_dry_run_handler_error_skips_autolog_initialization(
     assert list(observer_boundary.iterdir()) == []
     assert "[ERROR] handler boom" in captured.out
     assert "[ERROR] handler boom" in captured.err
+
+
+def test_tool_fallback_dry_run_skips_logging_and_subprocess(
+    observer_boundary, monkeypatch, capsys
+):
+    """Der Tool-Fallback bleibt im Dry-run rein beobachtend."""
+    tool_name = "activity_tracker"
+    tool_file = Path(bach_cli.TOOLS_DIR) / f"{tool_name}.py"
+    assert tool_file.exists()
+
+    monkeypatch.setattr(
+        bach_cli,
+        "log",
+        lambda *_args, **_kwargs: (observer_boundary / "autolog").write_text(
+            "called", encoding="utf-8"
+        ),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "subprocess.run darf im Dry-run nicht laufen"
+        ),
+    )
+
+    rc = bach_cli._try_run_tool(tool_name, ["--foo"], dry_run=True)
+
+    assert rc == 0
+    assert capsys.readouterr().out == (
+        "[DRY-RUN] Wuerde ausfuehren: activity_tracker --foo\n"
+    )
+    assert list(observer_boundary.iterdir()) == []
