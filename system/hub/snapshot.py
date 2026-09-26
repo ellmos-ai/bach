@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
+from . import session_checkpoint_provider
 
 
 class SnapshotHandler(BaseHandler):
@@ -154,8 +155,22 @@ class SnapshotHandler(BaseHandler):
                     timestamp,
                 ))
 
+            snapshot_row_id = cursor.lastrowid
             conn.commit()
             conn.close()
+
+            # source_ref must be unique per namespace (session_snapshots.id, not
+            # the user-chosen snapshot_name, which can repeat) -- same format as
+            # the migration mapping's source_ref ("bach-session_snapshots:{id}").
+            # Reusing a name would otherwise raise CheckpointConflict on the
+            # second create, which checkpoint_after_create swallows fail-soft,
+            # silently desyncing the carrier from session_snapshots.
+            checkpoint_result = session_checkpoint_provider.checkpoint_after_create(
+                self.db_path,
+                self.db_path.parent,
+                name=snapshot_name,
+                source_ref=f"bach-session_snapshots:{snapshot_row_id}",
+            )
 
             out = [
                 "[OK] Snapshot '" + snapshot_name + "' erstellt",
@@ -165,6 +180,10 @@ class SnapshotHandler(BaseHandler):
                 "Files: " + str(len(active_files)),
                 "  context_hash: " + str(context_hash) + " | tokens: " + str(token_usage),
             ]
+            if checkpoint_result.get("enabled") and "checkpoint" in checkpoint_result:
+                out.append(
+                    "  checkpoint: " + str(checkpoint_result["checkpoint"]["id"]) + " (carrier)"
+                )
             return True, "\n".join(out)
 
         except Exception as e:
@@ -375,7 +394,15 @@ class SnapshotHandler(BaseHandler):
             return False, f"[FEHLER] Snapshots auflisten: {e}"
     
     def _delete(self, snapshot_id: str, dry_run: bool = False) -> tuple:
-        """Snapshot loeschen."""
+        """Snapshot loeschen.
+
+        KNOWN GAP (S5, session-checkpoint carrier): deletes only the legacy
+        session_snapshots row. Any carrier checkpoint created by
+        checkpoint_after_create for the same source_ref is NOT deleted here
+        -- the carrier is additive/inactive-seam only, "delete" was never
+        wired to it (see session_checkpoint_provider.py). Tracked as a known
+        gap, not fixed in this PR.
+        """
         if dry_run:
             return True, f"[DRY-RUN] Wuerde Snapshot {snapshot_id} loeschen"
         
