@@ -1036,7 +1036,7 @@ class InjectorSystem:
                     self.cooldown.mark_shown("context")
 
         # Tool Injector - warnt vor Tool-Duplikaten (Cooldown: 5 Min)
-        if self.config.is_enabled("context_injector"):
+        if self.config.is_enabled("context_injector") and "tool_warn" not in skip:
             if not self.cooldown.is_on_cooldown("tool_warn"):
                 tool_warn = ToolInjector.check_before_create(text)
                 if tool_warn:

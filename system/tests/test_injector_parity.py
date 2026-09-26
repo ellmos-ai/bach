@@ -289,3 +289,142 @@ def test_context_not_handled_with_old_memoryhooker(context_pair):
     _, _, hook = context_pair
     hook._groups_supported = False
     assert hook.handled_injectors() == frozenset({"strategy"})
+
+
+# ---------------------------------------------------------------------------
+# Einheit 3: Tool-Warn (ToolInjector.check_before_create, Seed 046)
+# ---------------------------------------------------------------------------
+
+TOOL_PROMPTS = PROMPTS + [
+    "Erstelle mir bitte eine Übersicht",
+    "create a new report",
+    "Ich möchte ein neues Tool bauen",
+    "schreibe ein Script für den Import",
+    "baue ein Dashboard",
+    "implementiere ein tool zum Zählen",
+    "please write a tool",
+    "new script needed",
+    "Ein neues Script für OCR",
+    "Wie spät ist es?",
+]
+
+
+@pytest.fixture
+def tool_db(tmp_path):
+    db = tmp_path / "bach.db"
+    conn = sqlite3.connect(db)
+    _union_module().create_union_schema(conn)
+    for name in ("044_strategy_triggers.sql", "046_tool_warn_triggers.sql", "046_tool_warn_triggers.sql"):
+        conn.executescript((SCHEMA_DIR / "migrations" / name).read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _tool_hook(db, cooldown=0):
+    hook = mhp.ExternalMemoryHook(db_path=db, config_path=db.parent / "none.toml")
+    hook._config = replace(hook._config, triggers=replace(
+        hook._config.triggers, cooldowns={"strategy": 0, "context": 0, "tool_warn": cooldown}))
+    return hook
+
+
+def _toolcheck(message):
+    text = message or ""
+    start = text.find("[TOOL-CHECK]")
+    return [text[start:].split("\n\n")[0]] if start >= 0 else []
+
+
+@pytest.fixture
+def seam_env(monkeypatch):
+    monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
+    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+    monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
+
+
+@pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+    alt = injectors.ToolInjector.check_before_create(prompt)
+    neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+    assert neu == ([alt] if alt else [])
+
+
+def test_tool_warn_parity_cooldown_and_api_mode(tool_db, seam_env, tmp_path, monkeypatch):
+    """Cooldown 300 s wie CooldownManager; im api-Modus zeigt auch der Altpfad
+    den [TOOL-CHECK] (Praefix-Ausnahme in _filter_cli) -- kein Vorfilter."""
+    assert injectors.CooldownManager.DEFAULT_COOLDOWNS["tool_warn"] == mhp.HOOKER_INJECTORS["tool_warn"]
+    base = tmp_path / "bachbase"
+    (base / "data").mkdir(parents=True)
+    (base / "config.json").write_text(
+        '{"injectors": {"strategy_injector": false, "time_injector": false}}', encoding="utf-8")
+    monkeypatch.setattr(injectors.ContextInjector, "base_path", None)
+    monkeypatch.setattr(injectors.ContextInjector, "_cache", {})
+    clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["now"]
+
+    monkeypatch.setattr(injectors, "datetime", _Clock)
+    system = injectors.InjectorSystem(base)
+    import bach_api
+    proxy = bach_api._InjectorProxy()
+    proxy.set_mode("api")
+    config = _tool_hook(tool_db, cooldown=300)._config
+    backend = mhp.BachMemoryBackend(db_path=tool_db)
+    state = SessionState()
+    start = clock["now"]
+    for offset, prompt in [(0, "neues tool"), (100, "create x"), (299, "baue ein"),
+                           (300, "neues script"), (310, "nichts"), (700, "erstelle")]:
+        clock["now"] = start + timedelta(seconds=offset)
+        alt = proxy._filter_cli(system.process(prompt))
+        neu = evaluate_triggers(prompt, replace(config, triggers=replace(
+            config.triggers, sources=["tool_warn"])), backend, state,
+            now=clock["now"].timestamp())
+        assert neu == alt, (offset, prompt)
+
+
+def test_tool_warn_api_mode_not_prefiltered(tool_db, seam_env):
+    assert _toolcheck(_tool_hook(tool_db).hook_context("neues tool", "api", cli_hints=False))
+
+
+def test_bach_toggle_silences_hooker(tool_db, seam_env):
+    hook = _tool_hook(tool_db)
+    assert hook.handled_injectors() == frozenset({"strategy", "tool_warn"})
+    msg = hook.hook_context("neues tool, ich bin blockiert", "t",
+                            disabled=frozenset({"strategy", "tool_warn"}))
+    assert "[TOOL-CHECK]" not in (msg or "") and "[STRATEGIE]" not in (msg or "")
+
+
+def test_chat_runtime_maps_bach_switches():
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _Config:
+        def is_enabled(self, name):
+            return name != "context_injector"
+
+    class _System:
+        config = _Config()
+
+    class _Proxy:
+        def _get_system(self):
+            return _System()
+
+    rt = ChatRuntime.__new__(ChatRuntime)
+    rt.injector = _Proxy()
+    assert rt._injectors_off() == frozenset({"context", "tool_warn"})
+
+
+def test_handled_injectors_warns_once(tool_db, seam_env, caplog):
+    hook = _tool_hook(tool_db)
+
+    def boom(*args, **kwargs):
+        raise sqlite3.OperationalError("kaputt")
+
+    hook.backend.triggers = boom
+    with caplog.at_level("WARNING", logger=mhp.__name__):
+        assert hook.handled_injectors() == frozenset()
+        hook.handled_injectors()
+    msgs = [r.getMessage() for r in caplog.records if "nicht lesbar" in r.getMessage()]
+    assert len(msgs) == len(mhp.HOOKER_INJECTORS) - 1  # context ohne Flag gar nicht abgefragt
+    assert all("OperationalError" in m for m in msgs)

@@ -1765,9 +1765,20 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 return ""
             # api-Modus (Telegram): CLI-Hinweise zeigt der Chat nicht.
             cli_hints = getattr(self.injector, "_mode", "cli") != "api"
-            return hook.hook_context(text, chat_id, cli_hints=cli_hints) or ""
+            return hook.hook_context(text, chat_id, cli_hints=cli_hints,
+                                     disabled=self._injectors_off()) or ""
         except Exception:
             return ""
+
+    def _injectors_off(self) -> frozenset:
+        """In BACH abgeschaltete Injektoren (bach inject toggle), fail-soft."""
+        try:
+            from hub.memory_hook_provider import INJECTOR_SWITCHES
+            config = self.injector._get_system().config
+            return frozenset(key for key, switch in INJECTOR_SWITCHES.items()
+                             if not config.is_enabled(switch))
+        except Exception:
+            return frozenset()
 
     def _memory_hook(self):
         """Geteilter memoryhooker-Adapter oder None (fail-soft)."""
