@@ -22,12 +22,19 @@ __version__ = "1.0.0"
 __author__ = "BACH Team"
 
 import sqlite3
+import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
 # Pfade
 BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "data" / "bach.db"
+# Kanonische BACH-DB statt system/data/bach.db (dort lag auf dem Laptop eine
+# Geister-DB; T-20260926-363436040).
+_SYSTEM_ROOT = next(p for p in Path(__file__).resolve().parents
+                    if (p / "hub" / "bach_paths.py").exists())
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB as DB_PATH  # noqa: E402
 
 def run_maintenance():
     if not DB_PATH.exists():
