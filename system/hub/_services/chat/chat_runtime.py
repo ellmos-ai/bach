@@ -257,8 +257,12 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
     base = safe_exec.base_command_name(tokens[0])
     rest = tokens[1:]
     for t in rest:
-        if not t.startswith("-") and _is_secret_path(Path(t)):
+        # Positionsargumente und Werte von --opt=wert gleichermassen pruefen.
+        value = t.split("=", 1)[1] if t.startswith("-") and "=" in t else t
+        if value and not value.startswith("-") and _is_secret_path(Path(value)):
             return "Secrets-Pfad als Argument"
+        if value.lower().startswith("ext::"):
+            return "ext::-Transport ist nicht erlaubt"
     if base == "find":
         for t in rest:
             if t.lower().startswith(_FIND_DENY_PREFIXES):
@@ -317,6 +321,11 @@ BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 # generische Deny-Liste. Das hier verhindert nur den naheliegendsten
 # Exfiltrationspfad, kein vollstaendiger Schutz).
 _SECRET_PATH_SEGMENTS = frozenset({".ssh", ".credentials", "credentials"})
+# Einzelne Dateien mit Tokens/Zugangsdaten (u. a. die Bot-Konfiguration
+# ~/.config/bach/telegram_chat.json mit dem Bot-Token).
+_SECRET_FILE_NAMES = frozenset({
+    "telegram_chat.json", ".npmrc", ".netrc", ".pypirc", "auth.json",
+})
 
 
 def _is_secret_path(p: Path) -> bool:
@@ -330,7 +339,9 @@ def _is_secret_path(p: Path) -> bool:
     if any(seg.lower() in _SECRET_PATH_SEGMENTS for seg in resolved.parts):
         return True
     name = resolved.name.lower()
-    return name.endswith(".pem") or name.startswith("id_")
+    return (name.endswith(".pem") or name.startswith("id_")
+            or name in _SECRET_FILE_NAMES
+            or name == ".env" or name.startswith(".env."))
 
 
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:

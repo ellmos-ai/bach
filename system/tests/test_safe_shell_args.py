@@ -82,6 +82,12 @@ def test_git_read_allowed(args):
     ["hostname", "-F", "datei"],
     ["cat", "~/.ssh/id_rsa"],
     ["grep", "-r", "token", "/home/x/CREDENTIALS"],
+    ["grep", "--file=/home/x/.ssh/id_ed25519", "x"],
+    ["cat", "/home/x/.config/bach/telegram_chat.json"],
+    ["cat", "projekt/.env"],
+    ["cat", "/home/x/.npmrc"],
+    ["cat", "/home/x/.codex/auth.json"],
+    ["git", "log", "ext::irgendwas"],
 ])
 def test_other_writers_and_secrets_rejected(tokens):
     assert check_safe_shell_args(tokens)
