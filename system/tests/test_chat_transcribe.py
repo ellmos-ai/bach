@@ -243,6 +243,7 @@ class TestControlHandlerDispatch:
 
     @pytest.fixture
     def control_url(self, fake_stt, monkeypatch):
+        pytest.importorskip("telegram", reason="braucht python-telegram-bot (T-20260927-232943082)")
         from hub._services.chat.telegram_chat import ControlHandler, QuietHTTPServer
         monkeypatch.setenv("BACH_CONTROL_API_TOKEN", TEST_CONTROL_TOKEN)
         server = QuietHTTPServer(("127.0.0.1", 0), ControlHandler)
