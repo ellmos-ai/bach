@@ -29,12 +29,19 @@ BACH Telegram Direkttest
 Testet die Telegram-Verbindung unabhaengig vom Bridge-Daemon.
 
 Aufruf:
-    python telegram_test.py           - Verbindung + Status pruefen
-    python telegram_test.py send "Nachricht"  - Testnachricht senden
-    python telegram_test.py recv      - Letzte Nachrichten abrufen
+    python telegram_manual_check.py           - Verbindung + Status pruefen
+    python telegram_manual_check.py send "Nachricht"  - Testnachricht senden
+    python telegram_manual_check.py recv      - Letzte Nachrichten abrufen
 
 Autor: BACH System
 Datum: 2026-02-18
+
+T-20260927-283375364: Umbenannt von telegram_test.py. Braucht einen echten
+Telegram-Bot-Token und hatte keine echten Assertions (test_connection() gab
+False zurueck statt zu assertieren) -- pytest wertete das immer als
+"passed", unabhaengig vom tatsaechlichen Ergebnis. Der Dateiname matcht
+pytests Discovery-Muster (test_*.py/*_test.py) bewusst nicht mehr, damit
+das Skript manuell (siehe Aufruf oben) statt automatisiert laeuft.
 """
 
 import json

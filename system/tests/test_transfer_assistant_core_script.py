@@ -12,6 +12,19 @@ BACH_ROOT = Path.home() / "services" / "bach"
 SCRIPT = BACH_ROOT / "system" / "bin" / "transfer-assistant-core-444a1ff.sh"
 RUNBOOK = BACH_ROOT / "docs" / "OPERATOR-1240-ssh-transfer.md"
 
+# T-20260927-283375364: BACH_ROOT ist absichtlich fest auf den Mac-Studio-
+# Live-Deploy-Pfad codiert (~/services/bach) und existiert in keinem
+# Repo-Checkout. Dieses Modul ist ein Operator-Regressionstest fuer den
+# live deployten Host, keine CI-faehige Suite -- ueberspringen statt rot
+# laufen zu lassen, wenn der Pfad fehlt.
+pytestmark = pytest.mark.skipif(
+    not BACH_ROOT.exists(),
+    reason=(
+        "Nur auf dem Mac-Studio-Live-Host lauffaehig: BACH_ROOT "
+        f"({BACH_ROOT}) existiert nur dort, siehe T-20260927-283375364."
+    ),
+)
+
 
 @pytest.fixture
 def script_path() -> Path:
