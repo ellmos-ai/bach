@@ -49,6 +49,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import FrozenSet, List, Optional
 
@@ -58,6 +59,26 @@ from typing import FrozenSet, List, Optional
 # Zeilenumbruch (mehrere Befehle in einer "Zeile"). Fail-closed: im
 # Zweifel ablehnen statt zu raten.
 _SHELL_METACHARS = set('&|;<>`$(){}%^\n\r')
+
+_PORTABLE_COMMANDS = {
+    "echo": (
+        "import sys; "
+        "print(' '.join(sys.argv[1:]))"
+    ),
+    "cat": (
+        "import sys; "
+        "[sys.stdout.write(open(p, encoding='utf-8', errors='replace').read()) "
+        "for p in sys.argv[1:]]"
+    ),
+    "grep": (
+        "import re, sys; "
+        "pat = re.compile(sys.argv[1]); "
+        "[print(line.rstrip('\\n')) "
+        "for p in sys.argv[2:] "
+        "for line in open(p, encoding='utf-8', errors='replace') "
+        "if pat.search(line)]"
+    ),
+}
 
 
 class CommandRejected(Exception):
@@ -141,7 +162,20 @@ def resolve_executable(cmd: str, allowed: Optional[FrozenSet[str]] = None) -> Li
         raise CommandRejected(
             f"'{base}' ist nicht in der Allowlist ({', '.join(sorted(allowed))})"
         )
-    return [which_checked(base), *(dequote(t) for t in tokens[1:])]
+    args = [dequote(t) for t in tokens[1:]]
+    portable = portable_command_argv(base, args)
+    if portable is not None:
+        return portable
+    return [which_checked(base), *args]
+
+
+def portable_command_argv(base: str, args: List[str]) -> Optional[List[str]]:
+    """Small no-shell fallbacks for commands that are shell builtins on
+    Windows or may be absent in a minimal environment. They keep the same
+    allowlist and metacharacter gate as real executables."""
+    if base in _PORTABLE_COMMANDS and shutil.which(base) is None:
+        return [sys.executable, "-c", _PORTABLE_COMMANDS[base], *args]
+    return None
 
 
 def which_checked(base: str) -> str:
@@ -177,7 +211,7 @@ def demo() -> None:
     ok, argv = True, None
     try:
         argv = resolve_executable("echo hallo", allowed)
-        assert argv[1:] == ["hallo"]
+        assert argv[-1:] == ["hallo"]
     except CommandRejected:
         ok = False
     assert ok, "legitimer Befehl wurde abgelehnt"

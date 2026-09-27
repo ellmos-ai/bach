@@ -44,6 +44,28 @@ LEAD_HOSTNAMES = {
 }
 
 
+class RheingoldTaskCollision(RuntimeError):
+    """Raised when a remote task ID would overwrite unrelated local data."""
+
+
+def assert_local_task_id_available(
+    conn: sqlite3.Connection,
+    task_id: int,
+    title: str,
+) -> Optional[sqlite3.Row]:
+    """Fail closed when ``task_id`` already belongs to another local task."""
+    row = conn.execute(
+        "SELECT id, title, source FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    if row is not None and row[1] != title:
+        raise RheingoldTaskCollision(
+            f"Rheingold-ID {task_id} kollidiert lokal: "
+            f"'{row[1]}' statt '{title}'. Lokaler Task wurde nicht ueberschrieben."
+        )
+    return row
+
+
 def is_rheingold_lead() -> bool:
     """Prüft, ob dieser Prozess direkt auf dem Rheingold-Lead-Host läuft."""
     if os.environ.get("BACH_IS_RHEINGOLD_LEAD") == "1" or os.environ.get("BACH_MODE") == "lead":
@@ -213,6 +235,22 @@ def sync_drafts_to_rheingold(
         ok, res = post_task_to_rheingold(base_url, payload)
         if ok and "id" in res:
             new_id = res["id"]
+            existing = cursor.execute(
+                "SELECT title, source FROM tasks WHERE id = ?",
+                (new_id,),
+            ).fetchone()
+            if existing is not None:
+                collision_source = f"collision:{draft_src}:remote:{new_id}"
+                cursor.execute(
+                    "UPDATE tasks SET source = ? WHERE id = ?",
+                    (collision_source, old_id),
+                )
+                conn.commit()
+                raise RheingoldTaskCollision(
+                    f"Draft {old_id} wurde remote als Task {new_id} erstellt, "
+                    f"aber diese ID gehoert lokal bereits '{existing[0]}'. "
+                    f"Der Draft bleibt als {collision_source} erhalten."
+                )
             # Aktualisiere Task im lokalen Bachgrund
             cursor.execute("""
                 UPDATE tasks
@@ -251,6 +289,7 @@ def pull_tasks_from_rheingold(
     Returns:
         (inserted_count, updated_count)
     """
+    conn.row_factory = sqlite3.Row
     endpoint = f"{base_url.rstrip('/')}/api/tasks?limit=10000"
     req = urllib.request.Request(
         endpoint,
@@ -279,6 +318,35 @@ def pull_tasks_from_rheingold(
 
     local_rows = cursor.execute("SELECT * FROM tasks").fetchall()
     local_map = {row["id"]: dict(row) for row in local_rows}
+
+    collisions = []
+    for server_task in server_tasks:
+        task_id = server_task.get("id")
+        if task_id is None or task_id < 0 or task_id not in local_map:
+            continue
+        local_task = local_map[task_id]
+        local_source = str(local_task.get("source") or "")
+        local_created = local_task.get("created_at")
+        server_created = server_task.get("created_at")
+        same_creation = bool(
+            local_created
+            and server_created
+            and str(local_created) == str(server_created)
+        )
+        remote_managed = (
+            local_source.startswith(("rheingold:", "promoted:draft:"))
+            or same_creation
+        )
+        if local_task.get("title") != server_task.get("title") and not remote_managed:
+            collisions.append(
+                f"{task_id}: lokal '{local_task.get('title')}', "
+                f"remote '{server_task.get('title')}'"
+            )
+    if collisions:
+        raise RheingoldTaskCollision(
+            "Rheingold-Pull abgebrochen; lokale Tasks wuerden ueberschrieben: "
+            + "; ".join(collisions)
+        )
 
     inserted = 0
     updated = 0

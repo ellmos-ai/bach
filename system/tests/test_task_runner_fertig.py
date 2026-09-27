@@ -1,5 +1,6 @@
 """task_runner: FERTIG am Ende eines langen Berichts hakt den Task ab."""
 
+import sqlite3
 import sys
 import types
 
@@ -41,3 +42,18 @@ def test_long_report_ending_with_fertig_is_done(monkeypatch, tmp_path):
 
 def test_answer_without_fertig_stays_open(monkeypatch, tmp_path):
     assert _run(monkeypatch, tmp_path, "Backend-Fehler: ReadTimeout") == []
+
+
+def test_offene_tasks_keeps_malformed_dependency_blocked(tmp_path):
+    db_path = tmp_path / "tasks.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE tasks ("
+            "id INTEGER PRIMARY KEY, title TEXT, description TEXT, depends_on TEXT, "
+            "status TEXT, priority TEXT, project TEXT, category TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO tasks VALUES (1, 'Malformed', '', 'P1', 'pending', 'P2', 'p', 'p')"
+        )
+
+    assert task_runner.offene_tasks(str(db_path), "p") == []

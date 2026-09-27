@@ -1,15 +1,12 @@
-# -*- coding: utf-8 -*-
 """Unit tests for BACH slots configuration, dynamic background workers,
 multi-backend slot assignment, and activity dashboard.
 """
 
 import asyncio
 import importlib
-import json
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -23,13 +20,17 @@ if str(SYSTEM_ROOT) not in sys.path:
 
 pytest.importorskip("telegram", reason="braucht python-telegram-bot (T-20260927-232943082)")
 
+from hub._services.chat import telegram_chat
+from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, FailedAnswer
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
     add_worker,
+    bump_pause_counter,
     get_activity_history,
     get_slot,
     get_worker_slot,
     initialize_slots_config,
+    is_slot_paused,
     list_workers,
     load_slots_config,
     record_activity,
@@ -37,15 +38,12 @@ from hub._services.chat.slots_config import (
     save_slots_config,
     update_slot,
 )
-from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, FailedAnswer
-from hub._services.chat import telegram_chat
 from hub._services.chat.telegram_chat import (
-    _apply_slot_to_session,
-    _get_or_create_backend,
-    _resolve_slot_for_chat,
-    _snapshot_chat_backend,
     ControlHandler,
     WorkerBindingError,
+    _apply_slot_to_session,
+    _resolve_slot_for_chat,
+    _snapshot_chat_backend,
     legacy_worker_binding,
 )
 
@@ -167,6 +165,7 @@ class TestSlotsConfigCRUD:
 
         initialized = subprocess.run(
             command, env=env, capture_output=True, text=True, timeout=15,
+            check=False,
         )
         assert initialized.returncode == 0, initialized.stderr
         assert cfg_file.exists()
@@ -175,6 +174,7 @@ class TestSlotsConfigCRUD:
         cfg_file.write_text("{kaputt", encoding="utf-8")
         refused = subprocess.run(
             command, env=env, capture_output=True, text=True, timeout=15,
+            check=False,
         )
         assert refused.returncode == 1
         assert cfg_file.read_text(encoding="utf-8") == "{kaputt"
@@ -204,14 +204,14 @@ class TestSlotsConfigCRUD:
         def activity():
             try:
                 slots.update_slot("alpha", {"current_activity": "race-activity"}, path=str(cfg_file))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 failures.append(exc)
 
         def revoke():
             try:
                 slots.update_slot("alpha", {"allow_tools": False}, path=str(cfg_file))
                 revoked.set()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 failures.append(exc)
 
         activity_thread = threading.Thread(target=activity)
@@ -340,6 +340,24 @@ class TestSlotsConfigCRUD:
         second_after = next(w for w in by_id if w["id"] == second["id"])
         assert first_after["current_activity"] == "id-only activity"
         assert second_after.get("current_activity") != "id-only activity"
+
+    def test_buddha_always_on_pause_after_runs(self, tmp_path):
+        cfg_file = tmp_path / "pause-runs.json"
+        initialize_slots_config(str(cfg_file))
+
+        # pause_minutes must be > 0, otherwise maybe_start_pause never arms.
+        update_slot(
+            "buddha_always_on",
+            {"pause_after": 3, "pause_minutes": 1},
+            path=str(cfg_file),
+        )
+        slot = get_slot("buddha_always_on", path=str(cfg_file))
+
+        assert bump_pause_counter(slot) is False
+        assert bump_pause_counter(slot) is False
+        assert bump_pause_counter(slot) is True
+        assert is_slot_paused(slot) is True
+        assert slot["pause_counter"] == 0
 
 
 class TestTelegramSlotMapping:
@@ -577,7 +595,7 @@ class TestTelegramSlotMapping:
 
         with patch("hub._services.chat.telegram_chat.load_slots_config", return_value=cfg):
             session = ChatSession()
-            target_backend, model = _apply_slot_to_session("idle-paul-42", session)
+            _target_backend, model = _apply_slot_to_session("idle-paul-42", session)
 
             assert session.max_tool_rounds == 35
             assert session.mode == "full"
@@ -587,7 +605,7 @@ class TestTelegramSlotMapping:
     def test_dynamic_worker_slot_resolution(self, tmp_path):
         cfg_file = tmp_path / "test_slots.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({
+        _worker = add_worker({
             "id": "worker-special-1",
             "name": "Special Worker",
             "backend": "ollama",
@@ -944,7 +962,7 @@ class TestControlHandlerEndpoints:
                   "type": "once", "expires_at": None,
                   "backend": "ollama-cloud", "model": "kimi-k3:cloud",
                   "allow_tools": False, "max_tool_rounds": rounds,
-                  "task_prompt": "Nur CLOUD_OK"}
+                  "sub_mode": "task_worker", "task_prompt": "Nur CLOUD_OK"}
         session = ChatSession()
         session.chat_id = "alpha"
         session.messages = [{"role": "user", "content": "persistierter Verlauf"}]
@@ -958,6 +976,8 @@ class TestControlHandlerEndpoints:
                             lambda _id, change: updates.append(change) or worker)
         monkeypatch.setattr(control, "record_activity",
                             lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(control, "begin_assignment", lambda **_kw: None)
+        monkeypatch.setattr(control, "finish_assignment", lambda *_a, **_k: None)
 
         async def fake_process(*_args, **_kwargs):
             process_calls.append(session.allow_tools)
@@ -1037,7 +1057,8 @@ class TestControlHandlerEndpoints:
 
         worker_id = "worker-test-failed-answer"
         worker = {"id": worker_id, "name": "Probe", "status": "running",
-                  "type": "once", "expires_at": None, "task_prompt": "Probe"}
+                  "type": "once", "expires_at": None,
+                  "sub_mode": "task_worker", "task_prompt": "Probe"}
         updates = []
         activities = []
         monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
@@ -1045,6 +1066,8 @@ class TestControlHandlerEndpoints:
                             lambda _id, change: updates.append(change) or worker)
         monkeypatch.setattr(control, "record_activity",
                             lambda _id, message, status, details=None: activities.append(status))
+        monkeypatch.setattr(control, "begin_assignment", lambda **_kw: None)
+        monkeypatch.setattr(control, "finish_assignment", lambda *_a, **_k: None)
         monkeypatch.setattr(control, "_snapshot_chat_backend",
                             lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
 
@@ -1197,7 +1220,12 @@ class TestControlHandlerEndpoints:
         assert _is_allowed_origin("https://attacker.org:8081") is False
 
     def test_reconcile_workers_heals_frozen_running_status(self, tmp_path):
-        from hub._services.chat.slots_config import add_worker, update_slot, reconcile_workers, load_slots_config
+        from hub._services.chat.slots_config import (
+            add_worker,
+            load_slots_config,
+            reconcile_workers,
+            update_slot,
+        )
         cfg_file = tmp_path / "test_slots.json"
         initialize_slots_config(str(cfg_file))
 
@@ -1295,8 +1323,8 @@ class TestControlHandlerEndpoints:
 
     def test_api_workers_stop_endpoint(self, tmp_path, monkeypatch):
         monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
+        from hub._services.chat.slots_config import add_worker, update_slot
         from hub._services.chat.telegram_chat import ControlHandler
-        from hub._services.chat.slots_config import add_worker, update_slot, get_slot
         cfg_file = tmp_path / "test_slots.json"
         initialize_slots_config(str(cfg_file))
 
@@ -1397,6 +1425,8 @@ class TestControlHandlerEndpoints:
                  patch.object(telegram_chat, "get_worker_slot", side_effect=slot_get), \
                  patch.object(telegram_chat, "update_slot", side_effect=slot_update), \
                  patch.object(telegram_chat, "record_activity", side_effect=activity), \
+                 patch.object(telegram_chat, "begin_assignment", lambda **_kw: None), \
+                 patch.object(telegram_chat, "finish_assignment", lambda *_a, **_k: None), \
                  patch.object(telegram_chat, "_snapshot_chat_backend", return_value=("fake", "fake-model")), \
                  patch.object(telegram_chat, "_WORKER_STOP_WAIT_SECONDS", 0.05):
                 handler.path = "/api/workers/run"
@@ -1482,3 +1512,120 @@ class TestControlHandlerEndpoints:
             with telegram_chat._WORKER_CONTROL_LOCK:
                 telegram_chat._ACTIVE_WORKER_THREADS.clear()
                 telegram_chat._WORKER_CONTROLS.clear()
+
+    def test_api_worker_run_emits_assignment_events_end_to_end(self, tmp_path, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+        heart = importlib.import_module("hub._services.agents_heart")
+
+        cfg_file = tmp_path / "board-authz-slots.json"
+        initialize_slots_config(str(cfg_file))
+        worker = add_worker({"name": "Board-E2E", "type": "once",
+                             "task_prompt": "Nur CLOUD_OK"}, path=str(cfg_file))
+        worker_id = worker["id"]
+        update_slot(worker_id, {"status": "running"}, path=str(cfg_file))
+
+        session = ChatSession()
+        session.chat_id = worker_id
+        session.messages = []
+        responses = []
+        monkeypatch.setattr(control, "get_worker_slot",
+                            lambda _id: get_worker_slot(_id, path=str(cfg_file)))
+        monkeypatch.setattr(control, "update_slot",
+                            lambda _id, change: update_slot(_id, change, path=str(cfg_file)))
+        monkeypatch.setattr(control, "record_activity",
+                            lambda *_a, **_k: record_activity(*_a, path=str(cfg_file), **_k))
+        monkeypatch.setattr(control, "begin_assignment",
+                            lambda **_kw: heart.begin_assignment(**_kw, path=str(cfg_file)))
+        monkeypatch.setattr(control, "finish_assignment",
+                            lambda _a, **_kw: heart.finish_assignment(_a, **_kw, path=str(cfg_file)))
+        monkeypatch.setattr(control, "_snapshot_chat_backend",
+                            lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: object())
+
+        async def fake_process(*_args, **_kwargs):
+            return "CLOUD_OK"
+
+        monkeypatch.setattr(control.runtime, "process", fake_process)
+
+        class _SynchronousThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        handler.path = "/api/workers/run"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {"id": worker_id})
+        monkeypatch.setattr(handler, "_json",
+                            lambda body, code=200: responses.append((body, code)))
+
+        handler.do_POST()
+
+        assert responses[-1][1] == 200
+        assert responses[-1][0].get("ok") is True
+
+        events = get_activity_history(limit=50, path=str(cfg_file))
+        started = [e for e in events
+                    if (e.get("details") or {}).get("event") == "assignment_started"]
+        ended = [e for e in events
+                 if (e.get("details") or {}).get("event") == "assignment_ended"]
+        assert started and ended
+        start_details = started[0]["details"]
+        asgn = start_details["assignment_id"]
+        assert asgn.startswith("asgn-")
+        assert start_details["role_id"] == "task_worker"
+        assert start_details["initiated_by"] == f"board:{worker_id}"
+        match = [e for e in ended if e["details"]["assignment_id"] == asgn]
+        assert match
+        assert match[0]["details"]["status"] == "completed"
+        assert match[0]["details"]["result"] == "task_done"
+
+    def test_api_worker_run_denies_unknown_role_fail_closed(self, monkeypatch):
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+        worker = {"id": "hacker", "name": "Hacker", "status": "running",
+                  "type": "once", "expires_at": None,
+                  "sub_mode": "hacker", "task_prompt": "Nur CLOUD_OK"}
+        session = ChatSession()
+        session.chat_id = "hacker"
+        session.messages = []
+        responses = []
+        monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
+        monkeypatch.setattr(control, "update_slot",
+                            lambda _id, change: worker)
+        monkeypatch.setattr(control, "record_activity",
+                            lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(control, "_snapshot_chat_backend",
+                            lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
+        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
+        monkeypatch.setattr(control, "_get_or_create_backend",
+                            lambda *_args: object())
+
+        async def fake_process(*_args, **_kwargs):
+            return "CLOUD_OK"
+
+        monkeypatch.setattr(control.runtime, "process", fake_process)
+
+        class _SynchronousThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        handler.path = "/api/workers/run"
+        monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+        monkeypatch.setattr(handler, "_read_body", lambda: {"id": "hacker"})
+        monkeypatch.setattr(handler, "_json",
+                            lambda body, code=200: responses.append((body, code)))
+
+        handler.do_POST()
+
+        assert responses[-1][1] == 400
+        assert "Assignment verweigert" in responses[-1][0]["error"]

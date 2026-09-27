@@ -15,6 +15,7 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub.rheingold import (
+    RheingoldTaskCollision,
     generate_draft_hash,
     is_rheingold_lead,
     post_task_to_rheingold,
@@ -107,6 +108,41 @@ def test_offline_task_staging_with_negative_id(tmp_path):
     assert "(lokaler Entwurf)" in list_msg
 
 
+def test_remote_add_preserves_unrelated_local_task_on_id_collision(tmp_path, monkeypatch):
+    db_path = tmp_path / "data" / "bach.db"
+    db_path.parent.mkdir()
+    conn = sqlite3.connect(str(db_path))
+    _create_test_tasks_table(conn)
+    conn.execute(
+        "INSERT INTO tasks (id, title, status, source) "
+        "VALUES (1250, 'Local recurring task', 'pending', 'recurring')"
+    )
+    conn.commit()
+    conn.close()
+    handler = TaskHandler(tmp_path)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.setattr(
+        "hub.task.get_lead_config",
+        lambda: {"mode": "worker", "lead_url": "http://fake-rheingold:8000"},
+    )
+    monkeypatch.setattr(
+        "hub.task.get_rheingold_url",
+        lambda timeout=1.2: "http://fake-rheingold:8000",
+    )
+    monkeypatch.setattr(
+        "hub.task.post_task_to_rheingold",
+        lambda *args, **kwargs: (True, {"success": True, "id": 1250}),
+    )
+
+    ok, message = handler.handle("add", ["Different remote task"])
+
+    assert ok is False
+    assert "COLLISION" in message
+    with sqlite3.connect(db_path) as check:
+        row = check.execute("SELECT title, source FROM tasks WHERE id = 1250").fetchone()
+    assert row == ("Local recurring task", "recurring")
+
+
 def test_sync_drafts_promotes_to_official_id(tmp_path):
     db_path = tmp_path / "bach.db"
     conn = sqlite3.connect(str(db_path))
@@ -143,6 +179,31 @@ def test_sync_drafts_promotes_to_official_id(tmp_path):
     conn.close()
 
 
+def test_sync_drafts_preserves_both_rows_on_id_collision(tmp_path):
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    _create_test_tasks_table(conn)
+    conn.execute(
+        "INSERT INTO tasks (id, title, status, source) VALUES "
+        "(-1, 'Draft', 'pending', 'draft:wks:12345678'), "
+        "(1250, 'Local recurring task', 'pending', 'recurring')"
+    )
+    conn.commit()
+
+    with patch(
+        "hub.rheingold.post_task_to_rheingold",
+        return_value=(True, {"success": True, "id": 1250, "status": "created"}),
+    ):
+        with pytest.raises(RheingoldTaskCollision, match="bereits"):
+            sync_drafts_to_rheingold(conn, "http://fake-rheingold:8000")
+
+    rows = conn.execute("SELECT id, title, source FROM tasks ORDER BY id").fetchall()
+    assert rows[0][0:2] == (-1, "Draft")
+    assert rows[0][2].startswith("collision:draft:wks:12345678:remote:1250")
+    assert rows[1][0:2] == (1250, "Local recurring task")
+    conn.close()
+
+
 def test_lead_config_isolated_by_default(monkeypatch):
     from hub.rheingold import get_lead_config
     monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
@@ -156,6 +217,7 @@ def test_set_and_clear_lead_config(tmp_path, monkeypatch):
     cfg_file = tmp_path / "lead.json"
     monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
     monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
 
     p = set_lead_url("http://custom-lead:8000")
     assert p.is_file()
@@ -208,10 +270,94 @@ def test_pull_tasks_mirrors_to_local_bachgrund(tmp_path):
     conn.close()
 
 
+def test_pull_tasks_aborts_before_overwriting_local_id_collision(tmp_path):
+    from hub.rheingold import pull_tasks_from_rheingold
+
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    _create_test_tasks_table(conn)
+    conn.execute(
+        "INSERT INTO tasks (id, title, status, source) "
+        "VALUES (101, 'Local recurring task', 'pending', 'recurring')"
+    )
+    conn.commit()
+    mock_server_data = {
+        "success": True,
+        "tasks": [{"id": 101, "title": "Different remote task", "status": "pending"}],
+    }
+
+    class MockResponse:
+        status = 200
+
+        def read(self):
+            import json
+            return json.dumps(mock_server_data).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    with patch("urllib.request.urlopen", return_value=MockResponse()):
+        with pytest.raises(RheingoldTaskCollision, match="Pull abgebrochen"):
+            pull_tasks_from_rheingold(conn, "http://fake-rheingold:8000")
+
+    row = conn.execute("SELECT title FROM tasks WHERE id = 101").fetchone()
+    assert row[0] == "Local recurring task"
+    conn.close()
+
+
+def test_pull_tasks_allows_remote_rename_with_matching_creation_identity(tmp_path):
+    from hub.rheingold import pull_tasks_from_rheingold
+
+    db_path = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(db_path))
+    _create_test_tasks_table(conn)
+    conn.execute(
+        "INSERT INTO tasks (id, title, status, source, created_at) "
+        "VALUES (101, 'Old remote title', 'pending', NULL, '2026-09-27T10:00:00')"
+    )
+    conn.commit()
+    mock_server_data = {
+        "success": True,
+        "tasks": [{
+            "id": 101,
+            "title": "Renamed remote task",
+            "status": "pending",
+            "created_at": "2026-09-27T10:00:00",
+        }],
+    }
+
+    class MockResponse:
+        status = 200
+
+        def read(self):
+            import json
+            return json.dumps(mock_server_data).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    with patch("urllib.request.urlopen", return_value=MockResponse()):
+        inserted, updated = pull_tasks_from_rheingold(
+            conn, "http://fake-rheingold:8000"
+        )
+
+    assert (inserted, updated) == (0, 1)
+    row = conn.execute("SELECT title FROM tasks WHERE id = 101").fetchone()
+    assert row[0] == "Renamed remote task"
+    conn.close()
+
+
 def test_task_lead_command(tmp_path, monkeypatch):
     cfg_file = tmp_path / "lead.json"
     monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
     monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
 
     handler = TaskHandler(tmp_path)
     handler.db_path = tmp_path / "bach.db"
@@ -230,4 +376,3 @@ def test_task_lead_command(tmp_path, monkeypatch):
     ok_clr, clr_msg = handler.handle("lead", ["clear"])
     assert ok_clr is True
     assert "isolierten Standalone-Modus" in clr_msg
-

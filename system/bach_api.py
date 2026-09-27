@@ -460,19 +460,9 @@ class _TaskProxy(_DBBackedProxy):
         conn: sqlite3.Connection,
         depends_on: str | None,
     ) -> bool:
-        if not depends_on:
-            return False
+        from hub._services.task_schema import inspect_task_dependencies
 
-        dep_ids = [int(value.strip()) for value in str(depends_on).split(",") if value.strip()]
-        if not dep_ids:
-            return False
-
-        placeholders = ",".join("?" for _ in dep_ids)
-        unfinished = conn.execute(
-            f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) AND status != 'done'",
-            dep_ids,
-        ).fetchone()[0]
-        return unfinished > 0
+        return bool(inspect_task_dependencies(conn, depends_on)["blocked"])
 
 
 class _MemoryProxy(_DBBackedProxy):
