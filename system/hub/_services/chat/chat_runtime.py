@@ -225,15 +225,14 @@ BLOCKED_PATTERNS = [
 # beliebige Ausfuehrung oder Schreiben moeglich gewesen): env, docker, pip,
 # pip3, brew, curl und bach (umging die bach_command-Allowlist). Im
 # Full-Modus bleiben sie ueber execute_command erreichbar.
+# grep und find sind ebenfalls raus: rekursives Suchen/Auflisten laeuft
+# ueber search_text/list_directory, die den Secrets-Deny pro Datei anwenden.
 SAFE_BASES = frozenset({
-    "ls", "cat", "head", "tail", "grep", "find", "wc", "file", "stat",
+    "ls", "cat", "head", "tail", "wc", "file", "stat",
     "echo", "date", "which", "whoami", "hostname", "uname",
     "df", "du", "uptime", "ps", "top", "sw_vers", "sysctl",
     "ollama", "git",
 })
-
-# find-Aktionen, die Programme starten, loeschen oder Dateien schreiben.
-_FIND_DENY_PREFIXES = ("-exec", "-ok", "-delete", "-fprint", "-fls")
 # git: nur lesende Unterbefehle, keine globalen Optionen davor (-c,
 # --config-env, --exec-path, -C ...). Aliase sind damit automatisch aus.
 _GIT_READ_SUBCOMMANDS = frozenset({
@@ -263,11 +262,14 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
             return "Secrets-Pfad als Argument"
         if value.lower().startswith("ext::"):
             return "ext::-Transport ist nicht erlaubt"
-    if base == "find":
-        for t in rest:
-            if t.lower().startswith(_FIND_DENY_PREFIXES):
-                return f"find-Aktion {t} ist nicht erlaubt"
-    elif base == "git":
+    recursive = base == "du" or (base == "ls" and any(
+        t == "--recursive" or (t.startswith("-") and not t.startswith("--") and "R" in t)
+        for t in rest))
+    if recursive:
+        targets = [t for t in rest if not t.startswith("-")] or ["."]
+        if any(_contains_secret_location(Path(t)) for t in targets):
+            return "rekursiver Befehl auf ein Verzeichnis mit Secrets - list_directory nutzen"
+    if base == "git":
         if not rest or rest[0] not in _GIT_READ_SUBCOMMANDS:
             return "git: nur " + ", ".join(sorted(_GIT_READ_SUBCOMMANDS)) + " ohne globale Optionen"
         for t in rest[1:]:
@@ -324,24 +326,78 @@ _SECRET_PATH_SEGMENTS = frozenset({".ssh", ".credentials", "credentials"})
 # Einzelne Dateien mit Tokens/Zugangsdaten (u. a. die Bot-Konfiguration
 # ~/.config/bach/telegram_chat.json mit dem Bot-Token).
 _SECRET_FILE_NAMES = frozenset({
-    "telegram_chat.json", ".npmrc", ".netrc", ".pypirc", "auth.json",
+    "telegram_chat.json", "bach_secrets.json",
+    ".npmrc", ".netrc", ".pypirc", "auth.json",
 })
+
+
+def _resolve(p) -> Path:
+    try:
+        return Path(p).expanduser().resolve()
+    except OSError:
+        return Path(p).expanduser()
+
+
+def _norm(p: Path) -> str:
+    return os.path.normcase(str(p)).rstrip("\\/")
+
+
+def _is_under(child: Path, parent: Path) -> bool:
+    c, par = _norm(child), _norm(parent)
+    return c == par or c.startswith(par + os.sep)
+
+
+def _secret_locations() -> list:
+    """Bekannte Secrets-Orte, fuer den Vorfahren-Check rekursiver Befehle.
+    ~/.config/bach (Bot-Konfiguration mit Token) und die secrets_handler-
+    Ablage (BACH_SECRETS_FILE bzw. ~/.bach/bach_secrets.json) gehoeren dazu."""
+    home = _resolve(Path.home())
+    locs = [home / ".ssh", home / ".credentials", home / "CREDENTIALS",
+            home / ".config" / "bach", home / ".bach"]
+    env_file = os.environ.get("BACH_SECRETS_FILE")
+    if env_file:
+        locs.append(_resolve(env_file))
+    return locs
 
 
 def _is_secret_path(p: Path) -> bool:
     """`~` und `..` erst aufloesen (expanduser+resolve), DANN pruefen -
     sonst kann ein relativer Pfad oder ein Symlink den Vergleich auf den
     falschen (unaufgeloesten) Pfad umlenken und den Deny umgehen."""
-    try:
-        resolved = Path(p).expanduser().resolve()
-    except OSError:
-        resolved = Path(p).expanduser()
+    resolved = _resolve(p)
     if any(seg.lower() in _SECRET_PATH_SEGMENTS for seg in resolved.parts):
         return True
+    home = _resolve(Path.home())
+    if _is_under(resolved, home / ".config" / "bach"):
+        return True
+    env_file = os.environ.get("BACH_SECRETS_FILE")
+    if env_file and _is_under(resolved, _resolve(env_file)):
+        return True
     name = resolved.name.lower()
+    if _is_under(resolved.parent, home / ".bach") and ("token" in name or "secret" in name):
+        return True
     return (name.endswith(".pem") or name.startswith("id_")
             or name in _SECRET_FILE_NAMES
             or name == ".env" or name.startswith(".env."))
+
+
+def _contains_secret_location(p: Path) -> bool:
+    """True, wenn ein REKURSIVER Befehl auf p an Secrets vorbeikommen
+    koennte: p ist selbst geheim, ein Vorfahre eines bekannten Secrets-Orts,
+    ein Dateisystem-Wurzelverzeichnis oder hat ein direktes Unterverzeichnis
+    mit Secrets-Namen.
+    ponytail: tiefer verschachtelte Secrets-Ordner unter fremden Pfaden sieht
+    der Check nicht; die volle Loesung ist die Wurzel-Allowlist im Folgeticket."""
+    resolved = _resolve(p)
+    if _is_secret_path(resolved) or len(resolved.parts) <= 1:
+        return True
+    if any(_is_under(loc, resolved) for loc in _secret_locations()):
+        return True
+    try:
+        return any(c.name.lower() in _SECRET_PATH_SEGMENTS
+                   for c in resolved.iterdir() if c.is_dir())
+    except OSError:
+        return False
 
 
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:

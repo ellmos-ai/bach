@@ -111,10 +111,8 @@ class TestIsSafeCommand:
     @pytest.mark.parametrize("cmd", [
         "ls /home",
         "cat /etc/hosts",
-        "grep -r pattern .",
         "git status",
         "git log --oneline",
-        "find . -name '*.py'",
         "echo hello world",
         "date",
         "whoami",
@@ -157,6 +155,8 @@ class TestIsSafeCommand:
         "pip3 install requests",
         "bach status",
         "env",
+        "grep -r pattern .",
+        "find . -name '*.py'",
     ])
     def test_unsafe_commands_rejected(self, cmd):
         assert is_safe_command(cmd) is False
