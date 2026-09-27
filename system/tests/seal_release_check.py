@@ -82,7 +82,7 @@ class SealSystemTests:
         print("[TEST 1] Kernel-Scope (CORE-Dateien)")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
         cursor = conn.execute("""
             SELECT COUNT(*)
             FROM distribution_manifest
@@ -133,7 +133,7 @@ class SealSystemTests:
         print("[TEST 3] dist_file_versions Tabelle")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
         cursor = conn.execute("SELECT COUNT(*) FROM dist_file_versions")
         version_count = cursor.fetchone()[0]
         conn.close()
@@ -153,7 +153,7 @@ class SealSystemTests:
         print("[TEST 4] Startup-Check Stichproben")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
 
         # Wähle 5 zufällige CORE-Dateien mit Hashes aus dist_file_versions
         cursor = conn.execute("""
@@ -207,6 +207,15 @@ class SealSystemTests:
             return self.bach_root / relative_path
         else:
             return self.system_root / relative_path
+
+    def _ro_connect(self) -> sqlite3.Connection:
+        """Oeffnet BACH_DB read-only per URI (mode=ro): dieses Tool ist eine
+        Verifikation, keine Schreiboperation -- es darf die DB nicht per
+        Seiteneffekt anlegen/veraendern (z.B. wenn db_path noch nicht
+        existiert, wuerde ein normales sqlite3.connect() eine leere Datei
+        erzeugen)."""
+        uri = f"file:{self.db_path.as_posix()}?mode=ro"
+        return sqlite3.connect(uri, uri=True)
 
 
 def main():
