@@ -259,6 +259,70 @@ def save_slots_config(config: Dict[str, Any], path: str | None = None) -> None:
             raise
 
 
+def is_slot_paused(slot: Dict[str, Any]) -> bool:
+    """Return True if the slot is currently within its pause window."""
+    started_at = slot.get("pause_started_at", "")
+    pause_minutes = slot.get("pause_minutes") or 0
+    if not started_at or not pause_minutes:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
+        return elapsed_minutes < pause_minutes
+    except (ValueError, TypeError):
+        return False
+
+
+def end_pause_if_over(slot: Dict[str, Any]) -> bool:
+    """Clear an expired pause window. Returns True if a pause was ended."""
+    started_at = slot.get("pause_started_at", "")
+    pause_minutes = slot.get("pause_minutes") or 0
+    if not started_at:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
+        if elapsed_minutes >= pause_minutes:
+            slot["pause_started_at"] = ""
+            slot["pause_counter"] = 0
+            return True
+        return False
+    except (ValueError, TypeError):
+        slot["pause_started_at"] = ""
+        slot["pause_counter"] = 0
+        return True
+
+
+def maybe_start_pause(slot: Dict[str, Any]) -> bool:
+    """Start a pause window if the run counter has reached pause_after."""
+    pause_after = slot.get("pause_after") or 0
+    pause_minutes = slot.get("pause_minutes") or 0
+    counter = slot.get("pause_counter") or 0
+    if not pause_after or not pause_minutes:
+        return False
+    if is_slot_paused(slot):
+        return False
+    if counter < pause_after:
+        return False
+    slot["pause_started_at"] = datetime.now(timezone.utc).isoformat()
+    slot["pause_counter"] = 0
+    return True
+
+
+def bump_pause_counter(slot: Dict[str, Any]) -> bool:
+    """Increment the run counter and start a pause if threshold is reached.
+
+    Returns True when a new pause window was started.
+    """
+    end_pause_if_over(slot)
+    slot["pause_counter"] = int(slot.get("pause_counter", 0) or 0) + 1
+    return maybe_start_pause(slot)
+
+
 def get_slot(slot_id: str, path: str | None = None) -> Dict[str, Any]:
     """Return configuration for a specific slot or worker."""
     cfg = load_slots_config(path)
@@ -620,6 +684,13 @@ def record_activity(
     path: str | None = None
 ) -> None:
     """Record an action in the live activity history timeline."""
+    f = _resolve_path(path)
+    if not f.is_file():
+        cfg = _fresh_slots_config()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(f)
     cfg = load_slots_config(path, strict=True)
     history = cfg.setdefault("activity_history", [])
 

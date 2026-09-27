@@ -1833,3 +1833,134 @@ class TestFackelPreference:
         assert '"fackel_preference": get_fackel_preference()' in src
         assert 'app.add_handler(CommandHandler("fackel", _require_owner(cmd_fackel)))' in src
         assert 'setFackel' in src
+
+
+class TestFsRootAllowlist:
+    """Wurzel-Allowlist fuer list_directory/read_file/search_text.
+
+    Nur Pfade unterhalb von HOME oder BACH_SYSTEM_DIR (_ALLOWED_FS_ROOTS)
+    duerfen gelesen werden; Pfade werden vor dem Vergleich aufgeloest
+    (Symlinks), damit ein Symlink im erlaubten Ast, der nach aussen zeigt,
+    blockiert wird.
+    """
+
+    def test_fs_root_allowed_helper(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        assert cr._fs_root_allowed(tmp_path.resolve())
+        assert cr._fs_root_allowed(tmp_path.resolve() / "sub" / "file.txt")
+        assert not cr._fs_root_allowed(tmp_path.resolve().parent)
+        assert not cr._fs_root_allowed(Path("/etc"))
+
+    def test_list_directory_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        # tmp_path liegt ueblicherweise unter dem System-Temp-Verzeichnis,
+        # weder unter HOME noch unter BACH_SYSTEM_DIR (Ausnahme z. B.
+        # Windows: %USERPROFILE%\AppData\Local\Temp unterhalb von HOME).
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        result = exec_tool("list_directory", {"path": str(tmp_path)}, "safe")
+        assert "BLOCKIERT" in result
+
+    def test_read_file_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        f = tmp_path / "secret_notes.txt"
+        f.write_text("geheim\n", encoding="utf-8")
+        result = exec_tool("read_file", {"path": str(f)}, "safe")
+        assert "BLOCKIERT" in result
+        assert "geheim" not in result
+
+    def test_search_text_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        f = tmp_path / "notes.txt"
+        f.write_text("suchbegriff hier\n", encoding="utf-8")
+        result = exec_tool(
+            "search_text",
+            {"pattern": "suchbegriff", "path": str(tmp_path)},
+            "safe",
+        )
+        assert "BLOCKIERT" in result
+        assert "notes.txt" not in result
+
+    def test_list_directory_bach_root_allowed(self):
+        result = exec_tool("list_directory", {"path": BACH_SYSTEM_DIR}, "safe")
+        assert "BLOCKIERT" not in result
+
+    def test_home_allowed(self):
+        from hub._services.chat import chat_runtime as cr
+
+        if not any(cr._is_under(cr._resolve(Path.home()), r)
+                   for r in cr._ALLOWED_FS_ROOTS):
+            pytest.skip("HOME ist in dieser Umgebung keine erlaubte Wurzel")
+        result = exec_tool("list_directory", {"path": str(Path.home())}, "safe")
+        assert "BLOCKIERT" not in result
+
+    def test_symlink_escape_blocked(self, tmp_path, monkeypatch):
+        import os
+
+        from hub._services.chat import chat_runtime as cr
+
+        # tmp_path als einzige erlaubte Wurzel: der Symlink (in tmp_path)
+        # zeigt auf tmp_path.parent, also NACH AUSSERHALB der Wurzel, und
+        # muss trotzdem blockiert werden, weil aufgeloest verglichen wird.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        link = tmp_path / "escape_link"
+        try:
+            os.symlink(str(tmp_path.resolve().parent), str(link))
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks nicht verfuegbar (fehlende Rechte/Windows)")
+        result = exec_tool("list_directory", {"path": str(link)}, "safe")
+        assert "BLOCKIERT" in result
+
+    def test_patched_root_allows_tmp_path(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        # Gegenprobe: mit tmp_path als erlaubter Wurzel ist ein direkter
+        # Zugriff auf tmp_path NICHT blockiert und listet Dateien auf.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        marker = tmp_path / "allowlist_marker.txt"
+        marker.write_text("x\n", encoding="utf-8")
+        result = exec_tool("list_directory", {"path": str(tmp_path)}, "safe")
+        assert "BLOCKIERT" not in result
+        assert "allowlist_marker.txt" in result
+
+    def test_patched_root_search_and_read_allowed(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        f = tmp_path / "fund.txt"
+        f.write_text("nadel im heuhaufen\n", encoding="utf-8")
+        read = exec_tool("read_file", {"path": str(f)}, "safe")
+        assert "BLOCKIERT" not in read
+        assert "nadel" in read
+        hits = exec_tool(
+            "search_text",
+            {"pattern": "nadel", "path": str(tmp_path), "recursive": True},
+            "safe",
+        )
+        assert "BLOCKIERT" not in hits
+        assert "fund.txt" in hits
+
+    def test_search_text_still_blocks_secrets_under_allowed_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        # Die Secrets-Deny-Schicht bleibt auch bei erlaubter Wurzel aktiv:
+        # eine Datei in einem .ssh-Verzeichnis darf nicht gefunden werden.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "id_rsa").write_text("PRIVATE KEY nadel\n", encoding="utf-8")
+        hits = exec_tool(
+            "search_text",
+            {"pattern": "nadel", "path": str(tmp_path), "recursive": True},
+            "safe",
+        )
+        assert "id_rsa" not in hits
