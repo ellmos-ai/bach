@@ -324,6 +324,49 @@ class TestDone:
         ok, output = seeded_handler.handle("done", [])
         assert ok is False
 
+    # T-20261108-1360 (#1360): Auto-Unblock abhaengiger Tasks beim Erledigen
+    # des letzten offenen Vorgaengers.
+    def test_done_auto_unblocks_dependent(self, seeded_handler, seeded_env):
+        """Blocked Task mit depends_on wird pending, wenn letzter Vorgaenger done."""
+        _, db_path = seeded_env
+        # Task 4 ist 'blocked' (Fixture) und haengt jetzt von Task 1 ab
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE tasks SET depends_on = '1' WHERE id = 4")
+        conn.commit()
+        conn.close()
+
+        ok, output = seeded_handler.handle("done", ["1"])
+        assert ok is True
+        assert "entblockt" in output
+        assert _task_row(db_path, 4)["status"] == "pending"
+
+    def test_done_keeps_blocked_with_open_dependency(self, seeded_handler, seeded_env):
+        """Blocked Task bleibt blocked, wenn noch ein weiterer Vorgaenger offen ist."""
+        _, db_path = seeded_env
+        # Task 4 haengt von Task 1 UND Task 2 ab; nur Task 1 wird erledigt
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE tasks SET depends_on = '1,2' WHERE id = 4")
+        conn.commit()
+        conn.close()
+
+        ok, output = seeded_handler.handle("done", ["1"])
+        assert ok is True
+        assert "entblockt" not in output
+        assert _task_row(db_path, 4)["status"] == "blocked"
+
+    def test_done_multi_unblocks_when_all_deps_done(self, seeded_handler, seeded_env):
+        """Multi-Done: Task wird entblockt, sobald der letzte Vorgaenger done ist."""
+        _, db_path = seeded_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE tasks SET depends_on = '1,2' WHERE id = 4")
+        conn.commit()
+        conn.close()
+
+        ok, output = seeded_handler.handle("done", ["1", "2"])
+        assert ok is True
+        assert "entblockt" in output
+        assert _task_row(db_path, 4)["status"] == "pending"
+
 
 # ═══════════════════════════════════════════════════════════════
 # BLOCK / UNBLOCK

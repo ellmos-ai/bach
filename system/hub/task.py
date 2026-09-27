@@ -702,6 +702,39 @@ class TaskHandler(BaseHandler):
                 except Exception:
                     pass
 
+                # T-20261108-1360 (#1360): Auto-Unblock -- Tasks, deren saemtliche
+                # depends_on-Vorgaenger jetzt erledigt sind, automatisch entblocken.
+                # Kriterium identisch zur dynamischen Blockierungs-Logik
+                # (server.py/bach_api.py): alle deps haben status='done'.
+                # allow_reopen=True zwingend: Terminal-Park-Guard in
+                # task_audit wuerde Reopen aus 'blocked' sonst ablehnen
+                # (Explizit-Unblock-Semantik wie _unblock, auditiert via
+                # changed_by='cli-task').
+                blocked_cands = conn.execute(
+                    "SELECT id, depends_on FROM tasks "
+                    "WHERE status = 'blocked' AND depends_on IS NOT NULL"
+                ).fetchall()
+                for bc in blocked_cands:
+                    dep_ids = [int(x.strip()) for x in (bc['depends_on'] or '').split(',')
+                               if x.strip().isdigit()]
+                    if not dep_ids or task_id not in dep_ids:
+                        continue
+                    placeholders = ",".join(["?"] * len(dep_ids))
+                    unfinished = conn.execute(
+                        f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) "
+                        "AND status != 'done'", dep_ids
+                    ).fetchone()[0]
+                    if unfinished == 0:
+                        blocked_row = dict(conn.execute(
+                            "SELECT * FROM tasks WHERE id = ?", (bc['id'],)).fetchone())
+                        now_unblock = conn.execute("SELECT datetime('now')").fetchone()[0]
+                        apply_task_field_changes(conn, bc['id'], blocked_row,
+                                                 {"status": "pending"},
+                                                 changed_by="cli-task", now=now_unblock,
+                                                 allow_reopen=True)
+                        results.append(
+                            f"[OK] Task {bc['id']} entblockt (Abhaengigkeit {task_id} erledigt)")
+
             conn.commit()
 
         return True, "\n".join(results)
