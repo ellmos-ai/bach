@@ -220,14 +220,70 @@ BLOCKED_PATTERNS = [
     re.compile(r":\(\)\s*\{"),
 ]
 
+# Nur lesende Befehle, die selbst keine anderen Programme starten.
+# Entfernt (Argument-Ebene - ohne ein einziges Metazeichen waere ueber sie
+# beliebige Ausfuehrung oder Schreiben moeglich gewesen): env, docker, pip,
+# pip3, brew, curl und bach (umging die bach_command-Allowlist). Im
+# Full-Modus bleiben sie ueber execute_command erreichbar.
 SAFE_BASES = frozenset({
     "ls", "cat", "head", "tail", "grep", "find", "wc", "file", "stat",
-    "echo", "date", "which", "whoami", "hostname", "uname", "env",
+    "echo", "date", "which", "whoami", "hostname", "uname",
     "df", "du", "uptime", "ps", "top", "sw_vers", "sysctl",
-    "ollama", "brew", "pip", "pip3",
-    "docker", "git", "curl",
-    "bach",
+    "ollama", "git",
 })
+
+# find-Aktionen, die Programme starten, loeschen oder Dateien schreiben.
+_FIND_DENY_PREFIXES = ("-exec", "-ok", "-delete", "-fprint", "-fls")
+# git: nur lesende Unterbefehle, keine globalen Optionen davor (-c,
+# --config-env, --exec-path, -C ...). Aliase sind damit automatisch aus.
+_GIT_READ_SUBCOMMANDS = frozenset({
+    "status", "log", "diff", "show", "branch", "rev-parse", "ls-files",
+})
+_GIT_DENY_ARGS = ("--output", "--upload-pack", "--receive-pack",
+                  "--exec", "--ext-diff", "--textconv")
+_GIT_BRANCH_READ_ARGS = frozenset({
+    "--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv",
+    "--show-current", "--no-color",
+})
+_OLLAMA_READ_SUBCOMMANDS = frozenset({"list", "ls", "ps", "show", "--version", "-v"})
+
+
+def check_safe_shell_args(tokens: list) -> Optional[str]:
+    """Argument-Ebene fuer safe_shell: Fehlermeldung oder None.
+
+    tokens sind bereits tokenisiert und entquotet (Metazeichen-Verkettung
+    faengt safe_exec vorher ab). Hier geht es um Optionen, mit denen ein
+    an sich lesender Befehl doch etwas ausfuehrt oder schreibt."""
+    base = safe_exec.base_command_name(tokens[0])
+    rest = tokens[1:]
+    for t in rest:
+        if not t.startswith("-") and _is_secret_path(Path(t)):
+            return "Secrets-Pfad als Argument"
+    if base == "find":
+        for t in rest:
+            if t.lower().startswith(_FIND_DENY_PREFIXES):
+                return f"find-Aktion {t} ist nicht erlaubt"
+    elif base == "git":
+        if not rest or rest[0] not in _GIT_READ_SUBCOMMANDS:
+            return "git: nur " + ", ".join(sorted(_GIT_READ_SUBCOMMANDS)) + " ohne globale Optionen"
+        for t in rest[1:]:
+            if t.startswith(_GIT_DENY_ARGS):
+                return f"git-Option {t} ist nicht erlaubt"
+        if rest[0] == "branch" and not all(t in _GIT_BRANCH_READ_ARGS for t in rest[1:]):
+            return "git branch: nur auflisten (--list, -a, -r, -v, --show-current)"
+    elif base == "ollama":
+        if not rest or rest[0] not in _OLLAMA_READ_SUBCOMMANDS:
+            return "ollama: nur list, ps, show"
+    elif base == "sysctl":
+        if any(t in ("-w", "--write") or "=" in t for t in rest):
+            return "sysctl: nur lesen"
+    elif base == "date":
+        if any(t in ("-s", "--set") or t.startswith("--set=") for t in rest):
+            return "date: Setzen ist nicht erlaubt"
+    elif base == "hostname":
+        if any(not t.startswith("-") or t in ("-F", "--file") for t in rest):
+            return "hostname: Setzen ist nicht erlaubt"
+    return None
 
 CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
 
@@ -761,6 +817,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return f"Befehl nicht in der Safe-Liste. Erlaubt: {', '.join(sorted(SAFE_BASES)[:15])}..."
             if is_blocked(cmd):
                 return "Befehl blockiert (Sicherheit)"
+            try:
+                tokens = [safe_exec.dequote(t) for t in safe_exec.tokenize(cmd)]
+            except safe_exec.CommandRejected as e:
+                return f"Befehl blockiert (Sicherheit): {e}"
+            reason = check_safe_shell_args(tokens)
+            if reason:
+                return f"Befehl blockiert (Sicherheit): {reason}"
             return run_shell_restricted(cmd, allowed=SAFE_BASES)
 
         if name == "execute_command":

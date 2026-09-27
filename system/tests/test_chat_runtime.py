@@ -124,20 +124,13 @@ class TestIsSafeCommand:
         "du -sh /tmp",
         "uptime",
         "ps aux",
-        "docker ps",
-        "curl https://example.com",
         "ollama list",
-        "brew list",
-        "pip list",
-        "pip3 install requests",
-        "bach status",
         "wc -l file.txt",
         "file /tmp/test",
         "stat /tmp/test",
         "head -n 10 file.txt",
         "tail -f logfile",
         "which python",
-        "env",
     ])
     def test_safe_commands_pass(self, cmd):
         assert is_safe_command(cmd) is True
@@ -157,6 +150,13 @@ class TestIsSafeCommand:
         "systemctl stop sshd",
         "mkfs.ext4 /dev/sda1",
         "dd if=/dev/zero of=/dev/sda",
+        "docker ps",
+        "curl https://example.com",
+        "brew list",
+        "pip list",
+        "pip3 install requests",
+        "bach status",
+        "env",
     ])
     def test_unsafe_commands_rejected(self, cmd):
         assert is_safe_command(cmd) is False
