@@ -58,15 +58,18 @@ try:
     from telegram import Update
     from telegram.ext import (Application, CommandHandler, MessageHandler,
                               filters, ContextTypes)
-except ImportError:
-    print("python-telegram-bot nicht installiert: pip install python-telegram-bot")
-    sys.exit(1)
+except ImportError as exc:
+    # T-20260927-232943082: ein Bibliotheksmodul darf den Prozess nicht per
+    # sys.exit() beenden -- das riss frueher jeden Importeur mit (z.B.
+    # pytest beim Sammeln von Testmodulen, INTERNALERROR statt Testfehler).
+    raise ImportError(
+        "python-telegram-bot nicht installiert: pip install python-telegram-bot"
+    ) from exc
 
 try:
     import httpx
-except ImportError:
-    print("httpx nicht installiert: pip install httpx")
-    sys.exit(1)
+except ImportError as exc:
+    raise ImportError("httpx nicht installiert: pip install httpx") from exc
 
 # BACH imports
 try:
