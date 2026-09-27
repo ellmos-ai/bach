@@ -181,6 +181,7 @@ class TemplateChecker:
                 ["node", "--check", "-"],
                 input=code,
                 text=True,
+                encoding="utf-8",
                 capture_output=True,
             )
             if result.returncode != 0:
