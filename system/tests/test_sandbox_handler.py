@@ -319,64 +319,64 @@ class TestExtractBaseCommand:
 
 class TestCheckShellAllowed:
     def test_allowed(self, handler):
-        ok, _ = handler._check_shell_allowed("echo test")
+        ok, _, _argv = handler._check_shell_allowed("echo test")
         assert ok is True
 
     def test_denied(self, handler):
-        ok, msg = handler._check_shell_allowed("wget http://bad.com")
+        ok, msg, _argv = handler._check_shell_allowed("wget http://bad.com")
         assert ok is False
         assert "BLOCKIERT" in msg
         assert "Allowlist" in msg
 
     def test_blocked_pattern_rm_rf(self, handler):
-        ok, msg = handler._check_shell_allowed("rm -rf /")
+        ok, msg, _argv = handler._check_shell_allowed("rm -rf /")
         assert ok is False
         assert "verbotenes Muster" in msg
 
     def test_blocked_pattern_shutdown(self, handler):
-        ok, msg = handler._check_shell_allowed("shutdown -h now")
+        ok, msg, _argv = handler._check_shell_allowed("shutdown -h now")
         assert ok is False
 
     def test_empty(self, handler):
-        ok, _ = handler._check_shell_allowed("")
+        ok, _, _argv = handler._check_shell_allowed("")
         assert ok is False
 
     def test_no_false_positive_halt_in_filename(self, handler):
-        ok, _ = handler._check_shell_allowed("cat halted.log")
+        ok, _, _argv = handler._check_shell_allowed("cat halted.log")
         assert ok is True
 
     def test_no_false_positive_fork_in_filename(self, handler):
-        ok, _ = handler._check_shell_allowed("python forklift.py")
+        ok, _, _argv = handler._check_shell_allowed("python forklift.py")
         assert ok is True
 
     def test_no_false_positive_reboot_in_grep(self, handler):
-        ok, _ = handler._check_shell_allowed("grep reboot_time syslog.txt")
+        ok, _, _argv = handler._check_shell_allowed("grep reboot_time syslog.txt")
         assert ok is True
 
     def test_no_false_positive_shutdown_in_echo(self, handler):
-        ok, _ = handler._check_shell_allowed("echo shutdown_timer_started")
+        ok, _, _argv = handler._check_shell_allowed("echo shutdown_timer_started")
         assert ok is True
 
     def test_actual_shutdown_still_blocked(self, handler):
-        ok, msg = handler._check_shell_allowed("shutdown -h now")
+        ok, msg, _argv = handler._check_shell_allowed("shutdown -h now")
         assert ok is False
         assert "verbotenes Muster" in msg
 
     def test_actual_reboot_still_blocked(self, handler):
-        ok, msg = handler._check_shell_allowed("reboot")
+        ok, msg, _argv = handler._check_shell_allowed("reboot")
         assert ok is False
 
     def test_actual_halt_still_blocked(self, handler):
-        ok, msg = handler._check_shell_allowed("halt")
+        ok, msg, _argv = handler._check_shell_allowed("halt")
         assert ok is False
 
     def test_actual_rm_rf_still_blocked(self, handler):
-        ok, msg = handler._check_shell_allowed("rm -rf /")
+        ok, msg, _argv = handler._check_shell_allowed("rm -rf /")
         assert ok is False
         assert "verbotenes Muster" in msg
 
     def test_actual_fork_bomb_still_blocked(self, handler):
-        ok, msg = handler._check_shell_allowed(":(){ :|:& };:")
+        ok, msg, _argv = handler._check_shell_allowed(":(){ :|:& };:")
         assert ok is False
 
 
@@ -510,4 +510,35 @@ class TestHandleNewOps:
 
     def test_handle_deny_no_args(self, handler):
         ok, msg = handler.handle("deny", [])
+        assert ok is False
+
+
+class TestNoShellTrueInShellPath:
+    """Sicherheitsfix-Regressionstest: _shell()/_check_shell_allowed()
+    duerfen nie wieder shell=True an core.sandbox.run_isolated() reichen -
+    genau das war der urspruengliche Bug (Allowlist prueft nur den
+    Basisbefehl, der ganze String lief trotzdem per Shell)."""
+
+    def test_isolated_never_called_with_shell_true(self, handler, monkeypatch):
+        calls = []
+
+        def fake_isolated(cmd, timeout=None, cwd=None, env=None, shell=False):
+            calls.append(shell)
+            from core.sandbox import SandboxResult
+            return SandboxResult(returncode=0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(handler, "_isolated", fake_isolated)
+        handler._shell("echo hi")
+        assert calls == [False]
+
+    @pytest.mark.parametrize("cmd", [
+        "echo hi && curl http://example.invalid",
+        "echo hi | curl http://example.invalid",
+        "echo hi; rm -rf /tmp/x",
+    ])
+    def test_chaining_rejected_before_reaching_isolated(self, handler, monkeypatch, cmd):
+        def boom(*a, **k):
+            raise AssertionError("_isolated() darf bei Verkettung nicht aufgerufen werden")
+        monkeypatch.setattr(handler, "_isolated", boom)
+        ok, msg = handler._shell(cmd)
         assert ok is False
