@@ -20,8 +20,9 @@ RUNBOOK = BACH_ROOT / "docs" / "OPERATOR-1240-ssh-transfer.md"
 pytestmark = pytest.mark.skipif(
     not BACH_ROOT.exists(),
     reason=(
-        "Nur auf dem Mac-Studio-Live-Host lauffaehig: BACH_ROOT "
-        f"({BACH_ROOT}) existiert nur dort, siehe T-20260927-283375364."
+        "Nur auf dem Mac-Studio-Live-Host lauffaehig: das Verzeichnis "
+        f"~/services/bach ({BACH_ROOT}) existiert nur dort, nicht in "
+        "diesem Checkout, siehe T-20260927-283375364."
     ),
 )
 
