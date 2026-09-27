@@ -239,8 +239,10 @@ SAFE_BASES = frozenset({
 _FIND_DENY_PREFIXES = ("-exec", "-ok", "-delete", "-fprint", "-fls")
 # git: nur lesende Unterbefehle, keine globalen Optionen davor (-c,
 # --config-env, --exec-path, -C ...). Aliase sind damit automatisch aus.
+# diff fehlt bewusst: mit --no-index oder Pfaden ausserhalb des Arbeitsbaums
+# liest es beliebige Verzeichnisse rekursiv (Inhalte, nicht nur Namen).
 _GIT_READ_SUBCOMMANDS = frozenset({
-    "status", "log", "diff", "show", "branch", "rev-parse", "ls-files",
+    "status", "log", "show", "branch", "rev-parse", "ls-files",
 })
 _GIT_DENY_ARGS = ("--output", "--upload-pack", "--receive-pack",
                   "--exec", "--ext-diff", "--textconv")

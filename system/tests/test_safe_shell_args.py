@@ -139,6 +139,10 @@ def test_bach_db_readable(fake_home):
     ["config", "core.pager", "x"],
     ["log", "--output=out.txt"],
     ["diff", "--ext-diff"],
+    ["diff"],
+    ["diff", "--stat"],
+    ["diff", "--no-index", "a", "b"],
+    ["diff", "HEAD~1", "--", "/tmp/x"],
     ["branch", "neu"],
     ["branch", "-D", "main"],
     [],
@@ -148,7 +152,7 @@ def test_git_rejected(args):
 
 
 @pytest.mark.parametrize("args", [
-    ["status"], ["log", "-n", "5"], ["diff", "--stat"], ["show", "HEAD"],
+    ["status"], ["log", "-n", "5"], ["log", "-p", "-n", "1"], ["show", "HEAD"],
     ["branch", "--list"], ["branch"], ["rev-parse", "HEAD"], ["ls-files"],
 ])
 def test_git_read_allowed(args):
