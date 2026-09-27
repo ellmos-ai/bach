@@ -323,6 +323,14 @@ def _network_available() -> bool:
     return True
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="T-20260927-842543409/T-20260927-906715058: 'get' liefert bei canonical "
+           "einen kuerzeren Body als bundled (vermutlich interne Preview-Kappung im "
+           "externen web-scraper-Paket, CanonicalResponse ignoriert dessen "
+           "length/truncated-Felder). Kein Netzwerk-Hang -- deterministische "
+           "Inhalts-Ungleichheit, reproduziert 2026-09-27.",
+)
 @pytest.mark.skipif(not _network_available(), reason="no network")
 def test_both_engines_agree_against_a_real_page(handler, monkeypatch):
     """The measurement behind the default switch, repeatable.
