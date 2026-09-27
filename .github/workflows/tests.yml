@@ -9,8 +9,8 @@ name: tests
 # - system/tests/test_gui_console.py und test_web_scrape_seam.py:
 #   offene Fehler (T-20260927-896356881/-606803060); test_gui_console.py
 #   scheitert schon beim Import, weil FastAPI in der CI-Umgebung fehlt.
-# - system/tests/test_sandbox_handler.py: im Kandidatenlauf grün, im gesamten
-#   Inventar ein Fehler; bis zur Klärung ausgeschlossen (T-20260927-466056224).
+# - system/tests/test_idle_worker_parked.py: 18 Importfehler in der frischen
+#   CI-Abhängigkeitsmenge, weil pystray dort nicht installiert ist.
 # - test_abo_handler.py, test_bridge_tray.py, test_registry_watcher.py und
 #   test_secrets_handler.py: lokal grün, aber im Ubuntu-CI-Lauf rot (PR #143).
 # - system/tests/test_transfer_assistant_core_script.py: fest auf den
@@ -151,7 +151,6 @@ jobs:
             system/tests/test_home_guard_attribution.py \
             system/tests/test_hook_provider_wiring.py \
             system/tests/test_hooks_handler.py \
-            system/tests/test_idle_worker_parked.py \
             system/tests/test_imap_draft.py \
             system/tests/test_inbox_handler.py \
             system/tests/test_injector_parity.py \
@@ -207,6 +206,7 @@ jobs:
             system/tests/test_rheingold_handler.py \
             system/tests/test_routine_handler.py \
             system/tests/test_runner_safety_gates.py \
+            system/tests/test_sandbox_handler.py \
             system/tests/test_scan_handler.py \
             system/tests/test_scheduler_handler.py \
             system/tests/test_scheduler_provider.py \
