@@ -42,6 +42,38 @@ def test_classifies_pending_migrations_on_a_copy(tmp_path):
     conn.close()
 
 
+def test_file_relative_neighbor_module_is_available_in_sandbox(tmp_path):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    helper = tmp_path / "helper"
+    helper.mkdir()
+    (helper / "helper.py").write_text(
+        "def value():\n    return 42\n", encoding="utf-8")
+    (migrations / "001_uses_neighbor.py").write_text(
+        "import importlib.util\n"
+        "from pathlib import Path\n"
+        "\n"
+        "_HERE = Path(__file__).resolve().parent.parent / 'helper'\n"
+        "spec = importlib.util.spec_from_file_location(\n"
+        "    'neighbor_helper', _HERE / 'helper.py'\n"
+        ")\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "\n"
+        "def run_migration(conn):\n"
+        "    value = module.value()\n"
+        "    conn.execute(f'CREATE TABLE neighbor_value_{value} (value INTEGER)')\n"
+        "    conn.execute(f'INSERT INTO neighbor_value_{value} VALUES (?)', (value,))\n",
+        encoding="utf-8",
+    )
+
+    report = check(_source(tmp_path), migrations_dir=migrations, system_root=SYSTEM)
+
+    result = report["results"][0]
+    assert result["status"] == "fehlt"
+    assert "+table neighbor_value_42" in result["detail"]
+
+
 def _source(tmp_path):
     source = tmp_path / "source.db"
     conn = sqlite3.connect(source)

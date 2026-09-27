@@ -133,8 +133,9 @@ def check(source: Path, migrations_dir: Path = MIGRATIONS, system_root: Path = S
         pending = [m for m in available(migrations_dir) if m not in booked(src)]
         with tempfile.TemporaryDirectory(prefix="bach-baseline-") as tmp:
             root = Path(tmp)
-            work_migrations = root / "system" / "data" / "schema" / "migrations"
-            shutil.copytree(migrations_dir, work_migrations)
+            work_schema = root / "system" / "data" / "schema"
+            shutil.copytree(migrations_dir.parent, work_schema)
+            work_migrations = work_schema / migrations_dir.name
             copy = root / "copy.db"
             dst = sqlite3.connect(copy)
             src.backup(dst)
