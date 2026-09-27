@@ -351,6 +351,10 @@ class SandboxHandler(BaseHandler):
         shlex-Tokenisierung statt naivem .split()[0], das an Quoting/Leerzeichen
         in Pfaden mit Spaces scheiterte, siehe T-20260921-750493182). Gibt bei
         Ablehnung "" zurueck (Kompatibilitaet zu bestehenden Aufrufern/Tests)."""
+        first_raw = cmd.strip().split()[0] if cmd.strip() else ""
+        if "\\" in first_raw:
+            # Windows-Pfad: unter POSIX wuerde shlex die Backslashes schlucken.
+            return base_command_name(first_raw.rsplit("\\", 1)[-1])
         try:
             tokens = tokenize(cmd)
         except CommandRejected:

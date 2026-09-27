@@ -92,15 +92,19 @@ def tokenize(cmd: str) -> List[str]:
     if not cmd:
         raise CommandRejected("Leerer Befehl")
     try:
-        # posix=False auf Windows: erhaelt Backslashes in Pfaden
-        # (z. B. "C:\\Program Files\\Python312\\python.exe") statt sie
-        # als Escape-Zeichen zu verschlucken.
-        tokens = shlex.split(cmd, posix=(os.name != "nt"))
+        # Die Metazeichen-Pruefung laeuft IMMER auf posix=False-Tokens: nur
+        # dort bleiben die Anfuehrungszeichen erhalten, und nur so ist ein
+        # zitiertes Literal von einem nackten Metazeichen zu unterscheiden.
+        # Ausgefuehrt wird unter Windows dasselbe (erhaelt Backslashes in
+        # Pfaden), unter POSIX das posix=True-Ergebnis (Quotes entfernt, wie
+        # es eine Shell auch taete).
+        raw = shlex.split(cmd, posix=False)
+        tokens = raw if os.name == "nt" else shlex.split(cmd, posix=True)
     except ValueError as e:
         raise CommandRejected(f"Befehl konnte nicht geparst werden: {e}") from e
     if not tokens:
         raise CommandRejected("Leerer Befehl nach dem Parsen")
-    for tok in tokens:
+    for tok in raw:
         if not _is_quoted_literal(tok) and has_shell_metacharacters(tok):
             raise CommandRejected(
                 f"Befehl enthaelt ein nicht zitiertes Shell-Metazeichen ({tok!r}) "

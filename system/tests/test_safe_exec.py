@@ -62,10 +62,13 @@ class TestQuotingBypassClosed:
     naiv auf Leerzeichen, BEVOR Anfuehrungszeichen entfernt wurden - ein
     zitierter Pfad mit Leerzeichen ergab einen falschen Basisbefehl."""
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-Pfad")
     def test_quoted_path_with_spaces_resolves_correctly(self):
         argv = resolve_executable('"C:\\Program Files\\Python312\\python.exe" -c "1"', ALLOWED)
         assert base_command_name(argv[0].split("\\")[-1]) == "python" or "python" in argv[0].lower()
 
+    @pytest.mark.skipif(sys.platform != "win32",
+                        reason="unter POSIX ist py\"thon\" wie in einer Shell schlicht python")
     def test_py_thon_quoting_trick_not_recognized_as_python(self):
         # py"thon" -> Basisname enthaelt ein eingebettetes Anfuehrungszeichen,
         # ist also NICHT "python" - muss an der Allowlist scheitern, nicht
