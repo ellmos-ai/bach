@@ -12,6 +12,7 @@
 requests>=2.32.5          # HTTP requests (hub: web, mail, connectors)
 httpx>=0.28.1             # Async HTTP client (hub: API calls)
 aiohttp>=3.13.0           # Async HTTP sessions (connectors, bridge)
+fastapi>=0.115.0          # GUI control console and API server (system/gui/console.py)
 
 # --- Data & Config Parsing ---
 PyYAML>=6.0.2             # YAML config files (skills, connectors)
@@ -21,6 +22,8 @@ pydantic>=2.12.5          # Data validation (GUI API, FastAPI models)
 xmltodict>=1.0.2          # XML <-> dict conversion (converters)
 defusedxml>=0.7.1         # Secure XML parsing (document vendor code)
 lxml>=6.0.0               # Fast XML/HTML parser (document processing)
+openpyxl>=3.1.2           # Excel parsing (anonymizer dates)
+python-docx>=1.1.0        # Word document generation (report templates)
 
 # --- Text Processing ---
 emoji>=2.15.0             # Emoji handling & safe-stripping (policies)
