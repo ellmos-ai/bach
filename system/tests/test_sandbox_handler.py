@@ -22,11 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import psutil
 
 import pytest
 
@@ -254,6 +257,24 @@ class TestShell:
         ok, msg = handler._shell('python3 -c "import time; time.sleep(10)"')
         assert ok is False
         assert "TIMEOUT" in msg
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-Prozessbaum-Fallback")
+    def test_shell_timeout_kills_descendant(self, handler, monkeypatch, tmp_path):
+        monkeypatch.setattr(handler, "TIMEOUT", 1)
+        pid_file = tmp_path / "sleep-pid.txt"
+        pid_literal = repr(str(pid_file))
+        command = (
+            "python3 -c \"import os,time; "
+            f"open({pid_literal}, 'w').write(str(os.getpid())); "
+            "time.sleep(10)\""
+        )
+
+        ok, msg = handler._shell(command)
+
+        assert ok is False
+        assert "TIMEOUT" in msg
+        sleeper_pid = int(pid_file.read_text(encoding="utf-8"))
+        assert not psutil.pid_exists(sleeper_pid)
 
 
 class TestExtractBaseCommand:
