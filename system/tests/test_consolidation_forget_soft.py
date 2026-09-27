@@ -153,7 +153,7 @@ class TestConsolidationForgetSoft:
         # forget ausfuehren
         ok, msg = handler.handle("forget", [])
         assert ok is True
-        assert "2 Eintraege deaktiviert" in msg
+        assert "2 Einträge deaktiviert" in msg
         assert "1 als vergessen markiert" in msg
 
         conn = sqlite3.connect(str(db_path))
@@ -212,7 +212,7 @@ class TestConsolidationForgetSoft:
         ok, msg = handler.handle("forget", [], dry_run=True)
         assert ok is True
         assert "[DRY-RUN]" in msg
-        assert "2 Eintraege deaktiviert, 1 als vergessen markiert" in msg
+        assert "2 Einträge deaktiviert, 1 als vergessen markiert" in msg
 
         conn = sqlite3.connect(str(db_path))
         # Nichts geaendert

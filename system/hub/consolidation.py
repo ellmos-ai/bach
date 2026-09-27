@@ -161,7 +161,7 @@ class ConsolidationHandler(BaseHandler):
             output.append("")
             output.append("SCHWELLENWERTE:")
             output.append(f"  Archivieren bei weight < {self.WEIGHT_THRESHOLD_ARCHIVE}")
-            output.append(f"  Loeschen bei weight <    {self.WEIGHT_THRESHOLD_DELETE}")
+            output.append(f"  Vergessen bei weight <   {self.WEIGHT_THRESHOLD_DELETE}")
             output.append(f"  Decay-Rate (taeglich):   {self.DECAY_RATE_DEFAULT}")
             output.append(f"  Boost bei Abruf:         +{self.BOOST_ON_ACCESS}")
 
@@ -662,7 +662,7 @@ class ConsolidationHandler(BaseHandler):
                 conn.commit()
 
             prefix = "[DRY-RUN] " if dry_run else ""
-            return True, f"{prefix}[OK] {deactivated} Eintraege deaktiviert, {forgotten} als vergessen markiert"
+            return True, f"{prefix}[OK] {deactivated} Einträge deaktiviert, {forgotten} als vergessen markiert"
 
     def _reclassify(self, args: list, dry_run: bool = False) -> tuple:
         """Korrigiert falsch kategorisierte Eintraege (v1.1.81).
