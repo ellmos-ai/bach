@@ -217,6 +217,7 @@ def test_set_and_clear_lead_config(tmp_path, monkeypatch):
     cfg_file = tmp_path / "lead.json"
     monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
     monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
 
     p = set_lead_url("http://custom-lead:8000")
     assert p.is_file()
@@ -356,6 +357,7 @@ def test_task_lead_command(tmp_path, monkeypatch):
     cfg_file = tmp_path / "lead.json"
     monkeypatch.setattr("hub.rheingold.LEAD_CONFIG_FILE", cfg_file)
     monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
 
     handler = TaskHandler(tmp_path)
     handler.db_path = tmp_path / "bach.db"
