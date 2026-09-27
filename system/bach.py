@@ -848,7 +848,7 @@ INLINE_COMMANDS = {
 }
 
 
-def _try_run_tool(name: str, args: list) -> Optional[int]:
+def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]:
     """Versucht ein Tool aus tools/ auszufuehren."""
     import subprocess
 
@@ -867,6 +867,9 @@ def _try_run_tool(name: str, args: list) -> Optional[int]:
     if not tool_file:
         return None
 
+    if dry_run:
+        print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
+        return 0
     log(f"[TOOL] {tool_file.stem} {' '.join(args)}")
     try:
         cmd_line = [sys.executable, str(tool_file)] + args
@@ -1409,7 +1412,7 @@ def main():
                 return 1
 
     # 5. Tool-Fallback (bach <toolname> [args])
-    tool_result = _try_run_tool(command, [sub_cmd] + args if sub_cmd else args)
+    tool_result = _try_run_tool(command, [sub_cmd] + args if sub_cmd else args, dry_run_requested)
     if tool_result is not None:
         _track_activity(arg, json_requested, dry_run_requested)
         return tool_result
