@@ -105,12 +105,17 @@ def run_harvester(fake_tools, mode: str, **overrides):
     bash, base_env, calls = fake_tools
     env = base_env.copy()
     env.update({key: str(value) for key, value in overrides.items()})
+    # T-20260927-448662565: 10 Aufrufe dieser Funktion in der Datei x 45s ergab
+    # exakt die im CI-Inventar gemeldeten ">450s" -- kein Deadlock, sondern jeder
+    # git-bash.exe-Aufruf lief unter Host-Last regulaer in TimeoutExpired.
+    # Normalzeit pro Aufruf gemessen: 1-7s. Engerer Wert begrenzt den Worst-Case
+    # auf 150s statt 450s, bei weiterhin >2x Sicherheitsmarge.
     result = subprocess.run(
         [bash, SCRIPT.as_posix(), mode],
         text=True,
         capture_output=True,
         env=env,
-        timeout=45,
+        timeout=15,
     )
     return result, calls.read_text(encoding="utf-8") if calls.exists() else ""
 
