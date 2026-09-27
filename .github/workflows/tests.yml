@@ -37,7 +37,7 @@ jobs:
           # wird installiert, damit die Dokument-Extraktions-Seam-Tests real laufen.
           grep -v -E '^(assistant-core|accounts-core) @' requirements.txt > requirements-ci.txt
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-ci.txt pytest
+          python -m pip install -r requirements-ci.txt pytest "python-telegram-bot>=22,<23"
 
       - name: pytest (S2/S3 + Kern)
         env:
@@ -59,4 +59,9 @@ jobs:
             system/tests/test_cli_startup_observers.py \
             system/tests/test_dist_type_catchup_migration.py \
             system/tests/test_doc_extract_seam.py \
-            system/tests/test_core.py
+            system/tests/test_core.py \
+            system/tests/test_safe_exec.py \
+            system/tests/test_safe_shell_args.py \
+            system/tests/test_chat_runtime_security.py \
+            system/tests/test_telegram_owner_check.py \
+            system/tests/test_sandbox_handler.py

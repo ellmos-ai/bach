@@ -3,6 +3,7 @@
 Diese Tests decken den Fix ab: fail-closed bei leerer OWNER_ID, und ALLE
 in main() registrierten Handler laufen durch _require_owner()."""
 import ast
+import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -39,8 +40,10 @@ class TestOwnerCheckFailClosed:
 
 
 class TestRequireOwnerWrapsCallback:
-    @pytest.mark.asyncio
-    async def test_blocks_when_not_owner(self, monkeypatch):
+    def test_blocks_when_not_owner(self, monkeypatch):
+        asyncio.run(self._test_blocks_when_not_owner(monkeypatch))
+
+    async def _test_blocks_when_not_owner(self, monkeypatch):
         monkeypatch.setattr(tg, "OWNER_ID", "42")
         called = {"inner": False}
 
@@ -58,8 +61,10 @@ class TestRequireOwnerWrapsCallback:
         assert called["inner"] is False
         assert replies == ["Zugriff nur für den Owner."]
 
-    @pytest.mark.asyncio
-    async def test_calls_through_when_owner(self, monkeypatch):
+    def test_calls_through_when_owner(self, monkeypatch):
+        asyncio.run(self._test_calls_through_when_owner(monkeypatch))
+
+    async def _test_calls_through_when_owner(self, monkeypatch):
         monkeypatch.setattr(tg, "OWNER_ID", "42")
         called = {"inner": False}
 
@@ -119,8 +124,10 @@ class TestRealRegisteredHandlersRejectForeignChat:
     beweist, dass der Owner-Check tatsaechlich vor der Auslieferung sitzt,
     nicht nur strukturell im Quelltext."""
 
-    @pytest.mark.asyncio
-    async def test_every_registered_handler_rejects_foreign_chat(self, monkeypatch):
+    def test_every_registered_handler_rejects_foreign_chat(self, monkeypatch):
+        asyncio.run(self._test_every_registered_handler_rejects_foreign_chat(monkeypatch))
+
+    async def _test_every_registered_handler_rejects_foreign_chat(self, monkeypatch):
         from telegram.ext import Application
 
         monkeypatch.setattr(tg, "OWNER_ID", "42")
