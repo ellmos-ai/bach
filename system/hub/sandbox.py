@@ -45,7 +45,7 @@ import tempfile
 from pathlib import Path
 from typing import FrozenSet, List, Tuple
 from .base import BaseHandler
-from .safe_exec import CommandRejected, base_command_name, dequote, tokenize, which_checked
+from .safe_exec import CommandRejected, base_command_name, resolve_executable, tokenize
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -387,10 +387,10 @@ class SandboxHandler(BaseHandler):
             ), []
 
         try:
-            resolved = which_checked(base_cmd)
+            argv = resolve_executable(cmd, self._allowed_commands)
         except CommandRejected as e:
             return False, f"BLOCKIERT: {e}", []
-        return True, "", [resolved, *(dequote(t) for t in tokens[1:])]
+        return True, "", argv
 
     def _policy(self) -> Tuple[bool, str]:
         from core.sandbox import HAS_RLIMIT, IS_POSIX
