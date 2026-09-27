@@ -197,12 +197,31 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
                 except subprocess.TimeoutExpired:
                     pass
             return
-    # Fallback: nur direktes Kind (Windows)
+    # Fallback: Windows -- kein echtes killpg. Bei shell=True ist proc selbst
+    # cmd.exe /c <befehl>; der eigentliche Befehl laeuft als Enkel und ueberlebt
+    # proc.kill() unbeeindruckt. Deshalb zuerst den gesamten Nachkommenbaum
+    # beenden und auf dessen Ende warten, bevor der Aufrufer aufraeumt.
+    descendants = []
+    if HAS_PSUTIL:
+        try:
+            descendants = psutil.Process(proc.pid).children(recursive=True)
+        except psutil.Error:
+            descendants = []
+        for child in descendants:
+            try:
+                child.kill()
+            except psutil.Error:
+                pass
     try:
         proc.kill()
         proc.wait(timeout=_TERM_GRACE_SEC)
     except Exception:
         pass
+    for child in descendants:
+        try:
+            child.wait(timeout=_TERM_GRACE_SEC)
+        except psutil.Error:
+            pass
 
 
 def _tree_rss_bytes(pid: int) -> int:
