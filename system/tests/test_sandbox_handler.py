@@ -249,22 +249,42 @@ class TestShell:
         assert ok is False
         assert "Leerer Befehl" in msg
 
+    def _prepend_real_python_to_path(self, monkeypatch):
+        """sys.executable statt des blossen Namens 'python3' auf PATH stellen.
+
+        Ein PATH-aufgeloestes 'python3.exe' kann in eingeschraenkten Kontexten
+        auf einen 0-Byte Windows-Store-App-Execution-Alias treffen, der beim
+        Start haengt statt zu scheitern (bekanntes Muster, siehe
+        T-20260921-750493182). _extract_base_command() splittet den
+        Shell-String naiv auf Leerzeichen, bevor Anfuehrungszeichen entfernt
+        werden -- der volle, abgesicherte sys.executable-Pfad
+        (z. B. unter 'C:\\Program Files\\...') wuerde dort falsch geparst und
+        an der Allowlist scheitern. Deshalb stattdessen das echte
+        Interpreter-Verzeichnis vorn an PATH haengen und im Shell-Befehl den
+        blossen Namen 'python' verwenden (schon in DEFAULT_ALLOWED_COMMANDS) --
+        die PATH-Suche findet dann garantiert den echten Interpreter zuerst.
+        """
+        python_dir = str(Path(sys.executable).parent)
+        monkeypatch.setenv("PATH", python_dir + os.pathsep + os.environ.get("PATH", ""))
+
     def test_shell_timeout(self, handler, monkeypatch):
         # Verhaltenstest (echter Prozess) — Stufe 2: core.sandbox.run_isolated
         # ersetzt das fruehere Mocking von hub.sandbox.subprocess.run
         monkeypatch.setattr(handler, "TIMEOUT", 1)
-        # 'sleep' ist nicht in der Allowlist -> python3 (erlaubt) als Sleeper
-        ok, msg = handler._shell('python3 -c "import time; time.sleep(10)"')
+        self._prepend_real_python_to_path(monkeypatch)
+        # 'sleep' ist nicht in der Allowlist -> python (erlaubt) als Sleeper
+        ok, msg = handler._shell('python -c "import time; time.sleep(10)"')
         assert ok is False
         assert "TIMEOUT" in msg
 
     @pytest.mark.skipif(os.name != "nt", reason="Windows-Prozessbaum-Fallback")
     def test_shell_timeout_kills_descendant(self, handler, monkeypatch, tmp_path):
         monkeypatch.setattr(handler, "TIMEOUT", 1)
+        self._prepend_real_python_to_path(monkeypatch)
         pid_file = tmp_path / "sleep-pid.txt"
         pid_literal = repr(str(pid_file))
         command = (
-            "python3 -c \"import os,time; "
+            "python -c \"import os,time; "
             f"open({pid_literal}, 'w').write(str(os.getpid())); "
             "time.sleep(10)\""
         )
