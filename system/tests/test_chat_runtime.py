@@ -121,6 +121,7 @@ class TestIsSafeCommand:
         "df -h",
         "du -sh /tmp",
         "uptime",
+        "find . -name '*.py'",
         "ps aux",
         "ollama list",
         "wc -l file.txt",
@@ -156,7 +157,6 @@ class TestIsSafeCommand:
         "bach status",
         "env",
         "grep -r pattern .",
-        "find . -name '*.py'",
     ])
     def test_unsafe_commands_rejected(self, cmd):
         assert is_safe_command(cmd) is False

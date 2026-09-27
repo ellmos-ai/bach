@@ -225,14 +225,18 @@ BLOCKED_PATTERNS = [
 # beliebige Ausfuehrung oder Schreiben moeglich gewesen): env, docker, pip,
 # pip3, brew, curl und bach (umging die bach_command-Allowlist). Im
 # Full-Modus bleiben sie ueber execute_command erreichbar.
-# grep und find sind ebenfalls raus: rekursives Suchen/Auflisten laeuft
-# ueber search_text/list_directory, die den Secrets-Deny pro Datei anwenden.
+# grep ist ebenfalls raus: Inhaltssuche laeuft ueber search_text, das den
+# Secrets-Deny pro Datei anwendet. find bleibt (liefert nur Dateinamen),
+# ohne ausfuehrende/schreibende Aktionen und nicht auf Secrets-Vorfahren.
 SAFE_BASES = frozenset({
-    "ls", "cat", "head", "tail", "wc", "file", "stat",
+    "ls", "cat", "head", "tail", "find", "wc", "file", "stat",
     "echo", "date", "which", "whoami", "hostname", "uname",
     "df", "du", "uptime", "ps", "top", "sw_vers", "sysctl",
     "ollama", "git",
 })
+
+# find-Aktionen, die Programme starten, loeschen oder Dateien schreiben.
+_FIND_DENY_PREFIXES = ("-exec", "-ok", "-delete", "-fprint", "-fls")
 # git: nur lesende Unterbefehle, keine globalen Optionen davor (-c,
 # --config-env, --exec-path, -C ...). Aliase sind damit automatisch aus.
 _GIT_READ_SUBCOMMANDS = frozenset({
@@ -262,11 +266,24 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
             return "Secrets-Pfad als Argument"
         if value.lower().startswith("ext::"):
             return "ext::-Transport ist nicht erlaubt"
-    recursive = base == "du" or (base == "ls" and any(
+    if base == "find":
+        for t in rest:
+            if t.lower().startswith(_FIND_DENY_PREFIXES):
+                return f"find-Aktion {t} ist nicht erlaubt"
+    recursive = base in ("du", "find") or (base == "ls" and any(
         t == "--recursive" or (t.startswith("-") and not t.startswith("--") and "R" in t)
         for t in rest))
     if recursive:
-        targets = [t for t in rest if not t.startswith("-")] or ["."]
+        if base == "find":
+            # Startpfade stehen vor dem ersten Ausdruck (-name, (, ! ...).
+            targets = []
+            for t in rest:
+                if t.startswith(("-", "(", "!")):
+                    break
+                targets.append(t)
+            targets = targets or ["."]
+        else:
+            targets = [t for t in rest if not t.startswith("-")] or ["."]
         if any(_contains_secret_location(Path(t)) for t in targets):
             return "rekursiver Befehl auf ein Verzeichnis mit Secrets - list_directory nutzen"
     if base == "git":

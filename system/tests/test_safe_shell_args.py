@@ -16,7 +16,7 @@ def _blocked(cmd):
     return "Sicherheit" in result or "Safe-Liste" in result
 
 
-@pytest.mark.parametrize("base", ["grep", "rg", "find",
+@pytest.mark.parametrize("base", ["grep", "egrep", "fgrep", "rg",
                                   "env", "docker", "pip", "pip3", "npm", "npx",
                                   "curl", "wget", "brew", "bach", "xargs", "awk",
                                   "sed", "python", "python3", "bash", "sh",
@@ -37,12 +37,23 @@ def test_removed_bases_blocked(cmd):
 
 
 @pytest.mark.parametrize("cmd", [
-    "find . -name x -exec y",
+    "grep token datei.txt",
     "grep -r token .",
     "grep -rn token .",
+    "grep -R token .",
+    "grep --recursive token .",
+    "grep --directories=recurse token .",
+    "grep -d recurse token .",
 ])
-def test_recursive_search_blocked(cmd):
+def test_grep_in_any_form_blocked(cmd):
     assert _blocked(cmd)
+
+
+@pytest.mark.parametrize("action", ["-exec", "-execdir", "-ok", "-okdir",
+                                    "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"])
+def test_find_actions_rejected(action):
+    assert check_safe_shell_args(["find", ".", "-name", "x", action, "y"])
+    assert _blocked(f"find . -name x {action} y")
 
 
 @pytest.fixture
@@ -67,6 +78,14 @@ def test_recursive_ls_on_secret_ancestor_rejected(fake_home, args):
 
 def test_du_on_secret_ancestor_rejected(fake_home):
     assert check_safe_shell_args(["du", "-s", str(fake_home)])
+
+
+def test_find_on_secret_ancestor_rejected(fake_home):
+    assert check_safe_shell_args(["find", str(fake_home), "-name", "*.pub"])
+
+
+def test_find_on_clean_dir_allowed(fake_home):
+    assert check_safe_shell_args(["find", str(fake_home / "projekt"), "-name", "*.py"]) is None
 
 
 def test_recursive_on_dir_with_credentials_child_rejected(tmp_path, fake_home):
