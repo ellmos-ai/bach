@@ -21,6 +21,8 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
+pytest.importorskip("telegram", reason="braucht python-telegram-bot (T-20260927-232943082)")
+
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
     add_worker,

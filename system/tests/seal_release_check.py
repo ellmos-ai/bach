@@ -2,10 +2,21 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-test_seal.py - Seal System Verification Tests (Release Pipeline Integration)
-=============================================================================
+seal_release_check.py - Seal System Verification (Release Pipeline Integration)
+================================================================================
 
 Testet das Siegelsystem (SQ021) - Integriert in Release-Pipeline (SQ027).
+
+T-20260927-807838815: umbenannt von test_seal.py. Das war nie ein
+pytest-Test: die Klasse (vormals SealSystemTests) verlangt einen
+Pflicht-Parameter im __init__, den pytest beim Sammeln nicht mitgibt
+-- pytest sammelte deshalb 0 Tests, obwohl die Datei "pytest
+tests/test_seal.py" als Aufrufweg bewarb. Zusaetzlich braucht dieses
+Skript eine bereits mit distribution_manifest/dist_file_versions
+befuellte Release-DB (>= 200 CORE-Eintraege) -- in einem frischen
+Checkout ohne Release-Lauf schlicht nicht vorhanden. Das ist ein
+manuelles Release-Verifikationswerkzeug, kein CI-taugliicher Unit-Test;
+ohne eine Seed-DB mit Testdaten wird daraus kein CI-Gate gebaut.
 
 Tests:
 1. Kernel-Scope: Prüft ob alle dist_type=2 CORE-Dateien erfasst sind
@@ -14,17 +25,27 @@ Tests:
 4. Startup-Check: Simuliert Stichproben-Check
 
 Verwendung:
-  python tests/test_seal.py                  # Standalone
-  pytest tests/test_seal.py                  # Via pytest
-  python -m unittest tests.test_seal         # Via unittest
+  python tests/seal_release_check.py         # Standalone, nach einem Release-Lauf
 
 Teil von SQ021 (Seal System) + SQ027 (Release Pipeline Integration)
 """
 
 from pathlib import Path
-import sqlite3
 import hashlib
+import sqlite3
 import sys
+
+# Kanonischer BACH_DB-Pfad statt eines selbstgebauten system/data/bach.db
+# (T-20260927-807838815, gleiches Muster wie in bach#111/#112 gefixt --
+# ein selbstgebauter Pfad prueft sonst beim naechsten Release die falsche,
+# potenziell veraltete Datei statt der tatsaechlich aktiven BACH_DB).
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "hub" / "bach_paths.py").exists()
+)
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+from hub.bach_paths import BACH_DB  # noqa: E402
 
 
 class SealSystemTests:
@@ -33,7 +54,7 @@ class SealSystemTests:
     def __init__(self, bach_root: Path):
         self.bach_root = Path(bach_root)
         self.system_root = self.bach_root / "system"
-        self.db_path = self.system_root / "data" / "bach.db"
+        self.db_path = BACH_DB
         self.tests_passed = 0
         self.tests_failed = 0
 
@@ -61,7 +82,7 @@ class SealSystemTests:
         print("[TEST 1] Kernel-Scope (CORE-Dateien)")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
         cursor = conn.execute("""
             SELECT COUNT(*)
             FROM distribution_manifest
@@ -112,7 +133,7 @@ class SealSystemTests:
         print("[TEST 3] dist_file_versions Tabelle")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
         cursor = conn.execute("SELECT COUNT(*) FROM dist_file_versions")
         version_count = cursor.fetchone()[0]
         conn.close()
@@ -132,7 +153,7 @@ class SealSystemTests:
         print("[TEST 4] Startup-Check Stichproben")
         print("-" * 70)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._ro_connect()
 
         # Wähle 5 zufällige CORE-Dateien mit Hashes aus dist_file_versions
         cursor = conn.execute("""
@@ -186,6 +207,15 @@ class SealSystemTests:
             return self.bach_root / relative_path
         else:
             return self.system_root / relative_path
+
+    def _ro_connect(self) -> sqlite3.Connection:
+        """Oeffnet BACH_DB read-only per URI (mode=ro): dieses Tool ist eine
+        Verifikation, keine Schreiboperation -- es darf die DB nicht per
+        Seiteneffekt anlegen/veraendern (z.B. wenn db_path noch nicht
+        existiert, wuerde ein normales sqlite3.connect() eine leere Datei
+        erzeugen)."""
+        uri = f"file:{self.db_path.as_posix()}?mode=ro"
+        return sqlite3.connect(uri, uri=True)
 
 
 def main():

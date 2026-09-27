@@ -146,7 +146,7 @@ class TestConsolidationForgetSoft:
         conn.commit()
 
         # Vorher-Zustand erfassen
-        facts_before = conn.execute("SELECT id, category, key, value FROM memory_facts").fetchall()
+        facts_before = conn.execute("SELECT * FROM memory_facts").fetchall()
         assert len(facts_before) == 1
         conn.close()
 
@@ -160,13 +160,10 @@ class TestConsolidationForgetSoft:
         conn.row_factory = sqlite3.Row
 
         # 1. Zeilenzahl von memory_facts vorher == nachher
-        facts_after = conn.execute("SELECT id, category, key, value FROM memory_facts").fetchall()
+        facts_after = conn.execute("SELECT * FROM memory_facts").fetchall()
         assert len(facts_after) == len(facts_before)
-        # Fakt-Zeile existiert noch unveraendert
-        assert facts_after[0]["id"] == facts_before[0][0]
-        assert facts_after[0]["category"] == facts_before[0][1]
-        assert facts_after[0]["key"] == facts_before[0][2]
-        assert facts_after[0]["value"] == facts_before[0][3]
+        # Fakt-Zeile bleibt einschließlich Metadaten unverändert.
+        assert tuple(facts_after[0]) == facts_before[0]
 
         # 2. consolidation-Status fuer Fakt ist 'forgotten'
         fact_cons = conn.execute(

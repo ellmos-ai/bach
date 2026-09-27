@@ -46,7 +46,7 @@ CLI-BEFEHLE (bach consolidate)
   review       Erstellt Review-Tasks für manuelle Validierung.
   init         Tracking für existierende Einträge initialisieren.
   sync-triggers Dynamische Kontext-Trigger aktualisieren (NEU v1.1.80).
-  forget       Ungenutzte Einträge löschen (weight < threshold).
+  forget       Ungenutzte Lessons/Working-Einträge deaktivieren; Fakten als vergessen markieren (weight < threshold).
   reclassify   Falsch kategorisierte Einträge korrigieren (NEU v1.1.81).
 
 DAEMON-INTEGRATION

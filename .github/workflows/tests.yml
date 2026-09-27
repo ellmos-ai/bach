@@ -31,11 +31,13 @@ jobs:
 
       - name: Abhaengigkeiten (ohne private ellmos-ai-Pakete)
         run: |
-          # assistant-core, accounts-core und doc-services sind private Repos und
-          # ohne Token nicht installierbar; die ausgewaehlten Suiten brauchen sie nicht.
-          grep -v -E '^(assistant-core|accounts-core|doc-services) @' requirements.txt > requirements-ci.txt
+          # assistant-core und accounts-core sind private Repos und ohne Token
+          # nicht installierbar; die ausgewaehlten Suiten brauchen sie nicht.
+          # doc-services (ellmos-ai/doc-services) ist seit 2026-09-26 public und
+          # wird installiert, damit die Dokument-Extraktions-Seam-Tests real laufen.
+          grep -v -E '^(assistant-core|accounts-core) @' requirements.txt > requirements-ci.txt
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-ci.txt pytest
+          python -m pip install -r requirements-ci.txt pytest "python-telegram-bot>=22,<23"
 
       - name: pytest (S2/S3 + Kern)
         env:
@@ -53,6 +55,14 @@ jobs:
             system/tests/test_migration_baseline_check.py \
             system/tests/test_update_handler.py \
             system/tests/test_db_path_central.py \
+            system/tests/test_trigger_generators.py \
             system/tests/test_cli_startup_observers.py \
             system/tests/test_consolidation_forget_soft.py \
-            system/tests/test_core.py
+            system/tests/test_dist_type_catchup_migration.py \
+            system/tests/test_doc_extract_seam.py \
+            system/tests/test_core.py \
+            system/tests/test_safe_exec.py \
+            system/tests/test_safe_shell_args.py \
+            system/tests/test_chat_runtime_security.py \
+            system/tests/test_telegram_owner_check.py \
+            system/tests/test_sandbox_handler.py

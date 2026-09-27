@@ -21,6 +21,7 @@ Start:
   python telegram_chat.py
 """
 import asyncio
+import functools
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -58,15 +59,18 @@ try:
     from telegram import Update
     from telegram.ext import (Application, CommandHandler, MessageHandler,
                               filters, ContextTypes)
-except ImportError:
-    print("python-telegram-bot nicht installiert: pip install python-telegram-bot")
-    sys.exit(1)
+except ImportError as exc:
+    # T-20260927-232943082: ein Bibliotheksmodul darf den Prozess nicht per
+    # sys.exit() beenden -- das riss frueher jeden Importeur mit (z.B.
+    # pytest beim Sammeln von Testmodulen, INTERNALERROR statt Testfehler).
+    raise ImportError(
+        "python-telegram-bot nicht installiert: pip install python-telegram-bot"
+    ) from exc
 
 try:
     import httpx
-except ImportError:
-    print("httpx nicht installiert: pip install httpx")
-    sys.exit(1)
+except ImportError as exc:
+    raise ImportError("httpx nicht installiert: pip install httpx") from exc
 
 # BACH imports
 try:
@@ -469,6 +473,15 @@ CONFIG = load_config()
 BOT_TOKEN = CONFIG["bot_token"]
 OWNER_ID = CONFIG["owner_id"]
 
+if not OWNER_ID:
+    logging.getLogger("bach.telegram_chat").warning(
+        "TELEGRAM OWNER_ID IST NICHT GESETZT - der Bot lehnt fail-closed "
+        "JEDE Chat-Nachricht ab, bis owner_id in "
+        "~/.config/bach/telegram_chat.json, TELEGRAM_OWNER_ID oder "
+        "~/.credentials/telegram_owner_id gesetzt ist (eine leere OWNER_ID "
+        "bedeutete vorher 'jeder darf')."
+    )
+
 # Backend + Runtime initialisieren
 backend = create_backend(CONFIG["backend"])
 
@@ -632,9 +645,34 @@ WELCOME = (
 
 
 def _owner_check(update: Update) -> bool:
+    """Fail-closed: eine leere/fehlende OWNER_ID heisst "niemanden
+    hereinlassen", nicht "jeden hereinlassen". Vorher (Befund C) war eine
+    leere OWNER_ID ein offener Bot fuer jeden Telegram-Nutzer - siehe die
+    laute Warnung beim Modulstart weiter unten."""
     if not OWNER_ID:
-        return True
+        return False
     return str(update.effective_chat.id) == OWNER_ID
+
+
+def _require_owner(handler_fn):
+    """Wrappt einen Telegram-Handler mit _owner_check - zentral an der
+    Registrierung (siehe main()), nicht einzeln in jeder Callback-Funktion.
+
+    Befund C zeigte: von 19 registrierten Handlern hatten nur 5 ueberhaupt
+    einen eigenen _owner_check-Aufruf; die restlichen 14 (u. a. /bach, das
+    direkt in die bach_command-Routung geht, sowie /task, /remember,
+    /recall, /facts fuer Memory-Zugriff) liefen fuer JEDEN Chat, sobald
+    OWNER_ID gesetzt war. Ein Guard pro Registrierung statt pro Funktion
+    ist der kleinere, root-cause-Fix: ein neuer Handler kann diesen Schritt
+    nicht mehr vergessen, weil er ohnehin durch add_handler() muss."""
+    @functools.wraps(handler_fn)
+    async def wrapped(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not _owner_check(update):
+            if update.effective_message:
+                await update.effective_message.reply_text("Zugriff nur für den Owner.")
+            return
+        return await handler_fn(update, ctx)
+    return wrapped
 
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -4518,6 +4556,38 @@ def serve_control_only(server, reason: str) -> None:
 
 # --- Main ---
 
+def register_handlers(app) -> None:
+    """Registriert ALLE Telegram-Handler - jeder gewrappt mit
+    _require_owner() (Befund C: 14 von 19 Handlern hatten frueher gar
+    keinen Owner-Check). Eigene Funktion statt Inline-Code in main(),
+    damit ein Test die ECHTE Registrierung ausfuehren und pruefen kann,
+    statt eine von Hand gepflegte Kopie der Handler-Liste zu bewachen."""
+    app.add_handler(CommandHandler("start", _require_owner(cmd_start)))
+    app.add_handler(CommandHandler("clear", _require_owner(cmd_clear)))
+    app.add_handler(CommandHandler("think", _require_owner(cmd_think)))
+    app.add_handler(CommandHandler("nothink", _require_owner(cmd_nothink)))
+    app.add_handler(CommandHandler("mode", _require_owner(cmd_mode)))
+    app.add_handler(CommandHandler("model", _require_owner(cmd_model)))
+    app.add_handler(CommandHandler("backend", _require_owner(cmd_backend)))
+    app.add_handler(CommandHandler("maxrounds", _require_owner(cmd_maxrounds)))
+    app.add_handler(CommandHandler("settings", _require_owner(cmd_settings)))
+    app.add_handler(CommandHandler("fackel", _require_owner(cmd_fackel)))
+
+    if HAS_BACH:
+        app.add_handler(CommandHandler("remember", _require_owner(cmd_remember)))
+        app.add_handler(CommandHandler("recall", _require_owner(cmd_recall)))
+        app.add_handler(CommandHandler("facts", _require_owner(cmd_facts)))
+        app.add_handler(CommandHandler("bach", _require_owner(cmd_bach)))
+        app.add_handler(CommandHandler("task", _require_owner(cmd_task)))
+        app.add_handler(CommandHandler("tasks", _require_owner(cmd_tasks)))
+        app.add_handler(CommandHandler("status", _require_owner(cmd_status)))
+
+    app.add_handler(CommandHandler("voice", _require_owner(cmd_voice)))
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _require_owner(handle_voice)))
+    app.add_handler(MessageHandler(filters.PHOTO, _require_owner(handle_photo)))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _require_owner(handle_message)))
+
+
 def main():
     global TELEGRAM_VERIFIED
     control_server = start_control_api()
@@ -4547,31 +4617,7 @@ def main():
     print("Telegram Bot verifiziert")
 
     app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("clear", cmd_clear))
-    app.add_handler(CommandHandler("think", cmd_think))
-    app.add_handler(CommandHandler("nothink", cmd_nothink))
-    app.add_handler(CommandHandler("mode", cmd_mode))
-    app.add_handler(CommandHandler("model", cmd_model))
-    app.add_handler(CommandHandler("backend", cmd_backend))
-    app.add_handler(CommandHandler("maxrounds", cmd_maxrounds))
-    app.add_handler(CommandHandler("settings", cmd_settings))
-    app.add_handler(CommandHandler("fackel", cmd_fackel))
-
-    if HAS_BACH:
-        app.add_handler(CommandHandler("remember", cmd_remember))
-        app.add_handler(CommandHandler("recall", cmd_recall))
-        app.add_handler(CommandHandler("facts", cmd_facts))
-        app.add_handler(CommandHandler("bach", cmd_bach))
-        app.add_handler(CommandHandler("task", cmd_task))
-        app.add_handler(CommandHandler("tasks", cmd_tasks))
-        app.add_handler(CommandHandler("status", cmd_status))
-
-    app.add_handler(CommandHandler("voice", cmd_voice))
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    register_handlers(app)
 
     backend_type = CONFIG["backend"].get("type", "ollama")
     model = backend.get_default_model()

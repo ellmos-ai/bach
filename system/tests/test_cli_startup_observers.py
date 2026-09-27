@@ -3,6 +3,7 @@
 """Regressionen für side-effect-freie beobachtende CLI-Aufrufe."""
 
 import atexit
+import subprocess
 import sys
 import time
 import types
@@ -164,11 +165,6 @@ def test_subcommand_help_bypasses_global_start_side_effects(
     assert calls == [("dummy", [], False)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="T-20260926-401320545: Dry-run initialisiert den AutoLogger vor dem Handler "
-           "(Zielkonflikt mit #63, get_logger(RUNTIME_ROOT) unbedingt)",
-)
 def test_dry_run_dispatch_skips_global_start_side_effects(
     observer_boundary, monkeypatch, capsys
 ):
@@ -301,3 +297,72 @@ def test_activity_ticks_only_after_handler_acceptance(monkeypatch, tmp_path, cap
         "activity-tick",
         "handled",
     ]
+
+
+def test_dry_run_handler_error_skips_autolog_initialization(
+    observer_boundary, monkeypatch, capsys
+):
+    """Auch der Dry-run-Fehlerpfad darf den Logger nicht initialisieren."""
+
+    class FailingHandler:
+        def handle(self, _operation, _args, dry_run=False):
+            assert dry_run is True
+            raise RuntimeError("handler boom")
+
+    class FailingApp:
+        registry = _DummyRegistry()
+
+        def get_handler(self, name):
+            return FailingHandler() if name == "dummy" else None
+
+    class MarkerLogger:
+        def log(self, _message):
+            (observer_boundary / "autolog").write_text("called", encoding="utf-8")
+
+    monkeypatch.setitem(
+        bach_cli.log.__globals__,
+        "get_logger",
+        lambda *_args, **_kwargs: MarkerLogger(),
+    )
+    monkeypatch.setattr(bach_cli, "_get_app", lambda: FailingApp())
+    monkeypatch.setattr(sys, "argv", ["bach.py", "dummy", "run", "--dry-run"])
+
+    rc = bach_cli.main()
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert list(observer_boundary.iterdir()) == []
+    assert "[ERROR] handler boom" in captured.out
+    assert "[ERROR] handler boom" in captured.err
+
+
+def test_tool_fallback_dry_run_skips_logging_and_subprocess(
+    observer_boundary, monkeypatch, capsys
+):
+    """Der Tool-Fallback bleibt im Dry-run rein beobachtend."""
+    tool_name = "activity_tracker"
+    tool_file = Path(bach_cli.TOOLS_DIR) / f"{tool_name}.py"
+    assert tool_file.exists()
+
+    monkeypatch.setattr(
+        bach_cli,
+        "log",
+        lambda *_args, **_kwargs: (observer_boundary / "autolog").write_text(
+            "called", encoding="utf-8"
+        ),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "subprocess.run darf im Dry-run nicht laufen"
+        ),
+    )
+
+    rc = bach_cli._try_run_tool(tool_name, ["--foo"], dry_run=True)
+
+    assert rc == 0
+    assert capsys.readouterr().out == (
+        "[DRY-RUN] Wuerde ausfuehren: activity_tracker --foo\n"
+    )
+    assert list(observer_boundary.iterdir()) == []

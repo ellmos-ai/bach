@@ -2,6 +2,10 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytest.importorskip("telegram", reason="braucht python-telegram-bot (T-20260927-232943082)")
+
 from hub._services.chat import control_auth
 from hub._services.chat.telegram_chat import ControlHandler, _control_bind_host
 
