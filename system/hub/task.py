@@ -40,6 +40,7 @@ from ._services.task_schema import (
     parse_task_dependency_ids,
 )
 from .task_audit import (
+    reap_stale_in_progress_tasks,
     apply_task_field_changes,
     claim_task_atomic,
     release_claim,
@@ -96,6 +97,8 @@ class TaskHandler(BaseHandler):
             "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
+            "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
+            "sweep": "Alias fuer reap",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
@@ -192,6 +195,8 @@ class TaskHandler(BaseHandler):
             return self._claim(args)
         elif operation == "release":
             return self._release(args)
+        elif operation in ("reap", "sweep"):
+            return self._reap(args)
         elif operation in ["", "help"]:
             return self._help()
         else:
@@ -461,6 +466,22 @@ class TaskHandler(BaseHandler):
 
         return True, f"[OK] Task {task_id} bearbeitet: {', '.join(changes)}"
     
+    def _reap(self, args: List[str]) -> Tuple[bool, str]:
+        """Stale in_progress-Tasks bereinigen und auf pending zuruecksetzen."""
+        lease_seconds = 1800
+        for arg in args:
+            if arg.startswith("--lease="):
+                try:
+                    lease_seconds = int(arg.split("=", 1)[1])
+                except ValueError:
+                    pass
+        with self._get_db() as conn:
+            reaped = reap_stale_in_progress_tasks(conn, lease_seconds=lease_seconds)
+            if reaped:
+                conn.commit()
+                return True, f"[OK] {len(reaped)} abgelaufene in_progress-Tasks zurueckgesetzt: {reaped}"
+            return True, "[OK] Keine abgelaufenen in_progress-Tasks gefunden"
+
     def _list(self, args: List[str]) -> Tuple[bool, str]:
         """Tasks auflisten"""
         status_filter = "pending"
@@ -475,6 +496,8 @@ class TaskHandler(BaseHandler):
             "blocked": "blocked",
             "in_progress": "in_progress",
             "in-progress": "in_progress",
+            "completed": "completed",
+            "cancelled": "cancelled",
         }
         
         i = 0
@@ -501,7 +524,13 @@ class TaskHandler(BaseHandler):
         conditions = []
         params = []
         
-        if status_filter:
+        if status_filter == "open":
+            conditions.append("status IN ('pending', 'open', 'in_progress')")
+        elif status_filter == "pending":
+            conditions.append("status IN ('pending', 'open')")
+        elif status_filter == "completed":
+            conditions.append("status IN ('done', 'completed')")
+        elif status_filter:
             conditions.append("status = ?")
             params.append(status_filter)
         

@@ -352,8 +352,9 @@ class _TaskProxy(_DBBackedProxy):
         i = 0
         while i < len(args):
             arg = str(args[i])
-            if arg in ("all", "done", "pending", "open", "blocked"):
-                status_filter = None if arg == "all" else arg
+            arg_lower = arg.lower()
+            if arg_lower in ("all", "done", "pending", "open", "blocked", "in_progress", "in-progress", "completed", "cancelled"):
+                status_filter = None if arg_lower == "all" else ("in_progress" if arg_lower == "in-progress" else arg_lower)
             elif arg.startswith("--filter="):
                 title_filter = arg.split("=", 1)[1]
             elif arg == "--filter" and i + 1 < len(args):
@@ -370,7 +371,13 @@ class _TaskProxy(_DBBackedProxy):
 
         conditions = []
         params: list[Any] = []
-        if status_filter:
+        if status_filter == "open":
+            conditions.append("status IN ('pending', 'open', 'in_progress')")
+        elif status_filter == "pending":
+            conditions.append("status IN ('pending', 'open')")
+        elif status_filter == "completed":
+            conditions.append("status IN ('done', 'completed')")
+        elif status_filter:
             conditions.append("status = ?")
             params.append(status_filter)
         if title_filter:
@@ -445,6 +452,14 @@ class _TaskProxy(_DBBackedProxy):
             db_path=db_path,
             project_path=_SYSTEM_DIR.parent,
         )
+
+    def reap(self, lease_seconds: int = 1800) -> List[int]:
+        """Reap stale in_progress tasks whose claim lease has expired."""
+        with self._connect() as conn:
+            from hub.task_audit import reap_stale_in_progress_tasks
+            reaped = reap_stale_in_progress_tasks(conn, lease_seconds=lease_seconds)
+            conn.commit()
+            return reaped
 
     def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         task_data = dict(row)

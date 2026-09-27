@@ -356,3 +356,129 @@ def release_claim(conn: sqlite3.Connection, task_id: int, claimed_by: str) -> bo
 
     return True
 
+
+
+def reap_stale_in_progress_tasks(
+    conn: sqlite3.Connection,
+    *,
+    lease_seconds: int = 1800,
+    now: Optional[str] = None,
+    reaped_by: str = "reaper",
+) -> list[int]:
+    """Finds tasks stuck in 'in_progress' whose claim/start has expired, and resets them to 'pending'.
+
+    Preserves tasks with a future due_date (gate haltefristen).
+    Does NOT reap tasks started or claimed within the last lease_seconds.
+    Defensively handles stripped schemas (missing optional columns).
+    Returns the list of reaped task IDs.
+    """
+    from datetime import timezone
+    ensure_task_claim_columns(conn)
+    now_iso = _iso_now(now)
+    now_ref = datetime.fromisoformat(now_iso)
+    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+    now_utc = now_ref.replace(tzinfo=local_tz).astimezone(timezone.utc)
+
+    cur = conn.cursor()
+    cols = {col[1] for col in cur.execute("PRAGMA table_info(tasks)").fetchall()}
+    has_due = "due_date" in cols
+    has_started = "started_at" in cols
+    has_claimed_by = "claimed_by" in cols
+    has_claimed_at = "claimed_at" in cols
+    has_updated = "updated_at" in cols
+    has_history = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='task_history'").fetchone() is not None
+
+    select_sql = f"""
+        SELECT id,
+               {("claimed_by" if has_claimed_by else "NULL as claimed_by")},
+               {("claimed_at" if has_claimed_at else "NULL as claimed_at")},
+               {("started_at" if has_started else "NULL as started_at")},
+               {("due_date" if has_due else "NULL as due_date")}
+        FROM tasks
+        WHERE status = 'in_progress'
+    """
+    rows = cur.execute(select_sql).fetchall()
+    reaped_ids = []
+
+    def _parse_iso_utc(val: Optional[str]) -> Optional[datetime]:
+        if not val:
+            return None
+        try:
+            raw = str(val).strip()
+            if raw.endswith("Z") or raw.endswith("z"):
+                raw = raw[:-1] + "+00:00"
+            if " " in raw and "T" not in raw:
+                raw = raw.replace(" ", "T")
+            dt = datetime.fromisoformat(raw)
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc)
+            dt_local = dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
+            dt_utc = dt.replace(tzinfo=timezone.utc)
+            if abs((now_utc - dt_utc).total_seconds()) < abs((now_utc - dt_local).total_seconds()):
+                return dt_utc
+            return dt_local
+        except Exception:
+            return None
+
+    cutoff_utc = now_utc - timedelta(seconds=lease_seconds)
+
+    for row in rows:
+        tid = row[0]
+        cby = row[1]
+        cat = row[2]
+        sat = row[3]
+        due = row[4]
+
+        # 1. Skip future due_date (gate-haltefrist)
+        due_utc = _parse_iso_utc(due)
+        if due_utc and due_utc > now_utc:
+            continue
+
+        # 2. Check if active within lease window
+        cat_utc = _parse_iso_utc(cat)
+        sat_utc = _parse_iso_utc(sat)
+
+        if cat_utc and cat_utc > cutoff_utc:
+            continue
+        if sat_utc and sat_utc > cutoff_utc:
+            continue
+
+        update_clauses = ["status = 'pending'"]
+        update_vals = []
+        if has_claimed_by:
+            update_clauses.append("claimed_by = NULL")
+        if has_claimed_at:
+            update_clauses.append("claimed_at = NULL")
+        if has_updated:
+            update_clauses.append("updated_at = ?")
+            update_vals.append(now_iso)
+        update_vals.append(tid)
+
+        cursor = conn.execute(
+            f"""UPDATE tasks
+               SET {', '.join(update_clauses)}
+               WHERE id = ? AND status = 'in_progress'""",
+            update_vals,
+        )
+        if cursor.rowcount > 0:
+            reaped_ids.append(tid)
+            if has_history:
+                try:
+                    conn.execute(
+                        """INSERT INTO task_history
+                           (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            tid,
+                            "status_change",
+                            "status",
+                            "in_progress",
+                            "pending",
+                            f"{reaped_by}:stale_claim_expired",
+                            now_iso,
+                        ),
+                    )
+                except Exception:
+                    pass
+
+    return reaped_ids

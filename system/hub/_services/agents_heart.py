@@ -36,6 +36,21 @@ ROLE_CONTRACTS: Dict[str, RoleContract] = {
         revision="v1",
         rights=frozenset({"task.claim", "task.execute"}),
     ),
+    "task_worker": RoleContract(
+        role_id="task_worker",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
+    "boss_routing": RoleContract(
+        role_id="boss_routing",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
+    "expert_role": RoleContract(
+        role_id="expert_role",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
 }
 
 _REQUIRED_RIGHTS = frozenset({"task.claim", "task.execute"})

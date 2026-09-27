@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Slot- and Worker-Configuration Manager for BACH OS.
 
 Manages configuration and live metadata for:
@@ -13,22 +12,23 @@ Manages configuration and live metadata for:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
-import inspect
 import threading
 import time
 import uuid
-from functools import wraps
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "system" / "data"
 DEFAULT_SLOTS_FILE = os.environ.get(
     "BACH_SLOTS_CONFIG_PATH",
     str(_DEFAULT_DATA_DIR / "slots_config.json")
@@ -36,7 +36,7 @@ DEFAULT_SLOTS_FILE = os.environ.get(
 
 _config_lock = threading.RLock()
 
-DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
+DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_chat": {
         "id": "buddha_chat",
         "name": "Buddha Chat",
@@ -49,6 +49,11 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "gui-web",
         "status": "ready",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
     },
     "buddha_always_on": {
         "id": "buddha_always_on",
@@ -64,6 +69,18 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "idle-worker",
         "status": "idle",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
+        "pickup_filter": {
+            "enabled": True,
+            "categories": ["INBOX"],
+            "priorities": ["P1", "P2"],
+            "tags": [],
+            "exclude_tags": ["delegated", "waiting"],
+        },
     },
     "buddha_connector": {
         "id": "buddha_connector",
@@ -77,6 +94,11 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "telegram",
         "status": "ready",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
         "providers": {
             "telegram": {"backend": "ollama", "model": "qwen3.8:27b-mlx", "max_tool_rounds": 10},
             "whatsapp": {"backend": "ollama", "model": "qwen3.8:27b-mlx", "max_tool_rounds": 10},
@@ -96,7 +118,7 @@ WICHTIGSTE REGELN:
 - Behalte das Werkzeug-Rundenbudget im Auge.
 """
 
-DEFAULT_ROLE_PROMPTS: Dict[str, str] = {
+DEFAULT_ROLE_PROMPTS: dict[str, str] = {
     "hintergrund_worker": (
         "Du agierst als autonomer Hintergrundworker für das BACH-System.\n"
         "Deine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\n"
@@ -166,9 +188,9 @@ def _resolve_path(path: str | None = None) -> Path:
     return Path(os.path.expanduser(target)).resolve()
 
 
-def _fresh_slots_config() -> Dict[str, Any]:
+def _fresh_slots_config() -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 3,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
         "dynamic_workers": [],
@@ -176,22 +198,21 @@ def _fresh_slots_config() -> Dict[str, Any]:
     }
 
 
-def initialize_slots_config(path: str | None = None) -> Dict[str, Any]:
+def initialize_slots_config(path: str | None = None) -> dict[str, Any]:
     """Explicit bootstrap; never overwrite a config another writer created."""
     f = _resolve_path(path)
-    with _exclusive_lock(f):
-        with _config_lock:
-            if f.is_file():
-                return load_slots_config(path, strict=True)
-            cfg = _fresh_slots_config()
-            f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_name(f"{f.name}.init-{uuid.uuid4().hex}.tmp")
-            try:
-                tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-                tmp.replace(f)
-            finally:
-                tmp.unlink(missing_ok=True)
-            return cfg
+    with _exclusive_lock(f), _config_lock:
+        if f.is_file():
+            return load_slots_config(path, strict=True)
+        cfg = _fresh_slots_config()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f"{f.name}.init-{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(f)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return cfg
 
 
 def _serialized_mutation(func):
@@ -202,14 +223,13 @@ def _serialized_mutation(func):
     def guarded(*args, **kwargs):
         bound = signature.bind_partial(*args, **kwargs)
         target = _resolve_path(bound.arguments.get("path"))
-        with _exclusive_lock(target):
-            with _config_lock:
-                return func(*args, **kwargs)
+        with _exclusive_lock(target), _config_lock:
+            return func(*args, **kwargs)
 
     return guarded
 
 
-def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[str, Any]:
+def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[str, Any]:
     """Load the slots and dynamic workers configuration safely."""
     f = _resolve_path(path)
     if not f.is_file():
@@ -229,6 +249,30 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[
             for k, default_val in DEFAULT_CORE_SLOTS.items():
                 if k not in slots:
                     slots[k] = dict(default_val)
+            # Migrate version 1 -> 2: add pause fields to existing core slots
+            if data.get("version", 1) < 2:
+                for k, default_val in DEFAULT_CORE_SLOTS.items():
+                    slot = slots.get(k)
+                    if slot is None:
+                        continue
+                    for field in (
+                        "pause_after",
+                        "pause_minutes",
+                        "pause_basis",
+                        "pause_counter",
+                        "pause_started_at",
+                    ):
+                        if field not in slot:
+                            slot[field] = default_val[field]
+                data["version"] = 2
+            # Migrate version 2 -> 3: add pickup_filter to buddha_always_on
+            if data.get("version", 1) < 3:
+                always_on = slots.get("buddha_always_on")
+                if always_on is not None and "pickup_filter" not in always_on:
+                    always_on["pickup_filter"] = dict(
+                        DEFAULT_CORE_SLOTS["buddha_always_on"]["pickup_filter"]
+                    )
+                data["version"] = 3
             data["slots"] = slots
             if strict and not isinstance(data.get("dynamic_workers"), list):
                 raise ValueError("Slots-Konfiguration enthält keine gültige Worker-Liste")
@@ -244,7 +288,7 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[
             return _fresh_slots_config()
 
 
-def save_slots_config(config: Dict[str, Any], path: str | None = None) -> None:
+def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
     """Save configuration atomically."""
     f = _resolve_path(path)
     config["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -259,7 +303,232 @@ def save_slots_config(config: Dict[str, Any], path: str | None = None) -> None:
             raise
 
 
-def get_slot(slot_id: str, path: str | None = None) -> Dict[str, Any]:
+def is_slot_paused(slot: dict[str, Any]) -> bool:
+    """Return True if the slot is currently within its pause window."""
+    started_at = slot.get("pause_started_at", "")
+    pause_minutes = slot.get("pause_minutes", 0) or 0
+    if not started_at or not pause_minutes:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
+        return elapsed_minutes < pause_minutes
+    except (ValueError, TypeError):
+        return False
+
+
+def end_pause_if_over(slot: dict[str, Any]) -> bool:
+    """Clear an expired pause window. Returns True if a pause was ended."""
+    started_at = slot.get("pause_started_at", "")
+    pause_minutes = slot.get("pause_minutes", 0) or 0
+    if not started_at:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        slot["pause_started_at"] = ""
+        slot["pause_counter"] = 0
+        return True
+    elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
+    if elapsed_minutes >= pause_minutes:
+        slot["pause_started_at"] = ""
+        slot["pause_counter"] = 0
+        return True
+    return False
+
+
+def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> bool:
+    """Return True if *task* satisfies the slot's pickup_filter rules.
+
+    A missing or disabled filter rejects every task when checking against a
+    slot's pickup_filter, so callers like chat_tray can fall back to standard
+    assignee matching.
+    """
+    if not isinstance(slot, dict):
+        return False
+    pickup_filter = slot if "enabled" in slot else slot.get("pickup_filter")
+    if not isinstance(pickup_filter, dict):
+        return False
+    if not pickup_filter.get("enabled", False):
+        return False
+
+    task_categories = []
+    if task.get("category"):
+        task_categories.append(task["category"])
+    if task.get("project") and task["project"] != task.get("category"):
+        task_categories.append(task["project"])
+    raw_cats = task.get("categories")
+    if raw_cats:
+        if isinstance(raw_cats, str):
+            task_categories.extend([c.strip() for c in raw_cats.split(",") if c.strip()])
+        elif isinstance(raw_cats, (list, tuple, set)):
+            task_categories.extend(raw_cats)
+
+    filter_categories = pickup_filter.get("categories", []) or []
+    if filter_categories:
+        filter_cats_norm = {str(c).strip().lower() for c in filter_categories if str(c).strip()}
+        if not any(str(c).strip().lower() in filter_cats_norm for c in task_categories):
+            return False
+
+    task_priority = str(task.get("priority") or "").strip().upper()
+    filter_priorities = pickup_filter.get("priorities", []) or []
+    if filter_priorities:
+        filter_prios_norm = {str(p).strip().upper() for p in filter_priorities if str(p).strip()}
+        if task_priority not in filter_prios_norm:
+            return False
+
+    raw_tags = task.get("tags") or []
+    if isinstance(raw_tags, str):
+        task_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+    elif isinstance(raw_tags, (list, tuple, set)):
+        task_tags = [str(t).strip().lower() for t in raw_tags if str(t).strip()]
+    else:
+        task_tags = []
+
+    filter_tags = pickup_filter.get("tags", []) or []
+    if filter_tags:
+        filter_tags_norm = {str(t).strip().lower() for t in filter_tags if str(t).strip()}
+        if not any(t in filter_tags_norm for t in task_tags):
+            return False
+
+    exclude_tags = pickup_filter.get("exclude_tags", []) or []
+    if exclude_tags:
+        exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags if str(t).strip()}
+        if any(t in exclude_tags_norm for t in task_tags):
+            return False
+
+    # Model and slot binding (Ticket T-20260927-513417687)
+    slot_model = slot.get("model")
+    req_model = task.get("required_model")
+    if slot_model and req_model and str(req_model).strip():
+        if str(req_model).strip().lower() != str(slot_model).strip().lower():
+            return False
+
+    slot_id = slot.get("id")
+    assigned_slot = task.get("assigned_slot")
+    if slot_id and assigned_slot and str(assigned_slot).strip():
+        if str(assigned_slot).strip().lower() != str(slot_id).strip().lower():
+            return False
+
+    return True
+
+
+matches_pickup_filter = match_task_to_pickup_filter
+
+
+def get_slot_pause_info(slot: dict[str, Any]) -> dict[str, Any]:
+    """Return structured pause status and remaining duration for a slot or worker."""
+    if not isinstance(slot, dict):
+        return {
+            "is_paused": False,
+            "pause_after": 0,
+            "pause_minutes": 0,
+            "pause_basis": "runs",
+            "pause_counter": 0,
+            "pause_started_at": "",
+            "remaining_seconds": 0.0,
+            "remaining_minutes": 0.0,
+        }
+    end_pause_if_over(slot)
+    is_paused = is_slot_paused(slot)
+    pause_after = int(slot.get("pause_after", 0) or 0)
+    pause_minutes = int(slot.get("pause_minutes", 0) or 0)
+    pause_basis = str(slot.get("pause_basis") or "runs")
+    pause_counter = int(slot.get("pause_counter", 0) or 0)
+    started_at = slot.get("pause_started_at", "")
+    remaining_seconds = 0.0
+    if is_paused and started_at and pause_minutes > 0:
+        try:
+            started = datetime.fromisoformat(started_at)
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            remaining_seconds = max(0.0, (pause_minutes * 60.0) - elapsed)
+        except (ValueError, TypeError):
+            remaining_seconds = 0.0
+    return {
+        "is_paused": is_paused,
+        "pause_after": pause_after,
+        "pause_minutes": pause_minutes,
+        "pause_basis": pause_basis,
+        "pause_counter": pause_counter,
+        "pause_started_at": started_at,
+        "remaining_seconds": round(remaining_seconds, 1),
+        "remaining_minutes": round(remaining_seconds / 60.0, 1),
+    }
+
+
+def maybe_start_pause(slot: dict[str, Any]) -> bool:
+    """Start a pause window if the run counter has reached pause_after."""
+    pause_after = slot.get("pause_after", 0) or 0
+    pause_minutes = slot.get("pause_minutes", 0) or 0
+    counter = slot.get("pause_counter", 0) or 0
+    if not pause_after or not pause_minutes:
+        return False
+    if is_slot_paused(slot):
+        return False
+    if counter < pause_after:
+        return False
+    slot["pause_started_at"] = datetime.now(timezone.utc).isoformat()
+    slot["pause_counter"] = 0
+    return True
+
+
+def bump_pause_counter(
+    slot: dict[str, Any] | str,
+    event_type: str = "runs",
+    path: str | None = None,
+) -> bool:
+    """Increment run or task counter and start a pause if threshold is reached.
+
+    Parameters
+    ----------
+    slot: Slot or worker dict, or a slot_id string.
+    event_type: "runs" or "tasks". If slot's pause_basis is "tasks", only "tasks"
+                increments the counter. If pause_basis is "runs", any run/loop
+                increments the counter.
+    path: Optional path to slots_config file to persist state.
+    """
+    if isinstance(slot, str):
+        slot_id = slot
+        slot_obj = get_slot(slot_id, path=path)
+        if not slot_obj:
+            return False
+        started = bump_pause_counter(slot_obj, event_type=event_type, path=path)
+        try:
+            update_slot(slot_id, {
+                "pause_counter": slot_obj.get("pause_counter", 0),
+                "pause_started_at": slot_obj.get("pause_started_at", ""),
+            }, path=path)
+        except Exception:
+            pass
+        return started
+
+    end_pause_if_over(slot)
+    pause_basis = str(slot.get("pause_basis") or "runs").strip().lower()
+    if pause_basis == "tasks" and event_type != "tasks":
+        return False
+
+    slot["pause_counter"] = int(slot.get("pause_counter", 0) or 0) + 1
+    started = maybe_start_pause(slot)
+
+    slot_id = slot.get("id") or ("buddha_always_on" if "pickup_filter" in slot else None)
+    if slot_id and path is not None:
+        try:
+            update_slot(slot_id, {
+                "pause_counter": slot.get("pause_counter", 0),
+                "pause_started_at": slot.get("pause_started_at", ""),
+            }, path=path)
+        except Exception:
+            pass
+    return started
+
+
+def get_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
     """Return configuration for a specific slot or worker."""
     cfg = load_slots_config(path)
     if slot_id in cfg.get("slots", {}):
@@ -273,7 +542,7 @@ def get_slot(slot_id: str, path: str | None = None) -> Dict[str, Any]:
     return {}
 
 
-def get_worker_slot(worker_id: str, path: str | None = None) -> Dict[str, Any]:
+def get_worker_slot(worker_id: str, path: str | None = None) -> dict[str, Any]:
     """Return only a unique dynamic worker; ambiguity fails closed."""
     cfg = load_slots_config(path, strict=True)
     matches = [w for w in cfg.get("dynamic_workers", []) if w.get("id") == worker_id]
@@ -285,7 +554,7 @@ def get_worker_slot(worker_id: str, path: str | None = None) -> Dict[str, Any]:
 
 
 @_serialized_mutation
-def update_slot(slot_id: str, updates: Dict[str, Any], path: str | None = None) -> Dict[str, Any]:
+def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
@@ -320,9 +589,9 @@ def update_slot(slot_id: str, updates: Dict[str, Any], path: str | None = None) 
 
 @_serialized_mutation
 def reconcile_workers(
-    active_worker_ids: Optional[set[str]] = None,
+    active_worker_ids: set[str] | None = None,
     path: str | None = None
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Reconcile dynamic worker states against active thread IDs and TTLs.
 
     Any worker marked as 'running' whose ID is not in active_worker_ids
@@ -358,8 +627,8 @@ def reconcile_workers(
 def list_workers(
     path: str | None = None,
     include_expired: bool = False,
-    active_worker_ids: Optional[set[str]] = None,
-) -> List[Dict[str, Any]]:
+    active_worker_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Return all dynamic workers, automatically updating expiration and running states."""
     workers = reconcile_workers(active_worker_ids=active_worker_ids, path=path)
     result = []
@@ -369,7 +638,7 @@ def list_workers(
     return result
 
 
-def get_prompt_templates(path: str | None = None) -> Dict[str, Any]:
+def get_prompt_templates(path: str | None = None) -> dict[str, Any]:
     """Return active prompt templates, tracking custom modifications."""
     cfg = load_slots_config(path)
     custom_prompts = cfg.get("prompts", {})
@@ -435,7 +704,7 @@ def update_fackel_preference(preference: str, path: str | None = None) -> str:
     return preference
 
 
-def compose_worker_prompt(worker_dict: Dict[str, Any], path: str | None = None) -> str:
+def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) -> str:
     """Compose the final system prompt based on sub_mode, role, and checkboxes."""
     templates = get_prompt_templates(path)
     sys_default_text = templates["system_default"]["text"]
@@ -500,7 +769,7 @@ def compose_worker_prompt(worker_dict: Dict[str, Any], path: str | None = None) 
 
 
 @_serialized_mutation
-def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str, Any]:
+def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Create a new dynamic background worker."""
     cfg = load_slots_config(path, strict=True)
     workers = cfg.setdefault("dynamic_workers", [])
@@ -584,6 +853,11 @@ def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str
         "status": "idle",
         "current_activity": "Bereit",
         "history": [],
+        "pause_after": int(worker_data.get("pause_after", 0) or 0),
+        "pause_minutes": int(worker_data.get("pause_minutes", 0) or 0),
+        "pause_basis": str(worker_data.get("pause_basis", "runs") or "runs"),
+        "pause_counter": 0,
+        "pause_started_at": "",
     }
 
     workers.append(worker)
@@ -616,11 +890,13 @@ def record_activity(
     source: str,
     activity: str,
     status: str = "ok",
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
     path: str | None = None
 ) -> None:
     """Record an action in the live activity history timeline."""
-    cfg = load_slots_config(path, strict=True)
+    cfg = load_slots_config(path)  # non-strict: frische Defaults falls Datei fehlt;
+    # save_slots_config schreibt sie (Fix Task #1469 Finding d: strict crashte
+    # bei frischer Installation ohne Config-Datei)
     history = cfg.setdefault("activity_history", [])
 
     entry = {
@@ -661,7 +937,87 @@ def record_activity(
     save_slots_config(cfg, path)
 
 
-def get_activity_history(limit: int = 50, path: str | None = None) -> List[Dict[str, Any]]:
-    """Return the recent activity history."""
+def _parse_timestamp(value: Any) -> datetime | None:
+    """Parse an ISO timestamp string or datetime object, returning UTC aware datetime."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        val = value.strip()
+        if not val:
+            return None
+        if val.endswith("Z"):
+            val = val[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(val)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _entry_timestamp(entry: dict[str, Any]) -> datetime | None:
+    """Return the parsed UTC timestamp of an activity entry."""
+    ts = entry.get("timestamp")
+    if not ts:
+        return None
+    parsed = _parse_timestamp(ts)
+    if parsed and parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def get_activity_history(
+    limit: int = 50,
+    offset: int = 0,
+    source: str | list[str] | None = None,
+    status: str | list[str] | None = None,
+    since: str | datetime | None = None,
+    until: str | datetime | None = None,
+    order: str = "desc",
+    path: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return filtered and paginated activity history.
+
+    Parameters
+    ----------
+    limit: Maximum number of entries to return (default 50).
+    offset: Number of entries to skip after sorting.
+    source: Filter by source slot/worker id(s); string or list of strings.
+    status: Filter by status value(s); string or list of strings.
+    since: ISO timestamp or datetime; only return entries at or after this.
+    until: ISO timestamp or datetime; only return entries at or before this.
+    order: "desc" (newest first, default) or "asc" (oldest first).
+    path: Optional override path for the slots config file.
+    """
     cfg = load_slots_config(path)
-    return cfg.get("activity_history", [])[:limit]
+    history = list(cfg.get("activity_history", []))
+
+    since_dt = _parse_timestamp(since)
+    until_dt = _parse_timestamp(until)
+    sources = {source} if isinstance(source, str) else (set(source) if source else set())
+    statuses = {status} if isinstance(status, str) else (set(status) if status else set())
+
+    def _matches(entry: dict[str, Any]) -> bool:
+        if sources and entry.get("source") not in sources:
+            return False
+        if statuses and entry.get("status") not in statuses:
+            return False
+        ts = _entry_timestamp(entry)
+        if ts is None:
+            return False
+        if since_dt is not None and ts < since_dt:
+            return False
+        return not (until_dt is not None and ts > until_dt)
+
+    filtered = [e for e in history if _matches(e)]
+
+    reverse = (order.lower() == "desc")
+    if reverse:
+        # history is already newest-first, but re-sort to be safe.
+        sorted_entries = sorted(filtered, key=_entry_timestamp, reverse=True)
+    else:
+        sorted_entries = sorted(filtered, key=_entry_timestamp, reverse=False)
+
+    return sorted_entries[offset:offset + limit]

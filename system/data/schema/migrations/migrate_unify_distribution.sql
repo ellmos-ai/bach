@@ -4,6 +4,13 @@
 -- Datum: 2026-02-18
 -- Zweck: Tier-System entfernen, dist_type als einziges System
 -- Vorbedingung: Backup von bach.db erstellt
+-- FIX Task #1419 (2026-09-27): instance_identity wird per RENAME+INSERT
+--   migriert statt gedroppt (Siegel-/Instanzidentitaet bleibt erhalten);
+--   distribution_manifest wird vorsorglich angelegt, falls es fehlt
+--   (FK-Ziel fuer distribution_snapshot_files/file_versions und
+--   Quelle fuer v_distribution_stats).
+-- Hinweis: ALTER RENAME setzt eine existierende instance_identity voraus
+--   (Standard auf allen BACH-Instanzen); SQLite kennt kein ALTER IF EXISTS.
 -- ============================================================
 
 -- ============================================================
@@ -29,13 +36,15 @@ DROP TABLE IF EXISTS tier_patterns;
 DROP TABLE IF EXISTS filesystem_entries;
 DROP TABLE IF EXISTS tiers;
 
--- Alte instance_identity droppen (hat current_mode Spalte die entfaellt)
--- Daten werden spaeter neu erstellt via init_identity()
-DROP TABLE IF EXISTS instance_identity;
+-- instance_identity NICHT droppen: Siegel-/Instanzidentitaet wird erhalten
+-- (Migration in neue Struktur erfolgt in Phase 3, ohne current_mode)
 
 -- ============================================================
 -- PHASE 3: Neue Tabellen erstellen (dist_type-basiert)
 -- ============================================================
+
+-- Alte Tabelle (inkl. current_mode) beiseite legen, NICHT droppen
+ALTER TABLE instance_identity RENAME TO instance_identity_old;
 
 CREATE TABLE IF NOT EXISTS instance_identity (
     instance_id TEXT PRIMARY KEY,
@@ -51,6 +60,34 @@ CREATE TABLE IF NOT EXISTS instance_identity (
     seal_last_verified TIMESTAMP,
     base_release TEXT,
     base_release_date TIMESTAMP
+);
+
+-- Gespeicherte Identitaet/Siegel (instance_id, seal_status, kernel_hash,
+-- ...) in neue Struktur uebernehmen; nur current_mode entfaellt.
+INSERT INTO instance_identity (
+    instance_id, instance_name, created, forked_from,
+    seal_status, seal_broken_at, seal_broken_by, seal_broken_reason,
+    kernel_hash, kernel_version, seal_last_verified,
+    base_release, base_release_date
+) SELECT
+    instance_id, instance_name, created, forked_from,
+    seal_status, seal_broken_at, seal_broken_by, seal_broken_reason,
+    kernel_hash, kernel_version, seal_last_verified,
+    base_release, base_release_date
+FROM instance_identity_old;
+
+DROP TABLE instance_identity_old;
+
+-- distribution_manifest anlegen, falls noch nicht vorhanden
+-- (FK-Ziel fuer snapshot_files/file_versions, Quelle fuer v_distribution_stats)
+CREATE TABLE IF NOT EXISTS distribution_manifest (
+    id INTEGER PRIMARY KEY,
+    path TEXT UNIQUE NOT NULL,
+    dist_type INTEGER DEFAULT 2,
+    template_hash TEXT,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS distribution_snapshots (

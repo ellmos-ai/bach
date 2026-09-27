@@ -39,36 +39,78 @@ def _log(workdir: Path, msg: str) -> None:
         pass
 
 
-def offene_tasks(db: str, project: str) -> list[dict]:
+def offene_tasks(
+    db: str,
+    project: str,
+    pickup_filter: dict | None = None,
+    slot: dict | None = None,
+) -> list[dict]:
     """Offene Tasks eines Projekts, erfuellte Abhaengigkeiten zuerst.
 
+    Optional kann ein pickup_filter oder slot uebergeben werden, um
+    nur passende Tasks abzuarbeiten.
     Lesend ueber eine read-only-Verbindung: Schreiben laeuft ausschliesslich
     ueber die BACH-CLI, damit der DB-Guard nicht umgangen wird.
     """
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     try:
-        rows = con.execute(
-            "SELECT id, title, description, depends_on, status, priority "
-            "FROM tasks WHERE (project = ? OR category = ?) "
-            "AND status NOT IN ('done','cancelled','completed','in_progress','blocked') "
-            "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
-            "WHEN 'P3' THEN 3 ELSE 4 END, id",
-            (project, project),
-        ).fetchall()
-        erledigt = {
-            r[0] for r in con.execute(
-                "SELECT id FROM tasks WHERE (project = ? OR category = ?) AND status = 'done'", (project, project)
-            )
-        }
+        col_names = {c[1] for c in con.execute("PRAGMA table_info(tasks)").fetchall()}
+        cols = ["id", "title", "description", "depends_on", "status", "priority"]
+        for opt_col in ("category", "project", "tags", "required_model", "assigned_slot"):
+            if opt_col in col_names:
+                cols.append(opt_col)
+        cols_str = ", ".join(cols)
+
+        if project == "all":
+            rows = con.execute(
+                f"SELECT {cols_str} FROM tasks "
+                "WHERE status NOT IN ('done','cancelled','completed','in_progress','blocked') "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "WHEN 'P3' THEN 3 ELSE 4 END, id"
+            ).fetchall()
+            erledigt = {
+                r[0] for r in con.execute(
+                    "SELECT id FROM tasks WHERE status = 'done'"
+                )
+            }
+        else:
+            rows = con.execute(
+                f"SELECT {cols_str} FROM tasks "
+                "WHERE (project = ? OR category = ?) "
+                "AND status NOT IN ('done','cancelled','completed','in_progress','blocked') "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "WHEN 'P3' THEN 3 ELSE 4 END, id",
+                (project, project),
+            ).fetchall()
+            erledigt = {
+                r[0] for r in con.execute(
+                    "SELECT id FROM tasks WHERE (project = ? OR category = ?) AND status = 'done'",
+                    (project, project),
+                )
+            }
     finally:
         con.close()
 
     tasks = [dict(r) for r in rows]
+    effective_slot = slot or ({"pickup_filter": pickup_filter} if pickup_filter else None)
+
     # Ein Task, dessen Vorgaenger noch offen ist, wartet - sonst baut das
     # Modell auf etwas auf, das es noch gar nicht gibt.
     bereit = []
     for t in tasks:
+        if effective_slot:
+            from hub._services.chat.slots_config import match_task_to_pickup_filter
+
+            p_filter = (
+                effective_slot
+                if "enabled" in effective_slot
+                else effective_slot.get("pickup_filter")
+            )
+            if isinstance(p_filter, dict) and p_filter.get("enabled"):
+                if not match_task_to_pickup_filter(t, effective_slot):
+                    continue
+
         dep = (t.get("depends_on") or "").strip()
         if not dep:
             bereit.append(t)

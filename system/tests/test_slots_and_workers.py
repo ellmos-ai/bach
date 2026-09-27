@@ -33,6 +33,7 @@ from hub._services.chat.slots_config import (
     is_slot_paused,
     list_workers,
     load_slots_config,
+    match_task_to_pickup_filter,
     record_activity,
     remove_worker,
     save_slots_config,
@@ -359,6 +360,44 @@ class TestSlotsConfigCRUD:
         assert is_slot_paused(slot) is True
         assert slot["pause_counter"] == 0
 
+
+
+    def test_pause_basis_tasks_only_increments_on_tasks(self, tmp_path):
+        from hub._services.chat.slots_config import (
+            get_slot_pause_info,
+            bump_pause_counter,
+            is_slot_paused,
+            update_slot,
+            get_slot,
+            initialize_slots_config,
+        )
+        cfg_file = tmp_path / "pause-basis-test.json"
+        initialize_slots_config(str(cfg_file))
+        update_slot(
+            "buddha_always_on",
+            {"pause_after": 2, "pause_minutes": 10, "pause_basis": "tasks"},
+            path=str(cfg_file),
+        )
+        slot = get_slot("buddha_always_on", path=str(cfg_file))
+
+        # Event type "runs" must NOT increment when basis is "tasks"
+        assert bump_pause_counter(slot, event_type="runs") is False
+        assert slot["pause_counter"] == 0
+
+        # Event type "tasks" increments counter
+        assert bump_pause_counter(slot, event_type="tasks") is False
+        assert slot["pause_counter"] == 1
+        assert is_slot_paused(slot) is False
+
+        # Second task reaches threshold -> pause starts!
+        assert bump_pause_counter(slot, event_type="tasks") is True
+        assert is_slot_paused(slot) is True
+        assert slot["pause_counter"] == 0
+
+        info = get_slot_pause_info(slot)
+        assert info["is_paused"] is True
+        assert info["remaining_minutes"] > 0
+        assert info["pause_basis"] == "tasks"
 
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
@@ -1629,3 +1668,349 @@ class TestControlHandlerEndpoints:
 
         assert responses[-1][1] == 400
         assert "Assignment verweigert" in responses[-1][0]["error"]
+
+
+class TestSlotsConfigVersionAndDefaults:
+    def test_initialize_slots_config_creates_file_with_version_3_and_defaults(self, tmp_path):
+        cfg_file = tmp_path / "init-defaults-v3.json"
+        assert not cfg_file.exists()
+
+        cfg = initialize_slots_config(str(cfg_file))
+
+        assert cfg_file.exists()
+        assert cfg["version"] == 3
+        assert "buddha_always_on" in cfg["slots"]
+        always_on = cfg["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+        assert always_on["pickup_filter"]["priorities"] == ["P1", "P2"]
+        assert "pause_after" in always_on
+        assert "pause_minutes" in always_on
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == always_on["pickup_filter"]
+
+    def test_load_slots_config_migrates_v2_to_v3_adding_pickup_filter(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v2-v3.json"
+        v2_cfg = {
+            "version": 2,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": dict(DEFAULT_CORE_SLOTS["buddha_chat"]),
+                "buddha_always_on": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_always_on"].items()
+                    if k != "pickup_filter"
+                },
+                "buddha_connector": dict(DEFAULT_CORE_SLOTS["buddha_connector"]),
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v2_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        always_on = loaded["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+
+    def test_load_slots_config_migrates_v1_to_v3_adding_pause_and_pickup_filter(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v1-v3.json"
+        pause_fields = {"pause_after", "pause_minutes", "pause_basis", "pause_counter", "pause_started_at"}
+        v1_cfg = {
+            "version": 1,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_chat"].items()
+                    if k not in pause_fields
+                },
+                "buddha_always_on": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_always_on"].items()
+                    if k not in pause_fields and k != "pickup_filter"
+                },
+                "buddha_connector": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_connector"].items()
+                    if k not in pause_fields
+                },
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v1_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        for slot_id in DEFAULT_CORE_SLOTS:
+            slot = loaded["slots"][slot_id]
+            assert "pause_after" in slot
+            assert "pause_minutes" in slot
+            assert "pause_counter" in slot
+        always_on = loaded["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+
+    def test_load_slots_config_keeps_existing_pickup_filter_on_v3(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v3-keep-filter.json"
+        custom_filter = {
+            "enabled": False,
+            "categories": ["INBOX", "TASK"],
+            "priorities": ["P0"],
+            "tags": ["urgent"],
+            "exclude_tags": ["delegated"],
+        }
+        v3_cfg = {
+            "version": 3,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": dict(DEFAULT_CORE_SLOTS["buddha_chat"]),
+                "buddha_always_on": {
+                    **DEFAULT_CORE_SLOTS["buddha_always_on"],
+                    "pickup_filter": custom_filter,
+                },
+                "buddha_connector": dict(DEFAULT_CORE_SLOTS["buddha_connector"]),
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v3_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == custom_filter
+
+    def test_system_data_slots_config_exists_with_version_3_and_pickup_filter(self):
+        system_slots_file = Path(__file__).parent.parent / "system" / "data" / "slots_config.json"
+        assert system_slots_file.exists(), f"system/data/slots_config.json fehlt: {system_slots_file}"
+        cfg = load_slots_config(str(system_slots_file), strict=True)
+        assert cfg["version"] == 3
+        assert "buddha_always_on" in cfg["slots"]
+        always_on = cfg["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+        assert always_on["pickup_filter"]["priorities"] == ["P1", "P2"]
+        assert isinstance(cfg.get("dynamic_workers"), list)
+        assert isinstance(cfg.get("activity_history"), list)
+
+
+class TestMatchTaskToPickupFilter:
+    """Direct unit tests for match_task_to_pickup_filter."""
+
+    @pytest.mark.parametrize(
+        "task,slot_filter,expected",
+        [
+            # enabled match / mismatch by category
+            ({"categories": ["INBOX"]}, {"enabled": True, "categories": ["INBOX"]}, True),
+            ({"categories": ["DONE"]}, {"enabled": True, "categories": ["INBOX"]}, False),
+            # disabled filter rejects everything
+            ({"categories": ["INBOX"]}, {"enabled": False, "categories": ["INBOX"]}, False),
+            # missing / malformed filter rejects everything
+            ({"categories": ["INBOX"]}, None, False),
+            ({"categories": ["INBOX"]}, "invalid", False),
+            # categories: multiple values, string normalization
+            ({"categories": "WORK"}, {"enabled": True, "categories": ["INBOX", "WORK"]}, True),
+            ({"categories": ["MEETING"]}, {"enabled": True, "categories": ["INBOX", "WORK"]}, False),
+            # priority
+            ({"priority": "P1"}, {"enabled": True, "priorities": ["P1", "P2"]}, True),
+            ({"priority": "P3"}, {"enabled": True, "priorities": ["P1", "P2"]}, False),
+            # tags
+            ({"tags": ["urgent"]}, {"enabled": True, "tags": ["urgent", "blocking"]}, True),
+            ({"tags": ["normal"]}, {"enabled": True, "tags": ["urgent"]}, False),
+            # tags as string
+            ({"tags": "urgent"}, {"enabled": True, "tags": ["urgent"]}, True),
+            # exclude tags
+            ({"tags": ["blocked"]}, {"enabled": True, "exclude_tags": ["blocked"]}, False),
+            ({"tags": ["ok"]}, {"enabled": True, "exclude_tags": ["blocked"]}, True),
+            # empty filter (enabled but no restrictions) matches any task
+            ({"categories": ["ANY"], "priority": "P9", "tags": ["whatever"]}, {"enabled": True}, True),
+            # combination: all criteria must match
+            (
+                {"categories": ["INBOX"], "priority": "P1", "tags": ["urgent"]},
+                {"enabled": True, "categories": ["INBOX"], "priorities": ["P1"], "tags": ["urgent"]},
+                True,
+            ),
+            (
+                {"categories": ["INBOX"], "priority": "P1", "tags": ["blocked"]},
+                {"enabled": True, "categories": ["INBOX"], "priorities": ["P1"], "exclude_tags": ["blocked"]},
+                False,
+            ),
+        ],
+    )
+    def test_match_task_to_pickup_filter(self, task, slot_filter, expected):
+        slot = {"pickup_filter": slot_filter}
+        assert match_task_to_pickup_filter(task, slot) is expected
+
+    def test_empty_slot_filter_dict_rejects(self):
+        # A slot with an empty dict as pickup_filter is treated as missing/malformed
+        assert match_task_to_pickup_filter({"categories": ["INBOX"]}, {"pickup_filter": {}}) is False
+
+    def test_match_task_sqlite_category_project_and_tags(self):
+        slot = {
+            "pickup_filter": {
+                "enabled": True,
+                "categories": ["INBOX"],
+                "priorities": ["P1", "P2"],
+                "tags": ["urgent"],
+                "exclude_tags": ["delegated"],
+            }
+        }
+        # Matches via singular 'category' and comma-separated tags
+        task1 = {"category": "INBOX", "priority": "P1", "tags": "urgent, review"}
+        assert match_task_to_pickup_filter(task1, slot) is True
+
+        # Matches via 'project'
+        task2 = {"project": "INBOX", "priority": "P2", "tags": "urgent"}
+        assert match_task_to_pickup_filter(task2, slot) is True
+
+        # Rejected via exclude_tags in comma-separated string
+        task3 = {"category": "INBOX", "priority": "P1", "tags": "urgent, delegated"}
+        assert match_task_to_pickup_filter(task3, slot) is False
+
+        # Rejected via category mismatch
+        task4 = {"category": "OTHER", "priority": "P1", "tags": "urgent"}
+        assert match_task_to_pickup_filter(task4, slot) is False
+
+    def test_match_task_model_and_slot_binding(self):
+        slot = {
+            "id": "buddha_always_on",
+            "model": "qwen3.8:27b-mlx",
+            "pickup_filter": {"enabled": True},
+        }
+        # Matching model and slot
+        task1 = {"required_model": "qwen3.8:27b-mlx", "assigned_slot": "buddha_always_on"}
+        assert match_task_to_pickup_filter(task1, slot) is True
+
+        # Mismatched model
+        task2 = {"required_model": "glm-5.3:cloud"}
+        assert match_task_to_pickup_filter(task2, slot) is False
+
+        # Mismatched slot
+        task3 = {"assigned_slot": "buddha_chat"}
+        assert match_task_to_pickup_filter(task3, slot) is False
+
+        # Task without model/slot restrictions passes
+        task4 = {"required_model": None, "assigned_slot": None}
+        assert match_task_to_pickup_filter(task4, slot) is True
+
+
+class TestOffeneTasksPickupFilter:
+    """Tests for offene_tasks filtering with slot/pickup_filter."""
+
+    def test_offene_tasks_filters_by_slot_pickup_filter(self, tmp_path):
+        import sqlite3
+
+        from hub._services.chat.task_runner import offene_tasks
+        db_path = tmp_path / "test_tasks.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE tasks ("
+                "id INTEGER PRIMARY KEY, title TEXT, description TEXT, depends_on TEXT, "
+                "status TEXT, priority TEXT, project TEXT, category TEXT, tags TEXT, "
+                "required_model TEXT, assigned_slot TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (1, 'Inbox P1', '', '', 'pending', 'P1', 'bach', 'INBOX', 'urgent', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (2, 'Inbox P3', '', '', 'pending', 'P3', 'bach', 'INBOX', 'urgent', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (3, 'Inbox Delegated', '', '', 'pending', 'P1', 'bach', 'INBOX', 'delegated', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (4, 'General P1', '', '', 'pending', 'P1', 'bach', 'general', '', NULL, NULL)"
+            )
+
+        slot = {
+            "pickup_filter": {
+                "enabled": True,
+                "categories": ["INBOX"],
+                "priorities": ["P1", "P2"],
+                "exclude_tags": ["delegated"],
+            }
+        }
+        # With slot filter, only task 1 should match
+        tasks = offene_tasks(str(db_path), "all", slot=slot)
+        assert len(tasks) == 1
+        assert tasks[0]["id"] == 1
+
+        # Without filter, all 4 open tasks match
+        all_tasks = offene_tasks(str(db_path), "all")
+        assert len(all_tasks) == 4
+
+
+class TestActivityHistoryAndEndpoint:
+    """Tests for get_activity_history and GET /api/activity."""
+
+    def test_get_activity_history_filtering_and_pagination(self, tmp_path):
+        from hub._services.chat.slots_config import (
+            get_activity_history,
+            initialize_slots_config,
+            record_activity,
+        )
+
+        cfg_file = tmp_path / "slots-activity.json"
+        initialize_slots_config(str(cfg_file))
+
+        record_activity("slot_a", "activity 1", status="ok", path=str(cfg_file))
+        record_activity("slot_b", "activity 2", status="ok", path=str(cfg_file))
+        record_activity("slot_a", "activity 3", status="error", path=str(cfg_file))
+
+        # Filter by source
+        hist_a = get_activity_history(source="slot_a", path=str(cfg_file))
+        assert len(hist_a) == 2
+        assert all(e["source"] == "slot_a" for e in hist_a)
+
+        # Filter by status
+        hist_err = get_activity_history(status="error", path=str(cfg_file))
+        assert len(hist_err) == 1
+        assert hist_err[0]["status"] == "error"
+
+        # Pagination: limit & offset
+        all_hist = get_activity_history(order="asc", path=str(cfg_file))
+        assert len(all_hist) == 3
+        paged = get_activity_history(limit=1, offset=1, order="asc", path=str(cfg_file))
+        assert len(paged) == 1
+        assert paged[0] == all_hist[1]
+
+    def test_api_activity_endpoint(self, tmp_path, monkeypatch):
+        import importlib
+
+        from hub._services.chat.slots_config import (
+            get_activity_history,
+            initialize_slots_config,
+            record_activity,
+        )
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        cfg_file = tmp_path / "endpoint-activity.json"
+        initialize_slots_config(str(cfg_file))
+        record_activity("slot_1", "action 1", status="ok", path=str(cfg_file))
+        record_activity("slot_2", "action 2", status="error", path=str(cfg_file))
+
+        monkeypatch.setattr(
+            "hub._services.chat.telegram_chat.get_activity_history",
+            lambda **kwargs: get_activity_history(**kwargs, path=str(cfg_file)),
+        )
+
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        responses = []
+        monkeypatch.setattr(handler, "_json", lambda body, code=200: responses.append((body, code)))
+
+        # GET /api/activity
+        handler.path = "/api/activity?limit=10&source=slot_1"
+        handler.do_GET()
+        assert responses[-1][1] == 200
+        assert responses[-1][0]["ok"] is True
+        assert len(responses[-1][0]["history"]) == 1
+        assert responses[-1][0]["history"][0]["source"] == "slot_1"
+
+        # GET /api/activity with invalid order
+        handler.path = "/api/activity?order=invalid"
+        handler.do_GET()
+        assert responses[-1][1] == 400
+        assert "order" in responses[-1][0]["error"]

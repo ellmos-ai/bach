@@ -61,6 +61,25 @@ os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
 os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
 
 
+def pytest_configure(config):
+    """Redirect pytest's basetemp out of the protected source checkout.
+
+    Pytest registers an atexit cleanup for ``--basetemp`` that removes the
+    directory. When the user points that into ``system/data`` or similar
+    protected source-runtime roots, the audit hook blocks the cleanup writes
+    (``RuntimeError: source runtime write blocked: os.mkdir``) and the
+    ``_guard_source_runtime_dirs`` fixture fails its final assertion. We
+    therefore force basetemp into the per-test ``BACH_RUNTIME_DIR`` unless the
+    caller explicitly chose a location outside the protected checkout roots.
+    """
+    basetemp = config.getoption("basetemp")
+    if basetemp is not None and not _source_runtime_path(basetemp):
+        return
+    target = Path(os.environ["BACH_RUNTIME_DIR"])
+    target.mkdir(parents=True, exist_ok=True)
+    config.option.basetemp = str(target)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _bootstrap_private_slots_config():
     """Materialize the private slots config before strict Control API tests."""
