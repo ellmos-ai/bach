@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
 from .base import BaseHandler
+from ._services.task_schema import inspect_task_dependencies
 from ._services.user_config_store import load_user_config, update_user_config
 
 
@@ -398,14 +399,14 @@ class SessionHandler(BaseHandler):
             """).fetchall()
 
             for task in blocked_with_deps:
-                deps = [int(x) for x in task['depends_on'].split(',') if x.strip()]
-                # Pruefen ob alle Dependencies done sind
-                done_deps = conn.execute(f"""
-                    SELECT COUNT(*) FROM tasks
-                    WHERE id IN ({','.join('?' * len(deps))}) AND status = 'done'
-                """, deps).fetchone()[0]
-
-                if done_deps == len(deps):
+                dependency_state = inspect_task_dependencies(conn, task['depends_on'])
+                if dependency_state['invalid']:
+                    results.append(
+                        f" [!] Task {task['id']} hat ungueltige depends_on-Werte: "
+                        + ", ".join(dependency_state['invalid'])
+                    )
+                    checks_passed = False
+                elif not dependency_state['blocked']:
                     results.append(f" [!] Task {task['id']} kann entblockt werden!")
                     results.append(f"     \"{task['title'][:40]}...\"")
                     results.append(f"     --> bach task unblock {task['id']}")

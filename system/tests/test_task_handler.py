@@ -279,6 +279,17 @@ class TestList:
         assert "Fix critical bug" in output
         assert "bis 2026-09-15" in output
 
+    def test_list_all_marks_malformed_dependency_blocked(self, seeded_handler, seeded_env):
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE tasks SET depends_on = 'P1' WHERE id = 3")
+
+        ok, output = seeded_handler.handle("list", ["all"])
+
+        assert ok is True
+        assert "INVALID depends_on: P1" in output
+        assert "Old task" in output
+
 
 # ═══════════════════════════════════════════════════════════════
 # DONE
@@ -618,6 +629,19 @@ class TestDepends:
         ok, output = seeded_handler.handle("depends", ["999"])
         assert ok is False
         assert "nicht gefunden" in output
+
+    def test_malformed_dependency_requires_clear(self, seeded_handler, seeded_env):
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE tasks SET depends_on = 'P1' WHERE id = 2")
+
+        ok, output = seeded_handler.handle("depends", ["2"])
+        assert ok is False
+        assert "--clear" in output
+
+        cleared, clear_output = seeded_handler.handle("depends", ["2", "--clear"])
+        assert cleared is True
+        assert "entfernt" in clear_output
 
 
 # ═══════════════════════════════════════════════════════════════
