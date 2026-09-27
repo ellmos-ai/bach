@@ -136,3 +136,24 @@ def test_structured_task_list_exposes_due_date_with_legacy_fallback(
 
     expected_due = "2026-09-15" if with_due_column else None
     assert rows[0]["due_date"] == expected_due
+
+
+def test_structured_task_list_fails_closed_on_malformed_dependency(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE tasks ("
+        "id INTEGER PRIMARY KEY, priority TEXT, title TEXT, status TEXT, "
+        "category TEXT, description TEXT, assigned_to TEXT, delegated_to TEXT, "
+        "depends_on TEXT, created_at TEXT, completed_at TEXT, updated_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO tasks (id, priority, title, status, depends_on) "
+        "VALUES (1, 'P3', 'Legacy', 'done', 'P1')"
+    )
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    rows = proxy.list(status=None)
+
+    assert rows[0]["is_blocked_by_dep"] is True

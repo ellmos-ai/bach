@@ -12,6 +12,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Task-Sicherheit bei Legacy-Abhängigkeiten und Rheingold-ID-Kollisionen (Task #1344):** Ein gemeinsamer Parser behandelt nichtnumerische oder fehlende `depends_on`-Ziele nun auf API-, CLI-, Session- und Chat-Runner-Pfaden fail-closed, statt Tasklisten abstürzen zu lassen oder Arbeit fälschlich freizugeben. Rheingold-Add, Draft-Promotion und Pull überschreiben bei kollidierenden positiven IDs keine lokalen Tasks mehr; sie brechen mit einem expliziten Kollisionsbefund ab und erhalten Draft-/Lokaldaten zur kontrollierten Reconciliation.
 - **Einheitliche FERTIG-Erkennung:** `ist_fertig()` in `chat_runtime` prüft Anfang und Ende der Antwort; der `/auto`-Loop (`_auto_next`) und der Idle-Worker nutzen dieselbe Regel. Vorher las `_auto_next` nur die ersten 200 Zeichen und schob nach einem Abschlussbericht mit FERTIG am Ende weiter an.
 
 ### Added

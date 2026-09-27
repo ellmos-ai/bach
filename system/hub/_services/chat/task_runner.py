@@ -26,6 +26,8 @@ import sys
 import time
 from pathlib import Path
 
+from hub._services.task_schema import parse_task_dependency_ids
+
 
 def _log(workdir: Path, msg: str) -> None:
     line = f"[{time.strftime('%H:%M:%S')}] {msg}"
@@ -71,11 +73,10 @@ def offene_tasks(db: str, project: str) -> list[dict]:
         if not dep:
             bereit.append(t)
             continue
-        try:
-            ids = {int(x) for x in dep.replace(";", ",").split(",") if x.strip()}
-        except ValueError:
-            bereit.append(t)
+        dep_ids, invalid = parse_task_dependency_ids(dep)
+        if invalid:
             continue
+        ids = set(dep_ids)
         if ids <= erledigt:
             bereit.append(t)
     return bereit
