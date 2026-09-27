@@ -84,6 +84,11 @@ def test_find_on_secret_ancestor_rejected(fake_home):
     assert check_safe_shell_args(["find", str(fake_home), "-name", "*.pub"])
 
 
+@pytest.mark.parametrize("opts", [["-L"], ["-H"], ["-P"], ["-O3"], ["-D", "stat"], ["-L", "-O2"]])
+def test_find_leading_options_do_not_hide_start_path(fake_home, opts):
+    assert check_safe_shell_args(["find", *opts, str(fake_home), "-name", "*.pub"])
+
+
 def test_find_on_clean_dir_allowed(fake_home):
     assert check_safe_shell_args(["find", str(fake_home / "projekt"), "-name", "*.py"]) is None
 

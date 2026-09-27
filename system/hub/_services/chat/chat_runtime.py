@@ -277,9 +277,14 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
         for t in rest))
     if recursive:
         if base == "find":
-            # Startpfade stehen vor dem ersten Ausdruck (-name, (, ! ...).
+            # Startpfade stehen vor dem ersten Ausdruck (-name, (, ! ...),
+            # nach den fuehrenden Optionen -H/-L/-P, -O<n> und -D <arg>.
             targets = []
-            for t in rest:
+            i = 0
+            while i < len(rest) and (rest[i] in ("-H", "-L", "-P", "-D")
+                                     or rest[i].startswith("-O")):
+                i += 2 if rest[i] == "-D" else 1
+            for t in rest[i:]:
                 if t.startswith(("-", "(", "!")):
                     break
                 targets.append(t)
