@@ -111,10 +111,8 @@ class TestIsSafeCommand:
     @pytest.mark.parametrize("cmd", [
         "ls /home",
         "cat /etc/hosts",
-        "grep -r pattern .",
         "git status",
         "git log --oneline",
-        "find . -name '*.py'",
         "echo hello world",
         "date",
         "whoami",
@@ -123,21 +121,15 @@ class TestIsSafeCommand:
         "df -h",
         "du -sh /tmp",
         "uptime",
+        "find . -name '*.py'",
         "ps aux",
-        "docker ps",
-        "curl https://example.com",
         "ollama list",
-        "brew list",
-        "pip list",
-        "pip3 install requests",
-        "bach status",
         "wc -l file.txt",
         "file /tmp/test",
         "stat /tmp/test",
         "head -n 10 file.txt",
         "tail -f logfile",
         "which python",
-        "env",
     ])
     def test_safe_commands_pass(self, cmd):
         assert is_safe_command(cmd) is True
@@ -157,6 +149,14 @@ class TestIsSafeCommand:
         "systemctl stop sshd",
         "mkfs.ext4 /dev/sda1",
         "dd if=/dev/zero of=/dev/sda",
+        "docker ps",
+        "curl https://example.com",
+        "brew list",
+        "pip list",
+        "pip3 install requests",
+        "bach status",
+        "env",
+        "grep -r pattern .",
     ])
     def test_unsafe_commands_rejected(self, cmd):
         assert is_safe_command(cmd) is False
@@ -1831,5 +1831,5 @@ class TestFackelPreference:
         )
         assert 'elif path == "/api/fackel":' in src
         assert '"fackel_preference": get_fackel_preference()' in src
-        assert 'app.add_handler(CommandHandler("fackel", cmd_fackel))' in src
+        assert 'app.add_handler(CommandHandler("fackel", _require_owner(cmd_fackel)))' in src
         assert 'setFackel' in src

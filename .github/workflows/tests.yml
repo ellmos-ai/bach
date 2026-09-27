@@ -61,13 +61,13 @@ jobs:
           # wird installiert, damit die Dokument-Extraktions-Seam-Tests real laufen.
           grep -v -E '^(assistant-core|accounts-core) @' requirements.txt > requirements-ci.txt
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-ci.txt pytest pytest-timeout
+          python -m pip install -r requirements-ci.txt pytest pytest-timeout "python-telegram-bot>=22,<23"
 
       - name: "pytest (T-20260927-676283213: alle lokal ohne Live-Dienste gruenen Dateien)"
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          python -m pytest -p no:cacheprovider -rA --timeout=120 --timeout-method=thread \
+          python -m pytest -q -rA -p no:cacheprovider --timeout=120 --timeout-method=thread \
             system/tests/test_abo_handler.py \
             system/tests/test_activity_tracker.py \
             system/tests/test_agent_launcher_handler.py \
@@ -285,4 +285,10 @@ jobs:
             system/tests/test_web_parse_handler.py \
             system/tests/test_web_scrape_handler.py \
             system/tests/test_wiki_handler.py \
-            system/tests/test_worker_seam_fixes.py
+            system/tests/test_worker_seam_fixes.py \
+            system/tests/test_core.py \
+            system/tests/test_safe_exec.py \
+            system/tests/test_safe_shell_args.py \
+            system/tests/test_chat_runtime_security.py \
+            system/tests/test_telegram_owner_check.py \
+            system/tests/test_sandbox_handler.py
