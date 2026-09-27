@@ -39,13 +39,13 @@ Task: 995, 1071
 import json
 import os
 import re
-import shlex
 import sys
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import FrozenSet, List, Tuple
 from .base import BaseHandler
+from .safe_exec import CommandRejected, base_command_name, dequote, tokenize, which_checked
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -206,18 +206,23 @@ class SandboxHandler(BaseHandler):
             return False, f"Fehler: {e}"
 
     def _shell(self, cmd: str) -> Tuple[bool, str]:
-        """Shell-Befehl mit Sandbox (temp cwd, timeout, capability check)."""
-        allowed, reason = self._check_shell_allowed(cmd)
+        """Shell-Befehl mit Sandbox (temp cwd, timeout, capability check).
+
+        Fuehrt NIE mit shell=True aus: argv wird tokenisiert und der
+        Basisbefehl per shutil.which() gegen die Allowlist aufgeloest
+        (siehe hub/safe_exec.py). So kann kein Metazeichen (&& | ; $()
+        etc.) einen zweiten, nicht erlaubten Befehl anhaengen."""
+        allowed, reason, argv = self._check_shell_allowed(cmd)
         if not allowed:
             return False, reason
 
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 result = self._isolated(
-                    cmd,
+                    argv,
                     timeout=self.TIMEOUT,
                     cwd=tmpdir,
-                    shell=True,
+                    shell=False,
                 )
                 if result.timed_out:
                     return False, f"TIMEOUT ({self.TIMEOUT}s)"
@@ -340,44 +345,52 @@ class SandboxHandler(BaseHandler):
             return False
 
     def _extract_base_command(self, cmd: str) -> str:
-        """Extrahiert den Basis-Befehl (erstes Token) aus einem Shell-String."""
-        cmd_stripped = cmd.strip()
-        if not cmd_stripped:
-            return ""
-        # Windows-Pfade: Backslash ist Pfadtrenner, kein Escape —
-        # vor shlex behandeln (shlex posix frisst Backslashes)
-        first_raw = cmd_stripped.split()[0]
-        if "\\" in first_raw:
-            base = first_raw.strip('"').strip("'")
-            return Path(base.rsplit("\\", 1)[-1]).stem.lower()
-        try:
-            tokens = shlex.split(cmd_stripped, posix=(os.name != "nt"))
-            if tokens:
-                raw = tokens[0].strip('"').strip("'")
-                return Path(raw).stem.lower()
-        except ValueError:
-            pass
-        first = cmd_stripped.split()[0] if cmd_stripped.split() else ""
-        return Path(first).stem.lower()
+        """Extrahiert den Basis-Befehl (erstes Token) aus einem Shell-String.
 
-    def _check_shell_allowed(self, cmd: str) -> Tuple[bool, str]:
+        Delegiert an hub.safe_exec.tokenize()/base_command_name() (fail-closed
+        shlex-Tokenisierung statt naivem .split()[0], das an Quoting/Leerzeichen
+        in Pfaden mit Spaces scheiterte, siehe T-20260921-750493182). Gibt bei
+        Ablehnung "" zurueck (Kompatibilitaet zu bestehenden Aufrufern/Tests)."""
+        first_raw = cmd.strip().split()[0] if cmd.strip() else ""
+        if "\\" in first_raw:
+            # Windows-Pfad: unter POSIX wuerde shlex die Backslashes schlucken.
+            return base_command_name(first_raw.rsplit("\\", 1)[-1])
+        try:
+            tokens = tokenize(cmd)
+        except CommandRejected:
+            return ""
+        return base_command_name(tokens[0])
+
+    def _check_shell_allowed(self, cmd: str) -> Tuple[bool, str, List[str]]:
+        """Prueft cmd fail-closed und liefert das fertige argv fuer shell=False.
+
+        Gibt (allowed, reason, argv) zurueck. `argv` ist nur bei allowed=True
+        gefuellt - der von shutil.which() aufgeloeste, echte Pfad als argv[0],
+        NIE der vom Aufrufer gelieferte String (siehe hub/safe_exec.py)."""
         cmd_lower = cmd.lower().strip()
         for pattern in self.BLOCKED_PATTERNS:
             escaped = re.escape(pattern)
             if re.search(rf"(?:^|\s){escaped}(?:\s|$)", cmd_lower):
-                return False, f"BLOCKIERT: Befehl enthaelt verbotenes Muster '{pattern}'"
+                return False, f"BLOCKIERT: Befehl enthaelt verbotenes Muster '{pattern}'", []
 
-        base_cmd = self._extract_base_command(cmd)
-        if not base_cmd:
-            return False, "BLOCKIERT: Leerer Befehl"
+        try:
+            tokens = tokenize(cmd)
+        except CommandRejected as e:
+            return False, f"BLOCKIERT: {e}", []
 
+        base_cmd = base_command_name(tokens[0])
         if base_cmd not in self._allowed_commands:
             return False, (
                 f"BLOCKIERT: '{base_cmd}' ist nicht in der Sandbox-Allowlist.\n"
                 f"Erlaubte Befehle: {', '.join(sorted(self._allowed_commands))}\n"
                 f"Hinzufuegen: bach sandbox allow {base_cmd}"
-            )
-        return True, ""
+            ), []
+
+        try:
+            resolved = which_checked(base_cmd)
+        except CommandRejected as e:
+            return False, f"BLOCKIERT: {e}", []
+        return True, "", [resolved, *(dequote(t) for t in tokens[1:])]
 
     def _policy(self) -> Tuple[bool, str]:
         from core.sandbox import HAS_RLIMIT, IS_POSIX
