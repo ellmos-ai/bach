@@ -5,6 +5,73 @@
 import sqlite3
 
 
+def parse_task_dependency_ids(value: object) -> tuple[list[int], list[str]]:
+    """Parse a legacy ``depends_on`` value without trusting its contents.
+
+    The column predates strict validation and therefore may contain labels such
+    as ``P1``.  Callers need both the valid IDs and the invalid tokens so they
+    can fail closed instead of crashing or treating malformed dependencies as
+    satisfied.
+    """
+    if value is None:
+        return [], []
+
+    ids: list[int] = []
+    invalid: list[str] = []
+    seen: set[int] = set()
+    for raw_token in str(value).replace(";", ",").split(","):
+        token = raw_token.strip()
+        if not token:
+            continue
+        try:
+            task_id = int(token)
+        except (TypeError, ValueError):
+            invalid.append(token)
+            continue
+        if task_id <= 0:
+            invalid.append(token)
+            continue
+        if task_id not in seen:
+            ids.append(task_id)
+            seen.add(task_id)
+    return ids, invalid
+
+
+def inspect_task_dependencies(
+    conn: sqlite3.Connection,
+    value: object,
+) -> dict[str, object]:
+    """Return a fail-closed dependency state for one task row."""
+    ids, invalid = parse_task_dependency_ids(value)
+    if not ids:
+        return {
+            "ids": ids,
+            "invalid": invalid,
+            "missing": [],
+            "unfinished": [],
+            "blocked": bool(invalid),
+        }
+
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT id, status FROM tasks WHERE id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    statuses = {int(row[0]): row[1] for row in rows}
+    missing = [task_id for task_id in ids if task_id not in statuses]
+    unfinished = [
+        task_id for task_id in ids
+        if task_id in statuses and statuses[task_id] != "done"
+    ]
+    return {
+        "ids": ids,
+        "invalid": invalid,
+        "missing": missing,
+        "unfinished": unfinished,
+        "blocked": bool(invalid or missing or unfinished),
+    }
+
+
 def task_has_due_date(conn: sqlite3.Connection) -> bool:
     """Return whether the current ``tasks`` table exposes ``due_date``."""
     return any(row[1] == "due_date" for row in conn.execute("PRAGMA table_info(tasks)"))
@@ -56,4 +123,3 @@ def ensure_task_claim_columns(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tasks_claimed_at ON tasks(claimed_at)"
     )
-

@@ -36,6 +36,8 @@ from ._services.task_schema import (
     task_has_due_date,
     ensure_task_claim_columns,
     task_has_claim_columns,
+    inspect_task_dependencies,
+    parse_task_dependency_ids,
 )
 from .task_audit import (
     apply_task_field_changes,
@@ -54,6 +56,8 @@ from .rheingold import (
     generate_draft_hash,
     sync_drafts_to_rheingold,
     pull_tasks_from_rheingold,
+    assert_local_task_id_available,
+    RheingoldTaskCollision,
     LEAD_CONFIG_FILE,
 )
 
@@ -277,11 +281,21 @@ class TaskHandler(BaseHandler):
                             task_id = res["id"]
                             with self._get_db() as conn:
                                 ensure_task_due_date(conn)
-                                conn.execute("""
-                                    INSERT OR REPLACE INTO tasks
-                                        (id, title, priority, category, description, status, due_date, created_at, source)
-                                    VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
-                                """, (task_id, title, priority, category, description, due_date, f"rheingold:{rheingold_url}"))
+                                existing = assert_local_task_id_available(
+                                    conn, task_id, title
+                                )
+                                if existing is None:
+                                    conn.execute("""
+                                        INSERT INTO tasks
+                                            (id, title, priority, category, description, status, due_date, created_at, source)
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
+                                    """, (task_id, title, priority, category, description, due_date, f"rheingold:{rheingold_url}"))
+                                else:
+                                    conn.execute("""
+                                        UPDATE tasks
+                                        SET priority = ?, category = ?, description = ?, due_date = ?, source = ?
+                                        WHERE id = ?
+                                    """, (priority, category, description, due_date, f"rheingold:{rheingold_url}", task_id))
                                 conn.commit()
 
                             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -310,6 +324,8 @@ class TaskHandler(BaseHandler):
                     f"  {title}{due_text}\n"
                     f"  (Wird bei erreichbarem Rheingold-Server automatisch synchronisiert via 'bach task sync')"
                 )
+            except RheingoldTaskCollision as e:
+                return False, f"[COLLISION] {e}"
             except Exception as e:
                 if force_remote:
                     return False, f"Rheingold-Fehler: {e}"
@@ -516,13 +532,9 @@ class TaskHandler(BaseHandler):
             task_list = []
             for r in rows:
                 item = dict(r)
-                is_blocked = False
-                if item['depends_on']:
-                    dep_ids = [int(x.strip()) for x in item['depends_on'].split(',') if x.strip()]
-                    total_unfinished = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE id IN ({','.join(['?']*len(dep_ids))}) AND status != 'done'", dep_ids).fetchone()[0]
-                    if total_unfinished > 0:
-                        is_blocked = True
-                item['is_blocked_by_dep'] = is_blocked
+                dependency_state = inspect_task_dependencies(conn, item['depends_on'])
+                item['is_blocked_by_dep'] = dependency_state['blocked']
+                item['invalid_dependencies'] = dependency_state['invalid']
                 task_list.append(item)
         
         if not task_list:
@@ -548,16 +560,23 @@ class TaskHandler(BaseHandler):
             partner = t['assigned_to'] or t['delegated_to'] or ""
             partner_suffix = f" →{partner}" if partner else ""
             blocked_mark = " (BLOCKED)" if t['is_blocked_by_dep'] else ""
+            invalid_mark = ""
+            if t['invalid_dependencies']:
+                invalid_mark = (
+                    " (INVALID depends_on: "
+                    + ", ".join(t['invalid_dependencies'])
+                    + ")"
+                )
             due_suffix = f" (bis {t['due_date']})" if t['due_date'] else ""
             if t['id'] < 0:
                 lines.append(
                     f"  [DRAFT {t['id']}] {t['priority']} {t['title'][:50]} (lokaler Entwurf)"
-                    f"{partner_suffix}{due_suffix}{blocked_mark}"
+                    f"{partner_suffix}{due_suffix}{blocked_mark}{invalid_mark}"
                 )
             else:
                 lines.append(
                     f"  [{t['id']}] {t['priority']} {t['title'][:50]}"
-                    f"{partner_suffix}{due_suffix}{blocked_mark}"
+                    f"{partner_suffix}{due_suffix}{blocked_mark}{invalid_mark}"
                 )
         
         return True, "\n".join(lines)
@@ -696,16 +715,8 @@ class TaskHandler(BaseHandler):
                     "WHERE status = 'blocked' AND depends_on IS NOT NULL"
                 ).fetchall()
                 for bc in blocked_cands:
-                    dep_ids = [int(x.strip()) for x in (bc['depends_on'] or '').split(',')
-                               if x.strip().isdigit()]
-                    if not dep_ids or task_id not in dep_ids:
-                        continue
-                    placeholders = ",".join(["?"] * len(dep_ids))
-                    unfinished = conn.execute(
-                        f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) "
-                        "AND status != 'done'", dep_ids
-                    ).fetchone()[0]
-                    if unfinished == 0:
+                    dep = inspect_task_dependencies(conn, bc['depends_on'])
+                    if task_id in dep['ids'] and not dep['blocked']:
                         blocked_row = dict(conn.execute(
                             "SELECT * FROM tasks WHERE id = ?", (bc['id'],)).fetchone())
                         now_unblock = conn.execute("SELECT datetime('now')").fetchone()[0]
@@ -1101,15 +1112,19 @@ class TaskHandler(BaseHandler):
             if not row:
                 return False, f"Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}"
             
-            current_deps = set()
-            if row['depends_on']:
-                current_deps = set(int(x) for x in row['depends_on'].split(',') if x.strip())
-            
             # Clear all
             if clear_all:
                 conn.execute("UPDATE tasks SET depends_on = NULL, updated_at = datetime('now') WHERE id = ?", (task_id,))
                 conn.commit()
                 return True, f"[OK] Task {task_id}: Alle Abhaengigkeiten entfernt"
+
+            parsed_deps, invalid_deps = parse_task_dependency_ids(row['depends_on'])
+            if invalid_deps:
+                return False, (
+                    f"Task {task_id} hat ungueltige depends_on-Werte: "
+                    f"{', '.join(invalid_deps)}. Zuerst mit --clear reparieren."
+                )
+            current_deps = set(parsed_deps)
             
             # Add dependency
             if on_id:
