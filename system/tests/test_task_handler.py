@@ -367,6 +367,28 @@ class TestDone:
         assert "entblockt" in output
         assert _task_row(db_path, 4)["status"] == "pending"
 
+    @pytest.mark.parametrize(
+        ("depends_on", "expected_status"),
+        [
+            ("1,P1", "blocked"),
+            ("1,999", "blocked"),
+            ("1;3", "pending"),
+            ("1,3", "pending"),
+        ],
+    )
+    def test_done_auto_unblock_uses_dependency_inspection(
+        self, seeded_handler, seeded_env, depends_on, expected_status
+    ):
+        """Auto-Unblock follows the shared fail-closed dependency inspection."""
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE tasks SET depends_on = ? WHERE id = 4", (depends_on,))
+
+        ok, output = seeded_handler.handle("done", ["1"])
+        assert ok is True
+        assert _task_row(db_path, 4)["status"] == expected_status
+        assert ("entblockt" in output) == (expected_status == "pending")
+
 
 # ═══════════════════════════════════════════════════════════════
 # BLOCK / UNBLOCK

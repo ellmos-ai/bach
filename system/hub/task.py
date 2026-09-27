@@ -715,16 +715,8 @@ class TaskHandler(BaseHandler):
                     "WHERE status = 'blocked' AND depends_on IS NOT NULL"
                 ).fetchall()
                 for bc in blocked_cands:
-                    dep_ids = [int(x.strip()) for x in (bc['depends_on'] or '').split(',')
-                               if x.strip().isdigit()]
-                    if not dep_ids or task_id not in dep_ids:
-                        continue
-                    placeholders = ",".join(["?"] * len(dep_ids))
-                    unfinished = conn.execute(
-                        f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) "
-                        "AND status != 'done'", dep_ids
-                    ).fetchone()[0]
-                    if unfinished == 0:
+                    dep = inspect_task_dependencies(conn, bc['depends_on'])
+                    if task_id in dep['ids'] and not dep['blocked']:
                         blocked_row = dict(conn.execute(
                             "SELECT * FROM tasks WHERE id = ?", (bc['id'],)).fetchone())
                         now_unblock = conn.execute("SELECT datetime('now')").fetchone()[0]
