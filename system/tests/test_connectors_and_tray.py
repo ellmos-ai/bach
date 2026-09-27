@@ -967,6 +967,17 @@ class TestBACHTray:
             tray._set_fackel("compute")
             assert tray.state["fackel_preference"] == "compute"
 
+    def test_remote_fackel_failure_never_writes_laptop_preference(self, tray):
+        tray.remote = True
+        original = tray.state["fackel_preference"]
+        with patch.object(tray, "_api", return_value=None), \
+             patch("hub.compute_lock.set_fackel_preference") as local_write, \
+             patch.object(tray, "_notify_error") as notify:
+            tray._set_fackel("ollama")
+        local_write.assert_not_called()
+        notify.assert_called_once()
+        assert tray.state["fackel_preference"] == original
+
     def test_build_menu_contains_fackel_submenu(self, tray):
         tray.state["connected"] = True
         tray.state["fackel_preference"] = "ollama"
