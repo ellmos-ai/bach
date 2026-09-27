@@ -31,7 +31,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, FrozenSet, Optional
+
+from hub import safe_exec
 from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
 from hub._services.chat import hooks  # Hook-Punkte fuer memory-/workflowhooker
 
@@ -252,6 +254,29 @@ BLOCKED_WRITE_PREFIXES = (
 BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 
 
+# Kleiner, harter Deny fuer die offensichtlichsten Secrets-Orte in den
+# LESE-Werkzeugen list_directory/read_file/search_text (direkt aus
+# LLM-Argumenten, potenziell prompt-injection-gesteuert - siehe Ticket
+# fuer den vollstaendigen Pfad-Scope: Wurzel-Allowlist, Symlink-Aufloesung,
+# generische Deny-Liste. Das hier verhindert nur den naheliegendsten
+# Exfiltrationspfad, kein vollstaendiger Schutz).
+_SECRET_PATH_SEGMENTS = frozenset({".ssh", ".credentials", "credentials"})
+
+
+def _is_secret_path(p: Path) -> bool:
+    """`~` und `..` erst aufloesen (expanduser+resolve), DANN pruefen -
+    sonst kann ein relativer Pfad oder ein Symlink den Vergleich auf den
+    falschen (unaufgeloesten) Pfad umlenken und den Deny umgehen."""
+    try:
+        resolved = Path(p).expanduser().resolve()
+    except OSError:
+        resolved = Path(p).expanduser()
+    if any(seg.lower() in _SECRET_PATH_SEGMENTS for seg in resolved.parts):
+        return True
+    name = resolved.name.lower()
+    return name.endswith(".pem") or name.startswith("id_")
+
+
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
     """Return error message if the path is blocked for writes, else None.
 
@@ -275,10 +300,79 @@ def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
 
 
 def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
+    """Fuehrt cmd ueber eine echte Shell aus (Pipes/&&/Umleitung erlaubt).
+
+    NUR fuer interne Aufrufer mit FESTEM, nicht von aussen kontrolliertem
+    cmd (system_status/ollama_info-Vorlagen). Fuer alles, was direkt aus
+    LLM-Tool-Argumenten stammt, IMMER run_shell_restricted() nehmen
+    (safe_shell/execute_command) - siehe hub/safe_exec.py fuer den Grund.
+    """
     timeout = min(max(timeout, 5), 120)
     try:
         r = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
+            timeout=timeout, stdin=subprocess.DEVNULL,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        out = r.stdout
+        if r.stderr:
+            out += "\n[stderr] " + r.stderr
+        return (out or "(keine Ausgabe)")[:4000]
+    except subprocess.TimeoutExpired:
+        return f"Timeout nach {timeout}s"
+    except Exception as e:
+        return f"Fehler: {e}"
+
+
+def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
+                          allowed: Optional[FrozenSet[str]] = None) -> str:
+    """Fuehrt cmd fail-closed aus - IMMER shell=False (hub/safe_exec.py).
+
+    Fuer safe_shell/execute_command: cmd kommt direkt aus einem
+    LLM-Tool-Aufruf. Der fruehere Bug dort: der Basisbefehl wurde geprueft
+    (is_safe_command/is_blocked), der KOMPLETTE String aber danach trotzdem
+    per shell=True ausgefuehrt - Metazeichen wie && | ; $() erlaubten
+    beliebige Befehlsverkettung unabhaengig von der Pruefung.
+    safe_exec.resolve_executable() loest argv[0] per shutil.which() auf und
+    lehnt nicht zitierte Metazeichen fail-closed ab. `allowed=None`
+    (execute_command/Full-Modus) heisst "jeder Basisbefehl", Verkettung
+    bleibt trotzdem verboten.
+    """
+    timeout = min(max(timeout, 5), 120)
+    try:
+        argv = safe_exec.resolve_executable(cmd, allowed)
+    except safe_exec.CommandRejected as e:
+        return f"Befehl blockiert (Sicherheit): {e}"
+    try:
+        r = subprocess.run(
+            argv, shell=False, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
+            timeout=timeout, stdin=subprocess.DEVNULL,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        out = r.stdout
+        if r.stderr:
+            out += "\n[stderr] " + r.stderr
+        return (out or "(keine Ausgabe)")[:4000]
+    except subprocess.TimeoutExpired:
+        return f"Timeout nach {timeout}s"
+    except Exception as e:
+        return f"Fehler: {e}"
+
+
+def run_argv(argv: list, timeout: int = CMD_TIMEOUT) -> str:
+    """Fuehrt ein FERTIGES argv aus - immer shell=False, kein Tokenisieren.
+
+    Fuer Faelle wie 'ollama show <modell>': genau EIN Argument kommt aus
+    einem LLM-Tool-Aufruf, der Rest ist fest. Da nie eine Shell beteiligt
+    ist, kann das Argument nicht ausbrechen - unabhaengig davon, was es
+    enthaelt (kein shlex.quote()-Escaping noetig, das unter Windows ohnehin
+    nicht griff, siehe Befund D)."""
+    timeout = min(max(timeout, 5), 120)
+    try:
+        r = subprocess.run(
+            argv, shell=False, capture_output=True, text=True,
             encoding='utf-8', errors='replace',
             timeout=timeout, stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
@@ -310,6 +404,25 @@ def _tool(name, desc, props, required=None):
     }
 
 
+# Einzige Quelle fuer die bach_command-Handler: sowohl die Tool-Schema-
+# Beschreibung (fuers Modell) als auch die Laufzeit-Allowlist (fuer den
+# Dispatch) werden HIERAUS gebaut - ein Handler in dieser Liste zu ergaenzen
+# reicht, es kann nicht mehr auseinanderlaufen (Befund B: die Schema-
+# Beschreibung war rein deskriptiv, der Dispatch pruefte den vom Modell
+# gelieferten Handler-String gar nicht gegen irgendeine Liste - "sandbox"
+# war z. B. ueber bach_command erreichbar, obwohl es dort nie beworben
+# wurde). "sandbox" bleibt ausgeschlossen: es hat seine eigene, engere
+# Shell-Allowlist (hub/sandbox.py) und ist ueber bach_command nicht als
+# Umweg dorthin gedacht.
+BACH_COMMAND_HANDLERS = (
+    "status", "task", "mem", "search", "help", "tools", "denkarium",
+    "calendar", "contact", "routine", "timer", "countdown", "news",
+    "newspaper", "lesson", "snapshot", "partner", "connector", "msg",
+    "backup", "web-parse", "web-scrape", "skills", "agent", "maintain",
+    "sync", "abo", "steuer", "gesundheit", "mediplaner", "haushalt",
+    "versicherung", "inbox", "wiki",
+)
+
 TOOLS_SAFE = [
     _tool("list_directory", "Dateien und Ordner in einem Verzeichnis auflisten", {
         "path": {"type": "string", "description": "Verzeichnispfad"},
@@ -331,7 +444,7 @@ TOOLS_SAFE = [
         "model": {"type": "string", "description": "Modellname (nur bei show)"},
     }),
     _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Kalender, Denkarium, News, etc.)", {
-        "handler": {"type": "string", "description": "Handler: status, task, mem, search, help, tools, denkarium, calendar, contact, routine, timer, countdown, news, newspaper, lesson, snapshot, partner, connector, msg, backup, web-parse, web-scrape, skills, agent, maintain, sync, abo, steuer, gesundheit, mediplaner, haushalt, versicherung, inbox, wiki"},
+        "handler": {"type": "string", "description": "Handler: " + ", ".join(BACH_COMMAND_HANDLERS)},
         "operation": {"type": "string", "description": "Operation: list, add, done, facts, write, read, search, context, today, brainstorm, promote, stats, fetch, generate, create, load"},
         "args": {"type": "array", "items": {"type": "string"}, "description": "Argumente"},
     }, ["handler"]),
@@ -512,23 +625,81 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
     try:
         if name == "list_directory":
-            p = shlex.quote(args.get("path") or os.path.expanduser("~"))
-            return run_shell(f"ls -la {p}" if args.get("details") else f"ls {p}")
+            # Kein Subprocess/Shell mehr (frueher: run_shell("ls ..." per
+            # shell=True) mit shlex.quote() auf den Pfad - shlex.quote()
+            # eskript POSIX-Single-Quotes, die auf Windows'
+            # shell=True->cmd.exe NICHT als Quotierung wirken, sondern als
+            # literale Zeichen; Metazeichen im Pfad waeren dort trotzdem
+            # von cmd.exe interpretiert worden. pathlib kennt keine Shell.
+            target = Path(args.get("path") or os.path.expanduser("~"))
+            if _is_secret_path(target):
+                return "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden"
+            try:
+                entries = sorted(target.iterdir(), key=lambda e: e.name)
+            except OSError as e:
+                return f"Fehler: {e}"
+            details = args.get("details")
+            lines = []
+            for e in entries:
+                if _is_secret_path(e):
+                    continue
+                if details:
+                    try:
+                        st = e.stat()
+                        kind = "d" if e.is_dir() else "-"
+                        lines.append(f"{kind} {st.st_size:>10} {e.name}")
+                    except OSError:
+                        lines.append(f"? {e.name}")
+                else:
+                    lines.append(e.name)
+            return ("\n".join(lines) or "(leer)")[:4000]
 
         if name == "read_file":
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
+            if _is_secret_path(Path(p)):
+                return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
             lines = min(int(args.get("lines", 50)), 200)
             offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
             end_line = offset + lines - 1
-            return run_shell(f"sed -n '{offset},{end_line}p' {shlex.quote(p)}")
+            try:
+                with open(p, "r", encoding="utf-8", errors="replace") as fh:
+                    picked = [
+                        line for i, line in enumerate(fh, start=1)
+                        if offset <= i <= end_line
+                    ]
+            except OSError as e:
+                return f"Fehler: {e}"
+            return ("".join(picked) or "(keine Zeilen)")[:4000]
 
         if name == "search_text":
             pat = args.get("pattern", "")
-            p = shlex.quote(args.get("path", "."))
-            flag = "-r" if args.get("recursive", True) else ""
-            return run_shell(f"grep {flag} -n --color=never {shlex.quote(pat)} {p}")
+            p = Path(args.get("path", "."))
+            if _is_secret_path(p):
+                return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
+            recursive = args.get("recursive", True)
+            try:
+                rx = re.compile(pat)
+            except re.error as e:
+                return f"Ungueltiges Muster: {e}"
+            files = p.rglob("*") if recursive and p.is_dir() else (
+                p.glob("*") if p.is_dir() else [p]
+            )
+            hits = []
+            for f in files:
+                if not f.is_file() or len(hits) >= 200 or _is_secret_path(f):
+                    continue
+                try:
+                    with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                        for i, line in enumerate(fh, start=1):
+                            if rx.search(line):
+                                hits.append(f"{f}:{i}:{line.rstrip()}")
+                                if len(hits) >= 200:
+                                    break
+                except OSError:
+                    continue
+            return ("\n".join(hits) or "(keine Treffer)")[:4000]
 
         if name == "system_status":
             parts = [
@@ -546,8 +717,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if act == "running":
                 return run_shell("ollama ps")
             if act == "show":
-                m = shlex.quote(args.get("model", default_model))
-                return run_shell(f"ollama show {m}")
+                # "model" kommt aus einem LLM-Tool-Argument, nicht aus einer
+                # festen Vorlage - deshalb NICHT run_shell() (shell=True):
+                # argv-Liste + shell=False, das Argument wird nie von einer
+                # Shell interpretiert (kein shlex.quote()-Escaping noetig
+                # oder moeglich Windows-Umgehung, siehe Befund D).
+                m = args.get("model", default_model)
+                return run_argv(["ollama", "show", m])
             return "Unbekannte Aktion: " + act
 
         if name == "bach_command":
@@ -563,6 +739,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             }
             h = args.get("handler", "")
             h = _HANDLER_ALIASES.get(h, h)
+            if h not in BACH_COMMAND_HANDLERS:
+                return (
+                    f"BLOCKIERT: Handler '{h}' ist nicht in der bach_command-Allowlist.\n"
+                    f"Erlaubt: {', '.join(BACH_COMMAND_HANDLERS)}"
+                )
             op = args.get("operation", "")
             ex = args.get("args", [])
             ok, out = bach_app.execute(h, op, ex)
@@ -580,7 +761,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return f"Befehl nicht in der Safe-Liste. Erlaubt: {', '.join(sorted(SAFE_BASES)[:15])}..."
             if is_blocked(cmd):
                 return "Befehl blockiert (Sicherheit)"
-            return run_shell(cmd)
+            return run_shell_restricted(cmd, allowed=SAFE_BASES)
 
         if name == "execute_command":
             if mode != "full":
@@ -590,7 +771,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_blocked(cmd):
                 return f"Befehl blockiert (Sicherheit): {cmd}"
             log.info(f"FULL-CMD: {cmd}")
-            return run_shell(cmd, t)
+            return run_shell_restricted(cmd, t, allowed=None)
 
         if name == "write_file":
             if mode != "full":
