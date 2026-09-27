@@ -1831,5 +1831,5 @@ class TestFackelPreference:
         )
         assert 'elif path == "/api/fackel":' in src
         assert '"fackel_preference": get_fackel_preference()' in src
-        assert 'app.add_handler(CommandHandler("fackel", cmd_fackel))' in src
+        assert 'app.add_handler(CommandHandler("fackel", _require_owner(cmd_fackel)))' in src
         assert 'setFackel' in src
