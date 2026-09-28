@@ -1043,6 +1043,8 @@ def command_run_child(args: argparse.Namespace) -> int:
         env.update({str(k): str(v) for k, v in overrides.items()})
     env["BACH_STARTSPINE_LAUNCH_ID"] = str(spec.get("launch_id") or "")
     env["BACH_STARTSPINE_SERVICE"] = str(args.service)
+    if args.service == "tray":
+        env["BACH_STARTSPINE_READY_RECEIPT"] = str(_ready_receipt_path("tray"))
     log_path = Path(spec["log"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab", buffering=0) as log_handle:

@@ -173,6 +173,23 @@ def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     return handle
 
 
+def mark_tray_ready(icon):
+    """Publish readiness only after pystray starts its event loop."""
+    icon.visible = True
+    receipt = os.environ.get("BACH_STARTSPINE_READY_RECEIPT", "")
+    launch_id = os.environ.get("BACH_STARTSPINE_LAUNCH_ID", "")
+    if not receipt or not launch_id:
+        return
+    target = Path(receipt)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps({"launch_id": launch_id, "pid": os.getpid()}) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, target)
+
+
 class BACHTray:
 
     POLL_INTERVAL = 5
@@ -1390,7 +1407,7 @@ class BACHTray:
         poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         poll_thread.start()
 
-        self.icon.run()
+        self.icon.run(setup=mark_tray_ready)
 
 
 def main():

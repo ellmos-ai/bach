@@ -706,6 +706,21 @@ class TestHomeAssistantConnector:
 
 
 class TestBACHTray:
+    def test_startspine_ready_receipt_is_written_after_icon_setup(self, tmp_path, monkeypatch):
+        from hub._services.chat.chat_tray import mark_tray_ready
+
+        receipt = tmp_path / "receipts" / "tray.ready.json"
+        monkeypatch.setenv("BACH_STARTSPINE_READY_RECEIPT", str(receipt))
+        monkeypatch.setenv("BACH_STARTSPINE_LAUNCH_ID", "test-launch")
+        icon = MagicMock()
+        mark_tray_ready(icon)
+
+        assert icon.visible is True
+        assert json.loads(receipt.read_text(encoding="utf-8")) == {
+            "launch_id": "test-launch", "pid": os.getpid(),
+        }
+        assert not list(receipt.parent.glob("*.tmp"))
+
     @pytest.fixture
     def tray(self):
         with patch.dict('sys.modules', {
