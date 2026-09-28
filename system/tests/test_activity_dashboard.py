@@ -6,9 +6,9 @@ Prüft Modularisierung, Branding-Substitutionslogik,
 HTML-Struktur und Inline-JavaScript-Validität.
 """
 
-import re
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 from unittest.mock import patch
 
@@ -136,6 +136,28 @@ def test_custom_token_storage_key():
     assert "const TOKEN_STORAGE_KEY = 'ellmos-admin-token';" in content
 
 
+class _ScriptExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._in_script = False
+        self.scripts: list[str] = []
+        self._buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        if tag.lower() == "script":
+            self._in_script = True
+            self._buffer = []
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "script":
+            self._in_script = False
+            self.scripts.append("".join(self._buffer))
+
+    def handle_data(self, data: str):
+        if self._in_script:
+            self._buffer.append(data)
+
+
 def test_html_and_js_syntax_validity():
     """Rendertes HTML und Inline-JS müssen syntaktisch valide sein."""
     rendered = render_activity_dashboard()
@@ -143,11 +165,11 @@ def test_html_and_js_syntax_validity():
     if LXML_AVAILABLE:
         doc = lxml.html.fromstring(rendered)
         assert doc.tag == "html"
-        scripts = [node.text for node in doc.xpath("//script") if node.text]
-        assert len(scripts) >= 1
-    else:
-        scripts = re.findall(r"<script[^>]*>(.*?)</script>", rendered, flags=re.IGNORECASE | re.DOTALL)
-        assert len(scripts) >= 1
+
+    parser = _ScriptExtractor()
+    parser.feed(rendered)
+    scripts = [s for s in parser.scripts if s.strip()]
+    assert len(scripts) >= 1
 
     for script_code in scripts:
         res = subprocess.run(
