@@ -212,3 +212,57 @@ class TestSiblingDirectoryDiscriminator:
             json={"path": "../system_other/secret.py", "content": "x"}
         )
         assert response.status_code == 403
+
+
+# ===========================================================================
+# Generic host path hygiene guard tests
+# ===========================================================================
+
+class TestValidateHostPath:
+    """Unit tests for hub.path.validate_host_path generic guard."""
+
+    def _call(self, path, base_dir):
+        from hub.path import validate_host_path
+        return validate_host_path(path, base_dir=base_dir)
+
+    def test_none_returns_none(self, tmp_path):
+        assert self._call(None, tmp_path) is None
+
+    def test_empty_returns_none(self, tmp_path):
+        assert self._call("", tmp_path) is None
+        assert self._call("   ", tmp_path) is None
+
+    def test_absolute_outside_base_returns_none(self, tmp_path):
+        assert self._call("/etc/passwd", tmp_path) is None
+
+    def test_dotdot_traversal_returns_none(self, tmp_path):
+        (tmp_path / "allowed").mkdir()
+        assert self._call("../etc/passwd", tmp_path / "allowed") is None
+
+    def test_sibling_prefix_returns_none(self, tmp_path):
+        base = tmp_path / "templates"
+        base.mkdir()
+        sibling = tmp_path / "templates_other"
+        sibling.mkdir()
+        (sibling / "secret.txt").write_text("leaked")
+        assert self._call("../templates_other/secret.txt", base) is None
+
+    def test_under_base_allowed(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        target = base / "sub" / "file.txt"
+        target.parent.mkdir(parents=True)
+        target.write_text("ok")
+        result = self._call("sub/file.txt", base)
+        assert result is not None
+        assert result.resolve(strict=False) == target.resolve(strict=False)
+
+    def test_backslash_normalized(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        target = base / "sub" / "file.txt"
+        target.parent.mkdir(parents=True)
+        target.write_text("ok")
+        result = self._call("sub\\file.txt", base)
+        assert result is not None
+        assert result.resolve(strict=False) == target.resolve(strict=False)

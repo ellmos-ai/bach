@@ -1,0 +1,29 @@
+{
+  "receipt_id": "T-20260927-trithon-integration",
+  "datum": "2026-09-27",
+  "task_kette": [1381, 1411],
+  "merges": [
+    {
+      "pr": 139,
+      "merge_commit": "17b7f9d293cbc9a052d9456fe55eca843af8fe54",
+      "merged_at": "2026-09-27T20:42:12Z",
+      "methode": "admin-squash",
+      "inhalt": "docs/architecture/BACH20-01-INVENTAR.md, BACH20-02-SYSTEMMANIFEST.md, TRITHON-PHASE2-REVIEW-CI-GATES.md (3 Dateien, +645)"
+    },
+    {
+      "pr": 140,
+      "merge_commit": "f55d1aeb5870fabeed5f9fed47b93f27b977ac9c",
+      "merged_at": "2026-09-27T20:43:13Z",
+      "methode": "admin-squash",
+      "inhalt": "Auto-Unblock-Code #1360 (system/hub/task.py +33, test_task_handler.py +43, Branch fix/task-1360-auto-unblock, Commit a58605d)"
+    }
+  ],
+  "gates": {
+    "gate1_review": "erfuellt (mergeable, statusCheckRollup 7/7 je PR; externer Review nicht moeglich, Admin-Merge-Route)",
+    "gate2_ci": "erfuellt (tests + CodeQL + Analyze SUCCESS, je 7/7 Checks pro PR)",
+    "gate3_release": "definiert via tests/seal_release_check.py (read-only, 4 Pruefungen, exit 0/1); kein Release-Lauf in dieser Kette"
+  },
+  "autorisiert_durch": "#1381 done",
+  "admin_merge_begruendung": "branch protection main: required_approving_review_count=1, enforce_admins=false, keine required checks; kein externer Reviewer verfuegbar (lukisch=admin/author eigener PR, r-huijts=read, SecretiveShell=triage) - Admin-Merge war einzige vorgesehene Route",
+  "externer_review_punkt": "OCEAN-CI T-20260913-283190451 = WAITING"
+}

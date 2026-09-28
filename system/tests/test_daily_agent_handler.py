@@ -24,12 +24,11 @@ from hub._services.routinika_projection import (
     read_legacy_unauthenticated_routinika_projection,
     read_routinika_projection,
 )
-from sqlite_transit_sync import (
+from hub._services.sqlite_transit_sync_compat import (
     HMACKeyReference,
-    SyncConfig,
-    TransitSync,
     load_hmac_authenticator,
 )
+from sqlite_transit_sync import SyncConfig, TransitSync
 
 
 class _ProjectionSecretResolver:
@@ -497,7 +496,7 @@ class TestRoutinikaProjectionBriefing:
         )
         _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
 
-        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        with patch("hub._services.sqlite_transit_sync_compat.OSKeyringSecretResolver", return_value=resolver):
             ok, text = handler.handle(
                 "briefing",
                 [
@@ -566,7 +565,7 @@ class TestRoutinikaProjectionBriefing:
         )
         _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
 
-        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        with patch("hub._services.sqlite_transit_sync_compat.OSKeyringSecretResolver", return_value=resolver):
             ok, text = handler.handle(
                 "briefing",
                 [f"--routinika-manifest={snapshot.manifest_path}", "--dry-run"],
@@ -650,7 +649,7 @@ class TestRoutinikaProjectionBriefing:
         )
         _store_projection_auth(handler, "routinika_briefing", snapshot, auth_config)
 
-        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        with patch("hub._services.sqlite_transit_sync_compat.OSKeyringSecretResolver", return_value=resolver):
             ok, _ = handler.handle(
                 "briefing",
                 [f"--routinika-manifest={snapshot.manifest_path}"],
@@ -669,7 +668,7 @@ class TestRoutinikaProjectionBriefing:
         assert settings["last_checkpoint"] == 6
         assert settings["publisher_instance"] == "routinika-primary"
 
-        with patch("sqlite_transit_sync.OSKeyringSecretResolver", return_value=resolver):
+        with patch("hub._services.sqlite_transit_sync_compat.OSKeyringSecretResolver", return_value=resolver):
             ok, text = handler.handle(
                 "briefing",
                 [f"--routinika-manifest={snapshot.manifest_path}"],

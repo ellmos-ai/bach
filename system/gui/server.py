@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
 from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub.path import validate_host_path
 from gui.config import settings
 from gui.console import mount_console
 
@@ -301,16 +302,9 @@ def safe_cli_value(value, *, field_name: str) -> str:
 
 
 def resolve_under_base(base: Path, value: str, *, allowed_suffixes=None, must_exist: bool = False) -> Path:
-    base_resolved = base.resolve()
-    raw = Path(str(value or ""))
-    if raw.is_absolute():
-        candidate = raw.resolve(strict=False)
-    else:
-        candidate = (base_resolved / raw).resolve(strict=False)
-    try:
-        candidate.relative_to(base_resolved)
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert") from exc
+    candidate = validate_host_path(value, base_dir=base)
+    if candidate is None:
+        raise HTTPException(status_code=403, detail="Zugriff verweigert")
     if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
         raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt")
     if must_exist and not candidate.exists():

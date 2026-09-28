@@ -36,6 +36,26 @@ ROLE_CONTRACTS: Dict[str, RoleContract] = {
         revision="v1",
         rights=frozenset({"task.claim", "task.execute"}),
     ),
+    "gui_shell": RoleContract(
+        role_id="gui_shell",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
+    "operator_voice": RoleContract(
+        role_id="operator_voice",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
+    "ollama_slot": RoleContract(
+        role_id="ollama_slot",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
+    "bach_worker": RoleContract(
+        role_id="bach_worker",
+        revision="v1",
+        rights=frozenset({"task.claim", "task.execute"}),
+    ),
 }
 
 _REQUIRED_RIGHTS = frozenset({"task.claim", "task.execute"})

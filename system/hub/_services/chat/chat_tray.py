@@ -637,6 +637,25 @@ class BACHTray:
         self.idle_pending = None
         return True
 
+    def _is_blocked_by_dep(self, task):
+        """Prueft, ob ein Task von unerledigten Abhaengigkeiten blockiert ist.
+
+        Der Listen-Endpunkt liefert bei neueren server.py-Versionen bereits
+        `is_blocked_by_dep`; wenn das Feld fehlt, wird der Detail-Endpunkt
+        zur Sicherheit befragt.
+        """
+        if not isinstance(task, dict):
+            return False
+        if "is_blocked_by_dep" in task:
+            return bool(task.get("is_blocked_by_dep"))
+        tid = task.get("id")
+        if not tid:
+            return False
+        detail = self._api("GET", f"/api/tasks/{tid}", base=self.gui_url)
+        if detail and detail.get("success") and detail.get("task"):
+            return bool(detail["task"].get("is_blocked_by_dep"))
+        return False
+
     def _process_idle_task(self):
         if self.idle_processing:
             return
@@ -658,9 +677,13 @@ class BACHTray:
                         "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                        task = tasks_resp["tasks"][0]
-                        task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
-                        break
+                        for cand in tasks_resp["tasks"]:
+                            if self._is_blocked_by_dep(cand):
+                                print(f"[Idle] Task #{cand.get('id')} blocked by dependency (standard path); skip")
+                                continue
+                            task = cand
+                            task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                            break
                 if task:
                     break
 
@@ -674,10 +697,14 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
-                                task = cand
-                                task_status = status
-                                break
+                            if cand_assignee.lower() in ("user", "claude", "gemini", "operator", "blocked", ""):
+                                continue
+                            if self._is_blocked_by_dep(cand):
+                                print(f"[Idle] Task #{cand.get('id')} blocked by dependency (fallback path); skip")
+                                continue
+                            task = cand
+                            task_status = status
+                            break
                     if task:
                         break
 

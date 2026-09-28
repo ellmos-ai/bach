@@ -53,6 +53,7 @@ _SYSTEM_ROOT = next(
 if str(_SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_ROOT))
 from hub.bach_paths import BACH_DB
+from hub.path import validate_host_path
 
 # Pfade
 SERVICE_DIR = Path(__file__).parent
@@ -169,10 +170,8 @@ class PromptGenerator:
         if not template_path.endswith('.txt'):
             template_path += '.txt'
 
-        file_path = (TEMPLATES_DIR / template_path).resolve()
-        try:
-            file_path.relative_to(TEMPLATES_DIR.resolve())
-        except ValueError:
+        file_path = validate_host_path(template_path, base_dir=TEMPLATES_DIR)
+        if file_path is None:
             return None
         if file_path.exists():
             try:
@@ -196,10 +195,8 @@ class PromptGenerator:
         if not template_path.endswith('.txt'):
             template_path += '.txt'
 
-        file_path = (TEMPLATES_DIR / template_path).resolve()
-        try:
-            file_path.relative_to(TEMPLATES_DIR.resolve())
-        except ValueError:
+        file_path = validate_host_path(template_path, base_dir=TEMPLATES_DIR)
+        if file_path is None:
             return None
         if file_path.exists():
             return file_path.read_text(encoding='utf-8')

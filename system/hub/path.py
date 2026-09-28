@@ -42,6 +42,40 @@ from . import bach_paths as bp
 from .base import BaseHandler
 
 
+def validate_host_path(path, base_dir=None):
+    """Normalize and validate that *path* resolves under *base_dir*.
+
+    Host-facing path hygiene guard: converts backslashes to forward slashes,
+    resolves the candidate path, and verifies it stays inside the resolved
+    base directory using :meth:`pathlib.Path.relative_to`.
+
+    Args:
+        path: File path to validate (str, pathlib.Path, or None).
+        base_dir: Base directory the path must stay inside. Defaults to the
+            current working directory when ``None``.
+
+    Returns:
+        Resolved :class:`pathlib.Path` if the path is inside the base, else
+        ``None``. ``None``/empty inputs also return ``None``.
+    """
+    if path is None:
+        return None
+    text = str(path).replace("\\", "/").strip()
+    if not text:
+        return None
+    raw = Path(text)
+    base_resolved = Path(base_dir).resolve() if base_dir is not None else Path(".").resolve()
+    if raw.is_absolute():
+        candidate = raw.resolve(strict=False)
+    else:
+        candidate = (base_resolved / raw).resolve(strict=False)
+    try:
+        candidate.relative_to(base_resolved)
+    except ValueError:
+        return None
+    return candidate
+
+
 SUMMARY_GROUPS = {
     "core": ("root", "system", "hub", "data", "db"),
     "runtime": ("logs", "backups", "messages", "instances", "prosync_transit"),

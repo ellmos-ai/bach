@@ -40,10 +40,12 @@ def _log(workdir: Path, msg: str) -> None:
 
 
 def offene_tasks(db: str, project: str) -> list[dict]:
-    """Offene Tasks eines Projekts, erfuellte Abhaengigkeiten zuerst.
+    """Offene Tasks eines Projekts topologisch sortiert.
 
-    Lesend ueber eine read-only-Verbindung: Schreiben laeuft ausschliesslich
-    ueber die BACH-CLI, damit der DB-Guard nicht umgangen wird.
+    Bereite Tasks (keine offenen Vorgaenger) kommen zuerst, ihre Nachfolger
+    danach in Schichten. Innerhalb einer Schicht wird stabil nach
+    (priority, id) sortiert. Lesend ueber eine read-only-Verbindung;
+    Schreiben laeuft ausschliesslich ueber die BACH-CLI.
     """
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
@@ -64,22 +66,59 @@ def offene_tasks(db: str, project: str) -> list[dict]:
     finally:
         con.close()
 
+    def _prio_key(t: dict) -> tuple[int, int]:
+        p = t.get("priority")
+        if p == "P1":
+            return (1, t["id"])
+        if p == "P2":
+            return (2, t["id"])
+        if p == "P3":
+            return (3, t["id"])
+        return (4, t["id"])
+
     tasks = [dict(r) for r in rows]
-    # Ein Task, dessen Vorgaenger noch offen ist, wartet - sonst baut das
-    # Modell auf etwas auf, das es noch gar nicht gibt.
-    bereit = []
+    tasks_by_id = {t["id"]: t for t in tasks}
+
+    # Gueltige Tasks und ihre noch offenen Vorgaenger (nur solche, die selbst
+    # im offenen Pool liegen; erledigte Vorgaenger zaehlen nicht mehr).
+    open_deps: dict[int, set[int]] = {}
+    valid_tasks: list[dict] = []
     for t in tasks:
         dep = (t.get("depends_on") or "").strip()
         if not dep:
-            bereit.append(t)
+            open_deps[t["id"]] = set()
+            valid_tasks.append(t)
             continue
         dep_ids, invalid = parse_task_dependency_ids(dep)
         if invalid:
             continue
-        ids = set(dep_ids)
-        if ids <= erledigt:
-            bereit.append(t)
-    return bereit
+        open_deps[t["id"]] = {i for i in dep_ids if i in tasks_by_id and i not in erledigt}
+        valid_tasks.append(t)
+
+    tasks_by_id = {t["id"]: t for t in valid_tasks}
+
+    # Topologische Schichten: Tasks ohne offene Vorgaenger zuerst.
+    assigned: set[int] = set()
+    layer: dict[int, int] = {}
+    current = 0
+    remaining = set(tasks_by_id.keys())
+    while remaining:
+        ready = {tid for tid in remaining if open_deps[tid] <= assigned}
+        if not ready:
+            break
+        for tid in ready:
+            layer[tid] = current
+            assigned.add(tid)
+        remaining -= ready
+        current += 1
+
+    # Restliche (zyklisch oder durch externe Tasks blockierte) ans Ende.
+    fallback = current + 1
+    for tid in remaining:
+        layer[tid] = fallback
+
+    valid_tasks.sort(key=lambda t: (layer[t["id"]], _prio_key(t)))
+    return valid_tasks
 
 
 def markiere_erledigt(bach_cli: str, task_id: int) -> bool:

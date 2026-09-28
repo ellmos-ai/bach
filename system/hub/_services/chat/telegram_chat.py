@@ -106,6 +106,7 @@ from hub._services.chat.control_auth import (
     get_control_api_token,
     is_control_api_authorized,
 )
+from hub._services import agents_heart
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
     add_worker,
