@@ -9,6 +9,9 @@
 
 ## 1. Ausgangslage & Governance
 
+> **NACHTRAG 2026-09-27:** Der „Tagesvertrag“ (5-Regel-Vertrag für den täglichen Modul-Rückfluss) wurde auf Nutzerentscheid abgeschafft. Der Rückfluss läuft nicht mehr im Tagestakt, sondern nachweisbasiert so schnell, wie die Prüfungen es erlauben. Die allgemeinen Sicherheitsregeln (Reversibilität, Rollback, Nullreferenznachweis und sequentielle Abarbeitung) bleiben unverändert gültig.
+
+
 Nach erfolgreichem Abschluss des judging-hold Staus, dem Release von **BACH v3.14.0** und der weltweiten Veröffentlichung von **Open Ocean** startet die schrittweise, gegatete Rückführung der modularisierten Komponenten in BACH.
 
 Gemäß den Grundsätzen aus der BACH-Roadmap und den Nutzerentscheidungen (`D-20260906-005`, `D-20260906-006`):

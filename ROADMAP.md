@@ -223,8 +223,8 @@ Automatisierter Roadmap-Review (P2, wiederkehrend). Befund:
   #1184–#1195, #1181 (ellmos-tests-Kandidat) und #1175 (TASKPLAN-Cutover) sind in der
   heutigen Task-DB nicht mehr aufloesbar — die IDs wurden am 2026-09-08 mit abgeschlossenen
   GUI-Tasks bzw. Wegwerf-Test-Tasks neu belegt. Additiv korrigiert: BACH-2.0-Sektion,
-  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und Tagesvertrag bleiben als
-  Regelwerk gueltig; die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
+  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und allgemeine Sicherheitsregeln bleiben als
+  Regelwerk gueltig (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft; Rückfluss läuft nachweisbasiert so schnell wie die Prüfungen es erlauben); die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
   (docs/architecture/MODULRUECKTRANSFER-PLAN.md) als Gate-Quelle.
 - **Prioritaeten:** Kohaerent. P1–3 erledigt; P4 nach Release. Aktiver Fokus:
   MODULRUECKTRANSFER Stufen 6–8, TASKPLAN-Cutover (TASKPLAN #299/#300–#302) und
@@ -513,8 +513,8 @@ kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
 > neu belegt (#1181 = Layout-Shift, #1184 = Präsenzstatus). Die Rueckspiegelung
 > laeuft seit September 2026 stattdessen ueber den MODULRUECKTRANSFER-PLAN
 > (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`, BACH-Tasks 1217–1224) mit dort
-> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und Tagesvertrag dieser
-> Sektion bleiben als Regelwerk gueltig; bei Marker `Wettbewerb beendet` waere die
+> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und allgemeine Sicherheitsregeln dieser
+> Sektion bleiben als Regelwerk gueltig (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft); bei Marker `Wettbewerb beendet` waere die
 > Kette unter neuen IDs neu anzulegen.
 
 | ID | Atomarer Task | Abhängigkeiten | Abschlussgrenze |
@@ -524,23 +524,24 @@ kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
 | **1186** | `BACH20-02` versioniertes Systemmanifest | 1185 | Schema, Beispiel und Validatorvertrag; vorhandene Manifestflächen wiederverwenden |
 | **1187** | `BACH20-03` referenzieller Registry-ID-Vertrag | 1185, 1186 | Module-/Skill-/Policy-/Learning-IDs ohne Registry-Kopie |
 | **1188** | `BACH20-04` Kandidatenregister und Scoring | 1185, 1187 | live belegte Eignung oder ehrliches `NO_OP`/`BLOCKED` |
-| **1189** | `BACH20-05` seiteneffektfreier read-only Tagesplaner | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
+| **1189** | `BACH20-05` seiteneffektfreier read-only Planer | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
 | **1190** | `BACH20-06` Baseline-/Contract-/Shadow-/Rollback-Gates | 1186–1188 | gleiche Contracts, single-writer Shadow, vollständiger Rollback |
 | **1191** | `BACH20-07` atomarer Adapter-/Datenmigrationsvertrag | 1187, 1190 | idempotent, transaktional, crash- und rollbackfähig |
-| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | höchstens ein produktiver Wechsel pro Kalendertag |
+| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | Wechsel nacheinander; nächster erst nach grünem Nachweis (NACHTRAG 2026-09-27: Tageslimit entfallen) |
 | **1194** | `BACH20-10` unabhängige Modulupdates | 1186, 1187, 1190, 1192 | Pin/Hash, staged Update, konsistenter Code-/Manifest-/Datenrollback |
 | **1193** | `BACH20-09` Haltefrist-/Nullreferenz-/Removal-Gate | 1192, 1194 | recoverable Archivierung vor Entfernung; Daten/Credentials bleiben |
 | **1195** | `BACH20-11` BACH-2.0-Reifegates | 1193, 1194 | unabhängige Zertifizierung aller in T-20260728-12 definierten Reifekriterien |
 
-#### Tagesvertrag nach Aktivierung
+#### Allgemeine Sicherheitsregeln nach Aktivierung (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft)
 
-1. Der read-only Planner aktualisiert keine Zustände und liefert genau einen
-   belegten Kandidaten oder `NO_OP`/`BLOCKED`.
+1. Der read-only Planner aktualisiert keine Zustände und ermittelt den nächsten
+   geeigneten Kandidaten, sobald der vorige abgeschlossen ist.
 2. Locks, Ownerarbeit, Drift, fehlende Datenverträge oder rote Gates machen
    einen Kandidaten ungeeignet; es wird kein frischer Ersatz zur
    Quotenerfüllung gewählt.
-3. Analyse mehrerer Kandidaten ist zulässig. Pro Kalendertag darf aber
-   höchstens **ein** produktiver Source-of-Truth-Wechsel erfolgen.
+3. Analyse mehrerer Kandidaten ist zulässig. Wechsel laufen nacheinander. Der
+   nächste startet, sobald der vorige nachweislich grün ist (die Beschränkung
+   auf höchstens einen Wechsel pro Kalendertag ist auf Nutzerentscheid entfallen).
 4. Baseline, Contracttests, single-writer Shadowbetrieb und Rollback sind
    Vorbedingungen der atomaren Adapter-/Datenmigration.
 5. Umschaltung, Modulupdate und Entfernung sind drei getrennte Ereignisse.
