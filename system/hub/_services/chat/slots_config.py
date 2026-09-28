@@ -49,6 +49,11 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "gui-web",
         "status": "ready",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
     },
     "buddha_always_on": {
         "id": "buddha_always_on",
@@ -64,6 +69,11 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "idle-worker",
         "status": "idle",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
     },
     "buddha_connector": {
         "id": "buddha_connector",
@@ -77,6 +87,11 @@ DEFAULT_CORE_SLOTS: Dict[str, Dict[str, Any]] = {
         "chat_id": "telegram",
         "status": "ready",
         "current_activity": "",
+        "pause_after": 5,
+        "pause_minutes": 1,
+        "pause_basis": "runs",
+        "pause_counter": 0,
+        "pause_started_at": "",
         "providers": {
             "telegram": {"backend": "ollama", "model": "qwen3.8:27b-mlx", "max_tool_rounds": 10},
             "whatsapp": {"backend": "ollama", "model": "qwen3.8:27b-mlx", "max_tool_rounds": 10},
@@ -168,7 +183,7 @@ def _resolve_path(path: str | None = None) -> Path:
 
 def _fresh_slots_config() -> Dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
         "dynamic_workers": [],
@@ -229,6 +244,12 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> Dict[
             for k, default_val in DEFAULT_CORE_SLOTS.items():
                 if k not in slots:
                     slots[k] = dict(default_val)
+                else:
+                    for field in ("pause_after", "pause_minutes", "pause_basis",
+                                  "pause_counter", "pause_started_at"):
+                        slots[k].setdefault(field, default_val[field])
+            if data.get("version", 1) < 2:
+                data["version"] = 2
             data["slots"] = slots
             if strict and not isinstance(data.get("dynamic_workers"), list):
                 raise ValueError("Slots-Konfiguration enthält keine gültige Worker-Liste")
@@ -257,6 +278,58 @@ def save_slots_config(config: Dict[str, Any], path: str | None = None) -> None:
         except OSError as e:
             log.error("Failed to write slots configuration to %s: %s", f, e)
             raise
+
+
+def is_slot_paused(slot: Dict[str, Any]) -> bool:
+    """Return whether the slot's pause window has not yet elapsed."""
+    started_at = slot.get("pause_started_at")
+    minutes = slot.get("pause_minutes", 0) or 0
+    if not started_at or not minutes:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - started).total_seconds() < float(minutes) * 60
+    except (TypeError, ValueError):
+        return False
+
+
+def bump_pause_counter(
+    slot: Dict[str, Any] | str,
+    event_type: str = "runs",
+    path: str | None = None,
+) -> bool:
+    """Count a run or completed task; persist updates when given a slot ID."""
+    if isinstance(slot, str):
+        slot_id = slot
+        current = get_slot(slot_id, path=path)
+        if not current:
+            return False
+        started = bump_pause_counter(current, event_type=event_type)
+        update_slot(slot_id, {
+            "pause_counter": current["pause_counter"],
+            "pause_started_at": current.get("pause_started_at", ""),
+        }, path=path)
+        return started
+
+    if is_slot_paused(slot):
+        return False
+    basis = str(slot.get("pause_basis") or "runs").lower()
+    if basis == "tasks" and event_type != "tasks":
+        return False
+    if basis == "runs" and event_type != "runs":
+        return False
+    threshold = int(slot.get("pause_after", 0) or 0)
+    minutes = float(slot.get("pause_minutes", 0) or 0)
+    if threshold <= 0 or minutes <= 0:
+        return False
+    slot["pause_counter"] = int(slot.get("pause_counter", 0) or 0) + 1
+    if slot["pause_counter"] < threshold:
+        return False
+    slot["pause_started_at"] = datetime.now(timezone.utc).isoformat()
+    slot["pause_counter"] = 0
+    return True
 
 
 def get_slot(slot_id: str, path: str | None = None) -> Dict[str, Any]:
@@ -584,6 +657,11 @@ def add_worker(worker_data: Dict[str, Any], path: str | None = None) -> Dict[str
         "status": "idle",
         "current_activity": "Bereit",
         "history": [],
+        "pause_after": int(worker_data.get("pause_after", 0) or 0),
+        "pause_minutes": int(worker_data.get("pause_minutes", 0) or 0),
+        "pause_basis": str(worker_data.get("pause_basis", "runs") or "runs"),
+        "pause_counter": 0,
+        "pause_started_at": "",
     }
 
     workers.append(worker)
