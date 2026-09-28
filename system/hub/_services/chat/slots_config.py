@@ -116,6 +116,9 @@ WICHTIGSTE REGELN:
 - Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.
 - 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.
 - Behalte das Werkzeug-Rundenbudget im Auge.
+- Codeänderungen nur über start_task_worktree → finish_task. Der Live-Ordner ist gesperrt.
+- Nichts Unfertiges committen: Bricht ein Worker ab, sichert er seinen Stand als Commit mit „WIP“ im Titel und pusht ihn, ohne PR.
+- Keine Geheimnisse: Vor jedem Commit laufen Prüfung auf Zugangsdaten (Secrets-Scan) und git diff --check.
 """
 
 DEFAULT_ROLE_PROMPTS: dict[str, str] = {
