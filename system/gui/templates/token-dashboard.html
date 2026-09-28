@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geräte-Authentifizierung | BACH</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .token-container {
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .auth-card {
+            background: var(--bg-panel, #1e1e2f);
+            border: 1px solid var(--border, #2e2e42);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .auth-card h2 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-badge.active {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+        }
+
+        .status-badge.revoked {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+
+        .status-badge.unauthenticated {
+            background: rgba(241, 196, 15, 0.2);
+            color: #f1c40f;
+            border: 1px solid #f1c40f;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            min-width: 260px;
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border, #3a3a52);
+            background: var(--bg-input, #12121c);
+            color: var(--text, #fff);
+            font-family: inherit;
+        }
+
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--accent, #e94560);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-secondary {
+            background: var(--bg-hover, #2a2a3e);
+            color: var(--text, #fff);
+            border: 1px solid var(--border, #3a3a52);
+        }
+
+        .token-alert {
+            background: rgba(233, 69, 96, 0.15);
+            border: 1px solid var(--accent, #e94560);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .token-display {
+            font-family: monospace;
+            background: #000;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            word-break: break-all;
+            margin: 0.5rem 0;
+            display: block;
+            color: #00ffcc;
+        }
+
+        .devices-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .devices-table th,
+        .devices-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border, #2e2e42);
+        }
+
+        .devices-table th {
+            color: var(--text-muted, #8a8a9e);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="token-container">
+        <h1>🔐 BACH Geräte- & Token-Strategie</h1>
+        <p style="color: var(--text-muted, #8a8a9e); margin-bottom: 2rem;">
+            Ein permanenter, individueller Token pro Gerät (Laptop, Workstation, Handy, Browser).
+            Token laufen nicht ab und können im Verlustfall einzeln gesperrt werden.
+        </p>
+
+        <!-- Sektion 1: Dieses Gerät / Browser -->
+        <div class="auth-card" id="this-device-card">
+            <h2>📱 Dieses Gerät / Dieser Browser</h2>
+            <div id="auth-status-container">
+                <span class="status-badge unauthenticated" id="current-auth-badge">Prüfe Status...</span>
+            </div>
+
+            <div id="login-section" style="display: none; margin-top: 1rem;">
+                <p>Gib den Token für dieses Gerät ein, um den Browser dauerhaft anzumelden:</p>
+                <div class="input-group">
+                    <input type="password" id="device-token-input" placeholder="Geräte-Token eingeben..." />
+                    <button class="btn btn-primary" onclick="saveDeviceToken()">Token speichern</button>
+                </div>
+            </div>
+
+            <div id="authenticated-section" style="display: none; margin-top: 1rem;">
+                <p>Dieser Browser ist mit einem gültigen Geräte-Token angemeldet.</p>
+                <button class="btn btn-danger" onclick="logoutDevice()">Gerät abmelden</button>
+            </div>
+        </div>
+
+        <!-- Sektion 2: Neues Gerät anlegen -->
+        <div class="auth-card">
+            <h2>➕ Neues Gerät registrieren</h2>
+            <p>Registriere einen neuen Client (z. B. Handy, Workstation, Tray):</p>
+            <div class="input-group">
+                <input type="text" id="new-device-name" placeholder="Gerätename (z. B. Workstation-LG, Handy)" />
+                <button class="btn btn-primary" onclick="registerNewDevice()">Gerät anlegen</button>
+            </div>
+
+            <div id="new-token-container" style="display: none;" class="token-alert">
+                <strong>⚠️ Neuer Geräte-Token generiert:</strong>
+                <span class="token-display" id="generated-token-text"></span>
+                <p style="font-size: 0.85rem; margin: 0;">
+                    Kopiere diesen Token jetzt. Aus Sicherheitsgründen wird er <strong>nur einmal im Klartext</strong> angezeigt!
+                </p>
+                <button class="btn btn-secondary" style="margin-top: 0.5rem;" onclick="copyToken()">In die Zwischenablage kopieren</button>
+            </div>
+        </div>
+
+        <!-- Sektion 3: Registrierte Geräte -->
+        <div class="auth-card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>📋 Registrierte Geräte</h2>
+                <button class="btn btn-secondary" onclick="loadDevices()">Aktualisieren</button>
+            </div>
+            <table class="devices-table">
+                <thead>
+                    <tr>
+                        <th>Gerät</th>
+                        <th>Status</th>
+                        <th>Erstellt</th>
+                        <th>Zuletzt gesehen</th>
+                        <th>Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody id="devices-tbody">
+                    <tr><td colspan="5">Lade Geräte...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Global Fetch-Wrapper: Fügt Bearer-Token an alle Requests an
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            options.headers = options.headers || {};
+            const token = localStorage.getItem("bach_device_token");
+            if (token) {
+                if (options.headers instanceof Headers) {
+                    if (!options.headers.has("Authorization")) {
+                        options.headers.append("Authorization", "Bearer " + token);
+                    }
+                } else if (Array.isArray(options.headers)) {
+                    options.headers.push(["Authorization", "Bearer " + token]);
+                } else {
+                    if (!options.headers["Authorization"]) {
+                        options.headers["Authorization"] = "Bearer " + token;
+                    }
+                }
+            }
+            return originalFetch(url, options);
+        };
+
+        const STORAGE_KEY = "bach_device_token";
+
+        function updateAuthUI() {
+            const token = localStorage.getItem(STORAGE_KEY);
+            const badge = document.getElementById("current-auth-badge");
+            const loginSec = document.getElementById("login-section");
+            const authSec = document.getElementById("authenticated-section");
+
+            if (token) {
+                badge.className = "status-badge active";
+                badge.textContent = "Angemeldet";
+                loginSec.style.display = "none";
+                authSec.style.display = "block";
+            } else {
+                badge.className = "status-badge unauthenticated";
+                badge.textContent = "Nicht angemeldet";
+                loginSec.style.display = "block";
+                authSec.style.display = "none";
+            }
+        }
+
+        async function saveDeviceToken() {
+            const input = document.getElementById("device-token-input");
+            const token = (input.value || "").trim();
+            if (!token) {
+                alert("Bitte einen Token eingeben.");
+                return;
+            }
+
+            // Verify with backend
+            try {
+                const resp = await originalFetch("/api/devices/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token: token })
+                });
+                const data = await resp.json();
+                if (data.valid) {
+                    localStorage.setItem(STORAGE_KEY, token);
+                    input.value = "";
+                    updateAuthUI();
+                    loadDevices();
+                } else {
+                    alert("Token ist ungültig oder widerrufen: " + (data.reason || "Unbekannter Grund"));
+                }
+            } catch (err) {
+                // If offline or initial setup, store directly
+                localStorage.setItem(STORAGE_KEY, token);
+                input.value = "";
+                updateAuthUI();
+                loadDevices();
+            }
+        }
+
+        function logoutDevice() {
+            if (confirm("Gerät wirklich abmelden? Der gespeicherte Token wird aus diesem Browser entfernt.")) {
+                localStorage.removeItem(STORAGE_KEY);
+                updateAuthUI();
+                loadDevices();
+            }
+        }
+
+        async function loadDevices() {
+            const tbody = document.getElementById("devices-tbody");
+            try {
+                const resp = await fetch("/api/devices");
+                if (resp.status === 401) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color: #e74c3c;">Nicht autorisiert. Bitte Token für dieses Gerät hinterlegen.</td></tr>';
+                    return;
+                }
+                const data = await resp.json();
+                const devices = data.devices || [];
+
+                if (devices.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5">Keine Geräte registriert.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = devices.map(d => {
+                    const statusClass = d.status === "active" ? "active" : "revoked";
+                    const statusText = d.status === "active" ? "Aktiv" : "Gesperrt";
+                    const revokeBtn = d.status === "active"
+                        ? `<button class="btn btn-danger" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;" onclick="revokeDevice('${d.name}')">Sperren</button>`
+                        : '<span style="color: var(--text-muted); font-size: 0.8rem;">Gesperrt</span>';
+
+                    return `
+                        <tr>
+                            <td><strong>${d.name}</strong></td>
+                            <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                            <td style="font-size: 0.85rem; color: var(--text-muted);">${d.created_at || '-'}</td>
+                            <td style="font-size: 0.85rem; color: var(--text-muted);">${d.last_seen_at || 'Nie'}</td>
+                            <td>${revokeBtn}</td>
+                        </tr>
+                    `;
+                }).join("");
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" style="color: #e74c3c;">Fehler beim Laden: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function registerNewDevice() {
+            const input = document.getElementById("new-device-name");
+            const name = (input.value || "").trim();
+            if (!name) {
+                alert("Bitte einen Gerätenamen eingeben.");
+                return;
+            }
+
+            try {
+                const resp = await fetch("/api/devices", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: name })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert("Fehler: " + (err.detail || "Registrierung fehlgeschlagen"));
+                    return;
+                }
+
+                const result = await resp.json();
+                input.value = "";
+
+                // Show token
+                document.getElementById("generated-token-text").textContent = result.token;
+                document.getElementById("new-token-container").style.display = "block";
+
+                loadDevices();
+            } catch (err) {
+                alert("Verbindungsfehler: " + err.message);
+            }
+        }
+
+        async function revokeDevice(name) {
+            if (!confirm(`Gerät '${name}' wirklich sperren? Der Token wird unwiderruflich ungültig.`)) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/devices/${encodeURIComponent(name)}/revoke`, {
+                    method: "POST"
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert("Fehler: " + (err.detail || "Sperren fehlgeschlagen"));
+                    return;
+                }
+
+                loadDevices();
+            } catch (err) {
+                alert("Fehler beim Sperren: " + err.message);
+            }
+        }
+
+        function copyToken() {
+            const tokenText = document.getElementById("generated-token-text").textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+                alert("Token in die Zwischenablage kopiert!");
+            }).catch(() => {
+                alert("Kopieren fehlgeschlagen. Bitte manuell markieren.");
+            });
+        }
+
+        // Init
+        document.addEventListener("DOMContentLoaded", () => {
+            updateAuthUI();
+            loadDevices();
+        });
+    </script>
+</body>
+
+</html>
