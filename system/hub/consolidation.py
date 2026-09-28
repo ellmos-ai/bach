@@ -16,6 +16,7 @@ Operationen:
 - archive:  Alte Eintraege archivieren
 - index:    Facts/Help/Wiki abgleichen
 - review:   KI-Review anfordern (Tasks)
+- sleep:    Schlaffunktion (TTL-Grace/Deaktivierung via Gardener sleep_union)
 """
 import sqlite3
 from contextlib import contextmanager
@@ -60,7 +61,8 @@ class ConsolidationHandler(BaseHandler):
             "init": "Tracking fuer existierende Eintraege initialisieren",
             "sync-triggers": "Dynamische Kontext-Trigger aktualisieren (NEU v1.1.80)",
             "forget": "Ungenutzte Eintraege loeschen (weight < threshold)",
-            "reclassify": "Falsch kategorisierte Eintraege korrigieren (NEU v1.1.81)"
+            "reclassify": "Falsch kategorisierte Eintraege korrigieren (NEU v1.1.81)",
+            "sleep": "Schlaffunktion (TTL-Grace/Deaktivierung via Gardener sleep_union)"
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -89,6 +91,8 @@ class ConsolidationHandler(BaseHandler):
             return self._deactivate_unused(dry_run)
         elif operation == "reclassify":
             return self._reclassify(args, dry_run)
+        elif operation == "sleep":
+            return self._sleep_union(args, dry_run)
         else:
             ops = "\n".join(f"  {k:12} - {v}" for k, v in self.get_operations().items())
             return False, f"[FEHLER] Unbekannte Operation: {operation}\n\nVerfuegbar:\n{ops}"
@@ -159,6 +163,42 @@ class ConsolidationHandler(BaseHandler):
                 output.append(f"KONSOLIDIERUNG: Fehler - {e}")
 
             output.append("")
+            # Schlaf & TTL Status (Gardener sleep_union / decay_config)
+            try:
+                cursor.execute("""
+                    SELECT type,
+                           COUNT(*) as total,
+                           SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active,
+                           SUM(CASE WHEN is_active = 1 AND expires_at IS NOT NULL THEN 1 ELSE 0 END) as with_ttl,
+                           SUM(CASE WHEN is_active = 1 AND expires_at IS NOT NULL AND datetime(expires_at) < datetime('now') THEN 1 ELSE 0 END) as expired
+                    FROM memory_working
+                    WHERE type IN ('handoff', 'context')
+                    GROUP BY type
+                """)
+                working_ttl = cursor.fetchall()
+                if working_ttl:
+                    output.append("")
+                    output.append("SCHLAF & TTL (Working-Memory):")
+                    for row in working_ttl:
+                        act = row["active"] or 0
+                        w_ttl = row["with_ttl"] or 0
+                        exp = row["expired"] or 0
+                        output.append(f"  {row['type']:10} aktiv: {act:4} | mit TTL: {w_ttl:4} | abgelaufen: {exp:4}")
+
+                cursor.execute("SELECT COUNT(*) FROM decay_config")
+                decay_count = cursor.fetchone()[0]
+                if decay_count > 0:
+                    cursor.execute("SELECT agent_id, fact_decay_rate, lesson_decay_rate, min_confidence, last_cleanup_at FROM decay_config ORDER BY agent_id")
+                    cfg_rows = cursor.fetchall()
+                    output.append("")
+                    output.append(f"DECAY-CONFIG ({decay_count} Agenten):")
+                    for cr in cfg_rows:
+                        last_c = cr['last_cleanup_at'] or "nie"
+                        output.append(f"  {cr['agent_id']:12} Fact-Decay: {cr['fact_decay_rate']}, Lesson-Decay: {cr['lesson_decay_rate']}, Letzter Schlaf: {last_c}")
+            except Exception:
+                pass
+
+            output.append("")
             output.append("SCHWELLENWERTE:")
             output.append(f"  Archivieren bei weight < {self.WEIGHT_THRESHOLD_ARCHIVE}")
             output.append(f"  Vergessen bei weight <   {self.WEIGHT_THRESHOLD_DELETE}")
@@ -190,6 +230,10 @@ class ConsolidationHandler(BaseHandler):
         # 5. Vergessen (NEU v1.1.80)
         success, msg = self._deactivate_unused(dry_run)
         results.append(f"FORGET: {msg.split(chr(10))[0]}")
+
+        # 6. Schlaf (TTL-Grace/Deaktivierung via Gardener sleep_union)
+        success, msg = self._sleep_union(dry_run=dry_run)
+        results.append(f"SLEEP: {msg.split(chr(10))[0]}")
 
         prefix = "[DRY-RUN] " if dry_run else ""
         return True, f"{prefix}[CONSOLIDATION] Run All\n" + "\n".join(results)
@@ -919,3 +963,69 @@ class ConsolidationHandler(BaseHandler):
             conn.commit()
 
             return True, f"[OK] {fixed} Eintraege reklassifiziert, {tasks_created} Tasks erstellt"
+
+    def _sleep_union(self, args: Optional[List[str]] = None, dry_run: bool = False) -> tuple:
+        """Schlaffunktion via Gardener sleep_union (TTL-Grace/Deaktivierung).
+
+        Wendet TTL-Grace-Periods auf handoff/context Working-Memory-Eintraege an
+        und deaktiviert abgelaufene Eintraege.
+        decay=False, da BACH eigene Gewichtung/Verfall verwaltet.
+
+        CLI-Argumente:
+          --agent <id>    Nur fuer bestimmten Agenten ausfuehren
+          --if-due        Nur ausfuehren, wenn Intervall laut decay_config faellig
+          --report <path> JSON-Report anhaengen
+        """
+        args = args or []
+        agent = None
+        if_due = False
+        report = None
+
+        i = 0
+        while i < len(args):
+            if args[i] == "--agent" and i + 1 < len(args):
+                agent = args[i + 1]
+                i += 2
+            elif args[i] == "--if-due":
+                if_due = True
+                i += 1
+            elif args[i] == "--report" and i + 1 < len(args):
+                report = args[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        try:
+            import sleep_union
+        except ImportError:
+            try:
+                from gardener import sleep_union
+            except ImportError:
+                return False, "[SLEEP] sleep_union Modul (gardener) nicht verfuegbar."
+
+        try:
+            result = sleep_union.sleep(
+                str(self.db_path),
+                agent=agent,
+                if_due=if_due,
+                dry_run=dry_run,
+                decay=False,
+                report=report,
+            )
+            agents = result.get("agents", {})
+            total_ttl = sum(a.get("ttl_gesetzt", 0) for a in agents.values())
+            total_deact = sum(a.get("deaktiviert", 0) for a in agents.values())
+
+            skipped = []
+            for ag_id, a_data in sorted(agents.items()):
+                if a_data.get("uebersprungen"):
+                    reasons = ",".join(str(r) for r in a_data["uebersprungen"])
+                    skipped.append(f"{ag_id}: {reasons}")
+
+            prefix = "[DRY-RUN] " if dry_run else ""
+            summary = f"{prefix}[SLEEP] TTL gesetzt: {total_ttl}, Deaktiviert: {total_deact} ({len(agents)} Agenten)"
+            if skipped:
+                summary += f" | Uebersprungen: {'; '.join(skipped)}"
+            return True, summary
+        except Exception as e:
+            return False, f"[SLEEP] Fehler: {e}"
