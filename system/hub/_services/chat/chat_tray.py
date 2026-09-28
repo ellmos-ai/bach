@@ -212,6 +212,14 @@ class BACHTray:
             or os.environ.get("BACH_GUI_URL")
             or f"http://{host}:{gui_port}"
         )
+        self.gui_auth_header = None
+        try:
+            from hub.secrets_handler import get_secret_value
+            tray_token = get_secret_value("bach_device_token_tray")
+            if tray_token:
+                self.gui_auth_header = f"Bearer {tray_token.strip()}"
+        except Exception:
+            self.gui_auth_header = None
         self.activity_url = (
             activity_url
             or os.environ.get("BACH_ACTIVITY_URL")
@@ -264,6 +272,8 @@ class BACHTray:
         headers = {"Content-Type": "application/json"} if data else {}
         if self.control_api_auth_header and target_base == self.base_url:
             headers["Authorization"] = self.control_api_auth_header
+        elif self.gui_auth_header and target_base == self.gui_url:
+            headers["Authorization"] = self.gui_auth_header
         req = urllib.request.Request(
             url, data=data, method=method,
             headers=headers,

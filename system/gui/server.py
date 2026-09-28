@@ -1271,6 +1271,111 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(NoCacheMiddleware)
 
+# ── Device-Token Authentication Middleware (Task #1499) ─────────
+try:
+    from gui.device_auth import (
+        create_device,
+        has_active_devices,
+        list_devices,
+        revoke_device,
+        validate_token,
+    )
+except ImportError:
+    try:
+        from device_auth import (  # type: ignore
+            create_device,
+            has_active_devices,
+            list_devices,
+            revoke_device,
+            validate_token,
+        )
+    except ImportError:
+        import importlib.util
+        _devauth_path = Path(__file__).parent / "device_auth.py"
+        _spec = importlib.util.spec_from_file_location("device_auth", _devauth_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        create_device = _mod.create_device
+        has_active_devices = _mod.has_active_devices
+        list_devices = _mod.list_devices
+        revoke_device = _mod.revoke_device
+        validate_token = _mod.validate_token
+
+
+class DeviceAuthMiddleware(BaseHTTPMiddleware):
+    """Enforces Bearer token device authentication on API routes when devices exist."""
+
+    EXEMPT_PREFIXES = (
+        "/tokens",
+        "/token-dashboard",
+        "/static/",
+        "/favicon.ico",
+        "/docs",
+        "/openapi.json",
+    )
+
+    EXEMPT_API_PATHS = {
+        "/api/status",
+        "/api/health",
+        "/api/devices/verify",
+    }
+
+    TRAY_TRANSITIONAL_PATHS = {
+        "/api/tasks",
+        "/api/backends",
+        "/api/models",
+        "/api/slots",
+    }
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # 1. Non-API routes pass through
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        for prefix in self.EXEMPT_PREFIXES:
+            if path.startswith(prefix):
+                return await call_next(request)
+
+        # 2. Status & probe endpoints pass through
+        if path in self.EXEMPT_API_PATHS:
+            return await call_next(request)
+
+        # 3. Extract Bearer token if provided
+        auth_header = request.headers.get("Authorization", "").strip()
+        bearer_token = None
+        if auth_header.startswith("Bearer "):
+            bearer_token = auth_header[7:].strip()
+
+        # If a token was supplied, validate it
+        if bearer_token:
+            device = validate_token(bearer_token)
+            if not device:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Invalid or revoked device token", "detail": "Unauthorized"},
+                )
+            request.state.device = device
+            return await call_next(request)
+
+        # If no token was supplied:
+        # Check if any active devices exist in the database
+        if not has_active_devices():
+            return await call_next(request)
+
+        # Allow transitional tray paths without token during migration
+        if path in self.TRAY_TRANSITIONAL_PATHS:
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Missing device authorization token", "detail": "Unauthorized"},
+        )
+
+
+app.add_middleware(DeviceAuthMiddleware)
+
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -4832,6 +4937,65 @@ async def tokens_page():
         return FileResponse(tokens_file)
 
     raise HTTPException(status_code=404, detail="Template tokens.html nicht gefunden")
+
+
+@app.get("/token-dashboard", response_class=HTMLResponse)
+async def token_dashboard_page():
+    """Device Token Dashboard Seite (Task #1501)."""
+    tokens_file = TEMPLATES_DIR / "token-dashboard.html"
+    if tokens_file.exists():
+        return FileResponse(tokens_file)
+    raise HTTPException(status_code=404, detail="Template token-dashboard.html nicht gefunden")
+
+
+# ── API ROUTES - DEVICES AUTH (Task #1499) ──────────────────────
+
+@app.get("/api/devices")
+async def api_list_devices():
+    """List all registered devices (names, statuses, timestamps)."""
+    return {"devices": list_devices()}
+
+
+@app.post("/api/devices")
+async def api_create_device(payload: dict = Body(...)):
+    """Register a new device and return its one-time plaintext token."""
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name ist erforderlich.")
+    try:
+        token = create_device(name)
+        return {"ok": True, "name": name, "token": token, "status": "active"}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.delete("/api/devices/{name}")
+@app.post("/api/devices/{name}/revoke")
+async def api_revoke_device(name: str):
+    """Revoke a device token by name."""
+    success = revoke_device(name)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Gerät '{name}' nicht gefunden oder bereits gesperrt.")
+    return {"ok": True, "name": name, "status": "revoked"}
+
+
+@app.post("/api/devices/verify")
+async def api_verify_device(request: Request, payload: dict = Body(None)):
+    """Verify whether a token is valid and active."""
+    token = None
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif payload and isinstance(payload, dict):
+        token = payload.get("token")
+
+    if not token:
+        return {"valid": False, "reason": "No token provided"}
+
+    device = validate_token(token)
+    if device:
+        return {"valid": True, "device": device}
+    return {"valid": False, "reason": "Invalid or revoked token"}
 
 
 
