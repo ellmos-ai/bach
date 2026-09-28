@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Test fuer weiches Vergessen (forget ohne DELETE auf memory_facts).
 
 Entscheidung des Projektleiters (2026-09-26, E4):
@@ -12,6 +11,7 @@ Entscheidung des Projektleiters (2026-09-26, E4):
 import sqlite3
 import sys
 from pathlib import Path
+
 import pytest
 
 BACH_ROOT = Path(__file__).parent.parent
@@ -19,6 +19,7 @@ sys.path.insert(0, str(BACH_ROOT))
 
 from hub.consolidation import ConsolidationHandler
 from hub.memory import MemoryHandler
+from hub.memory_hook_provider import BachMemoryBackend
 
 MINIMAL_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS memory_working (
@@ -174,6 +175,27 @@ class TestConsolidationForgetSoft:
         ok, facts = memory._list_facts(min_confidence=0.5)
         assert ok is True
         assert "linux-arm64" not in facts
+
+        # Auch bei min_confidence=0.0 (Default) wird der vergessene Fakt nicht mehr gelistet
+        ok_def, facts_def = memory._list_facts(min_confidence=0.0)
+        assert ok_def is True
+        assert "linux-arm64" not in facts_def
+
+        # Suche schliesst vergessenen Fakt aus
+        ok_search, search_res = memory._search("platform")
+        assert ok_search is True
+        assert "linux-arm64" not in search_res
+
+        # Generierter Kontext schliesst vergessenen Fakt aus
+        ok_ctx, ctx_res = memory._generate_context()
+        assert ok_ctx is True
+        assert "linux-arm64" not in ctx_res
+
+        # memoryhooker-Provider (BachMemoryBackend) filtert vergessenen Fakt aus
+        hook_backend = BachMemoryBackend(handler.db_path)
+        scored = hook_backend._score_facts(conn, ["platform"])
+        assert scored == []
+
 
         # 2. consolidation-Status fuer Fakt ist 'forgotten'
         fact_cons = conn.execute(

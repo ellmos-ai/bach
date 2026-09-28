@@ -135,7 +135,8 @@ class MemoryHandler(BaseHandler):
             # Konfidenz-Statistik
             conf_high = conn.execute("SELECT COUNT(*) FROM memory_facts WHERE confidence >= 0.8").fetchone()[0]
             conf_mid = conn.execute("SELECT COUNT(*) FROM memory_facts WHERE confidence >= 0.5 AND confidence < 0.8").fetchone()[0]
-            conf_low = conn.execute("SELECT COUNT(*) FROM memory_facts WHERE confidence < 0.5 AND confidence IS NOT NULL").fetchone()[0]
+            conf_low = conn.execute("SELECT COUNT(*) FROM memory_facts WHERE confidence < 0.5 AND confidence > 0.0 AND confidence IS NOT NULL").fetchone()[0]
+            conf_forgotten = conn.execute("SELECT COUNT(*) FROM memory_facts WHERE confidence <= 0.0").fetchone()[0]
 
             results = [
                 "MEMORY STATUS (DB-basiert)",
@@ -150,6 +151,10 @@ class MemoryHandler(BaseHandler):
                 f"  [*****] Sicher (>=0.8):    {conf_high}",
                 f"  [***--] Mittel (0.5-0.8):  {conf_mid}",
                 f"  [*----] Unsicher (<0.5):   {conf_low}",
+            ]
+            if conf_forgotten > 0:
+                results.append(f"  [-----] Vergessen (<=0.0): {conf_forgotten}")
+            results.extend([
                 "",
                 "Befehle:",
                 "  --memory write \"...\"              Notiz speichern",
@@ -161,7 +166,7 @@ class MemoryHandler(BaseHandler):
                 "  --memory confidence key 0.9      Konfidenz aktualisieren",
                 "  --memory search \"...\"            Durchsuchen",
                 "  --memory context                  Kontext generieren"
-            ]
+            ])
             return True, "\n".join(results)
         finally:
             conn.close()
@@ -307,20 +312,49 @@ class MemoryHandler(BaseHandler):
         """Alle Fakten anzeigen mit Konfidenz und Quelle."""
         conn = self._get_conn()
         try:
-            if category:
-                rows = conn.execute("""
-                    SELECT category, key, value, confidence, source, updated_at
-                    FROM memory_facts
-                    WHERE category = ? AND (confidence >= ? OR confidence IS NULL)
-                    ORDER BY confidence DESC, key
-                """, (category, min_confidence)).fetchall()
+            has_consolidation = False
+            try:
+                has_consolidation = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name='memory_consolidation'"
+                    ).fetchone()
+                )
+            except sqlite3.Error:
+                has_consolidation = False
+
+            cons_join = ""
+            cons_filter = ""
+            if has_consolidation:
+                cons_join = "LEFT JOIN memory_consolidation mc ON mc.source_table = 'memory_facts' AND mc.source_id = memory_facts.id"
+                cons_filter = "AND (mc.status IS NULL OR mc.status != 'forgotten')"
+
+            if min_confidence > 0.0:
+                conf_filter = "(memory_facts.confidence >= ?)"
+                params = [min_confidence]
             else:
-                rows = conn.execute("""
-                    SELECT category, key, value, confidence, source, updated_at
+                conf_filter = "(memory_facts.confidence > 0.0 OR memory_facts.confidence IS NULL)"
+                params = []
+
+            if category:
+                query = f"""
+                    SELECT memory_facts.category, memory_facts.key, memory_facts.value,
+                           memory_facts.confidence, memory_facts.source, memory_facts.updated_at
                     FROM memory_facts
-                    WHERE confidence >= ? OR confidence IS NULL
-                    ORDER BY category, confidence DESC, key
-                """, (min_confidence,)).fetchall()
+                    {cons_join}
+                    WHERE memory_facts.category = ? AND {conf_filter} {cons_filter}
+                    ORDER BY memory_facts.confidence DESC, memory_facts.key
+                """
+                rows = conn.execute(query, [category, *params]).fetchall()
+            else:
+                query = f"""
+                    SELECT memory_facts.category, memory_facts.key, memory_facts.value,
+                           memory_facts.confidence, memory_facts.source, memory_facts.updated_at
+                    FROM memory_facts
+                    {cons_join}
+                    WHERE {conf_filter} {cons_filter}
+                    ORDER BY memory_facts.category, memory_facts.confidence DESC, memory_facts.key
+                """
+                rows = conn.execute(query, params).fetchall()
 
             if not rows:
                 if min_confidence > 0:
@@ -360,11 +394,26 @@ class MemoryHandler(BaseHandler):
         """Zeigt unsichere Fakten (<0.5) zur Ueberpruefung."""
         conn = self._get_conn()
         try:
-            rows = conn.execute("""
-                SELECT category, key, value, confidence, source, updated_at
+            has_consolidation = False
+            try:
+                has_consolidation = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name='memory_consolidation'"
+                    ).fetchone()
+                )
+            except sqlite3.Error:
+                has_consolidation = False
+
+            cons_join = "LEFT JOIN memory_consolidation mc ON mc.source_table = 'memory_facts' AND mc.source_id = memory_facts.id" if has_consolidation else ""
+            cons_filter = "AND (mc.status IS NULL OR mc.status != 'forgotten')" if has_consolidation else ""
+
+            rows = conn.execute(f"""
+                SELECT memory_facts.category, memory_facts.key, memory_facts.value,
+                       memory_facts.confidence, memory_facts.source, memory_facts.updated_at
                 FROM memory_facts
-                WHERE confidence < 0.5 AND confidence IS NOT NULL
-                ORDER BY confidence ASC, updated_at DESC
+                {cons_join}
+                WHERE memory_facts.confidence < 0.5 AND memory_facts.confidence > 0.0 AND memory_facts.confidence IS NOT NULL {cons_filter}
+                ORDER BY memory_facts.confidence ASC, memory_facts.updated_at DESC
             """).fetchall()
 
             if not rows:
@@ -432,9 +481,27 @@ class MemoryHandler(BaseHandler):
             return False, "Leere Suchanfrage."
             
         try:
+            has_consolidation = False
+            try:
+                has_consolidation = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name='memory_consolidation'"
+                    ).fetchone()
+                )
+            except sqlite3.Error:
+                has_consolidation = False
+
+            cons_join = "LEFT JOIN memory_consolidation mc ON mc.source_table = 'memory_facts' AND mc.source_id = memory_facts.id" if has_consolidation else ""
+            cons_filter = "AND (mc.status IS NULL OR mc.status != 'forgotten')" if has_consolidation else ""
+
             # 1. Alles abrufen (roh)
             working = conn.execute("SELECT content FROM memory_working WHERE is_active = 1").fetchall()
-            facts = conn.execute("SELECT key || ': ' || value FROM memory_facts").fetchall()
+            facts = conn.execute(f"""
+                SELECT memory_facts.key || ': ' || memory_facts.value
+                FROM memory_facts
+                {cons_join}
+                WHERE (memory_facts.confidence > 0.0 OR memory_facts.confidence IS NULL) {cons_filter}
+            """).fetchall()
             lessons = conn.execute("SELECT title || ': ' || solution FROM memory_lessons WHERE is_active = 1").fetchall()
             
             # 2. Scoring berechnen
@@ -485,6 +552,19 @@ class MemoryHandler(BaseHandler):
         """Generiert kompakten Kontext fuer Claude (priorisiert hochkonfidente Fakten)."""
         conn = self._get_conn()
         try:
+            has_consolidation = False
+            try:
+                has_consolidation = bool(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name='memory_consolidation'"
+                    ).fetchone()
+                )
+            except sqlite3.Error:
+                has_consolidation = False
+
+            cons_join = "LEFT JOIN memory_consolidation mc ON mc.source_table = 'memory_facts' AND mc.source_id = memory_facts.id" if has_consolidation else ""
+            cons_filter = "AND (mc.status IS NULL OR mc.status != 'forgotten')" if has_consolidation else ""
+
             context_parts = []
 
             # Aktive Working Notes (letzte 5)
@@ -498,10 +578,12 @@ class MemoryHandler(BaseHandler):
                     context_parts.append(f"- {content[:100]}")
 
             # Hochkonfidente Fakten zuerst (>= 0.7)
-            facts_certain = conn.execute("""
-                SELECT category, key, value, confidence FROM memory_facts
-                WHERE confidence >= 0.7 OR confidence IS NULL
-                ORDER BY confidence DESC, updated_at DESC LIMIT 8
+            facts_certain = conn.execute(f"""
+                SELECT memory_facts.category, memory_facts.key, memory_facts.value, memory_facts.confidence
+                FROM memory_facts
+                {cons_join}
+                WHERE (memory_facts.confidence >= 0.7 OR memory_facts.confidence IS NULL) {cons_filter}
+                ORDER BY memory_facts.confidence DESC, memory_facts.updated_at DESC LIMIT 8
             """).fetchall()
             if facts_certain:
                 context_parts.append("\n## Sichere Fakten")
@@ -509,11 +591,13 @@ class MemoryHandler(BaseHandler):
                     conf_indicator = f"[{conf:.1f}]" if conf else "[1.0]"
                     context_parts.append(f"- {key}: {value[:50]} {conf_indicator}")
 
-            # Unsichere Fakten separat markieren (< 0.7)
-            facts_uncertain = conn.execute("""
-                SELECT category, key, value, confidence FROM memory_facts
-                WHERE confidence < 0.7 AND confidence IS NOT NULL
-                ORDER BY confidence DESC LIMIT 5
+            # Unsichere Fakten separat markieren (< 0.7, aber nicht vergessen)
+            facts_uncertain = conn.execute(f"""
+                SELECT memory_facts.category, memory_facts.key, memory_facts.value, memory_facts.confidence
+                FROM memory_facts
+                {cons_join}
+                WHERE memory_facts.confidence < 0.7 AND memory_facts.confidence > 0.0 AND memory_facts.confidence IS NOT NULL {cons_filter}
+                ORDER BY memory_facts.confidence DESC LIMIT 5
             """).fetchall()
             if facts_uncertain:
                 context_parts.append("\n## Unsichere Fakten (zu verifizieren)")
