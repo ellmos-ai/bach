@@ -96,11 +96,15 @@ class ResearchAgent(PortableAgent):
 
         Reihenfolge:
           1. Umgebungsvariable BACH_OCEAN_PRIVATE_ARCH
-          2. BACH_ROOT/../open-ocean/architecture
+          2. BACH_ROOT/.ocean-work/architecture
+          3. BACH_ROOT/../open-ocean/architecture (Fallback)
         """
         env_dir = os.environ.get("BACH_OCEAN_PRIVATE_ARCH")
         if env_dir:
             return Path(env_dir).expanduser()
+        private_repo_dir = BACH_ROOT / ".ocean-work" / "architecture"
+        if private_repo_dir.is_dir():
+            return private_repo_dir.resolve()
         return (BACH_ROOT / ".." / "open-ocean" / "architecture").resolve()
 
     def _load_private_schema(self, name: str) -> Optional[Dict]:
