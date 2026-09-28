@@ -355,6 +355,20 @@ class TestCleanup:
         assert deleted == 0
         assert recent.exists()
 
+    def test_cleanup_delegates_to_external_engine_when_available(self, sync_env, monkeypatch):
+        m, _, _, _ = sync_env
+        calls = []
+
+        class DummyEngine:
+            def cleanup(self, keep_days=7, keep_per_node=10, dry_run=True):
+                calls.append((keep_days, keep_per_node, dry_run))
+                return {"deleted": ["snap1", "snap2"]}
+
+        monkeypatch.setattr(m, "_get_external_engine", lambda: DummyEngine())
+        deleted = m.cleanup_old_backups(keep_days=5, keep_per_host=2)
+        assert deleted == 2
+        assert calls == [(5, 2, False)]
+
 
 # ================================================================
 # HEARTBEAT & CONFLICTS

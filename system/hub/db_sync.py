@@ -763,6 +763,17 @@ class DBSyncManager:
                 except OSError:
                     pass
 
+        # Stufe-7 Seam: TransitSync-Snapshots bereinigen
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                res = engine.cleanup(
+                    keep_days=keep_days, keep_per_node=keep_per_host, dry_run=False
+                )
+                deleted += len(res.get("deleted", []))
+            except Exception:
+                pass
+
         return deleted
 
     # ==================== STATUS ====================

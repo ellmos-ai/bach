@@ -20,9 +20,10 @@ ever writes to the carrier's own dedicated SQLite file.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
-from session_checkpoint import Checkpoint, CheckpointStore
+if TYPE_CHECKING:
+    from session_checkpoint import Checkpoint, CheckpointStore
 
 from .snapshot_payload import collect_snapshot_payload
 
