@@ -59,6 +59,7 @@ def client():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
+    original_db = os.environ.get("BACH_DB")
     os.environ["BACH_DB"] = db_path
     # Falls Modul schon importiert wurde, muss es neu geladen werden können
     # Wir löschen ggf. vorhandene server-Module aus dem Cache
@@ -97,6 +98,11 @@ def client():
     yield TestClient(app)
 
     # Cleanup
+    if original_db is None:
+        os.environ.pop("BACH_DB", None)
+    else:
+        os.environ["BACH_DB"] = original_db
+    sys.modules.pop("hub.bach_paths", None)
     try:
         os.unlink(db_path)
     except FileNotFoundError:

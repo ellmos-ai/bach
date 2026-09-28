@@ -5,14 +5,13 @@ Vorher schrieben sie in system/data/bach.db (Geister-DB) und der
 Themen-Generator per INSERT OR REPLACE -- ein echter Lauf gegen BACH_DB haette
 deaktivierte Themen reaktiviert und fremde Zeilen gleicher Phrase ersetzt.
 """
+import importlib
 import importlib.util
 import sqlite3
 import sys
 from pathlib import Path
 
 import pytest
-
-import hub.bach_paths as bach_paths
 
 SYSTEM_DIR = Path(__file__).resolve().parent.parent
 TOOLS = SYSTEM_DIR / "tools"
@@ -59,6 +58,9 @@ def _rows(db):
     "theme_packet_generator", "lesson_trigger_generator", "tool_auto_discovery",
     "workflow_trigger_generator", "trigger_maintainer", "bach_auto_discovery"])
 def test_generators_use_bach_db(name):
+    # Andere Suiten laden die zentrale Pfad-Registry neu; der Vergleich muss
+    # denselben aktuell geladenen Kanon wie der Generator verwenden.
+    bach_paths = importlib.import_module("hub.bach_paths")
     assert Path(_load(name).DB_PATH) == Path(bach_paths.BACH_DB)
 
 

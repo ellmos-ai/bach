@@ -135,19 +135,17 @@ except ImportError:
 
 USER_DB = BACH_DB
 
-from assistant_core import MessageStore  # Welle 1 (D-20260830-002): Nachrichten-Fachkern, ein Datenkanon
-from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A): bank_accounts domain core
-
-
-def _messages() -> MessageStore:
+def _messages():
     """Store auf der kanonischen User-DB; fehlt sie, fail-closed wie get_user_db()."""
+    from assistant_core import MessageStore  # Welle 1 (D-20260830-002)
     if not USER_DB.exists():
         raise FileNotFoundError(f"User-DB nicht gefunden: {USER_DB}")
     return MessageStore(USER_DB)
 
 
-def _account_store() -> AccountStore:
+def _account_store():
     """AccountStore auf der kanonischen DB; fail-closed analog _messages() (Fix #1280, Regression c59b0da)."""
+    from accounts_core import AccountStore  # Welle 2 (D-20260903-003 = A)
     if not BACH_DB.exists():
         raise FileNotFoundError(f"BACH-DB nicht gefunden: {BACH_DB}")
     return AccountStore(BACH_DB)
@@ -1320,7 +1318,7 @@ async def get_status():
     # Messages (mit Fallback)
     try:
         messages_unread = _messages().unread_count()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError, FileNotFoundError):
+    except (sqlite3.OperationalError, sqlite3.DatabaseError, FileNotFoundError, ImportError):
         messages_unread = 0
 
 
