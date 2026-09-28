@@ -48,3 +48,36 @@ def test_missing_httpx_raises_importerror_not_systemexit(monkeypatch):
     _reload_without(monkeypatch, "httpx")
     with pytest.raises(ImportError):
         importlib.import_module(MODULE_NAME)
+
+
+def test_should_disable_telegram_bot_flags(monkeypatch):
+    pytest.importorskip("telegram")
+    from hub._services.chat.telegram_chat import should_disable_telegram_bot
+
+    monkeypatch.delenv("BACH_DISABLE_TELEGRAM_BOT", raising=False)
+    monkeypatch.delenv("BACH_REMOTE_HOST", raising=False)
+    monkeypatch.delenv("BACH_TELEGRAM_BOT_HOST", raising=False)
+
+    disabled, reason = should_disable_telegram_bot()
+    assert disabled is False
+
+    monkeypatch.setenv("BACH_DISABLE_TELEGRAM_BOT", "1")
+    disabled, reason = should_disable_telegram_bot()
+    assert disabled is True
+    assert "BACH_DISABLE_TELEGRAM_BOT" in reason
+
+    monkeypatch.delenv("BACH_DISABLE_TELEGRAM_BOT", raising=False)
+    monkeypatch.setenv("BACH_REMOTE_HOST", "mac")
+    disabled, reason = should_disable_telegram_bot()
+    assert disabled is True
+    assert "Remote-Host" in reason
+
+    monkeypatch.setenv("BACH_REMOTE_HOST", "local")
+    disabled, reason = should_disable_telegram_bot()
+    assert disabled is False
+
+    monkeypatch.delenv("BACH_REMOTE_HOST", raising=False)
+    monkeypatch.setenv("BACH_TELEGRAM_BOT_HOST", "some-other-machine")
+    disabled, reason = should_disable_telegram_bot()
+    assert disabled is True
+    assert "nicht Bot-Host" in reason

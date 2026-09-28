@@ -52,7 +52,7 @@ class TestOnLogs:
 
         with patch.object(bridge_tray, "LOG_FILE", log_file), \
              patch("sys.platform", "win32"), \
-             patch("os.startfile") as mock_start:
+             patch("os.startfile", create=True) as mock_start:
             tray._on_logs(icon, None)
             mock_start.assert_called_once_with(str(log_file))
 

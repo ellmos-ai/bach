@@ -874,18 +874,25 @@ def command_start(args: argparse.Namespace) -> int:
                 tray_host = host if remote else "127.0.0.1"
                 tray_control = control_port if remote else actual_control
                 tray_gui = gui_port if remote else actual_gui
+                tray_cmd = [
+                    sys.executable,
+                    str(CHAT_DIR / "chat_tray.py"),
+                    "--host", tray_host,
+                    "--port", str(tray_control),
+                    "--gui-port", str(tray_gui),
+                    "--ollama-host", "127.0.0.1",
+                    *(["--remote"] if remote else []),
+                ]
+                activity_url = getattr(args, "activity_url", None) or os.environ.get("BACH_ACTIVITY_URL")
+                if activity_url:
+                    tray_cmd.extend(["--activity-url", activity_url])
+                gui_url = getattr(args, "gui_url", None) or os.environ.get("BACH_GUI_URL")
+                if gui_url:
+                    tray_cmd.extend(["--gui-url", gui_url])
                 ok = _start_service(
                     state,
                     "tray",
-                    command=[
-                        sys.executable,
-                        str(CHAT_DIR / "chat_tray.py"),
-                        "--host", tray_host,
-                        "--port", str(tray_control),
-                        "--gui-port", str(tray_gui),
-                        "--ollama-host", "127.0.0.1",
-                        *(["--remote"] if remote else []),
-                    ],
+                    command=tray_cmd,
                     cwd=SYSTEM_DIR,
                     env=_child_environment(),
                     required=True,
@@ -924,7 +931,8 @@ def command_start(args: argparse.Namespace) -> int:
             print(f"[FEHLER] Starttransaktion zurückgerollt: {exc}")
 
     if args.open_browser and (args.gui or remote) and ok and os.environ.get("BACH_NO_BROWSER") != "1":
-        webbrowser.open(f"http://{host if remote else '127.0.0.1'}:{actual_gui}")
+        browser_target = getattr(args, "gui_url", None) or os.environ.get("BACH_GUI_URL") or f"http://{host if remote else '127.0.0.1'}:{actual_gui}"
+        webbrowser.open(browser_target)
     print(f"[INFO] Discovery: {_paths()['discovery']}")
     _print_status(discovery)
     return 0 if ok else 1
@@ -1155,6 +1163,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--host", help="Tray-/Remote-Host; Standard BACH_HOST oder 127.0.0.1")
     start.add_argument("--gui-port", type=int)
     start.add_argument("--control-port", type=int)
+    start.add_argument("--activity-url", help="Konfigurierbare Aktivitätsanzeige-URL")
+    start.add_argument("--gui-url", help="Konfigurierbare GUI-URL")
     start.add_argument("--open-browser", action="store_true")
     start.add_argument("--readiness-timeout", type=float, default=15.0)
     start.set_defaults(func=command_start)
