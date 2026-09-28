@@ -324,10 +324,12 @@ class TestSanitizeHostPath:
 
     def test_cli_sanitize_invocation(self, tmp_path, monkeypatch, capsys):
         import sys
+        import tools.fs_protection as fsp
         from tools.fs_protection import main
 
         base = tmp_path / "system"
         base.mkdir()
+        monkeypatch.setattr(fsp, "BASE_DIR", base)
         f = base / "valid.txt"
         f.write_text("test", encoding="utf-8")
 
