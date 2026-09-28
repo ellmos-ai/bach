@@ -324,6 +324,7 @@ class TestSanitizeHostPath:
 
     def test_cli_sanitize_invocation(self, tmp_path, monkeypatch, capsys):
         import sys
+
         import tools.fs_protection as fsp
         from tools.fs_protection import main
 

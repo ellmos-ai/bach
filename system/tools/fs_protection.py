@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
 Tool: fs_protection
@@ -43,17 +42,17 @@ v2.0 - 2026-01-30: Erweitert um dist_type System (Task 773)
 v1.0 - Initial
 """
 
-import os
-import sys
-import shutil
+import fnmatch
 import hashlib
 import json
+import os
+import shutil
 import sqlite3
+import sys
 import zipfile
-import fnmatch
-from pathlib import Path
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
 
 # Pfade
 BASE_DIR = Path(__file__).parent.parent
@@ -78,9 +77,9 @@ except ImportError:  # pragma: no cover - standalone invocation fallback
 # =============================================================================
 
 def sanitize_host_path(
-    path: Union[str, Path],
-    base_path: Optional[Union[str, Path]] = None,
-    allowed_roots: Optional[Sequence[Union[str, Path]]] = None,
+    path: str | Path,
+    base_path: str | Path | None = None,
+    allowed_roots: Sequence[str | Path] | None = None,
     allow_relative: bool = False,
     must_exist: bool = False,
 ) -> Path:
@@ -187,7 +186,7 @@ def sanitize_host_path(
                     f"Symlink-Escape erkannt: '{path}' loest sich nach '{resolved_candidate}' auf, "
                     f"das ausserhalb der erlaubten Wurzeln liegt."
                 )
-        except Exception:
+        except (OSError, RuntimeError):
             pass
 
         raise ValueError(
@@ -281,7 +280,7 @@ class PathClassifier:
     def __init__(self, base_path: Path = None):
         self.base_path = base_path or BASE_DIR
 
-    def _matches_any(self, rel_path: str, patterns: List[str]) -> bool:
+    def _matches_any(self, rel_path: str, patterns: list[str]) -> bool:
         """Prueft ob Pfad auf eines der Patterns matched."""
         # Normalisiere Pfad (forward slashes)
         rel_path = rel_path.replace("\\", "/")
@@ -351,7 +350,7 @@ class PathClassifier:
         dist_type = self.classify_path(path)
         return {0: "USER", 1: "TEMPLATE", 2: "CORE"}[dist_type]
 
-    def scan_directory(self, directory: Path = None) -> Dict[int, List[str]]:
+    def scan_directory(self, directory: Path = None) -> dict[int, list[str]]:
         """
         Scannt ein Verzeichnis und gruppiert Dateien nach dist_type.
 
@@ -437,13 +436,12 @@ class FSProtection:
     def _snapshot_name_to_path(self, snapshot_name: str) -> str:
         """Konvertiert Snapshot-Name zurueck zu Pfad."""
         # hub_time.py.orig -> hub/time.py
-        if snapshot_name.endswith(".orig"):
-            snapshot_name = snapshot_name[:-5]
+        snapshot_name = snapshot_name.removesuffix(".orig")
         # Einfache Heuristik: Erster Underscore ist Verzeichnistrenner
         # Das ist nicht perfekt, aber fuer die meisten Faelle OK
         return snapshot_name.replace("_", "/", 1)
 
-    def create_backup(self, tag: str = "auto", dry_run: bool = False) -> Tuple[bool, str]:
+    def create_backup(self, tag: str = "auto", dry_run: bool = False) -> tuple[bool, str]:
         """Erstellt ein ZIP-Backup der kritischen Verzeichnisse."""
         if dry_run:
             return True, f"[DRY-RUN] Backup wuerde erstellt werden (tag={tag})"
@@ -492,7 +490,7 @@ class FSProtection:
 
         MANIFEST_FILE.write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 
-    def check_integrity(self) -> Tuple[bool, str]:
+    def check_integrity(self) -> tuple[bool, str]:
         """Prueft Dateien gegen Snapshots und Manifest."""
         if not MANIFEST_FILE.exists():
             print("[FS] Kein Manifest gefunden. Erstelle neues...")
@@ -559,14 +557,14 @@ class FSProtection:
         success = len(results["missing"]) == 0
         return success, "\n".join(lines)
 
-    def heal(self, file_path: str = None, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+    def heal(self, file_path: str = None, force: bool = False, dry_run: bool = False) -> tuple[bool, str]:
         """Stellt Datei(en) aus Snapshots wieder her."""
         if file_path:
             return self._heal_single(file_path, force, dry_run)
         else:
             return self._heal_all(force, dry_run)
 
-    def _heal_single(self, rel_path: str, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+    def _heal_single(self, rel_path: str, force: bool = False, dry_run: bool = False) -> tuple[bool, str]:
         """Stellt eine einzelne Datei wieder her."""
         snapshot_name = self._path_to_snapshot_name(rel_path)
         snapshot_path = SNAPSHOTS_DIR / snapshot_name
@@ -591,7 +589,7 @@ class FSProtection:
 
         return True, f"[FS] Wiederhergestellt: {rel_path}"
 
-    def _heal_all(self, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+    def _heal_all(self, force: bool = False, dry_run: bool = False) -> tuple[bool, str]:
         """Stellt alle fehlenden/beschaedigten Dateien wieder her."""
         snapshots = list(SNAPSHOTS_DIR.glob("*.orig"))
         if not snapshots:
@@ -640,7 +638,7 @@ class FSProtection:
 
         return len(failed) == 0, "\n".join(lines)
 
-    def create_snapshot(self, file_path: str = None, all_files: bool = False) -> Tuple[bool, str]:
+    def create_snapshot(self, file_path: str = None, all_files: bool = False) -> tuple[bool, str]:
         """Erstellt Snapshot(s) von geschuetzten Dateien."""
         if file_path:
             return self._snapshot_single(file_path)
@@ -649,7 +647,7 @@ class FSProtection:
         else:
             return False, "Usage: snapshot <file> oder snapshot --all"
 
-    def _snapshot_single(self, rel_path: str) -> Tuple[bool, str]:
+    def _snapshot_single(self, rel_path: str) -> tuple[bool, str]:
         """Erstellt Snapshot einer einzelnen Datei."""
         source_path = self._resolve_manifest_path(rel_path)
 
@@ -674,7 +672,7 @@ class FSProtection:
 
         return True, f"[FS] Snapshot erstellt: {snapshot_name}"
 
-    def _snapshot_all(self) -> Tuple[bool, str]:
+    def _snapshot_all(self) -> tuple[bool, str]:
         """Erstellt Snapshots aller Core/Template Dateien."""
         created = 0
         skipped = 0
