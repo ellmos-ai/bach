@@ -648,6 +648,11 @@ class ConsolidationHandler(BaseHandler):
                             SET status = 'forgotten', updated_at = ?
                             WHERE id = ?
                         """, (now, entry['id']))
+                        cursor.execute("""
+                            UPDATE memory_facts
+                            SET confidence = 0.0, updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['source_id']))
                     else:
                         cursor.execute("""
                             UPDATE memory_consolidation

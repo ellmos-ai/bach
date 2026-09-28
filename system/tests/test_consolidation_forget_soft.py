@@ -3,7 +3,7 @@
 """Test fuer weiches Vergessen (forget ohne DELETE auf memory_facts).
 
 Entscheidung des Projektleiters (2026-09-26, E4):
-- memory_facts wird nicht geloescht; Zeile bleibt unveraendert
+- memory_facts wird nicht gelöscht; confidence wird auf 0.0 gesetzt
 - memory_consolidation erhaelt status = 'forgotten' fuer memory_facts
 - memory_lessons und memory_working erhalten status = 'deleted' und is_active = 0
 - Rueckgabetext unterscheidet zwischen deaktivierten und als vergessen markierten Eintraegen
@@ -18,6 +18,7 @@ BACH_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(BACH_ROOT))
 
 from hub.consolidation import ConsolidationHandler
+from hub.memory import MemoryHandler
 
 MINIMAL_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS memory_working (
@@ -162,8 +163,17 @@ class TestConsolidationForgetSoft:
         # 1. Zeilenzahl von memory_facts vorher == nachher
         facts_after = conn.execute("SELECT * FROM memory_facts").fetchall()
         assert len(facts_after) == len(facts_before)
-        # Fakt-Zeile bleibt einschließlich Metadaten unverändert.
-        assert tuple(facts_after[0]) == facts_before[0]
+        # Der Fakt bleibt erhalten, wird aber für übliche Confidence-Filter unsichtbar.
+        assert facts_after[0]["id"] == fact_id
+        assert facts_after[0]["key"] == "platform"
+        assert facts_after[0]["value"] == "linux-arm64"
+        assert facts_after[0]["confidence"] == 0.0
+
+        memory = MemoryHandler(handler.base_path)
+        memory.db_path = db_path
+        ok, facts = memory._list_facts(min_confidence=0.5)
+        assert ok is True
+        assert "linux-arm64" not in facts
 
         # 2. consolidation-Status fuer Fakt ist 'forgotten'
         fact_cons = conn.execute(
@@ -224,6 +234,8 @@ class TestConsolidationForgetSoft:
 
         facts_count = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
         assert facts_count == 1
+        fact_confidence = conn.execute("SELECT confidence FROM memory_facts WHERE id = 1").fetchone()[0]
+        assert fact_confidence == 1.0
         conn.close()
 
     def test_status_output_includes_forgotten(self, soft_forget_env):
