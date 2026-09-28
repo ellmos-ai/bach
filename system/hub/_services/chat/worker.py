@@ -189,6 +189,13 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(max(5, args.takt))
             continue
 
+        if bump_pause_counter("buddha_always_on", event_type="runs"):
+            _log(workdir, "Pause-Takt fuer buddha_always_on gestartet")
+            if args.einmal:
+                return 0
+            time.sleep(max(5, args.takt))
+            continue
+
         # Bind to the model that will actually run, including CLI overrides.
         offen = offene_tasks(db, args.category, slot={**slot, "model": modell})
 

@@ -249,21 +249,11 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
             for k, default_val in DEFAULT_CORE_SLOTS.items():
                 if k not in slots:
                     slots[k] = dict(default_val)
-            # Migrate version 1 -> 2: add pause fields to existing core slots
+                else:
+                    for field in ("pause_after", "pause_minutes", "pause_basis",
+                                  "pause_counter", "pause_started_at"):
+                        slots[k].setdefault(field, default_val[field])
             if data.get("version", 1) < 2:
-                for k, default_val in DEFAULT_CORE_SLOTS.items():
-                    slot = slots.get(k)
-                    if slot is None:
-                        continue
-                    for field in (
-                        "pause_after",
-                        "pause_minutes",
-                        "pause_basis",
-                        "pause_counter",
-                        "pause_started_at",
-                    ):
-                        if field not in slot:
-                            slot[field] = default_val[field]
                 data["version"] = 2
             # Migrate version 2 -> 3: add pickup_filter to buddha_always_on
             if data.get("version", 1) < 3:
@@ -304,41 +294,18 @@ def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
 
 
 def is_slot_paused(slot: dict[str, Any]) -> bool:
-    """Return True if the slot is currently within its pause window."""
-    started_at = slot.get("pause_started_at", "")
-    pause_minutes = slot.get("pause_minutes", 0) or 0
-    if not started_at or not pause_minutes:
+    """Return whether the slot's pause window has not yet elapsed."""
+    started_at = slot.get("pause_started_at")
+    minutes = slot.get("pause_minutes", 0) or 0
+    if not started_at or not minutes:
         return False
     try:
         started = datetime.fromisoformat(started_at)
         if started.tzinfo is None:
             started = started.replace(tzinfo=timezone.utc)
-        elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
-        return elapsed_minutes < pause_minutes
-    except (ValueError, TypeError):
+        return (datetime.now(timezone.utc) - started).total_seconds() < float(minutes) * 60
+    except (TypeError, ValueError):
         return False
-
-
-def end_pause_if_over(slot: dict[str, Any]) -> bool:
-    """Clear an expired pause window. Returns True if a pause was ended."""
-    started_at = slot.get("pause_started_at", "")
-    pause_minutes = slot.get("pause_minutes", 0) or 0
-    if not started_at:
-        return False
-    try:
-        started = datetime.fromisoformat(started_at)
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
-    except (ValueError, TypeError):
-        slot["pause_started_at"] = ""
-        slot["pause_counter"] = 0
-        return True
-    elapsed_minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60.0
-    if elapsed_minutes >= pause_minutes:
-        slot["pause_started_at"] = ""
-        slot["pause_counter"] = 0
-        return True
-    return False
 
 
 def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
@@ -432,10 +399,9 @@ def get_slot_pause_info(slot: dict[str, Any]) -> dict[str, Any]:
             "remaining_seconds": 0.0,
             "remaining_minutes": 0.0,
         }
-    end_pause_if_over(slot)
     is_paused = is_slot_paused(slot)
     pause_after = int(slot.get("pause_after", 0) or 0)
-    pause_minutes = int(slot.get("pause_minutes", 0) or 0)
+    pause_minutes = float(slot.get("pause_minutes", 0) or 0)
     pause_basis = str(slot.get("pause_basis") or "runs")
     pause_counter = int(slot.get("pause_counter", 0) or 0)
     started_at = slot.get("pause_started_at", "")
@@ -461,70 +427,41 @@ def get_slot_pause_info(slot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def maybe_start_pause(slot: dict[str, Any]) -> bool:
-    """Start a pause window if the run counter has reached pause_after."""
-    pause_after = slot.get("pause_after", 0) or 0
-    pause_minutes = slot.get("pause_minutes", 0) or 0
-    counter = slot.get("pause_counter", 0) or 0
-    if not pause_after or not pause_minutes:
-        return False
-    if is_slot_paused(slot):
-        return False
-    if counter < pause_after:
-        return False
-    slot["pause_started_at"] = datetime.now(timezone.utc).isoformat()
-    slot["pause_counter"] = 0
-    return True
-
-
 def bump_pause_counter(
     slot: dict[str, Any] | str,
     event_type: str = "runs",
     path: str | None = None,
 ) -> bool:
-    """Increment run or task counter and start a pause if threshold is reached.
-
-    Parameters
-    ----------
-    slot: Slot or worker dict, or a slot_id string.
-    event_type: "runs" or "tasks". If slot's pause_basis is "tasks", only "tasks"
-                increments the counter. If pause_basis is "runs", any run/loop
-                increments the counter.
-    path: Optional path to slots_config file to persist state.
-    """
+    """Count a run or completed task; persist updates when given a slot ID."""
     if isinstance(slot, str):
         slot_id = slot
-        slot_obj = get_slot(slot_id, path=path)
-        if not slot_obj:
+        current = get_slot(slot_id, path=path)
+        if not current:
             return False
-        started = bump_pause_counter(slot_obj, event_type=event_type, path=path)
-        try:
-            update_slot(slot_id, {
-                "pause_counter": slot_obj.get("pause_counter", 0),
-                "pause_started_at": slot_obj.get("pause_started_at", ""),
-            }, path=path)
-        except Exception:
-            pass
+        started = bump_pause_counter(current, event_type=event_type)
+        update_slot(slot_id, {
+            "pause_counter": current["pause_counter"],
+            "pause_started_at": current.get("pause_started_at", ""),
+        }, path=path)
         return started
 
-    end_pause_if_over(slot)
-    pause_basis = str(slot.get("pause_basis") or "runs").strip().lower()
-    if pause_basis == "tasks" and event_type != "tasks":
+    if is_slot_paused(slot):
         return False
-
+    basis = str(slot.get("pause_basis") or "runs").lower()
+    if basis == "tasks" and event_type != "tasks":
+        return False
+    if basis == "runs" and event_type != "runs":
+        return False
+    threshold = int(slot.get("pause_after", 0) or 0)
+    minutes = float(slot.get("pause_minutes", 0) or 0)
+    if threshold <= 0 or minutes <= 0:
+        return False
     slot["pause_counter"] = int(slot.get("pause_counter", 0) or 0) + 1
-    started = maybe_start_pause(slot)
-
-    slot_id = slot.get("id") or ("buddha_always_on" if "pickup_filter" in slot else None)
-    if slot_id and path is not None:
-        try:
-            update_slot(slot_id, {
-                "pause_counter": slot.get("pause_counter", 0),
-                "pause_started_at": slot.get("pause_started_at", ""),
-            }, path=path)
-        except Exception:
-            pass
-    return started
+    if slot["pause_counter"] < threshold:
+        return False
+    slot["pause_started_at"] = datetime.now(timezone.utc).isoformat()
+    slot["pause_counter"] = 0
+    return True
 
 
 def get_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:

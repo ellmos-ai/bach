@@ -250,7 +250,13 @@ async def list_tasks(status: str = "pending", limit: int = 50,
                      priority: str = "", _=Depends(verify_auth)):
     conn = _get_db()
     try:
-        query = "SELECT id, title, priority, status, category, assigned_to, created_at FROM tasks WHERE 1=1"
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        slot_fields = ", ".join(
+            name if name in columns else f"NULL AS {name}"
+            for name in ("required_model", "assigned_slot")
+        )
+        query = ("SELECT id, title, priority, status, category, assigned_to, "
+                 f"created_at, {slot_fields} FROM tasks WHERE 1=1")
         params = []
         if status != "all":
             query += " AND status = ?"

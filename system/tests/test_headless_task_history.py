@@ -110,6 +110,12 @@ def test_task_routing_fields_roundtrip_through_headless_api(client, db_path):
     assert response.json()["required_model"] == "glm-5.3:cloud"
     assert response.json()["assigned_slot"] == "cloud_worker"
 
+    response = client.get("/api/v1/tasks")
+    assert response.status_code == 200
+    listed = next(task for task in response.json()["tasks"] if task["id"] == task_id)
+    assert listed["required_model"] == "glm-5.3:cloud"
+    assert listed["assigned_slot"] == "cloud_worker"
+
     response = client.put(f"/api/v1/tasks/{task_id}", json={
         "required_model": "qwen3.8:27b-mlx", "assigned_slot": "local_worker",
     })
@@ -119,6 +125,13 @@ def test_task_routing_fields_roundtrip_through_headless_api(client, db_path):
             "SELECT required_model, assigned_slot FROM tasks WHERE id = ?", (task_id,)
         ).fetchone()
     assert row == ("qwen3.8:27b-mlx", "local_worker")
+
+
+def test_headless_list_exposes_empty_bindings_on_legacy_schema(client):
+    response = client.get("/api/v1/tasks")
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["required_model"] is None
+    assert response.json()["tasks"][0]["assigned_slot"] is None
 
 
 @pytest.fixture

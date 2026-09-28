@@ -5,6 +5,15 @@
 import sqlite3
 
 
+def unbound_task_filter(conn: sqlite3.Connection) -> str:
+    """SQL predicate excluding model/slot-bound tasks on schemas that expose them."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    return "".join(
+        f" AND COALESCE({name},'')=''"
+        for name in ("required_model", "assigned_slot") if name in columns
+    )
+
+
 def parse_task_dependency_ids(value: object) -> tuple[list[int], list[str]]:
     """Parse a legacy ``depends_on`` value without trusting its contents.
 
