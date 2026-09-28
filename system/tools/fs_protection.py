@@ -53,7 +53,7 @@ import zipfile
 import fnmatch
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 # Pfade
 BASE_DIR = Path(__file__).parent.parent
@@ -71,6 +71,141 @@ try:
     from hub.bach_paths import BACH_DB
 except ImportError:  # pragma: no cover - standalone invocation fallback
     BACH_DB = DATA_DIR / "bach.db"
+
+
+# =============================================================================
+# HYGIENE-GUARD: SANITIZE HOST PATH
+# =============================================================================
+
+def sanitize_host_path(
+    path: Union[str, Path],
+    base_path: Optional[Union[str, Path]] = None,
+    allowed_roots: Optional[Sequence[Union[str, Path]]] = None,
+    allow_relative: bool = False,
+    must_exist: bool = False,
+) -> Path:
+    """Sanitizes and validates a host filesystem path against traversal and symlink escapes.
+
+    Guarantees:
+    - Path cannot escape allowed root directories via directory traversal ('..').
+    - Symlinks cannot point to locations outside the allowed root directories.
+    - Path must resolve within base_path, repo root, or configured allowed_roots.
+    - If must_exist is True, the path must exist on disk.
+    - Returns a resolved, clean Path object (or relative Path if allow_relative is True).
+
+    Args:
+        path: Path to validate (string or Path).
+        base_path: Primary base directory (defaults to BASE_DIR).
+        allowed_roots: Explicit list of allowed root directories. If None, defaults to
+            [base_path, repo_root, os.environ.get("BACH_HOME"), os.environ.get("BACH_ROOT")].
+        allow_relative: If True and the input path was relative, returns path relative to base_path.
+        must_exist: If True, raises ValueError if the path does not exist.
+
+    Returns:
+        Path: Sanitized, resolved Path (or relative Path if allow_relative is True).
+
+    Raises:
+        ValueError: If path is empty, contains directory traversal out of bounds,
+            resolves outside allowed roots, or is an escaping symlink.
+    """
+    if path is None:
+        raise ValueError("Ungueltiger Pfad: None uebergeben.")
+    if isinstance(path, str) and not path.strip():
+        raise ValueError("Ungueltiger Pfad: Leerer Pfad uebergeben.")
+
+    # Determine base directory
+    if base_path is None:
+        base = BASE_DIR
+    else:
+        base = Path(base_path)
+
+    base_resolved = Path(os.path.realpath(str(base)))
+
+    # Determine project/repo root: if base is 'system', parent is repo root
+    repo_root = base_resolved.parent if base_resolved.name == "system" else base_resolved
+
+    # Determine allowed roots
+    if allowed_roots is not None:
+        roots = [Path(os.path.realpath(str(r))) for r in allowed_roots]
+    else:
+        roots = [base_resolved, repo_root]
+        for env_var in ("BACH_HOME", "BACH_ROOT"):
+            val = os.environ.get(env_var)
+            if val:
+                roots.append(Path(os.path.realpath(val)))
+
+    raw_path = Path(path)
+    is_input_relative = not raw_path.is_absolute()
+
+    if is_input_relative:
+        if raw_path.parts and raw_path.parts[0] == "system" and base_resolved.name == "system":
+            candidate = repo_root / raw_path
+        else:
+            candidate = base_resolved / raw_path
+    else:
+        candidate = raw_path
+
+    resolved_candidate = Path(os.path.realpath(str(candidate)))
+
+    def _is_within(target: Path, root: Path) -> bool:
+        if os.name == "nt":
+            t_str = target.as_posix().lower()
+            r_str = root.as_posix().lower()
+            return t_str == r_str or t_str.startswith(r_str + "/")
+        else:
+            try:
+                target.relative_to(root)
+                return True
+            except ValueError:
+                return False
+
+    # Check for symlink escapes along the candidate path
+    curr = candidate
+    while True:
+        try:
+            if curr.is_symlink():
+                link_target = Path(os.path.realpath(str(curr)))
+                if not any(_is_within(link_target, r) for r in roots):
+                    raise ValueError(
+                        f"Symlink-Escape erkannt: '{path}' zeigt ueber Symlink '{curr}' auf "
+                        f"'{link_target}', das ausserhalb der erlaubten Wurzeln liegt."
+                    )
+        except (OSError, ValueError) as err:
+            if "Symlink-Escape" in str(err):
+                raise
+        parent = curr.parent
+        if parent == curr:
+            break
+        curr = parent
+
+    # Verify that the fully resolved path is within at least one allowed root
+    if not any(_is_within(resolved_candidate, r) for r in roots):
+        try:
+            unresolved = candidate.resolve(strict=False)
+            if any(_is_within(unresolved, r) for r in roots):
+                raise ValueError(
+                    f"Symlink-Escape erkannt: '{path}' loest sich nach '{resolved_candidate}' auf, "
+                    f"das ausserhalb der erlaubten Wurzeln liegt."
+                )
+        except Exception:
+            pass
+
+        raise ValueError(
+            f"Pfad-Traversal oder unerlaubter Pfad erkannt: '{path}' liegt nach "
+            f"Normalisierung ('{resolved_candidate}') ausserhalb der erlaubten Wurzeln."
+        )
+
+    if must_exist and not resolved_candidate.exists():
+        raise ValueError(f"Pfad existiert nicht: '{path}' (aufgeloest: '{resolved_candidate}')")
+
+    if allow_relative and is_input_relative:
+        for r in [base_resolved] + roots:
+            try:
+                return resolved_candidate.relative_to(r)
+            except ValueError:
+                continue
+
+    return resolved_candidate
 
 
 # =============================================================================
@@ -171,14 +306,21 @@ class PathClassifier:
         Returns:
             dist_type: 0 (USER), 1 (TEMPLATE), 2 (CORE)
         """
-        # Relativen Pfad ermitteln
+        # Relativen Pfad ermitteln und Traversal blockieren
+        project_root = self.base_path.parent if self.base_path.name == "system" else self.base_path
+        allowed = [self.base_path, project_root]
+
         try:
             if path.is_absolute():
-                rel_path = str(path.relative_to(self.base_path))
+                sanitized = sanitize_host_path(path, base_path=self.base_path, allowed_roots=allowed)
+                rel_path = str(sanitized.relative_to(self.base_path))
             else:
-                rel_path = str(path)
+                raw_str = str(path)
+                if ".." in Path(raw_str).parts:
+                    sanitize_host_path(raw_str, base_path=self.base_path, allowed_roots=allowed)
+                rel_path = raw_str
         except ValueError:
-            # Pfad ausserhalb von BACH
+            # Pfad ausserhalb von BACH oder unzulaessige Traversal / Symlink-Escape
             return 0
 
         # Normalisiere
@@ -260,13 +402,15 @@ class FSProtection:
             raise ValueError(f"Ungueltiger Manifestpfad: {rel_path}")
 
         project_root = self.base_path.parent if self.base_path.name == "system" else self.base_path
+        allowed = [self.base_path, project_root]
+
         system_candidate = self.base_path / relative
         root_candidate = project_root / relative
         if relative.parts and relative.parts[0] == "system":
-            return root_candidate
+            return sanitize_host_path(root_candidate, base_path=self.base_path, allowed_roots=allowed)
         if system_candidate.exists() or not root_candidate.exists():
-            return system_candidate
-        return root_candidate
+            return sanitize_host_path(system_candidate, base_path=self.base_path, allowed_roots=allowed)
+        return sanitize_host_path(root_candidate, base_path=self.base_path, allowed_roots=allowed)
 
     def _get_conn(self) -> sqlite3.Connection:
         """Datenbankverbindung."""
@@ -607,6 +751,18 @@ def main():
         print(f"USER (dist_type=0): {len(result[0])} Dateien")
         success, msg = True, ""
 
+    elif op == "sanitize":
+        if len(args) < 2:
+            success, msg = False, "Usage: sanitize <path> [--must-exist]"
+        else:
+            raw = args[1]
+            must_exist = "--must-exist" in args
+            try:
+                sanitized = sanitize_host_path(raw, must_exist=must_exist)
+                success, msg = True, f"Sanitized: {sanitized}"
+            except ValueError as e:
+                success, msg = False, f"[FEHLER] {e}"
+
     elif op == "help":
         success = True
         msg = """
@@ -622,6 +778,7 @@ Befehle:
   snapshot --all    Erstellt Snapshots aller Core/Template Dateien
   classify <path>   Zeigt dist_type fuer Pfad
   scan              Scannt und gruppiert alle Dateien nach dist_type
+  sanitize <path>   Sanitisiert Pfad gegen Traversal und Symlink-Escape
 
 dist_type:
   0 = USER      - User-Daten (nicht im Installer)

@@ -143,3 +143,208 @@ def test_heal_all_fails_closed_without_snapshots(tmp_path, monkeypatch):
 
     assert ok is False
     assert "Keine gueltigen Snapshots" in message
+
+
+class TestSanitizeHostPath:
+    def test_valid_relative_within_base(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+        target = base / "hub" / "setup.py"
+        target.parent.mkdir()
+        target.write_text("# ok", encoding="utf-8")
+
+        res = sanitize_host_path("hub/setup.py", base_path=base)
+        assert res == target.resolve()
+
+    def test_valid_absolute_within_base(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+        target = base / "file.txt"
+        target.write_text("data", encoding="utf-8")
+
+        res = sanitize_host_path(target, base_path=base)
+        assert res == target.resolve()
+
+    def test_repo_root_allowed_when_base_is_system(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        project_root = tmp_path / "project"
+        system_root = project_root / "system"
+        system_root.mkdir(parents=True)
+        readme = project_root / "README.md"
+        readme.write_text("# hello", encoding="utf-8")
+
+        res = sanitize_host_path(readme, base_path=system_root)
+        assert res == readme.resolve()
+
+    def test_explicit_allowed_roots(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        root1 = tmp_path / "r1"
+        root2 = tmp_path / "r2"
+        root1.mkdir()
+        root2.mkdir()
+        f2 = root2 / "sample.txt"
+        f2.write_text("text", encoding="utf-8")
+
+        res = sanitize_host_path(f2, base_path=root1, allowed_roots=[root1, root2])
+        assert res == f2.resolve()
+
+    def test_empty_or_none_raises_value_error(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        with pytest.raises(ValueError, match="Ungueltiger Pfad"):
+            sanitize_host_path(None, base_path=tmp_path)
+
+        with pytest.raises(ValueError, match="Ungueltiger Pfad"):
+            sanitize_host_path("", base_path=tmp_path)
+
+        with pytest.raises(ValueError, match="Ungueltiger Pfad"):
+            sanitize_host_path("   ", base_path=tmp_path)
+
+    def test_traversal_blocked(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+
+        with pytest.raises(ValueError, match="Pfad-Traversal oder unerlaubter Pfad erkannt"):
+            sanitize_host_path("../../outside.txt", base_path=base)
+
+        with pytest.raises(ValueError, match="Pfad-Traversal oder unerlaubter Pfad erkannt"):
+            sanitize_host_path("hub/../../../../escape.py", base_path=base)
+
+    def test_absolute_outside_blocked(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        bach_root = tmp_path / "bach_root"
+        base = bach_root / "system"
+        base.mkdir(parents=True)
+        outside = tmp_path / "foreign" / "secret.txt"
+        outside.parent.mkdir()
+        outside.write_text("secret", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Pfad-Traversal oder unerlaubter Pfad erkannt"):
+            sanitize_host_path(outside, base_path=base)
+
+    def test_symlink_escape_blocked(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+        secret_dir = tmp_path / "outside_secret"
+        secret_dir.mkdir()
+        secret_file = secret_dir / "secret.txt"
+        secret_file.write_text("confidential", encoding="utf-8")
+
+        link = base / "symlink_secret"
+        try:
+            link.symlink_to(secret_file)
+        except OSError:
+            pytest.skip("Symlink creation not supported in this environment")
+
+        with pytest.raises(ValueError, match="Symlink-Escape erkannt"):
+            sanitize_host_path(link, base_path=base)
+
+    def test_symlink_within_root_allowed(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+        target_file = base / "real_file.txt"
+        target_file.write_text("allowed", encoding="utf-8")
+
+        link = base / "link_internal.txt"
+        try:
+            link.symlink_to(target_file)
+        except OSError:
+            pytest.skip("Symlink creation not supported in this environment")
+
+        res = sanitize_host_path(link, base_path=base)
+        assert res == target_file.resolve()
+
+    def test_must_exist_flag(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+
+        non_existent = base / "does_not_exist.txt"
+        res = sanitize_host_path(non_existent, base_path=base, must_exist=False)
+        assert res == non_existent.resolve()
+
+        with pytest.raises(ValueError, match="Pfad existiert nicht"):
+            sanitize_host_path(non_existent, base_path=base, must_exist=True)
+
+        non_existent.write_text("now exists", encoding="utf-8")
+        res2 = sanitize_host_path(non_existent, base_path=base, must_exist=True)
+        assert res2 == non_existent.resolve()
+
+    def test_allow_relative_returns_relative_path(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+
+        rel = sanitize_host_path("hub/sub/file.py", base_path=base, allow_relative=True)
+        assert not rel.is_absolute()
+        assert rel == Path("hub/sub/file.py")
+
+    def test_bach_home_environment_allowed(self, tmp_path, monkeypatch):
+        from tools.fs_protection import sanitize_host_path
+
+        base = tmp_path / "system"
+        base.mkdir()
+        home_dir = tmp_path / "bach_home"
+        home_dir.mkdir()
+        home_file = home_dir / "tasks.db"
+        home_file.write_text("db", encoding="utf-8")
+
+        monkeypatch.setenv("BACH_HOME", str(home_dir))
+
+        res = sanitize_host_path(home_file, base_path=base)
+        assert res == home_file.resolve()
+
+    def test_system_prefixed_relative_path(self, tmp_path):
+        from tools.fs_protection import sanitize_host_path
+
+        project_root = tmp_path / "project"
+        system_root = project_root / "system"
+        system_root.mkdir(parents=True)
+        target = system_root / "hub" / "setup.py"
+        target.parent.mkdir()
+        target.write_text("# ok", encoding="utf-8")
+
+        res = sanitize_host_path("system/hub/setup.py", base_path=system_root)
+        assert res == target.resolve()
+
+    def test_cli_sanitize_invocation(self, tmp_path, monkeypatch, capsys):
+        import sys
+        from tools.fs_protection import main
+
+        base = tmp_path / "system"
+        base.mkdir()
+        f = base / "valid.txt"
+        f.write_text("test", encoding="utf-8")
+
+        # Success case
+        monkeypatch.setattr(sys, "argv", ["fs_protection.py", "sanitize", str(f)])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 0
+        out, _ = capsys.readouterr()
+        assert "Sanitized:" in out
+
+        # Failure case
+        monkeypatch.setattr(sys, "argv", ["fs_protection.py", "sanitize", "../../invalid.txt"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
+        out, _ = capsys.readouterr()
+        assert "[FEHLER]" in out
+
+
