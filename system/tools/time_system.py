@@ -512,6 +512,22 @@ class CountdownModule:
         return " | ".join(parts) if parts else None
 
 
+def _resolve_time_db(base_path: Optional[Path] = None) -> Path:
+    """Kanonische BACH-DB (hub/bach_paths.py) fuer Produktion, Test-DB fuer Fixtures."""
+    system_root = Path(__file__).resolve().parent.parent
+    try:
+        from hub.bach_paths import BACH_DB
+        if base_path:
+            local = base_path / "data" / "bach.db"
+            if local.exists() and base_path.resolve() not in (system_root, system_root.parent):
+                return local
+        return Path(BACH_DB)
+    except Exception:
+        if base_path:
+            return base_path / "data" / "bach.db"
+        return Path.home() / ".bach" / "bach.db"
+
+
 class BetweenManager:
     """
     Between-Checks mit Profilen.
@@ -574,6 +590,10 @@ DENKANSTOSS:
         self.state = self._load_state()
         self._init_db_profiles()
 
+    def _db_path(self) -> Path:
+        """Kanonische BACH-DB oder Test-DB."""
+        return _resolve_time_db(self.base_path)
+
     def _load_state(self) -> dict:
         """Laedt Zustand aus Datei."""
         default = {
@@ -603,7 +623,7 @@ DENKANSTOSS:
         """Initialisiert Standard-Profile in DB falls nicht vorhanden."""
         try:
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._db_path()
             if not db_path.exists():
                 return
 
@@ -664,7 +684,7 @@ DENKANSTOSS:
         """Laedt Profil aus DB oder Fallback."""
         try:
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._db_path()
             if db_path.exists():
                 conn = sqlite3.connect(str(db_path))
                 conn.row_factory = sqlite3.Row
@@ -731,7 +751,7 @@ DENKANSTOSS:
 
         try:
             import sqlite3
-            db_path = self.base_path / "data" / "bach.db"
+            db_path = self._db_path()
             if db_path.exists():
                 conn = sqlite3.connect(str(db_path))
                 conn.row_factory = sqlite3.Row
@@ -775,6 +795,10 @@ class TimeManager:
         self.timer = TimerModule(base_path)
         self.countdown = CountdownModule(base_path)
         self.between = BetweenManager(base_path)
+
+    def _db_path(self) -> Path:
+        """Kanonische BACH-DB oder Test-DB."""
+        return _resolve_time_db(self.base_path)
 
     def get_beat(self) -> str:
         """
@@ -862,7 +886,7 @@ class TimeManager:
             import sqlite3
             
             # Aktiven Partner aus partner_presence holen
-            bach_db = self.base_path / "data" / "bach.db"
+            bach_db = self._db_path()
             if not bach_db.exists():
                 return None
             
@@ -880,10 +904,6 @@ class TimeManager:
             partner = row[0]
             
             # Ungelesene Nachrichten zählen
-            bach_db = self.base_path / "data" / "bach.db"
-            if not bach_db.exists():
-                return None
-
             conn = sqlite3.connect(str(bach_db))
             conn.row_factory = sqlite3.Row
             msgs = conn.execute("""
