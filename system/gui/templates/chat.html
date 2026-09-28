@@ -876,10 +876,10 @@
         function controlHeaders(method, jsonBody = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
             if (method !== 'GET' && method !== 'HEAD') {
-                let token = sessionStorage.getItem('bach-control-api-token') || '';
+                let token = localStorage.getItem('bach-control-api-token') || '';
                 if (!token) {
                     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-                    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+                    if (token) localStorage.setItem('bach-control-api-token', token.trim());
                 }
                 token = token.trim();
                 if (token) headers['Authorization'] = 'Bearer ' + token;

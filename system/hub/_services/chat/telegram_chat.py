@@ -1973,10 +1973,10 @@ function toast(msg) {
   setTimeout(() => t.style.display = 'none', 2000);
 }
 function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  let token = localStorage.getItem('bach-control-api-token') || '';
   if (!token) {
     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+    if (token) localStorage.setItem('bach-control-api-token', token.trim());
   }
   return token.trim();
 }
@@ -2749,10 +2749,10 @@ function toast(msg) {
   setTimeout(() => { t.style.display = 'none'; }, 2800);
 }
 function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  let token = localStorage.getItem('bach-control-api-token') || '';
   if (!token) {
     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+    if (token) localStorage.setItem('bach-control-api-token', token.trim());
   }
   return token.trim();
 }

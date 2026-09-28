@@ -88,6 +88,20 @@ ohne lokalen Backend-Start erzeugt:
 python start/startspine.py start --tray --host bach-server.local
 ```
 
+Für einen per SSH-Tunnel erreichbaren Mac-Host setzt der Laptop
+`BACH_REMOTE_HOST=mac`. Menüpunkt `[D]` in `bach.bat` startet dann nur den
+Tray gegen `BACH_REMOTE_API_HOST` (Standard `127.0.0.1:8081`) und öffnet die
+Web-GUI auf Port 8000. `[B]` verweigert den lokalen Telegram-Bot; `[G]` öffnet
+die Remote-GUI. `BACH_REMOTE_HOST=local` schaltet auf den lokalen Modus zurück.
+Der Tunnel muss bereits laufen. Der Browser speichert den einmal eingegebenen
+Control-API-Token im `localStorage` der jeweiligen Origin unter
+`bach-control-api-token`.
+
+Der Tray liest zuerst `BACH_CONTROL_API_TOKEN`. Für Hosts ohne verlässlich
+vererbte Token-Umgebung kann `BACH_CONTROL_API_TOKEN_FILE` auf eine lokale,
+zugriffsgeschützte Token-Datei zeigen. Der Dateipfad ist bewusst eine
+Host-Konfiguration; im Repository steht kein Token und kein Credential-Pfad.
+
 Wenn der Remote-Server andere Ports veröffentlicht, müssen sie über
 `--gui-port` und `--control-port` mitgegeben werden.
 
