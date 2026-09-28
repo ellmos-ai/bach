@@ -4551,12 +4551,16 @@ async def foerderplaner_dashboard_page():
 @app.get("/skills-board", response_class=HTMLResponse)
 async def skills_board_page():
     """Agents Board - Hierarchie- und Agenten-Verwaltung."""
-    board_file = TEMPLATES_DIR / "agents-board.html"
-    if not board_file.exists():
-        board_file = TEMPLATES_DIR / "skills-board.html"
-    if board_file.exists():
-        return FileResponse(board_file)
-    raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
+    try:
+        from gui.board_renderers import render_agents_board
+        return HTMLResponse(render_agents_board())
+    except Exception:
+        board_file = TEMPLATES_DIR / "agents-board.html"
+        if not board_file.exists():
+            board_file = TEMPLATES_DIR / "skills-board.html"
+        if board_file.exists():
+            return FileResponse(board_file)
+        raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
 
 
 @app.get("/skills")
@@ -4840,18 +4844,16 @@ async def tokens_page():
 
 
 @app.get("/tasks-board", response_class=HTMLResponse)
-
 async def tasks_board_api():
-
     """Tasks Board Seite."""
-
-    board_file = TEMPLATES_DIR / "tasks_board.html"
-
-    if board_file.exists():
-
-        return FileResponse(board_file)
-
-    raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
+    try:
+        from gui.board_renderers import render_tasks_board
+        return HTMLResponse(render_tasks_board())
+    except Exception:
+        board_file = TEMPLATES_DIR / "tasks_board.html"
+        if board_file.exists():
+            return FileResponse(board_file)
+        raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
 
 
 
