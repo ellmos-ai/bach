@@ -966,7 +966,7 @@ def _read_bach_version() -> str:
 #  z.B. in Chain-/Bot-Sessions im selben Python-Prozess)
 _exit_sync_registered = False
 _PROSYNC_RESULT_PREFIX = "__BACH_PROSYNC_RESULT__="
-_PROSYNC_STARTUP_TIMEOUT_DEFAULT = 15.0
+_PROSYNC_STARTUP_TIMEOUT_DEFAULT = 25.0
 
 
 _PROFILE_POSITIONAL_OPERATIONS = {

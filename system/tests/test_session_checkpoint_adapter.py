@@ -81,5 +81,18 @@ def test_load_empty_namespace_returns_none(store):
     assert adapter.load(store) is None
 
 
+def test_adapter_import_safe_without_carrier(monkeypatch):
+    """Adapter must be importable without session_checkpoint installed (e.g. by HandlerRegistry)."""
+    import importlib
+    # simulate uninstalled session_checkpoint
+    monkeypatch.setitem(sys.modules, "session_checkpoint", None)
+    import hub.session_checkpoint_adapter as fresh_adapter
+    importlib.reload(fresh_adapter)
+    assert hasattr(fresh_adapter, "create")
+    assert hasattr(fresh_adapter, "load")
+    assert hasattr(fresh_adapter, "list_checkpoints")
+    assert hasattr(fresh_adapter, "delete")
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
