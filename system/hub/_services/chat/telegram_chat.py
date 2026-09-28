@@ -106,7 +106,13 @@ from hub._services.chat.control_auth import (
     get_control_api_token,
     is_control_api_authorized,
 )
+from hub._services.agents_heart import (
+    AssignmentDenied,
+    begin_assignment,
+    finish_assignment,
+)
 from hub._services.chat.slots_config import (
+    get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
     add_worker,
     get_activity_history,
@@ -1973,10 +1979,10 @@ function toast(msg) {
   setTimeout(() => t.style.display = 'none', 2000);
 }
 function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  let token = localStorage.getItem('bach-control-api-token') || '';
   if (!token) {
     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+    if (token) localStorage.setItem('bach-control-api-token', token.trim());
   }
   return token.trim();
 }
@@ -2350,6 +2356,26 @@ tr:hover td{background:#24334d}
           <option value="safe">Safe (Nur Analyse)</option>
         </select>
       </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pause nach</label>
+        <input type="number" id="always-pause-after" min="0" placeholder="5" title="Anzahl Tasks/Läufe bis zur Pause">
+      </div>
+      <div class="form-group">
+        <label>Pausendauer (Min)</label>
+        <input type="number" id="always-pause-minutes" min="0" placeholder="1" title="Dauer der Pause in Minuten">
+      </div>
+      <div class="form-group">
+        <label>Pausenbasis</label>
+        <select id="always-pause-basis">
+          <option value="runs">Runs (Alle Durchläufe)</option>
+          <option value="tasks">Tasks (Erledigte Aufgaben)</option>
+        </select>
+      </div>
+    </div>
+    <div id="always-pause-banner" style="display:none;background:#78350f;color:#fef08a;padding:6px 10px;border-radius:6px;font-size:0.82rem;margin-bottom:8px">
+      ⏸ <strong>Pausiert:</strong> Noch <span id="always-pause-remaining">-</span> Min verbleibend (Pause-Takt aktiv)
     </div>
     <div class="form-group">
       <label>Aktuelle Aktivität</label>
@@ -2749,10 +2775,10 @@ function toast(msg) {
   setTimeout(() => { t.style.display = 'none'; }, 2800);
 }
 function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  let token = localStorage.getItem('bach-control-api-token') || '';
   if (!token) {
     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+    if (token) localStorage.setItem('bach-control-api-token', token.trim());
   }
   return token.trim();
 }
@@ -2818,11 +2844,30 @@ async function refreshSlots() {
     document.getElementById('always-model').value = s.model || '';
     document.getElementById('always-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 25;
     document.getElementById('always-mode').value = s.mode || 'full';
-    document.getElementById('always-activity').textContent = s.current_activity || (s.enabled ? 'Wartet auf Idle-Schwelle' : 'Pausiert');
+    document.getElementById('always-pause-after').value = s.pause_after != null ? s.pause_after : 5;
+    document.getElementById('always-pause-minutes').value = s.pause_minutes != null ? s.pause_minutes : 1;
+    document.getElementById('always-pause-basis').value = s.pause_basis || 'runs';
+
+    const pInfo = s.pause_info || {};
+    const pauseBanner = document.getElementById('always-pause-banner');
+    const pauseRem = document.getElementById('always-pause-remaining');
+    if (pInfo.is_paused) {
+      if (pauseBanner) pauseBanner.style.display = 'block';
+      if (pauseRem) pauseRem.textContent = pInfo.remaining_minutes || '0';
+    } else {
+      if (pauseBanner) pauseBanner.style.display = 'none';
+    }
+
+    document.getElementById('always-activity').textContent = s.current_activity || (s.enabled ? (pInfo.is_paused ? `Pausiert (${pInfo.remaining_minutes}m Rest)` : 'Wartet auf Idle-Schwelle') : 'Pausiert');
     const enabled = s.enabled !== false;
     const badge = document.getElementById('badge-buddha_always_on');
-    badge.textContent = enabled ? 'AKTIV' : 'PAUSIERT';
-    badge.className = 'badge ' + (enabled ? 'badge-ready' : 'badge-paused');
+    if (pInfo.is_paused) {
+      badge.textContent = `PAUSIERT (${pInfo.remaining_minutes}m)`;
+      badge.className = 'badge badge-paused';
+    } else {
+      badge.textContent = enabled ? 'AKTIV' : 'PAUSIERT';
+      badge.className = 'badge ' + (enabled ? 'badge-ready' : 'badge-paused');
+    }
     document.getElementById('btn-toggle-always-on').textContent = enabled ? 'Pausieren' : 'Aktivieren';
   }
 
@@ -2945,6 +2990,9 @@ async function saveCoreSlot(slotId) {
       model: document.getElementById('always-model').value.trim(),
       max_tool_rounds: parseInt(document.getElementById('always-turns').value) || 0,
       mode: document.getElementById('always-mode').value,
+      pause_after: parseInt(document.getElementById('always-pause-after').value) || 0,
+      pause_minutes: parseInt(document.getElementById('always-pause-minutes').value) || 0,
+      pause_basis: document.getElementById('always-pause-basis').value || 'runs',
     };
   } else if (slotId === 'buddha_connector') {
     updates = {
@@ -3888,10 +3936,16 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/slots":
             try:
                 cfg = load_slots_config()
+                slots = cfg.get("slots", {})
+                for sid, s in slots.items():
+                    s["pause_info"] = get_slot_pause_info(s)
+                workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                for w in workers:
+                    w["pause_info"] = get_slot_pause_info(w)
                 self._json({
                     "ok": True,
-                    "slots": cfg.get("slots", {}),
-                    "dynamic_workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
+                    "slots": slots,
+                    "dynamic_workers": workers,
                     "fackel_preference": get_fackel_preference(),
                 })
             except Exception as e:
@@ -3908,12 +3962,47 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/activity":
             try:
-                limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
+                q = parse_qs(parsed_url.query)
+
+                def _query_int(key: str, default: int) -> int:
+                    val = q.get(key, [str(default)])[0].strip()
+                    return int(val) if val else default
+
+                def _query_str_list(key: str) -> Optional[List[str]]:
+                    vals = q.get(key)
+                    if not vals:
+                        return None
+                    items = []
+                    for v in vals:
+                        items.extend([x.strip() for x in v.split(",") if x.strip()])
+                    return items if items else None
+
+                limit = _query_int("limit", 50)
+                offset = _query_int("offset", 0)
+                order = (q.get("order", ["desc"])[0] or "desc").lower()
+                source = _query_str_list("source")
+                status = _query_str_list("status")
+                since = (q.get("since", [""])[0] or None)
+                until = (q.get("until", [""])[0] or None)
+
+                if order not in ("asc", "desc"):
+                    self._json({"error": "order muss 'asc' oder 'desc' sein"}, 400)
+                    return
+
                 self._json({
                     "ok": True,
-                    "history": get_activity_history(limit=limit),
+                    "history": get_activity_history(
+                        limit=limit,
+                        offset=offset,
+                        source=source,
+                        status=status,
+                        since=since,
+                        until=until,
+                        order=order,
+                    ),
                 })
             except Exception as e:
+                log.warning("/api/activity Fehler: %s", e, exc_info=True)
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/prompts":
@@ -4270,6 +4359,28 @@ class ControlHandler(BaseHTTPRequestHandler):
                     _ACTIVE_WORKER_THREADS.pop(worker_id, None)
             control = _WorkerControl(worker_id)
 
+            # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
+            # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
+            sub_mode = (w.get("sub_mode") or "").strip().lower()
+            try:
+                board_assignment = begin_assignment(
+                    role_id=(sub_mode or "task_worker"),
+                    mode=(w.get("mode") or "full"),
+                    agent_instance_id=f"worker-{uuid.uuid4().hex}",
+                    backend_id=w.get("backend") or "ollama",
+                    model_id=w.get("model") or "qwen3.8:27b-mlx",
+                    slot_id=worker_id,
+                    task_id=(w.get("task_id") if w.get("task_id") is not None else 0),
+                    session_id=worker_id,
+                    initiated_by=f"board:{worker_id}",
+                )
+            except AssignmentDenied as exc:
+                self._json({"error": f"Assignment verweigert: {exc}"}, 400)
+                return
+            except ValueError as exc:
+                self._json({"error": f"Assignment unvollständig: {exc}"}, 400)
+                return
+
             def _run_worker_job():
                 worker_error = None
                 try:
@@ -4417,6 +4528,27 @@ class ControlHandler(BaseHTTPRequestHandler):
                         _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                         _record_worker_activity(control, f"Fehler: {exc}", "error")
                 finally:
+                    # Befehlsvertrag (agents_heart): Assignment in jedem
+                    # Ausstiegspfad beenden (assignment_ended, Konzept 10.8).
+                    try:
+                        if worker_error is not None:
+                            _as_status, _as_result, _as_reason = (
+                                "error", "runtime_error", type(worker_error).__name__)
+                        elif control.stop_event.is_set():
+                            _as_status, _as_result, _as_reason = "interrupted", "stopped", ""
+                        else:
+                            _latest_status = (get_worker_slot(worker_id) or {}).get("status")
+                            if _latest_status == "completed":
+                                _as_status, _as_result, _as_reason = "completed", "task_done", ""
+                            elif _latest_status == "expired":
+                                _as_status, _as_result, _as_reason = "released", "ttl_expired", ""
+                            else:
+                                _as_status, _as_result, _as_reason = "released", "not_finished", ""
+                        finish_assignment(board_assignment, status=_as_status,
+                                          result=_as_result, reason=_as_reason)
+                    except Exception:
+                        log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
+                                    exc_info=True)
                     if control.stop_event.is_set():
                         _write_revocation_receipt(
                             control,

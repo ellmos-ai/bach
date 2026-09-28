@@ -46,7 +46,7 @@ CLI-BEFEHLE (bach consolidate)
   review       Erstellt Review-Tasks für manuelle Validierung.
   init         Tracking für existierende Einträge initialisieren.
   sync-triggers Dynamische Kontext-Trigger aktualisieren (NEU v1.1.80).
-  forget       Ungenutzte Einträge löschen (weight < threshold).
+  forget       Ungenutzte Lessons/Working-Einträge deaktivieren; Fakten als vergessen markieren (weight < threshold).
   reclassify   Falsch kategorisierte Einträge korrigieren (NEU v1.1.81).
 
 DAEMON-INTEGRATION
@@ -91,7 +91,7 @@ memory_consolidation (AKTIV, 350+ Einträge):
   weight            REAL        -- Relevanz-Score (0.0-1.0)
   decay_rate        REAL        -- Verfalls-Rate
   threshold         REAL        -- Archivierungs-Schwelle
-  status            TEXT        -- active, archived, deleted
+  status            TEXT        -- active, archived, deleted, forgotten
   consolidated_to   INTEGER     -- ID in memory_context (wenn konsolidiert)
   created_at        TIMESTAMP
   updated_at        TIMESTAMP
@@ -141,10 +141,10 @@ NEUE OPERATIONEN (v1.1.80+)
                    - theme_packet_generator.py
                    - trigger_maintainer.py
 
-  forget           Deaktiviert/löscht Einträge mit weight < 0.05
+  forget           Deaktiviert Einträge oder markiert Fakten als vergessen (weight < 0.05)
                    - memory_lessons: is_active = 0
                    - memory_working: is_active = 0
-                   - memory_facts: DELETE
+                   - memory_facts: status = 'forgotten' (Fakt bleibt erhalten)
 
   reclassify       Korrigiert falsche Kategorisierungen:
                    - Lesson -> Context (bei hoher Nutzung)

@@ -29,6 +29,9 @@ for _p in (_system_dir, _root_dir):
         sys.path.insert(0, _p)
 
 from hub._services.chat.control_auth import get_control_api_auth_header
+from hub._services.chat.slots_config import (
+    match_task_to_pickup_filter, task_matches_slot_binding,
+)
 
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
@@ -51,8 +54,8 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 try:
     import pystray
@@ -173,6 +176,23 @@ def acquire_single_instance_lock(lock_path: Path = TRAY_LOCK_FILE):
     return handle
 
 
+def mark_tray_ready(icon):
+    """Publish readiness only after pystray starts its event loop."""
+    icon.visible = True
+    receipt = os.environ.get("BACH_STARTSPINE_READY_RECEIPT", "")
+    launch_id = os.environ.get("BACH_STARTSPINE_LAUNCH_ID", "")
+    if not receipt or not launch_id:
+        return
+    target = Path(receipt)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps({"launch_id": launch_id, "pid": os.getpid()}) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, target)
+
+
 class BACHTray:
 
     POLL_INTERVAL = 5
@@ -180,12 +200,14 @@ class BACHTray:
     IDLE_CHAT_ID = "idle-worker"
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
-    def __init__(self, host="127.0.0.1", port=8081):
+    def __init__(self, host="127.0.0.1", port=8081, gui_port=8000,
+                 ollama_host="127.0.0.1", remote=False):
         self.host = host
+        self.remote = remote
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
-        self.gui_url = f"http://{host}:8000"
-        self.ollama_url = f"http://{host}:11434"
+        self.gui_url = f"http://{host}:{gui_port}"
+        self.ollama_url = f"http://{ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
@@ -211,7 +233,7 @@ class BACHTray:
         self.services = {"gui": False, "control": False, "ollama": False}
 
         # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
-        self.idle_enabled = os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
+        self.idle_enabled = not remote and os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
@@ -280,13 +302,13 @@ class BACHTray:
         self.services["gui"] = self._check_url(self.gui_url + "/")
         self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
 
-        if "fackel_preference" not in self.state or not self.state.get("fackel_preference"):
+        if not self.remote and ("fackel_preference" not in self.state or not self.state.get("fackel_preference")):
             try:
                 from hub.compute_lock import get_fackel_preference
                 self.state["fackel_preference"] = get_fackel_preference()
             except Exception:
                 self.state.setdefault("fackel_preference", "compute")
-        elif not self.state.get("connected"):
+        elif not self.remote and not self.state.get("connected"):
             try:
                 from hub.compute_lock import get_fackel_preference
                 pref = get_fackel_preference()
@@ -651,20 +673,43 @@ class BACHTray:
             # 'open'-OLLAMA-Task liegen.
             task = None
             task_status = "open"
-            # 1. Zuerst bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
-            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
+
+            always_on = getattr(self, "slots", {}).get("buddha_always_on", {})
+            pickup_filter = always_on.get("pickup_filter", {})
+            filter_enabled = isinstance(pickup_filter, dict) and pickup_filter.get("enabled", False)
+
+            # 1. Gezielte Filter-Suche des Always-On-Slots (enabled + categories/priorities/tags/exclude_tags)
+            if filter_enabled:
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
-                        "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
+                        "GET", f"/api/tasks?status={status}", base=self.gui_url
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                        task = tasks_resp["tasks"][0]
-                        task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                        for cand in tasks_resp["tasks"]:
+                            if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
+                                task = cand
+                                task_status = status
+                                break
+                    if task:
                         break
-                if task:
-                    break
 
-            # 2. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
+            # 2. Bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
+            if not task:
+                for assignee in ("OLLAMA", "BUDDHA", "BACH"):
+                    for status in ("pending", "open"):
+                        tasks_resp = self._api(
+                            "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
+                        )
+                        if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
+                            for cand in tasks_resp["tasks"]:
+                                if task_matches_slot_binding(cand, always_on):
+                                    task = cand
+                                    task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                                    break
+                    if task:
+                        break
+
+            # 3. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
             if not task:
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
@@ -674,7 +719,8 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
+                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", "")
+                                    and task_matches_slot_binding(cand, always_on)):
                                 task = cand
                                 task_status = status
                                 break
@@ -821,7 +867,7 @@ class BACHTray:
             else:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
             draw.text((14, 10), "B", fill="white", font=font)
-        except (OSError, IOError):
+        except OSError:
             draw.text((16, 14), "B", fill="white")
         return img
 
@@ -1171,7 +1217,7 @@ class BACHTray:
 
     def _set_fackel(self, pref, *_):
         result = self._api("POST", "/api/fackel", {"preference": pref})
-        if result is None:
+        if result is None and not self.remote:
             try:
                 from hub.compute_lock import set_fackel_preference
                 set_fackel_preference(pref, quelle="tray")
@@ -1179,8 +1225,11 @@ class BACHTray:
             except Exception:
                 self._notify_error(f"Fackel → {pref}")
                 return
-        else:
+        elif result is not None:
             self.state["fackel_preference"] = pref
+        else:
+            self._notify_error(f"Fackel → {pref}")
+            return
         self._refresh()
         self._update_icon()
         if self.icon:
@@ -1188,6 +1237,9 @@ class BACHTray:
             self.icon.notify(f"Fackel: {label} bevorzugt", "BACH")
 
     def _toggle_idle(self, *_):
+        if self.remote:
+            self._notify_error("Idle-Worker ist im Remote-Client deaktiviert")
+            return
         self.idle_enabled = not self.idle_enabled
         if not self.idle_enabled:
             self.idle_consecutive = 0
@@ -1382,13 +1434,16 @@ class BACHTray:
         poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         poll_thread.start()
 
-        self.icon.run()
+        self.icon.run(setup=mark_tray_ready)
 
 
 def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
+    parser.add_argument("--gui-port", type=int, default=8000, help="Web-GUI Port")
+    parser.add_argument("--ollama-host", default="127.0.0.1", help="Ollama Host")
+    parser.add_argument("--remote", action="store_true", help="Remote-Client ohne lokale Schreib-Fallbacks")
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
@@ -1396,7 +1451,8 @@ def main():
     )
     args = parser.parse_args()
 
-    tray = BACHTray(host=args.host, port=args.port)
+    tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
+                    ollama_host=args.ollama_host, remote=args.remote)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return

@@ -390,6 +390,8 @@ class TaskCreate(BaseModel):
     assigned_to: Optional[str] = DEFAULT_TASK_ASSIGNEE
 
     created_by: Optional[str] = "user"
+    required_model: Optional[str] = None
+    assigned_slot: Optional[str] = None
 
 
 class ThemeUpdate(BaseModel):
@@ -415,6 +417,8 @@ class TaskUpdate(BaseModel):
     created_by: Optional[str] = None
 
     depends_on: Optional[str] = None
+    required_model: Optional[str] = None
+    assigned_slot: Optional[str] = None
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
     allow_reopen: Optional[bool] = False
@@ -1609,6 +1613,8 @@ async def api_post_task(payload: dict = Body(...)):
     """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
         conn = get_bach_db()
+        from hub._services.task_schema import ensure_task_slot_columns
+        ensure_task_slot_columns(conn)
         draft_source = payload.get("source") or payload.get("draft_hash")
         if draft_source:
             existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
@@ -1618,8 +1624,8 @@ async def api_post_task(payload: dict = Body(...)):
 
         now = datetime.now().isoformat()
         cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             payload.get("title"),
             payload.get("description", ""),
@@ -1632,7 +1638,9 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("depends_on"),
             payload.get("image"),
             payload.get("due_date"),
-            draft_source
+            draft_source,
+            payload.get("required_model") or None,
+            payload.get("assigned_slot") or None,
         ))
 
         task_id = cursor.lastrowid
@@ -1670,6 +1678,9 @@ async def update_task(task_id: int, update: TaskUpdate):
     """
     conn = get_bach_db()
     try:
+        from hub._services.task_schema import ensure_task_slot_columns
+        if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
+            ensure_task_slot_columns(conn)
         existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
@@ -1715,6 +1726,10 @@ async def update_task(task_id: int, update: TaskUpdate):
             field_values["created_by"] = update.created_by
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
+        if "required_model" in update.model_fields_set:
+            field_values["required_model"] = update.required_model or None
+        if "assigned_slot" in update.model_fields_set:
+            field_values["assigned_slot"] = update.assigned_slot or None
 
         try:
             # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von

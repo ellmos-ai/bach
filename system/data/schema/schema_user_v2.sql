@@ -153,6 +153,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     project TEXT,
     assignee TEXT,                   -- Agent oder 'user'
     due_date TEXT,                    -- ISO-Datum YYYY-MM-DD (Routinika-kompatibel)
+    required_model TEXT,
+    assigned_slot TEXT,
     estimated_minutes INTEGER,
     actual_minutes INTEGER,
     tags TEXT,                       -- JSON array

@@ -411,3 +411,69 @@ class TestServerTaskClaimAPI:
         assert row[0] == "P1"
         assert row[1] == "Neu"
         assert row[2] == "worker-1"
+
+
+class TestReapStaleInProgressTasks:
+    def test_manual_task_uses_updated_at_as_lease(self, task_db):
+        from hub.task_audit import reap_stale_in_progress_tasks
+        conn = sqlite3.connect(str(task_db))
+        conn.execute(
+            "INSERT INTO tasks (title, status, updated_at) VALUES (?, 'in_progress', ?)",
+            ("fresh manual", "2026-09-28T11:55:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO tasks (title, status, updated_at) VALUES (?, 'in_progress', ?)",
+            ("stale manual", "2026-09-28T10:00:00+00:00"),
+        )
+        conn.commit()
+        reaped = reap_stale_in_progress_tasks(
+            conn, lease_seconds=1800, now="2026-09-28T12:00:00+00:00"
+        )
+        assert len(reaped) == 1
+        assert conn.execute("SELECT title FROM tasks WHERE id = ?", (reaped[0],)).fetchone()[0] == "stale manual"
+        assert conn.execute("SELECT status FROM tasks WHERE title = 'fresh manual'").fetchone()[0] == "in_progress"
+        conn.close()
+
+    def test_reap_stale_in_progress_tasks_resets_expired_claims(self, task_db):
+        from hub.task_audit import reap_stale_in_progress_tasks
+        conn = sqlite3.connect(str(task_db))
+        conn.execute("INSERT INTO tasks (title, status, claimed_by, claimed_at, started_at) VALUES ('Old Stale Task', 'in_progress', 'idle-worker', '2026-09-01T10:00:00.000000', '2026-09-01T10:00:00.000000')")
+        conn.execute("INSERT INTO tasks (title, status, claimed_by, claimed_at, started_at) VALUES ('Fresh Active Task', 'in_progress', 'worker-2', datetime('now'), datetime('now'))")
+        conn.commit()
+
+        reaped = reap_stale_in_progress_tasks(conn, lease_seconds=1800)
+        conn.commit()
+
+        assert len(reaped) == 1
+        stale_id = reaped[0]
+
+        row = conn.execute("SELECT status, claimed_by, claimed_at FROM tasks WHERE id = ?", (stale_id,)).fetchone()
+        assert row[0] == "pending"
+        assert row[1] is None
+        assert row[2] is None
+
+        # Verify audit history
+        hist = conn.execute("SELECT action, old_value, new_value, changed_by FROM task_history WHERE task_id = ?", (stale_id,)).fetchall()
+        assert any(h[0] == "status_change" and h[1] == "in_progress" and h[2] == "pending" and "reaper" in h[3] for h in hist)
+
+        # Fresh task still in_progress
+        fresh_row = conn.execute("SELECT status, claimed_by FROM tasks WHERE title = 'Fresh Active Task'").fetchone()
+        assert fresh_row[0] == "in_progress"
+        assert fresh_row[1] == "worker-2"
+        conn.close()
+
+    def test_reap_preserves_future_due_date_gate_tasks(self, task_db):
+        from hub.task_audit import reap_stale_in_progress_tasks
+        conn = sqlite3.connect(str(task_db))
+        ensure_task_due_date(conn)
+        conn.execute("INSERT INTO tasks (title, status, claimed_by, claimed_at, due_date) VALUES ('Gate Task', 'in_progress', 'idle-worker', '2026-09-01T10:00:00.000000', '2029-12-31')")
+        conn.commit()
+
+        reaped = reap_stale_in_progress_tasks(conn, lease_seconds=1800)
+        conn.commit()
+
+        assert len(reaped) == 0
+        row = conn.execute("SELECT status, claimed_by FROM tasks WHERE title = 'Gate Task'").fetchone()
+        assert row[0] == "in_progress"
+        assert row[1] == "idle-worker"
+        conn.close()

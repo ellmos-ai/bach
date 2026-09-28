@@ -10,6 +10,8 @@ name: tests
 #   (T-20260927-606803060).
 # - system/tests/test_idle_worker_parked.py: 18 Importfehler in der frischen
 #   CI-Abhängigkeitsmenge, weil pystray dort nicht installiert ist.
+# - system/tests/test_connectors_and_tray.py: neuer Tray-Ready-Test aus #146
+#   importiert pystray; 1 Fehler in der frischen CI-Abhängigkeitsmenge.
 # - test_abo_handler.py, test_bridge_tray.py, test_registry_watcher.py und
 #   test_secrets_handler.py: lokal grün, aber im Ubuntu-CI-Lauf rot (PR #143).
 # - system/tests/test_transfer_assistant_core_script.py: fest auf den
@@ -102,8 +104,8 @@ jobs:
             system/tests/test_connections_handler.py \
             system/tests/test_connector_handler.py \
             system/tests/test_connectors.py \
-            system/tests/test_connectors_and_tray.py \
             system/tests/test_consolidation_handler.py \
+            system/tests/test_consolidation_forget_soft.py \
             system/tests/test_contact_handler.py \
             system/tests/test_context_handler.py \
             system/tests/test_context_injector_db.py \
@@ -113,6 +115,7 @@ jobs:
             system/tests/test_core_sandbox.py \
             system/tests/test_daemon.py \
             system/tests/test_daemon_service.py \
+            system/tests/test_daemon_task_binding.py \
             system/tests/test_daily_agent_handler.py \
             system/tests/test_daily_overview.py \
             system/tests/test_db_guard_hook.py \
@@ -230,6 +233,7 @@ jobs:
             system/tests/test_skills_board_xss.py \
             system/tests/test_skills_handler.py \
             system/tests/test_skills_integrity.py \
+            system/tests/test_slots_and_workers.py \
             system/tests/test_snapshot_handler.py \
             system/tests/test_snapshot_payload.py \
             system/tests/test_start_scripts.py \
@@ -246,6 +250,7 @@ jobs:
             system/tests/test_task_due_date.py \
             system/tests/test_task_handler.py \
             system/tests/test_task_runner_fertig.py \
+            system/tests/test_task_slot_fields.py \
             system/tests/test_tasks_board_filter.py \
             system/tests/test_telegram_chat_import_safety.py \
             system/tests/test_telegram_voice.py \
@@ -259,6 +264,7 @@ jobs:
             system/tests/test_tokens_handler.py \
             system/tests/test_tools_handler.py \
             system/tests/test_transit_sync_provider_wiring.py \
+            system/tests/test_trithon_dispatch.py \
             system/tests/test_trigger_generators.py \
             system/tests/test_trash_handler.py \
             system/tests/test_tuev_handler.py \

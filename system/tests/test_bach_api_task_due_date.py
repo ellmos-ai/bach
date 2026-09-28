@@ -157,3 +157,138 @@ def test_structured_task_list_fails_closed_on_malformed_dependency(monkeypatch):
     rows = proxy.list(status=None)
 
     assert rows[0]["is_blocked_by_dep"] is True
+
+
+def _make_task_conn(rows, with_due=False):
+    """In-memory tasks table populated with the given row dicts."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    due_col = ", due_date TEXT" if with_due else ""
+    conn.execute(
+        "CREATE TABLE tasks ("
+        "id INTEGER PRIMARY KEY, priority TEXT, title TEXT, status TEXT, "
+        "category TEXT, description TEXT, assigned_to TEXT, delegated_to TEXT, "
+        "depends_on TEXT, created_at TEXT, completed_at TEXT, updated_at TEXT"
+        f"{due_col})"
+    )
+    defaults = {
+        "priority": "P3",
+        "category": "general",
+        "description": "",
+        "depends_on": "",
+        "created_at": "",
+        "completed_at": "",
+        "updated_at": "",
+        "assigned_to": "",
+        "delegated_to": "",
+    }
+    for row in rows:
+        data = {**defaults, **row}
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join("?" for _ in data)
+        conn.execute(
+            f"INSERT INTO tasks ({columns}) VALUES ({placeholders})",
+            tuple(data.values()),
+        )
+    return conn
+
+
+def test_structured_task_list_assigned_to_matches_assigned_or_delegated(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "A", "status": "pending", "assigned_to": "HUB"},
+        {"id": 2, "title": "B", "status": "pending", "delegated_to": "HUB"},
+        {"id": 3, "title": "C", "status": "pending", "assigned_to": "OTHER"},
+    ])
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    rows = proxy.list(assigned_to="hub")
+
+    assert {row["id"] for row in rows} == {1, 2}
+
+
+def test_structured_task_list_unassigned_only_empty_owner_fields(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "A", "status": "pending", "assigned_to": "HUB"},
+        {"id": 2, "title": "B", "status": "pending", "delegated_to": "HUB"},
+        {"id": 3, "title": "C", "status": "pending"},
+        {"id": 4, "title": "D", "status": "pending", "assigned_to": "X", "delegated_to": "Y"},
+    ])
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    rows = proxy.list(unassigned=True)
+
+    assert {row["id"] for row in rows} == {3}
+
+
+@pytest.mark.parametrize(
+    "args, expected_ids",
+    [
+        (("--assigned=HUB",), {1, 2}),
+        (("--assigned", "HUB"), {1, 2}),
+        (("--unassigned",), {3}),
+    ],
+)
+def test_structured_task_list_assigned_unassigned_cli_forms(monkeypatch, args, expected_ids):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "A", "status": "pending", "assigned_to": "HUB"},
+        {"id": 2, "title": "B", "status": "pending", "delegated_to": "HUB"},
+        {"id": 3, "title": "C", "status": "pending"},
+    ])
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    rows = proxy.list(*args)
+
+    assert {row["id"] for row in rows} == expected_ids
+
+
+def test_structured_task_list_assigned_combined_with_status_and_filter(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "A assigned hub", "status": "pending", "assigned_to": "HUB"},
+        {"id": 2, "title": "B delegated hub", "status": "pending", "delegated_to": "HUB"},
+        {"id": 3, "title": "E done assigned hub", "status": "done", "assigned_to": "HUB"},
+    ])
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    assert {row["id"] for row in proxy.list("done", "--assigned=HUB")} == {3}
+    assert {row["id"] for row in proxy.list("pending", "--assigned=HUB", "--filter", "delegated")} == {2}
+
+
+def test_structured_task_list_in_progress_and_open(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "Pending Task", "status": "pending"},
+        {"id": 2, "title": "In Progress Task", "status": "in_progress"},
+        {"id": 3, "title": "Done Task", "status": "done"},
+    ])
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    in_prog = proxy.list("in_progress")
+    assert {r["id"] for r in in_prog} == {2}
+
+    open_tasks = proxy.list("open")
+    assert {r["id"] for r in open_tasks} == {1, 2}
+
+
+def test_structured_task_reap(monkeypatch):
+    proxy = _TaskProxy("task")
+    conn = _make_task_conn([
+        {"id": 1, "title": "Old Task", "status": "in_progress"},
+    ])
+    from hub._services.task_schema import ensure_task_claim_columns
+    ensure_task_claim_columns(conn)
+    conn.execute("CREATE TABLE IF NOT EXISTS task_history (id INTEGER PRIMARY KEY, task_id INTEGER, action TEXT, field_changed TEXT, old_value TEXT, new_value TEXT, changed_by TEXT, changed_at TEXT)")
+    conn.execute("UPDATE tasks SET claimed_at = '2026-01-01T00:00:00.000000', claimed_by = 'worker' WHERE id = 1")
+    conn.commit()
+    monkeypatch.setattr(proxy, "_connect", lambda: conn)
+
+    reaped = proxy.reap(lease_seconds=1800)
+    assert reaped == [1]
+
+    row = conn.execute("SELECT status, claimed_by, claimed_at FROM tasks WHERE id = 1").fetchone()
+    assert row[0] == "pending"
+    assert row[1] is None
+    assert row[2] is None

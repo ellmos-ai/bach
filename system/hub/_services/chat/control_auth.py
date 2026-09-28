@@ -1,9 +1,8 @@
 """Authentication helpers for the local BACH Control API.
 
-The bearer value is supplied either through ``BACH_CONTROL_API_TOKEN`` or the
-existing OS-keyring-backed BACH secrets store under
-``bach_control_api_token``.  No plaintext fallback is used: an unavailable or
-empty credential fails closed.
+The bearer value comes from ``BACH_CONTROL_API_TOKEN``, an explicitly
+configured ``BACH_CONTROL_API_TOKEN_FILE``, or the OS-keyring-backed BACH
+secrets store. An unavailable or empty credential fails closed.
 """
 
 from __future__ import annotations
@@ -11,9 +10,11 @@ from __future__ import annotations
 import hmac
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 
 CONTROL_API_TOKEN_ENV = "BACH_CONTROL_API_TOKEN"
+CONTROL_API_TOKEN_FILE_ENV = "BACH_CONTROL_API_TOKEN_FILE"
 CONTROL_API_SECRET = "bach_control_api_token"
 
 
@@ -22,6 +23,14 @@ def get_control_api_token() -> str:
 
     configured = str(os.environ.get(CONTROL_API_TOKEN_ENV) or "").strip()
     if configured:
+        return configured
+
+    token_file = str(os.environ.get(CONTROL_API_TOKEN_FILE_ENV) or "").strip()
+    if token_file:
+        try:
+            configured = Path(token_file).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            return ""
         return configured
 
     try:
