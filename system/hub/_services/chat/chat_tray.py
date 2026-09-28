@@ -674,7 +674,7 @@ class BACHTray:
             task = None
             task_status = "open"
 
-            always_on = self.slots.get("buddha_always_on", {})
+            always_on = getattr(self, "slots", {}).get("buddha_always_on", {})
             pickup_filter = always_on.get("pickup_filter", {})
             filter_enabled = isinstance(pickup_filter, dict) and pickup_filter.get("enabled", False)
 
