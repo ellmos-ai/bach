@@ -406,11 +406,13 @@ tr:hover td{background:#24334d}
         <th style="width:110px">Zeit</th>
         <th style="width:160px">Akteur / Slot</th>
         <th>Aktivität (Tool, Runde, Aufgabe)</th>
+        <th style="width:120px">Modell</th>
+        <th style="width:110px">Slot</th>
         <th style="width:100px">Status</th>
       </tr>
     </thead>
     <tbody id="activity-tbody">
-      <tr><td colspan="4" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
+      <tr><td colspan="6" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
     </tbody>
   </table>
 </div>
@@ -879,7 +881,7 @@ async function refreshActivity() {
   const tbody = document.getElementById('activity-tbody');
   const history = (data && data.history) ? data.history : [];
   if (history.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
     return;
   }
 
@@ -887,13 +889,17 @@ async function refreshActivity() {
   for (const item of history) {
     const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '-';
     const st = item.status || 'ok';
+    const reqModel = item.required_model || (item.details && item.details.required_model) || (item.details && item.details.model_id) || '-';
+    const assSlot = item.assigned_slot || (item.details && item.details.assigned_slot) || (item.details && item.details.slot_id) || '-';
 
     rows += `
       <tr>
         <td style="color:#94a3b8;font-size:0.8rem">${timeStr}</td>
         <td><strong>${escapeHtml(item.source || '-')}</strong></td>
         <td>${escapeHtml(item.activity || '-')}</td>
-        <td><span class="badge badge-${st === 'running' ? 'running' : (st === 'error' ? 'error' : 'ready')}">${escapeHtml(st)}</span></td>
+        <td><span style="font-family:monospace;font-size:0.8rem;color:#94a3b8">${escapeHtml(reqModel)}</span></td>
+        <td><span style="font-family:monospace;font-size:0.8rem;color:#94a3b8">${escapeHtml(assSlot)}</span></td>
+        <td><span class="badge ${st === 'ok' ? 'badge-ready' : (st === 'running' ? 'badge-running' : 'badge-error')}">${escapeHtml(st)}</span></td>
       </tr>
     `;
   }
