@@ -57,6 +57,7 @@ jobs:
             system/tests/test_db_path_central.py \
             system/tests/test_trigger_generators.py \
             system/tests/test_cli_startup_observers.py \
+            system/tests/test_consolidation_forget_soft.py \
             system/tests/test_dist_type_catchup_migration.py \
             system/tests/test_doc_extract_seam.py \
             system/tests/test_core.py \
