@@ -142,7 +142,8 @@ class CanonicalResponse:
         status               status_code
         body                 text
         content_type         headers["content-type"]
-        length, truncated    (nicht genutzt)
+        length               total_length
+        truncated            truncated
 
     `get()` liefert **keine vollstaendigen Header** -- nur den Content-Type. Fuer echte
     Header hat das Modul eine eigene Operation (`WebScraper.headers()`). Solange dieser
@@ -151,7 +152,7 @@ class CanonicalResponse:
     der Grund, warum der Altpfad weiterhin Default bleibt.
     """
 
-    __slots__ = ("url", "status_code", "headers", "text")
+    __slots__ = ("url", "status_code", "headers", "text", "total_length", "truncated")
 
     def __init__(self, payload: dict) -> None:
         if not isinstance(payload, dict):
@@ -162,6 +163,8 @@ class CanonicalResponse:
         self.url = payload.get("url", "")
         self.status_code = payload.get("status")
         self.text = payload.get("body", "")
+        self.total_length = payload.get("length")
+        self.truncated = payload.get("truncated", False)
         if "headers" in payload:
             # aus der headers-Operation: vollstaendige Header, gleiche Namen wie im Altpfad
             self.headers = payload["headers"]
@@ -456,10 +459,16 @@ class WebScrapeHandler(BaseHandler):
             return False, f"Fehler: {err}"
 
         body = resp.text
-        info = f"URL: {resp.url}\nStatus: {resp.status_code}\nContent-Type: {resp.headers.get('content-type', '?')}\nGröße: {len(body)} Zeichen\n{'=' * 40}\n\n"
+        total_len = getattr(resp, "total_length", None)
+        if total_len is None:
+            total_len = len(body)
+        is_truncated = getattr(resp, "truncated", False) or (len(body) > 10000)
 
-        if len(body) > 10000:
-            return True, info + body[:10000] + f"\n\n... ({len(body) - 10000} weitere Zeichen)"
+        info = f"URL: {resp.url}\nStatus: {resp.status_code}\nContent-Type: {resp.headers.get('content-type', '?')}\nGröße: {total_len} Zeichen\n{'=' * 40}\n\n"
+
+        if is_truncated:
+            remaining = total_len - 10000
+            return True, info + body[:10000] + f"\n\n... ({remaining} weitere Zeichen)"
         return True, info + body
 
     def _links(self, url: str) -> Tuple[bool, str]:
