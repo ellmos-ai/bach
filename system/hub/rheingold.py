@@ -207,10 +207,13 @@ def sync_drafts_to_rheingold(
     base_url: str,
 ) -> List[Dict[str, any]]:
     """Überträgt alle lokal gestagten Entwürfe an Rheingold und ersetzt die temporären IDs."""
+    from hub._services.task_schema import ensure_task_slot_columns
+    ensure_task_slot_columns(conn)
     cursor = conn.cursor()
     # Finde alle Tasks mit Draft-Source
     cursor.execute("""
-        SELECT id, title, description, priority, category, status, due_date, source, depends_on
+        SELECT id, title, description, priority, category, status, due_date, source, depends_on,
+               required_model, assigned_slot
         FROM tasks
         WHERE source LIKE 'draft:%'
         ORDER BY id ASC
@@ -219,7 +222,7 @@ def sync_drafts_to_rheingold(
     promoted = []
 
     for row in drafts:
-        old_id, title, desc, prio, cat, stat, due, draft_src, deps = row
+        old_id, title, desc, prio, cat, stat, due, draft_src, deps, required_model, assigned_slot = row
         payload = {
             "title": title,
             "description": desc or "",
@@ -228,6 +231,8 @@ def sync_drafts_to_rheingold(
             "status": stat or "pending",
             "due_date": due,
             "depends_on": deps,
+            "required_model": required_model,
+            "assigned_slot": assigned_slot,
             "source": draft_src,
             "created_by": socket.gethostname().split(".")[0].lower(),
         }
@@ -309,6 +314,7 @@ def pull_tasks_from_rheingold(
         "next_occurrence", "due_date", "executable_command", "created_at",
         "started_at", "completed_at", "updated_at", "dist_type", "modified_by",
         "depends_on", "created_by", "assigned_to", "project", "source",
+        "required_model", "assigned_slot",
     ]
 
     cursor = conn.cursor()

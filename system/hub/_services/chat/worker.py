@@ -132,16 +132,16 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("BACH_DELEGATION_DEPTH", "2")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-    from hub._services.chat.task_runner import offene_tasks, markiere_erledigt
+    from hub._services import fackel
+    from hub._services.agents_heart import begin_assignment, finish_assignment
+    from hub._services.chat import telegram_chat as tc
     from hub._services.chat.slots_config import (
+        get_slot_pause_info,
         bump_pause_counter,
         get_slot,
-        initialize_slots_config,
         is_slot_paused,
     )
-    from hub._services.agents_heart import begin_assignment, finish_assignment
-    from hub._services import fackel
-    from hub._services.chat import telegram_chat as tc
+    from hub._services.chat.task_runner import markiere_erledigt, offene_tasks
 
     try:
         from hub.compute_lock import (
@@ -175,22 +175,29 @@ def main(argv: list[str] | None = None) -> int:
 
     erledigt_gesamt = 0
     agent_instance_id = f"worker-{uuid.uuid4().hex}"
-    initialize_slots_config()
     while True:
         still = chat_still_seit(db)
-        if is_slot_paused(get_slot("buddha_always_on")):
-            _log(workdir, "Slot buddha_always_on pausiert - warte")
+
+        slot = get_slot("buddha_always_on")
+        if is_slot_paused(slot):
+            p_info = get_slot_pause_info(slot)
+            rem = p_info.get("remaining_minutes", slot.get("pause_minutes", 0))
+            _log(workdir, f"Slot buddha_always_on pausiert "
+                          f"({rem} min verbleibend) - warte")
             if args.einmal:
                 return 0
             time.sleep(max(5, args.takt))
             continue
+
         if bump_pause_counter("buddha_always_on", event_type="runs"):
             _log(workdir, "Pause-Takt fuer buddha_always_on gestartet")
             if args.einmal:
                 return 0
             time.sleep(max(5, args.takt))
             continue
-        offen = offene_tasks(db, args.category)
+
+        # Bind to the model that will actually run, including CLI overrides.
+        offen = offene_tasks(db, args.category, slot={**slot, "model": modell})
 
         if not offen:
             _log(workdir, "keine bereiten Tasks - Ende")
@@ -398,8 +405,16 @@ def main(argv: list[str] | None = None) -> int:
             if erledigt:
                 erledigt_gesamt += 1
                 _log(workdir, f"    #{t['id']} abgehakt")
-                if bump_pause_counter("buddha_always_on", event_type="tasks"):
-                    _log(workdir, "Pause-Takt fuer buddha_always_on gestartet")
+                try:
+                    slot = get_slot("buddha_always_on")
+                    if bump_pause_counter("buddha_always_on", event_type="tasks"):
+                        _log(
+                            workdir,
+                            f"Pause-Takt fuer buddha_always_on gestartet "
+                            f"({slot.get('pause_minutes', 0)} min)",
+                        )
+                except Exception as se:
+                    _log(workdir, f"Pause-Counter-Update fehlgeschlagen: {se}")
                 assignment_status = "completed"
                 assignment_result = "task_done"
             else:

@@ -26,6 +26,9 @@ import sys
 import time
 from pathlib import Path
 
+from hub._services.chat.slots_config import (
+    match_task_to_pickup_filter, task_matches_slot_binding,
+)
 from hub._services.task_schema import parse_task_dependency_ids
 
 
@@ -39,36 +42,78 @@ def _log(workdir: Path, msg: str) -> None:
         pass
 
 
-def offene_tasks(db: str, project: str) -> list[dict]:
+def offene_tasks(
+    db: str,
+    project: str,
+    pickup_filter: dict | None = None,
+    slot: dict | None = None,
+) -> list[dict]:
     """Offene Tasks eines Projekts, erfuellte Abhaengigkeiten zuerst.
 
+    Optional kann ein pickup_filter oder slot uebergeben werden, um
+    nur passende Tasks abzuarbeiten.
     Lesend ueber eine read-only-Verbindung: Schreiben laeuft ausschliesslich
     ueber die BACH-CLI, damit der DB-Guard nicht umgangen wird.
     """
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     try:
-        rows = con.execute(
-            "SELECT id, title, description, depends_on, status, priority "
-            "FROM tasks WHERE (project = ? OR category = ?) "
-            "AND status NOT IN ('done','cancelled','completed','in_progress','blocked') "
-            "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
-            "WHEN 'P3' THEN 3 ELSE 4 END, id",
-            (project, project),
-        ).fetchall()
-        erledigt = {
-            r[0] for r in con.execute(
-                "SELECT id FROM tasks WHERE (project = ? OR category = ?) AND status = 'done'", (project, project)
-            )
-        }
+        col_names = {c[1] for c in con.execute("PRAGMA table_info(tasks)").fetchall()}
+        cols = ["id", "title", "description", "depends_on", "status", "priority"]
+        for opt_col in ("category", "project", "tags", "required_model", "assigned_slot"):
+            if opt_col in col_names:
+                cols.append(opt_col)
+        cols_str = ", ".join(cols)
+
+        if project == "all":
+            rows = con.execute(
+                f"SELECT {cols_str} FROM tasks "
+                "WHERE status NOT IN ('done','cancelled','completed','in_progress','blocked') "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "WHEN 'P3' THEN 3 ELSE 4 END, id"
+            ).fetchall()
+            erledigt = {
+                r[0] for r in con.execute(
+                    "SELECT id FROM tasks WHERE status = 'done'"
+                )
+            }
+        else:
+            rows = con.execute(
+                f"SELECT {cols_str} FROM tasks "
+                "WHERE (project = ? OR category = ?) "
+                "AND status NOT IN ('done','cancelled','completed','in_progress','blocked') "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "WHEN 'P3' THEN 3 ELSE 4 END, id",
+                (project, project),
+            ).fetchall()
+            erledigt = {
+                r[0] for r in con.execute(
+                    "SELECT id FROM tasks WHERE (project = ? OR category = ?) AND status = 'done'",
+                    (project, project),
+                )
+            }
     finally:
         con.close()
 
     tasks = [dict(r) for r in rows]
+    effective_slot = slot or ({"pickup_filter": pickup_filter} if pickup_filter else {})
+
     # Ein Task, dessen Vorgaenger noch offen ist, wartet - sonst baut das
     # Modell auf etwas auf, das es noch gar nicht gibt.
     bereit = []
     for t in tasks:
+        if not task_matches_slot_binding(t, effective_slot):
+            continue
+        if effective_slot:
+            p_filter = (
+                effective_slot
+                if "enabled" in effective_slot
+                else effective_slot.get("pickup_filter")
+            )
+            if isinstance(p_filter, dict) and p_filter.get("enabled"):
+                if not match_task_to_pickup_filter(t, effective_slot):
+                    continue
+
         dep = (t.get("depends_on") or "").strip()
         if not dep:
             bereit.append(t)
@@ -99,6 +144,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--project", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--model", default="")
+    ap.add_argument("--slot-id", default="", help="Slot-ID für gebundene Tasks")
     ap.add_argument("--db", default="")
     ap.add_argument("--mode", default="full", choices=["safe", "full"])
     ap.add_argument("--max-tasks", type=int, default=6)
@@ -143,7 +189,14 @@ def main(argv: list[str] | None = None) -> int:
     runtime.auto_continue = args.auto_continue
     tc._global_defaults["mode"] = args.mode
 
-    tasks = offene_tasks(db, args.project)
+    from hub._services.chat.slots_config import get_slot
+    slot = get_slot(args.slot_id) if args.slot_id else {}
+    if args.slot_id and not slot:
+        _log(workdir, f"Unbekannter Slot: {args.slot_id}")
+        return 2
+    if args.model:
+        slot = {**slot, "model": args.model}
+    tasks = offene_tasks(db, args.project, slot=slot)
     _log(workdir, f"{len(tasks)} bereite Tasks im Projekt {args.project!r}")
     if not tasks:
         return 0

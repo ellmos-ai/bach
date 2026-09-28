@@ -27,7 +27,7 @@ def _run(monkeypatch, tmp_path, answer):
     fake = types.SimpleNamespace(runtime=_Runtime(answer), _global_defaults={})
     monkeypatch.setitem(sys.modules, "hub._services.chat.telegram_chat", fake)
     monkeypatch.setattr(chat_pkg, "telegram_chat", fake, raising=False)
-    monkeypatch.setattr(task_runner, "offene_tasks", lambda db, project: [{"id": 7, "title": "Aufgabe"}])
+    monkeypatch.setattr(task_runner, "offene_tasks", lambda *a, **k: [{"id": 7, "title": "Aufgabe"}])
     done = []
     monkeypatch.setattr(task_runner, "markiere_erledigt", lambda cli, task_id: done.append(task_id) or True)
     monkeypatch.chdir(tmp_path)

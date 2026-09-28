@@ -29,6 +29,9 @@ for _p in (_system_dir, _root_dir):
         sys.path.insert(0, _p)
 
 from hub._services.chat.control_auth import get_control_api_auth_header
+from hub._services.chat.slots_config import (
+    match_task_to_pickup_filter, task_matches_slot_binding,
+)
 
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
@@ -51,8 +54,8 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 try:
     import pystray
@@ -670,20 +673,43 @@ class BACHTray:
             # 'open'-OLLAMA-Task liegen.
             task = None
             task_status = "open"
-            # 1. Zuerst bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
-            for assignee in ("OLLAMA", "BUDDHA", "BACH"):
+
+            always_on = getattr(self, "slots", {}).get("buddha_always_on", {})
+            pickup_filter = always_on.get("pickup_filter", {})
+            filter_enabled = isinstance(pickup_filter, dict) and pickup_filter.get("enabled", False)
+
+            # 1. Gezielte Filter-Suche des Always-On-Slots (enabled + categories/priorities/tags/exclude_tags)
+            if filter_enabled:
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
-                        "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
+                        "GET", f"/api/tasks?status={status}", base=self.gui_url
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                        task = tasks_resp["tasks"][0]
-                        task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                        for cand in tasks_resp["tasks"]:
+                            if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
+                                task = cand
+                                task_status = status
+                                break
+                    if task:
                         break
-                if task:
-                    break
 
-            # 2. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
+            # 2. Bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
+            if not task:
+                for assignee in ("OLLAMA", "BUDDHA", "BACH"):
+                    for status in ("pending", "open"):
+                        tasks_resp = self._api(
+                            "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
+                        )
+                        if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
+                            for cand in tasks_resp["tasks"]:
+                                if task_matches_slot_binding(cand, always_on):
+                                    task = cand
+                                    task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                                    break
+                    if task:
+                        break
+
+            # 3. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
             if not task:
                 for status in ("pending", "open"):
                     tasks_resp = self._api(
@@ -693,7 +719,8 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
+                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", "")
+                                    and task_matches_slot_binding(cand, always_on)):
                                 task = cand
                                 task_status = status
                                 break
@@ -840,7 +867,7 @@ class BACHTray:
             else:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
             draw.text((14, 10), "B", fill="white", font=font)
-        except (OSError, IOError):
+        except OSError:
             draw.text((16, 14), "B", fill="white")
         return img
 

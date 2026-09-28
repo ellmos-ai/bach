@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """Tests for BACH Connectors (base, telegram, signal, discord, whatsapp, HA) and Chat Tray."""
 
 import json
 import os
-import socket
 import subprocess
 import sys
 import threading
@@ -12,7 +10,7 @@ import time
 import urllib.error
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,7 +19,6 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from connectors.base import BaseConnector, ConnectorConfig, ConnectorStatus, Message
-
 
 # ===================================================================
 # BASE CLASSES
@@ -348,7 +345,7 @@ class TestTelegramApiCallRetry:
         def mock_urlopen(req, timeout=None):
             attempts.append(1)
             if len(attempts) < 3:
-                raise socket.timeout("timed out")
+                raise TimeoutError("timed out")
             resp = MagicMock()
             resp.read.return_value = json.dumps({"ok": True, "result": "ok"}).encode()
             resp.__enter__ = lambda s: resp
@@ -364,7 +361,7 @@ class TestTelegramApiCallRetry:
     def test_socket_timeout_getupdates_returns_empty(self, tg):
         """getUpdates timeout returns empty list immediately (long-polling normal)."""
         def mock_urlopen(req, timeout=None):
-            raise socket.timeout("timed out")
+            raise TimeoutError("timed out")
 
         with patch('urllib.request.urlopen', side_effect=mock_urlopen):
             result = tg._api_call("getUpdates", retries=3)
@@ -1332,3 +1329,70 @@ class TestTrayIdleWorker:
 
         assert tray.idle_pending is None
         assert any(p.startswith("/api/tasks?") for m, p, d in calls), "Worker sucht wieder Arbeit"
+
+    def test_idle_task_picks_filter_match_before_assignee_scan(self, monkeypatch):
+        """Ein aktivierter pickup_filter wird vor dem Standard-Assignee-Scan genutzt."""
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        tray.slots = {
+            "buddha_always_on": {
+                "pickup_filter": {
+                    "enabled": True,
+                    "categories": ["TEST"],
+                    "priorities": [],
+                    "tags": [],
+                    "exclude_tags": [],
+                }
+            }
+        }
+        calls = []
+
+        def fake_api(method, path, data=None, **kw):
+            calls.append((method, path, data))
+            if method == "GET" and path == "/api/tasks?status=pending":
+                return {
+                    "success": True,
+                    "tasks": [
+                        {"id": 42, "title": "Filter Task", "description": "D", "category": "TEST"}
+                    ],
+                }
+            if method == "GET" and path.startswith("/api/tasks?"):
+                return {"success": True, "tasks": []}
+            if method == "POST":
+                return {"ok": True, "answer": "FERTIG"}
+            return {"success": True}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+
+        gets = [p for m, p, _ in calls if m == "GET"]
+        assert "/api/tasks?status=pending" in gets
+        assert not any("assigned_to=" in p for p in gets), "Assignee-Scan darf nicht durchlaufen"
+        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
+        assert ("/api/tasks/42", "in_progress") in puts
+        assert tray.idle_processing is False
+
+    @pytest.mark.parametrize("route", ["filter", "assignee", "universal"])
+    def test_idle_worker_skips_cloud_bound_task_on_every_route(self, monkeypatch, route):
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        tray.slots = {"buddha_always_on": {
+            "id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+            "pickup_filter": {"enabled": route == "filter"},
+        }}
+        task = {"id": 99, "title": "cloud only", "assigned_to": "OLLAMA",
+                "required_model": "kimi-k3:cloud"}
+        calls = []
+
+        def fake_api(method, path, data=None, **_kw):
+            calls.append((method, path))
+            if method == "GET":
+                if route == "filter" and path == "/api/tasks?status=pending":
+                    return {"success": True, "tasks": [task]}
+                if route == "assignee" and path == "/api/tasks?assigned_to=OLLAMA&status=pending":
+                    return {"success": True, "tasks": [task]}
+                if route == "universal" and path == "/api/tasks?status=pending":
+                    return {"success": True, "tasks": [task]}
+            return {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+        assert not any(method in ("PUT", "POST") for method, _ in calls)

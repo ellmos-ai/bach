@@ -36,10 +36,12 @@ from ._services.task_schema import (
     task_has_due_date,
     ensure_task_claim_columns,
     task_has_claim_columns,
+    ensure_task_slot_columns,
     inspect_task_dependencies,
     parse_task_dependency_ids,
 )
 from .task_audit import (
+    reap_stale_in_progress_tasks,
     apply_task_field_changes,
     claim_task_atomic,
     release_claim,
@@ -96,6 +98,8 @@ class TaskHandler(BaseHandler):
             "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
+            "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
+            "sweep": "Alias fuer reap",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
         }
@@ -192,6 +196,8 @@ class TaskHandler(BaseHandler):
             return self._claim(args)
         elif operation == "release":
             return self._release(args)
+        elif operation in ("reap", "sweep"):
+            return self._reap(args)
         elif operation in ["", "help"]:
             return self._help()
         else:
@@ -223,7 +229,8 @@ class TaskHandler(BaseHandler):
         if not clean_args:
             return False, (
                 "Usage: bach task add <titel> [--priority P1-P4] "
-                "[--description TEXT] [--due YYYY-MM-DD] [--local|--remote]"
+                "[--description TEXT] [--due YYYY-MM-DD] "
+                "[--required-model MODEL] [--assigned-slot SLOT] [--local|--remote]"
             )
         
         title = self._sanitize_title(clean_args[0])
@@ -231,6 +238,8 @@ class TaskHandler(BaseHandler):
         description = ""
         category = "general"
         due_date = None
+        required_model = None
+        assigned_slot = None
         
         # Optionen parsen
         i = 1
@@ -256,6 +265,24 @@ class TaskHandler(BaseHandler):
                 if due_date is None:
                     return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
                 i += 1
+            elif clean_args[i] in ("--required-model", "--assigned-slot"):
+                if i + 1 >= len(clean_args) or not clean_args[i + 1].strip():
+                    return False, f"Fehler: {clean_args[i]} erwartet einen Wert"
+                if clean_args[i] == "--required-model":
+                    required_model = clean_args[i + 1].strip()
+                else:
+                    assigned_slot = clean_args[i + 1].strip()
+                i += 2
+            elif clean_args[i].startswith("--required-model="):
+                required_model = clean_args[i].split("=", 1)[1].strip()
+                if not required_model:
+                    return False, "Fehler: --required-model erwartet einen Wert"
+                i += 1
+            elif clean_args[i].startswith("--assigned-slot="):
+                assigned_slot = clean_args[i].split("=", 1)[1].strip()
+                if not assigned_slot:
+                    return False, "Fehler: --assigned-slot erwartet einen Wert"
+                i += 1
             else:
                 i += 1
 
@@ -274,6 +301,8 @@ class TaskHandler(BaseHandler):
                             "category": category,
                             "description": description,
                             "due_date": due_date,
+                            "required_model": required_model,
+                            "assigned_slot": assigned_slot,
                             "created_by": socket.gethostname().split(".")[0].lower(),
                         }
                         ok, res = post_task_to_rheingold(rheingold_url, payload)
@@ -281,21 +310,22 @@ class TaskHandler(BaseHandler):
                             task_id = res["id"]
                             with self._get_db() as conn:
                                 ensure_task_due_date(conn)
+                                ensure_task_slot_columns(conn)
                                 existing = assert_local_task_id_available(
                                     conn, task_id, title
                                 )
                                 if existing is None:
                                     conn.execute("""
                                         INSERT INTO tasks
-                                            (id, title, priority, category, description, status, due_date, created_at, source)
-                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
-                                    """, (task_id, title, priority, category, description, due_date, f"rheingold:{rheingold_url}"))
+                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
+                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}"))
                                 else:
                                     conn.execute("""
                                         UPDATE tasks
-                                        SET priority = ?, category = ?, description = ?, due_date = ?, source = ?
+                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?
                                         WHERE id = ?
-                                    """, (priority, category, description, due_date, f"rheingold:{rheingold_url}", task_id))
+                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", task_id))
                                 conn.commit()
 
                             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -309,13 +339,14 @@ class TaskHandler(BaseHandler):
                 draft_hash = generate_draft_hash(title, category)
                 with self._get_db() as conn:
                     ensure_task_due_date(conn)
+                    ensure_task_slot_columns(conn)
                     min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                     draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                     conn.execute("""
                         INSERT INTO tasks
-                            (id, title, priority, category, description, status, due_date, created_at, source)
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
-                    """, (draft_id, title, priority, category, description, due_date, draft_hash))
+                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
+                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
                     conn.commit()
 
                 due_text = f" (fällig: {due_date})" if due_date else ""
@@ -334,13 +365,14 @@ class TaskHandler(BaseHandler):
             draft_hash = generate_draft_hash(title, category)
             with self._get_db() as conn:
                 ensure_task_due_date(conn)
+                ensure_task_slot_columns(conn)
                 min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                 draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                 conn.execute("""
                     INSERT INTO tasks
-                        (id, title, priority, category, description, status, due_date, created_at, source)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'), ?)
-                """, (draft_id, title, priority, category, description, due_date, draft_hash))
+                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
+                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
                 conn.commit()
 
             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -352,11 +384,12 @@ class TaskHandler(BaseHandler):
 
         with self._get_db() as conn:
             ensure_task_due_date(conn)
+            ensure_task_slot_columns(conn)
             cursor = conn.execute("""
                 INSERT INTO tasks
-                    (title, priority, category, description, status, due_date, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, datetime('now'))
-            """, (title, priority, category, description, due_date))
+                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'))
+            """, (title, priority, category, description, due_date, required_model, assigned_slot))
             task_id = cursor.lastrowid
             conn.commit()
 
@@ -367,6 +400,7 @@ class TaskHandler(BaseHandler):
                 'task_id': task_id, 'title': title,
                 'priority': priority, 'category': category,
                 'due_date': due_date,
+                'required_model': required_model, 'assigned_slot': assigned_slot,
             })
         except Exception:
             pass
@@ -386,7 +420,7 @@ class TaskHandler(BaseHandler):
     def _edit(self, args: List[str]) -> Tuple[bool, str]:
         """Task bearbeiten - Titel, Beschreibung, Kategorie, Zuweisung aendern"""
         if not args:
-            return False, "Usage: bach task edit <id> [--title TEXT] [--description TEXT] [--category TEXT] [--assigned NAME]"
+            return False, "Usage: bach task edit <id> [--title TEXT] [--description TEXT] [--category TEXT] [--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT]"
         
         # ID extrahieren
         try:
@@ -399,6 +433,9 @@ class TaskHandler(BaseHandler):
         description = None
         category = None
         assigned_to = None
+        required_model = None
+        assigned_slot = None
+        slot_fields_set = set()
         
         i = 1
         while i < len(args):
@@ -414,14 +451,35 @@ class TaskHandler(BaseHandler):
             elif args[i] in ["--assigned", "-a"] and i + 1 < len(args):
                 assigned_to = args[i + 1].lower()
                 i += 2
+            elif args[i] in ("--required-model", "--assigned-slot"):
+                if i + 1 >= len(args):
+                    return False, f"Fehler: {args[i]} erwartet einen Wert"
+                field = args[i][2:].replace("-", "_")
+                slot_fields_set.add(field)
+                if field == "required_model":
+                    required_model = args[i + 1].strip() or None
+                else:
+                    assigned_slot = args[i + 1].strip() or None
+                i += 2
+            elif args[i].startswith(("--required-model=", "--assigned-slot=")):
+                field = args[i].split("=", 1)[0][2:].replace("-", "_")
+                slot_fields_set.add(field)
+                value = args[i].split("=", 1)[1].strip() or None
+                if field == "required_model":
+                    required_model = value
+                else:
+                    assigned_slot = value
+                i += 1
             else:
                 i += 1
         
         # Pruefen ob mindestens eine Option angegeben wurde
-        if title is None and description is None and category is None and assigned_to is None:
-            return False, "Mindestens eine Option angeben: --title, --description, --category, --assigned"
+        if title is None and description is None and category is None and assigned_to is None and not slot_fields_set:
+            return False, "Mindestens eine Option angeben: --title, --description, --category, --assigned, --required-model, --assigned-slot"
         
         with self._get_db() as conn:
+            if slot_fields_set:
+                ensure_task_slot_columns(conn)
             # Pruefen ob Task existiert
             existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if not existing:
@@ -450,6 +508,13 @@ class TaskHandler(BaseHandler):
                 field_values["assigned_to"] = assigned_to
                 changes.append(f"Zugewiesen -> {assigned_to}")
 
+            if "required_model" in slot_fields_set:
+                field_values["required_model"] = required_model
+                changes.append(f"Modell -> {required_model or 'frei'}")
+            if "assigned_slot" in slot_fields_set:
+                field_values["assigned_slot"] = assigned_slot
+                changes.append(f"Slot -> {assigned_slot or 'frei'}")
+
             # now ueber SQLite (nicht Python-datetime): task.py nutzt durchgaengig
             # datetime('now') (UTC) fuer created_at/updated_at -- ein Python-seitiges
             # datetime.now().isoformat() (lokale Zeit) wuerde dieselbe Zeile inkonsistent
@@ -461,6 +526,22 @@ class TaskHandler(BaseHandler):
 
         return True, f"[OK] Task {task_id} bearbeitet: {', '.join(changes)}"
     
+    def _reap(self, args: List[str]) -> Tuple[bool, str]:
+        """Stale in_progress-Tasks bereinigen und auf pending zuruecksetzen."""
+        lease_seconds = 1800
+        for arg in args:
+            if arg.startswith("--lease="):
+                try:
+                    lease_seconds = int(arg.split("=", 1)[1])
+                except ValueError:
+                    pass
+        with self._get_db() as conn:
+            reaped = reap_stale_in_progress_tasks(conn, lease_seconds=lease_seconds)
+            if reaped:
+                conn.commit()
+                return True, f"[OK] {len(reaped)} abgelaufene in_progress-Tasks zurueckgesetzt: {reaped}"
+            return True, "[OK] Keine abgelaufenen in_progress-Tasks gefunden"
+
     def _list(self, args: List[str]) -> Tuple[bool, str]:
         """Tasks auflisten"""
         status_filter = "pending"
@@ -475,6 +556,8 @@ class TaskHandler(BaseHandler):
             "blocked": "blocked",
             "in_progress": "in_progress",
             "in-progress": "in_progress",
+            "completed": "completed",
+            "cancelled": "cancelled",
         }
         
         i = 0
@@ -501,7 +584,13 @@ class TaskHandler(BaseHandler):
         conditions = []
         params = []
         
-        if status_filter:
+        if status_filter == "open":
+            conditions.append("status IN ('pending', 'open', 'in_progress')")
+        elif status_filter == "pending":
+            conditions.append("status IN ('pending', 'open')")
+        elif status_filter == "completed":
+            conditions.append("status IN ('done', 'completed')")
+        elif status_filter:
             conditions.append("status = ?")
             params.append(status_filter)
         

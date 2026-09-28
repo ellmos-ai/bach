@@ -217,6 +217,8 @@ class TaskCreate(BaseModel):
     category: str = "general"
     assigned_to: str = DEFAULT_TASK_ASSIGNEE
     description: str = ""
+    required_model: Optional[str] = None
+    assigned_slot: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -224,6 +226,8 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     assigned_to: Optional[str] = None
     description: Optional[str] = None
+    required_model: Optional[str] = None
+    assigned_slot: Optional[str] = None
     # T-20260906-240256515: optionaler Aufrufer-Bezeichner fuer task_history.changed_by,
     # analog zu TaskUpdate.changed_by im GUI-Server. Externe API-Clients identifizieren
     # sich damit; ohne Angabe greift der Default "headless-api" (siehe update_task).
@@ -246,7 +250,13 @@ async def list_tasks(status: str = "pending", limit: int = 50,
                      priority: str = "", _=Depends(verify_auth)):
     conn = _get_db()
     try:
-        query = "SELECT id, title, priority, status, category, assigned_to, created_at FROM tasks WHERE 1=1"
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        slot_fields = ", ".join(
+            name if name in columns else f"NULL AS {name}"
+            for name in ("required_model", "assigned_slot")
+        )
+        query = ("SELECT id, title, priority, status, category, assigned_to, "
+                 f"created_at, {slot_fields} FROM tasks WHERE 1=1")
         params = []
         if status != "all":
             query += " AND status = ?"
@@ -267,12 +277,15 @@ async def list_tasks(status: str = "pending", limit: int = 50,
 async def create_task(task: TaskCreate, _=Depends(verify_auth)):
     conn = _get_db()
     try:
+        from hub._services.task_schema import ensure_task_slot_columns
+        ensure_task_slot_columns(conn)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.execute("""
-            INSERT INTO tasks (title, priority, category, status, assigned_to, description, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+            INSERT INTO tasks (title, priority, category, status, assigned_to, description, required_model, assigned_slot, created_at, updated_at)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
         """, (task.title, task.priority, task.category,
-              task.assigned_to or DEFAULT_TASK_ASSIGNEE, task.description, now, now))
+              task.assigned_to or DEFAULT_TASK_ASSIGNEE, task.description,
+              task.required_model or None, task.assigned_slot or None, now, now))
         conn.commit()
         return {"id": cur.lastrowid, "title": task.title, "status": "pending"}
     finally:
@@ -304,12 +317,18 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
     """
     conn = _get_db()
     try:
+        from hub._services.task_schema import ensure_task_slot_columns
+        if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
+            ensure_task_slot_columns(conn)
         existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(404, "Task nicht gefunden")
         existing_row = dict(existing)
 
         field_values = update.model_dump(exclude_none=True, exclude={"changed_by", "allow_reopen"})
+        for name in ("required_model", "assigned_slot"):
+            if name in update.model_fields_set:
+                field_values[name] = getattr(update, name) or None
         if not field_values:
             raise HTTPException(400, "Keine Felder zum Aktualisieren")
 
