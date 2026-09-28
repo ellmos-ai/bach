@@ -1116,7 +1116,7 @@ class TestControlHandlerEndpoints:
     def test_worker_gui_exposes_truthful_no_tools_control(self):
         from hub._services.chat import telegram_chat
 
-        source = Path(telegram_chat.__file__).read_text(encoding="utf-8")
+        source = getattr(telegram_chat, "WEB_ACTIVITY_DASHBOARD", "") or Path(telegram_chat.__file__).read_text(encoding="utf-8")
         assert 'id="nw-allow-tools" checked' in source
         assert "allow_tools: allowTools" in source
         assert "Max Turns 0“ bedeutet unbegrenzt" in source
