@@ -13,6 +13,17 @@ popd
 set "CHAT_DIR=!SYS_DIR!\hub\_services\chat"
 set "STARTSPINE=!ROOT_DIR!\start\startspine.py"
 set PYTHONIOENCODING=utf-8
+REM Explorer kann alte Umgebungsvariablen halten; User-Konfiguration aus HKCU lesen.
+if not defined BACH_REMOTE_HOST for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_REMOTE_HOST 2^>nul') do set "BACH_REMOTE_HOST=%%B"
+if not defined BACH_CONTROL_API_TOKEN_FILE for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_CONTROL_API_TOKEN_FILE 2^>nul') do set "BACH_CONTROL_API_TOKEN_FILE=%%B"
+set "BACH_CLIENT_MODE=local"
+if defined BACH_REMOTE_HOST set "BACH_CLIENT_MODE=remote"
+if /i "!BACH_REMOTE_HOST!"=="local" set "BACH_CLIENT_MODE=local"
+if "!BACH_REMOTE_HOST!"=="0" set "BACH_CLIENT_MODE=local"
+if /i "!BACH_REMOTE_HOST!"=="off" set "BACH_CLIENT_MODE=local"
+if /i "!BACH_REMOTE_HOST!"=="false" set "BACH_CLIENT_MODE=local"
+set "BACH_CLIENT_HOST=!BACH_REMOTE_API_HOST!"
+if "!BACH_CLIENT_HOST!"=="" set "BACH_CLIENT_HOST=127.0.0.1"
 
 :menu
 cls
@@ -27,7 +38,7 @@ echo   Personal AI Operating System v3.13.0
 echo   ==================================================
 echo.
 echo   --- SCHNELLSTART --------------------------------
-echo   [D]  Default Start (GUI + System Tray)
+echo   [D]  Default Start (im Remote-Modus: Mac-Tray + Browser)
 echo.
 echo   --- KONSOLEN ------------------------------------
 echo   [1]  Claude Code (lokal, volle Rechte)
@@ -71,8 +82,22 @@ goto menu
 REM ============================================================
 REM  DEFAULT START (GUI + System Tray)
 REM ============================================================
+:remote_client
+title BACH Mac Client
+echo [INFO] Remote-Modus: !BACH_REMOTE_HOST! über !BACH_CLIENT_HOST!.
+echo [INFO] Es werden nur Tray und Browser gestartet.
+python "!STARTSPINE!" start --tray --remote-client --host "!BACH_CLIENT_HOST!" --open-browser
+if errorlevel 1 echo [FEHLER] Tunnel oder Tray nicht bereit. Keine lokalen Dienste gestartet.
+pause
+goto menu
+
+:remote_gui
+start "" "http://!BACH_CLIENT_HOST!:8000"
+goto menu
+
 :default_start
 title BACH Default Start
+if "!BACH_CLIENT_MODE!"=="remote" goto remote_client
 cls
 echo.
 echo  ============================================
@@ -209,6 +234,12 @@ REM  CHAT SERVICE (Telegram Bot + Tray)
 REM ============================================================
 :chat_start
 title BACH Chat Service
+if "!BACH_CLIENT_MODE!"=="remote" (
+    echo [WARNUNG] BACH läuft auf !BACH_REMOTE_HOST!. Telegram-Bot nur dort starten.
+    echo [INFO] Mit [D] den Remote-Tray und Browser öffnen.
+    pause
+    goto menu
+)
 cls
 echo.
 echo  ============================================
@@ -226,6 +257,7 @@ REM  SERVER-MODUS (Buddha Connect)
 REM ============================================================
 :server_connect
 title BACH Server Connect
+if "!BACH_CLIENT_MODE!"=="remote" goto remote_client
 cls
 echo.
 echo  ============================================
@@ -301,8 +333,6 @@ if "!GUI_ONLINE!"=="1" (
 
 echo [2/3] Starte System Tray...
 if "!CONTROL_ONLINE!"=="1" (
-    python -c "import psutil, os; [p.kill() for p in psutil.process_iter(['name','cmdline']) if p.info.get('name') and 'python' in p.info['name'].lower() and any('chat_tray.py' in str(a) for a in (p.info.get('cmdline') or []))]" >nul 2>&1
-    timeout /t 1 /nobreak >nul
     pushd "!CHAT_DIR!"
     start "" pythonw chat_tray.py --host !BACH_HOST_TARGET! --port 8081
     popd
@@ -339,6 +369,7 @@ REM  WEB-GUI
 REM ============================================================
 :gui
 title BACH GUI Server
+if "!BACH_CLIENT_MODE!"=="remote" goto remote_gui
 python "!STARTSPINE!" start --gui --open-browser
 if errorlevel 1 echo [FEHLER] GUI ist nicht bereit. Details stehen im Startspine-Log.
 pause
@@ -370,6 +401,11 @@ title BACH Chat Service Stop
 cls
 echo.
 echo  Stoppe Chat Service...
+if "!BACH_CLIENT_MODE!"=="remote" (
+    python "!STARTSPINE!" stop --services tray
+    pause
+    goto menu
+)
 python "!STARTSPINE!" stop --services chat,tray
 pause
 goto menu

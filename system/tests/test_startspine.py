@@ -405,6 +405,34 @@ def test_tray_start_is_required_and_uses_local_ollama(tmp_path, monkeypatch):
     command = tray["command"]
     assert command[command.index("--ollama-host") + 1] == "127.0.0.1"
     assert command[command.index("--host") + 1] == "remote-control"
+    assert "--remote" in command
+
+
+def test_loopback_remote_client_starts_only_tray_and_opens_tunnel_gui(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BACH_REMOTE_HOST", "mac")
+    started = []
+    opened = []
+    monkeypatch.setattr(startspine, "_start_service", lambda state, name, **kwargs: started.append((name, kwargs)) or True)
+    monkeypatch.setattr(startspine, "_load_mutable_state", startspine._base_state)
+    monkeypatch.setattr(startspine, "_save_state", lambda state: None)
+    monkeypatch.setattr(startspine, "_discovery", lambda state, gui_port, control_port: {"services": {}, "ollama": {}})
+    monkeypatch.setattr(startspine, "_print_status", lambda payload: None)
+    monkeypatch.setattr(startspine.webbrowser, "open", opened.append)
+    args = startspine.build_parser().parse_args([
+        "start", "--tray", "--remote-client", "--host", "127.0.0.1", "--open-browser",
+    ])
+
+    assert startspine.command_start(args) == 0
+    assert [name for name, _ in started] == ["tray"]
+    assert "--remote" in started[0][1]["command"]
+    assert opened == ["http://127.0.0.1:8000"]
+
+
+def test_remote_host_configuration_rejects_local_bot(monkeypatch):
+    monkeypatch.setenv("BACH_REMOTE_HOST", "mac")
+    args = startspine.build_parser().parse_args(["start", "--chat", "--host", "127.0.0.1"])
+    assert startspine.command_start(args) == 2
 
 
 def test_remote_status_keeps_ollama_local(monkeypatch, capsys):

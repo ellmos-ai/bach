@@ -771,7 +771,8 @@ def command_start(args: argparse.Namespace) -> int:
         args.gui = True
         args.tray = True
 
-    remote = host not in LOCAL_HOSTS
+    remote_mode = os.environ.get("BACH_REMOTE_HOST", "").strip().lower()
+    remote = getattr(args, "remote_client", False) or remote_mode not in ("", "0", "false", "off", "local") or host not in LOCAL_HOSTS
     if remote and (args.gui or args.chat):
         print("[FEHLER] Remote-Hosts werden nur gelesen; lokale GUI/Chat-Prozesse werden nicht fern gestartet.")
         return 2
@@ -883,6 +884,7 @@ def command_start(args: argparse.Namespace) -> int:
                         "--port", str(tray_control),
                         "--gui-port", str(tray_gui),
                         "--ollama-host", "127.0.0.1",
+                        *(["--remote"] if remote else []),
                     ],
                     cwd=SYSTEM_DIR,
                     env=_child_environment(),
@@ -921,8 +923,8 @@ def command_start(args: argparse.Namespace) -> int:
                 }
             print(f"[FEHLER] Starttransaktion zurückgerollt: {exc}")
 
-    if args.open_browser and args.gui and ok and os.environ.get("BACH_NO_BROWSER") != "1":
-        webbrowser.open(f"http://127.0.0.1:{actual_gui}")
+    if args.open_browser and (args.gui or remote) and ok and os.environ.get("BACH_NO_BROWSER") != "1":
+        webbrowser.open(f"http://{host if remote else '127.0.0.1'}:{actual_gui}")
     print(f"[INFO] Discovery: {_paths()['discovery']}")
     _print_status(discovery)
     return 0 if ok else 1
@@ -1041,6 +1043,8 @@ def command_run_child(args: argparse.Namespace) -> int:
         env.update({str(k): str(v) for k, v in overrides.items()})
     env["BACH_STARTSPINE_LAUNCH_ID"] = str(spec.get("launch_id") or "")
     env["BACH_STARTSPINE_SERVICE"] = str(args.service)
+    if args.service == "tray":
+        env["BACH_STARTSPINE_READY_RECEIPT"] = str(_ready_receipt_path("tray"))
     log_path = Path(spec["log"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab", buffering=0) as log_handle:
@@ -1147,6 +1151,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--gui", action="store_true")
     start.add_argument("--chat", action="store_true")
     start.add_argument("--tray", action="store_true")
+    start.add_argument("--remote-client", action="store_true", help="Nur Tray/Browser gegen vorhandenen Remote-Dienst")
     start.add_argument("--host", help="Tray-/Remote-Host; Standard BACH_HOST oder 127.0.0.1")
     start.add_argument("--gui-port", type=int)
     start.add_argument("--control-port", type=int)
