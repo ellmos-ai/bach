@@ -359,6 +359,37 @@ class TestSlotsConfigCRUD:
         assert is_slot_paused(slot) is True
         assert slot["pause_counter"] == 0
 
+    def test_pause_basis_tasks_and_persisted_counter(self, tmp_path):
+        cfg_file = tmp_path / "pause-tasks.json"
+        initialize_slots_config(str(cfg_file))
+        update_slot("buddha_always_on", {
+            "pause_after": 2, "pause_minutes": 1, "pause_basis": "tasks",
+        }, path=str(cfg_file))
+
+        assert bump_pause_counter("buddha_always_on", "runs", str(cfg_file)) is False
+        assert get_slot("buddha_always_on", str(cfg_file))["pause_counter"] == 0
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is False
+        assert get_slot("buddha_always_on", str(cfg_file))["pause_counter"] == 1
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is True
+        paused = get_slot("buddha_always_on", str(cfg_file))
+        assert paused["pause_counter"] == 0
+        assert is_slot_paused(paused)
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is False
+
+    def test_existing_v1_config_gains_pause_fields(self, tmp_path):
+        cfg_file = tmp_path / "slots-v1.json"
+        cfg = initialize_slots_config(str(cfg_file))
+        cfg["version"] = 1
+        for slot in cfg["slots"].values():
+            for field in ("pause_after", "pause_minutes", "pause_basis",
+                          "pause_counter", "pause_started_at"):
+                slot.pop(field)
+        save_slots_config(cfg, str(cfg_file))
+
+        migrated = load_slots_config(str(cfg_file), strict=True)
+        assert migrated["version"] == 2
+        assert all(slot["pause_after"] == 5 for slot in migrated["slots"].values())
+
 
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
