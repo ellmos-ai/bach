@@ -26,6 +26,9 @@ import sys
 import time
 from pathlib import Path
 
+from hub._services.chat.slots_config import (
+    match_task_to_pickup_filter, task_matches_slot_binding,
+)
 from hub._services.task_schema import parse_task_dependency_ids
 
 
@@ -93,15 +96,15 @@ def offene_tasks(
         con.close()
 
     tasks = [dict(r) for r in rows]
-    effective_slot = slot or ({"pickup_filter": pickup_filter} if pickup_filter else None)
+    effective_slot = slot or ({"pickup_filter": pickup_filter} if pickup_filter else {})
 
     # Ein Task, dessen Vorgaenger noch offen ist, wartet - sonst baut das
     # Modell auf etwas auf, das es noch gar nicht gibt.
     bereit = []
     for t in tasks:
+        if not task_matches_slot_binding(t, effective_slot):
+            continue
         if effective_slot:
-            from hub._services.chat.slots_config import match_task_to_pickup_filter
-
             p_filter = (
                 effective_slot
                 if "enabled" in effective_slot
@@ -141,6 +144,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--project", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--model", default="")
+    ap.add_argument("--slot-id", default="", help="Slot-ID für gebundene Tasks")
     ap.add_argument("--db", default="")
     ap.add_argument("--mode", default="full", choices=["safe", "full"])
     ap.add_argument("--max-tasks", type=int, default=6)
@@ -185,7 +189,14 @@ def main(argv: list[str] | None = None) -> int:
     runtime.auto_continue = args.auto_continue
     tc._global_defaults["mode"] = args.mode
 
-    tasks = offene_tasks(db, args.project)
+    from hub._services.chat.slots_config import get_slot
+    slot = get_slot(args.slot_id) if args.slot_id else {}
+    if args.slot_id and not slot:
+        _log(workdir, f"Unbekannter Slot: {args.slot_id}")
+        return 2
+    if args.model:
+        slot = {**slot, "model": args.model}
+    tasks = offene_tasks(db, args.project, slot=slot)
     _log(workdir, f"{len(tasks)} bereite Tasks im Projekt {args.project!r}")
     if not tasks:
         return 0

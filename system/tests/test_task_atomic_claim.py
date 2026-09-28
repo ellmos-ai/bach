@@ -414,6 +414,26 @@ class TestServerTaskClaimAPI:
 
 
 class TestReapStaleInProgressTasks:
+    def test_manual_task_uses_updated_at_as_lease(self, task_db):
+        from hub.task_audit import reap_stale_in_progress_tasks
+        conn = sqlite3.connect(str(task_db))
+        conn.execute(
+            "INSERT INTO tasks (title, status, updated_at) VALUES (?, 'in_progress', ?)",
+            ("fresh manual", "2026-09-28T11:55:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO tasks (title, status, updated_at) VALUES (?, 'in_progress', ?)",
+            ("stale manual", "2026-09-28T10:00:00+00:00"),
+        )
+        conn.commit()
+        reaped = reap_stale_in_progress_tasks(
+            conn, lease_seconds=1800, now="2026-09-28T12:00:00+00:00"
+        )
+        assert len(reaped) == 1
+        assert conn.execute("SELECT title FROM tasks WHERE id = ?", (reaped[0],)).fetchone()[0] == "stale manual"
+        assert conn.execute("SELECT status FROM tasks WHERE title = 'fresh manual'").fetchone()[0] == "in_progress"
+        conn.close()
+
     def test_reap_stale_in_progress_tasks_resets_expired_claims(self, task_db):
         from hub.task_audit import reap_stale_in_progress_tasks
         conn = sqlite3.connect(str(task_db))

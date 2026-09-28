@@ -43,7 +43,7 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 # Schluessel aus freierem Input gebildet wird. Deshalb Allowlist statt Vertrauen.
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
-    "assigned_to", "created_by", "depends_on",
+    "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
 })
 
 # Spalten, die NICHT ueber field_values gesetzt werden (sie sind Ergebnis der
@@ -377,7 +377,8 @@ def reap_stale_in_progress_tasks(
     now_iso = _iso_now(now)
     now_ref = datetime.fromisoformat(now_iso)
     local_tz = datetime.now().astimezone().tzinfo or timezone.utc
-    now_utc = now_ref.replace(tzinfo=local_tz).astimezone(timezone.utc)
+    now_utc = (now_ref.astimezone(timezone.utc) if now_ref.tzinfo is not None
+               else now_ref.replace(tzinfo=local_tz).astimezone(timezone.utc))
 
     cur = conn.cursor()
     cols = {col[1] for col in cur.execute("PRAGMA table_info(tasks)").fetchall()}
@@ -393,7 +394,8 @@ def reap_stale_in_progress_tasks(
                {("claimed_by" if has_claimed_by else "NULL as claimed_by")},
                {("claimed_at" if has_claimed_at else "NULL as claimed_at")},
                {("started_at" if has_started else "NULL as started_at")},
-               {("due_date" if has_due else "NULL as due_date")}
+               {("due_date" if has_due else "NULL as due_date")},
+               {("updated_at" if has_updated else "NULL as updated_at")}
         FROM tasks
         WHERE status = 'in_progress'
     """
@@ -428,6 +430,7 @@ def reap_stale_in_progress_tasks(
         cat = row[2]
         sat = row[3]
         due = row[4]
+        updated_at = row[5]
 
         # 1. Skip future due_date (gate-haltefrist)
         due_utc = _parse_iso_utc(due)
@@ -437,6 +440,11 @@ def reap_stale_in_progress_tasks(
         # 2. Check if active within lease window
         cat_utc = _parse_iso_utc(cat)
         sat_utc = _parse_iso_utc(sat)
+        # Manually started tasks may have neither timestamp. Their last update
+        # still starts a lease; an unknown timestamp must never imply expiry.
+        fallback_utc = _parse_iso_utc(updated_at) if not cat_utc and not sat_utc else None
+        if not cat_utc and not sat_utc and (fallback_utc is None or fallback_utc > cutoff_utc):
+            continue
 
         if cat_utc and cat_utc > cutoff_utc:
             continue

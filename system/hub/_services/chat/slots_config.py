@@ -341,6 +341,16 @@ def end_pause_if_over(slot: dict[str, Any]) -> bool:
     return False
 
 
+def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
+    """Enforce task model and slot binding even when pickup filtering is off."""
+    slot = slot or {}
+    for task_key, slot_key in (("required_model", "model"), ("assigned_slot", "id")):
+        required = str(task.get(task_key) or "").strip().casefold()
+        if required and required != str(slot.get(slot_key) or "").strip().casefold():
+            return False
+    return True
+
+
 def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> bool:
     """Return True if *task* satisfies the slot's pickup_filter rules.
 
@@ -349,6 +359,8 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     assignee matching.
     """
     if not isinstance(slot, dict):
+        return False
+    if not task_matches_slot_binding(task, slot):
         return False
     pickup_filter = slot if "enabled" in slot else slot.get("pickup_filter")
     if not isinstance(pickup_filter, dict):
@@ -399,19 +411,6 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     if exclude_tags:
         exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags if str(t).strip()}
         if any(t in exclude_tags_norm for t in task_tags):
-            return False
-
-    # Model and slot binding (Ticket T-20260927-513417687)
-    slot_model = slot.get("model")
-    req_model = task.get("required_model")
-    if slot_model and req_model and str(req_model).strip():
-        if str(req_model).strip().lower() != str(slot_model).strip().lower():
-            return False
-
-    slot_id = slot.get("id")
-    assigned_slot = task.get("assigned_slot")
-    if slot_id and assigned_slot and str(assigned_slot).strip():
-        if str(assigned_slot).strip().lower() != str(slot_id).strip().lower():
             return False
 
     return True

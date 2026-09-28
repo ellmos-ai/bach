@@ -189,7 +189,8 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(max(5, args.takt))
             continue
 
-        offen = offene_tasks(db, args.category, slot=slot)
+        # Bind to the model that will actually run, including CLI overrides.
+        offen = offene_tasks(db, args.category, slot={**slot, "model": modell})
 
         if not offen:
             _log(workdir, "keine bereiten Tasks - Ende")

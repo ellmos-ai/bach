@@ -1782,9 +1782,9 @@ class TestSlotsConfigVersionAndDefaults:
         assert loaded["version"] == 3
         assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == custom_filter
 
-    def test_system_data_slots_config_exists_with_version_3_and_pickup_filter(self):
-        system_slots_file = Path(__file__).parent.parent / "system" / "data" / "slots_config.json"
-        assert system_slots_file.exists(), f"system/data/slots_config.json fehlt: {system_slots_file}"
+    def test_system_data_slots_config_exists_with_version_3_and_pickup_filter(self, tmp_path):
+        system_slots_file = tmp_path / "slots_config.json"
+        initialize_slots_config(str(system_slots_file))
         cfg = load_slots_config(str(system_slots_file), strict=True)
         assert cfg["version"] == 3
         assert "buddha_always_on" in cfg["slots"]
@@ -1941,6 +1941,38 @@ class TestOffeneTasksPickupFilter:
         # Without filter, all 4 open tasks match
         all_tasks = offene_tasks(str(db_path), "all")
         assert len(all_tasks) == 4
+
+    def test_binding_applies_without_pickup_filter(self, tmp_path):
+        import sqlite3
+        from hub._services.chat.task_runner import offene_tasks
+        from hub._services.chat.slots_config import task_matches_slot_binding
+
+        db_path = tmp_path / "bound_tasks.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, "
+                "depends_on TEXT, status TEXT, priority TEXT, project TEXT, "
+                "required_model TEXT, assigned_slot TEXT)"
+            )
+            conn.executemany(
+                "INSERT INTO tasks VALUES (?, ?, '', '', 'pending', 'P1', 'bach', ?, ?)",
+                [(1, "cloud", "kimi-k3:cloud", None),
+                 (2, "local", "qwen3.8:27b-mlx", "buddha_always_on"),
+                 (3, "other slot", None, "cloud-worker"),
+                 (4, "unbound", None, None)],
+            )
+
+        local = {"id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+                 "pickup_filter": {"enabled": False}}
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
+        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]
+        assert not task_matches_slot_binding(
+            {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker"}
+        )
+        assert task_matches_slot_binding(
+            {"required_model": "kimi-k3:cloud", "assigned_slot": "cloud-worker"},
+            {"id": "cloud-worker", "model": "kimi-k3:cloud"},
+        )
 
 
 class TestActivityHistoryAndEndpoint:

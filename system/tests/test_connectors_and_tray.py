@@ -1344,3 +1344,29 @@ class TestTrayIdleWorker:
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
         assert ("/api/tasks/42", "in_progress") in puts
         assert tray.idle_processing is False
+
+    @pytest.mark.parametrize("route", ["filter", "assignee", "universal"])
+    def test_idle_worker_skips_cloud_bound_task_on_every_route(self, monkeypatch, route):
+        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+        tray.slots = {"buddha_always_on": {
+            "id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+            "pickup_filter": {"enabled": route == "filter"},
+        }}
+        task = {"id": 99, "title": "cloud only", "assigned_to": "OLLAMA",
+                "required_model": "kimi-k3:cloud"}
+        calls = []
+
+        def fake_api(method, path, data=None, **_kw):
+            calls.append((method, path))
+            if method == "GET":
+                if route == "filter" and path == "/api/tasks?status=pending":
+                    return {"success": True, "tasks": [task]}
+                if route == "assignee" and path == "/api/tasks?assigned_to=OLLAMA&status=pending":
+                    return {"success": True, "tasks": [task]}
+                if route == "universal" and path == "/api/tasks?status=pending":
+                    return {"success": True, "tasks": [task]}
+            return {"success": True, "tasks": []}
+
+        with patch.object(tray, "_api", side_effect=fake_api):
+            tray._process_idle_task()
+        assert not any(method in ("PUT", "POST") for method, _ in calls)

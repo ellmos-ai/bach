@@ -29,7 +29,9 @@ for _p in (_system_dir, _root_dir):
         sys.path.insert(0, _p)
 
 from hub._services.chat.control_auth import get_control_api_auth_header
-from hub._services.chat.slots_config import match_task_to_pickup_filter
+from hub._services.chat.slots_config import (
+    match_task_to_pickup_filter, task_matches_slot_binding,
+)
 
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
@@ -665,7 +667,7 @@ class BACHTray:
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         for cand in tasks_resp["tasks"]:
-                            if match_task_to_pickup_filter(cand, always_on):
+                            if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
                                 task = cand
                                 task_status = status
                                 break
@@ -680,9 +682,11 @@ class BACHTray:
                             "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
                         )
                         if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                            task = tasks_resp["tasks"][0]
-                            task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
-                            break
+                            for cand in tasks_resp["tasks"]:
+                                if task_matches_slot_binding(cand, always_on):
+                                    task = cand
+                                    task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
+                                    break
                     if task:
                         break
 
@@ -696,7 +700,8 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", ""):
+                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", "")
+                                    and task_matches_slot_binding(cand, always_on)):
                                 task = cand
                                 task_status = status
                                 break
