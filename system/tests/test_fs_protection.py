@@ -234,8 +234,9 @@ class TestSanitizeHostPath:
     def test_symlink_escape_blocked(self, tmp_path):
         from tools.fs_protection import sanitize_host_path
 
-        base = tmp_path / "system"
-        base.mkdir()
+        bach_root = tmp_path / "bach_root"
+        base = bach_root / "system"
+        base.mkdir(parents=True)
         secret_dir = tmp_path / "outside_secret"
         secret_dir.mkdir()
         secret_file = secret_dir / "secret.txt"
@@ -253,8 +254,9 @@ class TestSanitizeHostPath:
     def test_symlink_within_root_allowed(self, tmp_path):
         from tools.fs_protection import sanitize_host_path
 
-        base = tmp_path / "system"
-        base.mkdir()
+        bach_root = tmp_path / "bach_root"
+        base = bach_root / "system"
+        base.mkdir(parents=True)
         target_file = base / "real_file.txt"
         target_file.write_text("allowed", encoding="utf-8")
 
@@ -297,8 +299,9 @@ class TestSanitizeHostPath:
     def test_bach_home_environment_allowed(self, tmp_path, monkeypatch):
         from tools.fs_protection import sanitize_host_path
 
-        base = tmp_path / "system"
-        base.mkdir()
+        bach_root = tmp_path / "bach_root"
+        base = bach_root / "system"
+        base.mkdir(parents=True)
         home_dir = tmp_path / "bach_home"
         home_dir.mkdir()
         home_file = home_dir / "tasks.db"
