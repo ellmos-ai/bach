@@ -1,4 +1,4 @@
--- Migration 050: Model and Slot routing columns for tasks
+-- Migration 051: Model and Slot routing columns for tasks
 -- Datum: 2026-09-28
 -- Beschreibung: Erweitert tasks-Tabelle um required_model und assigned_slot
 

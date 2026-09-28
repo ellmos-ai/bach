@@ -54,8 +54,8 @@ def test_migration_050_idempotent(tmp_path):
         assert cols_1 == cols_2
 
     # Verify SQL file exists and statements run cleanly on a fresh table
-    sql_path = SYSTEM_ROOT / "data" / "schema" / "migrations" / "050_task_model_binding.sql"
-    assert sql_path.exists(), "050_task_model_binding.sql does not exist"
+    sql_path = SYSTEM_ROOT / "data" / "schema" / "migrations" / "051_task_model_binding.sql"
+    assert sql_path.exists(), "051_task_model_binding.sql does not exist"
 
     sql_db = tmp_path / "test_sql.db"
     with sqlite3.connect(sql_db) as conn:
@@ -129,6 +129,10 @@ def test_offene_tasks_model_and_slot_filtering(tmp_path):
 
 
 def test_api_activity_enrichment(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    import hub.bach_paths
+
     """GET /api/activity must enrich history items that have task_id with task routing info."""
     db_path = tmp_path / "test_activity_bach.db"
     with sqlite3.connect(db_path) as conn:
@@ -146,6 +150,7 @@ def test_api_activity_enrichment(tmp_path, monkeypatch):
         )
         conn.commit()
 
+    monkeypatch.setattr(hub.bach_paths, "BACH_DB", db_path)
     monkeypatch.setenv("BACH_DB", str(db_path))
 
     cfg_file = tmp_path / "activity-slots.json"
