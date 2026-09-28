@@ -733,8 +733,53 @@ class TestBACHTray:
     def test_init_urls(self, tray):
         assert tray.base_url == "http://testhost:9999"
         assert tray.gui_url == "http://testhost:8000"
+        assert tray.activity_url == "http://testhost:9999/activity"
         # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
         assert not hasattr(tray, "webchat_url")
+
+    def test_custom_activity_and_gui_urls(self):
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(
+                host="testhost", port=9999,
+                activity_url="http://custom-host:8081/activity",
+                gui_url="http://custom-gui:8000",
+            )
+            assert tray.activity_url == "http://custom-host:8081/activity"
+            assert tray.gui_url == "http://custom-gui:8000"
+
+    def test_activity_and_gui_urls_from_env(self, monkeypatch):
+        monkeypatch.setenv("BACH_ACTIVITY_URL", "http://env-host:8081/custom-activity")
+        monkeypatch.setenv("BACH_GUI_URL", "http://env-host:8000/dashboard")
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }):
+            from hub._services.chat.chat_tray import BACHTray
+            tray = BACHTray(host="testhost", port=9999)
+            assert tray.activity_url == "http://env-host:8081/custom-activity"
+            assert tray.gui_url == "http://env-host:8000/dashboard"
+
+    def test_open_activity_opens_configured_url(self, tray):
+        tray.activity_url = "http://my-activity-url:9999/activity"
+        with patch("webbrowser.open") as opened:
+            tray._open_activity()
+        opened.assert_called_once_with("http://my-activity-url:9999/activity")
+
+    def test_open_gui_opens_configured_url(self, tray):
+        tray.gui_url = "http://my-gui-url:8000"
+        with patch("webbrowser.open") as opened:
+            tray._open_gui()
+        opened.assert_called_once_with("http://my-gui-url:8000")
 
     def test_buddha_chat_opens_the_gui_chat_page(self, tray):
         """The :8080 webchat no longer exists; the tray must open the GUI chat (1.1.6)."""

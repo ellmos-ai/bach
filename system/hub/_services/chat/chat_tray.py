@@ -201,12 +201,22 @@ class BACHTray:
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
     def __init__(self, host="127.0.0.1", port=8081, gui_port=8000,
-                 ollama_host="127.0.0.1", remote=False):
+                 ollama_host="127.0.0.1", remote=False,
+                 activity_url=None, gui_url=None):
         self.host = host
         self.remote = remote
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
-        self.gui_url = f"http://{host}:{gui_port}"
+        self.gui_url = (
+            gui_url
+            or os.environ.get("BACH_GUI_URL")
+            or f"http://{host}:{gui_port}"
+        )
+        self.activity_url = (
+            activity_url
+            or os.environ.get("BACH_ACTIVITY_URL")
+            or f"{self.base_url}/activity"
+        )
         self.ollama_url = f"http://{ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
@@ -1252,7 +1262,7 @@ class BACHTray:
 
     def _open_activity(self, *_):
         import webbrowser
-        webbrowser.open(f"{self.base_url}/activity")
+        webbrowser.open(self.activity_url)
 
     def _make_slot_model_action(self, slot_id, model):
         def action(*_):
@@ -1442,6 +1452,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
     parser.add_argument("--gui-port", type=int, default=8000, help="Web-GUI Port")
+    parser.add_argument("--activity-url", default=None, help="Konfigurierbare Aktivitätsanzeige-URL")
+    parser.add_argument("--gui-url", default=None, help="Konfigurierbare GUI-URL")
     parser.add_argument("--ollama-host", default="127.0.0.1", help="Ollama Host")
     parser.add_argument("--remote", action="store_true", help="Remote-Client ohne lokale Schreib-Fallbacks")
     parser.add_argument(
@@ -1452,7 +1464,8 @@ def main():
     args = parser.parse_args()
 
     tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
-                    ollama_host=args.ollama_host, remote=args.remote)
+                    ollama_host=args.ollama_host, remote=args.remote,
+                    activity_url=args.activity_url, gui_url=args.gui_url)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return

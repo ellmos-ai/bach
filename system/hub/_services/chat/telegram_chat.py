@@ -30,6 +30,7 @@ import ipaddress
 import json
 import logging
 import os
+import socket
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -4686,7 +4687,26 @@ def serve_control_only(server, reason: str) -> None:
         server.server_close()
 
 
-# --- Main ---
+def should_disable_telegram_bot() -> tuple[bool, str]:
+    """Prüft, ob der Telegram-Bot auf diesem Host deaktiviert werden soll (z. B. Remote-Modus,
+    Laptop-Client oder explizite Konfiguration), um einen 2. konkurrierenden Bot zu verhindern."""
+    disable_env = os.environ.get("BACH_DISABLE_TELEGRAM_BOT", "").strip().lower()
+    if disable_env in ("1", "true", "yes", "on"):
+        return True, "Telegram-Bot per BACH_DISABLE_TELEGRAM_BOT deaktiviert"
+
+    remote_host = os.environ.get("BACH_REMOTE_HOST", "").strip().lower()
+    if remote_host and remote_host not in ("", "0", "false", "off", "local", "none"):
+        return True, f"Telegram-Bot deaktiviert: Remote-Host aktiv ({remote_host})"
+
+    bot_host = os.environ.get("BACH_TELEGRAM_BOT_HOST", "").strip().lower()
+    if bot_host and bot_host not in (socket.gethostname().lower(), "localhost", "127.0.0.1"):
+        return True, f"Telegram-Bot deaktiviert: Host ({socket.gethostname()}) ist nicht Bot-Host ({bot_host})"
+
+    if CONFIG.get("telegram", {}).get("disabled") is True:
+        return True, "Telegram-Bot in Konfiguration deaktiviert"
+
+    return False, ""
+
 
 def register_handlers(app) -> None:
     """Registriert ALLE Telegram-Handler - jeder gewrappt mit
@@ -4738,6 +4758,11 @@ def main():
                 print("Compute Lock: kein Crash-Recovery noetig")
         except Exception as e:
             log.warning("Crash recovery failed: %s", e)
+
+    disabled, reason = should_disable_telegram_bot()
+    if disabled:
+        serve_control_only(control_server, reason)
+        return 0
 
     if not BOT_TOKEN:
         serve_control_only(control_server, "Kein Telegram-Bot-Token")
