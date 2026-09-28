@@ -622,13 +622,52 @@ class TestReview:
 # ================================================================
 
 class TestSleep:
+    def test_status_displays_sleep_and_decay_config(self, cons_env):
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO decay_config (agent_id, fact_decay_rate, lesson_decay_rate, min_confidence, last_cleanup_at)
+            VALUES ('claude', 0.01, 0.005, 0.2, '2026-09-28 10:00:00')
+        """)
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Active handoff', 'claude', '2026-09-25 10:00:00', '2026-10-25 10:00:00', 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("status", [])
+        assert ok is True
+        assert "SCHLAF & TTL (Working-Memory):" in msg
+        assert "handoff" in msg
+        assert "DECAY-CONFIG (1 Agenten):" in msg
+        assert "claude" in msg
+
+    def test_sleep_module_missing_graceful_handling(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if "sleep_union" in name:
+                raise ImportError("No module named 'sleep_union'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.setitem(sys.modules, "sleep_union", None)
+        ok, msg = h.handle("sleep", [])
+        assert ok is False
+        assert "nicht verfuegbar" in msg
+
     def test_sleep_empty(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, _ = cons_env
         ok, msg = h.handle("sleep", [])
         assert ok is True
         assert "TTL gesetzt: 0, Deaktiviert: 0" in msg
 
     def test_sleep_ttl_grace_applied(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, db = cons_env
         conn = sqlite3.connect(str(db))
         conn.execute("""
@@ -649,6 +688,7 @@ class TestSleep:
         assert row[1] == 1
 
     def test_sleep_deactivates_expired(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, db = cons_env
         conn = sqlite3.connect(str(db))
         conn.execute("""
@@ -668,6 +708,7 @@ class TestSleep:
         assert active == 0
 
     def test_sleep_dry_run_leaves_database_untouched(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, db = cons_env
         conn = sqlite3.connect(str(db))
         conn.execute("""
@@ -688,6 +729,7 @@ class TestSleep:
         assert row[0] is None
 
     def test_sleep_agent_filter(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, db = cons_env
         conn = sqlite3.connect(str(db))
         conn.execute("""
@@ -713,6 +755,7 @@ class TestSleep:
         assert gemini_exp is None
 
     def test_sleep_report(self, cons_env, tmp_path):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
         h, _ = cons_env
         report_file = tmp_path / "sleep_report.jsonl"
 
@@ -726,24 +769,3 @@ class TestSleep:
         data = json.loads(lines[0])
         assert "time" in data
         assert "agents" in data
-
-    def test_status_displays_sleep_and_decay_config(self, cons_env):
-        h, db = cons_env
-        conn = sqlite3.connect(str(db))
-        conn.execute("""
-            INSERT INTO decay_config (agent_id, fact_decay_rate, lesson_decay_rate, min_confidence, last_cleanup_at)
-            VALUES ('claude', 0.01, 0.005, 0.2, '2026-09-28 10:00:00')
-        """)
-        conn.execute("""
-            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
-            VALUES ('handoff', 'Active handoff', 'claude', '2026-09-25 10:00:00', '2026-10-25 10:00:00', 1)
-        """)
-        conn.commit()
-        conn.close()
-
-        ok, msg = h.handle("status", [])
-        assert ok is True
-        assert "SCHLAF & TTL (Working-Memory):" in msg
-        assert "handoff" in msg
-        assert "DECAY-CONFIG (1 Agenten):" in msg
-        assert "claude" in msg
