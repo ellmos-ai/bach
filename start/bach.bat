@@ -13,6 +13,9 @@ popd
 set "CHAT_DIR=!SYS_DIR!\hub\_services\chat"
 set "STARTSPINE=!ROOT_DIR!\start\startspine.py"
 set PYTHONIOENCODING=utf-8
+REM Explorer kann alte Umgebungsvariablen halten; User-Konfiguration aus HKCU lesen.
+if not defined BACH_REMOTE_HOST for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_REMOTE_HOST 2^>nul') do set "BACH_REMOTE_HOST=%%B"
+if not defined BACH_CONTROL_API_TOKEN_FILE for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_CONTROL_API_TOKEN_FILE 2^>nul') do set "BACH_CONTROL_API_TOKEN_FILE=%%B"
 set "BACH_CLIENT_MODE=local"
 if defined BACH_REMOTE_HOST set "BACH_CLIENT_MODE=remote"
 if /i "!BACH_REMOTE_HOST!"=="local" set "BACH_CLIENT_MODE=local"
