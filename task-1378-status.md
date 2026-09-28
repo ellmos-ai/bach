@@ -54,5 +54,12 @@ Ergebnisse bleiben maßgeblich.
 - Alle anderen untracked Dateien gehören nicht zu Task 1378 und werden nicht mit dem PR ausgeliefert.
 - Task 1378 T1/T2 damit abgeschlossen.
 
+## Close-out Update 2026-09-28 15:30
+- bach: `main` synchronisiert (gepulled). Branch `task-1378-t1-bach-loader` lokal und remote gelöscht.
+- open-ocean: frische Working-Copy aus `/Users/lukas/git-mirror/open-ocean.git` erstellt; `main` gepullt. Remote-Branch `task-1378-t1-private-pins` gelöscht.
+- `.ocean-work`: Remote-Check bestätigt – weder `ellmos-ai/.ocean-work` noch `ellmos-ai/ocean-work` existieren auf GitHub. Ein lokaler `.ocean-work` Git-Mirror konnte in den üblichen Orten nicht lokalisiert werden (siehe SACKGASSEN).
+- Untracked Dateien im bach-Repo bleiben unverändert; sie gehören zu anderen Tasks (T3-Doku, Runtime/GUI) und werden separat triagiert (siehe Task #1492).
+- Task 1378 T1/T2 close-out hiermit finalisiert.
+
 ---
-Letzte Aktualisierung: 2026-09-28
+Letzte Aktualisierung: 2026-09-28 15:30
