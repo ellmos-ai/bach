@@ -62,6 +62,49 @@ os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
 os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_distribution_manifest():
+    """Create distribution_manifest table and seed core system file hashes.
+
+    ``tools/fs_protection.py::check_integrity`` queries this table with
+    ``dist_type >= 1`` during some dry-run tests. The table and its rows are
+    normally maintained by the fs_protection tooling; for the test suite we
+    bootstrap it once per session with the current SHA256 hashes of all files
+    under ``system/`` so integrity checks do not fail on missing records.
+    """
+    import hashlib
+    import sqlite3
+
+    db_path = os.environ.get("BACH_DB")
+    if not db_path:
+        return
+
+    system_dir = Path(__file__).resolve().parent.parent / "system"
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribution_manifest (
+            path TEXT PRIMARY KEY,
+            template_hash TEXT,
+            dist_type INTEGER
+        )
+    """)
+    conn.commit()
+
+    if system_dir.exists():
+        for file_path in sorted(system_dir.rglob("*")):
+            if not file_path.is_file():
+                continue
+            rel = file_path.relative_to(system_dir)
+            rel_path = f"system/{rel.as_posix()}"
+            file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            conn.execute(
+                "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
+                (rel_path, file_hash, 1),
+            )
+    conn.commit()
+    conn.close()
+
+
 def pytest_configure(config):
     """Redirect pytest's basetemp out of the protected source checkout.
 
