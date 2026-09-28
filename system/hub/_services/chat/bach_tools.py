@@ -578,6 +578,17 @@ TOOLS_SAFE = [
         "extract_text": {"type": "boolean", "description": "Nur sichtbaren Text extrahieren (bei HTML, Standard: true)"},
         "max_chars": {"type": "integer", "description": "Maximale Zeichenanzahl (Standard 4000, max 8000)"},
     }, ["url"]),
+    _tool("start_task_worktree", "Erzeugt einen isolierten Git-Worktree für eine Aufgabe unter ~/services/bach-worktrees/task-<id>", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+    }, ["task_id"]),
+    _tool("finish_task", "Schließt die Aufgabe im Worktree ab: führt Tests aus, committet, pusht und erstellt einen PR. Bei Abbruch setzt is_wip=True einen WIP-Commit.", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+        "message": {"type": "string", "description": "Commit- und PR-Beschreibung"},
+        "is_wip": {"type": "boolean", "description": "True falls unvollständig/Abbruch (sichert WIP-Stand ohne PR)"},
+    }, ["task_id", "message"]),
+    _tool("cleanup_task_worktree", "Entfernt den Worktree für eine Aufgabe, nachdem der PR gemergt ist.", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+    }, ["task_id"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -605,6 +616,8 @@ _NICHT_IM_PLAN = frozenset({
     "bach_command", "maintain", "foerderbericht",
     # startet einen fremden Agenten, der diese Grenze nicht kennt
     "delegate",
+    # Worker-Git-Werkzeuge gehoeren nicht in den Planmodus
+    "start_task_worktree", "finish_task", "cleanup_task_worktree",
 })
 
 #: Werkzeuge eines Planlaufs: lesen, nachschlagen, Pakete anlegen.
@@ -837,8 +850,44 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             t = int(args.get("timeout", CMD_TIMEOUT))
             if is_blocked(cmd):
                 return f"Befehl blockiert (Sicherheit): {cmd}"
+            from hub.worker_git import is_live_path_blocked
+            cmd_lower = cmd.lower()
+            if any(git_mut in cmd_lower for git_mut in ["git commit", "git checkout -b", "git merge", "git push", "git rebase"]):
+                cwd = args.get("cwd") or args.get("path") or "."
+                if not any(token in cmd for token in ["bach-worktrees", "task-"]):
+                    if err := is_live_path_blocked(cwd):
+                        return err
             log.info(f"FULL-CMD: {cmd}")
             return run_shell_restricted(cmd, t, allowed=None)
+
+        if name == "start_task_worktree":
+            from hub.worker_git import start_task_worktree
+            tid = args.get("task_id")
+            try:
+                wt = start_task_worktree(tid)
+                return f"Worktree erstellt: {wt}"
+            except Exception as e:
+                return f"Fehler bei start_task_worktree: {e}"
+
+        if name == "finish_task":
+            from hub.worker_git import finish_task
+            tid = args.get("task_id")
+            msg = args.get("message", "")
+            is_wip = bool(args.get("is_wip", False))
+            try:
+                res = finish_task(tid, msg, is_wip=is_wip)
+                return json.dumps(res, ensure_ascii=False)
+            except Exception as e:
+                return f"Fehler bei finish_task: {e}"
+
+        if name == "cleanup_task_worktree":
+            from hub.worker_git import cleanup_task_worktree
+            tid = args.get("task_id")
+            try:
+                ok = cleanup_task_worktree(tid)
+                return f"Worktree aufgeräumt: {ok}"
+            except Exception as e:
+                return f"Fehler bei cleanup_task_worktree: {e}"
 
         if name == "write_file":
             if mode != "full":
@@ -847,6 +896,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             c = args.get("content", "")
             if not p:
                 return "Kein Pfad"
+            from hub.worker_git import is_live_path_blocked
+            if err := is_live_path_blocked(p):
+                return err
             Path(p).parent.mkdir(parents=True, exist_ok=True)
             with open(p, "w", encoding="utf-8") as f:
                 f.write(c)
@@ -1249,6 +1301,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             new_text = args.get("new_text", "")
             if not p or not old_text:
                 return "Pfad und old_text sind erforderlich"
+            from hub.worker_git import is_live_path_blocked
+            if err := is_live_path_blocked(p):
+                return err
             if err := is_safe_write_path(p, mode):
                 return err
             try:

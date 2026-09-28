@@ -18,6 +18,7 @@ der eine der APIs brechen wuerde.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping, Optional
@@ -232,6 +233,22 @@ def apply_task_field_changes(
 
     status_value = field_values.get("status")
     if status_value in COMPLETED_STATUSES:
+        # Task #1361: Eine Aufgabe, die Dateien geändert hat, lässt sich nicht auf
+        # completed/done setzen, solange kein PR eingetragen ist.
+        try:
+            from hub.worker_git import task_has_file_changes
+            has_changes = task_has_file_changes(task_id, conn)
+        except Exception:
+            has_changes = False
+
+        if has_changes:
+            desc = str(existing_row.get("description") or "") + " " + str(field_values.get("description") or "")
+            has_pr = bool(re.search(r"https?://github\.com/[^/]+/[^/]+/pull/\d+", desc) or "pull/" in desc.lower())
+            if not has_pr:
+                raise ValueError(
+                    f"Task #{task_id} hat Codeänderungen, kann aber erst mit eingetragenem PR auf completed gesetzt werden."
+                )
+
         updates.append("completed_at = ?")
         values.append(now)
     elif status_value in IN_PROGRESS_STATUSES and not existing_row.get("started_at"):

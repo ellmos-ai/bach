@@ -796,10 +796,13 @@ class TaskHandler(BaseHandler):
 
                 # Task als done markieren -- apply_task_field_changes setzt completed_at
                 # automatisch (T-20260906-833218904: 'done' ist Teil von
-                # hub.task_audit.COMPLETED_STATUSES, gemeinsam mit server.py's 'completed').
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
-                apply_task_field_changes(conn, task_id, existing_row, {"status": "done"},
-                                          changed_by="cli-task", now=now)
+                try:
+                    apply_task_field_changes(conn, task_id, existing_row, {"status": "done"},
+                                              changed_by="cli-task", now=now)
+                except ValueError as exc:
+                    results.append(f"[BLOCKED] {exc}")
+                    continue
 
                 # Note speichern falls vorhanden
                 if note:
