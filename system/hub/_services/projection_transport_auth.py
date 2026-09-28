@@ -59,7 +59,7 @@ def authenticated_projection_snapshot(
     verified size and digest. Consumers never reopen the mutable transit path.
     """
     try:
-        from hub._services.sqlite_transit_sync_compat import (
+        from sqlite_transit_sync import (
             HMACKeyReference,
             OSKeyringSecretResolver,
             load_hmac_authenticator,
@@ -67,7 +67,7 @@ def authenticated_projection_snapshot(
         )
     except ImportError as exc:
         raise ProjectionTransportAuthError(
-            "sqlite-transit-sync Auth-Preflight-Adapter ist nicht verfuegbar."
+            "sqlite-transit-sync mit Auth-Preflight ist nicht installiert."
         ) from exc
 
     config = _validated_auth_config(auth_config)

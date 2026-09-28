@@ -855,10 +855,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             for n, f in enumerate(files):
                 if n >= 5000:
                     break
-                if not f.is_file() or len(hits) >= 200 or _is_secret_path(f):
+                fr = _resolve(f)
+                if not _fs_root_allowed(fr) or _is_secret_path(fr):
+                    continue
+                if not fr.is_file() or len(hits) >= 200:
                     continue
                 try:
-                    with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                    with open(fr, "r", encoding="utf-8", errors="replace") as fh:
                         for i, line in enumerate(fh, start=1):
                             if rx.search(line):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")

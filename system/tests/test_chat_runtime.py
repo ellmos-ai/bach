@@ -1964,3 +1964,46 @@ class TestFsRootAllowlist:
             "safe",
         )
         assert "id_rsa" not in hits
+
+    def test_search_text_skips_file_symlink_outside_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        outside = tmp_path / "outside.txt"
+        outside.write_text("escape marker\n", encoding="utf-8")
+        link = allowed / "linked.txt"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("Datei-Symlinks sind hier nicht verfügbar")
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (allowed.resolve(),))
+
+        result = exec_tool(
+            "search_text", {"pattern": "escape marker", "path": str(allowed)}, "safe"
+        )
+        assert "linked.txt" not in result
+        assert "escape marker" not in result
+
+    def test_search_text_checks_resolved_file_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        linked = allowed / "linked.txt"
+        linked.write_text("escape marker\n", encoding="utf-8")
+        outside = tmp_path / "outside.txt"
+        real_resolve = cr._resolve
+
+        def resolve_with_escape(path):
+            if Path(path) == linked:
+                return outside
+            return real_resolve(path)
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (allowed.resolve(),))
+        monkeypatch.setattr(cr, "_resolve", resolve_with_escape)
+        result = exec_tool(
+            "search_text", {"pattern": "escape marker", "path": str(allowed)}, "safe"
+        )
+        assert "linked.txt" not in result
+        assert "escape marker" not in result
