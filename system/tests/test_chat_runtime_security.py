@@ -112,6 +112,12 @@ class TestBachCommandAllowlist:
         assert "sandbox" not in BACH_COMMAND_HANDLERS
 
 
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_in_fs_roots(tmp_path, monkeypatch):
+    from hub._services.chat import chat_runtime as cr
+    monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", cr._ALLOWED_FS_ROOTS + (tmp_path.resolve(),))
+
 class TestFileToolsNoSubprocess:
     def test_list_directory_uses_no_subprocess(self, tmp_path, monkeypatch):
         (tmp_path / "a.txt").write_text("x", encoding="utf-8")

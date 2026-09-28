@@ -337,10 +337,10 @@ BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
 
 # Kleiner, harter Deny fuer die offensichtlichsten Secrets-Orte in den
 # LESE-Werkzeugen list_directory/read_file/search_text (direkt aus
-# LLM-Argumenten, potenziell prompt-injection-gesteuert - siehe Ticket
-# fuer den vollstaendigen Pfad-Scope: Wurzel-Allowlist, Symlink-Aufloesung,
-# generische Deny-Liste. Das hier verhindert nur den naheliegendsten
-# Exfiltrationspfad, kein vollstaendiger Schutz).
+# LLM-Argumenten, potenziell prompt-injection-gesteuert). Zusaetzlich
+# gilt die Wurzel-Allowlist _ALLOWED_FS_ROOTS mit Symlink-Aufloesung
+# (siehe _fs_root_allowed weiter unten); die Secrets-Deny-Liste bleibt
+# als zusaetzliche Schicht darueber.
 _SECRET_PATH_SEGMENTS = frozenset({".ssh", ".credentials", "credentials"})
 # Einzelne Dateien mit Tokens/Zugangsdaten (u. a. die Bot-Konfiguration
 # ~/.config/bach/telegram_chat.json mit dem Bot-Token).
@@ -364,6 +364,20 @@ def _norm(p: Path) -> str:
 def _is_under(child: Path, parent: Path) -> bool:
     c, par = _norm(child), _norm(parent)
     return c == par or c.startswith(par + os.sep)
+
+
+# Wurzel-Allowlist fuer die LESE-Werkzeuge list_directory/read_file/
+# search_text: nur Pfade unterhalb des Home-Verzeichnisses oder des
+# BACH-Systemverzeichnisses sind erlaubt. Alles wird vor dem Vergleich
+# aufgeloest (Symlinks), damit ein Symlink in einem erlaubten Ast, der
+# ausserhalb zeigt (z. B. nach /etc), blockiert wird.
+_ALLOWED_FS_ROOTS = tuple(
+    _resolve(p) for p in (Path.home(), Path(BACH_SYSTEM_DIR))
+)
+
+
+def _fs_root_allowed(resolved: Path) -> bool:
+    return any(_is_under(resolved, r) for r in _ALLOWED_FS_ROOTS)
 
 
 def _secret_locations() -> list:
@@ -774,10 +788,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             # literale Zeichen; Metazeichen im Pfad waeren dort trotzdem
             # von cmd.exe interpretiert worden. pathlib kennt keine Shell.
             target = Path(args.get("path") or os.path.expanduser("~"))
-            if _is_secret_path(target):
+            resolved = _resolve(target)
+            if not _fs_root_allowed(resolved):
+                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+            if _is_secret_path(resolved):
                 return "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden"
             try:
-                entries = sorted(target.iterdir(), key=lambda e: e.name)
+                entries = sorted(resolved.iterdir(), key=lambda e: e.name)
             except OSError as e:
                 return f"Fehler: {e}"
             details = args.get("details")
@@ -800,13 +817,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
-            if _is_secret_path(Path(p)):
+            resolved = _resolve(p)
+            if not _fs_root_allowed(resolved):
+                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+            if _is_secret_path(resolved):
                 return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
             lines = min(int(args.get("lines", 50)), 200)
             offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
             end_line = offset + lines - 1
             try:
-                with open(p, "r", encoding="utf-8", errors="replace") as fh:
+                with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
                     picked = [
                         line for i, line in enumerate(fh, start=1)
                         if offset <= i <= end_line
@@ -818,22 +838,30 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "search_text":
             pat = args.get("pattern", "")
             p = Path(args.get("path", "."))
-            if _is_secret_path(p):
+            resolved = _resolve(p)
+            if not _fs_root_allowed(resolved):
+                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+            if _is_secret_path(resolved):
                 return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
             recursive = args.get("recursive", True)
             try:
                 rx = re.compile(pat)
             except re.error as e:
                 return f"Ungueltiges Muster: {e}"
-            files = p.rglob("*") if recursive and p.is_dir() else (
-                p.glob("*") if p.is_dir() else [p]
+            files = resolved.rglob("*") if recursive and resolved.is_dir() else (
+                resolved.glob("*") if resolved.is_dir() else [resolved]
             )
             hits = []
-            for f in files:
-                if not f.is_file() or len(hits) >= 200 or _is_secret_path(f):
+            for n, f in enumerate(files):
+                if n >= 5000:
+                    break
+                fr = _resolve(f)
+                if not _fs_root_allowed(fr) or _is_secret_path(fr):
+                    continue
+                if not fr.is_file() or len(hits) >= 200:
                     continue
                 try:
-                    with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                    with open(fr, "r", encoding="utf-8", errors="replace") as fh:
                         for i, line in enumerate(fh, start=1):
                             if rx.search(line):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
