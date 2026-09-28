@@ -25,6 +25,7 @@ Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 import atexit
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -542,3 +543,26 @@ def _guard_real_process_control(monkeypatch):
 
     monkeypatch.setattr(psutil.Process, "terminate", guarded_terminate)
     monkeypatch.setattr(psutil.Process, "kill", guarded_kill)
+
+
+@pytest.fixture
+def isolated_runtime(tmp_path, monkeypatch):
+    """Yield an isolated BACH runtime directory for a single test.
+
+    Mirrors the user's ~/.bach/.runtime into a temp directory if it exists,
+    sets BACH_RUNTIME_DIR to that directory, and restores the previous value
+    after the test.
+    """
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    user_runtime = Path.home() / ".bach" / ".runtime"
+    if user_runtime.exists():
+        if user_runtime.is_dir():
+            shutil.copytree(user_runtime, runtime_dir, dirs_exist_ok=True)
+        else:
+            shutil.copy2(user_runtime, runtime_dir / user_runtime.name)
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
+    yield runtime_dir
