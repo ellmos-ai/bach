@@ -159,44 +159,77 @@ class TaskHandler(BaseHandler):
     
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Haupteinstiegspunkt"""
+        if "--dry-run" in args or "-n" in args:
+            dry_run = True
+            args = [a for a in args if a not in ("--dry-run", "-n")]
         
         if operation == "add":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._add(args)
         elif operation == "list":
             return self._list(args)
         elif operation == "edit":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._edit(args)
         elif operation == "done":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._done(args)
         elif operation == "block":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._block(args)
         elif operation == "unblock":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._unblock(args)
         elif operation == "reopen":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._reopen(args)
         elif operation == "show":
             return self._show(args)
         elif operation == "delete":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._delete(args)
         elif operation == "priority":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._priority(args)
         elif operation == "assign":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._assign(args)
         elif operation == "depends":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._depends(args)
         elif operation == "taskplan":
             return self._taskplan(args)
         elif operation == "sync":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._sync(args)
         elif operation == "pull":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._pull(args)
         elif operation == "lead":
             return self._lead(args)
         elif operation == "claim":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._claim(args)
         elif operation == "release":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._release(args)
         elif operation in ("reap", "sweep"):
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
             return self._reap(args)
         elif operation in ["", "help"]:
             return self._help()
@@ -220,7 +253,7 @@ class TaskHandler(BaseHandler):
         
         return title.strip()
     
-    def _add(self, args: List[str]) -> Tuple[bool, str]:
+    def _add(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Task hinzufuegen"""
         clean_args = [a for a in args if a not in ("--local", "--offline", "--remote")]
         force_remote = "--remote" in args
@@ -417,7 +450,7 @@ class TaskHandler(BaseHandler):
         except (TypeError, ValueError):
             return None
     
-    def _edit(self, args: List[str]) -> Tuple[bool, str]:
+    def _edit(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Task bearbeiten - Titel, Beschreibung, Kategorie, Zuweisung aendern"""
         if not args:
             return False, "Usage: bach task edit <id> [--title TEXT] [--description TEXT] [--category TEXT] [--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT]"
@@ -742,7 +775,7 @@ class TaskHandler(BaseHandler):
         else:
             return False, "Usage: bach task lead [show | set <url> | clear]"
     
-    def _done(self, args: List[str]) -> Tuple[bool, str]:
+    def _done(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Task(s) als erledigt markieren - Multi-ID Support"""
         ids, rest = self._parse_ids(args)
         
