@@ -25,6 +25,7 @@ Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 import atexit
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,49 @@ os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
     _TEST_DB_DIR / "fackel_preference.json"
 )
 os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_distribution_manifest():
+    """Create distribution_manifest table and seed core system file hashes.
+
+    ``tools/fs_protection.py::check_integrity`` queries this table with
+    ``dist_type >= 1`` during some dry-run tests. The table and its rows are
+    normally maintained by the fs_protection tooling; for the test suite we
+    bootstrap it once per session with the current SHA256 hashes of all files
+    under ``system/`` so integrity checks do not fail on missing records.
+    """
+    import hashlib
+    import sqlite3
+
+    db_path = os.environ.get("BACH_DB")
+    if not db_path:
+        return
+
+    system_dir = Path(__file__).resolve().parent.parent / "system"
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribution_manifest (
+            path TEXT PRIMARY KEY,
+            template_hash TEXT,
+            dist_type INTEGER
+        )
+    """)
+    conn.commit()
+
+    if system_dir.exists():
+        for file_path in sorted(system_dir.rglob("*")):
+            if not file_path.is_file():
+                continue
+            rel = file_path.relative_to(system_dir)
+            rel_path = f"system/{rel.as_posix()}"
+            file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            conn.execute(
+                "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
+                (rel_path, file_hash, 1),
+            )
+    conn.commit()
+    conn.close()
 
 
 def pytest_configure(config):
@@ -542,3 +586,26 @@ def _guard_real_process_control(monkeypatch):
 
     monkeypatch.setattr(psutil.Process, "terminate", guarded_terminate)
     monkeypatch.setattr(psutil.Process, "kill", guarded_kill)
+
+
+@pytest.fixture
+def isolated_runtime(tmp_path, monkeypatch):
+    """Yield an isolated BACH runtime directory for a single test.
+
+    Mirrors the user's ~/.bach/.runtime into a temp directory if it exists,
+    sets BACH_RUNTIME_DIR to that directory, and restores the previous value
+    after the test.
+    """
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    user_runtime = Path.home() / ".bach" / ".runtime"
+    if user_runtime.exists():
+        if user_runtime.is_dir():
+            shutil.copytree(user_runtime, runtime_dir, dirs_exist_ok=True)
+        else:
+            shutil.copy2(user_runtime, runtime_dir / user_runtime.name)
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
+    yield runtime_dir

@@ -200,16 +200,19 @@ def _handle_fs(sub_cmd, args):
         print("Usage: bach fs [check|heal|status|classify|scan|backup]")
         return 1
 
+    dry_run = "--dry-run" in args or "-n" in args or "--dry-run" in sys.argv or "-n" in sys.argv
+    clean_args = [a for a in args if a not in ("--dry-run", "-n")]
+
     if sub_cmd == "check":
         success, msg = fs.check_integrity()
         print(msg)
     elif sub_cmd == "heal":
-        file_path = args[0] if args else None
+        file_path = clean_args[0] if clean_args else None
         force = "--force" in sys.argv
-        if "--all" in sys.argv:
-            success, msg = fs.heal(force=force)
+        if "--all" in sys.argv or "--all" in clean_args:
+            success, msg = fs.heal(force=force, dry_run=dry_run)
         elif file_path:
-            success, msg = fs.heal(file_path, force)
+            success, msg = fs.heal(file_path, force=force, dry_run=dry_run)
         else:
             print("Usage: bach fs heal <file> oder bach fs heal --all")
             return 1
@@ -221,10 +224,10 @@ def _handle_fs(sub_cmd, args):
         print(f"  Snapshots: {snapshot_count} Dateien")
         print("  Befehle: bach fs check, bach fs heal, bach dist snapshot")
     elif sub_cmd == "classify":
-        if not args:
+        if not clean_args:
             print("Usage: bach fs classify <path>")
             return 1
-        path = Path(args[0])
+        path = Path(clean_args[0])
         dist_type = classifier.classify_path(path)
         level = classifier.get_protection_level(path)
         print(f"{path}: dist_type={dist_type} ({level})")
@@ -235,8 +238,8 @@ def _handle_fs(sub_cmd, args):
         print(f"  TEMPLATE (dist_type=1): {len(result[1])} Dateien")
         print(f"  USER (dist_type=0): {len(result[0])} Dateien")
     elif sub_cmd == "backup":
-        tag = args[0] if args else "manual"
-        success, msg = fs.create_backup(tag)
+        tag = clean_args[0] if clean_args else "manual"
+        success, msg = fs.create_backup(tag, dry_run=dry_run)
         print(msg)
     else:
         print(f"Unbekannter FS-Befehl: {sub_cmd}")
@@ -798,13 +801,15 @@ def _handle_task(sub_cmd, args):
     try:
         from hub.task import TaskHandler
         handler = TaskHandler(SYSTEM_ROOT)
-        success, msg = handler.handle(sub_cmd, args)
+        dry_run = "--dry-run" in args or "-n" in args or "--dry-run" in sys.argv or "-n" in sys.argv
+        clean_args = [a for a in args if a not in ("--dry-run", "-n")]
+        success, msg = handler.handle(sub_cmd, clean_args, dry_run=dry_run)
         print(msg)
         # T-20260926-620619287: wie der Direct-Execute-Pfad (Z. ~1382) muss
         # auch der Task-Sonderpfad die Between-Erinnerung ausloesen, sonst
         # feuert sie fuer 'bach task done' nie. Nicht bei --json (analog
         # quiet_protocol_mode); MCP ruft TaskHandler direkt, nicht hierueber.
-        if success and msg and "--json" not in args:
+        if success and msg and "--json" not in args and not dry_run:
             _run_injectors(msg, f"task {sub_cmd}")
         return 0 if success else 1
     except Exception as e:

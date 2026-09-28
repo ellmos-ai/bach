@@ -299,8 +299,11 @@ class FSProtection:
         # Das ist nicht perfekt, aber fuer die meisten Faelle OK
         return snapshot_name.replace("_", "/", 1)
 
-    def create_backup(self, tag: str = "auto") -> Tuple[bool, str]:
+    def create_backup(self, tag: str = "auto", dry_run: bool = False) -> Tuple[bool, str]:
         """Erstellt ein ZIP-Backup der kritischen Verzeichnisse."""
+        if dry_run:
+            return True, f"[DRY-RUN] Backup wuerde erstellt werden (tag={tag})"
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"BACH_Backup_{tag}_{timestamp}.zip"
         backup_path = BACKUP_DIR / backup_name
@@ -412,14 +415,14 @@ class FSProtection:
         success = len(results["missing"]) == 0
         return success, "\n".join(lines)
 
-    def heal(self, file_path: str = None, force: bool = False) -> Tuple[bool, str]:
+    def heal(self, file_path: str = None, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
         """Stellt Datei(en) aus Snapshots wieder her."""
         if file_path:
-            return self._heal_single(file_path, force)
+            return self._heal_single(file_path, force, dry_run)
         else:
-            return self._heal_all(force)
+            return self._heal_all(force, dry_run)
 
-    def _heal_single(self, rel_path: str, force: bool = False) -> Tuple[bool, str]:
+    def _heal_single(self, rel_path: str, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
         """Stellt eine einzelne Datei wieder her."""
         snapshot_name = self._path_to_snapshot_name(rel_path)
         snapshot_path = SNAPSHOTS_DIR / snapshot_name
@@ -428,6 +431,9 @@ class FSProtection:
             return False, f"[FS] Kein Snapshot fuer: {rel_path}"
 
         target_path = self._resolve_manifest_path(rel_path)
+
+        if dry_run:
+            return True, f"[DRY-RUN] Wuerde wiederherstellen: {rel_path}"
 
         # Backup der aktuellen Version
         if target_path.exists() and not force:
@@ -441,7 +447,7 @@ class FSProtection:
 
         return True, f"[FS] Wiederhergestellt: {rel_path}"
 
-    def _heal_all(self, force: bool = False) -> Tuple[bool, str]:
+    def _heal_all(self, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
         """Stellt alle fehlenden/beschaedigten Dateien wieder her."""
         snapshots = list(SNAPSHOTS_DIR.glob("*.orig"))
         if not snapshots:
@@ -449,6 +455,21 @@ class FSProtection:
                 "[FS] Heal abgebrochen: Keine gueltigen Snapshots vorhanden. "
                 "Erstelle zuerst bewusst Snapshots mit `bach dist snapshot --all`."
             )
+
+        if dry_run:
+            candidates = []
+            for snapshot_file in snapshots:
+                rel_path = self._snapshot_name_to_path(snapshot_file.name)
+                target_path = self._resolve_manifest_path(rel_path)
+                if not target_path.exists():
+                    candidates.append(rel_path)
+            lines = ["[FS] Heal All", "[DRY-RUN]", ""]
+            lines.append(f"Wuerde wiederherstellen: {len(candidates)}")
+            if candidates:
+                lines.append("")
+                for p in candidates[:10]:
+                    lines.append(f"  [DRY-RUN] {p}")
+            return True, "\n".join(lines)
 
         healed = []
         failed = []
