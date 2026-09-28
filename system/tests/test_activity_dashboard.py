@@ -93,12 +93,12 @@ def test_custom_branding():
 
 def test_custom_api_base():
     """API-Base URL muss im Client-JS gesetzt werden."""
-    content = render_activity_dashboard(api_base="http://127.0.0.1:8081/api")
-    assert "http://127.0.0.1:8081/api" in content
+    content = render_activity_dashboard(api_base="/custom/api/v2")
+    assert "/custom/api/v2" in content
 
     # Auch über das branding-Dict
-    content2 = render_activity_dashboard(branding={"api_base": "https://remote.control:9000"})
-    assert "https://remote.control:9000" in content2
+    content2 = render_activity_dashboard(branding={"api_base": "/gateway/control-api"})
+    assert "/gateway/control-api" in content2
 
 
 def test_custom_nav_links():
@@ -143,11 +143,11 @@ def test_html_and_js_syntax_validity():
     if LXML_AVAILABLE:
         doc = lxml.html.fromstring(rendered)
         assert doc.tag == "html"
-        assert len(doc.xpath("//script")) >= 1
-
-    # Inline-JS mit Node.js prüfen (falls installiert)
-    scripts = re.findall(r"<script[^>]*>(.*?)</script>", rendered, re.DOTALL)
-    assert len(scripts) >= 1
+        scripts = [node.text for node in doc.xpath("//script") if node.text]
+        assert len(scripts) >= 1
+    else:
+        scripts = re.findall(r"<script[^>]*>(.*?)</script>", rendered, flags=re.IGNORECASE | re.DOTALL)
+        assert len(scripts) >= 1
 
     for script_code in scripts:
         res = subprocess.run(
