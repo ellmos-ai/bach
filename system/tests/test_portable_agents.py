@@ -126,6 +126,29 @@ class TestResearchAgentStandalone:
         assert "agent" in cfg
         assert cfg["agent"] == "ResearchAgent"
 
+    @pytest.mark.skipif(not _RESEARCH_AVAILABLE, reason="ResearchAgent not available")
+    def test_research_agent_default_sources_fail_closed(self, monkeypatch):
+        """Fail-closed: ohne privates Schema sind default_sources leer und
+        search() ruft keine APIs auf."""
+        monkeypatch.delenv("BACH_OCEAN_PRIVATE_ARCH", raising=False)
+        monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+        monkeypatch.delenv("NCBI_API_KEY", raising=False)
+
+        agent = _research_mod.ResearchAgent()
+        cfg = agent.standalone_config_template()
+        assert cfg.get("default_sources") == []
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("API call attempted with no sources configured")
+
+        monkeypatch.setattr(agent, "_fetch_pubmed", _boom)
+        monkeypatch.setattr(agent, "_fetch_perplexity", _boom)
+
+        result = agent.search("test query", max_results=1)
+        assert result["pubmed"] == []
+        assert result["perplexity"] is None
+        assert result["total_results"] == 0
+
 
 class TestEntwicklerAgentStandalone:
     """Tests fuer EntwicklerAgent Standalone-Betrieb."""

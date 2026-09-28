@@ -48,7 +48,9 @@ else:
 CACHE_DIR = SCRIPT_DIR / "cache"
 
 # NCBI E-Utilities endpoints
-PUBMED_SEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+PUBMED_SEARCH_URL = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+)
 PUBMED_FETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
 # Perplexity API
@@ -87,10 +89,85 @@ class ResearchAgent(PortableAgent):
         with open(history_file, 'w', encoding='utf-8') as f:
             json.dump(self.history[-100:], f, indent=2, ensure_ascii=False)
 
+    # --- Private open-ocean Schema-Lader ---
+
+    def _private_arch_dir(self) -> Path:
+        """Ermittelt das private open-ocean/architecture-Verzeichnis.
+
+        Reihenfolge:
+          1. Umgebungsvariable BACH_OCEAN_PRIVATE_ARCH
+          2. BACH_ROOT/../open-ocean/architecture
+        """
+        env_dir = os.environ.get("BACH_OCEAN_PRIVATE_ARCH")
+        if env_dir:
+            return Path(env_dir).expanduser()
+        return (BACH_ROOT / ".." / "open-ocean" / "architecture").resolve()
+
+    def _load_private_schema(self, name: str) -> Optional[Dict]:
+        """Lädt eine private .v1.json-Schema-Datei aus open-ocean/architecture.
+
+        Args:
+            name: Schema-Name (z.B. "default-source-pins").
+
+        Returns:
+            Geparste JSON-Daten oder None bei Fehler / nicht gefunden.
+        """
+        path = self._private_arch_dir() / f"{name}.v1.json"
+        if not path.exists():
+            self.logger.warning(f"Private Schema nicht gefunden: {path}")
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.warning(f"Fehler beim Laden von {path}: {e}")
+            return None
+
+        schema_id = data.get("schema", "")
+        expected_suffix = f".{name}.v1"
+        if not schema_id.endswith(expected_suffix):
+            self.logger.warning(
+                f"Schema-ID mismatch in {path}: {schema_id!r} "
+                f"(erwartet Suffix {expected_suffix!r})"
+            )
+            return None
+        return data
+
+    def _get_default_sources(self) -> List[str]:
+        """Ermittelt Default-Source-Pins aus privatem Schema.
+
+        Fail-closed.
+        - Blocked sources (global + lokal) werden aus der enabled-Liste
+          entfernt.
+        - Wenn das Schema fehlt oder keine enabled sources definiert,
+          wird [] geliefert.
+        """
+        schema = self._load_private_schema("default-source-pins")
+        if schema is None:
+            return []
+
+        pins = schema.get("default_sources", {}).get(
+            self.AGENT_NAME, {}
+        )
+        enabled = pins.get("enabled", [])
+        if not isinstance(enabled, list):
+            self.logger.warning(
+                f"Ungültiger Typ fuer enabled sources: "
+                f"{type(enabled).__name__}"
+            )
+            return []
+
+        blocked: set = set(
+            schema.get("global_blocked_sources", [])
+        )
+        blocked.update(pins.get("blocked", []))
+        result = [s for s in enabled if s not in blocked]
+        return result
+
     # --- PubMed API ---
 
     def _fetch_pubmed(self, query: str, max_results: int = 10) -> List[Dict]:
-        """Sucht PubMed via NCBI E-Utilities und gibt strukturierte Ergebnisse zurueck."""
+        """Sucht PubMed via NCBI E-Utilities und gibt Ergebnisse zurueck."""
         # Schritt 1: PMIDs suchen via esearch
         params = urllib.parse.urlencode({
             "db": "pubmed",
@@ -102,7 +179,10 @@ class ResearchAgent(PortableAgent):
         search_url = f"{PUBMED_SEARCH_URL}?{params}"
 
         try:
-            req = urllib.request.Request(search_url, headers={"User-Agent": "BACH-ResearchAgent/2.0"})
+            req = urllib.request.Request(
+                search_url,
+                headers={"User-Agent": "BACH-ResearchAgent/2.0"},
+            )
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
                 search_xml = resp.read().decode("utf-8")
         except Exception as e:
@@ -127,7 +207,10 @@ class ResearchAgent(PortableAgent):
         fetch_url = f"{PUBMED_FETCH_URL}?{fetch_params}"
 
         try:
-            req = urllib.request.Request(fetch_url, headers={"User-Agent": "BACH-ResearchAgent/2.0"})
+            req = urllib.request.Request(
+                fetch_url,
+                headers={"User-Agent": "BACH-ResearchAgent/2.0"},
+            )
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
                 fetch_xml = resp.read().decode("utf-8")
         except Exception as e:
@@ -207,7 +290,9 @@ class ResearchAgent(PortableAgent):
                 "year": year,
                 "journal": journal,
                 "abstract": abstract[:500] if len(abstract) > 500 else abstract,
-                "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                "url": (
+                    f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+                ),
             })
 
         return results
@@ -228,7 +313,7 @@ class ResearchAgent(PortableAgent):
         return None
 
     def _fetch_perplexity(self, query: str) -> Optional[Dict]:
-        """Fragt Perplexity API ab. Gibt None zurueck wenn kein Key vorhanden."""
+        """Fragt Perplexity API ab. Liefert None, falls kein Key vorhanden."""
         api_key = self._get_perplexity_key()
         if not api_key:
             self.logger.info("Perplexity: Kein API-Key, ueberspringe")
@@ -271,7 +356,8 @@ class ResearchAgent(PortableAgent):
     def _save_results(self, query: str, results: Dict):
         """Speichert Recherche-Ergebnisse als JSON."""
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_query = "".join(c if c.isalnum() or c in " _-" else "" for c in query)[:40].strip()
+        cleaned = (c if c.isalnum() or c in " _-" else "" for c in query)
+        safe_query = "".join(cleaned)[:40].strip()
         filename = f"{ts}_{safe_query.replace(' ', '_')}.json"
         out_path = OUTPUT_DIR / filename
 
@@ -285,7 +371,7 @@ class ResearchAgent(PortableAgent):
     def search(self, query: str, sources: List[str] = None,
                max_results: int = 10) -> Dict:
         """Fuehrt Recherche ueber konfigurierte Quellen durch."""
-        sources = sources or ["pubmed", "perplexity"]
+        sources = sources or self._get_default_sources()
 
         result = {
             "query": query,
@@ -412,7 +498,7 @@ class ResearchAgent(PortableAgent):
             "version": self.VERSION,
             "output_dir": str(OUTPUT_DIR),
             "cache_dir": str(CACHE_DIR),
-            "default_sources": ["pubmed", "perplexity"],
+            "default_sources": self._get_default_sources(),
             "pubmed_max_results": 10,
         }
 
@@ -480,8 +566,10 @@ def main():
         print(f"  Version:    {st['version']}")
         print(f"  BACH:       {'ja' if st['bach_available'] else 'nein'}")
         print(f"  Suchen:     {st['searches_total']}")
-        print(f"  PubMed:     {'verfuegbar' if st['apis']['pubmed'] else 'nein'}")
-        print(f"  Perplexity: {'verfuegbar' if st['apis']['perplexity'] else 'kein Key'}")
+        pubmed_status = 'verfuegbar' if st['apis']['pubmed'] else 'nein'
+        perplexity_status = 'verfuegbar' if st['apis']['perplexity'] else 'kein Key'
+        print(f"  PubMed:     {pubmed_status}")
+        print(f"  Perplexity: {perplexity_status}")
         print(f"  Output:     {st['output_dir']}")
 
 
