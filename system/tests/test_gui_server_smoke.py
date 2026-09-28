@@ -318,6 +318,7 @@ class TestGUIServerSmoke:
         assert srv.DEFAULT_TASK_ASSIGNEE == headless.DEFAULT_TASK_ASSIGNEE
 
     def test_messages_list(self, client):
+        pytest.importorskip("assistant_core", reason="private assistant-core is not installed in CI")
         resp = client.get("/api/messages")
         assert resp.status_code == 200
         data = resp.json()
@@ -469,6 +470,7 @@ class TestGUIServerWrite:
             assert resp.status_code == 200
 
     def test_message_create(self, client):
+        pytest.importorskip("assistant_core", reason="private assistant-core is not installed in CI")
         resp = client.post("/api/messages", json={
             "recipient": "system",
             "body": "Test message"

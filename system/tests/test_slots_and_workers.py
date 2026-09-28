@@ -731,6 +731,7 @@ class TestTelegramSlotMapping:
                     _resolve_slot_for_chat("worker-legacy-other")
 
     def test_legacy_session_binding_is_explicit_and_scoped(self, tmp_path):
+        initialize_slots_config()
         cfg_file = tmp_path / "legacy_binding.json"
         cfg = load_slots_config(str(cfg_file))
         session = ChatSession()
@@ -1176,6 +1177,7 @@ class TestControlHandlerEndpoints:
             assert activities[-1] == "error"
 
     def test_get_slots_and_activity(self):
+        initialize_slots_config()
         handler = ControlHandler.__new__(ControlHandler)
         handler.headers = {}
         handler.wfile = MagicMock()

@@ -1,8 +1,35 @@
 name: tests
 
-# pytest fuer die Gedaechtnis-/Injektor-Pfade (S2/S3 von T-20260920-823767362)
-# und den Kern. Laeuft ohne Live-DB und ohne Netzwerk-Dienste: conftest.py
-# isoliert BACH_DB & Co. in ein Temp-Verzeichnis.
+# pytest fuer die Gedaechtnis-/Injektor-Pfade (S2/S3 von T-20260920-823767362),
+# den Kern und (seit T-20260927-676283213) alle Testdateien, die im Inventar
+# lokal ohne Live-Dienste gruen liefen. Laeuft ohne Live-DB und ohne
+# Netzwerk-Dienste: conftest.py isoliert BACH_DB & Co. in ein Temp-Verzeichnis.
+#
+# Bewusst NICHT hier drin (Begruendung/Tickets siehe T-20260927-676283213):
+# - system/tests/test_web_scrape_seam.py: offener Fehler
+#   (T-20260927-606803060).
+# - system/tests/test_idle_worker_parked.py: 18 Importfehler in der frischen
+#   CI-Abhängigkeitsmenge, weil pystray dort nicht installiert ist.
+# - system/tests/test_connectors_and_tray.py: neuer Tray-Ready-Test aus #146
+#   importiert pystray; 1 Fehler in der frischen CI-Abhängigkeitsmenge.
+# - test_abo_handler.py, test_bridge_tray.py, test_registry_watcher.py und
+#   test_secrets_handler.py: lokal grün, aber im Ubuntu-CI-Lauf rot (PR #143).
+# - system/tests/test_transfer_assistant_core_script.py: fest auf den
+#   Mac-Studio-Live-Pfad codiert, kann in CI nie gruen sein (T-20260927-283375364).
+# - system/tests/test_git_harvester.py: haengt real (>450s), Ursache offen
+#   (T-20260927-375706252).
+# - system/tests/seal_release_check.py (vormals test_seal.py): kein Unit-Test
+#   (manuelles Release-Verifikationswerkzeug, braucht eine bereits befuellte
+#   Release-DB), T-20260927-807838815.
+# - system/tools/ollama/ollama_manual_check.py, system/hub/_services/claude_bridge/
+#   telegram_manual_check.py (vormals test_tokens.py/telegram_test.py):
+#   brauchen einen Live-Dienst und hatten keine echten asserts, matchen
+#   pytests Discovery-Muster jetzt bewusst nicht mehr (T-20260927-283375364).
+# - system/tests/test_accounts_via_accounts_core.py: privates accounts-core
+#   ist in dieser CI ohne Token nicht installierbar (T-20260927-346884638).
+# - system/tests/test_anonymizer_excel_dates.py und
+#   test_report_workflow_service.py: openpyxl bzw. python-docx fehlen in
+#   der CI-Installation (T-20260927-346884638).
 
 on:
   pull_request:
@@ -37,32 +64,219 @@ jobs:
           # wird installiert, damit die Dokument-Extraktions-Seam-Tests real laufen.
           grep -v -E '^(assistant-core|accounts-core) @' requirements.txt > requirements-ci.txt
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-ci.txt pytest "python-telegram-bot>=22,<23"
+          python -m pip install -r requirements-ci.txt pytest pytest-timeout "python-telegram-bot>=22,<23" "fastapi>=0.128.0" "starlette>=0.50.0" "httpx>=0.28.1" "uvicorn>=0.40.0"
 
-      - name: pytest (S2/S3 + Kern)
+      - name: "pytest (T-20260927-676283213: alle lokal ohne Live-Dienste gruenen Dateien)"
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          python -m pytest -p no:cacheprovider -rA \
-            system/tests/test_injector_parity.py \
-            system/tests/test_context_injector_db.py \
-            system/tests/test_hook_provider_wiring.py \
-            system/tests/test_migration_backup.py \
-            system/tests/test_seed_fresh_db.py \
-            system/tests/test_timebeat_parity.py \
-            system/tests/test_memory_union.py \
-            system/tests/test_memory_readers_union.py \
-            system/tests/test_migration_baseline_check.py \
-            system/tests/test_update_handler.py \
-            system/tests/test_db_path_central.py \
-            system/tests/test_trigger_generators.py \
+          python -m pytest -q -rA -p no:cacheprovider --timeout=120 --timeout-method=thread \
+            system/tests/test_activity_tracker.py \
+            system/tests/test_agent_launcher_handler.py \
+            system/tests/test_agent_pid_identity.py \
+            system/tests/test_agent_process_provider.py \
+            system/tests/test_agents_export.py \
+            system/tests/test_agents_handler.py \
+            system/tests/test_agents_heart.py \
+            system/tests/test_backup_handler.py \
+            system/tests/test_anonymizer_email.py \
+            system/tests/test_anonymizer_whitelist.py \
+            system/tests/test_ati_handler.py \
+            system/tests/test_ati_task_scanner.py \
+            system/tests/test_auto_mode.py \
+            system/tests/test_bach_api_task_due_date.py \
+            system/tests/test_bach_api_tool_registry.py \
+            system/tests/test_base_handler.py \
+            system/tests/test_bericht_handler.py \
+            system/tests/test_calendar_contract_migration.py \
+            system/tests/test_calendar_handler.py \
+            system/tests/test_canonical_seam.py \
+            system/tests/test_chain_control.py \
+            system/tests/test_chain_handler.py \
+            system/tests/test_chat_runtime.py \
+            system/tests/test_chat_runtime_task_manage.py \
+            system/tests/test_chat_session_store.py \
+            system/tests/test_claude_bridge_handler.py \
+            system/tests/test_claude_permissions.py \
             system/tests/test_cli_startup_observers.py \
+            system/tests/test_cloud_service.py \
+            system/tests/test_clutch.py \
+            system/tests/test_connections_handler.py \
+            system/tests/test_connector_handler.py \
+            system/tests/test_connectors.py \
+            system/tests/test_consolidation_handler.py \
             system/tests/test_consolidation_forget_soft.py \
-            system/tests/test_dist_type_catchup_migration.py \
-            system/tests/test_doc_extract_seam.py \
+            system/tests/test_contact_handler.py \
+            system/tests/test_context_handler.py \
+            system/tests/test_context_injector_db.py \
+            system/tests/test_control_api_auth.py \
+            system/tests/test_cookbook_handler.py \
             system/tests/test_core.py \
+            system/tests/test_core_sandbox.py \
+            system/tests/test_daemon.py \
+            system/tests/test_daemon_service.py \
+            system/tests/test_daemon_task_binding.py \
+            system/tests/test_daily_agent_handler.py \
+            system/tests/test_daily_overview.py \
+            system/tests/test_db_guard_hook.py \
+            system/tests/test_db_handler.py \
+            system/tests/test_db_path_central.py \
+            system/tests/test_db_sync_handler.py \
+            system/tests/test_delegation_adapter.py \
+            system/tests/test_denkarium_handler.py \
+            system/tests/test_dist_handler.py \
+            system/tests/test_dist_type_catchup_migration.py \
+            system/tests/test_doc_analysis.py \
+            system/tests/test_doc_extract_seam.py \
+            system/tests/test_docs_handler.py \
+            system/tests/test_document_pipeline_docx_extraction.py \
+            system/tests/test_document_pipeline_priorities.py \
+            system/tests/test_email_handler.py \
+            system/tests/test_explorer_provider_wiring.py \
+            system/tests/test_extensions_handler.py \
+            system/tests/test_fackel.py \
+            system/tests/test_folders_handler.py \
+            system/tests/test_fs_handler.py \
+            system/tests/test_fs_protection.py \
+            system/tests/test_gesundheit_handler.py \
+            system/tests/test_gui_handler.py \
+            system/tests/test_gui_console.py \
+            system/tests/test_gui_mounts_contract.py \
+            system/tests/test_gui_prompt_manager.py \
+            system/tests/test_gui_server_smoke.py \
+            system/tests/test_gui_server.py \
+            system/tests/test_gui_skills_board.py \
+            system/tests/test_gui_templates_regression.py \
+            system/tests/test_gui_workflow_tuev.py \
+            system/tests/test_haushalt_handler.py \
+            system/tests/test_haushalt_inventory.py \
+            system/tests/test_headless_task_history.py \
+            system/tests/test_health_handler.py \
+            system/tests/test_health_log_dedup.py \
+            system/tests/test_help_handler.py \
+            system/tests/test_help_language_invariants.py \
+            system/tests/test_home_guard_attribution.py \
+            system/tests/test_hook_provider_wiring.py \
+            system/tests/test_hooks_handler.py \
+            system/tests/test_imap_draft.py \
+            system/tests/test_inbox_handler.py \
+            system/tests/test_injector_parity.py \
+            system/tests/test_integration_handler.py \
+            system/tests/test_kernel_security.py \
+            system/tests/test_lang_handler.py \
+            system/tests/test_lesson_handler.py \
+            system/tests/test_literatur.py \
+            system/tests/test_logs_handler.py \
+            system/tests/test_maintain_handler.py \
+            system/tests/test_mcp_servers.py \
+            system/tests/test_md_to_pdf.py \
+            system/tests/test_media.py \
+            system/tests/test_mediplaner_handler.py \
+            system/tests/test_mediplaner_projection.py \
+            system/tests/test_mem_handler.py \
+            system/tests/test_memory_handler.py \
+            system/tests/test_memory_readers_union.py \
+            system/tests/test_memory_session_provenance.py \
+            system/tests/test_memory_union.py \
+            system/tests/test_memory_working_cleanup.py \
+            system/tests/test_message_worker.py \
+            system/tests/test_messages_handler.py \
+            system/tests/test_migration_backup.py \
+            system/tests/test_migration_baseline_check.py \
+            system/tests/test_model_backend.py \
+            system/tests/test_mount_handler.py \
+            system/tests/test_n8n_handler.py \
+            system/tests/test_newspaper_handler.py \
+            system/tests/test_notify_local_service.py \
+            system/tests/test_notify_via_assistant_core.py \
+            system/tests/test_obsidian_handler.py \
+            system/tests/test_ollama.py \
+            system/tests/test_ollama_stream.py \
+            system/tests/test_operator_control.py \
+            system/tests/test_partner_handler.py \
+            system/tests/test_path_handler.py \
+            system/tests/test_path_traversal.py \
+            system/tests/test_persoenlich_dashboard.py \
+            system/tests/test_pipeline_handler.py \
+            system/tests/test_plugin_security.py \
+            system/tests/test_plugins.py \
+            system/tests/test_plugins_handler.py \
+            system/tests/test_portable_agents.py \
+            system/tests/test_profile_handler.py \
+            system/tests/test_prompt_chat_draft.py \
+            system/tests/test_prompt_generator.py \
+            system/tests/test_prompt_handler.py \
+            system/tests/test_prosync_race.py \
+            system/tests/test_recurring_tasks.py \
+            system/tests/test_reflection_handler.py \
+            system/tests/test_restore_handler.py \
+            system/tests/test_rheingold_handler.py \
+            system/tests/test_routine_handler.py \
+            system/tests/test_runner_safety_gates.py \
+            system/tests/test_sandbox_handler.py \
+            system/tests/test_scan_handler.py \
+            system/tests/test_scheduler_handler.py \
+            system/tests/test_scheduler_provider.py \
+            system/tests/test_scheduler_provider_wiring.py \
+            system/tests/test_schwarm_handler.py \
+            system/tests/test_search_handler.py \
+            system/tests/test_security_scan_handler.py \
+            system/tests/test_seed_fresh_db.py \
+            system/tests/test_session_checkpoint_adapter.py \
+            system/tests/test_session_checkpoint_provider.py \
+            system/tests/test_session_handler.py \
+            system/tests/test_session_provenance_migration.py \
+            system/tests/test_settings_handler.py \
+            system/tests/test_setup_handler.py \
+            system/tests/test_shared_memory_handler.py \
+            system/tests/test_shutdown_handler.py \
+            system/tests/test_skills_board_xss.py \
+            system/tests/test_skills_handler.py \
+            system/tests/test_skills_integrity.py \
+            system/tests/test_slots_and_workers.py \
+            system/tests/test_snapshot_handler.py \
+            system/tests/test_snapshot_payload.py \
+            system/tests/test_start_scripts.py \
+            system/tests/test_startseite_cleanup.py \
+            system/tests/test_startup_handler.py \
+            system/tests/test_status_handler.py \
+            system/tests/test_steuer_handler.py \
+            system/tests/test_stigmergy_union.py \
+            system/tests/test_suite_isolation_guard.py \
+            system/tests/test_summarize_chunks.py \
+            system/tests/test_sync_handler.py \
+            system/tests/test_task_atomic_claim.py \
+            system/tests/test_task_audit.py \
+            system/tests/test_task_due_date.py \
+            system/tests/test_task_handler.py \
+            system/tests/test_task_runner_fertig.py \
+            system/tests/test_task_slot_fields.py \
+            system/tests/test_tasks_board_filter.py \
+            system/tests/test_telegram_chat_import_safety.py \
+            system/tests/test_telegram_voice.py \
+            system/tests/test_test_handler_adapter.py \
+            system/tests/test_testing_selftest.py \
+            system/tests/test_text_chunker.py \
+            system/tests/test_theme_handler.py \
+            system/tests/test_time_handler.py \
+            system/tests/test_time_system_countdown_format.py \
+            system/tests/test_timebeat_parity.py \
+            system/tests/test_tokens_handler.py \
+            system/tests/test_tools_handler.py \
+            system/tests/test_transit_sync_provider_wiring.py \
+            system/tests/test_trithon_dispatch.py \
+            system/tests/test_trigger_generators.py \
+            system/tests/test_trash_handler.py \
+            system/tests/test_tuev_handler.py \
+            system/tests/test_update_handler.py \
+            system/tests/test_versicherung_handler.py \
+            system/tests/test_voice_to_file.py \
+            system/tests/test_watcher_handler.py \
+            system/tests/test_web_parse_handler.py \
+            system/tests/test_web_scrape_handler.py \
+            system/tests/test_wiki_handler.py \
+            system/tests/test_worker_seam_fixes.py \
             system/tests/test_safe_exec.py \
             system/tests/test_safe_shell_args.py \
             system/tests/test_chat_runtime_security.py \
-            system/tests/test_telegram_owner_check.py \
-            system/tests/test_sandbox_handler.py
+            system/tests/test_telegram_owner_check.py
