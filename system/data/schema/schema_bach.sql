@@ -157,6 +157,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     recurrence_pattern TEXT,         -- 'daily', 'weekly', 'monthly', cron-like
     next_occurrence TEXT,
     due_date TEXT,                    -- ISO-Datum YYYY-MM-DD (Routinika-kompatibel)
+    required_model TEXT,
+    assigned_slot TEXT,
     
     -- Ausführung
     executable_command TEXT,         -- Optional: Direkt ausführbarer Befehl

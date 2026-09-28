@@ -268,11 +268,15 @@ class _TaskProxy(_DBBackedProxy):
         description: str | None = None,
         category: str | None = "general",
         due_date: str | None = None,
+        required_model: str | None = None,
+        assigned_slot: str | None = None,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
         cli_category = category
         cli_due_date = due_date
+        cli_required_model = required_model
+        cli_assigned_slot = assigned_slot
 
         i = 0
         while i < len(args):
@@ -301,6 +305,19 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--due="):
                 cli_due_date = arg.split("=", 1)[1]
                 i += 1
+            elif arg in ("--required-model", "--assigned-slot"):
+                value = str(args[i + 1]) if i + 1 < len(args) else ""
+                if arg == "--required-model":
+                    cli_required_model = value
+                else:
+                    cli_assigned_slot = value
+                i += 2 if i + 1 < len(args) else 1
+            elif arg.startswith("--required-model="):
+                cli_required_model = arg.split("=", 1)[1]
+                i += 1
+            elif arg.startswith("--assigned-slot="):
+                cli_assigned_slot = arg.split("=", 1)[1]
+                i += 1
             else:
                 i += 1
 
@@ -311,6 +328,10 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--category", cli_category])
         if cli_due_date is not None:
             raw_args.extend(["--due", cli_due_date])
+        if cli_required_model is not None:
+            raw_args.extend(["--required-model", cli_required_model])
+        if cli_assigned_slot is not None:
+            raw_args.extend(["--assigned-slot", cli_assigned_slot])
 
         success, message = self.raw("add", *raw_args)
         if not success:
@@ -334,6 +355,28 @@ class _TaskProxy(_DBBackedProxy):
 
         task_data["_message"] = str(message)
         return task_data
+
+    def edit(
+        self,
+        task_id: int | str,
+        *,
+        required_model: str | None = None,
+        assigned_slot: str | None = None,
+    ) -> dict[str, Any]:
+        """Set or clear model and slot routing on an existing task."""
+        if required_model is None and assigned_slot is None:
+            raise BachAPIError("Mindestens ein Routing-Feld angeben")
+        raw_args = [str(task_id)]
+        if required_model is not None:
+            raw_args.extend(["--required-model", required_model])
+        if assigned_slot is not None:
+            raw_args.extend(["--assigned-slot", assigned_slot])
+        success, message = self.raw("edit", *raw_args)
+        if not success:
+            raise BachAPIError(message)
+        result = self.show(task_id)
+        result["_message"] = str(message)
+        return result
 
     def list(
         self,
@@ -397,10 +440,15 @@ class _TaskProxy(_DBBackedProxy):
             from hub._services.task_schema import task_has_due_date
 
             due_projection = "due_date" if task_has_due_date(conn) else "NULL AS due_date"
+            task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+            routing_projection = ", ".join(
+                name if name in task_columns else f"NULL AS {name}"
+                for name in ("required_model", "assigned_slot")
+            )
             sql = (
                 "SELECT id, priority, title, status, category, description, assigned_to, "
                 "delegated_to, depends_on, created_at, completed_at, updated_at, "
-                f"{due_projection} FROM tasks "
+                f"{due_projection}, {routing_projection} FROM tasks "
                 f"WHERE {where_clause} "
                 "ORDER BY priority, id"
             )
