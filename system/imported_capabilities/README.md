@@ -14,19 +14,19 @@ Alle vier Quell-Repositories wurden **ausschließlich lesend** analysiert und ni
 
 ## 1. Kategorie-Übersicht & Zuordnung
 
-| Kategorie | Quelle | Komponente / Feature | Ziel in BACH / OCEAN | Status |
-|:---|:---|:---|:---|:---:|
-| **1. Schon gelöst, was wir bauen wollten** | Roshambo | Atomare serielle Leases (`leases.py`) | `system/core/leases.py` & TaskHandler | Eingepflegt |
-| **1. Schon gelöst, was wir bauen wollten** | Roshambo | Negatives Gedächtnis / Failure Trails (`memory.py`) | `system/hub/_services/memory/` | Eingepflegt |
-| **1. Schon gelöst, was wir bauen wollten** | FolderHome | Vertrags- & Versicherungscockpit (`finance_store`) | `system/capabilities/contract_cockpit/` | Eingepflegt |
-| **2. Besser gelöst als in Ocean/Bach/Skills** | SentinelFleet | Zero-Trust Model Armor (`model_armor.py`) | `system/core/model_armor.py` | Eingebaut |
-| **2. Besser gelöst als in Ocean/Bach/Skills** | NemoFold | Inter-Rater-Reliabilität (`interrater.py`) | `system/hub/_services/interrater.py` | Eingebaut |
-| **2. Besser gelöst als in Ocean/Bach/Skills** | NemoFold | Reversibles 2-Phasen Action Journal (`action_journal.py`)| `system/core/action_journal.py` | Eingebaut |
-| **2. Besser gelöst als in Ocean/Bach/Skills** | SentinelFleet | § 14 UStG Rechnungsprüfung & Dispute Loop | `system/capabilities/administrative_notice_engine/` | Eingebaut |
-| **3. Bereichernde Features für Ocean & Bach** | SentinelFleet | Dynamischer SVG Circuit & Blueprint Graph | Bach Web GUI & Ocean Recipe Topology | Mitgeliefert |
-| **3. Bereichernde Features für Ocean & Bach** | FolderHome | Haushaltsinventar- & Verfallsdaten-Tracker | `system/capabilities/inventory_store/` | Mitgeliefert |
-| **3. Bereichernde Features für Ocean & Bach** | FolderHome | Medikationsplan & Einnahme-Logger | `system/capabilities/medication_store/` | Mitgeliefert |
-| **3. Bereichernde Features für Ocean & Bach** | Roshambo | Swarm Radar / Multi-Agent GPS (`live map`) | `system/gui/` & Swarm Coordinator | Mitgeliefert |
+| Kategorie | Quelle | Komponente / Feature | Zielmodul / Repo (Modularer Einbau) | Task-ID (Mac) | Status |
+|:---|:---|:---|:---|:---:|:---:|
+| **1. Schon gelöst, was wir bauen wollten** | Roshambo | Atomare serielle Leases (`leases.py`) | `roshambo` / `model-races` / `ocean` core | #1510 | Eingepflegt |
+| **1. Schon gelöst, was wir bauen wollten** | Roshambo | Negatives Gedächtnis / Failure Trails (`memory.py`) | `memoryhooker` / `session-checkpoint` / `ocean` | #1511 | Eingepflegt |
+| **1. Schon gelöst, was wir bauen wollten** | FolderHome | Vertrags- & Versicherungscockpit (`finance_store`) | `FolderHome` / `terminpilot` | #1512 | Eingepflegt |
+| **2. Besser gelöst als in Ocean/Bach/Skills** | SentinelFleet | Zero-Trust Model Armor (`model_armor.py`) | `sentinel-fleet` / `ocean` security gateway | #1513 | Eingebaut |
+| **2. Besser gelöst als in Ocean/Bach/Skills** | NemoFold | Inter-Rater-Reliabilität (`interrater.py`) | `compare-race` / `skills` / `ocean` eval | #1514 | Eingebaut |
+| **2. Besser gelöst als in Ocean/Bach/Skills** | NemoFold | Reversibles 2-Phasen Action Journal (`action_journal.py`)| `file-bricks` / `ocean` fs layer | #1515 | Eingebaut |
+| **2. Besser gelöst als in Ocean/Bach/Skills** | SentinelFleet | § 14 UStG Rechnungsprüfung & Dispute Loop | `rechtsabteilung` / `UniversalInvoiceMail` | #1516 | Eingebaut |
+| **3. Bereichernde Features für Ocean & Bach** | SentinelFleet | Dynamischer SVG Circuit & Blueprint Graph | `unified-gui` / `open-ocean` visualizer | #1517 | Mitgeliefert |
+| **3. Bereichernde Features für Ocean & Bach** | FolderHome | Haushaltsinventar- & Verfallsdaten-Tracker | `FolderHome` | #1518 | Mitgeliefert |
+| **3. Bereichernde Features für Ocean & Bach** | FolderHome | Medikationsplan & Einnahme-Logger | `mediplaner` / `FolderHome` | #1519 | Mitgeliefert |
+| **3. Bereichernde Features für Ocean & Bach** | Roshambo | Swarm Radar / Multi-Agent GPS (`live map`) | `unified-gui` / `roshambo-starmap` / `swarm-ai` | #1520 | Mitgeliefert |
 
 ---
 
