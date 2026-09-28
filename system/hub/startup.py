@@ -792,6 +792,8 @@ class StartupHandler(BaseHandler):
                     for rel_path in sample_files:
                         if not rel_path.startswith('system/'):
                             file_path = self.base_path.parent / 'system' / rel_path
+                            if not file_path.exists() and (self.base_path.parent / rel_path).exists():
+                                file_path = self.base_path.parent / rel_path
                         else:
                             file_path = self.base_path.parent / rel_path
                         if not file_path.exists():
