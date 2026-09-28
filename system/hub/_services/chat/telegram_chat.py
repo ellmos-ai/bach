@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import socket
+import sqlite3
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -2486,11 +2487,13 @@ tr:hover td{background:#24334d}
         <th style="width:110px">Zeit</th>
         <th style="width:160px">Akteur / Slot</th>
         <th>Aktivität (Tool, Runde, Aufgabe)</th>
+        <th style="width:120px">Modell</th>
+        <th style="width:110px">Slot</th>
         <th style="width:100px">Status</th>
       </tr>
     </thead>
     <tbody id="activity-tbody">
-      <tr><td colspan="4" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
+      <tr><td colspan="6" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
     </tbody>
   </table>
 </div>
@@ -2954,7 +2957,7 @@ async function refreshActivity() {
   const tbody = document.getElementById('activity-tbody');
   const history = (data && data.history) ? data.history : [];
   if (history.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
     return;
   }
 
@@ -2962,12 +2965,16 @@ async function refreshActivity() {
   for (const item of history) {
     const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '-';
     const st = item.status || 'ok';
+    const reqModel = item.required_model || (item.details && item.details.required_model) || (item.details && item.details.model_id) || '-';
+    const assSlot = item.assigned_slot || (item.details && item.details.assigned_slot) || (item.details && item.details.slot_id) || '-';
 
     rows += `
       <tr>
         <td style="color:#94a3b8;font-size:0.8rem">${timeStr}</td>
         <td><strong>${escapeHtml(item.source || '-')}</strong></td>
         <td>${escapeHtml(item.activity || '-')}</td>
+        <td><span style="font-family:monospace;font-size:0.8rem;color:#94a3b8">${escapeHtml(reqModel)}</span></td>
+        <td><span style="font-family:monospace;font-size:0.8rem;color:#94a3b8">${escapeHtml(assSlot)}</span></td>
         <td><span class="badge badge-${st === 'running' ? 'running' : (st === 'error' ? 'error' : 'ready')}">${escapeHtml(st)}</span></td>
       </tr>
     `;
@@ -3714,6 +3721,63 @@ class QuietHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _enrich_activity_history_with_tasks(history: list[dict[str, Any]]) -> None:
+    """Enrich activity items that reference task_id with required_model/assigned_slot from tasks."""
+    if not history:
+        return
+    task_ids: set[int] = set()
+    for item in history:
+        tid = item.get("task_id")
+        if tid is None and isinstance(item.get("details"), dict):
+            tid = item["details"].get("task_id")
+        if tid is not None:
+            try:
+                task_ids.add(int(tid))
+            except (ValueError, TypeError):
+                pass
+    if not task_ids:
+        return
+
+    try:
+        from hub.bach_paths import BACH_DB
+        db_env = os.environ.get("BACH_DB")
+        db_path = Path(db_env) if db_env else BACH_DB
+        if not db_path.exists():
+            return
+        conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
+        try:
+            placeholders = ",".join("?" for _ in task_ids)
+            cursor = conn.execute(
+                f"SELECT id, required_model, assigned_slot FROM tasks WHERE id IN ({placeholders})",
+                list(task_ids),
+            )
+            mapping = {int(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+        finally:
+            conn.close()
+
+        for item in history:
+            tid = item.get("task_id")
+            if tid is None and isinstance(item.get("details"), dict):
+                tid = item["details"].get("task_id")
+            try:
+                tid_int = int(tid) if tid is not None else None
+            except (ValueError, TypeError):
+                tid_int = None
+            if tid_int in mapping:
+                req_m, ass_s = mapping[tid_int]
+                if "required_model" not in item:
+                    item["required_model"] = req_m
+                if "assigned_slot" not in item:
+                    item["assigned_slot"] = ass_s
+            else:
+                if "required_model" not in item:
+                    item["required_model"] = None
+                if "assigned_slot" not in item:
+                    item["assigned_slot"] = None
+    except Exception as exc:
+        log.debug("Konnte Activity nicht mit Tasks anreichern: %s", exc)
+
+
 class ControlHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         log.debug("ControlAPI: " + fmt % args)
@@ -3990,17 +4054,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                     self._json({"error": "order muss 'asc' oder 'desc' sein"}, 400)
                     return
 
+                history = get_activity_history(
+                    limit=limit,
+                    offset=offset,
+                    source=source,
+                    status=status,
+                    since=since,
+                    until=until,
+                    order=order,
+                )
+                _enrich_activity_history_with_tasks(history)
                 self._json({
                     "ok": True,
-                    "history": get_activity_history(
-                        limit=limit,
-                        offset=offset,
-                        source=source,
-                        status=status,
-                        since=since,
-                        until=until,
-                        order=order,
-                    ),
+                    "history": history,
                 })
             except Exception as e:
                 log.warning("/api/activity Fehler: %s", e, exc_info=True)
