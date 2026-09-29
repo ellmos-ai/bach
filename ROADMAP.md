@@ -1821,59 +1821,59 @@ Vollständige, read-only Quell-Evaluation der vier internen Schwester-Repositori
 ### 1. Kategorie 1: Gewünscht & bereits gelöst (Sofortige Lückenschließung)
 - **CAP-1.1 (Task #1510, P1, `governance`): Atomare Distributed Leases & Work-Claiming**
   - *Quelle:* Roshambo (`roshambo/core/leases.py`, `models.py`)
-  - *Zielmodul / Repo:* `roshambo` / `model-races` / `ocean` (Modularer Core-Coordinator).
+  - *Zielmodul (Ocean):* `open-ocean` / `coordination` (`ellmos-coordination-choice-bundle` / `lock-master`).
   - *Lückenschluss:* **Behebt BACH Kernlücke 1** („Kein atomarer Claim; worker nimmt offen[0] und startet ohne Anspruch; chat_tray liest erst und markiert danach", siehe Zeilen 677–679 oben).
   - *Adapter:* `imported_capabilities/category_1_solved_wanted/leases/adapter_bach.py` (`try_claim_task_atomic`, `renew_task_lease`, `release_task_lease`).
 - **CAP-1.2 (Task #1511, P2, `memory`): Negatives Gedächtnis & Failure Trails**
   - *Quelle:* Roshambo (`roshambo/core/memory_trails.py`)
-  - *Zielmodul / Repo:* `memoryhooker` / `session-checkpoint` / `ocean` memory services.
+  - *Zielmodul (Ocean):* `open-ocean` / `working_memory` (`ellmos-working-memory-bundle` / `session-checkpoint`).
   - *Nutzen:* Verhindert autonome Endlosschleifen von Hintergrund-Subagenten durch protokollierte Sackgassen und Kontextabgleich vor Werkzeugausführungen.
   - *Adapter:* `imported_capabilities/category_1_solved_wanted/failure_trails/adapter_bach.py`.
 - **CAP-1.3 (Task #1512, P2, `features`): Vertrags- & Kündigungscockpit**
   - *Quelle:* FolderHome (`folderhome/services/contract_store.py`)
-  - *Zielmodul / Repo:* `FolderHome` / `terminpilot` (Persönliches OS-Assistenzmodul).
-  - *Nutzen:* Proaktives Fristenmanagement, Kündigungserinnerungen und Kostenübersichten für monatliche Fixkosten.
+  - *Zielmodul (Ocean):* `open-ocean` / `finance_assist` (`ellmos-finance-assist-bundle` / `accounts-core`).
+  - *Nutzen:* Proaktives Fristenmanagement, Kündigungserinnerungen und Kostenübersichten für monatliche Fixkosten im modularen Finanz-Assistenten.
   - *Adapter:* `imported_capabilities/category_1_solved_wanted/contract_cockpit/adapter_bach.py`.
 
 ### 2. Kategorie 2: Überlegene Lösungen (Modernisierung bestehender Bausteine)
 - **CAP-2.1 (Task #1513, P1, `security`): Zero-Trust Model Armor Interceptor**
   - *Quelle:* SentinelFleet (`sentinelfleet/armor/model_armor.py`, `gateway.py`)
-  - *Zielmodul / Repo:* `sentinel-fleet` / `ocean` security gateway.
+  - *Zielmodul (Ocean):* `open-ocean` / `K9-BOUNDARY` (Security Interceptor & Model Armor Gateway).
   - *Vorteil:* Robuste heuristische & regex-basierte Erkennung von Evasion-Mustern (Space-Padding, Delimiter-Manipulation) sowie automatische PII-Redaction (IBAN, API-Keys).
   - *Adapter:* `imported_capabilities/category_2_superior_solutions/model_armor/adapter_bach.py`.
 - **CAP-2.2 (Task #1514, P2, `evaluation`): Inter-Rater-Reliabilität (Cohen's Kappa)**
   - *Quelle:* NemoFold (`nemofold/interrater.py`, `structured_codec.py`)
-  - *Zielmodul / Repo:* `compare-race` skill / `skills` library / `ocean` evaluation.
+  - *Zielmodul (Ocean):* `open-ocean` / `evaluation` (`skills` / `compare-race` & `ellmos-agents-bundle`).
   - *Vorteil:* Mathematisch fundierte Übereinstimmungsmessung bei Multi-Modell-Vergleichen (Claude vs. GPT vs. Gemini) statt simpler String-Gleichheit.
   - *Adapter:* `imported_capabilities/category_2_superior_solutions/interrater/adapter_bach.py`.
 - **CAP-2.3 (Task #1515, P2, `core`): Reversibles Zwei-Phasen Action Journal**
   - *Quelle:* NemoFold (`nemofold/core/action_journal.py`)
-  - *Zielmodul / Repo:* `file-bricks` / `ocean` transactional filesystem engine.
+  - *Zielmodul (Ocean):* `open-ocean` / `K9-BOUNDARY` (Transaktionale Dateisystem-Schicht / FS-Journaling).
   - *Vorteil:* Transaktionales Dateisystem-Journaling mit SHA-256 Integritätsprüfung und vollständigem automatischem Rollback bei Fehlern oder Abstürzen.
   - *Adapter:* `imported_capabilities/category_2_superior_solutions/action_journal/adapter_bach.py`.
 - **CAP-2.4 (Task #1516, P2, `features`): § 14 UStG Rechnungsprüfung & Dispute Loop**
   - *Quelle:* SentinelFleet (`sentinelfleet/compliance.py`, `dispute_loop.py`)
-  - *Zielmodul / Repo:* `rechtsabteilung` / `law-checker` / `UniversalInvoiceMail`.
+  - *Zielmodul (Ocean):* `open-ocean` / `doc_handler` & `finance_assist` (`ellmos-doc-handler-bundle` / `ellmos-finance-assist-bundle`).
   - *Vorteil:* Validierung formaler Pflichtangaben auf Eingangsrechnungen und automatisierte Generierung rechtssicherer Bestreitungsschreiben bei Formfehlern.
   - *Adapter:* `imported_capabilities/category_2_superior_solutions/administrative_notice_engine/adapter_bach.py`.
 
 ### 3. Kategorie 3: Bereichernde Features (Mehrwert für BACH & OCEAN)
 - **CAP-3.1 (Task #1517, P2, `gui`): Standalone Blueprint & Circuit SVG Generator**
   - *Quelle:* SentinelFleet (`sentinelfleet/blueprint_graph.py`) & NemoFold (`nemofold/chronicle_svg.py`)
-  - *Zielmodul / Repo:* `unified-gui` / `open-ocean` recipe & topology visualizer.
+  - *Zielmodul (Ocean):* `open-ocean` / `ellmos-unified-gui` (Recipe & Topology Visualizer).
   - *Vorteil:* Erzeugt leichtgewichtige, interaktive SVG-Topologiediagramme ohne Abhängigkeit von schweren externen JS-Bibliotheken oder fehleranfälligen Mermaid-Renderern.
   - *Adapter:* `imported_capabilities/category_3_enriching_features/blueprint_graph/adapter_ocean_bach.py`.
 - **CAP-3.2 (Task #1518, P3, `features`): Haushaltsinventar & Mindestbestands-Tracker**
   - *Quelle:* FolderHome (`folderhome/services/inventory_store.py`)
-  - *Zielmodul / Repo:* `FolderHome` (Haushalts- & Vorrats-Modul).
+  - *Zielmodul (Ocean):* `open-ocean` / `daily_life` (`ellmos-daily-life-bundle`).
   - *Adapter:* `imported_capabilities/category_3_enriching_features/inventory_store/adapter_bach.py`.
 - **CAP-3.3 (Task #1519, P3, `features`): Medikationsplan & Einnahme-Logger**
   - *Quelle:* FolderHome (`folderhome/services/medication_store.py`)
-  - *Zielmodul / Repo:* `mediplaner` / `FolderHome` (Gesundheits- & Medikationsmodul).
+  - *Zielmodul (Ocean):* `open-ocean` / `health_assist` (`ellmos-health-assist-bundle`).
   - *Adapter:* `imported_capabilities/category_3_enriching_features/medication_store/adapter_bach.py`.
 - **CAP-3.4 (Task #1520, P2, `gui`, hängt von #1510 ab): Swarm Radar / GPS Dashboard**
   - *Quelle:* Roshambo & SentinelFleet
-  - *Zielmodul / Repo:* `unified-gui` / `roshambo-starmap` / `swarm-ai`.
-  - *Vorteil:* Hostübergreifende Live-Übersicht im Bach Dashboard über aktive Agenten, Leases und abgewendete Arbeitskollisionen (ASUS-GEI, WORKSTATION-LG, Mac Studio).
+  - *Zielmodul (Ocean):* `open-ocean` / `ellmos-unified-gui` & `coordination` (`ellmos-coordination-choice-bundle`).
+  - *Vorteil:* Hostübergreifende Live-Übersicht im Dashboard über aktive Agenten, Leases und abgewendete Arbeitskollisionen (ASUS-GEI, WORKSTATION-LG, Mac Studio).
   - *Adapter:* `imported_capabilities/category_3_enriching_features/swarm_radar/adapter_bach_gui.py`.
 
