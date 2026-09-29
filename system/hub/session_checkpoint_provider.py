@@ -84,3 +84,47 @@ def checkpoint_after_create(
         log.warning("session-checkpoint carrier create failed (fail-soft): %s", exc)
         return {"enabled": True, "error": str(exc)}
     return {"enabled": True, "checkpoint": checkpoint}
+
+
+def checkpoint_after_delete(
+    data_dir: Path,
+    *,
+    source_ref: str,
+    dry_run: bool = False,
+) -> dict:
+    """Delete additive carrier checkpoint(s) matching source_ref after legacy delete."""
+    if _rollback_forced():
+        return {
+            "enabled": False,
+            "reason": f"rollback forced by {ROLLBACK_ENV_VAR}",
+        }
+
+    store = get_checkpoint_store(data_dir)
+    if store is None:
+        try:
+            module_available = importlib.util.find_spec(_MODULE_NAME) is not None
+        except Exception:
+            module_available = False
+        if not module_available:
+            return {
+                "enabled": False,
+                "reason": f"{_MODULE_NAME} is not installed in this environment",
+            }
+        return {"enabled": True, "error": "checkpoint store unavailable"}
+
+    try:
+        from . import session_checkpoint_adapter
+
+        checkpoints = [
+            cp for cp in store.list(namespace=session_checkpoint_adapter.NAMESPACE, limit=100)
+            if cp.source_ref == source_ref
+        ]
+        deleted_checkpoints = []
+        for cp in checkpoints:
+            res = session_checkpoint_adapter.delete(store, cp.id, dry_run=dry_run)
+            deleted_checkpoints.append(res)
+        return {"enabled": True, "deleted": deleted_checkpoints}
+    except Exception as exc:
+        log.warning("session-checkpoint carrier delete failed (fail-soft): %s", exc)
+        return {"enabled": True, "error": str(exc)}
+
