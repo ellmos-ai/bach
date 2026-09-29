@@ -8,7 +8,9 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -16,8 +18,18 @@ import pytest
 SYSTEM_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SYSTEM_ROOT))
 
+import subprocess
+
+import core.sandbox as core_sandbox
 from core.sandbox import (  # noqa: E402
-    IS_POSIX, SandboxLimits, load_limits_from_db, run_isolated,
+    DEFAULT_DOCKER_IMAGE,
+    IS_POSIX,
+    SandboxResult,
+    SandboxLimits,
+    docker_available,
+    docker_run_isolated,
+    load_limits_from_db,
+    run_isolated,
 )
 from hub.sandbox import SandboxHandler  # noqa: E402
 
@@ -237,3 +249,221 @@ class TestHandlerStufe2:
         ok, msg = handler._shell(f'python3 -c "{code}"')
         assert ok is False
         assert "MEMORY-LIMIT" in msg
+
+
+DOCKER = pytest.mark.skipif(not docker_available(), reason="Docker/Image nicht verfuegbar")
+
+
+class _FakeDocker:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, cmd, limits=None, cwd=None, env=None, shell=False,
+                 input_text=None, image=DEFAULT_DOCKER_IMAGE):
+        self.calls.append({
+            "cmd": cmd, "limits": limits, "cwd": cwd, "env": env,
+            "shell": shell, "input_text": input_text, "image": image,
+        })
+        return SandboxResult(returncode=0, stdout="FAKE-DOCKER", stderr="",
+                             args=cmd, backend="docker")
+
+
+def test_sandbox_result_default_backend_local():
+    r = SandboxResult(returncode=0, stdout="", stderr="")
+    assert r.backend == "local"
+
+
+def test_run_isolated_docker_fallback_local(monkeypatch):
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: False)
+    r = run_isolated(["echo", "hi"], backend="docker")
+    assert r.backend == "local"
+    assert "hi" in r.stdout
+
+
+def test_run_isolated_auto_fallback_local(monkeypatch):
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: False)
+    r = run_isolated(["echo", "hi"], backend="auto")
+    assert r.backend == "local"
+    assert "hi" in r.stdout
+
+
+def test_run_isolated_docker_dispatch(monkeypatch):
+    fake = _FakeDocker()
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+    lim = SandboxLimits(timeout_sec=5)
+    r = run_isolated(["echo", "hi"], limits=lim, backend="docker")
+    assert r.stdout == "FAKE-DOCKER"
+    assert r.backend == "docker"
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["limits"] is lim
+
+
+def test_run_isolated_auto_dispatch(monkeypatch):
+    fake = _FakeDocker()
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+    r = run_isolated(["echo", "hi"], backend="auto")
+    assert r.backend == "docker"
+    assert r.stdout == "FAKE-DOCKER"
+
+
+def test_run_isolated_local_ignores_docker(monkeypatch):
+    fake = _FakeDocker()
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+    r = run_isolated(["echo", "hi"], backend="local")
+    assert fake.calls == []
+    assert "hi" in r.stdout
+    assert r.backend == "local"
+
+
+def test_run_isolated_default_backend_local(monkeypatch):
+    fake = _FakeDocker()
+    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+    r = run_isolated(["echo", "hi"])
+    assert r.backend == "local"
+    assert fake.calls == []
+
+
+def test_docker_available_false_without_cli(monkeypatch):
+    monkeypatch.setattr(core_sandbox.shutil, "which", lambda name: None)
+    assert docker_available(force=True) is False
+
+
+def test_docker_run_isolated_error_no_silent_fallback(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise OSError("boom")
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _boom)
+    r = docker_run_isolated(["echo", "hi"])
+    assert r.returncode == -1
+    assert "Docker-Fehler" in r.stderr
+    assert r.backend == "docker"
+
+
+def test_docker_run_isolated_timeout_cleanup_sequence(monkeypatch):
+    """Bei Timeout muss stop/kill/rm -f aufgerufen werden (nicht nur Popen.kill)."""
+
+    class _StubbornPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+            self._done = threading.Event()
+            self._killed = False
+
+        def poll(self):
+            return 137 if self._killed else None
+
+        def communicate(self, input=None):
+            assert self._done.wait(timeout=5)
+            self.returncode = 137
+            return ("", "")
+
+        def wait(self, timeout=None):
+            self._done.wait(timeout=timeout)
+
+        def kill_container(self):
+            self._killed = True
+            self._done.set()
+
+    popen = _StubbornPopen()
+    calls = []
+
+    def _fake_popen(*args, **kwargs):
+        return popen
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(list(cmd))
+        if cmd[:2] == ["docker", "kill"]:
+            popen.kill_container()
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
+
+    r = docker_run_isolated(["sleep", "60"], limits=SandboxLimits(timeout_sec=0.05))
+    assert r.timed_out is True
+    assert r.returncode == -1
+    assert r.backend == "docker"
+
+    # Cleanup-Sequenz muss enthalten sein (stop -> kill -> rm -f)
+    cmds = [c[:2] for c in calls]
+    assert ["docker", "stop"] in cmds
+    assert ["docker", "kill"] in cmds
+    assert ["docker", "rm"] in cmds or ["docker", "rm", "-f"] in [c[:3] for c in calls]
+
+
+def test_docker_run_isolated_oom_detection(monkeypatch):
+    """OOMKilled=true aus docker inspect muss memory_exceeded setzen."""
+
+    class _OOMExitPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = 1
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self, input=None):
+            return ("", "")
+
+        def wait(self, timeout=None):
+            pass
+
+    def _fake_run(cmd, *args, **kwargs):
+        if cmd[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="true\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _OOMExitPopen)
+    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
+
+    r = docker_run_isolated(["python3", "-c", "x=bytearray(300*1024*1024)"])
+    assert r.returncode == 1
+    assert r.memory_exceeded is True
+    assert r.backend == "docker"
+
+
+@DOCKER
+def test_docker_run_isolated_echo():
+    r = docker_run_isolated(["echo", "docker-ok"])
+    assert r.returncode == 0
+    assert "docker-ok" in r.stdout
+    assert r.backend == "docker"
+
+
+@DOCKER
+def test_docker_run_isolated_timeout_rollback():
+    unique_name = "bach-sbx-test-" + uuid.uuid4().hex[:12]
+    r = docker_run_isolated(["sleep", "60"], limits=SandboxLimits(timeout_sec=2),
+                            name=unique_name)
+    assert r.timed_out is True
+    ps = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"],
+                        capture_output=True, text=True, timeout=15)
+    assert unique_name not in ps.stdout
+
+
+@DOCKER
+def test_docker_run_isolated_memory_limit():
+    r = docker_run_isolated(["python3", "-c", "x = bytearray(300*1024*1024)"],
+                            limits=SandboxLimits(timeout_sec=30, memory_mb=32))
+    assert r.memory_exceeded is True
+
+
+@DOCKER
+def test_docker_run_isolated_read_only_rootfs():
+    r = docker_run_isolated(["sh", "-c", "echo x > /probe.txt"])
+    assert r.returncode != 0
+
+
+@DOCKER
+def test_docker_run_isolated_network_blocked():
+    code = chr(10).join([
+        "import socket",
+        "try:",
+        "    socket.create_connection(('127.0.0.1', 80), timeout=3)",
+        "    print('OPEN')",
+        "except Exception:",
+        "    print('BLOCKED')",
+    ])
+    r = docker_run_isolated(["python3", "-c", code])
+    assert "BLOCKED" in r.stdout

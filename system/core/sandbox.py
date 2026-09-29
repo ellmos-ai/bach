@@ -51,11 +51,13 @@ Version: 1.0.0
 """
 
 import os
+import shutil
 import signal
 import sqlite3
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Union
@@ -120,6 +122,7 @@ class SandboxResult:
     rlimits_applied: bool = False   # POSIX-rlimit im Kind gesetzt
     watchdog_active: bool = False   # Eltern-Watchdog lief
     args: Union[Sequence[str], str, None] = None
+    backend: str = "local"   # 'local' (Stufe 2) oder 'docker' (Stufe 3)
 
 
 def _child_preexec(limits: SandboxLimits):
@@ -289,7 +292,8 @@ def run_isolated(cmd: Union[Sequence[str], str],
                  cwd: Optional[Union[str, Path]] = None,
                  env: Optional[dict] = None,
                  shell: bool = False,
-                 input_text: Optional[str] = None) -> SandboxResult:
+                 input_text: Optional[str] = None,
+                 backend: str = "local") -> SandboxResult:
     """Fuehrt einen Befehl mit Resource-Bounds aus.
 
     Args:
@@ -303,6 +307,10 @@ def run_isolated(cmd: Union[Sequence[str], str],
     Returns:
         SandboxResult mit returncode/stdout/stderr/timed_out/memory_exceeded
     """
+    backend = (backend or "local").lower()
+    if backend in ("docker", "auto") and docker_available(DEFAULT_DOCKER_IMAGE):
+        return docker_run_isolated(cmd, limits=limits, cwd=cwd, env=env,
+                                  shell=shell, input_text=input_text)
     limits = limits or SandboxLimits()
     start = time.monotonic()
     preexec = _child_preexec(limits)
@@ -371,6 +379,7 @@ def run_isolated(cmd: Union[Sequence[str], str],
         rlimits_applied=(preexec is not None),
         watchdog_active=watchdog_active,
         args=cmd,
+        backend="local",
     )
 
 
@@ -404,3 +413,231 @@ def load_limits_from_db(db_path: Optional[Union[str, Path]],
     except Exception:
         pass
     return SandboxLimits(timeout_sec=timeout, memory_mb=memory)
+
+
+# --- Stufe 3: Docker-Container-Isolation (Task #1385) ---
+DEFAULT_DOCKER_IMAGE = "python:3.12-slim"
+
+_DOCKER_CACHE: dict = {}
+
+
+def docker_available(image: str = DEFAULT_DOCKER_IMAGE, force: bool = False) -> bool:
+    """True wenn Docker-Daemon laeuft UND Image lokal existiert (kein Auto-Pull)."""
+    if not force and image in _DOCKER_CACHE:
+        return _DOCKER_CACHE[image]
+    available = False
+    try:
+        if shutil.which("docker") is None:
+            return False
+        daemon = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True, timeout=10,
+        )
+        if daemon.returncode != 0:
+            return False
+        img = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True, timeout=10,
+        )
+        available = img.returncode == 0
+    except Exception:
+        available = False
+    _DOCKER_CACHE[image] = available
+    return available
+
+
+def _map_image_command(cmd: Union[Sequence[str], str]) -> list:
+    """Mappt Host-Befehl auf im Basis-Image verfuegbaren Befehl."""
+    if not cmd:
+        return list(cmd)
+    if os.path.basename(str(cmd[0])).startswith("python"):
+        return ["python3"] + list(cmd[1:])
+    return list(cmd)
+
+
+def docker_run_isolated(cmd: Union[Sequence[str], str],
+                        limits: Optional[SandboxLimits] = None,
+                        cwd: Optional[Union[str, Path]] = None,
+                        env: Optional[dict] = None,
+                        shell: bool = False,
+                        input_text: Optional[str] = None,
+                        image: str = DEFAULT_DOCKER_IMAGE,
+                        name: Optional[str] = None) -> SandboxResult:
+    """Stufe 3: Befehl in isoliertem Container (net=none, read-only, cap-drop ALL).
+
+    Der Container wird ohne ``--rm`` gestartet, damit nach Beenden die
+    OOM-Information aus ``docker inspect`` gelesen werden kann. In jedem
+    Fall (Erfolg, Timeout, Exception) wird der Container anschliessend mit
+    ``docker rm -f`` entfernt.
+
+    Timeout-Handling arbeitet mit ``subprocess.Popen`` plus einem
+    Watchdog-Thread. Bei Ueberschreitung des Limits wird zuerst
+    ``docker stop`` (mit Grace-Periode) und danach ``docker kill`` auf den
+    laufenden Container ausgefuehrt -- nicht nur der lokale
+    ``docker run``-Client-Prozess wird gekillt.
+    """
+    limits = limits or SandboxLimits()
+    name = name or "bach-sbx-" + uuid.uuid4().hex[:12]
+    argv = ["docker", "run", "--name", name, "--network", "none",
+            "--read-only", "--cap-drop", "ALL", "--security-opt",
+            "no-new-privileges", "--user", "1000:1000",
+            "--tmpfs", "/tmp:rw,size=64m"]
+    if limits.memory_mb:
+        argv += ["--memory", f"{limits.memory_mb}m",
+                 "--memory-swap", f"{limits.memory_mb}m"]
+    argv += ["--pids-limit", str(limits.max_processes or 256)]
+    argv += ["--ulimit", "core=0"]
+    if limits.max_file_mb:
+        argv += ["--ulimit", f"fsize={int(limits.max_file_mb) * 1024 * 1024}"]
+    if limits.cpu_sec:
+        argv += ["--ulimit", f"cpu={limits.cpu_sec}"]
+    if input_text is not None:
+        argv += ["-i"]
+    if cwd:
+        workdir = os.path.abspath(cwd)
+        argv += ["-w", workdir, "-v", f"{workdir}:{workdir}"]
+    if env:
+        for key in sorted(env):
+            if key.startswith(("PYTHON", "BACH", "LANG", "LC_")):
+                argv += ["-e", f"{key}={env[key]}"]
+    argv += ["-e", "PYTHONIOENCODING=utf-8", "-e", "PYTHONUNBUFFERED=1", image]
+    if shell:
+        argv += ["sh", "-c", cmd if isinstance(cmd, str) else " ".join(cmd)]
+    else:
+        argv += _map_image_command(list(cmd))
+
+    timed_out_event = threading.Event()
+    _cleanup_lock = threading.Lock()
+    _cleanup_done = threading.Event()
+    _cleanup_oom_result = [False]  # wird vom einmaligen Cleanup gesetzt
+
+    def _docker_cleanup(oom_check: bool = True) -> bool:
+        """Stoppe/entferne Container und gib OOMKilled-Status zurueck.
+
+        Thread-sicher und idempotent: docker stop/kill/rm -f wird nur
+        einmal ausgefuehrt; danach liefert jeder weitere Aufruf das
+        gespeicherte OOM-Ergebnis zurueck.
+        """
+        if _cleanup_done.is_set():
+            return _cleanup_oom_result[0]
+
+        with _cleanup_lock:
+            if _cleanup_done.is_set():
+                return _cleanup_oom_result[0]
+
+            try:
+                if proc.poll() is None:
+                    try:
+                        subprocess.run(
+                            ["docker", "stop", "-t", str(int(_TERM_GRACE_SEC)), name],
+                            capture_output=True,
+                            timeout=_TERM_GRACE_SEC + 5,
+                        )
+                    except Exception:
+                        pass
+                    if proc.poll() is None:
+                        try:
+                            subprocess.run(
+                                ["docker", "kill", name],
+                                capture_output=True, timeout=10,
+                            )
+                        except Exception:
+                            pass
+                    try:
+                        proc.wait(timeout=_TERM_GRACE_SEC + 5)
+                    except Exception:
+                        pass
+                if oom_check:
+                    try:
+                        inspect = subprocess.run(
+                            ["docker", "inspect", name, "--format",
+                             "{{.State.OOMKilled}}"],
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=5,
+                        )
+                        _cleanup_oom_result[0] = "true" in (inspect.stdout or "").lower()
+                    except Exception:
+                        _cleanup_oom_result[0] = False
+            finally:
+                try:
+                    subprocess.run(["docker", "rm", "-f", name],
+                                   capture_output=True, timeout=15)
+                except Exception:
+                    pass
+                _cleanup_oom_result[0] = _cleanup_oom_result[0] if oom_check else False
+                _cleanup_done.set()
+            return _cleanup_oom_result[0]
+
+    def _timeout_watcher() -> None:
+        try:
+            deadline = time.monotonic() + limits.timeout_sec
+            while proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(min(0.2, deadline - time.monotonic()))
+            if proc.poll() is None:
+                timed_out_event.set()
+                _docker_cleanup(oom_check=False)
+        except Exception:
+            pass
+
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception as exc:
+        return SandboxResult(
+            returncode=-1, stdout="",
+            stderr=f"Docker-Fehler: {exc}",
+            timed_out=False, memory_exceeded=False,
+            args=cmd, backend="docker",
+        )
+
+    watcher = threading.Thread(
+        target=_timeout_watcher, name=f"docker-timeout-{name}", daemon=True,
+    )
+    watcher.start()
+
+    start = time.monotonic()
+    try:
+        stdout, stderr = proc.communicate(input=input_text)
+    except Exception as exc:
+        _docker_cleanup(oom_check=False)
+        return SandboxResult(
+            returncode=-1, stdout="",
+            stderr=f"Docker-Fehler: {exc}",
+            timed_out=False, memory_exceeded=False,
+            args=cmd, backend="docker",
+        )
+    finally:
+        watcher.join(timeout=_TERM_GRACE_SEC + 3)
+
+    oom_killed = _docker_cleanup(oom_check=True)
+    duration = time.monotonic() - start
+    stderr = stderr or ""
+    stdout = stdout or ""
+    timed_out = timed_out_event.is_set()
+    returncode = proc.returncode if proc.returncode is not None else -1
+    if timed_out:
+        returncode = -1
+    memory_exceeded = (
+        oom_killed
+        or returncode == 137
+        or "MemoryError" in stderr
+        or "Killed" in stderr
+    )
+
+    return SandboxResult(
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+        timed_out=timed_out,
+        memory_exceeded=memory_exceeded,
+        duration_sec=round(duration, 3),
+        args=cmd,
+        backend="docker",
+    )
