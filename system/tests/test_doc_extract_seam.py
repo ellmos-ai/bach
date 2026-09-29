@@ -88,14 +88,14 @@ def _install_fake_module(monkeypatch, extrahieren):
 
 # --- engine resolution ---------------------------------------------------------------
 
-def test_default_is_the_legacy_path():
-    """Nothing changes for existing installations until equivalence is proven."""
-    assert DOC_ENGINE_DEFAULT == DOC_ENGINE_BUNDLED
-    assert resolve_doc_engine({}) == DOC_ENGINE_BUNDLED
+def test_default_is_the_canonical_path():
+    """Canonical is the default per D-20260913-001 (Task #1185)."""
+    assert DOC_ENGINE_DEFAULT == DOC_ENGINE_CANONICAL
+    assert resolve_doc_engine({}) == DOC_ENGINE_CANONICAL
 
 
 def test_empty_value_falls_back_to_the_default():
-    assert resolve_doc_engine({DOC_ENGINE_ENV: "   "}) == DOC_ENGINE_BUNDLED
+    assert resolve_doc_engine({DOC_ENGINE_ENV: "   "}) == DOC_ENGINE_CANONICAL
 
 
 def test_canonical_is_selectable_case_insensitively():
@@ -109,10 +109,10 @@ def test_unknown_value_fails_closed():
     assert "canonicle" in str(excinfo.value)
 
 
-# --- the legacy path still works -----------------------------------------------------
+# --- default canonical path and explicit legacy path ----------------------------------
 
-def test_legacy_path_reads_the_pdf(pdf):
-    """The recorded baseline: pypdf returns this text for this file."""
+def test_canonical_path_reads_the_pdf_by_default(pdf):
+    """The canonical path reads this text by default."""
     assert PDFProcessor.extract_text(str(pdf)).strip() == "Probe Dokument Text"
 
 

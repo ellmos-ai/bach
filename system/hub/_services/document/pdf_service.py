@@ -56,14 +56,13 @@ from hub.canonical_seam import CanonicalSeam, require_canonical
 # genau wie die Regel in ~/CLAUDE.md es sagt. Deshalb ruft `_extract_text_canonical`
 # ausdruecklich mit produces="text".
 #
-# WARUM DER DEFAULT TROTZDEM `bundled` BLEIBT -- und das ist keine Vorsicht mehr,
-# sondern ein anderer Grund als vor der Messung: `doc-services` traegt eine
-# PRIVATE.txt mit GATE: closed und darf nicht als Paket veroeffentlicht werden. BACH
-# kann es daher nicht als Abhaengigkeit deklarieren. Waere `canonical` der Default,
-# schluege die PDF-Extraktion auf jeder Installation ohne den privaten Klon
-# fail-closed fehl -- richtig laut, aber kaputt. Die Umschaltung haengt also an einer
-# Vertriebsentscheidung (Veroeffentlichung oder anderer Bezugsweg), nicht mehr an der
-# Extraktionsqualitaet. Siehe Ticket T-20260818-903104603, Einheit 5b.
+# UMSCHALTUNG AUF `canonical` ALS DEFAULT (D-20260913-001, Task #1185):
+# Die Extraktionsphase ist beendet. Per Nutzerentscheidung D-20260913-001
+# (Option A) ist `doc-services` in requirements.txt ueber einen gepinnten VCS-
+# Pfad fest deklariert und installiert. Die funktionale Aequivalenz an echten
+# LaTeX- und Plain-PDFs ist nachgewiesen (Einheit 5b). Damit wird `canonical`
+# der Default-Weg. `bundled` bleibt als expliziter Fallback ueber
+# BACH_DOC_EXTRACT_ENGINE=bundled verfuegbar.
 #
 # Vertrag (ellmos-homebase-mcp/MODE-CONTRACT.md):
 #     canonical + Ziel nicht erreichbar  =>  klarer Fehler.
@@ -72,7 +71,7 @@ DOC_ENGINE_ENV = "BACH_DOC_EXTRACT_ENGINE"
 DOC_ENGINE_BUNDLED = "bundled"
 DOC_ENGINE_CANONICAL = "canonical"
 DOC_ENGINES = (DOC_ENGINE_BUNDLED, DOC_ENGINE_CANONICAL)
-DOC_ENGINE_DEFAULT = DOC_ENGINE_BUNDLED
+DOC_ENGINE_DEFAULT = DOC_ENGINE_CANONICAL
 
 
 class DocEngineConfigError(RuntimeError):
