@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-24 | **Version:** 4.3.65 | **Review:** 2026-09-24 (Daily Care & Dev Check)
+**Stand:** 2026-09-29 | **Version:** 4.3.66 | **Review:** 2026-09-29 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -18,6 +18,38 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-09-29 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20260929_162252` für Partner `gemini` im Silent-Modus erfolgreich initialisiert.
+  - Vorherige Session ordnungsgemäß mit Auto-Snapshot abgeschlossen; Directory-Scan und Continuation-Context intakt.
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch auf den neuesten Stand von `origin/main` per Fast-Forward aktualisiert (74 Commits nachgezogen, u. a. PR #169 Importierte Fähigkeiten aus Kategorien 1-3, Trithon Phasen 2-5 Routing/Fencing, Device-Auth-Strategie, Task-Model-Binding, Safe-Exec-Härtung).
+  - Arbeitsverzeichnis sauber bis auf dokumentarische Pfad-Konsolidierungen in `system/docs/help/health.txt` und `health_en.txt` (`~/.bach/bach.db` kanonisch verankert).
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+- **Task-Audit & Konsistenzprüfung:**
+  - 8 Aufgaben im Task-Backlog verifiziert: #1061 (Installer E2E), #1062 (GUI Regression), #1341 (assistant-core Checkout-Pin), #1343 (i18n Release Drift), #1346 (Recurring-Task-Erzeugung / ID-Kollisionen Reconcilierung), #1044 (Mail-Service), #1118 (Supervisor/Runner), #1340 (TRANSFER-09 Haltefrist bis 2026-10-12).
+  - Keine unberechtigten Statusverschiebungen; Fail-Closed gewahrt.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py --maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Memory-Hygiene: Working Memory analysiert (171 Einträge; 0 abgelaufene `is_active`-Bereinigungen nötig).
+- **OpenClaw Competitive Watch (Stand v2026.9.6):**
+  - Abgleich mit neuester OpenClaw Version `v2026.9.6` (Stand 2026-09-29):
+    - *Managed-Update Outcomes & Recovery:* Verbesserungen der Update-Zuverlässigkeit und Recovery nicht abgeschlossener Aufgaben über Restarts hinweg.
+    - *Security Guardrails:* Verstärkte System-Prompt-Leitplanken und strikte Befehlsautorisierung gegen unbefugte Shell-Ausführungen.
+    - *Background Task Orchestration:* Steuerung von Hintergrund-Tasks direkt über Command-Palette und verbesserte Telemetrie/30-Tage-Reportings.
+  - *Relevanz für BACH:* Bestätigt vollumfänglich BACHs Architekturfokus: atomare Release- & Update-Reparatur (`distribution_releases` v3.14.0), Session-Continuation Context & Snapshots, `safe_exec.py` ohne Shell & Allowlist-Validierung (#137) sowie Task #1118 (OPS-RUN-001 aktive Laufsteuerung).
 
 ## Review 2026-09-24 (Daily Care & Dev Check)
 

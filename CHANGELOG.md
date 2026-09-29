@@ -31,6 +31,13 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Daily Care & Dev Check (2026-09-29):**
+  - **Main Branch Fast-Forward:** Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (74 neue Commits integriert, inkl. PR #169 Importierte Fähigkeiten aus Kategorien 1-3, Trithon Phasen 2-5 Routing/Fencing, Device-Auth-Strategie, Task-Model-Binding, Safe-Exec-Härtung).
+  - **Session Lifecycle & Partner-Init:** Frische Session `session_20260929_162252` für Partner Gemini gestartet; vorherige Session ordnungsgemäß mit Auto-Snapshot abgeschlossen; Directory-Scan und Continuation-Context intakt.
+  - **OpenClaw-Abgleich (Stand v2026.9.6):** Neueste Version `v2026.9.6` (September 2026) analysiert (Managed Updates & Recovery unvollendeter Aufgaben nach Neustarts, verschärfte Befehlsguardrails gegen Shell-Injections und 30-Tage-Usage-Reporting). Relevanz für BACHs Release-Pinning (`distribution_releases` v3.14.0), Session-Continuation Context & Task #1118 (OPS-RUN-001) sowie `safe_exec.py` ohne Shell & Allowlist-Validierung (#137) bestätigt.
+  - **Dokumentations-Pflege & Host-Neutralität:** `system/docs/help/health.txt` und `health_en.txt` auf kanonische, hostneutrale Pfade (`~/.bach/bach.db`, `system/hub/health.py`) und Version 1.1.0 gehoben.
+  - **Doctors, Governance & Health:** Agent Doctor für `ati` und `entwickler` jeweils 7/7 bestanden (`ready: true`, `can_start: true`); Scheduler Doctor 7/7 bestanden (`ready: true`, 4/5 Jobs aktiv); Maintainer Registry Check 0 Actionable Issues (`healthy: true`); 50/50 Usecases via Dry-Run fehlerfrei durchlaufen (100% verknüpft mit Workflow-Dateien); Skills Health GESUND (30/30 Skills, 10/10 Agenten); 171 Working Memory Einträge auditiert (0 expired).
+
 - **Daily Care & Dev Check (2026-09-24):**
   - **Session Lifecycle & Stale Session Rollover:** Verwaiste 192h-Session `session_20260916_161820` sauber via `bach.py session end` beendet (Auto-Snapshot `auto_20260924_162147` erstellt), frische Session `session_20260924_162242` (Partner: Gemini) initialisiert.
   - **OpenClaw-Abgleich (Stand v2026.9.6):** Aktuelle Version `v2026.9.6` (September 2026) analysiert (Managed-Update Outcomes, Work Recovery after Restarts und aggregiertes Usage Reporting). Relevanz für BACHs Release-Pinning (`distribution_releases` v3.14.0), Session-Continuation Context & Task #1118 (OPS-RUN-001) sowie lokales Low-Cardinality Telemetrie-Design (OPS-TELEM-001 / Task #1315) bestätigt.

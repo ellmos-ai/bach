@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.0
-# Zuletzt validiert: 2026-03-04
+# Version: 1.1.0
+# Zuletzt validiert: 2026-09-28
 
 HANDLER-NAME
 ============
@@ -51,13 +51,13 @@ bach health disk
 DATEIEN
 =======
 
-hub/health.py           Health-Handler-Implementierung
-data/bach.db            Loggings in memory_working-Tabelle
+system/hub/health.py    Health-Handler-Implementierung
+~/.bach/bach.db         Kanonische Runtime-DB; Loggings in memory_working
                         (Checks werden mit Timestamp protokolliert)
 
 
 SIEHE AUCH
 ==========
 
-hub/base.py             BaseHandler (Klassen-Grundlage)
-docs/help/              Andere Handler-Dokumentation
+system/hub/base.py      BaseHandler (Klassen-Grundlage)
+system/docs/help/       Andere Handler-Dokumentation
