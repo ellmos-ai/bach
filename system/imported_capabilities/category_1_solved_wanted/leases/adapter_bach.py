@@ -67,6 +67,23 @@ def _functions(conn):
     conn.create_function("bach_t797_uuid4", 1, _uuid4, deterministic=True)
 
 
+def _commit_owned(conn):
+    conn.commit()
+    # In Python 3.12 autocommit=True the method deliberately does nothing,
+    # even for our explicit BEGIN. Keep method-level failure semantics, then
+    # close only the transaction that this adapter explicitly opened.
+    if conn.in_transaction:
+        conn.execute("COMMIT")
+
+
+def _rollback_owned(conn):
+    try:
+        conn.rollback()
+    finally:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+
+
 def _owned_update(conn, statement, parameters, *, returning=False):
     """Rollback even RAISE(FAIL), which can retain the already updated row."""
     try:
@@ -75,10 +92,10 @@ def _owned_update(conn, statement, parameters, *, returning=False):
         conn.execute("BEGIN IMMEDIATE")
         cursor = conn.execute(statement, parameters)
         result = cursor.fetchone() if returning else cursor.rowcount > 0
-        conn.commit()
+        _commit_owned(conn)
         return result
     except BaseException:
-        conn.rollback()
+        _rollback_owned(conn)
         raise
 
 
@@ -107,9 +124,9 @@ def ensure_task_lease_schema(conn: sqlite3.Connection) -> None:
         for column in ("claim_id", "claimed_by", "claim_expires_at", "claim_heartbeat_at", "claim_host"):
             if column not in columns:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
-        conn.commit()
+        _commit_owned(conn)
     except BaseException:
-        conn.rollback()
+        _rollback_owned(conn)
         raise
 
 

@@ -42,3 +42,23 @@ Die Änderungen betreffen nur den experimentellen SQLite-Adapter, seine
 Gegenfalltests und dieses Receipt. Kein Runtimecaller, keine DB-Migration,
 kein Journalfix, keine Workflowänderung und keine Veröffentlichung.
 Unabhängige erneute Abnahme steht aus; das Vollticket bleibt offen.
+
+## Nachtrag: echte Python-3.12-Transaktionsmodi
+
+Der unabhängige Nachreview belegte einen weiteren Fehler: `autocommit=True`
+macht die Methoden `commit()`/`rollback()` trotz explizitem BEGIN wirkungslos.
+Dies unterscheidet sich von `isolation_level=None`. Zehn unveränderte Reviewer-
+Assertions wurden übernommen (nur Import angepasst); Testcheckpoint `d69e5cd8`
+ergab **7 fehlgeschlagen, 3 bestanden**.
+
+Der Abschluss eigener BEGIN-Transaktionen verwendet nun zunächst die vorhandene
+Connection-Methode (einschließlich ihrer Commitfehler), anschließend nötigenfalls
+explizites SQL `COMMIT`/`ROLLBACK`. Es wird niemals eine schon beim API-Eintritt
+bestehende Callertransaktion übernommen. Der echte `autocommit=False`-Modus
+besitzt stets eine Callertransaktion und wird vor eigener SQL-Mutation verweigert;
+vier zusätzliche Savepointfälle belegen unveränderten Inhalt und gültige Savepoints.
+
+Enger Gesamtlauf: **138 bestanden, null Skips**, 16.02 Sekunden. Darunter echte
+Python-3.12-`autocommit=True`-Erfolge/FAIL-Trigger, Legacy-Modus, `isolation_level=None`,
+`autocommit=False`-Erhaltung und die drei ursprünglichen Commitfailure-Kontrollen.
+Der Journalcode bleibt bytegleich `861a3ca5` und weiterhin ohne Nachabnahme.

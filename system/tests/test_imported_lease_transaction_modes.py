@@ -1,11 +1,10 @@
-import importlib.util
-import pathlib
 import socket
 import sqlite3
-import sys
 import uuid
+
 import pytest
 from imported_capabilities.category_1_solved_wanted.leases import adapter_bach as m
+
 
 @pytest.fixture(autouse=True)
 def no_net(monkeypatch):
@@ -80,3 +79,23 @@ def test_commit_failure_restores_owned_transaction(fixture_db, op):
         with pytest.raises(sqlite3.OperationalError, match='commit injected'): invoke(c, op, token)
         assert (c.in_transaction, c.execute('SELECT * FROM tasks').fetchall()) == (False, before)
     finally: c.rollback(); c.close()
+
+
+@pytest.mark.parametrize('op', ['schema', 'claim', 'renew', 'release'])
+def test_autocommit_false_is_caller_transaction_preserved(fixture_db, op):
+    c = sqlite3.connect(fixture_db, autocommit=False)
+    try:
+        token = str(uuid.uuid4())
+        c.execute('SAVEPOINT caller')
+        c.execute("UPDATE tasks SET claim_host='caller' WHERE id=1")
+        before = c.execute('SELECT * FROM tasks').fetchall()
+        with pytest.raises(ValueError, match='transaction'):
+            invoke(c, op, token)
+        assert c.in_transaction
+        assert c.execute('SELECT * FROM tasks').fetchall() == before
+        c.execute('ROLLBACK TO caller')
+        c.execute('RELEASE caller')
+        assert c.execute('SELECT claim_host FROM tasks').fetchone()[0] is None
+    finally:
+        c.rollback()
+        c.close()
