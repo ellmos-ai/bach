@@ -12,6 +12,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Handler-basierte Recurring-Task-Erzeugung (Task #1346, Code-Slice):** Der System-Service schreibt BACH- und ATI-Tasks nicht mehr selbst per `INSERT`, sondern delegiert an `TaskHandler` beziehungsweise `ATIHandler`. Damit nutzt der BACH-Pfad auf Rheingold-Workern den Lead oder erzeugt bei dessen Ausfall einen kollisionsfreien negativen Draft. Ein typisiertes Ergebnis ersetzt den mehrdeutigen `-1`-Sentinel, sodass ein erfolgreicher Draft mit ID `-1` nicht mehr als Duplikat missverstanden wird. Die kontrollierte Neuvergabe bereits kollidierter historischer IDs und der Live-Cross-Host-Nachweis bleiben getrennte Folge-Gates.
 - **Task-Sicherheit bei Legacy-Abhängigkeiten und Rheingold-ID-Kollisionen (Task #1344):** Ein gemeinsamer Parser behandelt nichtnumerische oder fehlende `depends_on`-Ziele nun auf API-, CLI-, Session- und Chat-Runner-Pfaden fail-closed, statt Tasklisten abstürzen zu lassen oder Arbeit fälschlich freizugeben. Rheingold-Add, Draft-Promotion und Pull überschreiben bei kollidierenden positiven IDs keine lokalen Tasks mehr; sie brechen mit einem expliziten Kollisionsbefund ab und erhalten Draft-/Lokaldaten zur kontrollierten Reconciliation.
 - **Einheitliche FERTIG-Erkennung:** `ist_fertig()` in `chat_runtime` prüft Anfang und Ende der Antwort; der `/auto`-Loop (`_auto_next`) und der Idle-Worker nutzen dieselbe Regel. Vorher las `_auto_next` nur die ersten 200 Zeichen und schob nach einem Abschlussbericht mit FERTIG am Ende weiter an.
 

@@ -222,6 +222,30 @@ class TestTask:
         assert row[0] == "my-tool"
         assert row[1] == "hoch"
 
+    def test_task_add_with_recurring_metadata(self, ati_env):
+        h, db = ati_env
+        ok, msg = h.handle(
+            "task",
+            [
+                "add",
+                "Recurring check",
+                "--priority-score",
+                "85",
+                "--source",
+                "recurring",
+                "--tags",
+                "recurring,demo",
+            ],
+        )
+        assert ok is True
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute(
+            "SELECT priority_score, source_file, tags FROM ati_tasks WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        assert row == (85.0, "recurring", "recurring,demo")
+
     def test_task_add_no_title(self, ati_env):
         h, _ = ati_env
         ok, msg = h.handle("task", ["add"])
