@@ -121,7 +121,7 @@ tr:hover td{background:#24334d}
 </div>
 
 <div class="grid-3">
-  <!-- Slot 1: Buddha Chat -->
+  <!-- Slot 1: Chat -->
   <div class="card" id="card-buddha_chat">
     <div class="card-header">
       <div>
@@ -206,7 +206,7 @@ tr:hover td{background:#24334d}
     </div>
   </div>
 
-  <!-- Slot 2: Buddha Always-On -->
+  <!-- Slot 2: Always-On -->
   <div class="card" id="card-buddha_always_on">
     <div class="card-header">
       <div>
@@ -308,7 +308,7 @@ tr:hover td{background:#24334d}
     </div>
   </div>
 
-  <!-- Slot 3: Buddha Connector -->
+  <!-- Slot 3: Connector -->
   <div class="card" id="card-buddha_connector">
     <div class="card-header">
       <div>
@@ -425,7 +425,7 @@ tr:hover td{background:#24334d}
     <button class="btn btn-secondary btn-sm" onclick="loadPromptTemplates()">↺ Neu laden</button>
   </div>
   <p style="color:#94a3b8;font-size:0.88rem;margin-bottom:16px">
-    Hier können der allgemeine Buddha-Systemprompt sowie alle Rollenprompts eingesehen und angepasst werden.
+    Hier können der allgemeine Systemprompt sowie alle Rollenprompts eingesehen und angepasst werden.
     Der unveränderliche Werkstandard bleibt im System gesichert und kann jederzeit für jeden Prompt wiederhergestellt werden.
   </p>
 
@@ -435,7 +435,7 @@ tr:hover td{background:#24334d}
       <div class="card-header">
         <div>
           <div class="card-title"><span>🛡️</span> System-Default-Prompt</div>
-          <div class="card-desc">Basis-Instruktion für Buddha (Werkzeuge, Regeln, Deutsch-Gebot)</div>
+          <div class="card-desc">Basis-Instruktion für den Chat (Werkzeuge, Regeln, Deutsch-Gebot)</div>
         </div>
         <span class="badge badge-ready" id="badge-prompt-sys">Werkstandard</span>
       </div>
@@ -556,7 +556,7 @@ tr:hover td{background:#24334d}
         <input type="checkbox" id="nw-include-system-prompt" checked> System-Default-Prompt einbinden (Standard aktiv)
       </label>
       <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
-        Vererbt automatische BACH-Grundregeln, Werkzeuge, Pfade und das Deutsch-Gebot.
+        Vererbt die vom Backend vorgegebenen Grundregeln, Werkzeuge, Pfade und das Deutsch-Gebot.
       </div>
     </div>
 
@@ -686,15 +686,56 @@ tr:hover td{background:#24334d}
 </datalist>
 
 <div id="toast"></div>
+<p id="control-access" role="status" aria-live="polite">Nur lesen · Schreibzugriff noch nicht geprüft</p>
+<button id="btn-authorize-control" class="btn btn-sm btn-outline" onclick="authorizeControl()">Schreibzugriff prüfen</button>
 
 <script>
-const _rawApiBase = '{{ api_base }}'.trim();
+const SHELL_CONFIG = {{ shell_config_json }};
+const _rawApiBase = SHELL_CONFIG.apiBase.trim();
 const API = _rawApiBase
   ? (_rawApiBase.endsWith('/api') ? _rawApiBase : _rawApiBase.replace(/\/+$/, '') + '/api')
   : (location.origin + '/api');
-const TOKEN_STORAGE_KEY = '{{ token_storage_key }}';
-const ALWAYS_ON_TITLE = '{{ slot_always_on_title }}';
+const TOKEN_STORAGE_KEY = SHELL_CONFIG.tokenStorageKey;
+const ALWAYS_ON_TITLE = SHELL_CONFIG.alwaysOnTitle;
+let writeAuthorized = false;
 let _isEditing = false;
+
+function setWriteAccess(allowed, note) {
+  writeAuthorized = allowed === true && !SHELL_CONFIG.readOnly;
+  const status = document.getElementById('control-access');
+  if (status) status.textContent = note || (writeAuthorized ? 'Schreibzugriff bestätigt' : 'Nur lesen');
+  const authorize = document.getElementById('btn-authorize-control');
+  if (authorize) authorize.hidden = SHELL_CONFIG.readOnly;
+  for (const button of document.querySelectorAll('button[onclick]')) {
+    if (/^(toggleFackel|saveCoreSlot|toggleAlwaysOn|openNewWorkerModal|createWorker|savePrompt|resetPrompt|resetCurrentRolePrompt|saveCurrentRolePrompt|runWorker|stopWorker|toggleWorker|deleteWorker)\(/.test(button.getAttribute('onclick') || '')) {
+      button.disabled = !writeAuthorized;
+    }
+  }
+}
+
+async function checkControlAuth(token) {
+  if (SHELL_CONFIG.readOnly || !token) {
+    setWriteAccess(false, 'Nur lesen · kein freigegebener Schreibzugriff');
+    return false;
+  }
+  try {
+    const res = await fetch(API + '/auth/check', {
+      method: 'GET', headers: {Authorization: 'Bearer ' + token},
+      redirect: 'error', credentials: 'same-origin'
+    });
+    const receipt = await res.json();
+    const allowed = res.ok && receipt.service === 'bach-chat-control' && receipt.authenticated === true;
+    setWriteAccess(allowed, allowed ? 'Schreibzugriff bestätigt' : 'Nur lesen · Authentifizierung abgelehnt');
+    return allowed;
+  } catch (_) {
+    setWriteAccess(false, 'Backend nicht erreichbar · nur lesen');
+    return false;
+  }
+}
+
+async function authorizeControl() {
+  return checkControlAuth(controlTokenForWrite());
+}
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -713,18 +754,26 @@ function controlTokenForWrite() {
 
 async function api(method, path, body = null) {
   try {
-    const opts = { method, headers: {} };
+    const opts = { method, headers: {}, redirect: 'error', credentials: 'same-origin' };
     if (method !== 'GET' && method !== 'HEAD') {
-      const token = controlTokenForWrite();
-      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+      if (!writeAuthorized || SHELL_CONFIG.readOnly) return {error: 'Nur lesen · Schreibzugriff zuerst prüfen'};
+      const token = (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();
+      if (!await checkControlAuth(token)) return {error: 'Schreibzugriff abgelehnt'};
+      opts.headers['Authorization'] = 'Bearer ' + token;
     }
     if (body) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
     const res = await fetch(API + path, opts);
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok || !data || typeof data !== 'object' || Array.isArray(data) || data.error || data.ok === false) {
+      if (res.status === 401 || res.status === 403) setWriteAccess(false, 'Nur lesen · Authentifizierung abgelehnt');
+      return {error: (data && data.error) || 'Backendantwort ungültig (HTTP ' + res.status + ')'};
+    }
+    return data;
   } catch (err) {
+    setWriteAccess(false, 'Backend nicht erreichbar · nur lesen');
     return { error: String(err) };
   }
 }
@@ -823,7 +872,9 @@ function renderWorkers(workers) {
 
   let html = '';
   for (const w of workers) {
-    const st = w.status || 'idle';
+    // IDs enter inline handlers: reject values outside the backend identifier contract.
+    if (typeof w.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(w.id)) continue;
+    const st = typeof w.status === 'string' && /^[a-z_]+$/.test(w.status) ? w.status : 'idle';
     let badgeClass = 'badge-idle';
     if (st === 'running') badgeClass = 'badge-running';
     else if (st === 'paused') badgeClass = 'badge-paused';
@@ -831,12 +882,12 @@ function renderWorkers(workers) {
     else if (st === 'expired' || st === 'completed') badgeClass = 'badge-expired';
 
     const expires = w.expires_at ? new Date(w.expires_at).toLocaleString() : 'Kein Ablauf';
-    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${w.task_id}</span>` : `<span style="color:#94a3b8">${escapeHtml(w.category || 'General')}</span>`;
+    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${escapeHtml(w.task_id)}</span>` : `<span style="color:#94a3b8">${escapeHtml(w.category || 'General')}</span>`;
     
     // Sub-mode formatting
     let subModeLabel = '3.2 Taskworker';
     if (w.sub_mode === 'hintergrund_worker') subModeLabel = '3.1 Hintergrundworker';
-    else if (w.sub_mode === 'boss_routing') subModeLabel = `3.3 Bossrouting (${w.max_experts || 3} Exp.)`;
+    else if (w.sub_mode === 'boss_routing') subModeLabel = `3.3 Bossrouting (${escapeHtml(w.max_experts || 3)} Exp.)`;
     else if (w.sub_mode === 'expert_role') subModeLabel = w.multi_role ? '3.4 Multi-Role Pool' : `3.4 Experte: ${escapeHtml(w.role_id || w.role)}`;
 
     const sysPromptBadge = w.include_system_prompt !== false 
@@ -860,7 +911,7 @@ function renderWorkers(workers) {
         <div class="worker-meta">
           <div><strong>Modus:</strong> <span style="color:#38bdf8">${subModeLabel}</span> · ${taskBadge} · ${sysPromptBadge}</div>
           <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
-          <div><strong>Turns:</strong> ${turnsLabel} · <strong>Modus:</strong> ${w.mode || 'full'} · <strong>Tools:</strong> ${toolsLabel}</div>
+          <div><strong>Turns:</strong> ${escapeHtml(turnsLabel)} · <strong>Modus:</strong> ${escapeHtml(w.mode || 'full')} · <strong>Tools:</strong> ${toolsLabel}</div>
           <div><strong>Ablauf:</strong> ${expires}</div>
         </div>
         <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
@@ -874,6 +925,7 @@ function renderWorkers(workers) {
     `;
   }
   container.innerHTML = html;
+  setWriteAccess(writeAuthorized);
 }
 
 async function refreshActivity() {
@@ -1178,7 +1230,7 @@ async function openHistoryModal(chatId) {
     html += `
       <div style="padding:10px 14px;border-radius:8px;${bubbleStyle}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span class="badge ${roleBadge}">${roleLabel}</span>
+          <span class="badge ${roleBadge}">${escapeHtml(roleLabel)}</span>
         </div>
         <div style="white-space:pre-wrap;word-break:break-word;font-size:0.86rem;color:#e2e8f0">${escapeHtml(content)}</div>
     `;
@@ -1335,6 +1387,7 @@ document.addEventListener('focusin', (e) => {
 });
 document.addEventListener('focusout', () => { _isEditing = false; });
 
+setWriteAccess(false, 'Nur lesen · Schreibzugriff noch nicht geprüft');
 refreshAll();
 loadModelsIntoPresets();
 setInterval(refreshAll, 3000);

@@ -110,7 +110,7 @@ def test_custom_nav_links():
     content = render_activity_dashboard(branding={"nav_links": links})
 
     assert '<a href="/hub" class="btn btn-outline btn-sm">Zurück zum Hub</a>' in content
-    assert '<a href="https://docs.example.com" target="_blank" class="btn btn-outline btn-sm">Dokumentation</a>' in content
+    assert '<a href="https://docs.example.com" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">Dokumentation</a>' in content
     # Standard-Links sollten nicht mehr im Header enthalten sein
     assert '<a href="/" class="btn btn-outline btn-sm">Chat-Control</a>' not in content
 
@@ -133,7 +133,7 @@ def test_custom_theme_colors():
 def test_custom_token_storage_key():
     """LocalStorage-Schlüssel für Control-Token muss konfigurierbar sein."""
     content = render_activity_dashboard(branding={"token_storage_key": "ellmos-admin-token"})
-    assert "const TOKEN_STORAGE_KEY = 'ellmos-admin-token';" in content
+    assert '"tokenStorageKey": "ellmos-admin-token"' in content
 
 
 class _ScriptExtractor(HTMLParser):
