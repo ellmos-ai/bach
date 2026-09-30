@@ -161,3 +161,71 @@ def test_external_chat_preserves_flags_rules_and_counts_only_shown(tmp_path, mon
     assert rows[2][1:3] == (1, 'blocked')
     assert rows[3][1:3] == (0, 'approved')
     assert rows[1][0] == original[1].hint
+
+
+MIXED_UNKNOWN = [
+    'Gemischt: bach steuer status | python3 absent.py',
+    'Gemischt: bach steuer status | python "absent.py"',
+    'Gemischt: bach steuer status | --unknown-danger',
+]
+
+
+@pytest.mark.parametrize('hint', MIXED_UNKNOWN)
+def test_mixed_unknown_helper_preserves_complete_original(hint):
+    assert neutral_manual_hint(hint, SYSTEM) == hint
+    assert CLI_PATTERN.search(hint)
+
+
+@pytest.mark.parametrize('hint', MIXED_UNKNOWN)
+def test_mixed_unknown_legacy_filtered_before_usage_selection_and_cooldown(tmp_path, monkeypatch, hint):
+    ci = injectors.ContextInjector
+    system = injectors.InjectorSystem(tmp_path)
+    monkeypatch.setattr(ci, 'base_path', tmp_path)
+    monkeypatch.setattr(ci, '_last_load', datetime.now())  # noqa: DTZ005 -- Zeitvertrag des Altpfads
+    cache = {'steuer': {'id': 1, 'source': 'manual', 'hint': hint}}
+    monkeypatch.setattr(ci, '_cache', cache)
+    used = []
+    monkeypatch.setattr(ci, '_mark_usage', classmethod(lambda cls, rid: used.append(rid)))
+    monkeypatch.setattr(injectors.ToolInjector, 'check_before_create', lambda text: None)
+    monkeypatch.setattr(system.config, 'is_enabled', lambda name: name == 'context_injector')
+    assert system.process('steuer', cli_hints=False) == []
+    assert used == []
+    assert not system.cooldown.is_on_cooldown('context')
+    valid = ci.CONTEXT_TRIGGERS['steuer']
+    cache['steuer|beleg'] = {'id': 2, 'source': 'manual', 'hint': valid}
+    assert system.process('steuer', cli_hints=False) == ['[KONTEXT] ' + neutral_manual_hint(valid, SYSTEM)]
+    assert used == [2]
+    assert system.cooldown.is_on_cooldown('context')
+    assert ci.check('steuer', cli_hints=True) == '[KONTEXT] ' + hint
+    assert cache['steuer']['hint'] == hint
+    assert used == [2, 1]
+
+
+@pytest.mark.parametrize('hint', MIXED_UNKNOWN)
+def test_mixed_unknown_external_filtered_before_usage_selection_and_cooldown(tmp_path, monkeypatch, hint):
+    from hub import memory_hook_provider as mhp
+    db = tmp_path / 'mixed.db'
+    _database(db)
+    conn = sqlite3.connect(db)
+    conn.execute('UPDATE context_triggers SET hint_text=? WHERE id=1', (hint,))
+    conn.execute("UPDATE context_triggers SET trigger_phrase='beleg' WHERE id=2")
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, '1')
+    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+    monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
+    hook = mhp.ExternalMemoryHook(db_path=db, config_path=tmp_path / 'missing.toml')
+    assert hook._groups_supported
+    hook._config = replace(hook._config, triggers=replace(
+        hook._config.triggers, sources=['context'], cooldowns={'context': 60}))
+    assert '[KONTEXT]' not in (hook.hook_context('steuer', 'chat', cli_hints=False) or '')
+    valid = injectors.ContextInjector.CONTEXT_TRIGGERS['steuer']
+    assert '[KONTEXT] ' + neutral_manual_hint(valid, SYSTEM) in hook.hook_context('steuer beleg', 'chat', cli_hints=False)
+    assert hint in hook.hook_context('steuer', 'cli', cli_hints=True)
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute('SELECT hint_text,usage_count FROM context_triggers ORDER BY id').fetchall()
+    finally:
+        conn.close()
+    assert rows[0] == (hint, 1)  # Only the explicit CLI view counts this unchanged rule.
+    assert rows[1] == (valid, 1)
