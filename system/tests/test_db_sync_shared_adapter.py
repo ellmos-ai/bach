@@ -21,6 +21,24 @@ from hub.db_sync import DBSyncHandler
 from hub.db_sync_adapter import SharedDBSyncAdapter, SharedDBSyncConfig
 
 
+@pytest.mark.parametrize('value', [None, 0, 1, "false", [], {}])
+def test_nonboolean_preview_never_authorizes(seam, value):
+    adapter, root = seam
+    before = tree(root)
+    ok, text = handler(adapter, 'enable', dry_run=value)
+    assert not ok and 'boolean-dry-run-required' in text
+    assert tree(root) == before
+
+
+def test_private_modules_not_left_in_global_registry(seam):
+    adapter, root = seam
+    before = {k for k in sys.modules if k.startswith('_bach_shared_dbsync_')}
+    for _ in range(3):
+        assert adapter.handle('init').ok
+    after = {k for k in sys.modules if k.startswith('_bach_shared_dbsync_')}
+    assert before == after
+
+
 def tree(root):
     return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in root.rglob("*") if p.is_file()}
