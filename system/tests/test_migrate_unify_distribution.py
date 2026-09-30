@@ -3,6 +3,7 @@
 
 import importlib.util
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -195,7 +196,7 @@ def test_fresh_schema_without_instance_identity_creates_it_empty():
 @pytest.fixture
 def committed_legacy_db(tmp_path):
     """Persisted rows expose DDL that a caller rollback cannot undo."""
-    with sqlite3.connect(tmp_path / "legacy.db") as conn:
+    with closing(sqlite3.connect(tmp_path / "legacy.db")) as conn:
         _old_schema_with_seal_row(conn)
         conn.commit()
         yield conn
@@ -338,3 +339,229 @@ def test_all_identity_fields_and_multiple_rows_survive(committed_legacy_db):
     assert conn.execute(
         f"SELECT {', '.join(columns)} FROM instance_identity ORDER BY instance_id"
     ).fetchall() == rows
+
+
+def _assert_persisted_unchanged(conn, before):
+    assert not conn.in_transaction
+    assert _snapshot(conn) == before
+    path = conn.execute("PRAGMA database_list").fetchone()[2]
+    with closing(sqlite3.connect(path)) as reopened:
+        assert _snapshot(reopened) == before
+
+
+@pytest.mark.parametrize("table", _load_migration().LEGACY_TABLES)
+@pytest.mark.parametrize("uppercase", [True, False], ids=["upper", "mixed"])
+def test_case_variant_nonempty_legacy_preserves_committed_keep(
+    committed_legacy_db, table, uppercase
+):
+    conn = committed_legacy_db
+    actual = table.upper() if uppercase else table[0].upper() + table[1:]
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+        conn.execute(f'ALTER TABLE "{table}" RENAME TO "case_rename_intermediate"')
+        conn.execute(f'ALTER TABLE "case_rename_intermediate" RENAME TO "{actual}"')
+        conn.execute(f'ALTER TABLE "{actual}" ADD COLUMN keep TEXT')
+    else:
+        conn.execute(f'CREATE TABLE "{actual}" (id INTEGER, keep TEXT)')
+    conn.execute(f'INSERT INTO "{actual}" (id, keep) VALUES (1, ?)', ("KEEP",))
+    conn.commit()
+    before = _snapshot(conn)
+    with pytest.raises(RuntimeError, match=table):
+        _load_migration().run_migration(conn)
+    _assert_persisted_unchanged(conn, before)
+    assert conn.execute(f'SELECT keep FROM "{actual}"').fetchall() == [("KEEP",)]
+
+
+@pytest.mark.parametrize("name,kind", [
+    ("v_files_with_tiers", "table"),
+    ("v_latest_versions", "table"),
+    ("distribution_snapshots", "view"),
+    ("distribution_snapshot_files", "view"),
+    ("distribution_releases", "view"),
+    ("distribution_file_versions", "view"),
+    ("v_distribution_stats", "table"),
+    ("instance_identity_pre_unify", "table"),
+    ("instance_identity", "view"),
+])
+def test_case_variant_object_collision_fails_before_ddl(committed_legacy_db, name, kind):
+    conn = committed_legacy_db
+    previous = conn.execute("SELECT type FROM sqlite_master WHERE name=?", (name,)).fetchone()
+    if previous:
+        conn.execute(f'DROP {previous[0]} "{name}"')
+    if kind == "table":
+        conn.execute(f'CREATE TABLE "{name.upper()}" (keep TEXT)')
+        conn.execute(f'INSERT INTO "{name.upper()}" VALUES (?)', ("KEEP",))
+    else:
+        conn.execute(f'CREATE VIEW "{name.upper()}" AS SELECT 1 AS keep')
+    conn.commit()
+    before = _snapshot(conn)
+    statements = []
+    conn.set_trace_callback(statements.append)
+    with pytest.raises(RuntimeError, match=name):
+        _load_migration().run_migration(conn)
+    conn.set_trace_callback(None)
+    assert not any(sql.startswith(("ALTER ", "CREATE ", "DROP ")) for sql in statements)
+    _assert_persisted_unchanged(conn, before)
+
+
+@pytest.mark.parametrize("name", [
+    "instance_identity", "instance_identity_pre_unify", "distribution_snapshots",
+    "v_distribution_stats", "v_files_with_tiers", "tiers",
+])
+def test_case_variant_index_collision_is_rejected(committed_legacy_db, name):
+    conn = committed_legacy_db
+    previous = conn.execute("SELECT type FROM sqlite_master WHERE name=?", (name,)).fetchone()
+    if previous:
+        conn.execute(f'DROP {previous[0]} "{name}"')
+    conn.execute(f'CREATE INDEX "{name.upper()}" ON tasks(id)')
+    conn.commit()
+    before = _snapshot(conn)
+    with pytest.raises(RuntimeError, match=name):
+        _load_migration().run_migration(conn)
+    _assert_persisted_unchanged(conn, before)
+
+
+def test_case_variant_identity_table_and_columns_preserve_all_fields(committed_legacy_db):
+    conn = committed_legacy_db
+    migration = _load_migration()
+    fields = migration.NEW_INSTANCE_IDENTITY_COLUMNS
+    before = conn.execute(f"SELECT {', '.join(fields)} FROM instance_identity").fetchall()
+    conn.execute('ALTER TABLE instance_identity RENAME TO "case_rename_intermediate"')
+    conn.execute('ALTER TABLE "case_rename_intermediate" RENAME TO "INSTANCE_IDENTITY"')
+    for name in [*fields, "current_mode"]:
+        conn.execute(f'ALTER TABLE "INSTANCE_IDENTITY" RENAME COLUMN "{name}" TO "case_rename_intermediate"')
+        conn.execute(f'ALTER TABLE "INSTANCE_IDENTITY" RENAME COLUMN "case_rename_intermediate" TO "{name.upper()}"')
+    conn.commit()
+    migration.run_migration(conn)
+    assert conn.execute(f"SELECT {', '.join(fields)} FROM instance_identity").fetchall() == before
+    migration.run_migration(conn)
+    assert conn.execute(f"SELECT {', '.join(fields)} FROM instance_identity").fetchall() == before
+
+
+@pytest.mark.parametrize("storage", ["VIRTUAL", "STORED"])
+@pytest.mark.parametrize("column", ["private_note", "kernel_hash", "current_mode"])
+def test_generated_identity_columns_fail_closed(committed_legacy_db, storage, column):
+    conn = committed_legacy_db
+    conn.execute("DROP TABLE instance_identity")
+    conn.execute(
+        "CREATE TABLE instance_identity (instance_id TEXT PRIMARY KEY, "
+        "instance_name TEXT NOT NULL, "
+        f'"{column}" TEXT GENERATED ALWAYS AS (instance_name || \'-KEEP\') {storage})'
+    )
+    conn.execute(
+        "INSERT INTO instance_identity(instance_id, instance_name) VALUES ('id', 'name')"
+    )
+    conn.commit()
+    before = _snapshot(conn)
+    statements = []
+    conn.set_trace_callback(statements.append)
+    with pytest.raises(RuntimeError, match=column):
+        _load_migration().run_migration(conn)
+    conn.set_trace_callback(None)
+    assert not any(sql.startswith(("ALTER ", "CREATE ", "DROP ")) for sql in statements)
+    _assert_persisted_unchanged(conn, before)
+
+
+def test_hidden_virtual_identity_columns_fail_closed(committed_legacy_db):
+    conn = committed_legacy_db
+    conn.execute("DROP TABLE instance_identity")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE instance_identity USING fts5(instance_id, instance_name)")
+    except sqlite3.OperationalError as exc:
+        if "no such module: fts5" in str(exc):
+            pytest.skip("SQLite build has no FTS5")
+        raise
+    conn.execute("INSERT INTO instance_identity(instance_id, instance_name) VALUES ('id', 'KEEP')")
+    conn.commit()
+    before = _snapshot(conn)
+    with pytest.raises(RuntimeError, match="instance_identity"):
+        _load_migration().run_migration(conn)
+    _assert_persisted_unchanged(conn, before)
+
+
+@pytest.mark.parametrize("name", ["tıers", "ſnapshots"])
+def test_non_ascii_object_names_are_distinct_and_preserved(committed_legacy_db, name):
+    conn = committed_legacy_db
+    conn.execute(f'CREATE TABLE "{name}" (keep TEXT)')
+    conn.execute(f'INSERT INTO "{name}" VALUES (?)', ("KEEP",))
+    conn.commit()
+    _load_migration().run_migration(conn)
+    assert conn.execute(f'SELECT keep FROM "{name}"').fetchall() == [("KEEP",)]
+
+
+def test_unicode_casefold_alias_is_not_an_allowed_identity_column(committed_legacy_db):
+    conn = committed_legacy_db
+    conn.execute('ALTER TABLE instance_identity ADD COLUMN "ſeal_status" TEXT')
+    conn.execute('UPDATE instance_identity SET "ſeal_status" = ?', ("KEEP",))
+    conn.commit()
+    before = _snapshot(conn)
+    with pytest.raises(RuntimeError, match="ſeal_status"):
+        _load_migration().run_migration(conn)
+    _assert_persisted_unchanged(conn, before)
+
+
+@pytest.mark.parametrize("name", [
+    "instance_identity", "instance_identity_pre_unify", "tiers",
+    "v_files_with_tiers", "v_latest_versions", "distribution_snapshots",
+    "distribution_snapshot_files", "distribution_releases", "distribution_file_versions",
+    "v_distribution_stats",
+])
+def test_trigger_namespace_does_not_conflict_with_table_namespace(committed_legacy_db, name):
+    conn = committed_legacy_db
+    conn.execute(f'CREATE TRIGGER "{name.upper()}" AFTER INSERT ON tasks BEGIN SELECT 1; END')
+    conn.commit()
+    _load_migration().run_migration(conn)
+    assert conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?", (name.upper(),)
+    ).fetchone()
+    conn.execute("INSERT INTO tasks(id) VALUES (42)")
+
+
+def test_temp_objects_do_not_shadow_main_identity_or_legacy_tables(committed_legacy_db):
+    conn = committed_legacy_db
+    conn.execute("CREATE TEMP TABLE tiers (keep TEXT)")
+    conn.execute("INSERT INTO temp.tiers VALUES ('KEEP')")
+    conn.execute("CREATE TEMP TABLE instance_identity (keep TEXT)")
+    conn.execute("INSERT INTO temp.instance_identity VALUES ('TEMP KEEP')")
+    conn.commit()
+    _load_migration().run_migration(conn)
+    assert conn.execute("SELECT keep FROM temp.tiers").fetchall() == [("KEEP",)]
+    assert conn.execute("SELECT keep FROM temp.instance_identity").fetchall() == [("TEMP KEEP",)]
+    assert conn.execute("SELECT kernel_hash FROM main.instance_identity").fetchall() == [("deadbeefcafe0000",)]
+
+
+def test_case_variant_empty_legacy_and_valid_targets_migrate_safely(committed_legacy_db):
+    conn = committed_legacy_db
+    migration = _load_migration()
+    for name in migration.LEGACY_VIEWS:
+        conn.execute(f'DROP VIEW "{name}"')
+        conn.execute(f'CREATE VIEW "{name.upper()}" AS SELECT 1 AS id')
+    for name in migration.LEGACY_TABLES:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            conn.execute(f'ALTER TABLE "{name}" RENAME TO "case_rename_intermediate"')
+            conn.execute(f'ALTER TABLE "case_rename_intermediate" RENAME TO "{name.upper()}"')
+        else:
+            conn.execute(f'CREATE TABLE "{name.upper()}" (id INTEGER)')
+    targets = [
+        "distribution_snapshots", "distribution_snapshot_files",
+        "distribution_releases", "distribution_file_versions",
+    ]
+    for statement in migration.NEW_DISTRIBUTION_TABLES_DDL.split(";"):
+        if statement.strip():
+            for name in targets:
+                statement = statement.replace(name, name.upper())
+            conn.execute(statement)
+    conn.execute("INSERT INTO distribution_manifest(id) VALUES (42)")
+    conn.execute("INSERT INTO distribution_snapshots(id, name) VALUES (42, 'KEEP')")
+    conn.execute("INSERT INTO distribution_snapshot_files(id, snapshot_id, manifest_id) VALUES (42, 42, 42)")
+    conn.execute("INSERT INTO distribution_releases(id, version) VALUES (42, 'KEEP')")
+    conn.execute("INSERT INTO distribution_file_versions(id, manifest_id) VALUES (42, 42)")
+    conn.execute('CREATE VIEW "V_DISTRIBUTION_STATS" AS SELECT 1')
+    conn.commit()
+    before = {name: conn.execute(f'SELECT * FROM "{name}"').fetchall() for name in targets}
+    conn.execute("PRAGMA foreign_keys=ON")
+    migration.run_migration(conn)
+    for name in [*migration.LEGACY_TABLES, *migration.LEGACY_VIEWS]:
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE", (name,)).fetchone() is None
+    for name in targets:
+        assert conn.execute(f'SELECT * FROM "{name}"').fetchall() == before[name]
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name.upper(),)).fetchone()

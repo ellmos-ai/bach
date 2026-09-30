@@ -45,7 +45,7 @@ NEW_INSTANCE_IDENTITY_COLUMNS = [
 ]
 
 NEW_INSTANCE_IDENTITY_DDL = """
-CREATE TABLE instance_identity (
+CREATE TABLE main.instance_identity (
     instance_id TEXT PRIMARY KEY,
     instance_name TEXT NOT NULL,
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -72,7 +72,7 @@ LEGACY_TABLES = [
 ]
 
 NEW_DISTRIBUTION_TABLES_DDL = """
-CREATE TABLE IF NOT EXISTS distribution_snapshots (
+CREATE TABLE IF NOT EXISTS main.distribution_snapshots (
     id INTEGER PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
     snapshot_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS distribution_snapshots (
     is_valid INTEGER DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS distribution_snapshot_files (
+CREATE TABLE IF NOT EXISTS main.distribution_snapshot_files (
     id INTEGER PRIMARY KEY,
     snapshot_id INTEGER NOT NULL REFERENCES distribution_snapshots(id) ON DELETE CASCADE,
     manifest_id INTEGER NOT NULL REFERENCES distribution_manifest(id),
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS distribution_snapshot_files (
     file_size INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS distribution_releases (
+CREATE TABLE IF NOT EXISTS main.distribution_releases (
     id INTEGER PRIMARY KEY,
     version TEXT UNIQUE NOT NULL,
     release_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS distribution_releases (
     dist_zip_path TEXT
 );
 
-CREATE TABLE IF NOT EXISTS distribution_file_versions (
+CREATE TABLE IF NOT EXISTS main.distribution_file_versions (
     id INTEGER PRIMARY KEY,
     manifest_id INTEGER NOT NULL REFERENCES distribution_manifest(id),
     checksum TEXT,
@@ -117,14 +117,14 @@ CREATE TABLE IF NOT EXISTS distribution_file_versions (
 """
 
 DISTRIBUTION_STATS_VIEW_SQL = """
-CREATE VIEW v_distribution_stats AS
+CREATE VIEW main.v_distribution_stats AS
 SELECT
     'skills' as table_name,
     COUNT(*) as total,
     SUM(CASE WHEN dist_type = 2 THEN 1 ELSE 0 END) as core,
     SUM(CASE WHEN dist_type = 1 THEN 1 ELSE 0 END) as template,
     SUM(CASE WHEN dist_type = 0 THEN 1 ELSE 0 END) as user_data
-FROM skills
+FROM main.skills
 UNION ALL
 SELECT
     'tools' as table_name,
@@ -132,7 +132,7 @@ SELECT
     SUM(CASE WHEN dist_type = 2 THEN 1 ELSE 0 END) as core,
     SUM(CASE WHEN dist_type = 1 THEN 1 ELSE 0 END) as template,
     SUM(CASE WHEN dist_type = 0 THEN 1 ELSE 0 END) as user_data
-FROM tools
+FROM main.tools
 UNION ALL
 SELECT
     'tasks' as table_name,
@@ -140,7 +140,7 @@ SELECT
     SUM(CASE WHEN dist_type = 2 THEN 1 ELSE 0 END) as core,
     SUM(CASE WHEN dist_type = 1 THEN 1 ELSE 0 END) as template,
     SUM(CASE WHEN dist_type = 0 THEN 1 ELSE 0 END) as user_data
-FROM tasks
+FROM main.tasks
 UNION ALL
 SELECT
     'manifest' as table_name,
@@ -148,19 +148,54 @@ SELECT
     SUM(CASE WHEN dist_type = 2 THEN 1 ELSE 0 END) as core,
     SUM(CASE WHEN dist_type = 1 THEN 1 ELSE 0 END) as template,
     SUM(CASE WHEN dist_type = 0 THEN 1 ELSE 0 END) as user_data
-FROM distribution_manifest
+FROM main.distribution_manifest
 """
 
 
 def _object_type(conn, name):
+    # SQLite identifiers use ASCII case-insensitive matching. Python lower /
+    # casefold would also equate distinct Unicode names. Triggers have their
+    # own namespace and do not conflict with tables, views or indexes.
     row = conn.execute(
-        "SELECT type FROM sqlite_master WHERE name = ?", (name,)
+        "SELECT type FROM main.sqlite_master WHERE name = ? COLLATE NOCASE "
+        "AND type IN ('table', 'view', 'index')", (name,)
     ).fetchone()
     return row[0] if row else None
 
 
-def _table_columns(conn, name):
-    return [row[1] for row in conn.execute(f'PRAGMA table_info("{name}")')]
+def _identity_columns(conn):
+    """Map supported ordinary columns using SQLite's identifier semantics.
+
+    table_info omits hidden and generated columns; rebuilding from that list
+    silently loses their schema and stored values. Reject all such columns,
+    including generated columns whose names are otherwise supported.
+    """
+    supported = [*NEW_INSTANCE_IDENTITY_COLUMNS, "current_mode"]
+    columns = {}
+    unexpected = []
+    hidden = []
+    for row in conn.execute('PRAGMA main.table_xinfo("instance_identity")'):
+        actual = row[1]
+        canonical = next((name for name in supported if conn.execute(
+            "SELECT ? = ? COLLATE NOCASE", (actual, name)
+        ).fetchone()[0]), None)
+        if canonical is None:
+            unexpected.append(actual)
+        else:
+            columns[canonical] = actual
+        if row[6] != 0:
+            hidden.append(actual)
+
+    missing = {"instance_id", "instance_name"} - columns.keys()
+    if missing or unexpected or hidden:
+        raise RuntimeError(
+            "migrate_unify_distribution abgebrochen: instance_identity "
+            f"hat fehlende Pflichtspalten {sorted(missing)}, unbekannte "
+            f"Spalten {sorted(unexpected)} oder nicht unterstützte "
+            f"hidden/generated Spalten {sorted(hidden)}. "
+            "Manuelle Schema-Prüfung erforderlich."
+        )
+    return columns
 
 
 def _validate_before_any_mutation(conn):
@@ -174,15 +209,7 @@ def _validate_before_any_mutation(conn):
         )
 
     if kind == "table":
-        columns = set(_table_columns(conn, "instance_identity"))
-        missing = {"instance_id", "instance_name"} - columns
-        unexpected = columns - set(NEW_INSTANCE_IDENTITY_COLUMNS) - {"current_mode"}
-        if missing or unexpected:
-            raise RuntimeError(
-                "migrate_unify_distribution abgebrochen: instance_identity "
-                f"hat fehlende Pflichtspalten {sorted(missing)} oder unbekannte "
-                f"Spalten {sorted(unexpected)}. Manuelle Schema-Pruefung erforderlich."
-            )
+        _identity_columns(conn)
 
     if _object_type(conn, "instance_identity_pre_unify") is not None:
         raise RuntimeError(
@@ -214,7 +241,7 @@ def _validate_before_any_mutation(conn):
                 f"migrate_unify_distribution abgebrochen: {table!r} existiert "
                 f"als {kind!r}, erwartet Tabelle oder gar nichts."
             )
-        count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        count = conn.execute(f'SELECT COUNT(*) FROM main."{table}"').fetchone()[0]
         if count:
             raise RuntimeError(
                 "migrate_unify_distribution abgebrochen: Legacy-Tabelle "
@@ -239,15 +266,15 @@ def _migrate_instance_identity(conn):
             "Ueberschreiben."
         )
 
-    current_columns = _table_columns(conn, "instance_identity")
-    if current_columns == NEW_INSTANCE_IDENTITY_COLUMNS:
+    current_columns = _identity_columns(conn)
+    if list(current_columns) == NEW_INSTANCE_IDENTITY_COLUMNS:
         return  # Bereits migriert -- idempotenter No-Op.
 
     before_count = conn.execute(
-        "SELECT COUNT(*) FROM instance_identity"
+        "SELECT COUNT(*) FROM main.instance_identity"
     ).fetchone()[0]
 
-    conn.execute("ALTER TABLE instance_identity RENAME TO instance_identity_pre_unify")
+    conn.execute("ALTER TABLE main.instance_identity RENAME TO instance_identity_pre_unify")
     conn.execute(NEW_INSTANCE_IDENTITY_DDL)
 
     # Nur Spalten uebernehmen, die es in der alten Form auch gab (current_mode
@@ -255,13 +282,14 @@ def _migrate_instance_identity(conn):
     # ist bereits in der alten Form vorhanden, siehe schema.sql).
     copyable = [c for c in NEW_INSTANCE_IDENTITY_COLUMNS if c in current_columns]
     cols_sql = ", ".join(f'"{c}"' for c in copyable)
+    source_cols_sql = ", ".join(f'"{current_columns[c]}"' for c in copyable)
     conn.execute(
-        f"INSERT INTO instance_identity ({cols_sql}) "
-        f"SELECT {cols_sql} FROM instance_identity_pre_unify"
+        f"INSERT INTO main.instance_identity ({cols_sql}) "
+        f"SELECT {source_cols_sql} FROM main.instance_identity_pre_unify"
     )
 
     after_count = conn.execute(
-        "SELECT COUNT(*) FROM instance_identity"
+        "SELECT COUNT(*) FROM main.instance_identity"
     ).fetchone()[0]
     if after_count != before_count:
         raise RuntimeError(
@@ -269,7 +297,7 @@ def _migrate_instance_identity(conn):
             f"Zeilenzahl aenderte sich waehrend der Migration ({before_count} -> {after_count}) -- "
             "Siegel-/Instanzidentitaet waere sonst verloren gegangen."
         )
-    conn.execute("DROP TABLE instance_identity_pre_unify")
+    conn.execute("DROP TABLE main.instance_identity_pre_unify")
 
 
 def run_migration(conn):
@@ -279,10 +307,10 @@ def run_migration(conn):
         _migrate_instance_identity(conn)
 
         for view in LEGACY_VIEWS:
-            conn.execute(f'DROP VIEW IF EXISTS "{view}"')
+            conn.execute(f'DROP VIEW IF EXISTS main."{view}"')
 
         for table in LEGACY_TABLES:
-            conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+            conn.execute(f'DROP TABLE IF EXISTS main."{table}"')
 
         # This fixed DDL contains no semicolons inside literals or comments.
         # executescript would commit the savepoint before running the script.
@@ -290,7 +318,7 @@ def run_migration(conn):
             if statement.strip():
                 conn.execute(statement)
 
-        conn.execute("DROP VIEW IF EXISTS v_distribution_stats")
+        conn.execute("DROP VIEW IF EXISTS main.v_distribution_stats")
         conn.execute(DISTRIBUTION_STATS_VIEW_SQL)
     except BaseException:
         conn.execute("ROLLBACK TO SAVEPOINT unify_distribution")
