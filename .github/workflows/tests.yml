@@ -71,6 +71,7 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           python -m pytest -q -rA -p no:cacheprovider --timeout=120 --timeout-method=thread \
+            system/tests/test_activity_dashboard.py \
             system/tests/test_activity_tracker.py \
             system/tests/test_agent_launcher_handler.py \
             system/tests/test_agent_pid_identity.py \
@@ -192,6 +193,7 @@ jobs:
             system/tests/test_notify_local_service.py \
             system/tests/test_notify_via_assistant_core.py \
             system/tests/test_obsidian_handler.py \
+            system/tests/test_ocean_gui_shell.py \
             system/tests/test_ollama.py \
             system/tests/test_ollama_stream.py \
             system/tests/test_operator_control.py \
