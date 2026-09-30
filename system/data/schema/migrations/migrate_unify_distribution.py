@@ -26,15 +26,12 @@ Idempotent: ein zweiter Lauf (Migration bereits vollstaendig angewandt) ist
 ein No-Op -- jeder Schritt prueft zuerst den Ist-Zustand, bevor er etwas
 aendert.
 
-**"Abbruch, nichts veraendert" ist HIER selbst gebaut, nicht vom Runner
-geerbt:** SQLite committet DDL-Anweisungen (DROP/ALTER/CREATE TABLE) sofort
-und ausserhalb jeder Python-Transaktion -- ``conn.rollback()`` (das
-``core/db.py``s ``Database.connect()``-Context-Manager bei einer Exception
-aufruft) macht ein bereits gelaufenes ``DROP TABLE`` NICHT rueckgaengig
-(empirisch verifiziert, T-20260926-357988320). ``run_migration()`` prueft
-deshalb ALLE Abbruchbedingungen zuerst (``_validate_before_any_mutation``,
-reine Lesephase) und mutiert erst danach -- anders als 037, dessen einzige
-Abbruchbedingung ohnehin vor jedem DROP liegt.
+Vorvalidierung und Mutation laufen in einem SAVEPOINT. SQLite-DDL ist darin
+transaktional; ohne explizite Transaktion beginnt Python jedoch erst bei DML
+eine Transaktion. ``executescript()`` kann eine bestehende Transaktion zudem
+implizit committen. Deshalb werden alle DDL-Anweisungen einzeln ausgefuehrt,
+und ein Fehler rollt den gesamten Umbau zurueck. Eine bestehende Transaktion
+des Aufrufers bleibt erhalten und wird hier niemals committet.
 """
 
 # Zielschema (current_mode entfaellt -- tot, kein Aufrufer im Repo liest ihn;
@@ -167,16 +164,7 @@ def _table_columns(conn, name):
 
 
 def _validate_before_any_mutation(conn):
-    """Prueft ALLE Abbruchbedingungen, BEVOR auch nur ein DDL-Statement
-    laeuft -- SQLite committet DDL (DROP/ALTER/CREATE TABLE) sofort und
-    unabhaengig von der Python-Transaktion; ein spaeteres conn.rollback()
-    macht ein bereits gelaufenes DROP TABLE NICHT rueckgaengig (empirisch
-    verifiziert). "Abbruch, nichts veraendert" ist deshalb nur erreichbar,
-    wenn Validierung und Mutation strikt getrennte Phasen sind: faende
-    z.B. die 3. von 10 Legacy-Tabellen erst waehrend einer einzigen
-    Drop-Schleife eine nicht-leere Tabelle, waeren Tabelle 1 und 2 bereits
-    unwiderruflich weg, obwohl die Migration insgesamt "abgebrochen" meldet.
-    """
+    """Prueft bekannte Konflikte vor der ersten DDL-Anweisung."""
     kind = _object_type(conn, "instance_identity")
     if kind is not None and kind != "table":
         raise RuntimeError(
@@ -184,6 +172,38 @@ def _validate_before_any_mutation(conn):
             f"existiert als {kind!r}, nicht als Tabelle -- Abbruch statt "
             "Ueberschreiben."
         )
+
+    if kind == "table":
+        columns = set(_table_columns(conn, "instance_identity"))
+        missing = {"instance_id", "instance_name"} - columns
+        unexpected = columns - set(NEW_INSTANCE_IDENTITY_COLUMNS) - {"current_mode"}
+        if missing or unexpected:
+            raise RuntimeError(
+                "migrate_unify_distribution abgebrochen: instance_identity "
+                f"hat fehlende Pflichtspalten {sorted(missing)} oder unbekannte "
+                f"Spalten {sorted(unexpected)}. Manuelle Schema-Pruefung erforderlich."
+            )
+
+    if _object_type(conn, "instance_identity_pre_unify") is not None:
+        raise RuntimeError(
+            "migrate_unify_distribution abgebrochen: instance_identity_pre_unify "
+            "existiert bereits. Vorhandenen Bestand zuerst manuell pruefen."
+        )
+
+    for name, expected in [
+        *((name, "view") for name in LEGACY_VIEWS),
+        ("v_distribution_stats", "view"),
+        ("distribution_snapshots", "table"),
+        ("distribution_snapshot_files", "table"),
+        ("distribution_releases", "table"),
+        ("distribution_file_versions", "table"),
+    ]:
+        kind = _object_type(conn, name)
+        if kind is not None and kind != expected:
+            raise RuntimeError(
+                f"migrate_unify_distribution abgebrochen: {name!r} existiert "
+                f"als {kind!r}, erwartet {expected!r} oder gar nichts."
+            )
 
     for table in LEGACY_TABLES:
         kind = _object_type(conn, table)
@@ -253,22 +273,28 @@ def _migrate_instance_identity(conn):
 
 
 def run_migration(conn):
-    # Phase 1: nur lesen, keine Mutation. Wirft ab, bevor irgendetwas
-    # geloescht/umgebaut wird (siehe _validate_before_any_mutation).
-    _validate_before_any_mutation(conn)
+    conn.execute("SAVEPOINT unify_distribution")
+    try:
+        _validate_before_any_mutation(conn)
+        _migrate_instance_identity(conn)
 
-    # Phase 2: erst jetzt mutieren -- jeder verbleibende Schritt ist bereits
-    # als sicher validiert oder (IF EXISTS/IF NOT EXISTS) von sich aus
-    # idempotent.
-    _migrate_instance_identity(conn)
+        for view in LEGACY_VIEWS:
+            conn.execute(f'DROP VIEW IF EXISTS "{view}"')
 
-    for view in LEGACY_VIEWS:
-        conn.execute(f'DROP VIEW IF EXISTS "{view}"')
+        for table in LEGACY_TABLES:
+            conn.execute(f'DROP TABLE IF EXISTS "{table}"')
 
-    for table in LEGACY_TABLES:
-        conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+        # This fixed DDL contains no semicolons inside literals or comments.
+        # executescript would commit the savepoint before running the script.
+        for statement in NEW_DISTRIBUTION_TABLES_DDL.split(";"):
+            if statement.strip():
+                conn.execute(statement)
 
-    conn.executescript(NEW_DISTRIBUTION_TABLES_DDL)
-
-    conn.execute("DROP VIEW IF EXISTS v_distribution_stats")
-    conn.execute(DISTRIBUTION_STATS_VIEW_SQL)
+        conn.execute("DROP VIEW IF EXISTS v_distribution_stats")
+        conn.execute(DISTRIBUTION_STATS_VIEW_SQL)
+    except BaseException:
+        conn.execute("ROLLBACK TO SAVEPOINT unify_distribution")
+        conn.execute("RELEASE SAVEPOINT unify_distribution")
+        raise
+    else:
+        conn.execute("RELEASE SAVEPOINT unify_distribution")
