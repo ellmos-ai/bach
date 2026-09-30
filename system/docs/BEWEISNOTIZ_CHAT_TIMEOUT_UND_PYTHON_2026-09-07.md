@@ -54,8 +54,8 @@ Der Nutzer stellte im Web-Chat der BACH-GUI (`http://localhost:8000/chat`, API-B
 
 ### D. Python-Umfeld
 - Der von Buddha angelegte Symlink `/opt/homebrew/bin/python -> python3` zeigte auf **Python 3.14.7** (Homebrew global).
-- Die BACH-Installation und alle Abhängigkeiten (`httpx` etc.) liegen jedoch in der Virtualenv `/Users/lukas/.venvs/bach/` (**Python 3.12.13**).
-- Die LaunchAgents hatten `/Users/lukas/.venvs/bach/bin` nicht im `PATH`, sodass Subprozesse im unvollständigen globalen Python 3.14 landeten.
+- Die BACH-Installation und alle Abhängigkeiten (`httpx` etc.) liegen jedoch in der Virtualenv `<venv>/bach/` (**Python 3.12.13**).
+- Die LaunchAgents hatten `<venv>/bach/bin` nicht im `PATH`, sodass Subprozesse im unvollständigen globalen Python 3.14 landeten.
 
 ---
 
@@ -83,7 +83,7 @@ Der Nutzer stellte im Web-Chat der BACH-GUI (`http://localhost:8000/chat`, API-B
 
 4. **Virtualenv im LaunchAgent-PATH verankert:**
    - In `com.bach.telegram-bot.plist` und `com.bach.chat-tray.plist`:
-     `PATH` erweitert auf `/Users/lukas/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`.
+     `PATH` erweitert auf `<venv>/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`.
    - Dadurch nutzen alle aufgerufenen Skripte garantiert die Python-3.12-Virtualenv mit allen installierten Bibliotheken.
 
 5. **Bereinigung der Chathistorie:**

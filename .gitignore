@@ -229,6 +229,7 @@ logs/daily/
 # === PLAN-DATEIEN (Interne Planung, nicht veröffentlichen) ===
 PLAN.txt
 **/PLAN.txt
+task-*-status.md
 
 # === AGENT WORKFLOWS (Lokal) ===
 .agent/

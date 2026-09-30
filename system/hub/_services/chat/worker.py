@@ -15,8 +15,8 @@ Was gebaut ist, liegt ohnehin im Dateisystem - das ist der eigentliche
 Zustand. Der geschriebene State ergaenzt nur, was man den Dateien nicht
 ansieht: warum abgebrochen wurde und wo es weitergeht.
 
-    python -m hub._services.chat.worker --category lerncockpit-android \\
-        --workdir /Users/lukas/dev/lerncockpit-android --model qwen3.8:27b-mlx
+    python -m hub._services.chat.worker --category example-project \\
+        --workdir /path/to/example-project --model qwen3.8:27b-mlx
 """
 from __future__ import annotations
 
