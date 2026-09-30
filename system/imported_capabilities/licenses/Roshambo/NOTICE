@@ -1,0 +1,45 @@
+Roshambo
+Copyright 2026 the Roshambo authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This project was built for the CockroachDB x AWS Hackathon ("Build with Agentic
+Memory", Cockroach Labs, managed by Devpost).
+
+This distribution depends on, but does not bundle, the following third-party
+components, each under its own license:
+
+  - Model Context Protocol Python SDK ("mcp")   -- MIT License
+    https://github.com/modelcontextprotocol/python-sdk
+  - psycopg (PostgreSQL adapter, used for the CockroachDB connection) -- LGPL-3.0
+    https://github.com/psycopg/psycopg
+  - boto3 / botocore (AWS SDK for Python)        -- Apache License 2.0
+    https://github.com/boto/boto3
+
+See pyproject.toml for the exact dependency set and version constraints.
+
+Additional third-party components used only by the demo web app
+(demo/requirements.txt) and packaged into the deployed roshambo-demo Lambda
+function (infra/deploy_demo_lambda.py) -- not bundled in this repository, and
+not needed to use the roshambo/roshambo-mcp package itself:
+
+  - FastAPI                                      -- MIT License
+    https://github.com/fastapi/fastapi
+  - Starlette (FastAPI's ASGI toolkit dependency) -- BSD-3-Clause
+    https://github.com/Kludex/starlette
+  - Pydantic / pydantic-core                     -- MIT License
+    https://github.com/pydantic/pydantic
+  - Mangum (ASGI-to-Lambda adapter)               -- MIT License
+    https://github.com/Kludex/mangum
+
+Licenses verified against each package's PyPI metadata, 2026-07-30.
+
+Optional integration, not bundled:
+
+  - cockroachlabs/cockroachdb-skills -- Apache License 2.0
+    https://github.com/cockroachlabs/cockroachdb-skills
+    Referenced in docs/skills.md as an additional, separately-installed skill
+    collection; not copied into this repository.
+
+The contents of this NOTICE file are for informational purposes only and do
+not modify the License.

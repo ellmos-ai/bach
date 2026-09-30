@@ -1,6 +1,92 @@
-# Imported Capabilities Architecture & Provenance Catalog
+# Imported Capabilities: Herkunft und tatsächlicher Transferstand
 
-**Stand:** 2026-09-29 | **Host:** ASUS-GEI | **Ticket:** `T-20260929-797360984`
+**Stand:** 2026-09-30 | **Ticket:** `T-20260929-797360984`
+
+Dieser Nachtrag ersetzt die pauschalen Aussagen „eingebaut“, „überlegen“ und
+„Kernlücke 1 geschlossen“ des historischen Katalogs vom 2026-09-29 unten.
+PR #169 hat Kopien, Adapter und zehn Tests integriert. Das belegt keine
+vollständige Integration der vier Quellpakete oder Überlegenheit gegenüber
+BACH, Ocean und Skills. Die Kategorieverzeichnisse sind historische Zuordnungen.
+
+## Herkunft und Lizenztexte
+
+[PROVENANCE.json](PROVENANCE.json) enthält die geprüften Quellcommits,
+Dateipfade, SHA-256-Werte der Git-Blobs, LF-normalisierte Vergleichshashes,
+direkten AST-Importe und vorhandenen Lizenz-/NOTICE-Dateien. Es beschreibt
+beobachtete Inhalte; der ursprüngliche historische Kopiercommit ist unbekannt.
+
+| Quelle | Geprüfter Commit | Beobachteter Root-Lizenztext | Beigefügt |
+| --- | --- | --- | --- |
+| NemoFold | `b0545be39fc7740704f5bfe1b54458fe960dbdaf` | MIT | [LICENSE](licenses/NemoFold/LICENSE) |
+| FolderHome | `2c52211dad0bb2680014a7da244dbacde5b8a23c` | MIT | [LICENSE](licenses/FolderHome/LICENSE) |
+| Roshambo | `f56efcbb926294f12f75e39b8c5865d454164060` | Apache License 2.0 | [LICENSE](licenses/Roshambo/LICENSE), [NOTICE](licenses/Roshambo/NOTICE) |
+| SentinelFleet | `e7f9c748df0ed6a677dbba38dcd725fe700fe75e` | GNU Affero General Public License, Version 3 | [LICENSE](licenses/SentinelFleet/LICENSE) |
+
+SentinelFleet ist damit nicht durch die frühere pauschale Angabe „MIT/Apache“
+beschrieben. Aus dem AGPL-Text allein wird keine Wahl „nur Version 3“ oder
+„Version 3 oder später“ abgeleitet. Root-NOTICE-Dateien wurden nur bei
+Roshambo gefunden; weitere Lizenzinventare sind im Manifest benannt.
+Diese Bestandsaufnahme enthält keine rechtliche Gesamtfreigabe.
+
+## Elf bisher ausgewählte Komponenten
+
+Die Ziele sind die bestehenden Ocean-Modulzuordnungen; ein Zielname ist kein
+Nachweis, dass die Quelle dort bereits exponiert oder ausführbar ist.
+
+| Mac-Task / Priorität | Komponente | Ziel | Nachgewiesener lokaler Stand / Rest |
+| --- | --- | --- | --- |
+| 1510 / P1 | Roshambo-Leases | `coordination` | SQLite-Adapter mit UUID-v4-Fence und TTL, lokal unabhängig geprüft. Original-Roshambo benötigt PostgreSQL-/Paketabhängigkeiten. Runtime-Fence-Weitergabe offen. |
+| 1511 / P2 | Failure Trails | `working_memory` | Kopie und eigener SQLite-Adapter; Originalimport benötigt unter anderem `psycopg` und fehlende Roshambo-Module. Kein belegter Task-Ausführungshook. |
+| 1512 / P2 | FinanceStore | `finance_assist` | Kopiertes `finance_store/__init__.py`, lokal `contract_store.py` genannt. Es enthält FinanceStore, keinen Nachweis des vollständigen Vertrags-/Versicherungscockpits. `folderhome.contracts` fehlt. |
+| 1513 / P1 | Model Armor | `K9-BOUNDARY` | Kopie und Adapter vorhanden; `pydantic` erforderlich, weitere Gateway-Imports benötigen `sentinel_fleet`. Keine belegte Runtime-Interceptor-Anbindung. |
+| 1514 / P2 | Interrater | `evaluation` | Kopie und Adapter mit lokalem Test. Keine belegte Einbindung in den Skill `compare-race`; keine vergleichende Überlegenheitsabnahme. |
+| 1515 / P2 | Action Journal | `K9-BOUNDARY` | Unveränderte Nemo-Kernmodule mit isoliertem Guard-Wrapper, lokal unabhängig geprüft. Copy/move nur unter explizitem exklusivem Hostguard; write/delete verweigert. Kein produktiver Hostguard-/Consumerbeleg. |
+| 1516 / P2 | Administrative Notice / Dispute Loop | `doc_handler`, `finance_assist` | Kopien und eigener Prüfadapter. Vollständiges SentinelFleet-Paket/Workflow und fachliche Gesamtprüfung nicht belegt. |
+| 1517 / P2 | Blueprint-/Chronicle-SVG | `ellmos-unified-gui` | Kopien plus eigener SVG-Adapter. Kein belegter neutraler GUI-Mount oder Recipe-Consumer. |
+| 1518 / P3 | InventoryStore | `daily_life` | BACH-Adapter vorhanden; Quellkopie benötigt `folderhome.contracts`. Ocean-Exposition offen. |
+| 1519 / P3 | MedicationStore | `health_assist` | BACH-Adapter vorhanden; Quellkopie benötigt `folderhome.contracts`. Ocean-Exposition offen; keine medizinische Funktionsabnahme. |
+| 1520 / P2, abhängig von 1510 | Swarm Radar | `ellmos-unified-gui`, `coordination` | Eigener SQLite-Leseadapter. Kein belegter Live-Radar-/Multi-Host-GUI-Consumer. |
+
+Die zwölf starken Lease-Gegenfälle prüfen echte deferred-FK-Commitfehler und
+partielle DDL-Rollbacks unter drei SQLite-Modi. Journal-Gegenfälle prüfen
+Guardverlust unmittelbar vor Mutationen, kurze Writes, Instanzisolation und
+echten FD-Abschluss. Die geprüften Adapter ersetzen keine vollständigen
+Quellpaket-Imports. Permanente CI wird als eigenes Delta vorbereitet.
+
+## Atomarer Claim und offene Ausführungsgrenze
+
+BACH `main` bei `7120cd1e891a447a8de1bb27f2b57480d47a435b` besitzt bereits
+seit `2cfda653` einen conditional UPDATE vor Verarbeitung:
+`worker.py` → `task.py:_claim` → `task_audit.claim_task_atomic` sowie
+`chat_tray.py` → `gui/server.py` → denselben Claim. Die frühere Aussage
+„worker nimmt offen[0] ohne Claim“ beschreibt diesen Stand nicht.
+
+Offen ist die Konvergenz dieser vorhandenen Autorität mit dem UUID-/TTL-Vertrag
+und die geprüfte Weitergabe des Fence bis Ausführung und Abschluss. Der
+Journalwrapper hat derzeit Tests als Consumer; ein externer produktiver
+Aufrufpfad wurde nicht belegt. Keine zweite Claim- oder Journalengine ist
+aus diesen Tests abgeleitet.
+
+## Messung und verbleibender Analyseumfang
+
+Die schreibgeschützt gelesenen Mac-Tasks 1510–1520 beschreiben Status,
+Priorität und Abhängigkeiten. „done/completed“ ist keine Implementierungs-
+oder Abnahmebescheinigung. Die Leseverbindung nutzte SQLite `mode=ro` und
+`query_only`; eine spätere separate Dateimessung ersetzt keinen
+Vorher/Nachher-Beleg unveränderter Sidecars.
+
+Die vollständige Feature-/Skill-Vergleichsmatrix aller vier Quellinventare
+gegen Skills, BACH und Ocean ist ein weiterer eigener Analysecheckpoint.
+Die elf ausgewählten Komponenten decken diesen Analyseauftrag nicht ab.
+Optionale/dynamische Importpfade, vollständige Paketabhängigkeiten und
+produktive Transfergates bleiben bei fehlendem Beleg ausdrücklich offen.
+
+---
+
+## Historischer Katalog vom 2026-09-29 (durch obigen Nachtrag superseded)
+
+Die folgenden ursprünglichen Beschreibungen sind historische Autorenangaben,
+keine aktuelle Funktions-, Überlegenheits-, Lizenz- oder Integrationsabnahme.
 
 Dieser Katalog dokumentiert die systematische Erfassung, Klassifikation und den Code-Transfer aus vier internen Spitzen-Repositories:
 1. **NemoFold** (`ellmos-ai/NemoFold`) — Dokument-Agent, Evidenz-Bindung, Reversible Action Journals, Inter-Rater-Reliabilität.
