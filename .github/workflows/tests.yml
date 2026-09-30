@@ -374,3 +374,69 @@ jobs:
               raise SystemExit("Required shared adapter suite incomplete or unsuccessful")
           print(f"Required shared adapter cases: {len(cases)}, no skips/failures/errors")
           PY
+
+  imported-capability-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install explicit fixture dependencies
+        run: python -m pip install pytest pydantic
+      - name: Require actual SQLite autocommit modes
+        run: |
+          python - <<'PY'
+          import sqlite3
+          import sys
+
+          if sys.version_info < (3, 12):
+              raise SystemExit("SQLite autocommit=True/False require Python 3.12 or newer")
+          for mode in (True, False):
+              connection = sqlite3.connect(":memory:", autocommit=mode)
+              try:
+                  if connection.autocommit is not mode:
+                      raise SystemExit("Requested sqlite3 autocommit mode unavailable")
+              finally:
+                  connection.close()
+          print("Actual sqlite3 autocommit=True and autocommit=False are available")
+          PY
+      - name: Run complete lease and journal safety scope
+        run: |
+          python -B -m pytest -q -rA -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP}/imported-capability-tests" \
+            --junitxml="${RUNNER_TEMP}/imported-capability.xml" \
+            system/tests/test_imported_capabilities.py \
+            system/tests/test_imported_lease_safety.py \
+            system/tests/test_imported_lease_countercases.py \
+            system/tests/test_imported_lease_transaction_modes.py \
+            system/tests/test_imported_lease_real_commit.py \
+            system/tests/test_imported_journal_safety.py \
+            system/tests/test_imported_journal_countercases.py \
+            system/tests/test_imported_journal_final_guards.py
+      - name: Require all 175 safety cases without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "imported-capability.xml"
+          cases = ET.parse(path).getroot().findall(".//testcase")
+          if len(cases) < 175 or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required lease/journal safety suite incomplete or unsuccessful")
+          print(f"Safety cases: {len(cases)}, no skips/failures/errors")
+          PY

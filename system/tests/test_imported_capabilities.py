@@ -8,6 +8,7 @@ Verifies the correct functionality of all imported components and their Bach ada
 
 import sqlite3
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -216,7 +217,11 @@ def test_interrater_reliability():
 def test_action_journal_rollback():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        journal = BachActionJournal(tmp_path / "journal", run_id="run_test_001")
+        @contextmanager
+        def isolated_fixture_lease(paths):
+            assert all(path.is_relative_to(tmp_path) for path in paths)
+            yield lambda: True
+        journal = BachActionJournal(tmp_path / "journal", run_id="run_test_001", allowed_roots=(tmp_path,), mutation_guard=isolated_fixture_lease)
 
         src_file = tmp_path / "source.txt"
         tgt_file = tmp_path / "target.txt"
