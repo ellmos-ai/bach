@@ -152,7 +152,10 @@ class SealSystemTests:
         """Test 4: Startup-Check Stichproben-Logik.
         Simuliert die Stichproben-Pruefung aus system/hub/startup.py (SQ021):
         5 zufaellige CORE-Dateien werden gezogen und auf Dateipraesenz geprueft.
+        Wie Startup muss jede der fünf gezogenen Dateien vorhanden sein.
         Zusaetzlich wird bei vorhandenem Release-Hash die Hash-Berechnung getestet.
+        Hash-Abweichungen werden nur informativ ausgegeben; dies ist kein
+        Ersatz für die vollständige Integritätsprüfung mit bach seal check.
         """
         print("[TEST 4] Startup-Check Stichproben")
         print("-" * 70)
@@ -201,8 +204,9 @@ class SealSystemTests:
                 except Exception as e:
                     print(f"  - {path}: Fehler beim Hash-Check: {e}")
 
-        # Startup-Check prueft Existenz der Stichproben (>=4/5 Praesenz-Schwelle)
-        if verified_exists >= 4:
+        # T437: Startup meldet jede fehlende Datei. Vier von fünf genügen
+        # deshalb nicht für eine erfolgreiche Präsenz-Stichprobe.
+        if verified_exists == 5:
             print(f"✓ PASS: {verified_exists}/5 Stichproben verifiziert (Dateipraesenz: {verified_exists}/5, Hash-Match: {verified_hash}/{verified_exists})")
             self.tests_passed += 1
         else:
