@@ -148,6 +148,7 @@ class TestSeamTakeover:
     def _env(self, monkeypatch):
         monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
         monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+        monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
 
     def test_handled_and_injected_once(self, seeded_db):
         hook = mhp.ExternalMemoryHook(db_path=seeded_db, config_path=seeded_db.parent / "none.toml")
