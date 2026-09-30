@@ -25,8 +25,8 @@ from hub.db_sync import DBSyncManager
 
 def _create_minimal_db(path: Path):
     conn = sqlite3.connect(str(path))
-    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)")
-    conn.execute("INSERT OR IGNORE INTO system_config VALUES ('version', '2.5')")
+    conn.executescript((SYSTEM_DIR / "data/schema/schema.sql").read_text(encoding="utf-8"))
+    conn.execute("INSERT OR IGNORE INTO system_config(key,value) VALUES ('version', '2.5')")
     conn.commit()
     conn.close()
 

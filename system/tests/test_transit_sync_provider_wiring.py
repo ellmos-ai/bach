@@ -255,7 +255,9 @@ class _FakeEngine:
 def manager(tmp_path, monkeypatch):
     db = tmp_path / ".bach" / "bach.db"
     db.parent.mkdir(parents=True)
-    _mkdb(db).close()
+    conn = sqlite3.connect(str(db))
+    conn.executescript((BACH_ROOT / "data/schema/schema.sql").read_text(encoding="utf-8"))
+    conn.close()
     transit = tmp_path / "transit"
     transit.mkdir()
     mgr = DBSyncManager(db_path=db, transit_dir=transit)

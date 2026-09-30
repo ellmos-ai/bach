@@ -163,8 +163,9 @@ init      | vorhandenes ausdrücklich deklariertes Schema und Version prüfen
 Push/pull/sync, Aliase und unbekannte Argumente sind unter diesem Selector
 verweigert. Der vorhandene native Schema-0-Bestand wird NICHT umgestempelt:
 Version 0 ist für diese unveränderte Shared-API unzulässig. Ein erfolgreicher
-synthetischer Version-1-Test legitimiert keine native Schemaänderung. Task1168
-(stale Erstkopie im nativen init) und dessen reale Schemaautorität bleiben offen.
+synthetischer Version-1-Test legitimiert keine native Schemaänderung. Die
+native Bereitschaftskorrektur ist unten begrenzt beschrieben; gemeinsame
+Schema0-/Credential-/FTS-Abdeckung und weitere Migrationsepochen bleiben offen.
 
 Dry-run veröffentlicht/löscht/verändert keine Dateien oder Verzeichnisse.
 Status ist immer lesend. Bei Snapshotpublikation mit anschließendem fehlendem
@@ -184,3 +185,29 @@ Grenze: lokaler API-Schnitt, keine dauerhafte Paket-/Runtimeabhängigkeit,
 BACH-IN/P8, Dreiweg-Parität, Migration/Rollback oder Fremdhostabnahme. Das
 Paritätsregister bleibt push/pull/sync = 3/9. Anforderungen an Deployment und
 Schema-0/Task1168 werden getrennt geschlossen, bevor echte Calls umgestellt werden.
+
+
+NATIVE BEREITSCHAFT (T903 / Task1168, 2026-09-30)
+=============================================
+Native init/ensure_local_db prüft ausschließlich den tatsächlich gewählten
+DB-Pfad. Keine Erstkopie aus stale data/bach.db oder Transitbackups, keine
+Anlage/Migration/Stempeländerung. Startup beachtet False; direkter Merge
+verweigert eine fehlende lokale DB. Konstruktion legt keine Verzeichnisse an.
+Vor Provider-, Heartbeat-, State- oder Backupvorbereitung wird Bereitschaft
+verlangt. Native Statusanzeige konstruiert keine neue Engine.
+
+Profil bach-schema-sql-v1: exakt sourcegebundene schema.sql-Struktur mit
+168 Tabellen einschließlich FTS, 146 Indizes, sechs Triggern und drei Views;
+optional exakt die kanonische _migrations-Tabelle aus core/db.py. Table_xinfo,
+Table_list und DDL werden vollständig verglichen. Native user_version=0 bleibt
+unverändert; höhere Werte, fehlende/Teil-/unbekannte Strukturen, Links und
+literal benannte WAL-/SHM-/Journal-Sidecars werden verweigert. Herkunftsstempel
+allein beweisen keine Frische. Weitere legitime Migrationsepochen und tatsächliche
+Hostkopien brauchen gesondert belegte Profile, keine pauschale Freigabe.
+
+Dry-run endet ohne Verzeichnis-, Marker-, Heartbeat-, State- oder Backupwrite;
+ein fehlender DB-Bestand wird auch in der Vorschau verweigert. Ein gültiger
+Datei-/Statreadback ist keine dauerhafte Writerexklusion. Dies ist ausschließlich
+ein Bereitschaftsschutz: keine neue Credentialprüfung, keine FTS-Coverage,
+kein Shared-Cutover und keine Runtime-/Host-/Gesamtparitätsabnahme. Bestehende
+native Backup-/Merge-/Retentionalgorithmen sind unverändert. Register bleibt 3/9.

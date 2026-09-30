@@ -151,8 +151,8 @@ init      | validate the existing explicitly declared schema and version
 Push/pull/sync, aliases and unknown arguments are refused under this selector.
 The native schema-0 database is NOT restamped: version 0 is invalid for this
 unchanged shared API. A successful synthetic version-1 test does not authorize
-changing native schema. Task1168 (stale first-copy in native init) and its actual
-application-schema authority remain open.
+changing native schema. The bounded native readiness correction is described
+below; shared schema0/credential/FTS coverage and other migration epochs remain open.
 
 Dry-run publishes/deletes/changes no files or directories. Status is read-only.
 Snapshot publication followed by heartbeat failure returns
@@ -172,3 +172,27 @@ Boundary: local API seam, no permanent packaging/runtime dependency, BACH-IN/P8,
 three-way parity, migration/rollback or off-host acceptance. The parity register
 remains push/pull/sync = 3/9. Deployment and schema-0/Task1168 requirements must
 be resolved separately before actual calls are switched over.
+
+
+NATIVE READINESS (T903 / Task1168, 2026-09-30)
+===========================================
+Native init/ensure_local_db checks only the actually selected DB path. No first
+copy from stale data/bach.db or transit backups, no creation/migration/stamping.
+Startup respects False; direct merge refuses a missing local DB. Construction
+creates no directories. Readiness precedes provider, heartbeat, state or backup
+preparation. Native status never constructs a new engine.
+
+Profile bach-schema-sql-v1: exactly the source-bound schema.sql structure with
+168 tables including FTS, 146 indexes, six triggers and three views; optionally
+the exact canonical _migrations table from core/db.py. Complete table_xinfo,
+table_list and DDL comparison. Native user_version=0 stays unchanged. Positive
+versions, missing/partial/unknown structures, links and literal WAL/SHM/journal
+sidecars are refused. Provenance stamps alone do not establish freshness.
+Other legitimate migration epochs and actual host copies need separately
+evidenced profiles, not a blanket permission.
+
+Dry-run creates/changes no directory, marker, heartbeat, state or backup;
+missing DBs are also refused in preview. A successful file/stat readback is not
+a lasting writer-exclusion lease. This is only a readiness prerequisite: no new
+credential scan, FTS coverage, shared cutover or runtime/host/full parity claim.
+Existing native backup/merge/retention algorithms stay unchanged. Register = 3/9.
