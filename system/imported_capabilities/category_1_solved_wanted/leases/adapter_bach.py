@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
 Bach Adapter for Atomic Distributed Leases (from Roshambo).
@@ -14,7 +13,6 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from typing import Optional
 
 
 def _validate(conn, task_id, token, ttl=None):
@@ -32,10 +30,10 @@ def _validate(conn, task_id, token, ttl=None):
 class TaskClaimResult:
     success: bool
     task_id: int
-    claim_id: Optional[str]
+    claim_id: str | None
     claimed_by: str
-    holder: Optional[str]
-    expires_at: Optional[str]
+    holder: str | None
+    expires_at: str | None
     reason: str
 
 
@@ -174,7 +172,7 @@ def release_task_lease(
     conn: sqlite3.Connection,
     task_id: int,
     claim_id: str,
-    mark_status: Optional[str] = None,
+    mark_status: str | None = None,
 ) -> bool:
     """Release a live fenced lease; default pending permits a later claim."""
     _validate(conn, task_id, claim_id)
@@ -185,7 +183,7 @@ def release_task_lease(
     params = [status, task_id, claim_id]
 
     cursor.execute(
-        f"""
+        """
         UPDATE tasks
            SET claim_id = NULL,
                claimed_by = NULL,

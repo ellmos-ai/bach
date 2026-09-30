@@ -4,9 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-
 from imported_capabilities.category_1_solved_wanted.leases.adapter_bach import (
-    ensure_task_lease_schema, release_task_lease, renew_task_lease,
+    ensure_task_lease_schema,
+    release_task_lease,
+    renew_task_lease,
     try_claim_task_atomic,
 )
 
