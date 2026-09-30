@@ -16,7 +16,7 @@ from hub.context_hints import CLI_PATTERN, ChatTriggerBackend, neutral_manual_hi
 
 
 @pytest.mark.parametrize('phrase', [
-    'steuer', 'medikament', 'versicherung', 'abo', 'fixkosten', 'arzt',
+    'steuer', 'medikament', 'versicherung', 'abo', 'fixkosten',
     'fehler', 'memory', 'backup', 'pfad', 'json',
 ])
 def test_manual_cli_becomes_existing_document(phrase):
@@ -37,6 +37,46 @@ def test_manual_cli_becomes_existing_document(phrase):
     'Kuratierter Pfad: skills/workflows/example',
 ])
 def test_unknown_or_noncli_hint_unchanged(hint):
+    assert neutral_manual_hint(hint, SYSTEM) == hint
+
+
+def test_stale_arzt_option_is_preserved_and_filtered(monkeypatch):
+    original = injectors.ContextInjector.CONTEXT_TRIGGERS['arzt']
+    assert '--upcoming' in original
+    assert '--upcoming' not in (SYSTEM / 'docs/help/gesundheit.txt').read_text(encoding='utf-8')
+    assert '--upcoming' not in (SYSTEM / 'hub/gesundheit.py').read_text(encoding='utf-8')
+    assert neutral_manual_hint(original, SYSTEM) == original
+    ci = injectors.ContextInjector
+    monkeypatch.setattr(ci, '_last_load', datetime.now())  # noqa: DTZ005 -- Zeitvertrag des Altpfads
+    monkeypatch.setattr(ci, '_cache', {'arzt': {'id': 1, 'source': 'manual', 'hint': original}})
+    used = []
+    monkeypatch.setattr(ci, '_mark_usage', classmethod(lambda cls, rid: used.append(rid)))
+    assert ci.check('arzt', cli_hints=False) is None
+    assert used == []
+    assert ci.check('arzt', cli_hints=True) == '[KONTEXT] ' + original
+    assert used == [1]
+    assert ci.CONTEXT_TRIGGERS['arzt'] == original
+
+
+@pytest.mark.parametrize('hint', [
+    'Bekannt: bach gesundheit appointments --all',
+    'Bekannt: bach backup create --to-nas',
+    'Bekannt: python3 "system/tools/backup_manager.py"',
+    "Bekannt: python 'system/tools/backup_manager.py'",
+])
+def test_supported_options_and_quoted_python_targets_stay_visible(hint):
+    rendered = neutral_manual_hint(hint, SYSTEM)
+    assert rendered != hint
+    assert not CLI_PATTERN.search(rendered)
+    assert all((SYSTEM / target).is_file() for target in rendered.split('Dokumentation: ')[1].split(' | '))
+
+
+@pytest.mark.parametrize('tail', [
+    '--unknown-danger', '--unknown-danger=1', '--format-unknown',
+    '| --format', '| python -u absent.py', '| python3 "missing file.py"',
+])
+def test_unknown_attached_or_unowned_cli_marker_preserves_original(tail):
+    hint = 'Gemischt: bach steuer status ' + tail
     assert neutral_manual_hint(hint, SYSTEM) == hint
 
 
@@ -192,7 +232,8 @@ def test_mixed_unknown_legacy_filtered_before_usage_selection_and_cooldown(tmp_p
     assert used == []
     assert not system.cooldown.is_on_cooldown('context')
     valid = ci.CONTEXT_TRIGGERS['steuer']
-    cache['steuer|beleg'] = {'id': 2, 'source': 'manual', 'hint': valid}
+    cache['steuer|beleg'] = {'id': 2, 'source': 'manual', 'hint': valid,
+                            'pattern': ci._compile_trigger('steuer|beleg')}
     assert system.process('steuer', cli_hints=False) == ['[KONTEXT] ' + neutral_manual_hint(valid, SYSTEM)]
     assert used == [2]
     assert system.cooldown.is_on_cooldown('context')

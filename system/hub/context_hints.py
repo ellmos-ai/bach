@@ -7,11 +7,13 @@ Befehle werden nicht umgedeutet; der vorhandene API-Filter entscheidet weiter.
 import re
 from pathlib import Path
 
-CLI_PATTERN = re.compile(r'bach\s+\w+|--\w+|\bpython(?:3)?\s+["\']?[^\s"\']+\.py\b')
+# Detect full option names and every Python invocation, even if its path cannot
+# be parsed. A known prefix must never hide an unresolvable command later on.
+CLI_PATTERN = re.compile(r'\bbach\s+\w+|--[\w-]+|\bpython(?:3)?\s+')
 _REFERENCES = re.compile(
     r'\bbach\s+(?P<command>[a-zA-Z_][a-zA-Z_0-9-]*)'
     r'|--help\s+(?P<help>[a-zA-Z_][a-zA-Z_0-9-]*)'
-    r'|\bpython\s+(?P<python>[a-zA-Z_0-9./-]+\.py)')
+    r'|\bpython(?:3)?\s+(?P<python>"[^"\r\n]+\.py"|\'[^\'\r\n]+\.py\'|[a-zA-Z_0-9./\\-]+\.py\b)')
 _TOOLS = {
     'c_encoding_fixer': 'tools/file_ops/encoding_fixer.py',
 }
@@ -29,6 +31,7 @@ def neutral_manual_hint(hint: str, system_root: Path) -> str:
         return hint
     root = Path(system_root).resolve()
     targets = []
+    resolved = []
     for match in matches:
         command = match['command'] or match['help']
         if command:
@@ -37,12 +40,34 @@ def neutral_manual_hint(hint: str, system_root: Path) -> str:
                 target = f'docs/help/tools/{command}.txt'
         else:
             target = match['python']
+            if target.startswith(('"', "'")):
+                target = target[1:-1]
             target = target.removeprefix('system/')
         candidate = (root / target).resolve()
         if not candidate.is_relative_to(root) or not candidate.is_file():
             return hint
         if target not in targets:
             targets.append(target)
+        resolved.append((match, candidate))
+
+    # Every marker must belong to a resolved reference, or to an option
+    # documented by that exact reference in the same command segment.
+    for marker in CLI_PATTERN.finditer(hint):
+        if any(reference.start() <= marker.start() and marker.end() <= reference.end()
+               for reference, _ in resolved):
+            continue
+        if not marker[0].startswith('--'):
+            return hint
+        owner = next(((reference, candidate) for reference, candidate in reversed(resolved)
+                      if reference.end() <= marker.start()), None)
+        if owner is None or re.search(r'[|;\n\r]', hint[owner[0].end():marker.start()]):
+            return hint
+        try:
+            documentation = owner[1].read_text(encoding='utf-8')
+        except (OSError, UnicodeError):
+            return hint
+        if not re.search(r'(?<![\w-])' + re.escape(marker[0]) + r'(?![\w-])', documentation):
+            return hint
     label = hint[:matches[0].start()].strip().rstrip(':|').strip()
     if CLI_PATTERN.search(label):
         return hint
