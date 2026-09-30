@@ -316,3 +316,80 @@ def test_crashed_process_releases_kernel_lock_without_unlinking_it(tmp_path):
         process.close()
         receiver.close()
         sender.close()
+
+
+@pytest.mark.parametrize("corrupt_entry", [
+    None,
+    {"token": "secret-a", "salt": "salt-a"},
+    {"node_id": "other-node", "token": "secret-a", "salt": "salt-a"},
+    {"node_id": "node-a", "salt": "salt-a"},
+    {"node_id": "node-a", "token": 7, "salt": "salt-a"},
+    {"node_id": "node-a", "token": "", "salt": "salt-a"},
+    {"node_id": "node-a", "token": "secret-a"},
+    {"node_id": "node-a", "token": "secret-a", "salt": 7},
+    {"node_id": "node-a", "token": "secret-a", "salt": True},
+    {"node_id": "node-a", "token": "secret-a", "salt": []},
+    {"node_id": "node-a", "token": "secret-a", "salt": {}},
+])
+def test_claim_rejects_every_malformed_registered_entry_without_changing_term(tmp_path, corrupt_entry):
+    _setup_node(tmp_path)
+    fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    registry_path = tmp_path / fencing.NODES_FILE
+    registry_path.write_text(json.dumps({"nodes": {"node-a": corrupt_entry}}), encoding="utf-8")
+    before_term = (tmp_path / fencing.TERM_FILE).read_bytes()
+    before_nodes = registry_path.read_bytes()
+    with pytest.raises(fencing.FencingError):
+        fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    assert (tmp_path / fencing.TERM_FILE).read_bytes() == before_term
+    assert registry_path.read_bytes() == before_nodes
+
+
+@pytest.mark.parametrize("registry", [None, {}, {"nodes": []}, {"nodes": {"node-b": None}}])
+def test_claim_requires_a_complete_registry_including_other_nodes(tmp_path, registry):
+    _setup_node(tmp_path)
+    before_term = (tmp_path / fencing.TERM_FILE).read_bytes()
+    (tmp_path / fencing.NODES_FILE).write_text(json.dumps(registry), encoding="utf-8")
+    with pytest.raises(fencing.FencingError):
+        fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    assert (tmp_path / fencing.TERM_FILE).read_bytes() == before_term
+
+
+def test_claim_does_not_ignore_a_corrupt_unrelated_node(tmp_path):
+    _setup_node(tmp_path)
+    registry_path = tmp_path / fencing.NODES_FILE
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry["nodes"]["node-b"] = {"node_id": "node-b", "token": "secret-b", "salt": []}
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    before_term = (tmp_path / fencing.TERM_FILE).read_bytes()
+    with pytest.raises(fencing.FencingError):
+        fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    assert (tmp_path / fencing.TERM_FILE).read_bytes() == before_term
+
+
+@pytest.mark.parametrize("salt", [None, "", "synthetisch-ü"])
+def test_explicit_valid_salt_remains_supported(tmp_path, salt):
+    fencing.register_node(tmp_path, "node-a", "secret-a", salt=salt)
+    result = fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    assert result["salt"] == salt
+    assert result["fencing_token"] == fencing._fencing_token("node-a", 1, salt)
+
+
+def test_claim_auth_and_salt_use_one_registry_snapshot_under_the_claim_lock(tmp_path, monkeypatch):
+    from filelock import FileLock, Timeout
+
+    _setup_node(tmp_path)
+    original_read = fencing._read_json
+    reads = []
+
+    def read_once(path):
+        if path.name == fencing.NODES_FILE:
+            with pytest.raises(Timeout), FileLock(str(tmp_path / fencing.LOCK_FILE), timeout=0):
+                pytest.fail("claim registry was read outside its native lock")
+            reads.append(path)
+        return original_read(path)
+
+    monkeypatch.setattr(fencing, "_read_json", read_once)
+    result = fencing.claim_lead(tmp_path, "node-a", "secret-a")
+    assert len(reads) == 1
+    assert result["salt"] == "salt-a"
+    assert result["fencing_token"] == fencing._fencing_token("node-a", 1, "salt-a")

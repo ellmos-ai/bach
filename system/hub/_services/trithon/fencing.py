@@ -122,6 +122,7 @@ def _validate_nodes(data: dict) -> None:
         if (not isinstance(node_id, str) or not node_id or not isinstance(entry, dict)
                 or entry.get("node_id") != node_id
                 or not isinstance(entry.get("token"), str) or not entry["token"]
+                or "salt" not in entry
                 or (entry.get("salt") is not None and not isinstance(entry["salt"], str))):
             raise FencingError("Invalid registered node")
 
@@ -230,7 +231,15 @@ def claim_lead(
     als der bisherige, sonst FencingError (stale Term / Split-Brain-Schutz).
     """
     with _state_lock(state_dir) as directory:
-        if not authenticate(directory, node_id, token):
+        registry = _read_json(directory / NODES_FILE)
+        if registry is None or not isinstance(registry.get("nodes"), dict):
+            raise FencingError("Existing node registry is missing or corrupt")
+        _validate_nodes(registry)
+        # Authenticate and derive the fence from this single validated snapshot.
+        # Re-reading through authenticate/load_nodes could select different data.
+        entry = registry["nodes"].get(node_id) if isinstance(node_id, str) else None
+        if (entry is None or not isinstance(token, str) or not token
+                or not hmac.compare_digest(entry["token"].encode("utf-8"), token.encode("utf-8"))):
             raise FencingError(f"Node '{node_id}' ist nicht authentisiert")
         state = _load_term(directory)
         new_term = state["term"] + 1 if term is None else term
@@ -238,7 +247,7 @@ def claim_lead(
             raise FencingError(
                 f"Stale Term: {new_term} <= aktueller Term {state['term']}"
             )
-        salt = load_nodes(directory)["nodes"].get(node_id, {}).get("salt")
+        salt = entry["salt"]
         fencing = _fencing_token(node_id, new_term, salt)
         record = {
             "term": new_term,
