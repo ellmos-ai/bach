@@ -183,6 +183,7 @@ jobs:
             system/tests/test_messages_handler.py \
             system/tests/test_migration_backup.py \
             system/tests/test_migration_baseline_check.py \
+            system/tests/test_migrate_unify_distribution.py \
             system/tests/test_model_backend.py \
             system/tests/test_mount_handler.py \
             system/tests/test_n8n_handler.py \
