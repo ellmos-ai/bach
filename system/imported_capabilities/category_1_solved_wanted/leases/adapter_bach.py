@@ -10,9 +10,11 @@ which needs its own dependencies; this adapter does not provide it.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 def _validate(conn, task_id, token, ttl=None):
@@ -24,6 +26,60 @@ def _validate(conn, task_id, token, ttl=None):
         raise ValueError("Owner/claim token must be a nonempty string")
     if ttl is not None and (type(ttl) is not int or not 0 < ttl <= 2147483647):
         raise ValueError("ttl_seconds must be a positive bounded integer")
+
+
+def _uuid4(value):
+    """The adapter issues canonical RFC 4122 UUIDv4 fences, never NIL UUIDs."""
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return False
+    return parsed.version == 4 and parsed.variant == uuid.RFC_4122 and str(parsed) == value
+
+
+def _expiry(value):
+    """Validate full calendar/time/offset before SQLite compares an instant.
+
+    SQLite accepts Julian numbers, time-only strings and impossible dates.
+    Legacy ISO timestamps with space/T, optional microseconds and valid UTC
+    offset remain supported. Naive timestamps follow SQLite's UTC convention.
+    """
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?", value
+    ):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        # fromisoformat normalizes overflowing offset minutes; validate them
+        # separately instead of silently repairing persisted lease data.
+        if re.search(r"[+-]\d{2}:\d{2}$", value) and (int(value[-5:-3]) > 23 or int(value[-2:]) > 59):
+            return None
+        parsed = parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+        return parsed.isoformat(sep=" ", timespec="microseconds").removesuffix("+00:00")
+    except (ValueError, OverflowError):
+        return None
+
+
+def _functions(conn):
+    conn.create_function("bach_t797_expiry", 1, _expiry, deterministic=True)
+    conn.create_function("bach_t797_uuid4", 1, _uuid4, deterministic=True)
+
+
+def _owned_update(conn, statement, parameters, *, returning=False):
+    """Rollback even RAISE(FAIL), which can retain the already updated row."""
+    try:
+        # Also own the transaction on autocommit connections: RAISE(FAIL)
+        # otherwise commits partial UPDATE effects before rollback can help.
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(statement, parameters)
+        result = cursor.fetchone() if returning else cursor.rowcount > 0
+        conn.commit()
+        return result
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 @dataclass(frozen=True)
@@ -82,11 +138,12 @@ def try_claim_task_atomic(
     if not isinstance(host, str) or not host.strip():
         raise ValueError("host must be a nonempty string")
     ensure_task_lease_schema(conn)
+    _functions(conn)
     cursor = conn.cursor()
     claim_id = str(uuid.uuid4())
 
     # Single atomic UPDATE with conditional WHERE
-    cursor.execute(
+    row = _owned_update(conn,
         """
         UPDATE tasks
            SET claim_id = ?,
@@ -99,15 +156,16 @@ def try_claim_task_atomic(
            AND status IN ('pending', 'open', 'in_progress')
            AND (
                (status IN ('pending', 'open') AND claim_id IS NULL
-                AND claimed_by IS NULL AND claim_expires_at IS NULL)
-               OR datetime(claim_expires_at) < datetime('now')
+                AND claimed_by IS NULL AND claim_expires_at IS NULL
+                AND claim_heartbeat_at IS NULL AND claim_host IS NULL)
+               OR (bach_t797_uuid4(claim_id) AND length(trim(claimed_by)) > 0
+                   AND julianday(bach_t797_expiry(claim_expires_at)) < julianday('now'))
            )
          RETURNING claim_expires_at
         """,
         (claim_id, agent_id, ttl_seconds, host, task_id),
+        returning=True,
     )
-    row = cursor.fetchone()
-    conn.commit()
 
     if row is not None:
         expires = row[0]
@@ -151,8 +209,10 @@ def renew_task_lease(
     if ttl_seconds is None:
         raise ValueError("ttl_seconds must be a positive bounded integer")
     _validate(conn, task_id, claim_id, ttl_seconds)
-    cursor = conn.cursor()
-    cursor.execute(
+    if not _uuid4(claim_id):
+        raise ValueError("claim_id must be a canonical RFC 4122 UUIDv4")
+    _functions(conn)
+    return _owned_update(conn,
         """
         UPDATE tasks
            SET claim_heartbeat_at = datetime('now'),
@@ -160,12 +220,11 @@ def renew_task_lease(
          WHERE id = ?
            AND claim_id = ?
            AND status = 'in_progress'
-           AND datetime('now') < datetime(claim_expires_at)
+           AND length(trim(claimed_by)) > 0
+           AND julianday('now') < julianday(bach_t797_expiry(claim_expires_at))
         """,
         (ttl_seconds, task_id, claim_id),
     )
-    conn.commit()
-    return cursor.rowcount > 0
 
 
 def release_task_lease(
@@ -176,13 +235,15 @@ def release_task_lease(
 ) -> bool:
     """Release a live fenced lease; default pending permits a later claim."""
     _validate(conn, task_id, claim_id)
+    if not _uuid4(claim_id):
+        raise ValueError("claim_id must be a canonical RFC 4122 UUIDv4")
     status = "pending" if mark_status is None else mark_status
     if status not in {"pending", "open", "done", "completed", "cancelled", "blocked"}:
         raise ValueError("Unsupported release status")
-    cursor = conn.cursor()
+    _functions(conn)
     params = [status, task_id, claim_id]
 
-    cursor.execute(
+    return _owned_update(conn,
         """
         UPDATE tasks
            SET claim_id = NULL,
@@ -194,9 +255,8 @@ def release_task_lease(
          WHERE id = ?
            AND claim_id = ?
            AND status = 'in_progress'
-           AND datetime('now') < datetime(claim_expires_at)
+           AND length(trim(claimed_by)) > 0
+           AND julianday('now') < julianday(bach_t797_expiry(claim_expires_at))
         """,
         params,
     )
-    conn.commit()
-    return cursor.rowcount > 0
