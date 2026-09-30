@@ -48,8 +48,8 @@ WICHTIGE SCOPE-REGEL (GEAENDERT seit Feb 2026):
 
 VERZEICHNIS-ABLEITUNG
 ---------------------
-  /Users/lukas/services/bach/.git  (Git-Root)
-  -->  -Users-lukas-services-bach/memory/
+  <repo-root>/.git  (Git-Root)
+  -->  <repo-memory-name>/memory/
   (auch wenn claude in .../bach/system/ gestartet wird!)
 
   Eigener Name moeglich: CLAUDE_CODE_PROJECT_DIR_NAME=<name>

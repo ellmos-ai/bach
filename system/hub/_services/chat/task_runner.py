@@ -9,8 +9,8 @@ Ein Task benennt seinen Umfang. Das Modell liest, was dazu gehoert, und
 faengt an. Danach beginnt der naechste mit leerem Fenster - keine Uebergabe
 noetig, weil nichts mitgeschleppt werden muss.
 
-    python -m hub._services.chat.task_runner --project lerncockpit-android \\
-        --workdir /Users/lukas/dev/lerncockpit-android --model qwen3.8:27b-mlx
+    python -m hub._services.chat.task_runner --project example-project \\
+        --workdir /path/to/example-project --model qwen3.8:27b-mlx
 
 Schreibt nur ueber bach_api bzw. die CLI - nie direkt in bach.db.
 """

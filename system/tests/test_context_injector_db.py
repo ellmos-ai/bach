@@ -136,4 +136,3 @@ def test_substring_matching_and_word_boundaries():
     assert CI.check("Hilf mir bei der Steuererklärung") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["steuer"]
     assert CI.check("Ich habe einen Arzttermin") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["arzt"]
     assert CI.check("Was steht an Medikamenten an?") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["medikament"]
-

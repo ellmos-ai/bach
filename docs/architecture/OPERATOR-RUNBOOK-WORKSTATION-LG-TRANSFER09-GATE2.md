@@ -10,7 +10,7 @@
 
 ## Warum lokal NICHT ausführbar (Beweis 2026-09-12, mac-studio)
 - BACH erreicht **nur** den Host `mac-studio`. `WORKSTATION-LG` & `ASUS-GEI` = separate Hosts.
-- SSH: `~/.ssh/config` inkludiert nur `/Users/lukas/.colima/ssh_config` (lokale Lima-VM `colima`); kein Eintrag für `WORKSTATION-LG`.
+- SSH: `~/.ssh/config` inkludiert nur `~/.colima/ssh_config` (lokale Lima-VM `colima`); kein Eintrag für `WORKSTATION-LG`.
 - `known_hosts` ohne Eintrag für `WORKSTATION-LG`; Suche nach `workstation/lg/windows/remote/connector` im BACH-Index: **0 Treffer**.
 - Keine Connector-/Sync-Pipe zu `WORKSTATION-LG`. → **kein Zugriff von BACH aus.**
 - Delegation an Claude/Codex bringt keine Host-Erreichbarkeit (gleiche Umgebung) → bringt hier nichts.
@@ -34,7 +34,7 @@ eigentliche Windows-Gegenprobe.
 | `test_transit_sync_provider_wiring.py` | 7 | 26 ✅ |
 | **Summe** | | **110 Tests grün in ~2.6 s** |
 
-Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller main-HEAD `60d9888`** (branch `main`), venv `/Users/lukas/.venvs/bach`
+Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller main-HEAD `60d9888`** (branch `main`), venv `<venv>/bach`
 (editable Installs aus `~/services/*`), `ellmos_scheduler`/`accounts_core`/`sqlite_transit_sync`/
 `system_explorer` importierbar.
 > ⚠️ REGRESSION 2026-09-12 ~14:2X (Task #1253): Der Repo-HEAD ist auf `c59b0da` vorgerückt; dort
@@ -54,7 +54,7 @@ Repo-Basis (grüner Paritäts-Pin): `git rev-parse --short HEAD` = **aktueller m
 > **Frisch-Re-Verifizierung 2026-09-17 21:5X (BACH qwen3.8:27b-mlx, mac-studio):** Seit Refresh 10
 > (#1251, `ace2568`, 2026-09-15) ist Code-Drift eingetreten (`ace2568` → `8825f73`, v.a. docs-only:
 > Translations/Help/Telemetrie), daher war ein Refresh gerechtfertigt. Live-Lauf der 5-Datei-Parität
-> am **aktuellen main-HEAD `8825f73`** (venv `/Users/lukas/.venvs/bach`): **110 passed, 1 warning**
+> am **aktuellen main-HEAD `8825f73`** (venv `<venv>/bach`): **110 passed, 1 warning**
 > in ~10,8 s. Der frühere „1 error" ist bestätigt transientes `~/.bach`-SHM-Artefakt (conftest-Teardown,
 > fremde BACH-Dienste PID 30288/31904/32354/41063/92080) — **nicht** Paritätsfall, jetzt nur Warning.
 > => macOS-Ersatznachweis bleibt grün und drift-robust. Die **EIGENTLICHE Windows-Gegenprobe auf

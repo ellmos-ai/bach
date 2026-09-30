@@ -63,7 +63,7 @@ class TestDbGuardHookBlocksDirectDbAccess:
 
     def test_python_sqlite3_update_blocked(self):
         rc, out, err = _run_hook(
-            "python3 -c \"import sqlite3; con=sqlite3.connect('/Users/lukas/.bach/bach.db'); "
+            "python3 -c \"import sqlite3; con=sqlite3.connect('/home/example/.bach/bach.db'); "
             "con.execute('UPDATE memory_working SET content=\\\"x\\\"'); con.commit()\""
         )
         assert rc == 2

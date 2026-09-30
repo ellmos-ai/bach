@@ -17,7 +17,7 @@
 - docs.anthropic.com/en/docs/claude-code/memory: Vollstaendig neu strukturiert -
   "Auto Memory" ist jetzt offizielles Feature mit eigener Doku-Sektion
 - Lokale Verzeichnisanalyse ~/.claude/projects/: Struktur geprueft
-- /Users/lukas/services/bach/.git: Bestaetigt (Git-Root fuer Scope-Ableitung)
+- <repo-root>/.git: Bestaetigt (Git-Root fuer Scope-Ableitung)
 
 ### Fakten geprueft (Auszug)
 
