@@ -80,6 +80,7 @@ def handler(cal_env):
 def populated(handler, cal_env):
     _, db_path = cal_env
     now = datetime.now()
+    current_month = now.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
     conn = sqlite3.connect(str(db_path))
 
     conn.execute(
@@ -93,6 +94,10 @@ def populated(handler, cal_env):
     conn.execute(
         "INSERT INTO assistant_calendar (title, event_type, start_datetime, status) VALUES (?, ?, ?, ?)",
         ("Altes Event", "erinnerung", (now - timedelta(days=60)).strftime("%Y-%m-%d 09:00:00"), "erledigt"),
+    )
+    conn.execute(
+        "INSERT INTO assistant_calendar (title, event_type, start_datetime, status) VALUES (?, ?, ?, ?)",
+        ("Monatstermin", "termin", current_month.strftime("%Y-%m-%d %H:%M:%S"), "geplant"),
     )
 
     conn.execute(
@@ -238,7 +243,7 @@ class TestCalendarMonth:
     def test_month_shows_events(self, populated):
         ok, msg = populated.handle("month", [])
         assert ok
-        assert "Zahnarzt" in msg
+        assert "Monatstermin" in msg
 
 
 # ─── Add ────────────────────────────────────────────────────
