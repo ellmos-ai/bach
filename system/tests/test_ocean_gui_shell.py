@@ -1,8 +1,8 @@
 """Hermetic neutral resource, branding and browser-client contracts."""
 import json
-import re
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -11,8 +11,82 @@ from gui.activity_dashboard import render_activity_dashboard as bach_render
 from ocean_gui_shell import render_activity_dashboard
 
 
+class ShellPageParser(HTMLParser):
+    """Parse every HTML tag while preserving actual script data for Node."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts = []
+        self.current_script = None
+        self.external_assets = []
+
+    def handle_starttag(self, tag, attrs):
+        resource_attr = {"script": "src", "link": "href"}.get(tag)
+        if resource_attr and any(name == resource_attr for name, _ in attrs):
+            self.external_assets.append(tag)
+        if tag == "script":
+            self.scripts.append([])
+            self.current_script = self.scripts[-1]
+
+    def handle_startendtag(self, tag, attrs):
+        if tag == "script":
+            raise ValueError("script element must have a complete closing tag")
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self.current_script = None
+
+    def handle_data(self, data):
+        if self.current_script is not None:
+            self.current_script.append(data)
+
+
+def parse_page(page):
+    parsed = ShellPageParser()
+    parsed.feed(page)
+    parsed.close()
+    return parsed
+
+
 def script_of(page):
-    return re.search(r"<script>(.*?)</script>", page, re.DOTALL)[1]
+    parsed = parse_page(page)
+    if (len(parsed.scripts) != 1 or parsed.current_script is not None
+            or "script" in parsed.external_assets):
+        raise ValueError("expected exactly one complete inline script")
+    return "".join(parsed.scripts[0])
+
+
+@pytest.mark.parametrize("opening,closing", [
+    ("script", "script"), ("SCRIPT", "SCRIPT"), ("ScRiPt", "sCrIpT"),
+    ('SCRIPT type="text/javascript" nonce="test"', "SCRIPT"),
+    ('script data-note="a>b"', "sCrIpT"),
+])
+def test_script_extraction_covers_tag_case_attributes_and_raw_js(opening, closing):
+    code = 'const raw = "<img>&amp;"; // actual script data\n'
+    assert script_of(f'<html><{opening}>{code}</{closing}></html>') == code
+
+
+@pytest.mark.parametrize("page", [
+    "<p>no script</p>", "<script>unfinished",
+    "<script>one()</script><script>two()</script>",
+    "<script>one()</script><SCRIPT>two()</SCRIPT>",
+    '<script src="external.js">ignored()</script>',
+    '<SCRIPT />',
+])
+def test_script_extraction_rejects_missing_incomplete_multiple_or_external(page):
+    with pytest.raises(ValueError):
+        script_of(page)
+
+
+@pytest.mark.parametrize("page", [
+    '<SCRIPT nonce="n" SRC="external.js"></SCRIPT>',
+    '<script src></script>', '<LINK HREF="external.css">',
+    '<link rel="stylesheet" href="external.css" />',
+])
+def test_asset_check_parses_case_attributes_and_self_closing_tags(page):
+    assert parse_page(page).external_assets
 
 
 def test_neutral_and_bach_use_same_resource():
@@ -22,7 +96,7 @@ def test_neutral_and_bach_use_same_resource():
     assert "BACH" not in neutral
     assert bach_render() == render_activity_dashboard(DEFAULT_BRANDING)
     assert '{{' not in neutral
-    assert not re.search(r'<(?:script|link)[^>]*(?:src|href)=', neutral)
+    assert not parse_page(neutral).external_assets
 
 
 def test_import_has_no_bach_or_backend_dependencies():
