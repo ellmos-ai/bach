@@ -582,7 +582,7 @@ class BACHTray:
         Niemals ungetrackte Runtime-Dateien (system/data/) stagen.
         """
         try:
-            repo_dir = "/Users/lukas/services/bach"
+            repo_dir = _root_dir
             res = subprocess.run(
                 ["git", "diff", "--name-only"],
                 cwd=repo_dir, capture_output=True, text=True, timeout=10

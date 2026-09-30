@@ -111,7 +111,7 @@ Keine Fälschung: Eine eigene `NotificationService`-Implementierung wäre NICHT 
 
 ## STATUS 2026-09-15 04:46 (Task #1248, Re-Verifikation #2) — OPERATOR-BLOCKED, kein lokaler Fix moeglich (definitiv belegt)
 - **Key wird offeriert, aber von GitHub abgelehnt** (entscheidend): `ssh -vT git@github.com` zeigt
-  `Offering public key: /Users/lukas/.ssh/id_ed25519 ED25519 SHA256:cFv6MMm+ziHLURAKxsTkorFsyqa2DbFoXqYFv64dUdk
+  `Offering public key: ~/.ssh/id_ed25519 ED25519 SHA256:<fingerprint>
   explicit agent` -> anschliessend `git@github.com: Permission denied (publickey)`. Der Key ist also korrekt
   geladen (ssh-agent) und korrekt offeriert (~/.ssh/config: `Host github.com` -> `IdentitiesOnly yes`,
   `IdentityFile ~/.ssh/id_ed25519`), wird aber von github.com abgelehnt => **der Key ist schlicht nicht im
