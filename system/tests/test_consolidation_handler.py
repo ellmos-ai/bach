@@ -349,8 +349,30 @@ class TestIndex:
 # ================================================================
 
 class TestRunAll:
-    def test_run_all_empty(self, cons_env):
+    @pytest.mark.parametrize('failed', [None, 'WEIGHT', 'ARCHIVE', 'INDEX', 'TRIGGERS', 'FORGET', 'SLEEP'])
+    @pytest.mark.parametrize('dry_run', [False, True])
+    def test_order_and_failure_receipt(self, cons_env, monkeypatch, failed, dry_run):
         h, _ = cons_env
+        called = []
+        steps = [('WEIGHT', '_update_weights'), ('ARCHIVE', '_archive_old'),
+                 ('INDEX', '_index_facts'), ('TRIGGERS', '_sync_triggers'),
+                 ('FORGET', '_deactivate_unused'), ('SLEEP', '_sleep_union')]
+        for name, method in steps:
+            def step(dry_run, name=name):
+                called.append((name, dry_run))
+                return name != failed, f'{name} details\nsecond line'
+            monkeypatch.setattr(h, method, step)
+        ok, msg = h.handle('run', [], dry_run=dry_run)
+        assert ok is (failed is None)
+        assert called == [(name, dry_run) for name, _ in steps]
+        assert msg.count('second line') == 6
+        if failed:
+            assert f'{failed} (FEHLER)' in msg
+
+    def test_run_all_empty(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        monkeypatch.setattr(h, '_sync_triggers', lambda dry_run: (True, 'fixture sync'))
+        monkeypatch.setattr(h, '_sleep_union', lambda dry_run: (True, 'fixture TTL'))
         ok, msg = h.handle("run", [])
         assert ok is True
         assert "WEIGHT" in msg
@@ -358,11 +380,71 @@ class TestRunAll:
         assert "INDEX" in msg
         assert "SLEEP" in msg
 
-    def test_run_all_dry_run(self, cons_env):
+    def test_run_all_dry_run(self, cons_env, monkeypatch):
         h, _ = cons_env
+        monkeypatch.setattr(h, '_sleep_union', lambda dry_run: (True, 'fixture TTL'))
         ok, msg = h.handle("run", [], dry_run=True)
         assert ok is True
         assert "DRY-RUN" in msg
+
+
+class TestS4PolicyAndTriggerBinding:
+    def test_policy_without_database(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        h.db_path = h.base_path / 'absent.db'
+        monkeypatch.setattr(sqlite3, 'connect', lambda *a, **kw: pytest.fail('policy opens DB'))
+        ok, msg = h.handle('policy', [])
+        assert ok
+        for text in ('Gardener', 'sync-triggers', 'workflowhooker Stop', 'ellmos-scheduler',
+                     'Offene Integration', 'aktiviert keine', 'decay=False'):
+            assert text in msg
+        assert not h.db_path.exists()
+
+    def test_missing_generators_fail(self, cons_env):
+        h, _ = cons_env
+        ok, msg = h.handle('sync-triggers', [])
+        assert not ok
+        assert msg.count('Nicht gefunden') == 5
+
+    def test_generator_database_is_handler_database(self, cons_env, monkeypatch):
+        h, db = cons_env
+        tools = h.base_path / 'tools'
+        tools.mkdir()
+        scripts = ['workflow_trigger_generator.py', 'lesson_trigger_generator.py',
+                   'tool_auto_discovery.py', 'theme_packet_generator.py', 'trigger_maintainer.py']
+        # Echte Kindprozesse, ausschließlich gegen die Temp-DB. Der geerbte Pfad ist absichtlich falsch.
+        monkeypatch.setenv('BACH_DB', str(h.base_path / 'must-not-create.db'))
+        source = (
+            "import os, sqlite3\n"
+            "from pathlib import Path\n"
+            "conn = sqlite3.connect(os.environ['BACH_DB'])\n"
+            "conn.execute('CREATE TABLE IF NOT EXISTS sync_probes (name TEXT)')\n"
+            "conn.execute('INSERT INTO sync_probes VALUES (?)', (Path(__file__).name,))\n"
+            "conn.commit()\nconn.close()\n"
+        )
+        for script in scripts:
+            (tools / script).write_text(source, encoding='utf-8')
+        ok, msg = h.handle('sync-triggers', [])
+        assert ok, msg
+        conn = sqlite3.connect(db)
+        try:
+            assert [r[0] for r in conn.execute('SELECT name FROM sync_probes')] == scripts
+        finally:
+            conn.close()
+        assert not (h.base_path / 'must-not-create.db').exists()
+        (tools / scripts[0]).write_text('raise SystemExit(7)', encoding='utf-8')
+        ok, msg = h.handle('sync-triggers', [])
+        assert not ok
+        assert 'Fehler' in msg and scripts[0] in msg
+
+    def test_dry_trigger_sync_has_no_process_or_write(self, cons_env, monkeypatch):
+        import subprocess
+        h, db = cons_env
+        before = db.read_bytes()
+        monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: pytest.fail('dry-run launches subprocess'))
+        ok, msg = h.handle('sync-triggers', [], dry_run=True)
+        assert ok and 'DRY-RUN' in msg
+        assert db.read_bytes() == before
 
 
 # ================================================================

@@ -52,7 +52,8 @@ class ConsolidationHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "status": "Konsolidierungs-Status anzeigen",
-            "run": "Alle Prozesse ausfuehren (weight, archive, index)",
+            "run": "Bestehende BACH-Schritte inkl. sync-triggers und Gardener-TTL ausführen",
+            "policy": "S4-Zuständigkeit und Auslöservertrag anzeigen (keine Laufzeitprüfung)",
             "compress": "Sessions komprimieren (benoetigt KI)",
             "weight": "Gewichtungen aktualisieren (decay + boost)",
             "archive": "Alte Eintraege archivieren",
@@ -66,6 +67,8 @@ class ConsolidationHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        if operation == "policy":
+            return self._sleep_policy()
         if not self.db_path.exists():
             return False, f"[FEHLER] Datenbank nicht gefunden: {self.db_path}"
 
@@ -207,36 +210,36 @@ class ConsolidationHandler(BaseHandler):
 
             return True, "\n".join(output)
 
+    def _sleep_policy(self) -> tuple:
+        """Normativer S4-Vertrag; keine Behauptung über aktivierte Jobs."""
+        return True, (
+            "[S4-POLICY] Gemeinsamer Schlaf: Gardener ist der zuständige Träger.\n"
+            "sync-triggers gehört zur gemeinsamen Schlaf-Pipeline.\n"
+            "Bestehender BACH-Pfad run: weight, archive, index, sync-triggers, forget, Gardener-TTL.\n"
+            "sleep ruft derzeit nur Gardener sleep_union (TTL) auf; decay=False vermeidet Doppelverfall.\n"
+            "Vorgesehene Auslöser: workflowhooker Stop und ellmos-scheduler Nachtlauf.\n"
+            "Offene Integration: gemeinsamer Gardener-Pipeline-Einstieg und dessen Stop-/Nacht-Anbindung.\n"
+            "Diese Ausgabe prüft keine Registrierungen und aktiviert keine Jobs oder Hooks."
+        )
+
     def _run_all(self, dry_run: bool = False) -> tuple:
-        """Fuehrt alle automatischen Prozesse aus"""
+        """Bestehenden BACH-Pfad ausführen, jeden Teilschritt wahrheitsgemäß melden."""
         results = []
-
-        # 1. Gewichtungen aktualisieren
-        success, msg = self._update_weights(dry_run)
-        results.append(f"WEIGHT: {msg.split(chr(10))[0]}")
-
-        # 2. Alte archivieren
-        success, msg = self._archive_old(dry_run)
-        results.append(f"ARCHIVE: {msg.split(chr(10))[0]}")
-
-        # 3. Facts-Index
-        success, msg = self._index_facts(dry_run)
-        results.append(f"INDEX: {msg.split(chr(10))[0]}")
-        
-        # 4. Sync Triggers (NEU v1.1.80)
-        success, msg = self._sync_triggers(dry_run)
-        results.append(f"TRIGGERS: {msg.split(chr(10))[0]}")
-        
-        # 5. Vergessen (NEU v1.1.80)
-        success, msg = self._deactivate_unused(dry_run)
-        results.append(f"FORGET: {msg.split(chr(10))[0]}")
-
-        # 6. Schlaf (TTL-Grace/Deaktivierung via Gardener sleep_union)
-        success, msg = self._sleep_union(dry_run=dry_run)
-        results.append(f"SLEEP: {msg.split(chr(10))[0]}")
-
+        all_ok = True
+        for name, step in (
+            ("WEIGHT", self._update_weights),
+            ("ARCHIVE", self._archive_old),
+            ("INDEX", self._index_facts),
+            ("TRIGGERS", self._sync_triggers),
+            ("FORGET", self._deactivate_unused),
+            ("SLEEP", self._sleep_union),
+        ):
+            success, msg = step(dry_run=dry_run)
+            all_ok = all_ok and success
+            # Details erhalten: ein fehlender Generator darf nicht im ersten Satz verschwinden.
+            results.append(f"{name} ({'OK' if success else 'FEHLER'}): {msg}")
         prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[CONSOLIDATION] Run All\n" + "\n".join(results)
+        return all_ok, f"{prefix}[CONSOLIDATION] Run All\n" + "\n".join(results)
 
     def _update_weights(self, dry_run: bool = False) -> tuple:
         """Aktualisiert Gewichtungen (decay)"""
@@ -632,6 +635,7 @@ class ConsolidationHandler(BaseHandler):
         if dry_run:
             return True, "[DRY-RUN] Trigger-Synchronisation uebersprungen."
             
+        import os
         import subprocess
         import sys
         
@@ -645,21 +649,27 @@ class ConsolidationHandler(BaseHandler):
         
         results = []
         tools_path = self.base_path / "tools"
+        env = os.environ.copy()
+        env["BACH_DB"] = str(self.db_path.resolve())
+        all_ok = True
         
         for script in scripts:
             script_path = tools_path / script
             if script_path.exists():
                 try:
-                    res = subprocess.run([sys.executable, str(script_path)],
+                    subprocess.run([sys.executable, str(script_path)],
                                        capture_output=True, text=True,
-                                       encoding='utf-8', errors='replace', check=True)
+                                       encoding='utf-8', errors='replace', check=True,
+                                       env=env)
                     results.append(f"  {script}: OK")
                 except Exception as e:
+                    all_ok = False
                     results.append(f"  {script}: Fehler ({e})")
             else:
+                all_ok = False
                 results.append(f"  {script}: Nicht gefunden")
                 
-        return True, "Trigger-Sync abgeschlossen:\n" + "\n".join(results)
+        return all_ok, "Trigger-Sync abgeschlossen:\n" + "\n".join(results)
 
     def _deactivate_unused(self, dry_run: bool = False) -> tuple:
         """Deaktiviert oder markiert Eintraege mit sehr geringem Gewicht als vergessen (v1.1.80)."""
