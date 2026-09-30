@@ -3,9 +3,10 @@
 """
 Bach Adapter for Atomic Distributed Leases (from Roshambo).
 
-Provides an atomic, race-free task claiming mechanism for Bach workers and subagents,
-solving Core Gap 1 (Kernlücke 1 in ROADMAP.md: "Kein atomarer Claim").
-Compatible with SQLite (local ~/.bach/bach.db) and PostgreSQL / CockroachDB (Rheingold federation).
+Experimental SQLite adapter; not wired into runtime workers or federation.
+Uses BACH task_audit's conditional UPDATE/status gate and Roshambo's exclusive,
+expiring UUID lease contract. PostgreSQL support belongs to the copied original,
+which needs its own dependencies; this adapter does not provide it.
 """
 
 from __future__ import annotations
@@ -13,9 +14,18 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+
+
+def _validate(conn, task_id, token, ttl=None):
+    if conn.in_transaction:
+        raise ValueError("Lease API requires a separate connection without an active transaction")
+    if type(task_id) is not int or task_id <= 0:
+        raise ValueError("task_id must be a positive integer")
+    if not isinstance(token, str) or not token.strip():
+        raise ValueError("Owner/claim token must be a nonempty string")
+    if ttl is not None and (type(ttl) is not int or not 0 < ttl <= 2147483647):
+        raise ValueError("ttl_seconds must be a positive bounded integer")
 
 
 @dataclass(frozen=True)
@@ -31,21 +41,22 @@ class TaskClaimResult:
 
 def ensure_task_lease_schema(conn: sqlite3.Connection) -> None:
     """Ensures lease tracking columns exist on the tasks table in SQLite."""
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(tasks)")
-    columns = {row[1] for row in cursor.fetchall()}
-
-    if "claim_id" not in columns:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN claim_id TEXT")
-    if "claimed_by" not in columns:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN claimed_by TEXT")
-    if "claim_expires_at" not in columns:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN claim_expires_at TEXT")
-    if "claim_heartbeat_at" not in columns:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN claim_heartbeat_at TEXT")
-    if "claim_host" not in columns:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN claim_host TEXT")
-    conn.commit()
+    if conn.in_transaction:
+        raise ValueError("Schema initialization cannot commit a caller transaction")
+    # Serialize first-time DDL as well as claims: concurrent initializers must
+    # inspect the schema AFTER obtaining the write lock.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if not {"id", "status"} <= columns:
+            raise ValueError("Existing tasks table with id/status is required")
+        for column in ("claim_id", "claimed_by", "claim_expires_at", "claim_heartbeat_at", "claim_host"):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def try_claim_task_atomic(
@@ -60,11 +71,20 @@ def try_claim_task_atomic(
     
     A claim succeeds if:
     1. The task is pending/open and unassigned, OR
-    2. Any existing lease has expired (current_time > claim_expires_at).
+    2. A valid existing lease has expired on an eligible task.
+
+    Terminal/blocked/unknown statuses and malformed/unbounded existing leases
+    are denied. Same-owner acquisition is not renewal. This standalone API
+    owns its commits and rejects active caller transactions. Initialize only
+    disposable/explicitly authorized databases; no runtime caller is wired.
     """
+    if ttl_seconds is None:
+        raise ValueError("ttl_seconds must be a positive bounded integer")
+    _validate(conn, task_id, agent_id, ttl_seconds)
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("host must be a nonempty string")
     ensure_task_lease_schema(conn)
     cursor = conn.cursor()
-    now_iso = datetime.now(timezone.utc).isoformat()
     claim_id = str(uuid.uuid4())
 
     # Single atomic UPDATE with conditional WHERE
@@ -78,21 +98,21 @@ def try_claim_task_atomic(
                claim_host = ?,
                status = 'in_progress'
          WHERE id = ?
+           AND status IN ('pending', 'open', 'in_progress')
            AND (
-               claim_expires_at IS NULL
-               OR datetime('now') > datetime(claim_expires_at)
-               OR status = 'pending'
-               OR claimed_by = ?
+               (status IN ('pending', 'open') AND claim_id IS NULL
+                AND claimed_by IS NULL AND claim_expires_at IS NULL)
+               OR datetime(claim_expires_at) < datetime('now')
            )
+         RETURNING claim_expires_at
         """,
-        (claim_id, agent_id, int(ttl_seconds), host, task_id, agent_id),
+        (claim_id, agent_id, ttl_seconds, host, task_id),
     )
+    row = cursor.fetchone()
     conn.commit()
 
-    if cursor.rowcount > 0:
-        cursor.execute("SELECT claim_expires_at FROM tasks WHERE id = ?", (task_id,))
-        row = cursor.fetchone()
-        expires = row[0] if row else None
+    if row is not None:
+        expires = row[0]
         return TaskClaimResult(
             success=True,
             task_id=task_id,
@@ -130,6 +150,9 @@ def renew_task_lease(
     ttl_seconds: int = 300,
 ) -> bool:
     """Extends the heartbeat and expiration of an active lease."""
+    if ttl_seconds is None:
+        raise ValueError("ttl_seconds must be a positive bounded integer")
+    _validate(conn, task_id, claim_id, ttl_seconds)
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -138,9 +161,10 @@ def renew_task_lease(
                claim_expires_at = datetime('now', '+' || ? || ' seconds')
          WHERE id = ?
            AND claim_id = ?
-           AND datetime('now') <= datetime(claim_expires_at)
+           AND status = 'in_progress'
+           AND datetime('now') < datetime(claim_expires_at)
         """,
-        (int(ttl_seconds), task_id, claim_id),
+        (ttl_seconds, task_id, claim_id),
     )
     conn.commit()
     return cursor.rowcount > 0
@@ -152,10 +176,13 @@ def release_task_lease(
     claim_id: str,
     mark_status: Optional[str] = None,
 ) -> bool:
-    """Releases an active lease, optionally updating status to 'done' or 'pending'."""
+    """Release a live fenced lease; default pending permits a later claim."""
+    _validate(conn, task_id, claim_id)
+    status = "pending" if mark_status is None else mark_status
+    if status not in {"pending", "open", "done", "completed", "cancelled", "blocked"}:
+        raise ValueError("Unsupported release status")
     cursor = conn.cursor()
-    new_status_clause = ", status = ?" if mark_status else ""
-    params = [mark_status, task_id, claim_id] if mark_status else [task_id, claim_id]
+    params = [status, task_id, claim_id]
 
     cursor.execute(
         f"""
@@ -163,10 +190,13 @@ def release_task_lease(
            SET claim_id = NULL,
                claimed_by = NULL,
                claim_expires_at = NULL,
-               claim_heartbeat_at = NULL
-               {new_status_clause}
+               claim_heartbeat_at = NULL,
+               claim_host = NULL,
+               status = ?
          WHERE id = ?
            AND claim_id = ?
+           AND status = 'in_progress'
+           AND datetime('now') < datetime(claim_expires_at)
         """,
         params,
     )
