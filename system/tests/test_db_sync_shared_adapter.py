@@ -336,20 +336,34 @@ def test_invalid_selector_is_not_native_fallback(seam):
 def test_native_selection_rollback_preserves_shared_artifacts(seam, monkeypatch):
     adapter, root = seam
     assert handler(adapter, "enable", dry_run=False)[0]
+    native_system = root / "native-system"
+    native_db = native_system / "data" / "bach.db"
+    native_db.parent.mkdir(parents=True)
+    with closing(sqlite3.connect(native_db)) as connection:
+        connection.execute("CREATE TABLE fixture_identity(value TEXT)")
+        connection.execute("INSERT INTO fixture_identity VALUES ('private native path')")
+        connection.commit()
+    native_handler = DBSyncHandler(native_system)
+    assert native_handler._canonical_db == native_db
     before = tree(root)
     calls = []
+    selected_paths = []
 
     class NativeProbe:
-        def __init__(self):
+        def __init__(self, *, db_path):
+            assert db_path == native_db
+            assert db_path.is_file()
+            selected_paths.append(db_path)
             calls.append("constructed")
 
         def get_status(self):
             return "native dispatch probe (no live data)"
 
     monkeypatch.setattr("hub.db_sync.DBSyncManager", NativeProbe)
-    ok, text = DBSyncHandler.handle(None, "status", [], dry_run=True)
+    ok, text = native_handler.handle("status", [], dry_run=True)
     assert ok and text == "native dispatch probe (no live data)"
     assert calls == ["constructed"]
+    assert selected_paths == [native_db]
     assert tree(root) == before
     # This is selection rollback only, not migrated native-state equivalence.
 
