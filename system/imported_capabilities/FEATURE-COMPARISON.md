@@ -78,14 +78,49 @@ Umsetzung; insbesondere enthalten 1511 und 1515 weiterhin Blockertexte.
 ## Abhängigkeiten und Beweisgrenzen
 
 Pro Modul sind sämtliche AST-Importstellen, die transitive interne
-Python-Importkette, Stdlib-Imports, externe oder nicht aufgelöste Imports
+Python-Importkette einschließlich vorhandener Paketinitialisierungen,
+Stdlib-Imports, externe oder nicht aufgelöste Imports
 und dynamische Import-/exec-Stellen erfasst. Dazu kommen alle deklarierten
 Pyproject-Abhängigkeiten/Extras sowie vorhandene `uv.lock`-/Requirements-
 Manifeste mit Hashes und Paket-/Versionsangaben. Beim FolderHome-Katalog
 bleiben logische Ressourcen, Effekte und der Unterschied zwischen
 `typed_adapter_available`, `planning_only` und `no_typed_adapter` erhalten.
 
-Das ist die vollständige **statische deklarierte** Abhängigkeitsaufnahme.
+Der Modulgraph verfolgt vorhandene `__init__.py` beim Einstieg und beim
+Import verschachtelter Ziele rekursiv. Ein Besuchsregister beendet Zyklen.
+Namespace-Segmente ohne Initialisierungsdatei erzeugen keine erfundene
+`__init__.py`-Kante. Grundlage ist der normale Paketimport im erfassten
+Quellmodulgraph; ein isolierter `spec_from_file_location`-Load hat einen
+anderen Vertrag. Explizite AST-Importe werden als statische mögliche Kanten
+erfasst, auch innerhalb bedingter Zweige; deren Laufzeitwahl ist nicht bewiesen.
+
+Die Korrektur ergänzt direkte Initialisierungskanten und verändert daraus
+abgeleitete Modulclosures, externe/Stdlib-Listen und dynamische Standorte:
+
+| Quelle | Ergänzte direkte Kanten | Veränderte Abhängigkeitszeilen |
+| --- | ---: | ---: |
+| NemoFold | 90 | 89 |
+| FolderHome | 313 | 133 |
+| Roshambo | 64 | 52 |
+| SentinelFleet | 60 | 53 |
+
+Diese Kantenanzahlen umfassen Einstieg und Importziele; sie sind keine Zahl
+unabhängiger Features oder Laufzeitfehler. Die 425 Zeilen, vier Gitinventare,
+392 Modul-/Skillhashes, 344 direkten AST-Importlisten sowie Vergleichs- und
+Skillstände bleiben gegenüber dem vorherigen Matrixcheckpoint unverändert.
+Roshambo `aws/s3.py` erreicht jetzt beide Paketinitialisierungen und zusätzlich
+`psycopg`; FolderHome `application/administrative_drafts.py` erreicht
+`application/__init__.py` und `contracts/__init__.py`; Nemo `action_journal.py`
+erreicht `nemofold/__init__.py` und `contracts.py`.
+
+Die [statische Gegenkontrolle](../../docs/reviews/T797-static-import-closure.py)
+rekonstruiert alle 344 Closures, prüft diese Beispiele und einen synthetischen
+Import in ein fremdes Zielpaket mit Reexportzyklus und Namespace-Segment.
+Keine Originalmodule werden dabei importiert. Der vorherige Graph verfehlte
+im synthetischen Fall die Parentinitialisierung; der korrigierte Graph erfasst sie.
+
+Das ist eine **statische deklarierte** Abhängigkeitsaufnahme im beschriebenen
+Modulgraph, keine vollständige Auflösung aller möglichen Importumgebungen.
 Dynamisch gewählte Ressourcen, Provider, Netzwerkbudgets und tatsächliche
 Umgebungskonfiguration werden nicht als vollständig gelöst ausgegeben.
 `runtime_dependency_closure_proven` bleibt deshalb ausdrücklich falsch.
