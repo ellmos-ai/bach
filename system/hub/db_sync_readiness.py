@@ -44,7 +44,7 @@ def _quote(name):
 def _structure(conn):
     objects = tuple(conn.execute(
         "SELECT type,name,tbl_name,sql FROM main.sqlite_schema "
-        "WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name"
+        "WHERE substr(name, 1, 7) <> 'sqlite_' ORDER BY type,name"
     ))
     # Preserve quoted tokens; discard only whitespace and SQL comments.
     def tokens(sql):
