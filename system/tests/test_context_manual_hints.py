@@ -207,6 +207,9 @@ MIXED_UNKNOWN = [
     'Gemischt: bach steuer status | python3 absent.py',
     'Gemischt: bach steuer status | python "absent.py"',
     'Gemischt: bach steuer status | --unknown-danger',
+    'Gemischt: bach steuer status | python tools/backup_manager.py.bak',
+    'Gemischt: bach steuer status | python tools/backup_manager.py/absent',
+    'Gemischt: bach steuer status | python tools/backup_manager.py?absent',
 ]
 
 
