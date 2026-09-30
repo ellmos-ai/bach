@@ -864,7 +864,24 @@ class DBSyncHandler(BaseHandler):
             "disable": "Auto-Sync deaktivieren",
         }
 
-    def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+    def handle(self, operation: str, args: List[str], dry_run: bool = False,
+               *, shared_adapter=None) -> Tuple[bool, str]:
+        if shared_adapter is not None:
+            # Explicit source seam only: no native manager/path preparation,
+            # state migration or startup/exit cutover. Even refusal stays on
+            # this path; the native fallback must not become a second writer.
+            from .db_sync_adapter import OPERATIONS, SharedDBSyncAdapter
+            if not isinstance(shared_adapter, SharedDBSyncAdapter):
+                return False, "Shared dbsync refused: invalid-adapter"
+            if operation not in OPERATIONS:
+                return False, "Shared dbsync refused: operation-outside-shared-scope"
+            scope = None
+            if args:
+                if operation != "cleanup" or args not in (["--local-node"], ["--all-nodes"]):
+                    return False, "Shared dbsync refused: unsupported-arguments"
+                scope = "local-node" if args == ["--local-node"] else "all-nodes"
+            return shared_adapter.handler_result(operation, dry_run=dry_run, scope=scope)
+
         manager = DBSyncManager()
 
         if operation == "backup":

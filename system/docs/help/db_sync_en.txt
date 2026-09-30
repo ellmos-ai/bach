@@ -109,3 +109,66 @@ SEE ALSO
 - docs/help/setup.txt: bach setup prosync (configuration)
 - hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
 - basehandler / handler framework: See base.py for interface
+
+
+EXPLICIT LOCAL SHARED API (T903, 2026-09-30)
+=========================================
+The source seam hub/db_sync_adapter.py reuses unchanged, hash-bound adapter
+code from Ocean 7127a0f5 and TransitSync 7648a20. It does not activate an Ocean
+product runtime or startup/exit sync. No ambient tools import or installed-module
+fallback is used.
+
+SharedDBSyncConfig requires explicit absolute database/transit/state/marker/
+heartbeat paths, node_id, namespace="bach", required_schema and user_version.
+SharedDBSyncAdapter also requires ocean_root, carrier_root and a timezone-aware
+clock. The caller owns application schema, database creation, an exclusive writer
+claim and a quiescent database. Links/reparse paths and SQLite sidecars are
+refused. The seam does not enforce global writer exclusion or locks.
+
+API: adapter.handle(operation, dry_run=True, scope=None) returns the shared
+OperationResult (supported/dry-run/refused/error, code, message, data).
+Source/configuration failures may raise a refusal before this call.
+Handler: DBSyncHandler.handle(..., shared_adapter=adapter, dry_run=...) selects
+the seam BEFORE constructing the native manager. Without the explicit selector,
+native dispatch remains; shared refusal never falls back to native writes.
+The existing handler default dry_run=False is APPLY; the adapter default True
+is preview. Callers must account for this difference.
+
+Operation | Shared contract | Native classification / outstanding correction
+backup    | Carrier snapshot, secret validation, heartbeat after publication
+          | replaces only the selected call; native .bachdb backup stays separate
+status    | verified snapshot metadata, marker, heartbeat, no changes
+          | structured result replaces the unverified legacy inventory
+enable    | atomically write exactly "enabled" at the injected marker
+disable   | remove only this owned marker; refuse foreign content
+          | native config paths stay unchanged; no activation is performed
+cleanup   | explicitly selected local-node/all-nodes scope, UTC carrier retention
+          | handler args --local-node/--all-nodes; never infer scope from a default
+          | differs from legacy: manifest time replaces file mtime, explicit errors
+init      | validate the existing explicitly declared schema and version
+          | no first-copy, migration or inferred freshness
+
+Push/pull/sync, aliases and unknown arguments are refused under this selector.
+The native schema-0 database is NOT restamped: version 0 is invalid for this
+unchanged shared API. A successful synthetic version-1 test does not authorize
+changing native schema. Task1168 (stale first-copy in native init) and its actual
+application-schema authority remain open.
+
+Dry-run publishes/deletes/changes no files or directories. Status is read-only.
+Snapshot publication followed by heartbeat failure returns
+error/snapshot-published-heartbeat-failed with the snapshot evidence, not a false
+rollback. Other carrier failures may leave partial effects and report
+carrier-call-failed-state-unknown. Calls are synchronous: no bounded IO deadline,
+cancellation or retry is promised. Carrier clock and retention stay unchanged;
+the injected clock timestamps the heartbeat only.
+
+Corrections (dry-run, credential/sidecar refusal, marker ownership, verified
+status, selected cleanup scope and no first-copy) are explicitly classified,
+not counted as native equivalence. The tested return path only removes the
+explicit selector and retains shared artifacts; it does not prove migration or
+restoration of legacy state.
+
+Boundary: local API seam, no permanent packaging/runtime dependency, BACH-IN/P8,
+three-way parity, migration/rollback or off-host acceptance. The parity register
+remains push/pull/sync = 3/9. Deployment and schema-0/Task1168 requirements must
+be resolved separately before actual calls are switched over.
