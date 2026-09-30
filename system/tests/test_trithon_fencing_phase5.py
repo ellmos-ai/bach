@@ -3,10 +3,27 @@
 import json
 import multiprocessing
 import os
-import time
+from importlib.machinery import PathFinder
+from pathlib import Path
 
 import pytest
 from hub._services.trithon import fencing
+
+from tests.trithon_fencing_process_helpers import (
+    _exit_while_holding_lock,
+    _fencing_process,
+)
+
+
+@pytest.fixture(params=[False, True], ids=["inherited-imports", "hub-shadowed-imports"])
+def spawn_imports(request, monkeypatch):
+    """Keep the real suite's hub/email shadowing in spawned children."""
+    if request.param:
+        hub = Path(__file__).resolve().parents[1] / "hub"
+        spec = PathFinder.find_spec("email", [str(hub)])
+        assert Path(spec.origin) == hub / "email.py"
+        assert spec.submodule_search_locations is None
+        monkeypatch.syspath_prepend(str(hub))
 
 
 def _setup_node(tmp_path, node_id="node-a", token="secret-a", salt="salt-a"):
@@ -93,36 +110,6 @@ def test_term_file_atomar_und_lesbar(tmp_path):
     assert reste == []
 
 
-def _fencing_process(directory, index, operation, ready, start, results):
-    """Real spawned process; widen the original read/write race deterministically."""
-    from hub._services.trithon import fencing as child_fencing
-    original = child_fencing._load_term
-
-    def slow_read(path):
-        state = original(path)
-        time.sleep(0.1)
-        return state
-
-    child_fencing._load_term = slow_read
-    ready.put(index)
-    if not start.wait(15):
-        raise RuntimeError("Parent did not release fixture processes")
-    try:
-        if operation == "register":
-            child_fencing.register_node(directory, f"node-{index}", f"synthetic-{index}")
-            result = index
-        elif operation == "epoch":
-            result = child_fencing.bump_epoch(directory)
-        else:
-            result = child_fencing.claim_lead(
-                directory, f"node-{index}", f"synthetic-{index}",
-                term=1 if operation == "explicit-claim" else None,
-            )["term"]
-        results.put(("ok", result))
-    except child_fencing.FencingError as exc:
-        results.put(("refused", str(exc)))
-
-
 def _run_processes(directory, operation, count=4):
     # spawn tests Windows and POSIX without inherited lock descriptors or caches.
     context = multiprocessing.get_context("spawn")
@@ -152,7 +139,7 @@ def _run_processes(directory, operation, count=4):
         results.close()
 
 
-def test_multiprocess_claims_get_unique_monotone_terms(tmp_path):
+def test_multiprocess_claims_get_unique_monotone_terms(tmp_path, spawn_imports):
     for i in range(4):
         fencing.register_node(tmp_path, f"node-{i}", f"synthetic-{i}")
     results = _run_processes(tmp_path, "claim")
@@ -160,7 +147,7 @@ def test_multiprocess_claims_get_unique_monotone_terms(tmp_path):
     assert fencing.current_term(tmp_path) == 4
 
 
-def test_multiprocess_explicit_term_has_exactly_one_winner(tmp_path):
+def test_multiprocess_explicit_term_has_exactly_one_winner(tmp_path, spawn_imports):
     for i in range(4):
         fencing.register_node(tmp_path, f"node-{i}", f"synthetic-{i}")
     results = _run_processes(tmp_path, "explicit-claim")
@@ -169,14 +156,14 @@ def test_multiprocess_explicit_term_has_exactly_one_winner(tmp_path):
     assert fencing.current_term(tmp_path) == 1
 
 
-def test_multiprocess_fresh_registration_does_not_drop_nodes(tmp_path):
+def test_multiprocess_fresh_registration_does_not_drop_nodes(tmp_path, spawn_imports):
     results = _run_processes(tmp_path, "register")
     assert all(status == "ok" for status, _ in results)
     assert set(fencing.load_nodes(tmp_path)["nodes"]) == {f"node-{i}" for i in range(4)}
     assert fencing.current_term(tmp_path) == 0
 
 
-def test_multiprocess_epoch_changes_do_not_drop_increments(tmp_path):
+def test_multiprocess_epoch_changes_do_not_drop_increments(tmp_path, spawn_imports):
     _setup_node(tmp_path)
     results = _run_processes(tmp_path, "epoch")
     assert sorted(result for status, result in results if status == "ok") == [1, 2, 3, 4]
@@ -284,18 +271,7 @@ def test_corrupt_nodes_do_not_get_overwritten_or_advance_epoch(tmp_path):
     assert (tmp_path / fencing.TERM_FILE).read_bytes() == before
 
 
-def _exit_while_holding_lock(directory, signal):
-    from pathlib import Path
-
-    from filelock import FileLock
-    from hub._services.trithon import fencing as child_fencing
-
-    with FileLock(str(Path(directory) / child_fencing.LOCK_FILE)):
-        signal.send("locked")
-        os._exit(23)
-
-
-def test_crashed_process_releases_kernel_lock_without_unlinking_it(tmp_path):
+def test_crashed_process_releases_kernel_lock_without_unlinking_it(tmp_path, spawn_imports):
     """A dead holder cannot leave permanent local ownership on either OS."""
     _setup_node(tmp_path)
     context = multiprocessing.get_context("spawn")
