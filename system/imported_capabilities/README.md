@@ -75,9 +75,10 @@ oder Abnahmebescheinigung. Die Leseverbindung nutzte SQLite `mode=ro` und
 `query_only`; eine spätere separate Dateimessung ersetzt keinen
 Vorher/Nachher-Beleg unveränderter Sidecars.
 
-Die vollständige Feature-/Skill-Vergleichsmatrix aller vier Quellinventare
-gegen Skills, BACH und Ocean ist ein weiterer eigener Analysecheckpoint.
-Die elf ausgewählten Komponenten decken diesen Analyseauftrag nicht ab.
+Die [statische Vergleichsmatrix](FEATURE-COMPARISON.md) erfasst inzwischen
+die vollständigen getrackten Quellinventare mit Modul-, Skill- und
+Endpunktzeilen, Importketten und konkreten Skills-/BACH-/Ocean-Gegenstücken.
+Die elf ausgewählten Komponenten allein deckten diesen Analyseauftrag nicht ab.
 Optionale/dynamische Importpfade, vollständige Paketabhängigkeiten und
 produktive Transfergates bleiben bei fehlendem Beleg ausdrücklich offen.
 
