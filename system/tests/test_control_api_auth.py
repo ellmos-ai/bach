@@ -94,3 +94,57 @@ def test_remote_bind_requires_configured_token(monkeypatch):
         assert "Bearer-Token" in str(exc)
     else:
         raise AssertionError("Remote-Bind darf ohne Token nicht zugelassen werden")
+
+
+@pytest.mark.parametrize("authorization", [None, "", "Bearer wrong", "Basic control-secret"])
+def test_auth_check_rejects_missing_or_invalid_token(monkeypatch, authorization):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
+    headers = {"Authorization": authorization} if authorization is not None else {}
+    handler = _handler(headers, "/api/auth/check")
+    with patch.object(handler, "_json") as response, \
+         patch("hub._services.chat.telegram_chat.runtime") as runtime, \
+         patch("hub._services.chat.telegram_chat.add_worker") as add_worker, \
+         patch("hub._services.chat.telegram_chat.remove_worker") as remove_worker:
+        handler.do_GET()
+    response.assert_called_once_with(
+        {"error": "Control-API-Token erforderlich oder ungültig"}, 401
+    )
+    assert runtime.mock_calls == []
+    add_worker.assert_not_called()
+    remove_worker.assert_not_called()
+
+
+def test_auth_check_valid_token_is_readonly(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
+    handler = _handler({"Authorization": "Bearer control-secret"}, "/api/auth/check")
+    with patch.object(handler, "_json") as response, \
+         patch("hub._services.chat.telegram_chat.runtime") as runtime, \
+         patch("hub._services.chat.telegram_chat.add_worker") as add_worker, \
+         patch("hub._services.chat.telegram_chat.remove_worker") as remove_worker:
+        handler.do_GET()
+    response.assert_called_once_with(
+        {"service": "bach-chat-control", "authenticated": True}
+    )
+    assert runtime.mock_calls == []
+    add_worker.assert_not_called()
+    remove_worker.assert_not_called()
+
+
+def test_auth_check_retains_origin_policy(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
+    handler = _handler({"Authorization": "Bearer control-secret",
+                        "Host": "127.0.0.1:8081", "Origin": "https://foreign.invalid"},
+                       "/api/auth/check")
+    with patch.object(handler, "_json") as response:
+        handler.do_GET()
+    response.assert_called_once_with({"error": "Fremd-Origin nicht erlaubt"}, 403)
+
+
+def test_auth_check_without_server_token_fails_closed(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "")
+    handler = _handler({"Authorization": "Bearer control-secret"}, "/api/auth/check")
+    with patch.object(handler, "_json") as response:
+        handler.do_GET()
+    response.assert_called_once_with(
+        {"error": "Control-API-Token erforderlich oder ungültig"}, 401
+    )
