@@ -830,12 +830,8 @@ except ImportError:
 
 # --- Injector-Integration ---
 
-# Pattern: "bach befehl" oder "--befehl" CLI-Hinweise erkennen
-_CLI_PATTERN = re.compile(
-    r'bach\s+\w+'           # "bach steuer status", "bach task list"
-    r'|--\w+'               # "--help tasks", "--memory"
-    r'|python\s+\w+\.py'    # "python injectors.py"
-)
+# Derselbe Filter gilt vor der Auswahl im Legacy- und memoryhooker-Pfad.
+from hub.context_hints import CLI_PATTERN as _CLI_PATTERN
 
 
 class _InjectorProxy:
@@ -867,9 +863,9 @@ class _InjectorProxy:
     def set_mode(self, mode: str):
         """Setzt den Modus: 'cli' (alles) oder 'api' (CLI-Hinweise gefiltert).
 
-        Im API-Modus werden Kontext-Hinweise die CLI-Befehle enthalten
-        (z.B. 'bach steuer status') herausgefiltert. Pfad-Hinweise und
-        kognitive Strategien bleiben erhalten.
+        Im API-Modus werden bekannte manuelle Befehle vor der Auswahl als
+        Dokumentationsverweise dargestellt. Verbleibende CLI-Hinweise werden
+        herausgefiltert. Pfad-Hinweise und kognitive Strategien bleiben erhalten.
         """
         if mode in ("cli", "api"):
             self._mode = mode
@@ -907,7 +903,7 @@ class _InjectorProxy:
             Liste von Hinweisen (kann leer sein)
         """
         system = self._get_system()
-        injections = system.process(text, context, skip=skip)
+        injections = system.process(text, context, skip=skip, cli_hints=self._mode != "api")
         return self._filter_cli(injections)
 
     def check_between(self, last_action: str, session_ending: bool = False):

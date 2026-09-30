@@ -453,7 +453,7 @@ class ContextInjector:
         return re.compile('|'.join(parts), re.IGNORECASE)
 
     @classmethod
-    def check(cls, text: str) -> Optional[str]:
+    def check(cls, text: str, cli_hints: bool = True) -> Optional[str]:
         """Prüft ob Kontext-Hinweis hilfreich wäre."""
         text_lower = text.lower()
 
@@ -466,6 +466,13 @@ class ContextInjector:
             pattern = data.get('pattern')
             matched = bool(pattern.search(text)) if pattern else (trigger in text_lower)
             if matched:
+                hint = data['hint']
+                if not cli_hints:
+                    from hub.context_hints import CLI_PATTERN, neutral_manual_hint
+                    if data.get('source') == 'manual':
+                        hint = neutral_manual_hint(hint, Path(__file__).resolve().parent.parent)
+                    if CLI_PATTERN.search(hint):
+                        continue
                 # v1.1.82: Themen-Pakete nur einmal pro Session
                 if data.get('source') == 'theme':
                     if data['id'] in cls._session_triggered:
@@ -481,7 +488,7 @@ class ContextInjector:
                 if data.get('id'):
                     cls._mark_usage(data['id'])
 
-                return f"[KONTEXT] {data['hint']}"
+                return f"[KONTEXT] {hint}"
 
         return None
 
@@ -969,7 +976,7 @@ class InjectorSystem:
         self.cooldown = CooldownManager(base_path)  # v1.1.75: Cooldown-Management
         self._tool_reminder_shown = False
 
-    def process(self, text: str, context: dict = None, skip=()) -> List[str]:
+    def process(self, text: str, context: dict = None, skip=(), cli_hints: bool = True) -> List[str]:
         """
         Verarbeitet Text durch alle aktiven Injektoren.
 
@@ -995,7 +1002,7 @@ class InjectorSystem:
         # Context Injector (Cooldown: 1 Min)
         if self.config.is_enabled("context_injector") and "context" not in skip:
             if not self.cooldown.is_on_cooldown("context"):
-                ctx = ContextInjector.check(text)
+                ctx = ContextInjector.check(text, cli_hints=cli_hints)
                 if ctx:
                     injections.append(ctx)
                     self.cooldown.mark_shown("context")

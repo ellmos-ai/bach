@@ -43,13 +43,15 @@ import importlib.util
 import json
 import logging
 import os
-import re
 import sqlite3
 import threading
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+from .context_hints import ChatTriggerBackend
+from .context_hints import CLI_PATTERN as _CLI_PATTERN
 
 log = logging.getLogger(__name__)
 
@@ -105,11 +107,6 @@ _ON_VALUES = {"1", "true", "yes", "on"}
 
 #: Tabellenquellen, die der ContextInjector als eine Liste las.
 CONTEXT_SOURCES = ["manual", "theme", "lesson", "tool", "workflow", "skill"]
-
-#: CLI-Hinweise, die der Chat im api-Modus nicht zeigt (gleich
-#: bach_api._CLI_PATTERN, dort filtert der Altpfad nach der Auswahl).
-_CLI_PATTERN = re.compile(r'bach\s+\w+|--\w+|python\s+\w+\.py')
-
 
 def _context_triggers_db_on() -> bool:
     return os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() in _ON_VALUES
@@ -507,7 +504,9 @@ class ExternalMemoryHook:
                 kwargs["accept"] = lambda rule: (
                     rule.source not in CONTEXT_SOURCES
                     or not _CLI_PATTERN.search(rule.hint))
-        hints = self._evaluate_triggers(text, cfg, self.backend, state, **kwargs)
+        backend = self.backend if cli_hints else ChatTriggerBackend(
+            self.backend, Path(__file__).resolve().parent.parent)
+        hints = self._evaluate_triggers(text, cfg, backend, state, **kwargs)
         # usage_count zaehlte der Altpfad nur fuer den ContextInjector.
         self._mark_usage([r.rule_id for r in fired
                           if r.source in CONTEXT_SOURCES and r.rule_id is not None])

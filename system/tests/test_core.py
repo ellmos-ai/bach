@@ -550,6 +550,37 @@ class TestHandlerAdapter:
 # ═══════════════════════════════════════════════════════════════
 
 class TestApp:
+    @pytest.fixture(autouse=True)
+    def private_app_database(self, tmp_path, monkeypatch):
+        import hub.bach_paths as paths
+
+        db_path = tmp_path / "app.db"
+        # The session fixture intentionally seeds distribution_manifest in its
+        # own DB. App bootstrap needs a genuinely fresh DB per test; never
+        # treat partly populated shared state as a fresh production database.
+        monkeypatch.setattr(paths, "BACH_DB", db_path)
+        monkeypatch.setenv("BACH_DB", str(db_path))
+
+    def test_app_database_is_fresh_per_test(self):
+        from core.app import App
+        from hub.bach_paths import BACH_DB
+
+        assert not BACH_DB.exists(), "App tests must not inherit a partly seeded shared DB"
+        app = App(SYSTEM_ROOT)
+        assert app.db.table_exists("tasks")
+
+    def test_partly_populated_database_keeps_production_bootstrap_guard(self):
+        from core.app import App
+        from hub.bach_paths import BACH_DB
+
+        with sqlite3.connect(BACH_DB) as conn:
+            conn.execute("CREATE TABLE distribution_manifest(path TEXT)")
+            conn.execute("INSERT INTO distribution_manifest VALUES('existing-fixture')")
+        app = App(SYSTEM_ROOT)
+        assert not app.db.table_exists("tasks")
+        assert app.db.execute_scalar("SELECT path FROM distribution_manifest") == "existing-fixture"
+        assert app.db.execute_scalar("SELECT COUNT(*) FROM _migrations") == 0
+
     def test_create(self):
         from core.app import App
         app = App(SYSTEM_ROOT)
@@ -593,7 +624,7 @@ class TestApp:
         from core.app import App
         app = App(SYSTEM_ROOT)
         success, message = app.execute("task", "list")
-        assert success is True
+        assert success is True, message
         assert len(message) > 0
 
     def test_execute_forwards_dry_run_flag(self):
