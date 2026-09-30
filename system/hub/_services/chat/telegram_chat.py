@@ -2555,7 +2555,14 @@ class ControlHandler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
-        if path == "/":
+        if path == "/api/auth/check":
+            # T-20260926-652455601: side-effect-free capability authentication.
+            # Use the exact mutation guard; public status proves no write rights.
+            if not self._allow_control_request():
+                return
+            self._json({"service": "bach-chat-control", "authenticated": True})
+
+        elif path == "/":
             self._html(WEB_DASHBOARD)
 
         elif path == "/api/status":

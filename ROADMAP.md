@@ -753,7 +753,12 @@ Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
 > und ist die Oberfläche der OCEAN-**Vollausprägung**; BACH konsumiert und brandet sie zurück
 > (Muster wie `assistant-core`/`ellmos-chat`). `ellmos-unified-gui` bleibt als **Lite**-Schale
 > für Teilinstallationen erhalten, kein Nachbau. Details und Folgestufen:
-> `_control-center/_TICKETS/ACTIONABLE/T-20260920-829000873.ASUS-GEI.txt`.
+> Ticket `T-20260920-829000873` in `_control-center/_TICKETS/`; nach Ticket-ID über
+> die Lebenszyklusordner auflösen.
+
+> **Pointer-Korrektur [P 2026-09-30, T-20260920-829000873]:** Der Verweis oben ist
+> lebenszyklusstabil nachgeführt. Die Richtung des Nachtrags vom 23.09. gilt
+> unverändert; Folgetickets sind im Mutterticket registriert.
 
 **Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
 Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
@@ -1908,4 +1913,3 @@ Vollständige, read-only Quell-Evaluation der vier internen Schwester-Repositori
   - *Zielmodul (Ocean):* `open-ocean` / `ellmos-unified-gui` & `coordination` (`ellmos-coordination-choice-bundle`).
   - *Vorteil:* Hostübergreifende Live-Übersicht im Dashboard über aktive Agenten, Leases und abgewendete Arbeitskollisionen (ASUS-GEI, WORKSTATION-LG, Mac Studio).
   - *Adapter:* `imported_capabilities/category_3_enriching_features/swarm_radar/adapter_bach_gui.py`.
-

@@ -1,6 +1,7 @@
 """Tests for CalendarHandler."""
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -45,6 +46,20 @@ CREATE TABLE IF NOT EXISTS household_routines (
 """
 
 
+@pytest.fixture(autouse=True)
+def calendar_now(monkeypatch, request):
+    """Keep fixture data and handler views on the same deterministic date."""
+    now = getattr(request, "param", datetime.fromisoformat("2026-09-15 08:00:00"))
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls):
+            return now
+
+    monkeypatch.setattr("hub.calendar_handler.datetime", FrozenDatetime)
+    return now
+
+
 @pytest.fixture
 def cal_env(tmp_path):
     base = tmp_path / "bach"
@@ -77,9 +92,9 @@ def handler(cal_env):
 
 
 @pytest.fixture
-def populated(handler, cal_env):
+def populated(handler, cal_env, calendar_now):
     _, db_path = cal_env
-    now = datetime.now()
+    now = calendar_now
     conn = sqlite3.connect(str(db_path))
 
     conn.execute(
@@ -197,11 +212,11 @@ class TestCalendarToday:
         assert "Heute" in msg
         assert "Staubsaugen" in msg
 
-    def test_today_shows_weekday(self, populated):
+    def test_today_shows_weekday(self, populated, calendar_now):
         ok, msg = populated.handle("today", [])
         assert ok
         wd = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-        today_wd = wd[datetime.now().weekday()]
+        today_wd = wd[calendar_now.weekday()]
         assert today_wd in msg
 
 
@@ -227,18 +242,60 @@ class TestCalendarWeek:
 # ─── Month ──────────────────────────────────────────────────
 
 class TestCalendarMonth:
-    def test_month_view(self, populated):
+    def test_month_view(self, populated, calendar_now):
         ok, msg = populated.handle("month", [])
         assert ok
         month_names = ["Januar", "Februar", "März", "April", "Mai", "Juni",
                        "Juli", "August", "September", "Oktober", "November", "Dezember"]
-        current_month = month_names[datetime.now().month - 1]
+        current_month = month_names[calendar_now.month - 1]
         assert current_month in msg
 
     def test_month_shows_events(self, populated):
         ok, msg = populated.handle("month", [])
         assert ok
         assert "Zahnarzt" in msg
+
+    @pytest.mark.parametrize(
+        "calendar_now, current_label, next_label",
+        [
+            (datetime.fromisoformat("2026-09-30 08:00:00"), "September 2026", "Oktober 2026"),
+            (datetime.fromisoformat("2026-12-31 08:00:00"), "Dezember 2026", "Januar 2027"),
+            (datetime.fromisoformat("2026-02-28 08:00:00"), "Februar 2026", "März 2026"),
+            (datetime.fromisoformat("2028-02-29 08:00:00"), "Februar 2028", "März 2028"),
+        ],
+        indirect=["calendar_now"],
+    )
+    def test_month_boundary_keeps_tomorrow_in_next_month(
+        self, populated, cal_env, calendar_now, current_label, next_label
+    ):
+        _, db_path = cal_env
+        next_month = (calendar_now + timedelta(days=1)).replace(hour=0)
+        with closing(sqlite3.connect(str(db_path))) as conn, conn:
+            conn.executemany(
+                "INSERT INTO assistant_calendar (title, start_datetime) VALUES (?, ?)",
+                [
+                    ("Monatsende", (next_month - timedelta(seconds=1)).isoformat(" ")),
+                    ("Monatsanfang", next_month.isoformat(" ")),
+                ],
+            )
+
+        ok, msg = populated.handle("month", [])
+        assert ok
+        assert current_label in msg
+        assert "Monatsende" in msg
+        assert "Staubsaugen" in msg
+        assert "Monatsanfang" not in msg
+        assert "Zahnarzt" not in msg
+
+        with patch("hub.calendar_handler.datetime", wraps=datetime) as clock:
+            clock.now.return_value = next_month
+            ok, msg = populated.handle("month", [])
+        assert ok
+        assert next_label in msg
+        assert "Monatsanfang" in msg
+        assert "Zahnarzt" in msg
+        assert "Monatsende" not in msg
+        assert "Staubsaugen" not in msg
 
 
 # ─── Add ────────────────────────────────────────────────────
@@ -265,10 +322,10 @@ class TestCalendarAdd:
         assert ok
         assert "2026-06-15" in msg
 
-    def test_add_with_short_date(self, handler):
+    def test_add_with_short_date(self, handler, calendar_now):
         ok, msg = handler.handle("add", ["Test", "-d", "15.06"])
         assert ok
-        year = datetime.now().year
+        year = calendar_now.year
         assert f"{year}-06-15" in msg
 
     def test_add_with_location(self, handler, cal_env):
@@ -460,16 +517,16 @@ class TestRangeView:
         assert ok
         assert "Keine Termine" in msg
 
-    def test_range_groups_by_day(self, populated):
-        now = datetime.now()
+    def test_range_groups_by_day(self, populated, calendar_now):
+        now = calendar_now
         start = now.replace(hour=0, minute=0, second=0)
         end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59)
         ok, msg = populated._range_view(start, end, "Testwoche")
         assert ok
         assert "---" in msg
 
-    def test_range_shows_location(self, populated):
-        now = datetime.now()
+    def test_range_shows_location(self, populated, calendar_now):
+        now = calendar_now
         start = now.replace(hour=0, minute=0, second=0)
         end = (now + timedelta(days=2)).replace(hour=23, minute=59, second=59)
         ok, msg = populated._range_view(start, end, "Diese Woche")
