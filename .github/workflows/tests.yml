@@ -266,6 +266,10 @@ jobs:
             system/tests/test_tools_handler.py \
             system/tests/test_transit_sync_provider_wiring.py \
             system/tests/test_trithon_dispatch.py \
+            system/tests/test_trithon_fencing_phase5.py \
+            system/tests/test_trithon_muschelgrund_phase4.py \
+            system/tests/test_trithon_open_ocean_t3.py \
+            system/tests/test_trithon_receipt_providers_phase5.py \
             system/tests/test_trigger_generators.py \
             system/tests/test_trash_handler.py \
             system/tests/test_tuev_handler.py \
