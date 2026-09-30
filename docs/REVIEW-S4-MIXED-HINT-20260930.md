@@ -65,3 +65,35 @@ zum Originalcommit, insbesondere Punkt-3-Policy und Ausführungsfolge.
 CI-Ergänzung wird als eigener Ein-Zeilen-Workflowcommit geliefert.
 Unabhängige andere-Modell-Abnahme sowie neue tatsächliche CI/Integration
 stehen aus; kein Gesamt-S4-/Mutterprogramm-Abschluss.
+# Nachbesserung vollständiger Python-Pfadtoken
+
+Autorenworktree: `C:\_Local_DEV\worktrees\bach-s4-python-token-codex-20260930`.
+Aktuelle frisch gefetchte Mainbasis: `e3fbd8f15e5dfc74466b64d42b509d3d789f7b82`.
+Main, expliziter OneDrive-Twin und neuer eigener Worktree wurden unmittelbar
+frei geprüft. Originaldelta und bisherige Regressionen wurden auf diese
+Basis übertragen; der separate CI-Commit `4669dae7` ist hier nicht enthalten.
+
+Die drei Astra-Gegenfälle `tools/backup_manager.py.bak`, `.py/absent` und
+`.py?absent` stehen dauerhaft in den Helper-, tatsächlichen Legacy- und
+External-Memoryhook-DB-Regressionen. Vor Produktkorrektur liefen **9 failed,
+43 deselected**; reiner Testcheckpoint `84bc15b46d83eb0c0ef93f8ebfe43d5ec51b7ea7`.
+
+Der Parser erfasst nun das ganze unquotierte oder quotierte Pfadargument,
+prüft dessen `.py`-Endung und vollständig aufgelöstes vorhandenes lokales
+Ziel. Angehängte Suffixe, Quote-Konkatenation sowie ungültige Pfade erhalten
+den Originalhinweis. Auswahl, Nutzungszählung und Cooldown werden davor
+verweigert; gespeicherte Regeln und der ausdrückliche CLI-Modus bleiben
+unverändert. Normale Python-/Python3-Pfade und beide Quoteformen bleiben
+separat positiv geprüft. Die sieben übrigen Originaldateien und Punkt 3
+bleiben bytegleich zum ursprünglichen `d3005c7`.
+
+Vollständiger bisheriger 226er-Scope plus 15 neue Fälle: **241 passed in
+81.44s, keine Skips**. Vier Suiten: `test_context_manual_hints.py`,
+`test_consolidation_handler.py`, `test_context_injector_db.py`,
+`test_injector_parity.py`. Gardener ausschließlich lesend über
+`PYTHONPATH=C:\_Local_DEV\repos\gardener`; Testdaten in privaten Tempbereichen,
+Basetemp `C:\_Local_DEV\test-tmp\s4-python-token-full241`.
+Ruff für Helper/Tests und `git diff --check` bestanden.
+
+Keine Remote-, Live-, Runtime-, Seed-DB- oder Ticketänderung. Unabhängige
+Nachabnahme und echte CI bleiben offene Gates.

@@ -61,6 +61,8 @@ def test_stale_arzt_option_is_preserved_and_filtered(monkeypatch):
 @pytest.mark.parametrize('hint', [
     'Bekannt: bach gesundheit appointments --all',
     'Bekannt: bach backup create --to-nas',
+    'Bekannt: python tools/backup_manager.py',
+    'Bekannt: python3 system/tools/backup_manager.py',
     'Bekannt: python3 "system/tools/backup_manager.py"',
     "Bekannt: python 'system/tools/backup_manager.py'",
 ])
@@ -77,6 +79,15 @@ def test_supported_options_and_quoted_python_targets_stay_visible(hint):
 ])
 def test_unknown_attached_or_unowned_cli_marker_preserves_original(tail):
     hint = 'Gemischt: bach steuer status ' + tail
+    assert neutral_manual_hint(hint, SYSTEM) == hint
+
+
+@pytest.mark.parametrize('target', [
+    '"tools/backup_manager.py".bak', "'tools/backup_manager.py'/absent",
+    '"tools/backup_manager.py?absent"', 'tools/backup_manager.py\x00',
+])
+def test_quoted_or_invalid_complete_python_argument_is_preserved(target):
+    hint = 'Gemischt: bach steuer status | python ' + target
     assert neutral_manual_hint(hint, SYSTEM) == hint
 
 

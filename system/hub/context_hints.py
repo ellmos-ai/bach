@@ -13,7 +13,7 @@ CLI_PATTERN = re.compile(r'\bbach\s+\w+|--[\w-]+|\bpython(?:3)?\s+')
 _REFERENCES = re.compile(
     r'\bbach\s+(?P<command>[a-zA-Z_][a-zA-Z_0-9-]*)'
     r'|--help\s+(?P<help>[a-zA-Z_][a-zA-Z_0-9-]*)'
-    r'|\bpython(?:3)?\s+(?P<python>"[^"\r\n]+\.py"|\'[^\'\r\n]+\.py\'|[a-zA-Z_0-9./\\-]+\.py\b)')
+    r'|\bpython(?:3)?\s+(?P<python>"[^"\r\n]+"|\'[^\'\r\n]+\'|[^\s"\'|;&]+)(?=$|[\s|;&])')
 _TOOLS = {
     'c_encoding_fixer': 'tools/file_ops/encoding_fixer.py',
 }
@@ -43,8 +43,16 @@ def neutral_manual_hint(hint: str, system_root: Path) -> str:
             if target.startswith(('"', "'")):
                 target = target[1:-1]
             target = target.removeprefix('system/')
-        candidate = (root / target).resolve()
-        if not candidate.is_relative_to(root) or not candidate.is_file():
+            # Validate the entire argument, including suffixes after a .py
+            # prefix. A quoted prefix followed by more text is not a token.
+            if not target.endswith('.py') or Path(target).is_absolute():
+                return hint
+        try:
+            candidate = (root / target).resolve()
+            valid = candidate.is_relative_to(root) and candidate.is_file()
+        except (OSError, ValueError):
+            return hint
+        if not valid:
             return hint
         if target not in targets:
             targets.append(target)
