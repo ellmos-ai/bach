@@ -224,6 +224,7 @@ jobs:
             system/tests/test_schwarm_handler.py \
             system/tests/test_search_handler.py \
             system/tests/test_security_scan_handler.py \
+            system/tests/test_seal_release_sampling.py \
             system/tests/test_seed_fresh_db.py \
             system/tests/test_session_checkpoint_adapter.py \
             system/tests/test_session_checkpoint_provider.py \
