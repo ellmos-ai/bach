@@ -109,6 +109,7 @@ jobs:
             system/tests/test_contact_handler.py \
             system/tests/test_context_handler.py \
             system/tests/test_context_injector_db.py \
+            system/tests/test_context_manual_hints.py \
             system/tests/test_control_api_auth.py \
             system/tests/test_cookbook_handler.py \
             system/tests/test_core.py \
