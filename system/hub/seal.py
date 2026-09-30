@@ -134,31 +134,61 @@ class SealHandler:
             return ""
 
     def _update_kernel_hash(self, kernel_hash: str) -> bool:
-        """Aktualisiert kernel_hash in instance_identity."""
+        """Commit a verified update of exactly one unambiguous identity.
+
+        instance_id is the logical key; INSERT OR REPLACE can change rowid.
+        An already active caller transaction is refused without taking ownership.
+        """
+        if not isinstance(kernel_hash, str) or not kernel_hash.strip():
+            return False
+        conn = None
+        owned = False
         try:
-            conn = self._get_conn()
-
-            # Pruefen ob instance_identity existiert
-            cursor = conn.execute("SELECT COUNT(*) FROM instance_identity")
-            count = cursor.fetchone()[0]
-
-            if count == 0:
-                conn.close()
+            if not self.db_path.is_file():
                 return False
-
-            # kernel_hash aktualisieren
-            conn.execute("""
-                UPDATE instance_identity
+            conn = self._get_conn()
+            if conn.in_transaction:
+                return False
+            owned = True
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.execute("SELECT * FROM main.instance_identity LIMIT 2")
+            columns = [column[0] for column in cursor.description]
+            before = cursor.fetchall()
+            if len(before) != 1:
+                return False
+            identity_index = columns.index("instance_id")
+            identity = before[0][identity_index]
+            if not isinstance(identity, str) or not identity.strip():
+                return False
+            expected = list(before[0])
+            expected[columns.index("kernel_hash")] = kernel_hash
+            expected[columns.index("seal_status")] = "intact"
+            cursor = conn.execute("""
+                UPDATE main.instance_identity
                 SET kernel_hash = ?,
                     seal_status = 'intact'
-                WHERE rowid = 1
-            """, (kernel_hash,))
-
+                WHERE instance_id = ?
+            """, (kernel_hash, identity))
+            if cursor.rowcount != 1:
+                return False
+            # Detect ignored/reversed updates or triggers changing other values.
+            after = conn.execute("SELECT * FROM main.instance_identity LIMIT 2").fetchall()
+            if after != [tuple(expected)]:
+                return False
             conn.commit()
-            conn.close()
-            return True
-        except Exception:
+            return not conn.in_transaction
+        except Exception:  # noqa: BLE001 - preserve the handler's boolean error contract
             return False
+        finally:
+            if owned and conn is not None:
+                try:
+                    try:
+                        if conn.in_transaction:
+                            conn.rollback()
+                    finally:
+                        conn.close()
+                except Exception:  # noqa: BLE001 - cleanup failure must not claim success
+                    return False
 
     def check(self, verbose: bool = False) -> int:
         """

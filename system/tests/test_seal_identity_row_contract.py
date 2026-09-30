@@ -52,7 +52,7 @@ def sandbox(tmp_path, monkeypatch):
         scope.setitem(sys.modules, paths.__name__, paths)
         seal = load_module(package.__name__ + ".seal", SYSTEM / "hub/seal.py")
     schema = (SYSTEM / "data/schema/schema_distribution.sql").read_text(encoding="utf-8")
-    statement = re.search(r"CREATE TABLE IF NOT EXISTS instance_identity\s*\(.*?\);", schema, re.S)
+    statement = re.search(r"CREATE TABLE IF NOT EXISTS instance_identity\s*\(.*?\);", schema, re.DOTALL)
     assert statement is not None
     with closing(sqlite3.connect(db)) as conn:
         conn.execute(statement.group(0))
@@ -196,6 +196,69 @@ def test_real_deferred_commit_failure_rolls_back(sandbox, monkeypatch):
     assert sandbox.db.read_bytes() == before
     with closing(sqlite3.connect(sandbox.db)) as conn:
         assert conn.execute("SELECT COUNT(*) FROM deferred_hash").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("failure", ["raise", "no-acknowledgement"])
+def test_commit_failure_or_noncommit_never_claims_success(sandbox, monkeypatch, failure):
+    seed(sandbox)
+    before = sandbox.db.read_bytes()
+    closed = []
+
+    class FailedCommit(sqlite3.Connection):
+        def commit(self):
+            if failure == "raise":
+                raise sqlite3.OperationalError("injected commit failure")
+            # Deliberately omit the actual commit; in_transaction stays true.
+
+        def close(self):
+            closed.append(True)
+            super().close()
+
+    monkeypatch.setattr(sandbox.handler, "_get_conn", lambda: sqlite3.connect(sandbox.db, factory=FailedCommit))
+    assert sandbox.handler._update_kernel_hash(NEW_HASH) is False
+    assert closed == [True]
+    assert sandbox.db.read_bytes() == before
+
+
+def test_missing_identity_table_refused_and_connection_closed(sandbox, monkeypatch):
+    with closing(sqlite3.connect(sandbox.db)) as conn:
+        conn.execute("DROP TABLE instance_identity")
+        conn.commit()
+    before = sandbox.db.read_bytes()
+    closed = []
+
+    class ObservedConnection(sqlite3.Connection):
+        def close(self):
+            closed.append(True)
+            super().close()
+
+    monkeypatch.setattr(sandbox.handler, "_get_conn", lambda: sqlite3.connect(sandbox.db, factory=ObservedConnection))
+    assert sandbox.handler._update_kernel_hash(NEW_HASH) is False
+    assert closed == [True]
+    assert sandbox.db.read_bytes() == before
+
+
+def test_temp_identity_cannot_redirect_main_identity_update(sandbox, monkeypatch):
+    seed(sandbox)
+    conn = sqlite3.connect(sandbox.db)
+    conn.execute("CREATE TEMP TABLE instance_identity(instance_id TEXT,kernel_hash TEXT,seal_status TEXT)")
+    conn.execute("INSERT INTO temp.instance_identity VALUES('shadow','keep','keep')")
+    conn.commit()
+
+    class ConnectionProxy:
+        def __getattr__(self, name):
+            return getattr(conn, name)
+
+        def close(self):
+            pass  # Inspect both schemas after the handler's owned transaction.
+
+    monkeypatch.setattr(sandbox.handler, "_get_conn", ConnectionProxy)
+    try:
+        assert sandbox.handler._update_kernel_hash(NEW_HASH) is True
+        assert conn.execute("SELECT * FROM temp.instance_identity").fetchall() == [("shadow", "keep", "keep")]
+        assert read_identity(sandbox)[0][1]["kernel_hash"] == NEW_HASH
+    finally:
+        conn.close()
 
 
 def test_active_caller_transaction_is_not_committed_rolled_back_or_closed(sandbox, monkeypatch):
