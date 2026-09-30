@@ -412,3 +412,67 @@ def test_file_removed_after_readiness_not_recreated(env, monkeypatch, operation)
     with pytest.raises(sqlite3.OperationalError):
         m.create_backup() if operation == "backup" else m.merge_backup(remote)
     assert not db.exists() and not m.heartbeat_file.exists()
+
+
+# Reviewer counterexamples: only the helper import binding is local here.
+native = types.SimpleNamespace(_canonical=_canonical, _tree=_tree, _manager=_manager)
+
+
+@pytest.mark.parametrize('name', ['extra_index', 'sqliteXextra_index'])
+def test_unknown_index_is_refused(env, name):
+    db = native._canonical(env)
+    with sqlite3.connect(db) as conn:
+        conn.execute(f'CREATE INDEX "{name}" ON tasks(title)')
+    conn.close()
+    before = native._tree(env.root)
+    result = env.r.validate_native_db(db)
+    assert not result.ready, (name, result)
+    assert native._tree(env.root) == before
+
+
+@pytest.mark.parametrize('name', ['extra_trigger', 'sqliteXextra_trigger'])
+def test_unknown_trigger_is_refused(env, name):
+    db = native._canonical(env)
+    with sqlite3.connect(db) as conn:
+        conn.execute(f'CREATE TRIGGER "{name}" AFTER UPDATE ON tasks BEGIN DELETE FROM secrets; END')
+    conn.close()
+    before = native._tree(env.root)
+    result = env.r.validate_native_db(db)
+    assert not result.ready, (name, result)
+    assert native._tree(env.root) == before
+
+
+def test_foreign_write_transaction_untouched(env):
+    db = native._canonical(env)
+    writer = sqlite3.connect(db)
+    try:
+        writer.execute('SAVEPOINT caller')
+        writer.execute("UPDATE memory_facts SET value='uncommitted' WHERE key='äöü'")
+        before = (db.read_bytes(), writer.total_changes, writer.execute("SELECT value FROM memory_facts WHERE key='äöü'").fetchone())
+        result = env.r.validate_native_db(db)
+        assert not result.ready and writer.in_transaction
+        assert (db.read_bytes(), writer.total_changes, writer.execute("SELECT value FROM memory_facts WHERE key='äöü'").fetchone()) == before
+        writer.execute('ROLLBACK TO caller')
+        assert writer.execute("SELECT value FROM memory_facts WHERE key='äöü'").fetchone() == ('Größe',)
+        writer.execute('RELEASE caller')
+    finally:
+        writer.close()
+
+
+@pytest.mark.parametrize('operation', ['backup', 'merge'])
+def test_denied_trigger_precedes_native_io(env, operation):
+    db = native._canonical(env)
+    with sqlite3.connect(db) as conn:
+        conn.execute('CREATE TRIGGER sqliteXextra_trigger AFTER UPDATE ON tasks BEGIN DELETE FROM secrets; END')
+    conn.close()
+    manager = native._manager(env)
+    remote = env.root / 'foreign.bachdb'
+    remote.write_bytes(db.read_bytes())
+    before = native._tree(env.root)
+    # Readiness refusal must happen before mkdir, staging, provider or heartbeat.
+    with pytest.raises(env.r.DBSyncReadinessError):
+        if operation == 'backup':
+            manager.create_backup()
+        else:
+            manager.merge_backup(remote)
+    assert native._tree(env.root) == before
