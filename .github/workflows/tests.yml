@@ -289,3 +289,88 @@ jobs:
             system/tests/test_safe_shell_args.py \
             system/tests/test_chat_runtime_security.py \
             system/tests/test_telegram_owner_check.py
+
+  shared-dbsync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REQUIRE_SHARED_DBSYNC: "1"
+      SHARED_DBSYNC_OCEAN_ROOT: ${{ github.workspace }}/.ci-sources/ocean
+      TRANSIT_SYNC_ROOT: ${{ github.workspace }}/.ci-sources/carrier
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/open-ocean
+          ref: 7127a0f5beea7d3784121c89ca69a118af5ca32b
+          path: .ci-sources/ocean
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/sqlite-transit-sync
+          ref: 7648a20b11ca958e9622d2b5d8a13fd02613e92a
+          path: .ci-sources/carrier
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify immutable source commits and LF hashes
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import subprocess
+          from pathlib import Path
+
+          sources = (
+              ("SHARED_DBSYNC_OCEAN_ROOT", "7127a0f5beea7d3784121c89ca69a118af5ca32b", (
+                  ("tools/dbsync_adapter.py", "e0b46347849035d58d0464c3c0554a4d9594033a8617eeb7aaa34b290b0266a7"),
+              )),
+              ("TRANSIT_SYNC_ROOT", "7648a20b11ca958e9622d2b5d8a13fd02613e92a", (
+                  ("sqlite_transit_sync/core.py", "f90ac3134c64f68b4833650a44cb07fb4b020f664026b89d3820bd1b70dd2870"),
+                  ("sqlite_transit_sync/credential-triggers.json", "8bc931754dd43cddfcebbfa3e20260ebfca3d16d12a6bfd6dafe37ee9b412e22"),
+              )),
+          )
+          for variable, commit, files in sources:
+              root = Path(os.environ[variable])
+              if not root.is_absolute() or not root.is_dir():
+                  raise SystemExit(f"Required source checkout missing: {variable}")
+              actual = subprocess.check_output(
+                  ["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+              if actual != commit:
+                  raise SystemExit(f"Source commit mismatch: {variable}: {actual}")
+              print(f"{variable}: {actual}")
+              for relative, expected in files:
+                  content = (root / relative).read_bytes().replace(b"\r\n", b"\n")
+                  actual_hash = hashlib.sha256(content).hexdigest()
+                  if actual_hash != expected:
+                      raise SystemExit(f"Source LF hash mismatch: {relative}: {actual_hash}")
+                  print(f"{relative}: {actual_hash}")
+          PY
+      - name: Install hermetic test dependency
+        run: python -m pip install pytest
+      - name: Run every shared adapter contract case
+        run: |
+          python -B -m pytest system/tests/test_db_sync_shared_adapter.py \
+            -q -rA -p no:cacheprovider --basetemp="${RUNNER_TEMP}/shared-dbsync-tests" \
+            --junitxml="${RUNNER_TEMP}/shared-dbsync.xml"
+      - name: Require at least 55 successful cases without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "shared-dbsync.xml"
+          cases = ET.parse(report).getroot().findall(".//testcase")
+          if len(cases) < 55 or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required shared adapter suite incomplete or unsuccessful")
+          print(f"Required shared adapter cases: {len(cases)}, no skips/failures/errors")
+          PY
