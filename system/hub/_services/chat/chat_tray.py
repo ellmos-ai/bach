@@ -180,12 +180,13 @@ class BACHTray:
     IDLE_CHAT_ID = "idle-worker"
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
-    def __init__(self, host="127.0.0.1", port=8081):
+    def __init__(self, host="127.0.0.1", port=8081, *, gui_port=8000,
+                 ollama_host="127.0.0.1"):
         self.host = host
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
-        self.gui_url = f"http://{host}:8000"
-        self.ollama_url = f"http://{host}:11434"
+        self.gui_url = f"http://{host}:{gui_port}"
+        self.ollama_url = f"http://{ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
         self.state = {
             "backend": "?",
@@ -1389,6 +1390,8 @@ def main():
     parser = argparse.ArgumentParser(description="BACH Unified System Tray")
     parser.add_argument("--host", default="127.0.0.1", help="Control API Host")
     parser.add_argument("--port", type=int, default=8081, help="Control API Port")
+    parser.add_argument("--gui-port", type=int, default=8000, help="GUI Port")
+    parser.add_argument("--ollama-host", default="127.0.0.1", help="Local Ollama Host")
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
@@ -1396,7 +1399,8 @@ def main():
     )
     args = parser.parse_args()
 
-    tray = BACHTray(host=args.host, port=args.port)
+    tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
+                    ollama_host=args.ollama_host)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return

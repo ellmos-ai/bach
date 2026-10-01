@@ -721,6 +721,7 @@ class TestBACHTray:
     def test_init_urls(self, tray):
         assert tray.base_url == "http://testhost:9999"
         assert tray.gui_url == "http://testhost:8000"
+        assert tray.ollama_url == "http://127.0.0.1:11434"
         # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
         assert not hasattr(tray, "webchat_url")
 
@@ -1057,6 +1058,29 @@ print(TRAY_LOCK_FILE)
         assert lock is not None
         assert lock_path.parent.is_dir()
         lock.close()
+
+    def test_main_accepts_startspine_endpoints(self, monkeypatch, capsys):
+        mod = self._mod()
+        monkeypatch.setattr(sys, "argv", [
+            "chat_tray.py", "--host", "remote-control", "--port", "9001",
+            "--gui-port", "8002", "--ollama-host", "127.0.0.1",
+            "--smoke-promptboard",
+        ])
+        instances = []
+        original_init = mod.BACHTray.__init__
+
+        def capture_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            instances.append(self)
+
+        monkeypatch.setattr(mod.BACHTray, "__init__", capture_init)
+        monkeypatch.setattr(mod, "acquire_single_instance_lock",
+                            lambda *a, **k: pytest.fail("Smoke must not acquire the tray lock"))
+        mod.main()
+        assert instances[0].base_url == "http://remote-control:9001"
+        assert instances[0].gui_url == "http://remote-control:8002"
+        assert instances[0].ollama_url == "http://127.0.0.1:11434"
+        json.loads(capsys.readouterr().out)
 
     def test_main_refuses_a_second_tray_without_running_it(self, monkeypatch, capsys):
         mod = self._mod()
