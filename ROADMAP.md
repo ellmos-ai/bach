@@ -1,13 +1,13 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-30 | **Version:** 4.3.67 | **Review:** 2026-09-30 (Daily Care & Dev Check)
+**Stand:** 2026-10-01 | **Version:** 4.3.68 | **Review:** 2026-10-01 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
 > **Reiner Index-Anker, rein additiv (0 Bewegungsrisiko).** Verschiebt NIX — verweist
 > nur auf die bestehenden, verteilten „Abgeschlossen"-Blöcke. Inhalte bleiben an ihren
 > bisherigen Stellen. Aktuelle/Offene Visionen (z. B. MCP-Server 2026-06-03, Persona-System
-> Phase 2) und der aktuellste Changelog-Eintrag (4.3.63, 2026-09-10) sind **nicht** als
+> Phase 2) und der aktuellste Changelog-Eintrag (4.3.64, 2026-09-10) sind **nicht** als
 > veraltet gekennzeichnet und bleiben aktiv.
 >
 > Status-Quelle: Task #1215 (Option A') / Folgeaufgabe #1216.
@@ -18,6 +18,46 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-10-01 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20261001_161927` für Partner `gemini` im Silent-Modus erfolgreich gestartet.
+  - Working Memory Cleanup: 0 abgelaufene Einträge; 179 Einträge analysiert (17 <7d, 5 7-14d, 157 >14d); Continuation-Context intakt.
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (Integration von PR #180 expliziter geteilter Adapter mit geforderter Pinned-Source CI, PR #181 Capabilities: Härtung von Leases und Guarded Journals, PR #182 Seal: Identitäts-Update an verifizierten logischen Singleton gebunden, PR #183 Docs(T797): Feature-Vergleich an vollständige statische Paket-Closures gebunden, PR #184 T903: Native Readiness und Pinned Carrier CI gefordert).
+- **Fehlerbehebung & Systemhärtung:**
+  - *Standard-Library Beschattung in `upgrade check --json` behoben:* Redundantes `sys.path.insert(0, str(HUB_DIR))` in `system/bach.py` (`_handle_upgrade`, `_handle_cookbook`, `_handle_pipeline`, restore, downgrade) entfernt, wodurch Stdlib-`email` nicht mehr durch `system/hub/email.py` überschattet wird.
+  - *Hermetische Topologie-Zustandsisolation:* In `system/hub/explorer_provider.py` und `UpgradeHandler._topology_evidence_payload` wird `_state_file` nun relativ zum übergebenen `base_path` aufgelöst, sodass Test-Suiten mit temporären Umgebungen keine Zugriffe auf das Checkout-Datenverzeichnis mehr versuchen.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+  - Topologie-Audit via `system-explorer` liefert 100% fehlerfreie Evidenz (260 Dateien, 286 Verzeichnisse, 1.733 Knoten, 1.765 Kanten, 0 Drift).
+- **Task-Audit & Erledigung:**
+  - Tasks #1125 (Backup-Status), #1135 (Anschlussanalyse Registry/Skills), #1136 (Dokumentations-Frische) und #1137 (Docs-Changelog) verifiziert und als erledigt markiert.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **Testsuite-Vollprüfung (100% grün):**
+  - Core-Suite: 124 passed in 285.34s (`test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_core.py`, `test_dry_run_side_effects.py`).
+  - Provider- & Wiring-Suite: 149 passed in 96.60s (`test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_transit_sync_provider_wiring.py`, `test_db_guard_hook.py`).
+  - Upgrade- & Explorer-Suite: 74 passed in 53.20s (`test_upgrade_handler.py`, `test_explorer_provider_wiring.py`).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Backup: Frisches lokales Backup `userdata_2026-10-01_155334` (0.80 MB) verifiziert.
+  - Dokumentations-Report (`Doc_Update_Report_2026-10-01_16-30.md`, 2.099 Dokumente geprüft, 0 ungültige Pfade) und 30-Tage-Changelog (`2026-10_docs_report.md`, 148 Änderungen) erstellt.
+- **OpenClaw Competitive Watch (Stand v2026.9.7):**
+  - Abgleich mit neuester OpenClaw Version `v2026.9.7` (veröffentlicht am 30. September 2026, folgend auf `v2026.9.6`):
+    - *Stabilität bei langen Konversationen:* Optimierungen für lange Chatverläufe und hohe Last.
+    - *OpenAI Agents API & Auth:* Integration von OpenAIs Agents API und "Sign in with ChatGPT" (Beta).
+    - *Backup & Rollback-Schutz:* Verbesserte Update-Backups und erweiterte Rollback-Absicherung.
+    - *Multi-Device Continuity:* Verbesserte Desktop/Mobile-Unterstützung (Mac, iPhone, iPad).
+  - *Relevanz für BACH:* Bestätigt BACHs Session-Continuation Context & Snapshots, atomare Release- & Rollback-Reparatur (`bach update apply` / `rollback` / `upgrade repair`, `distribution_releases` v3.14.0) und Task #1118 (OPS-RUN-001 aktive Laufsteuerung).
 
 ## Review 2026-09-30 (Daily Care & Dev Check)
 
