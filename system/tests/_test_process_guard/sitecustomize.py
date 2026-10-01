@@ -30,13 +30,24 @@ def _dangerous_command(command):
     unguarded_python = re.compile(
         r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
         r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
-        r"[^\r\n;&|]*?-[a-z]*[eis][a-z]*(?:\s|$)",
+        r"(?:-[a-df-hj-rt-z0-9]+\s+)*(?<!-)-(?:[a-df-hj-rt-z0-9]*[eis][a-z0-9]*)(?:\s|$)",
         re.IGNORECASE,
     )
     if unguarded_python.search(_render_command(command)):
         return True
     if executable_name.startswith("python") and isinstance(command, (list, tuple)):
-        if any(str(part) in {"-E", "-I", "-S"} for part in command[1:]):
+        options = []
+        for part in command[1:]:
+            option = str(part)
+            if option in {"-c", "-m"}:
+                break
+            if not option.startswith("-") or option == "-":
+                break
+            options.append(option)
+        if any(
+            not option.startswith("--") and any(c in "eEisIS" for c in option[1:])
+            for option in options
+        ):
             return True
     if "onedrive" in executable and "/shutdown" in rendered:
         return True

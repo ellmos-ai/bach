@@ -108,3 +108,29 @@ def test_destructive_process_reason_allows_script_arguments_with_options():
     assert conftest._destructive_process_reason("python system/bach.py --status") is None
     assert conftest._destructive_process_reason("python system/bach.py --memory status") is None
 
+
+def test_python_child_distinguishes_interpreter_and_program_options():
+    commands = [
+        [sys.executable, "-m", "http.server", "0", "--bind", "127.0.0.1"],
+        [sys.executable, "system/bach.py", "--status"],
+        [sys.executable, "-c", "pass", "-I"],
+        "python -m http.server 0 --bind 127.0.0.1",
+        [sys.executable, "-I", "-m", "http.server", "0"],
+        [sys.executable, "-E", "-c", "pass"],
+        [sys.executable, "-S", "-c", "pass"],
+        [sys.executable, "-uI", "-c", "pass"],
+        "python -S -c pass",
+        ["cmd.exe", "/c", "taskkill /PID 999999 /F"],
+    ]
+    code = (
+        "import json, sitecustomize; "
+        f"commands = {commands!r}; "
+        "print(json.dumps([sitecustomize._dangerous_command(c) for c in commands]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == [False] * 4 + [True] * 6
