@@ -1,14 +1,8 @@
 """Identify Python interpreter flags that bypass the inherited test guard."""
 import os
-import re
 import shlex
 from pathlib import Path
 
-_PYTHON_COMMAND = re.compile(
-    r'(?:^|[;&|]\s*)(?:"[^"]*python(?:\d+(?:\.\d+)*)?\.exe"|'
-    r'[^\s"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+',
-    re.IGNORECASE,
-)
 
 
 def _unguarded_options(arguments):
@@ -50,12 +44,22 @@ def python_without_site_guard(command):
         rendered = os.fsdecode(command)
     else:
         return False
-    for match in _PYTHON_COMMAND.finditer(rendered):
-        try:
-            arguments = shlex.split(rendered[match.end():], posix=False)
-        except ValueError:
-            # An unparseable Python command must not bypass the safety guard.
-            return True
-        if _unguarded_options(arguments):
-            return True
+    try:
+        lexer = shlex.shlex(rendered, posix=False, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return "python" in rendered.casefold()
+    segment = []
+    for token in [*tokens, ";"]:
+        if token and set(token) <= set(";&|"):
+            if segment:
+                executable = segment[0].strip('"\'').replace("\\", "/")
+                if executable.rsplit("/", 1)[-1].casefold().startswith("python"):
+                    if _unguarded_options(segment[1:]):
+                        return True
+            segment = []
+        else:
+            segment.append(token)
     return False
