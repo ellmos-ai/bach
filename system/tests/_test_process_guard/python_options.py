@@ -6,8 +6,7 @@ from pathlib import Path
 
 _PYTHON_COMMAND = re.compile(
     r'(?:^|[;&|]\s*)(?:"[^"]*python(?:\d+(?:\.\d+)*)?\.exe"|'
-    r'[^\s"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+'
-    r'([^\r\n;&|]*)',
+    r'[^\s"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+',
     re.IGNORECASE,
 )
 
@@ -53,7 +52,7 @@ def python_without_site_guard(command):
         return False
     for match in _PYTHON_COMMAND.finditer(rendered):
         try:
-            arguments = shlex.split(match.group(1), posix=False)
+            arguments = shlex.split(rendered[match.end():], posix=False)
         except ValueError:
             # An unparseable Python command must not bypass the safety guard.
             return True

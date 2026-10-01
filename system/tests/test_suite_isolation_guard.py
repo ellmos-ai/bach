@@ -131,6 +131,7 @@ def test_python_child_distinguishes_interpreter_and_program_options():
         [sys.executable, "-X", "importtime", "-m", "http.server", "0", "--bind", "127.0.0.1"],
         "python -X importtime -m http.server 0 --bind 127.0.0.1",
         [sys.executable, "--check-hash-based-pycs", "default", "-m", "http.server", "0"],
+        'python -c "import time; time.sleep(30)"',
     ]
     code = (
         "import json, sitecustomize; "
@@ -143,6 +144,6 @@ def test_python_child_distinguishes_interpreter_and_program_options():
         text=True,
         check=True,
     )
-    expected = [False] * 4 + [True] * 11 + [False] * 5
+    expected = [False] * 4 + [True] * 11 + [False] * 6
     assert json.loads(result.stdout) == expected
     assert [conftest._destructive_process_reason(c) is not None for c in commands] == expected
