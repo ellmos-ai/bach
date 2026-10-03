@@ -29,6 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+import threading
 import httpx
 
 import sqlite3
@@ -1393,7 +1394,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
-                or path == "/api/governance/audit"):
+                or path == "/api/governance/audit"
+                or path == "/api/daemon" or path.startswith("/api/daemon/")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
@@ -1645,6 +1647,16 @@ async def get_status():
     except Exception as e:
         system_info = {"error": public_error_message()}
 
+    db_connected = None
+    try:
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve(strict=True).as_uri() + "?mode=ro", uri=True, timeout=2)) as probe:
+            probe.execute("PRAGMA query_only = ON")
+            if probe.execute("SELECT 1").fetchone() == (1,):
+                db_connected = True
+    except (OSError, sqlite3.Error):
+        pass
+
     return {
 
         "status": "online",
@@ -1652,7 +1664,7 @@ async def get_status():
         "version": "1.1.85",
 
         "timestamp": datetime.now().isoformat(),
-        "db_connected": True,
+        "db_connected": db_connected,
 
         "stats": {
 
@@ -2895,34 +2907,24 @@ async def list_scheduler_runs(job_id: Optional[int] = None, limit: int = 20):
 
 
 
+_DAEMON_CONTROL_LOCK = threading.Lock()
+_GUI_DAEMON = None
+_GUI_DAEMON_STARTING = False
+
+
 @app.get("/api/daemon/status")
 
 async def get_daemon_status():
 
     """Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken."""
 
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    running = False
-    pid = None
-    pid_content = None
+    identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+    running = identity["running"]
+    pid = identity["pid"]
     started_at = None
-
-    if DAEMON_PID_FILE.exists():
-        try:
-            pid_content = DAEMON_PID_FILE.read_text().strip()
-            pid = int(pid_content)
-            import subprocess
-            if os.name == 'nt':
-                output = subprocess.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=subprocess.DEVNULL).decode('utf-8', errors='replace')
-                running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                running = True
-        except Exception:
-            pass
 
     config = {"interval": 15, "max_sessions": 3, "quiet_time": None}
     is_quiet = False
@@ -2938,46 +2940,47 @@ async def get_daemon_status():
                 if quiet_start and quiet_end:
                     config["quiet_time"] = f"{quiet_start}-{quiet_end}"
                     is_quiet = is_quiet_time(quiet_start, quiet_end)
-                started_at = cfg.get("started_at")
         except Exception:
             pass
 
-    runtime_str = "00:00:00"
-    sessions_generated = 0
-    next_session_in = 0
-    if running and started_at:
-        interval = config["interval"]
-        sessions_generated = get_extrapolated_session_count(started_at, interval)
-        next_session_in = get_next_session_seconds(started_at, interval)
-        runtime_str = get_runtime_string(started_at)
+    # A configured interval does not prove a session ran or when the loop began.
+    runtime_str = None
+    sessions_generated = None
+    next_session_in = None
 
-    conn = get_user_db()
-    stats = {"total_jobs": 0, "active_jobs": 0, "runs_today": 0, "failed_today": 0}
+    stats = {"total_jobs": None, "active_jobs": None, "runs_today": None, "failed_today": None}
     last_runs = []
+    stats_availability = "unavailable"
     try:
-        stats["total_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0]
-        stats["active_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0]
-        stats["runs_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
-        ).fetchone()[0]
-        stats["failed_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
-        ).fetchone()[0]
-        last_runs = conn.execute("""
-            SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
-            FROM scheduler_runs r
-            JOIN scheduler_jobs j ON r.job_id = j.id
-            ORDER BY r.started_at DESC LIMIT 5
-        """).fetchall()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            observed = {
+                "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
+                "active_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0],
+                "runs_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
+                ).fetchone()[0],
+                "failed_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
+                ).fetchone()[0],
+            }
+            observed_runs = conn.execute("""
+                SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
+                FROM scheduler_runs r
+                JOIN scheduler_jobs j ON r.job_id = j.id
+                ORDER BY r.started_at DESC LIMIT 5
+            """).fetchall()
+            stats, last_runs, stats_availability = observed, observed_runs, "available"
+    except (OSError, sqlite3.Error):
         pass
-    conn.close()
 
     return {
         "running": running,
         "pid": pid,
-        "pid_file": str(DAEMON_PID_FILE),
-        "pid_content": pid_content,
+        "identity": identity["identity"],
+        "identity_reason": identity["reason"],
+        "control_available": identity["control_available"],
         "started_at": started_at,
         "config": config,
         "runtime_str": runtime_str,
@@ -2985,115 +2988,64 @@ async def get_daemon_status():
         "next_session_in": next_session_in,
         "is_quiet_time": is_quiet,
         "stats": stats,
+        "stats_availability": stats_availability,
         "last_runs": rows_to_list(last_runs),
     }
 
 
-
-
-
 @app.post("/api/daemon/start")
-
 async def start_daemon(background_tasks: BackgroundTasks):
-
-    """Startet den Daemon-Service im Hintergrund."""
-
+    """Queue a GUI-owned scheduler only when no legacy or foreign PID is present."""
+    global _GUI_DAEMON_STARTING, _GUI_DAEMON
     from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-
-
-    # Pruefen ob bereits laeuft (mit PID-Validierung)
-
-    if DAEMON_PID_FILE.exists():
-        daemon_running = False
-        try:
-            pid = int(DAEMON_PID_FILE.read_text().strip())
-            if os.name == 'nt':
-                import subprocess as _sp
-                output = _sp.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=_sp.DEVNULL).decode('utf-8', errors='replace')
-                daemon_running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                daemon_running = True
-        except Exception:
-            DAEMON_PID_FILE.unlink(missing_ok=True)
-        if daemon_running:
-            return {"status": "already_running", "message": "Daemon laeuft bereits"}
-
-
+    with _DAEMON_CONTROL_LOCK:
+        if _GUI_DAEMON_STARTING:
+            raise HTTPException(status_code=409, detail="Daemon-Start läuft bereits")
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if identity["running"]:
+            return {"status": "already_running", "message": "Daemon-Prozessidentität bestätigt"}
+        if identity["identity"] != "stopped":
+            raise HTTPException(status_code=409, detail="Daemon-Identität nicht bestätigt; Start gesperrt")
+        _GUI_DAEMON_STARTING = True
 
     def run_daemon():
-
-        daemon = DaemonService()
-
-        daemon.run()
-
-
+        global _GUI_DAEMON_STARTING, _GUI_DAEMON
+        daemon = None
+        try:
+            daemon = DaemonService()
+            with _DAEMON_CONTROL_LOCK:
+                _GUI_DAEMON = daemon
+            daemon.run(owner_kind="gui")
+        finally:
+            with _DAEMON_CONTROL_LOCK:
+                if _GUI_DAEMON is daemon:
+                    _GUI_DAEMON = None
+                _GUI_DAEMON_STARTING = False
 
     background_tasks.add_task(run_daemon)
-
-    return {"status": "starting", "message": "Daemon wird gestartet..."}
-
-
-
+    return {"status": "starting", "message": "Daemon-Start eingereiht; Laufstatus erneut prüfen"}
 
 
 @app.post("/api/daemon/stop")
-
 async def stop_daemon():
+    """Request graceful stop only from the verified GUI-owned service object."""
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    """Stoppt den Daemon-Service."""
-
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
-
-
-
-    if not DAEMON_PID_FILE.exists():
-
-        return {"status": "not_running", "message": "Daemon laeuft nicht"}
-
-
-
-    # Signal senden (PID-File entfernen reicht meist)
-
-    try:
-
-        DAEMON_PID_FILE.unlink()
-
-        return {"status": "stopped", "message": "Stop-Signal gesendet"}
-
-    except Exception as e:
-
-        return {"status": "error", "message": public_error_message()}
-
-
-
+    with _DAEMON_CONTROL_LOCK:
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if not identity["running"] or not identity["control_available"] or _GUI_DAEMON is None:
+            raise HTTPException(status_code=409, detail="Steuerung ohne bestätigte lokale Prozessidentität gesperrt")
+        _GUI_DAEMON.stop()
+    return {"status": "stopping", "message": "Stop-Signal an bestätigten lokalen Daemon gesendet"}
 
 
 @app.post("/api/daemon/kill-all")
-
 async def kill_all_daemons():
-
-    """Beendet alle Daemon-Prozesse (Zombie-Praevention)."""
-
-    from gui.daemon_service import DaemonService
-
-
-
-    DaemonService.kill_all_daemons()
-
-    return {
-
-        "status": "ok",
-
-        "message": "Daemon-Prozesse wurden beendet"
-
-    }
-
-
-
+    """Broad process-name termination has no safe ownership contract."""
+    raise HTTPException(status_code=409, detail="Massenbeenden ohne Prozessidentität gesperrt")
 
 
 @app.post("/api/daemon/jobs/{job_id}/run")

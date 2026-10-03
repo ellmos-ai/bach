@@ -6,9 +6,14 @@
 const API = {
     baseUrl: '',
 
+    deviceHeaders() {
+        const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('bach_device_token');
+        return token ? { Authorization: 'Bearer ' + token } : {};
+    },
+
     async get(endpoint) {
         try {
-            const response = await fetch(this.baseUrl + endpoint);
+            const response = await fetch(this.baseUrl + endpoint, { headers: this.deviceHeaders() });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
         } catch (error) {
@@ -21,7 +26,7 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.deviceHeaders() },
                 body: JSON.stringify(data)
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -36,7 +41,7 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.deviceHeaders() },
                 body: JSON.stringify(data)
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -50,7 +55,7 @@ const API = {
     async delete(endpoint) {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
-                method: 'DELETE'
+                method: 'DELETE', headers: this.deviceHeaders()
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
