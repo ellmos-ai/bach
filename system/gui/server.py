@@ -1385,6 +1385,19 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         elif request.query_params.get("token"):
             bearer_token = request.query_params.get("token")
 
+        # Inbox paths expose private file names, previews and sorting actions.
+        # Require a registered device even on loopback and with no devices set up.
+        if (path == "/api/inbox" or path.startswith("/api/inbox/")
+                or path == "/api/mounts" or path.startswith("/api/mounts/")):
+            private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
+            if not private_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(private_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
+            return await call_next(request)
+
         # Memory and Agent Studio responses contain private notes and persona
         # prompts. Transitional and loopback fallbacks must not expose them.
         if (path == "/api/calendar" or path.startswith("/api/calendar/")

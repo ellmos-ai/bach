@@ -350,7 +350,7 @@
                             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <span>Status: <b id="scanner-status-text">Lade...</b></span>
                             <button class="btn btn-primary" id="toggle-scanner-btn"
-                                onclick="toggleScanner()">Umschalten</button>
+                                onclick="toggleScanner()">Konfiguration umschalten</button>
                         </div>
                         <button class="btn btn-secondary" style="width: 100%;" onclick="runScan()">Jetzt manuell
                             scannen</button>
@@ -565,6 +565,35 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
+        // Private file metadata and previews require the existing device login.
+        async function inboxFetch(url, options = {}) {
+            const token = localStorage.getItem('bach_device_token');
+            if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
+            const headers = new Headers(options.headers || {});
+            headers.set('Authorization', 'Bearer ' + token);
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+            }
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response;
+        }
+        const inboxApi = {
+            async get(url) { return (await inboxFetch(url)).json(); },
+            async post(url, data = {}) {
+                return (await inboxFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
+            },
+            async put(url, data = {}) {
+                return (await inboxFetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
+            },
+            async delete(url) { return (await inboxFetch(url, { method: 'DELETE' })).json(); }
+        };
+        let previewObjectUrl = null;
+        let displayedFolders = [];
+        let displayedRules = [];
+        let displayedUnsorted = [];
+        let displayedMounts = [];
+        let displayedClients = [];
         // TAB LOGIC
         function showTab(e, tabId) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -580,8 +609,9 @@
         // INBOX SCANNER LOGIC (from original)
         async function loadInboxStatus() {
             try {
-                const resp = await fetch('/api/inbox/status');
+                const resp = await inboxFetch('/api/inbox/status');
                 const data = await resp.json();
+                if (data.error || typeof data.enabled !== 'boolean') throw new Error('Posteingangsstatus nicht verfügbar');
                 const folders = data.folders || [];
                 document.getElementById('stat-folders').textContent = folders.length;
                 document.getElementById('stat-files').textContent = folders.reduce((sum, f) => sum + (f.file_count || 0), 0);
@@ -589,17 +619,21 @@
                 document.getElementById('stat-unsorted').textContent = data.unsorted_count || 0;
 
                 const statusText = document.getElementById('scanner-status-text');
-                statusText.textContent = data.enabled ? 'Aktiviert' : 'Deaktiviert';
-                statusText.style.color = data.enabled ? 'var(--success)' : 'var(--text-muted)';
-            } catch (e) { console.error(e); }
+                statusText.textContent = data.enabled ? 'Konfiguration aktiviert · Überwachung nicht bestätigt' : 'Konfiguration deaktiviert';
+                statusText.style.color = 'var(--text-muted)';
+            } catch (e) {
+                document.getElementById('scanner-status-text').textContent = e.message;
+                for (const id of ['stat-folders', 'stat-files', 'stat-rules', 'stat-unsorted']) document.getElementById(id).textContent = '–';
+            }
         }
 
         async function loadFolders() {
             try {
-                const resp = await fetch('/api/inbox/status');
+                const resp = await inboxFetch('/api/inbox/status');
                 const data = await resp.json();
                 const list = document.getElementById('folder-list');
                 const folders = data.folders || [];
+                displayedFolders = folders;
                 if (folders.length === 0) {
                     list.innerHTML = '<li class="list-item">Keine Ordner konfiguriert</li>';
                     return;
@@ -613,8 +647,8 @@
                         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                             <span style="font-size:0.8rem; font-family:monospace; word-break:break-all;">${escapeHtml(path)}</span>
                             <div style="display:flex; gap:0.3rem; flex-shrink:0;">
-                                <button class="btn btn-secondary" style="padding:0.2rem 0.4rem; font-size:0.75rem;" onclick="editFolder(${i}, '${escapeJs(path)}', '${escapeJs(mode)}', '${escapeJs(filter)}')" title="Bearbeiten">✏️</button>
-                                <button class="btn btn-secondary" style="padding:0.2rem 0.4rem; font-size:0.75rem;" onclick="removeFolder('${escapeJs(path)}')" title="Entfernen">🗑️</button>
+                                <button class="btn btn-secondary" style="padding:0.2rem 0.4rem; font-size:0.75rem;" onclick="editFolderByIndex(${i})" title="Bearbeiten">✏️</button>
+                                <button class="btn btn-secondary" style="padding:0.2rem 0.4rem; font-size:0.75rem;" onclick="removeFolderByIndex(${i})" title="Entfernen">🗑️</button>
                             </div>
                         </div>
                         ${mode || filter ? `<div style="font-size:0.7rem; color:var(--text-muted);">${mode ? 'Modus: '+escapeHtml(mode) : ''} ${filter ? '| Filter: '+escapeHtml(filter) : ''}</div>` : ''}
@@ -625,7 +659,7 @@
 
         async function loadRules() {
             try {
-                const resp = await fetch('/api/inbox/rules');
+                const resp = await inboxFetch('/api/inbox/rules');
                 const data = await resp.json();
                 const list = document.getElementById('rule-list');
 
@@ -636,12 +670,13 @@
                     datalist.innerHTML = targets.map(t => `<option value="${escapeHtml(t)}">`).join('');
                 }
 
-                list.innerHTML = (data.rules || []).map(r => `
+                displayedRules = data.rules || [];
+                list.innerHTML = displayedRules.map((r, i) => `
                     <li class="list-item">
                         <span>${escapeHtml(r.name)}</span>
                         <div style="display:flex; gap:0.5rem;">
-                            <button class="btn btn-secondary" onclick="editRule('${escapeJs(r.id || r.name)}')">✏️</button>
-                            <button class="btn btn-secondary" style="background:var(--error); color:white;" onclick="deleteRule('${escapeJs(r.id || r.name)}')">🗑️</button>
+                            <button class="btn btn-secondary" onclick="editRuleByIndex(${i})">✏️</button>
+                            <button class="btn btn-secondary" style="background:var(--error); color:white;" onclick="deleteRuleByIndex(${i})">🗑️</button>
                         </div>
                     </li>
                 `).join('') || '<li class="list-item">Keine Regeln</li>';
@@ -650,11 +685,12 @@
 
         async function loadUnsorted() {
             try {
-                const resp = await fetch('/api/inbox/unsorted');
+                const resp = await inboxFetch('/api/inbox/unsorted');
                 const data = await resp.json();
                 const container = document.getElementById('unsorted-list');
-                container.innerHTML = (data.files || []).map(f => `
-                    <div class="list-item" style="cursor:pointer; margin-bottom:0.25rem;" onclick="processFile('${escapeJs(f.name)}')">
+                displayedUnsorted = data.files || [];
+                container.innerHTML = displayedUnsorted.map((f, i) => `
+                    <div class="list-item" style="cursor:pointer; margin-bottom:0.25rem;" onclick="processFileByIndex(${i})">
                         <div>
                             <span style="font-weight:600;">${escapeHtml(f.name)}</span><br>
                             <small color="var(--text-muted)">${(f.size_bytes / 1024).toFixed(1)} KB</small>
@@ -665,12 +701,25 @@
             } catch (e) { console.error(e); }
         }
 
+        function folderAt(index) {
+            const f = displayedFolders[index];
+            return f && typeof f === 'object' ? f : (typeof f === 'string' ? { path: f } : null);
+        }
+        function editFolderByIndex(index) {
+            const f = folderAt(index);
+            if (f) editFolder(index, f.path, f.mode || '', f.filter || '');
+        }
+        function removeFolderByIndex(index) {
+            const f = folderAt(index);
+            if (f) removeFolder(f.path);
+        }
+
         // FOLDER ACTIONS
         async function addFolder() {
             const path = document.getElementById('new-folder').value.trim();
             if (!path) return;
             try {
-                const res = await api.post('/api/inbox/folders', { path });
+                const res = await inboxApi.post('/api/inbox/folders', { path });
                 if (res.success) {
                     document.getElementById('new-folder').value = '';
                     loadFolders();
@@ -682,7 +731,7 @@
         async function removeFolder(path) {
             if (!confirm(`Tatsächlich '${path}' aus der Überwachung entfernen?`)) return;
             try {
-                await fetch(`/api/inbox/folders?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+                await inboxFetch(`/api/inbox/folders?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
                 loadFolders();
                 loadInboxStatus();
             } catch (e) { alert(e.message); }
@@ -706,7 +755,7 @@
                 filter: document.getElementById('folder-filter').value
             };
             try {
-                const res = await api.put('/api/inbox/folders', data);
+                const res = await inboxApi.put('/api/inbox/folders', data);
                 if (res && res.success) {
                     closeModal('folder-modal');
                     loadFolders();
@@ -716,6 +765,15 @@
                 }
             } catch (err) { alert(err.message); }
         });
+
+        function editRuleByIndex(index) {
+            const rule = displayedRules[index];
+            if (rule) editRule(rule.id || rule.name);
+        }
+        function deleteRuleByIndex(index) {
+            const rule = displayedRules[index];
+            if (rule) deleteRule(rule.id || rule.name);
+        }
 
         // RULE ACTIONS
         function showAddRuleModal() {
@@ -727,7 +785,7 @@
 
         async function editRule(ruleId) {
             try {
-                const resp = await fetch('/api/inbox/rules');
+                const resp = await inboxFetch('/api/inbox/rules');
                 const data = await resp.json();
                 const rule = data.rules.find(r => (r.id === ruleId || r.name === ruleId));
                 if (!rule) return;
@@ -745,7 +803,7 @@
         async function deleteRule(ruleId) {
             if (!confirm(`Regel '${ruleId}' wirklich löschen?`)) return;
             try {
-                const res = await api.delete(`/api/inbox/rules/${ruleId}`);
+                const res = await inboxApi.delete(`/api/inbox/rules/${encodeURIComponent(ruleId)}`);
                 if (res.success) loadRules();
                 else alert(res.error);
             } catch (e) { alert(e.message); }
@@ -764,9 +822,9 @@
             try {
                 let res;
                 if (ruleId) {
-                    res = await api.put(`/api/inbox/rules/${ruleId}`, data);
+                    res = await inboxApi.put(`/api/inbox/rules/${encodeURIComponent(ruleId)}`, data);
                 } else {
-                    res = await api.post('/api/inbox/rules', data);
+                    res = await inboxApi.post('/api/inbox/rules', data);
                 }
                 if (res.success) {
                     closeModal('rule-modal');
@@ -774,6 +832,11 @@
                 } else alert(res.error);
             } catch (err) { alert(err.message); }
         });
+
+        function processFileByIndex(index) {
+            const file = displayedUnsorted[index];
+            if (file && typeof file.name === 'string') processFile(file.name);
+        }
 
         // PROCESS FILE ACTIONS
         async function processFile(filename) {
@@ -786,20 +849,31 @@
 
             // Preview
             const preview = document.getElementById('process-preview');
+            if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = null;
+            preview.replaceChildren();
             const ext = filename.split('.').pop().toLowerCase();
-            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-                preview.innerHTML = `<img src="/api/inbox/preview/${encodeURIComponent(filename)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">`;
-            } else if (ext === 'pdf') {
-                preview.innerHTML = `<iframe src="/api/inbox/preview/${encodeURIComponent(filename)}" style="width: 100%; height: 100%; border: none;"></iframe>`;
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(ext)) {
+                try {
+                    const response = await inboxFetch(`/api/inbox/preview/${encodeURIComponent(filename)}`);
+                    previewObjectUrl = URL.createObjectURL(await response.blob());
+                    const element = document.createElement(ext === 'pdf' ? 'iframe' : 'img');
+                    element.src = previewObjectUrl;
+                    element.style.cssText = 'width:100%;height:100%;object-fit:contain;border:0';
+                    element.title = 'Dateivorschau';
+                    preview.append(element);
+                } catch (error) {
+                    preview.textContent = 'Vorschau nicht verfügbar: ' + error.message;
+                }
             } else {
-                preview.innerHTML = `<div style="font-size: 3rem;">📄</div>`;
+                preview.textContent = '📄';
             }
 
             document.getElementById('process-modal').style.display = 'flex';
 
             // Analyse laden
             try {
-                const res = await fetch(`/api/inbox/analyze/${encodeURIComponent(filename)}`);
+                const res = await inboxFetch(`/api/inbox/analyze/${encodeURIComponent(filename)}`);
                 const data = await res.json();
                 if (data.success) {
                     if (data.suggestion) {
@@ -822,7 +896,7 @@
             };
 
             try {
-                const res = await api.post('/api/inbox/sort', data);
+                const res = await inboxApi.post('/api/inbox/sort', data);
                 if (res.success) {
                     closeModal('process-modal');
                     loadUnsorted();
@@ -835,11 +909,10 @@
         // MODAL HELPERS
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
-        }
-
-        function escapeJs(text) {
-            if (!text) return '';
-            return text.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"');
+            if (id === 'process-modal' && previewObjectUrl) {
+                URL.revokeObjectURL(previewObjectUrl);
+                previewObjectUrl = null;
+            }
         }
 
         function showToast(msg, type) {
@@ -849,55 +922,67 @@
 
         async function toggleScanner() {
             try {
-                const resp = await fetch('/api/inbox/status');
+                const resp = await inboxFetch('/api/inbox/status');
                 const data = await resp.json();
+                if (data.error || typeof data.enabled !== 'boolean') throw new Error('Konfiguration nicht lesbar');
                 const newState = !data.enabled;
-                const res = await fetch('/api/inbox/settings', {
+                const res = await inboxFetch('/api/inbox/settings', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: newState })
                 });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                loadInboxStatus();
-            } catch (e) { alert('Scanner-Umschaltung fehlgeschlagen: ' + e.message); }
+                const ack = await res.json();
+                if (ack.success !== true || ack.settings?.enabled !== newState) throw new Error('Speichern nicht bestätigt');
+                const readback = await (await inboxFetch('/api/inbox/status')).json();
+                if (readback.enabled !== newState) throw new Error('Gespeicherter Zustand nicht bestätigt');
+                await loadInboxStatus();
+                showToast('Scanner-Konfiguration gespeichert. Laufende Überwachung nicht bestätigt.', 'success');
+            } catch (e) { alert('Scanner-Konfiguration fehlgeschlagen: ' + e.message); }
         }
 
         async function runScan() {
             try {
-                await fetch('/api/inbox/scan', { method: 'POST' });
-                loadInboxStatus();
-                loadUnsorted();
-                alert('Scan ausgefuehrt!');
+                const scanResponse = await inboxFetch('/api/inbox/scan', { method: 'POST' });
+                const result = await scanResponse.json();
+                if (result.success !== true) throw new Error(result.error || 'Scan nicht bestätigt');
+                await Promise.all([loadInboxStatus(), loadUnsorted()]);
+                showToast(`Scan beendet: ${result.processed || 0} verarbeitet, ${result.error_count || 0} Fehler.`, result.error_count ? 'warning' : 'success');
             } catch (e) { alert(e.message); }
+        }
+
+        function anonymizeFolderByIndex(index) {
+            const client = displayedClients[index];
+            if (client && typeof client.id === 'string') anonymizeFolder(client.id);
         }
 
         // ANONYMIZATION LOGIC (from original)
         async function loadQuarantine() {
             try {
-                const data = await api.get('/api/anonymization/clients');
+                const data = await inboxApi.get('/api/anonymization/clients');
                 const list = document.getElementById('anon-clients-list');
                 if (!data.clients || data.clients.length === 0) {
                     list.innerHTML = '<p style="padding:1rem; color:var(--text-muted)">Keine Klienten in Quarantäne</p>';
                     return;
                 }
-                list.innerHTML = data.clients.map(c => `
+                displayedClients = data.clients;
+                list.innerHTML = displayedClients.map((c, i) => `
                     <div class="card" style="padding:1rem; margin-bottom:0.75rem;">
                         <div style="display:flex; justify-content:space-between; align-items:start;">
                             <div>
                                 <h3 style="margin:0">${escapeHtml(c.name)}</h3>
                                 <small style="color:var(--text-muted)">Quell-Ordner: ${escapeHtml(c.real_name)}</small>
                             </div>
-                            <span class="status-badge ${c.status === 'profile_ready' ? 'active' : ''}">${c.status}</span>
+                            <span class="status-badge ${c.status === 'profile_ready' ? 'active' : ''}">${escapeHtml(c.status)}</span>
                         </div>
                         <div style="margin-top:0.75rem; font-size:0.8rem; display:flex; justify-content:space-between;">
-                            <span>${c.file_count} Dateien</span>
+                            <span>${Number(c.file_count) || 0} Dateien</span>
                             <span>${new Date(c.last_modified).toLocaleDateString()}</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width:${c.progress || 0}%"></div>
+                            <div class="progress-fill" style="width:${Math.max(0, Math.min(100, Number(c.progress) || 0))}%"></div>
                         </div>
                         <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
-                             <button class="btn btn-secondary" style="flex:1; font-size:0.8rem;" onclick="anonymizeFolder('${escapeJs(c.id)}')">Starten</button>
+                             <button class="btn btn-secondary" style="flex:1; font-size:0.8rem;" onclick="anonymizeFolderByIndex(${i})">Starten</button>
                              <button class="btn btn-secondary" style="flex:1; font-size:0.8rem;">Details</button>
                         </div>
                     </div>
@@ -913,7 +998,7 @@
                 redaction_terms: document.getElementById('anon-terms').value
             };
             try {
-                const res = await api.post('/api/anonymization/profile', data);
+                const res = await inboxApi.post('/api/anonymization/profile', data);
                 if (res.success) {
                     alert('Job erstellt!');
                     loadQuarantine();
@@ -921,16 +1006,22 @@
             } catch (err) { alert(err.message); }
         });
 
+        function removeMountByIndex(index) {
+            const mount = displayedMounts[index];
+            if (mount && typeof mount.alias === 'string') removeMount(mount.alias);
+        }
+
         // MOUNT LOGIC (Verbindungen)
         async function loadMounts() {
             try {
-                const res = await fetch('/api/mounts');
+                const res = await inboxFetch('/api/mounts');
                 const data = await res.json();
                 const tbody = document.getElementById('mounts-list-body');
                 if (!tbody) return;
 
                 if (data.mounts && data.mounts.length > 0) {
-                    tbody.innerHTML = data.mounts.map(m => `
+                    displayedMounts = data.mounts;
+                    tbody.innerHTML = displayedMounts.map((m, i) => `
                         <tr>
                             <td><b>${escapeHtml(m.alias)}</b></td>
                             <td style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(m.path)}</td>
@@ -940,7 +1031,7 @@
                                 </span>
                             </td>
                             <td>
-                                <button onclick="removeMount(${escapeHtml(JSON.stringify(m.alias))})" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Löschen</button>
+                                <button onclick="removeMountByIndex(${i})" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Löschen</button>
                             </td>
                         </tr>
                     `).join('');
@@ -960,7 +1051,7 @@
             if (!path || !alias) { alert('Bitte Pfad und Alias angeben.'); return; }
 
             try {
-                const res = await fetch('/api/mounts', {
+                const res = await inboxFetch('/api/mounts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path, alias })
@@ -980,7 +1071,7 @@
         async function removeMount(alias) {
             if (!confirm(`Möchten Sie die Verbindung '${alias}' wirklich entfernen?`)) return;
             try {
-                const res = await fetch(`/api/mounts/${alias}`, { method: 'DELETE' });
+                const res = await inboxFetch(`/api/mounts/${encodeURIComponent(alias)}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.success) loadMounts();
                 else alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
@@ -989,7 +1080,7 @@
 
         async function restoreMounts() {
             try {
-                const res = await fetch('/api/mounts/restore', { method: 'POST' });
+                const res = await inboxFetch('/api/mounts/restore', { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
                     alert(data.message || data.output || 'Mounts wiederhergestellt');
