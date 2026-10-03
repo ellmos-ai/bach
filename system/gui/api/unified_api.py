@@ -14,6 +14,7 @@ Provides modular endpoints for:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import logging
@@ -42,6 +43,7 @@ from hub.bach_paths import BACH_DB, BACH_ROOT
 BACH_DIR = BACH_ROOT
 
 router = APIRouter(prefix="/api", tags=["unified"])
+_COMPARE_RACE_LOCK = asyncio.Lock()
 
 
 def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
@@ -107,7 +109,7 @@ def _lock_cache_snapshot() -> Dict[str, Any]:
         return {**unavailable, "error": "lock_cache_invalid"}
 
 
-def _require_memory_device(request: Request) -> None:
+def _require_memory_device(request: Request) -> int:
     """Authorize private search with an active device token using a RO query."""
     header = request.headers.get("Authorization", "")
     token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "").strip()
@@ -125,6 +127,7 @@ def _require_memory_device(request: Request) -> None:
         raise HTTPException(status_code=503, detail="Device authorization unavailable")
     if row is None:
         raise HTTPException(status_code=403, detail="Device token invalid or revoked")
+    return int(row[0])
 
 
 @router.get("/nav/config")
@@ -1109,13 +1112,27 @@ async def search_federated_memory(request: Request, q: str = Query(..., min_leng
     return search_memory(q.strip(), limit, BACH_DB)
 
 
+@router.get("/chat/compare-race/status")
+async def compare_race_status(request: Request):
+    from .compare_race_adapter import readiness
+    _require_memory_device(request)
+    return readiness()
+
+
 @router.post("/chat/compare-race")
-async def compare_race(payload: Dict[str, Any] = Body(...)):
-    """Do not claim a model comparison until real provider calls exist."""
-    prompt = payload.get("prompt", "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt fehlt")
-    raise HTTPException(status_code=501, detail="Compare-Race ist noch nicht mit Modell-Providern verbunden.")
+async def compare_race(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Run configured SDK lanes only after device, cost, and call-budget gates."""
+    from .compare_race_adapter import RaceUnavailable, execute_isolated
+    device_id = _require_memory_device(request)
+    if _COMPARE_RACE_LOCK.locked():
+        raise HTTPException(status_code=409, detail="Ein Compare-Race läuft bereits.")
+    async with _COMPARE_RACE_LOCK:
+        try:
+            return await asyncio.to_thread(execute_isolated, payload, device_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Prompt oder Modellauswahl ungültig.")
+        except RaceUnavailable as exc:
+            raise HTTPException(status_code=501, detail=exc.code)
 
 
 @router.get("/domains")
