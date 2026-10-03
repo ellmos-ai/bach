@@ -1350,6 +1350,13 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if path in self.EXEMPT_API_PATHS or (path == "/api/nav/config" and request.method == "GET"):
             return await call_next(request)
 
+        # Chat-Control uses its own Bearer credential. The allowlisted proxy
+        # forwards it to ControlHandler, which authorizes mutations and private
+        # profile reads; interpreting it as a device token here blocks the chat.
+        if (path.startswith("/api/chat-control/") and request.method in {"GET", "POST"}
+                and path.removeprefix("/api/chat-control/") in CHAT_CONTROL_PATHS):
+            return await call_next(request)
+
         # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
         auth_header = request.headers.get("Authorization", "").strip()
         bearer_token = None
