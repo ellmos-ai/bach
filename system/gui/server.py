@@ -1360,6 +1360,24 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         elif request.query_params.get("token"):
             bearer_token = request.query_params.get("token")
 
+        # Memory responses include private facts and session notes. The
+        # transitional prefix and loopback fallback must not expose them.
+        if path == "/api/memory" or path.startswith("/api/memory/") or path == "/api/gardener" or path.startswith("/api/gardener/"):
+            private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
+            if not private_token:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Missing device authorization token", "detail": "Unauthorized"},
+                )
+            device = validate_token(private_token)
+            if not device:
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "Invalid or revoked device token", "detail": "Forbidden"},
+                )
+            request.state.device = device
+            return await call_next(request)
+
         # If a token was supplied, validate it
         if bearer_token:
             device = validate_token(bearer_token)

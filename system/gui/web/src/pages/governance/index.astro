@@ -15,8 +15,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
 
     <div style="display:flex;gap:0.5rem;">
-      <span class="badge badge-success" style="font-size:0.85rem;padding:0.4rem 0.8rem;">
-        ● Fail-Closed Aktiv (P-001)
+      <span class="badge" id="governance-status-badge" style="font-size:0.85rem;padding:0.4rem 0.8rem;">
+        ● Durchsetzung nicht geprüft
       </span>
     </div>
   </div>
@@ -33,29 +33,29 @@ import BachLayout from "../../layouts/BachLayout.astro";
   <div class="card" style="margin-bottom:1.5rem;border-left:4px solid var(--warning);">
     <div class="card-header">
       <h2 class="card-title">⚖️ Decision-Clicker (Offene menschliche Entscheidungen)</h2>
-      <span class="badge badge-warning" id="decisions-count-badge">1 Entscheidung wartet</span>
+      <span class="badge" id="decisions-count-badge">Entscheidungen nicht geprüft</span>
     </div>
     <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-      Autonome Worker stoppen vor irreversiblen Aktionen (Public, Release, Push). Bestätige oder verwerfe Anträge hier direkt per 1-Klick:
+      Das Register listet Entscheidungsdateien. Der Freigabestatus und die 1-Klick-Aktion sind hier noch nicht angebunden:
     </p>
 
     <div id="decisions-list" style="display:flex;flex-direction:column;gap:0.75rem;">
       <div style="padding:1rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <div>
           <div style="display:flex;align-items:center;gap:0.5rem;">
-            <strong style="color:var(--text);font-size:0.9rem;">D-20261002-001: Freigabe Astro-Umbau BACH-GUI</strong>
-            <span class="badge badge-warning">Wartet auf Go</span>
+            <strong style="color:var(--text);font-size:0.9rem;">Entscheidungsregister</strong>
+            <span class="badge">Status nicht geprüft</span>
           </div>
           <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
-            Vollständige Überführung der Frontend-Architektur in Astro v5 mit nativer FastAPI-Einbettung.
+            Der aktuelle Registerstand wird geladen.
           </p>
         </div>
         <div style="display:flex;gap:0.5rem;">
-          <button class="btn btn-primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="resolveDecision('D-20261002-001', 'approved')">
-            ✓ Genehmigen & Freigeben
+          <button class="btn btn-primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;" disabled title="Freigabe-Endpunkt nicht angebunden">
+            ✓ Genehmigen (nicht verfügbar)
           </button>
-          <button class="btn" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="resolveDecision('D-20261002-001', 'rejected')">
-            ✕ Ablehnen
+          <button class="btn" style="padding:0.4rem 0.8rem;font-size:0.8rem;" disabled title="Freigabe-Endpunkt nicht angebunden">
+            ✕ Ablehnen (nicht verfügbar)
           </button>
         </div>
       </div>
@@ -68,36 +68,21 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="card">
       <div class="card-header">
         <h2 class="card-title">🔒 Lock-Master (Aktive Sperren & Haltefristen)</h2>
-        <span class="badge badge-success">0 Locks aktiv</span>
+        <span class="badge" id="locks-count-badge">Lock-Feed nicht geprüft</span>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
         Gesperrte Bereiche (<code>LOCK.user.*</code>, <code>LOCK.condition.*</code>) sind für alle KI-Agenten Fail-Closed (Read-Only).
       </p>
 
-      <div style="display:flex;flex-direction:column;gap:0.75rem;">
+      <div id="locks-list" style="display:flex;flex-direction:column;gap:0.75rem;">
         <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:0.85rem;color:var(--text);">C:\_Local_DEV\repos\bach</strong>
-            <span class="badge badge-success">Frei (Kein Lock)</span>
+            <strong style="font-size:0.85rem;color:var(--text);">Lock-Feed</strong>
+            <span class="badge">Nicht geprüft</span>
           </div>
-          <span style="font-size:0.75rem;color:var(--text-muted);">Schreib- und Entwicklungszugriff aktiv</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);">Eine fehlende Cachedatei bedeutet keine Schreibfreigabe.</span>
         </div>
 
-        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:0.85rem;color:var(--text);">OneDrive\.TOPICS\.HACKATHONS</strong>
-            <span class="badge badge-success">Frei (Kein Lock)</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-muted);">Sperren nach Abschluss neutralisiert</span>
-        </div>
-
-        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:0.85rem;color:var(--text);">system/gui/templates/.dirlock.user</strong>
-            <span class="badge badge-accent">DIRLOCK Geschützt</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-muted);">Schützt Alt-Templates vor unkontrollierter Mutation</span>
-        </div>
       </div>
     </div>
 
@@ -105,28 +90,28 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="card">
       <div class="card-header">
         <h2 class="card-title">📜 System-Policies (P-001 bis P-007)</h2>
-        <span class="badge badge-accent">7 Aktiv</span>
+        <span class="badge badge-accent">7 konfiguriert</span>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-        Verbindliche Richtlinien für alle Agenten (Claude, Gemini, Codex, Ollama):
+        Konfigurierte Richtlinien; die Durchsetzung pro Agent ist hier nicht geprüft:
       </p>
 
       <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.82rem;">
         <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
-          <span><strong>P-001:</strong> Absolute Lock-Sicherheit & Fail-Closed</span>
-          <span style="color:var(--success);font-weight:600;">Verbindlich</span>
+          <span><strong>P-001:</strong> Fail-Closed Git Protection</span>
+          <span>Durchsetzung nicht geprüft</span>
         </div>
         <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
-          <span><strong>P-002:</strong> Multi-Host System-Gaps & Sync-Pflicht</span>
-          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+          <span><strong>P-002:</strong> Two-Tree Rule</span>
+          <span>Durchsetzung nicht geprüft</span>
         </div>
         <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
-          <span><strong>P-003:</strong> Zwei-Modell-Review (D-20260902-002)</span>
-          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+          <span><strong>P-003:</strong> Device Token Auth</span>
+          <span>Durchsetzung nicht geprüft</span>
         </div>
         <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
           <span><strong>P-007:</strong> Proof-Note Freigabe in Forschungs-Repos</span>
-          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+          <span>Durchsetzung nicht geprüft</span>
         </div>
       </div>
     </div>
@@ -139,10 +124,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <h2 class="card-title">📻 Agentenfunk (Inter-Agenten Kommunikation & Signale)</h2>
         <a href="/governance/funk" style="font-size:0.8rem;color:var(--accent);text-decoration:none;">➔ Zur Vollansicht</a>
       </div>
-      <span class="badge badge-accent">Mesh-Kanal</span>
+      <span class="badge">Zustellung nicht geprüft</span>
     </div>
     <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-      Live-Signalübertragung zwischen autonomen Agenten (Gemini ↔ Claude ↔ GPT ↔ Kimi ↔ Ollama).
+      Agentenfunk-Konzept; Zustellung und Laufzeitstatus werden hier nicht gemessen.
     </p>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
@@ -151,23 +136,23 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <h4 style="margin:0 0 0.25rem 0;font-size:0.85rem;color:var(--text);">Letzte Signale & Handshakes</h4>
         <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
           <div style="display:flex;justify-content:space-between;color:var(--accent);">
-            <strong>gemini@ASUS-GEI ➔ claude@ASUS-GEI</strong>
-            <span style="font-size:0.7rem;color:var(--text-muted);">vor 20 Min</span>
+            <strong>Letzter Handshake</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">Nicht geprüft</span>
           </div>
-          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">T-20261003-605028960 geclaimed. Menürestrukturierung gestartet.</p>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Kein Live-Signalfeed angebunden.</p>
         </div>
         <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
           <div style="display:flex;justify-content:space-between;color:var(--success);">
-            <strong>claude@ASUS-GEI ➔ all</strong>
-            <span style="font-size:0.7rem;color:var(--text-muted);">2026-09-27</span>
+            <strong>Policy-Durchsetzung</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">Nicht geprüft</span>
           </div>
-          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Policy P-001 Durchsetzung aktiv: Keine Direkt-Pushes auf main.</p>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Ein Guard-Nachweis wird von dieser Ansicht nicht erhoben.</p>
         </div>
       </div>
 
       <!-- Quick Funk Message Form -->
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
-        <h4 style="margin:0 0 0.5rem 0;font-size:0.85rem;color:var(--text);">Signal ins Netzwerk senden</h4>
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.85rem;color:var(--text);">Signal ins Netzwerk senden (nicht verfügbar)</h4>
         <form onsubmit="event.preventDefault(); sendFunkMessage();" style="display:flex;flex-direction:column;gap:0.75rem;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
             <div>
@@ -189,28 +174,57 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Nachricht</label>
             <input type="text" id="funk-msg" placeholder="Mitteilung an Agenten..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
           </div>
-          <button type="submit" class="btn btn-sm btn-primary">Funkspruch absenden</button>
+          <button type="submit" class="btn btn-sm btn-primary" disabled title="Kein Zustell-Endpunkt angebunden">Funkspruch absenden</button>
         </form>
       </div>
     </div>
   </div>
 
   <script is:inline>
-    function resolveDecision(id, action) {
-      alert(`Entscheidung [${id}] erfolgreich als [${action}] protokolliert!`);
-      const list = document.getElementById('decisions-list');
-      list.innerHTML = '<p style="color:var(--success);text-align:center;padding:1.5rem;">Alle Entscheidungen abgearbeitet. 0 offene Fragen.</p>';
-      document.getElementById('decisions-count-badge').textContent = '0 Offen';
-      document.getElementById('decisions-count-badge').className = 'badge badge-success';
+    async function loadGovernanceStatus() {
+      try {
+        const response = await fetch('/api/governance/status');
+        if (!response.ok) throw new Error('Status nicht erreichbar');
+        const data = await response.json();
+        document.getElementById('governance-status-badge').textContent =
+          data.availability === 'available' ? '● Lock-Feed verfügbar; Durchsetzung nicht geprüft' : '● Lock-Lage unbekannt';
+        const badge = document.getElementById('locks-count-badge');
+        const list = document.getElementById('locks-list');
+        list.replaceChildren();
+        if (data.availability === 'available' && Number.isInteger(data.lock_count)) {
+          badge.textContent = data.lock_count + ' Locks im Scan';
+          for (const lock of data.active_locks || []) {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm)';
+            const name = document.createElement('strong');
+            name.textContent = lock.name;
+            const scope = document.createElement('span');
+            scope.style.cssText = 'display:block;font-size:0.75rem;color:var(--text-muted)';
+            scope.textContent = 'Scope: ' + lock.scope;
+            row.append(name, scope);
+            list.appendChild(row);
+          }
+          if (data.lock_count === 0) list.textContent = 'Keine Locks im letzten Scan. Schreibzugriff separat prüfen.';
+        } else {
+          badge.textContent = 'Lock-Lage unbekannt';
+          list.textContent = 'Kein gültiger, frischer Lock-Scan verfügbar.';
+        }
+        document.getElementById('decisions-count-badge').textContent =
+          (data.recent_decisions || []).length + ' Registerdateien; offener Status nicht geprüft';
+        const decisions = document.getElementById('decisions-list');
+        const registerLabel = decisions.querySelector('strong');
+        if (registerLabel) registerLabel.textContent =
+          (data.recent_decisions || []).length ? 'Entscheidungsregister geladen' : 'Keine Registerdateien gefunden';
+      } catch (_) {
+        document.getElementById('governance-status-badge').textContent = '● Status nicht geprüft';
+        document.getElementById('locks-count-badge').textContent = 'Lock-Lage unbekannt';
+        document.getElementById('decisions-count-badge').textContent = 'Entscheidungen nicht geprüft';
+      }
     }
 
     function sendFunkMessage() {
-      const from = document.getElementById('funk-from').value;
-      const to = document.getElementById('funk-to').value;
-      const msg = document.getElementById('funk-msg').value.trim();
-      if (!msg) return;
-      alert(`Funkspruch erfolgreich an [${to}] gesendet:\n"${msg}"`);
-      document.getElementById('funk-msg').value = '';
+      document.getElementById('funk-msg').setCustomValidity('Kein Zustell-Endpunkt angebunden');
     }
+    loadGovernanceStatus();
   </script>
 </BachLayout>

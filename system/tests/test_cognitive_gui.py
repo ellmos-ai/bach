@@ -66,9 +66,9 @@ def test_cognitive_memory_state():
     assert "Aufgabenprompt" in sp["formula"]
     assert "Governance" in sp["agent_formula"]
 
-    # Verify Hooker Governance: All dynamic context injections audited
+    # The diagram is conceptual; this endpoint does not attest runtime guards.
     hg = data["hooker_governance"]
-    assert "Fail-Closed" in hg["status"]
+    assert hg["status"] == "Nicht geprüft"
     assert len(hg["safety_rules"]) >= 3
     assert len(hg["channels"]) >= 4
 

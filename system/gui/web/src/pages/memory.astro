@@ -49,7 +49,7 @@ const mermaidCode = `flowchart TD
     end
 
     subgraph LEARN ["8. Lern- & Konsolidierungssystem"]
-        CL["Kognitives Lernen (76% Rauschfilter)"]
+        CL["Kognitives Lernen (Konzept)"]
         KW -->|"Rohdaten-Strom"| CL
         CL -->|"Destilliertes Wissen"| LTM
     end`;
@@ -69,11 +69,11 @@ const mermaidCode = `flowchart TD
 
     <!-- Live Kognitions-Statuschips -->
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-      <span class="badge badge-success" id="chip-sys-status">● Kontextfenster Gesund</span>
-      <span class="badge" style="background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);">👑 Exekutive: SAS Aktiv</span>
-      <span class="badge" style="background:color-mix(in srgb, var(--accent-blue) 15%, transparent);color:var(--accent-blue);border:1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent);">🛡️ Guards: 2-Stufig</span>
-      <span class="badge" style="background:color-mix(in srgb, var(--success) 15%, transparent);color:var(--success);border:1px solid color-mix(in srgb, var(--success) 30%, transparent);">💉 Hooker: Zustell-Bereit</span>
-      <span class="badge" style="background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);" id="chip-tokens">🗣️ 1.420 / 200k Tokens (0.7%)</span>
+      <span class="badge" id="chip-sys-status">● Laufzeit nicht geprüft</span>
+      <span class="badge">👑 Exekutive: Konzept</span>
+      <span class="badge">🛡️ Guards: nicht geprüft</span>
+      <span class="badge">💉 Hooker: nicht geprüft</span>
+      <span class="badge" style="background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);" id="chip-tokens">🗣️ Tokens nicht geprüft</span>
     </div>
   </div>
 
@@ -243,7 +243,7 @@ const mermaidCode = `flowchart TD
         <g class="svg-node" data-target="learn" style="cursor:pointer;" onclick="selectInspector('learn')">
           <rect x="430" y="565" width="240" height="52" rx="8" class="node-box"></rect>
           <text x="550" y="586" text-anchor="middle" class="node-title" font-weight="700" font-size="11.5">🌙 Kognitives Lernen & Konsolidierung</text>
-          <text x="550" y="603" text-anchor="middle" class="node-sub" font-size="9.5">76% Rauschfilter • Lessons Learned • Best Practices</text>
+          <text x="550" y="603" text-anchor="middle" class="node-sub" font-size="9.5">Lessons Learned • Best Practices (Konzept)</text>
         </g>
 
         <!-- 9. LANGZEITGEDÄCHTNIS (RECHTS UNTEN) -->
@@ -307,7 +307,7 @@ const mermaidCode = `flowchart TD
             Das Herzstück des Modells: Arbeitsgedächtnismodell (Baddeley) • CoT-Planung & Innerer Monolog
           </span>
         </div>
-        <span class="badge badge-accent">1.420 / 200.000 Tokens (0.71%)</span>
+        <span class="badge badge-accent">Tokenbelegung nicht geprüft</span>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;margin-bottom:1rem;">
@@ -316,15 +316,15 @@ const mermaidCode = `flowchart TD
           <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.85rem;">
             <div style="display:flex;justify-content:space-between;">
               <span style="color:var(--text-muted);">Token-Sparmodus:</span>
-              <strong style="color:var(--success);">Normalbetrieb (&lt;10% belegt)</strong>
+              <strong>Nicht geprüft</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:var(--text-muted);">PreCompact-Frühwarnung:</span>
-              <strong style="color:var(--success);">Inaktiv (Puffer frei)</strong>
+              <strong>Nicht geprüft</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:var(--text-muted);">Clean Handoff (Übergabe):</span>
-              <strong style="color:var(--accent-blue);">Bereit bei &gt;80% Füllstand</strong>
+              <strong>Nicht geprüft</strong>
             </div>
           </div>
         </div>
@@ -332,19 +332,15 @@ const mermaidCode = `flowchart TD
         <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
           <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Das Grundgesetz der Laufzeit</h4>
           <p style="font-size:0.825rem;color:var(--text-muted);margin-bottom:0.5rem;line-height:1.5;">
-            Nach dem initialen Booten gibt es <strong>KEINEN unkontrollierten Input</strong> direkt in das Kontextfenster.
-            Alles, was nachträglich hinein will, muss zwingend über die <strong>Guards freigegeben</strong> und durch die <strong>Hooker-Pipeline</strong> zugestellt werden!
+            Vorgesehen ist ein kontrollierter Input über Guards und Hooker. Die Durchsetzung im laufenden Agenten ist hier nicht geprüft.
           </p>
-          <span class="badge badge-success">Fail-Closed Ingress-Schutz Aktiv</span>
+          <span class="badge">Durchsetzung nicht geprüft</span>
         </div>
       </div>
 
       <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
-        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Aktiver Chain-of-Thought (Innerer Sprachstrom)</h4>
-        <pre style="background:var(--bg-dark);color:var(--text);padding:0.75rem;border-radius:var(--radius-sm);font-size:0.8rem;font-family:monospace;margin:0;overflow-x:auto;border:1px solid var(--border);">[Stream:CenterHub] Startprompt verifiziert: Rolle 'Senior Software Architect' gebootet.
-[Stream:CenterHub] Sensoren aktiv -> Messtechnik meldet 0 Loops, 0 Stress.
-[Stream:CenterHub] PreToolUse-Guard prüft Befehl -> P-001 Lock intakt (0 Push-Aktivitäten).
-[Stream:CenterHub] Kontextfenster stabil. Phonologische Schleife arbeitet fehlerfrei.</pre>
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Innerer Sprachstrom</h4>
+        <pre style="background:var(--bg-dark);color:var(--text);padding:0.75rem;border-radius:var(--radius-sm);font-size:0.8rem;font-family:monospace;margin:0;overflow-x:auto;border:1px solid var(--border);">Kein Laufzeit- oder Chain-of-Thought-Feed angebunden.</pre>
       </div>
     </div>
 
@@ -453,7 +449,7 @@ const mermaidCode = `flowchart TD
             Logik: <code>[Sensor-Befund] + [Skript- & LLM-Guard Pass] ➔ Autorisierung</code>.
             Erst wenn beide Guards zustimmen, wird der Payload (z. B. ein korrigierender Gedanke oder ein Faktenanker) freigegeben.
           </p>
-          <span class="badge badge-success">Fail-Closed Gate Aktiv</span>
+          <span class="badge">Durchsetzung nicht geprüft</span>
         </div>
 
         <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
@@ -516,7 +512,7 @@ const mermaidCode = `flowchart TD
         <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
           <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Filter & Destillation</h4>
           <p style="font-size:0.825rem;color:var(--text-muted);line-height:1.5;">
-            76% Rauschreduktion: Rohtext ➔ Speicherung an Meilensteinen ➔ Lesson Learned ➔ Best Practice ➔ Eintrag in <code>bach.db</code>.
+            Konzept: Rohtext ➔ Speicherung an Meilensteinen ➔ Lesson Learned ➔ Best Practice ➔ Eintrag in <code>bach.db</code>. Eine Rauschreduktionsquote ist nicht gemessen.
           </p>
         </div>
       </div>
@@ -545,24 +541,35 @@ const mermaidCode = `flowchart TD
       </div>
 
       <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
-        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Aktive Datenbank-Bestände (bach.db)</h4>
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Datenbank-Bestände (bach.db)</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:0.5rem;text-align:center;">
           <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
-            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-facts">50</div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-facts">Nicht geprüft</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">memory_facts</div>
           </div>
           <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
-            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-lessons">50</div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-lessons">Nicht geprüft</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">memory_lessons</div>
           </div>
           <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
-            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-sessions">9.359</div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-sessions">Nicht geprüft</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">memory_sessions</div>
           </div>
           <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
-            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-working">136</div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-working">Nicht geprüft</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">memory_working</div>
           </div>
+        </div>
+
+        <div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1.25rem;">
+          <h4 style="margin:0 0 0.5rem 0;color:var(--text);">Gedächtnisquellen durchsuchen</h4>
+          <p style="font-size:0.8rem;color:var(--text-muted);">BACH, Gardener und USMC werden getrennt und nur lesend abgefragt. Fehlende Quellen erscheinen als nicht verfügbar.</p>
+          <form id="memory-search-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <input id="memory-search-query" type="search" minlength="2" maxlength="200" required placeholder="Suchbegriff" style="flex:1;min-width:12rem;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+            <button type="submit" class="btn btn-sm btn-primary">Suchen</button>
+          </form>
+          <div id="memory-search-sources" style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted);">Quellenstatus wird beim Suchen geprüft.</div>
+          <div id="memory-search-results" style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.5rem;"></div>
         </div>
 
         <!-- Interaktiver Tabellen-Inspektor & Editor fuer bach.db -->
@@ -949,14 +956,14 @@ const mermaidCode = `flowchart TD
         const data = await res.json();
         if (data.langzeit_gedaechtnis) {
           const lzg = data.langzeit_gedaechtnis;
-          if (lzg.facts) document.getElementById('stat-facts').innerText = lzg.facts.count;
-          if (lzg.lessons) document.getElementById('stat-lessons').innerText = lzg.lessons.count;
-          if (lzg.sessions) document.getElementById('stat-sessions').innerText = lzg.sessions.count.toLocaleString();
-          if (lzg.working) document.getElementById('stat-working').innerText = lzg.working.count;
+          for (const [key, id] of Object.entries({facts: 'stat-facts', lessons: 'stat-lessons', sessions: 'stat-sessions', working: 'stat-working'})) {
+            const count = lzg[key]?.count;
+            document.getElementById(id).textContent = Number.isInteger(count) ? count.toLocaleString('de-DE') : 'Nicht geprüft';
+          }
         }
       }
     } catch (e) {
-      // Fallback auf statische Werte
+      // Unknown remains visible when the live source cannot be read.
     }
   }
 
@@ -978,6 +985,17 @@ const mermaidCode = `flowchart TD
   function toggleAddFactForm() {
     const f = document.getElementById('form-add-fact');
     if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function escapeHtml(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value ?? '');
+    return node.innerHTML;
+  }
+
+  function safeId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id >= 0 ? id : 0;
   }
 
   function toggleAddLessonForm() {
@@ -1011,13 +1029,13 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${facts.map(f => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${f.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${f.category || 'general'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${f.key}</strong></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all;">${f.value}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${(f.confidence || 1.0).toFixed(2)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(f.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(f.category || 'general')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(f.key)}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all;">${escapeHtml(f.value)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${Number(f.confidence ?? 1).toFixed(2)}</td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);">
-                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteFact(${f.id})">Löschen</button>
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteFact(${safeId(f.id)})">Löschen</button>
                 </td>
               </tr>
             `).join('')}
@@ -1025,7 +1043,7 @@ const mermaidCode = `flowchart TD
         </table>
       `;
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Fakten konnten nicht geladen werden.';
     }
   }
 
@@ -1093,14 +1111,14 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${lessons.map(l => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${l.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${l.category || 'general'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${l.title}</strong></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:320px;word-break:break-word;">${l.content || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(l.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(l.category || 'general')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(l.title)}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:320px;word-break:break-word;">${escapeHtml(l.content || '-')}</td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge ${l.is_active ? 'badge-success' : 'badge-secondary'}">${l.is_active ? 'Ja' : 'Nein'}</span></td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);white-space:nowrap;">
-                  <button class="btn btn-sm btn-secondary" style="padding:0.2rem 0.5rem;" onclick="toggleLesson(${l.id})">Umschalten</button>
-                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteLesson(${l.id})">Löschen</button>
+                  <button class="btn btn-sm btn-secondary" style="padding:0.2rem 0.5rem;" onclick="toggleLesson(${safeId(l.id)})">Umschalten</button>
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteLesson(${safeId(l.id)})">Löschen</button>
                 </td>
               </tr>
             `).join('')}
@@ -1108,7 +1126,7 @@ const mermaidCode = `flowchart TD
         </table>
       `;
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Lessons konnten nicht geladen werden.';
     }
   }
 
@@ -1175,17 +1193,17 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${items.map(w => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${w.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${w.type || 'context'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.content}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.created_at || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(w.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(w.type || 'context')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(w.content)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(w.created_at || '-')}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       ` : '<p class="text-muted" style="padding:1rem;">Arbeitsgedächtnis aktuell leer.</p>';
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Arbeitsgedächtnis konnte nicht geladen werden.';
     }
   }
 
@@ -1202,23 +1220,58 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${sessions.map(s => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${s.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><code>${s.session_id ? s.session_id.substring(0, 16) + '...' : '-'}</code></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.started_at || '-'}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.ended_at || '-'}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${s.summary || 'Arbeitssitzung'}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(s.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><code>${escapeHtml(s.session_id ? String(s.session_id).substring(0, 16) + '...' : '-')}</code></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(s.started_at || '-')}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(s.ended_at || '-')}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(s.summary || 'Arbeitssitzung')}</strong></td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       ` : '<p class="text-muted" style="padding:1rem;">Keine Sitzungen verzeichnet.</p>';
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Sitzungen konnten nicht geladen werden.';
+    }
+  }
+
+  async function searchMemory(event) {
+    event.preventDefault();
+    const query = document.getElementById('memory-search-query').value.trim();
+    if (query.length < 2) return;
+    const sourcesEl = document.getElementById('memory-search-sources');
+    const resultsEl = document.getElementById('memory-search-results');
+    sourcesEl.textContent = 'Quellen werden geprüft.';
+    resultsEl.replaceChildren();
+    try {
+      const response = await fetch('/api/memory/search?q=' + encodeURIComponent(query) + '&limit=10');
+      if (!response.ok) throw new Error('request_failed');
+      const data = await response.json();
+      sourcesEl.textContent = (data.sources || []).map(source =>
+        source.source + ': ' + (source.availability === 'available'
+          ? source.count + ' Treffer' : 'nicht verfügbar')
+      ).join(' · ');
+      for (const result of data.results || []) {
+        const card = document.createElement('div');
+        card.style.cssText = 'padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm)';
+        const heading = document.createElement('strong');
+        heading.textContent = result.source + ' · ' + result.type + ' · ' + result.title;
+        const snippet = document.createElement('p');
+        snippet.style.cssText = 'margin:0.35rem 0 0;font-size:0.8rem;color:var(--text-muted)';
+        snippet.textContent = result.snippet;
+        card.append(heading, snippet);
+        resultsEl.appendChild(card);
+      }
+      if (!(data.results || []).length) resultsEl.textContent = 'Keine Treffer in den verfügbaren Quellen.';
+    } catch (_) {
+      sourcesEl.textContent = 'Quellenstatus nicht verfügbar.';
+      resultsEl.textContent = 'Suche fehlgeschlagen.';
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     loadCognitiveState();
     loadFactsTable();
+    document.getElementById('memory-search-form').addEventListener('submit', searchMemory);
   });
 </script>
