@@ -60,67 +60,37 @@ if (typeof escapeHtml === 'undefined') {
     };
 }
 
-const NAV_ITEMS = [
-    { id: "dashboard", href: "/", label: "Dashboard", icon: "🎵" },
-    { id: "tasks", label: "Aufgaben", icon: "📋", children: [
-        { href: "/tasks", label: "Aufgaben & Taskboard", icon: "📝", description: "Zentrales Aufgabenboard mit Status & Filtern" },
-        { href: "/routinen?tab=bach", label: "Bachroutinen", icon: "🎼", description: "Automatisierte System- & Wartungsroutinen" },
-        { href: "/routinen?tab=ocean", label: "Oceanroutinen", icon: "🌊", description: "Verteilte Schwarm- & Hintergrundzyklen" },
-    ]},
-    { id: "assistant", label: "Persönlicher Assistent", shortLabel: "Assistent", icon: "🧘", children: [
-        { href: "/persoenlich", label: "Assistenten-Dashboard", icon: "📊", description: "Status, Haltung und Fokus von Buddha" },
-        { href: "/chat", label: "Buddha Chat (Compare-Race)", icon: "💬", description: "Multi-Modell Dialog & Race-Evaluation" },
-        { href: "/prompt-library", label: "Profil & Prompts", icon: "📚", description: "Systemprompts & Persönlichkeitsprofile" },
-        { href: "/denkarium", label: "Denkarium", icon: "🔮", description: "Externes Gedankenlabor (neuer Tab)", external: true },
-        { href: "/kontakte", label: "Kontakte", icon: "👥", description: "Adressbuch & Netzwerk" },
-        { href: "/wiki", label: "Wiki", icon: "📖", description: "Persönliche Wissensbasis" },
-    ]},
-    { id: "life", label: "Life", icon: "🌱", children: [
-        { href: "/life", label: "Life-Zentrale", icon: "🌿", description: "Ganzheitliche Lebensübersicht" },
-        { href: "/life?tab=kalender", label: "Kalender (Tag, Woche, Monat, Jahr)", icon: "📅", description: "Tages-, Wochen-, Monatsansicht & Jahresüberblick" },
-        { href: "/life?tab=routinen", label: "Deine Routinen", icon: "⏰", description: "Persönliche Lebens-, Haushalts- und Tagesroutinen" },
-        { href: "/tasks?assigned_to=user", label: "Meine Aufgaben", icon: "👤", description: "Gefiltert auf persönliche Aufgaben" },
-        { href: "/life?tab=selbstmanagement", label: "Selbstmanagement & ADHS", icon: "🎯", description: "Fokusstrategien und Entlastungsmethoden" },
-        { href: "/financial", label: "Finanzen & Budget", icon: "💰", description: "Einnahmen, Ausgaben und Prognosen" },
-        { href: "/life?tab=balance", label: "Lebenskreise & Reflexion", icon: "☯️", description: "Work-Life-Balance & Selbsteinschätzung" },
-        { href: "/gesundheit", label: "Gesundheit & Vitalität", icon: "🩺", description: "Tracking, Wohlbefinden und Pläne" },
-    ]},
-    { id: "agenten", label: "Agenten", icon: "🤖", children: [
-        { href: "/agenten/fabrika", label: "Agenten-Fabrik", icon: "🏭", description: "Baukasten: Einzelagenten, Swarm & Ketten" },
-        { href: "/agenten/running", label: "Living & Running", icon: "⚡", description: "Aktive Instanzen, Beseelungen & Health" },
-        { href: "/agenten/sessions", label: "Sessions & Protokolle", icon: "📜", description: "Rohberichte und Zusammenfassungen" },
-        { href: "/messages", label: "Messages (User Inbox)", icon: "✉️", description: "Direktnachrichten von Agenten an dich" },
-        { href: "/agents-board", label: "Agents-Board (Skill-Katalog)", icon: "📊", description: "Aufgabenzuweisung & 388+ Skills" },
-        { href: "/skills", label: "Skill- & Tool-Center", icon: "🔌", description: "Steckdosenleiste, MCP Cookbooks & Rollback" },
-        { href: "/memory", label: "Memory", icon: "🧠", description: "Kognitiver Schaltplan, Arbeitsgedächtnis & Fakten" },
-    ]},
-    { id: "domains", label: "Meine Domänen", shortLabel: "Domänen", icon: "🌐", children: [
-        { href: "/domains", label: "Domänen & Fachmodule", icon: "🧩", description: "Slot-Dashboard: AI-Media, PC-Tools" },
-        { href: "/financial", label: "Finanzen", icon: "💰", description: "Budget & Finanzplanung" },
-        { href: "/ati", label: "ATI Entwickler", icon: "🛠️", description: "Code-Entwicklung & Entwickler-Tasks" },
-        { href: "/steuer", label: "Theodor Steuer", icon: "⚖️", description: "Steuer-Assistent, Belege & Abschreibungen" },
-        { href: "/gesundheit", label: "Förderplaner & Diagnostik", icon: "🩺", description: "Pädagogische & therapeutische Pläne" },
-    ]},
-    { id: "files", label: "Dateien", icon: "📁", children: [
-        { href: "/inbox", label: "Inbox & Dateiverwaltung", icon: "📥", description: "Upload, Sync & Cloud-Speicher" },
-        { href: "/artefakte", label: "Artefakte & Exporte", icon: "🎨", description: "Generierte Berichte, Diagramme & Mockups" },
-    ]},
-    { id: "governance", label: "Governance & Control", shortLabel: "Governance", icon: "🛡️", children: [
-        { href: "/governance", label: "Governance CONTROL Room", icon: "🏛️", description: "Zentrale Sicherheitsregeln & Audit" },
-        { href: "/governance?tab=locks", label: "Lock-Master & Decision-Clicker", icon: "🔒", description: "Fail-Closed Sperren & P-001 Prüfungen" },
-        { href: "/governance/funk", label: "Agentenfunk", icon: "📻", description: "Inter-Agenten-Signale & Handshakes" },
-        { href: "/governance/usecases", label: "Use Cases & Workflows", icon: "🎯", description: "Definierte Einsatzszenarien & Pfade" },
-        { href: "/governance/logs", label: "Logs & Audit", icon: "📜", description: "Echtzeit-Streams aller System-Events" },
-        { href: "/help", label: "Hilfe & Dokumentation", icon: "❓", description: "Handbücher, Architektur-Guides & Shortcuts" },
-    ]},
-    { id: "system", label: "System", icon: "⚙️", children: [
-        { href: "/settings", label: "Einstellungen & Setup", icon: "🔧", description: "Installer, Modulschaltplan, Trithon, Salt" },
-        { href: "/tools", label: "Tools & CLI-Werkzeuge", icon: "🔨", description: "Ausführbare Helfer & Diagnose-Tools" },
-        { href: "/daemon", label: "Daemon & Chains", icon: "⛓️", description: "Hintergrund-Dienste & Trigger" },
-        { href: "/system?tab=ocean", label: "Ocean-Ausbaustufen", icon: "🌊", description: "Stufenplan & Cluster-Status" },
-        { href: "/maintenance", label: "Wartung & Integrität", icon: "🩺", description: "Datenbank-Bereinigung & Healthchecks" },
-    ]},
-];
+let NAV_ITEMS = [{ id: 'dashboard', href: '/', label: 'Dashboard', icon: '🎵' }];
+let navigationState = 'loading';
+let navClickBound = false;
+
+function safeNavHref(href) {
+    if (typeof href !== 'string' || !href.startsWith('/') || /[\\\u0000-\u001f\u007f]/.test(href)) return '/';
+    try {
+        return new URL(href, window.location.href).origin === window.location.origin ? href : '/';
+    } catch (_) {
+        return '/';
+    }
+}
+
+async function loadNavigationConfig() {
+    try {
+        const response = await fetch('/api/nav/config');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const items = await response.json();
+        if (!Array.isArray(items) || items.length === 0 ||
+            items.some(item => !item || typeof item.label !== 'string' ||
+                !(typeof item.href === 'string' || Array.isArray(item.children)))) {
+            throw new Error('Ungültige Navigation');
+        }
+        NAV_ITEMS = items;
+        navigationState = 'ready';
+    } catch (error) {
+        NAV_ITEMS = [{ id: 'dashboard', href: '/', label: 'Dashboard', icon: '🎵' }];
+        navigationState = 'error';
+    }
+    initNavigation();
+}
 
 function initNavigation() {
     const header = document.getElementById('main-header');
@@ -150,7 +120,7 @@ function initNavigation() {
     }
 
     const navHtml = NAV_ITEMS.map(item => {
-        const iconHtml = item.icon ? `<span class="nav-icon">${item.icon}</span>` : '';
+        const iconHtml = item.icon ? `<span class="nav-icon">${escapeHtml(item.icon)}</span>` : '';
         const fullLabel = item.label;
         const shortLabel = item.shortLabel || item.label;
         const labelHtml = item.shortLabel
@@ -162,14 +132,16 @@ function initNavigation() {
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
                 const target = child.external || child.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
-                let href = child.href;
+                let href = safeNavHref(child.href);
                 if (child.portRel) {
                     const host = window.location.hostname || 'localhost';
-                    href = `http://${host}:${child.portRel}${child.path || ''}`;
+                    if (Number.isInteger(child.portRel) && child.portRel > 0 && child.portRel < 65536) {
+                        href = `http://${host}:${child.portRel}${safeNavHref(child.path || '/')}`;
+                    }
                 }
-                const childIcon = child.icon ? `<span class="dropdown-item-icon">${child.icon}</span>` : '';
+                const childIcon = child.icon ? `<span class="dropdown-item-icon">${escapeHtml(child.icon)}</span>` : '';
                 const descHtml = child.description ? `<div class="dropdown-item-desc">${escapeHtml(child.description)}</div>` : '';
-                return `<a href="${href}"${target} class="dropdown-item${childActive}">
+                return `<a href="${escapeHtml(href)}"${target} class="dropdown-item${childActive}">
                     ${childIcon}
                     <div class="dropdown-item-text">
                         <div class="dropdown-item-title">${escapeHtml(child.label)}</div>
@@ -186,13 +158,17 @@ function initNavigation() {
         }
         const active = isActive(item.href) ? ' active' : '';
         const target = item.external || item.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
-        let itemHref = item.href;
+        let itemHref = safeNavHref(item.href);
         if (item.portRel) {
             const host = window.location.hostname || 'localhost';
-            itemHref = `http://${host}:${item.portRel}${item.path || ''}`;
+            if (Number.isInteger(item.portRel) && item.portRel > 0 && item.portRel < 65536) {
+                itemHref = `http://${host}:${item.portRel}${safeNavHref(item.path || '/')}`;
+            }
         }
-        return `<a href="${itemHref}"${target} class="nav-item${active}">${iconHtml}${labelHtml}</a>`;
+        return `<a href="${escapeHtml(itemHref)}"${target} class="nav-item${active}">${iconHtml}${labelHtml}</a>`;
     }).join('\n            ');
+    const navNotice = navigationState === 'ready' ? '' :
+        `<span class="nav-item" role="status" style="cursor:default;">${navigationState === 'loading' ? 'Navigation lädt…' : 'Menü derzeit nicht verfügbar'}</span>`;
 
     const currentTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
@@ -203,6 +179,7 @@ function initNavigation() {
                 <span class="logo-text">BACH <span style="font-size:0.75rem;opacity:0.6;font-weight:normal;">v${BACH_VERSION}</span></span>
             </a>
             <nav class="main-nav" aria-label="Hauptnavigation">
+                ${navNotice}
                 ${navHtml}
             </nav>
         </div>
@@ -248,11 +225,14 @@ function initNavigation() {
         });
     });
 
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.nav-dropdown')) {
-            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
-        }
-    });
+    if (!navClickBound) {
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.nav-dropdown')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
+        });
+        navClickBound = true;
+    }
 
     document.getElementById('theme-switcher').addEventListener('click', async (e) => {
         const btn = e.target.closest('.theme-btn');
@@ -358,6 +338,7 @@ async function loadNavStatus() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
+    loadNavigationConfig();
     loadThemePreference();
     loadNavStatus();
 });
@@ -366,6 +347,6 @@ if (typeof module !== 'undefined') {
     module.exports = {
         initNavigation, updateNavStatus, loadNavStatus, setTheme, previewTheme,
         commitTheme, persistThemePreference,
-        loadThemePreference, normalizeTheme, NAV_ITEMS, BACH_VERSION
+        loadThemePreference, normalizeTheme, loadNavigationConfig, safeNavHref, BACH_VERSION
     };
 }

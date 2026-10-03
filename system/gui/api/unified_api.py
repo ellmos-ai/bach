@@ -394,12 +394,26 @@ async def save_agent_blueprint(payload: Dict[str, Any]):
     contractus = payload.get("contractus", {})
     modus = payload.get("modus", "casualis")
     governance = payload.get("governance", {})
+    if not isinstance(contractus, dict):
+        raise HTTPException(status_code=400, detail="Contractus muss ein Objekt sein")
+    if "model" in contractus or "fallback" in contractus:
+        if animus not in ("api", "mcp", "cli", "subscription"):
+            raise HTTPException(status_code=400, detail="Ungültiger Animus-Typ")
+        for field in ("model", "fallback"):
+            value = contractus.get(field)
+            if not isinstance(value, str) or not value.strip() or len(value) > 200 or any(ord(char) < 32 for char in value):
+                raise HTTPException(status_code=400, detail=f"Ungültige Modellkonfiguration: {field}")
     is_template = int(payload.get("is_template", 0))
     now = datetime.now().isoformat()
 
     conn = _get_conn()
     try:
         _ensure_agent_studio_tables(conn)
+        existing = conn.execute(
+            "SELECT is_template FROM agent_blueprints WHERE name = ?", (name,)
+        ).fetchone()
+        if existing and existing[0]:
+            raise HTTPException(status_code=409, detail="Vorlage ist schreibgeschützt; bitte eigenen Namen wählen")
         conn.execute("""
             INSERT INTO agent_blueprints (
                 name, title, description, persona_role, persona_prompt,

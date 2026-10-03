@@ -196,7 +196,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
         <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
           <button type="button" class="btn" onclick="saveBlueprint()">💾 Schablone & Governance speichern</button>
-          <button type="button" class="btn btn-primary" onclick="openBeseelenModal()">✨ Schablone Beseelen (➔ Living)</button>
+          <button type="button" class="btn btn-primary" onclick="openBeseelenModal()">✨ Schablone als Konfiguration vormerken</button>
         </div>
       </div>
     </div>
@@ -328,12 +328,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
   <!-- Modal: Beseelung an Animus -->
   <div id="modal-beseelen" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;">
     <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:550px;padding:2rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
-      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">✨ Agenten Beseelen</h2>
+      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">Schablone vormerken</h2>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.25rem;">
-        Verknüpfe die Schablone mit einem konkreten Modell (Animus), um sie als lebenden Agenten zu aktivieren.
+        Die Schablone erscheint danach als konfiguriert in Living & Running. Ein Agentenprozess wird dadurch nicht gestartet.
       </p>
 
       <div style="display:flex;flex-direction:column;gap:1rem;">
+        <p style="font-size:0.8rem;color:var(--text-muted);">Diese Auswahl wird als Konfiguration gespeichert. Ein Agentenprozess wertet sie derzeit noch nicht aus.</p>
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Animus-Typ</label>
           <select id="animus-type" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
@@ -343,7 +344,6 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <option value="subscription">Subscription / Avatar Agent (Selbstwartend)</option>
           </select>
         </div>
-
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Primäres Modell</label>
           <select id="animus-model" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
@@ -353,7 +353,6 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <option value="codex-cli">💻 Codex CLI (OpenAI)</option>
           </select>
         </div>
-
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Tokenlimit-Fallback</label>
           <select id="animus-fallback" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
@@ -362,10 +361,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <option value="gemini-2.0-flash">Auf schnelles Flash-Modell wechseln</option>
           </select>
         </div>
-
         <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1rem;">
           <button type="button" class="btn" onclick="document.getElementById('modal-beseelen').classList.add('hidden')">Abbrechen</button>
-          <button type="button" class="btn btn-primary" onclick="confirmBeseelen()">Beseelung aktivieren ➔</button>
+          <button type="button" class="btn btn-primary" onclick="confirmBeseelen()">Konfiguration vormerken</button>
         </div>
       </div>
     </div>
@@ -448,7 +446,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
       picker.innerHTML = _allBlueprints.map(b => {
         const isSel = _selectedTeamMembers.has(b.name);
-        return `<button type="button" class="blueprint-chip ${isSel ? 'selected' : ''}" onclick="toggleTeamMember('${escapeHtml(b.name)}')">
+        return `<button type="button" class="blueprint-chip ${isSel ? 'selected' : ''}" onclick="toggleTeamMemberById(${Number(b.id)})">
           <span>${isSel ? '✓' : '+'}</span>
           <span>${escapeHtml(b.name)}</span>
           <span style="opacity:0.7;font-size:0.7rem;">(${escapeHtml(b.persona_role || b.role || 'Agent')})</span>
@@ -456,7 +454,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }).join('');
     }
 
-    function toggleTeamMember(name) {
+    function toggleTeamMemberById(id) {
+      const blueprint = _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) return;
+      const name = blueprint.name;
       if (_selectedTeamMembers.has(name)) {
         _selectedTeamMembers.delete(name);
       } else {
@@ -496,7 +497,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     function loadPresetTemplate(key) {
       if (!key || !PRESETS[key]) return;
       const p = PRESETS[key];
-      document.getElementById('bp-name').value = p.name;
+      document.getElementById('bp-name').value = `${p.name} (eigene)`;
+      document.getElementById('bp-name').readOnly = false;
       document.getElementById('bp-persona').value = p.persona;
       document.getElementById('bp-turns').value = p.turns;
       document.getElementById('bp-modus').value = p.modus;
@@ -504,6 +506,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     function resetForm() {
       document.getElementById('bp-name').value = '';
+      document.getElementById('bp-name').readOnly = false;
       document.getElementById('bp-persona').value = '';
       document.getElementById('bp-template-select').value = '';
       document.getElementById('bp-turns').value = 15;
@@ -528,12 +531,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <strong style="font-size:0.9rem;color:var(--text);">${escapeHtml(b.name)}</strong>
-              <span class="badge badge-accent">${escapeHtml(b.role || 'Schablone')}</span>
+              <span class="badge badge-accent">${escapeHtml(b.persona_role || 'Schablone')}</span>
             </div>
-            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona || b.description || '').slice(0, 80))}...</p>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona_prompt || b.description || '').slice(0, 80))}...</p>
             <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:0.5rem;">
-              <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor('${b.id}')">Bearbeiten</button>
-              <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal('${b.name}')">Beseelen ✨</button>
+              <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor(${Number(b.id)})">Bearbeiten</button>
+              <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal(${Number(b.id)})">Vormerken ✨</button>
             </div>
           </div>
         `).join('');
@@ -542,16 +545,106 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
-    function openBeseelenModal(name) {
+    function loadBlueprintToEditor(id) {
+      const blueprint = _allBlueprints.find(b => String(b.id) === String(id));
+      if (!blueprint) { alert('Schablone nicht gefunden. Bitte Liste neu laden.'); return; }
+      document.getElementById('bp-name').value = blueprint.name;
+      document.getElementById('bp-name').readOnly = true;
+      document.getElementById('bp-persona').value = blueprint.persona_prompt || '';
+      document.getElementById('bp-turns').value = blueprint.contractus?.turns ?? 15;
+      document.getElementById('bp-modus').value = blueprint.modus || 'casualis';
+      const profile = document.getElementById('bp-gov-profile');
+      if (profile && blueprint.governance?.profile) profile.value = blueprint.governance.profile;
+      const skills = new Set(blueprint.skills || []);
+      document.querySelectorAll('#skills-selector input[type="checkbox"]').forEach(box => {
+        box.checked = skills.has(box.value);
+      });
+      const tools = new Set(blueprint.governance?.tool_whitelist || []);
+      document.getElementById('tool-read').checked = tools.has('read_files');
+      document.getElementById('tool-write').checked = tools.has('write_files');
+      document.getElementById('tool-cmd').checked = tools.has('execute_command');
+      document.getElementById('tool-git').checked = tools.has('git_guarded_p001');
+      document.getElementById('tool-mcp').checked = tools.has('mcp_cookbooks');
+      document.getElementById('tool-web').checked = tools.has('web_fetch');
+      document.getElementById('bp-name').focus();
+    }
+
+    let selectedBlueprintId = null;
+
+    function selectConfiguredValue(id, value) {
+      const field = document.getElementById(id);
+      Array.from(field.options).filter(option => option.dataset.saved === 'true').forEach(option => option.remove());
+      if (!value) { field.selectedIndex = 0; return; }
+      if (!Array.from(field.options).some(option => option.value === value)) {
+        const option = new Option(value + ' (gespeichert)', value);
+        option.dataset.saved = 'true';
+        field.add(option);
+      }
+      field.value = value;
+    }
+
+    async function fetchBlueprintById(id) {
+      const response = await fetch('/api/agent-studio/blueprints');
+      if (!response.ok) throw new Error('Readback HTTP ' + response.status);
+      const data = await response.json();
+      return (data.blueprints || []).find(b => Number(b.id) === id);
+    }
+
+    function openBeseelenModal(id) {
+      const blueprint = id == null
+        ? _allBlueprints.find(b => b.name === document.getElementById('bp-name').value.trim().toLowerCase())
+        : _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) { alert('Bitte speichere zuerst die Schablone.'); return; }
+      selectedBlueprintId = Number(blueprint.id);
+      selectConfiguredValue('animus-type', blueprint.animus_type);
+      selectConfiguredValue('animus-model', blueprint.contractus?.model);
+      selectConfiguredValue('animus-fallback', blueprint.contractus?.fallback);
       document.getElementById('modal-beseelen').classList.remove('hidden');
     }
 
     async function confirmBeseelen() {
-      const model = document.getElementById('animus-model').value;
-      const animusType = document.getElementById('animus-type').value;
-      alert(`Schablone erfolgreich an Animus [${model} / ${animusType}] gebunden! Agent erscheint nun in Living & Running.`);
-      document.getElementById('modal-beseelen').classList.add('hidden');
-      window.location.href = '/agenten/running';
+      if (!Number.isInteger(selectedBlueprintId)) return;
+      try {
+        const blueprint = await fetchBlueprintById(selectedBlueprintId);
+        if (!blueprint) throw new Error('Schablone nicht mehr vorhanden');
+        const animusType = document.getElementById('animus-type').value;
+        const model = document.getElementById('animus-model').value;
+        const fallback = document.getElementById('animus-fallback').value;
+        const configured = await fetch('/api/agent-studio/blueprints', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: blueprint.name,
+            title: blueprint.title,
+            description: blueprint.description,
+            persona_role: blueprint.persona_role,
+            persona_prompt: blueprint.persona_prompt,
+            skills: blueprint.skills,
+            animus_type: animusType,
+            contractus: { ...blueprint.contractus, model, fallback },
+            modus: blueprint.modus,
+            governance: blueprint.governance
+          })
+        });
+        if (!configured.ok || (await configured.json()).success !== true) {
+          throw new Error('Konfiguration HTTP ' + configured.status);
+        }
+        const saved = await fetchBlueprintById(selectedBlueprintId);
+        if (!saved || saved.animus_type !== animusType || saved.contractus?.model !== model || saved.contractus?.fallback !== fallback) {
+          throw new Error('Modellkonfiguration nicht bestätigt');
+        }
+        const response = await fetch(`/api/agent-studio/blueprints/${selectedBlueprintId}/materialize`, { method: 'POST' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result.success !== true || result.status !== 'configured') throw new Error('Keine Bestätigung der Konfiguration');
+        const materialized = await fetchBlueprintById(selectedBlueprintId);
+        if (!materialized || Number(materialized.is_materialized) !== 1) throw new Error('Konfiguration nicht bestätigt');
+        document.getElementById('modal-beseelen').classList.add('hidden');
+        alert('Modell, Typ und Fallback als Konfiguration gespeichert. Kein Agentenprozess gestartet.');
+        window.location.href = '/agenten/running';
+      } catch (error) {
+        alert('Konfiguration konnte nicht bestätigt werden: ' + error.message);
+      }
     }
 
     function applyGovProfile(profile) {
@@ -602,6 +695,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
       if (document.getElementById('tool-web')?.checked) allowedTools.push('web_fetch');
 
       if (!name) { alert('Bitte gib einen Schablonen-Namen an.'); return; }
+      const existing = _allBlueprints.find(b => b.name === name.toLowerCase());
+      const visibleSkills = new Set(Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]'), box => box.value));
+      const selectedSkills = Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]:checked'), box => box.value);
+      for (const skill of existing?.skills || []) {
+        if (!visibleSkills.has(skill)) selectedSkills.push(skill);
+      }
 
       const governance = {
         profile: govProfile,
@@ -616,19 +715,28 @@ import BachLayout from "../../layouts/BachLayout.astro";
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name,
-            role: name,
-            persona,
-            skills: ["git-hygiene", "lock-master"],
-            contractus: { turns },
+            title: existing?.title || name,
+            description: existing?.description || '',
+            persona_role: existing?.persona_role || name,
+            persona_prompt: persona,
+            skills: selectedSkills,
+            animus_type: existing?.animus_type || 'subscription',
+            contractus: { ...(existing?.contractus || {}), turns },
             modus,
-            governance
+            governance: { ...(existing?.governance || {}), ...governance }
           })
         });
         if (res.ok) {
-          alert('Schablone & Governance erfolgreich gespeichert!');
-          loadBlueprints();
+          const check = await fetch('/api/agent-studio/blueprints');
+          if (!check.ok) throw new Error('Readback HTTP ' + check.status);
+          const saved = ((await check.json()).blueprints || []).find(b => b.name === name.toLowerCase());
+          if (!saved || saved.persona_prompt !== persona || saved.persona_role !== (existing?.persona_role || name)) {
+            throw new Error('Persona und Rolle wurden nicht bestätigt');
+          }
+          await loadBlueprints();
+          alert('Schablone & Governance gespeichert. Persona bestätigt.');
         } else {
-          alert('Fehler beim Speichern der Schablone');
+          alert('Fehler beim Speichern der Schablone (HTTP ' + res.status + ')');
         }
       } catch (err) {
         alert('Netzwerkfehler: ' + err.message);

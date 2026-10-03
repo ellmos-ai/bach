@@ -1347,7 +1347,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS:
+        if path in self.EXEMPT_API_PATHS or (path == "/api/nav/config" and request.method == "GET"):
             return await call_next(request)
 
         # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
