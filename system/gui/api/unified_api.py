@@ -897,55 +897,8 @@ async def delete_marblerun_chain(chain_id: int):
 
 @router.post("/marblerun/chains/{chain_id}/run")
 async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Fuehrt eine Agenten-Kette schrittweise aus (Simulation / Pipeline Handoff)."""
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
-    try:
-        _ensure_marblerun_tables(conn)
-        row = conn.execute("SELECT * FROM marblerun_chains WHERE id = ?", (chain_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Kette nicht gefunden")
-        steps = json.loads(row["steps_json"])
-        initial_input = payload.get("input", "Standard-Eingabe fuer Pipeline")
-
-        results = []
-        current_data = initial_input
-        start_time = datetime.now().isoformat()
-
-        for idx, step in enumerate(steps):
-            step_name = step.get("name", f"Schritt {idx+1}")
-            assigned_agent = step.get("agent", "bach")
-            animus = step.get("animus", "subscription")
-            step_result = {
-                "step_index": idx + 1,
-                "name": step_name,
-                "agent": assigned_agent,
-                "animus": animus,
-                "input_snippet": str(current_data)[:100],
-                "output_snippet": f"Ergebnis von {assigned_agent} fuer: {step_name}",
-                "status": "completed",
-                "timestamp": datetime.now().isoformat()
-            }
-            results.append(step_result)
-            current_data = step_result["output_snippet"]
-
-        end_time = datetime.now().isoformat()
-        cursor = conn.execute("""
-            INSERT INTO marblerun_runs (chain_id, chain_name, status, current_step, results_json, started_at, completed_at)
-            VALUES (?, ?, 'completed', ?, ?, ?, ?)
-        """, (chain_id, row["name"], len(steps), json.dumps(results), start_time, end_time))
-        run_id = cursor.lastrowid
-        conn.commit()
-
-        return {
-            "success": True,
-            "run_id": run_id,
-            "chain_name": row["name"],
-            "steps_executed": len(steps),
-            "results": results
-        }
-    finally:
-        conn.close()
+    """No run is recorded until a real agent dispatcher is connected."""
+    raise HTTPException(status_code=501, detail="Agenten-Kettenlauf nicht verfügbar: kein Worker-Dispatcher angebunden.")
 
 
 @router.get("/marblerun/agents-map")

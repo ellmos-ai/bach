@@ -10,13 +10,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
         ⛓️ Agenten-Staffel (MarbleRun)
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Visueller Workflow-Builder • Kettenglieder mit Agenten beseelen • Usecase-Pipelines & Multi-Agenten-Handoffs
+        Kettenentwürfe und Schritte anzeigen. Ein ausführender Worker-Dispatcher ist noch nicht angebunden.
       </p>
     </div>
 
     <div style="display:flex;gap:0.5rem;">
-      <button class="btn btn-primary" onclick="createNewChain()">
-        <span>+</span> Neue Kette erstellen
+      <button class="btn btn-primary" disabled title="Designer-Speichern hier nicht angebunden">
+        <span>+</span> Neue Kette (nicht verfügbar)
       </button>
       <a href="/agenten/running" class="btn">
         <span>⚡</span> Living Agents
@@ -29,15 +29,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="card-header">
       <h2 class="card-title">📐 Ketten-Designer: <span id="active-chain-title" style="color:var(--accent);">NemoFold Multi-Model Review</span></h2>
       <div style="display:flex;gap:0.5rem;">
-        <button class="btn btn-primary" onclick="executeActiveChain()">
-          ▶ Kette Ausführen
+        <button class="btn btn-primary" disabled title="Kein Worker-Dispatcher angebunden">
+          ▶ Ausführen (nicht verfügbar)
         </button>
-        <button class="btn" onclick="addChainStep()">
-          + Glied hinzufügen
+        <button class="btn" disabled title="Designer-Speichern hier nicht angebunden">
+          + Glied (nicht verfügbar)
         </button>
       </div>
     </div>
 
+    <p style="font-size:0.8rem;color:var(--text-muted);">Beispielkette zur Veranschaulichung. Kein Schritt wurde ausgeführt.</p>
     <!-- Visual Pipeline -->
     <div id="pipeline-canvas" style="display:flex;align-items:center;gap:1rem;overflow-x:auto;padding:1.5rem 0.5rem;min-height:160px;">
       <!-- Step 1 -->
@@ -109,36 +110,24 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <div style="padding:1.25rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
               <strong style="font-size:0.95rem;color:var(--text);">${escapeHtml(c.name || 'Kette')}</strong>
-              <span class="badge badge-success">${c.steps_count || (c.steps ? c.steps.length : 3)} Schritte</span>
+              <span class="badge">${Array.isArray(c.steps) ? c.steps.length : 0} Schritte</span>
             </div>
             <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem;">
-              ${escapeHtml(c.description || 'Automatisierte Multi-Agenten Pipeline')}
+              ${escapeHtml(c.description || 'Kettenentwurf ohne Beschreibung')}
             </p>
             <div style="display:flex;gap:0.5rem;">
-              <button class="btn btn-primary" style="flex:1;padding:0.35rem 0.5rem;font-size:0.75rem;" onclick="executeChain('${c.id}')">
-                ▶ Starten
+              <button class="btn btn-primary" style="flex:1;padding:0.35rem 0.5rem;font-size:0.75rem;" disabled title="Kein Worker-Dispatcher angebunden">
+                ▶ Starten (nicht verfügbar)
               </button>
-              <button class="btn" style="padding:0.35rem 0.5rem;font-size:0.75rem;" onclick="editChain('${c.id}')">
-                Bearbeiten
+              <button class="btn" style="padding:0.35rem 0.5rem;font-size:0.75rem;" disabled title="Editor-Speichern hier nicht angebunden">
+                Bearbeiten (nicht verfügbar)
               </button>
             </div>
           </div>
         `).join('');
       } catch (e) {
-        container.innerHTML = `<p style="color:var(--error);text-align:center;grid-column:span 3;">Fehler: ${e.message}</p>`;
+        container.textContent = 'Ketten konnten nicht geladen werden.';
       }
-    }
-
-    function executeActiveChain() {
-      alert("Kette gestartet! Schritt 1 [Code Analysis] wurde an Agent Ati übergeben.");
-    }
-
-    function addChainStep() {
-      alert("Neues Kettenglied hinzugefügt! Wähle in der Fabrika einen Agenten zur Beseelung aus.");
-    }
-
-    function createNewChain() {
-      alert("Neue Kette angelegt.");
     }
 
     function escapeHtml(t) {
