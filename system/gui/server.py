@@ -1392,7 +1392,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/artefakte"
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
-                or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")):
+                or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
+                or path == "/api/governance/audit"):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})

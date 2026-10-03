@@ -1013,6 +1013,43 @@ async def get_governance_status():
     }
 
 
+@router.get("/governance/audit")
+async def get_governance_audit(request: Request, limit: int = Query(50, ge=1, le=100)):
+    """Read task-history metadata only; values and caller-supplied actor stay private."""
+    _require_memory_device(request)
+    try:
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            rows = conn.execute(
+                "SELECT rowid, task_id, action, field_changed, changed_at "
+                "FROM task_history ORDER BY rowid DESC LIMIT ?", (limit,)
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return {"availability": "unavailable", "reason": "task_history_unavailable",
+                "source": "task_history", "events": [], "count": 0}
+
+    events = []
+    for audit_id, task_id, action, field, timestamp in rows:
+        try:
+            task_number = int(task_id)
+            event_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).isoformat()
+            if task_number < 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        events.append({
+            "id": int(audit_id),
+            "task_id": task_number,
+            "action": action if action in {"field_change", "status_change"} else "other",
+            "field": field if isinstance(field, str) and re.fullmatch(r"[a-z_]{1,40}", field) else "unknown",
+            "changed_at": event_time,
+        })
+    return {"availability": "available", "source": "task_history",
+            "actor_verified": False, "values_included": False,
+            "events": events, "count": len(events),
+            "observed_at": datetime.now(timezone.utc).isoformat()}
+
+
 @router.get("/governance/locks")
 async def list_governance_locks():
     """Gibt alle detaillierten Sperren und Haltefristen zurueck."""
