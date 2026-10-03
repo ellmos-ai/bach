@@ -191,34 +191,37 @@ import BachLayout from "../layouts/BachLayout.astro";
       <div class="card-grid">
         <div class="glass-card">
           <h3><span class="icon">🧠</span> Neurodivergenz & Exekutiv-Entlastung</h3>
-          <p class="card-desc">Kompensation von Arbeitsgedächtnis-Überlastung durch visuelle Schienen</p>
+          <p class="card-desc">Praktische Hilfen für selbst gewählte Arbeitsschritte</p>
           <div class="feature-item">
-            <strong>1. Die 20-Minuten-Regel (Time-Boxing)</strong>
-            <p>Beginne jede Aufgabe mit der Absicht, nur 20 Minuten daran zu arbeiten. Der Einstiegswiderstand sinkt dadurch um 80%.</p>
+            <strong>1. Kurzes Fokusintervall</strong>
+            <p>Wähle eine überschaubare Dauer und lege den nächsten Schritt fest. Der Timer läuft ausschließlich in deinem Browser.</p>
           </div>
           <div class="feature-item">
-            <strong>2. Radikale Reizreduktion (76%-Filter)</strong>
+            <strong>2. Reize reduzieren</strong>
             <p>Schließe alle Tabs, die nicht zum aktuellen Schritt gehören. Nutze das Denkarium als Zwischenablage für spontane Impulse.</p>
           </div>
           <div class="feature-item">
-            <strong>3. Body-Doubling mit Buddha</strong>
-            <p>Nutze den persönlichen Assistenten im Chat als stillen Begleiter. Formuliere den nächsten Minischritt laut im Prompt.</p>
+            <strong>3. Begleitung bei Bedarf</strong>
+            <p>Ein begleiteter Arbeitsmodus benötigt noch eine überprüfte Chat- und Datenschutzanbindung. Der Timer funktioniert bereits ohne Agentenaufruf.</p>
           </div>
+          <button type="button" disabled title="Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt.">UpToday öffnen – Anbindung in Arbeit</button>
         </div>
 
         <div class="glass-card">
           <h3><span class="icon">⏱️</span> Fokus-Timer & Arbeits-Intervall</h3>
           <div class="timer-widget">
-            <div class="timer-display" id="timer-display">25:00</div>
+            <div class="timer-display" id="timer-display" role="timer" aria-live="off">25:00</div>
             <div class="timer-controls">
               <button class="btn btn-primary" id="btn-timer-start">Start</button>
               <button class="btn btn-secondary" id="btn-timer-reset">Reset</button>
+              <button class="btn btn-secondary" id="btn-focus-window" type="button">Eigenes Fokusfenster öffnen</button>
             </div>
             <div class="timer-modes">
-              <span class="timer-tag active">25m Fokus</span>
-              <span class="timer-tag">5m Pause</span>
-              <span class="timer-tag">15m Deep Rest</span>
+              <button type="button" class="timer-tag active" data-seconds="1500">25 Minuten Fokus</button>
+              <button type="button" class="timer-tag" data-seconds="300">5 Minuten Pause</button>
+              <button type="button" class="timer-tag" data-seconds="900">15 Minuten Erholung</button>
             </div>
+            <p id="focus-window-status" class="load-status" role="status" aria-live="polite">Timer bereit.</p>
           </div>
         </div>
       </div>
@@ -230,72 +233,18 @@ import BachLayout from "../layouts/BachLayout.astro";
         <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
           <div>
             <h3><span class="icon">💰</span> Finanzen & Budget-Dashboard</h3>
-            <p class="card-desc">Einnahmen, Ausgaben und Liquiditätsstatus</p>
+            <p class="card-desc">Finanzdaten und Auswertungen im vorhandenen Finanzbereich</p>
           </div>
           <a href="/financial" class="btn btn-secondary">Vollständiges Finanzmodul ↗</a>
         </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">Monatsbudget</div>
-            <div class="stat-value">Stabil</div>
-            <div class="stat-sub">Ausgaben im Soll</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Offene Belege</div>
-            <div class="stat-value">2</div>
-            <div class="stat-sub">Theodor Steuer wartet</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Rücklagen-Quote</div>
-            <div class="stat-value">Grün</div>
-            <div class="stat-sub">Sicherheitsnetz intakt</div>
-          </div>
-        </div>
+        <p class="load-status">Für Monatsbudget, Belege und Rücklagen gibt es hier noch keinen belegten, gemeinsamen Auswertungsvertrag. Im Finanzbereich sind die vorhandenen Konten-, Abonnement- und Finanzmail-Funktionen erreichbar.</p>
       </div>
     </div>
 
     <!-- TAB 6: LEBENSBEREICHE -->
     <div class="tab-pane" id="pane-balance">
       <div class="glass-card">
-        <h3><span class="icon">☯️</span> Lebenskreise & Balance-Audit</h3>
-        <p class="card-desc">Zyklische Bewertung der 5 tragenden Lebenssäulen</p>
-        <div class="balance-bars">
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Arbeit, Code & Erschaffen</span>
-              <span>85%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 85%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Gesundheit & Physis</span>
-              <span>70%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 70%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Beziehungen & Umfeld</span>
-              <span>75%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 75%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Finanzen & Ordnung</span>
-              <span>90%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 90%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Sinn, Reflexion & Philosophie</span>
-              <span>80%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 80%;"></div></div>
-          </div>
-        </div>
+        <p class="card-desc">In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt.</p>
       </div>
     </div>
 
@@ -304,14 +253,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       <div class="glass-card">
         <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
           <div>
-            <h3><span class="icon">🩺</span> Gesundheit, Vitalwerte & Förderpläne</h3>
-            <p class="card-desc">Ernährung, Bewegung, Schlafrhythmus und medizinische Dokumente</p>
-          </div>
-          <a href="/gesundheit" class="btn btn-secondary">Zum Gesundheitsmodul ↗</a>
-        </div>
-        <p style="font-size:0.85rem;color:var(--text-muted);">
-          Alle Gesundheitsdaten sind lokal gesichert und unterliegen striktem Mandanten-Schutz.
-        </p>
+             <h3><span class="icon">🩺</span> Gesundheit</h3>
+             <p class="card-desc">Gesundheitsbereich im Life-Tab – Fachanbindung in Arbeit</p>
+           </div>
+         </div>
+         <p>Die bisherige Gesundheitsansicht enthält nur geplante Funktionen. Für Vitalwerte, Arzttermine und Medikamente fehlen ein geprüfter Fachadapter, ein Datenvertrag und ein Gerätezugriffsvertrag. Hier werden keine Gesundheitsdaten gelesen oder angezeigt.</p>
+         <ul><li>Fachmodul und installierte Web-Oberfläche verifizieren</li><li>Autorisierte Gesundheits-API anbinden</li><li>Erst danach Eingabe und Anzeige ergänzen</li></ul>
       </div>
     </div>
   </div>
@@ -708,6 +655,8 @@ import BachLayout from "../layouts/BachLayout.astro";
     .timer-controls, .timer-modes {
       display: flex;
       gap: 0.5rem;
+      flex-wrap:wrap;
+      justify-content:center;
     }
     .timer-tag {
       font-size: 0.75rem;
@@ -716,12 +665,21 @@ import BachLayout from "../layouts/BachLayout.astro";
       background: var(--bg-hover);
       color: var(--text-muted);
       cursor: pointer;
+      border:1px solid var(--border);
     }
     .timer-tag.active {
       background: var(--accent);
       color: #0b0d14;
       font-weight: 600;
     }
+    .life-container.standalone-focus { max-width:600px; }
+    .life-container.standalone-focus .page-header,
+    .life-container.standalone-focus .tab-bar,
+    .life-container.standalone-focus .tab-pane:not(#pane-selbstmanagement),
+    .life-container.standalone-focus #pane-selbstmanagement .glass-card:first-child,
+    .life-container.standalone-focus #btn-focus-window { display:none !important; }
+    .life-container.standalone-focus #pane-selbstmanagement { display:block; }
+    .life-container.standalone-focus .card-grid { grid-template-columns:minmax(0,1fr); }
     .stats-row {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1328,6 +1286,8 @@ import BachLayout from "../layouts/BachLayout.astro";
     // ── TIMER ──
     let timerInterval = null;
     let secondsLeft = 25 * 60;
+    let timerDeadline = null;
+    let focusPopup = null;
 
     function updateTimerDisplay() {
       const display = document.getElementById('timer-display');
@@ -1335,6 +1295,23 @@ import BachLayout from "../layouts/BachLayout.astro";
       const m = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
       const s = (secondsLeft % 60).toString().padStart(2, '0');
       display.textContent = `${m}:${s}`;
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      timerDeadline = null;
+    }
+
+    function tickTimer() {
+      if (timerDeadline === null) return;
+      secondsLeft = Math.max(0, Math.ceil((timerDeadline - performance.now()) / 1000));
+      updateTimerDisplay();
+      if (secondsLeft === 0) {
+        stopTimer();
+        document.getElementById('btn-timer-start').textContent = 'Start';
+        document.getElementById('focus-window-status').textContent = 'Intervall beendet.';
+      }
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -1348,39 +1325,68 @@ import BachLayout from "../layouts/BachLayout.astro";
 
       const btnStart = document.getElementById('btn-timer-start');
       const btnReset = document.getElementById('btn-timer-reset');
-
-      if (btnStart) {
-        btnStart.addEventListener('click', () => {
-          if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            btnStart.textContent = 'Weiter';
-          } else {
-            btnStart.textContent = 'Pause';
-            timerInterval = setInterval(() => {
-              if (secondsLeft > 0) {
-                secondsLeft--;
-                updateTimerDisplay();
-              } else {
-                clearInterval(timerInterval);
-                timerInterval = null;
-                alert('Fokus-Intervall beendet! Zeit für eine Pause.');
+      btnStart?.addEventListener('click', () => {
+        if (timerInterval) {
+          tickTimer();
+          stopTimer();
+          btnStart.textContent = 'Weiter';
+        } else {
+          if (secondsLeft <= 0) secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+          timerDeadline = performance.now() + secondsLeft * 1000;
+          btnStart.textContent = 'Pause';
+          tickTimer();
+          timerInterval = setInterval(tickTimer, 250);
+        }
+      });
+      btnReset?.addEventListener('click', () => {
+        stopTimer();
+        secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+        updateTimerDisplay();
+        btnStart.textContent = 'Start';
+        document.getElementById('focus-window-status').textContent = 'Timer bereit.';
+      });
+      document.querySelectorAll('.timer-tag').forEach(button => button.addEventListener('click', () => {
+        stopTimer();
+        document.querySelectorAll('.timer-tag').forEach(tag => tag.classList.remove('active'));
+        button.classList.add('active');
+        secondsLeft = Number(button.dataset.seconds);
+        updateTimerDisplay();
+        btnStart.textContent = 'Start';
+      }));
+      if (new URLSearchParams(location.search).get('focus') === '1') {
+        document.querySelector('.life-container')?.classList.add('standalone-focus');
+        document.getElementById('focus-window-status').textContent = 'Eigenständiger Browser-Timer. Er wird nicht mit dem Hauptfenster synchronisiert.';
+      } else {
+        document.getElementById('btn-focus-window')?.addEventListener('click', () => {
+          const url = new URL('/life?tab=selbstmanagement&focus=1', location.origin);
+          if (url.origin !== location.origin) return;
+          focusPopup = window.open(url.href, 'life-focus-timer', 'width=500,height=580');
+          const status = document.getElementById('focus-window-status');
+          if (!focusPopup) { status.textContent = 'Das Browserfenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben.'; return; }
+          try {
+            focusPopup.focus();
+            status.textContent = 'Fokusfenster geöffnet. Beide Timer laufen unabhängig.';
+          } catch (_) {
+            focusPopup.close();
+            status.textContent = 'Fokusfenster konnte nicht sicher geöffnet werden.';
+          }
+        });
+        setInterval(() => {
+          if (focusPopup && focusPopup.closed) {
+            focusPopup = null;
+            document.getElementById('focus-window-status').textContent = 'Fokusfenster geschlossen. Der Timer hier ist unabhängig.';
+          } else if (focusPopup) {
+            try {
+              if (focusPopup.location.origin !== location.origin) {
+                focusPopup = null;
+                document.getElementById('focus-window-status').textContent = 'Fokusfenster ist nicht mehr mit dieser Seite verbunden.';
               }
-            }, 1000);
+            } catch (_) {
+              focusPopup = null;
+              document.getElementById('focus-window-status').textContent = 'Fokusfenster ist nicht mehr mit dieser Seite verbunden.';
+            }
           }
-        });
-      }
-
-      if (btnReset) {
-        btnReset.addEventListener('click', () => {
-          if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-          }
-          secondsLeft = 25 * 60;
-          updateTimerDisplay();
-          if (btnStart) btnStart.textContent = 'Start';
-        });
+        }, 1000);
       }
     });
   </script>
