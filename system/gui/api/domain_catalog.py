@@ -60,8 +60,11 @@ def discover_domains(root: Path | None = None) -> dict:
         if not isinstance(name, str) or not name.strip() or len(name) > 120:
             name = module_id
         manifest_status = raw.get("status")
-        if manifest_status not in _STATUSES:
+        if not isinstance(manifest_status, str) or manifest_status not in _STATUSES:
             manifest_status = "unknown"
+        kind = raw.get("kind")
+        if not isinstance(kind, str) or kind not in {"library", "service", "runtime", "ui"}:
+            kind = "unknown"
         capabilities = raw.get("provides")
         if not isinstance(capabilities, list):
             capabilities = []
@@ -70,7 +73,7 @@ def discover_domains(root: Path | None = None) -> dict:
             "id": module_id,
             "name": name,
             "category": "domains",
-            "kind": raw.get("kind") if raw.get("kind") in {"library", "service", "runtime", "ui"} else "unknown",
+            "kind": kind,
             "manifest_status": manifest_status,
             "capabilities": capabilities,
             "evidence_type": "manifest_present",

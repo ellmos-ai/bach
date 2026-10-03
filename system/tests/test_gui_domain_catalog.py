@@ -67,6 +67,18 @@ class DomainCatalogTests(unittest.TestCase):
             self._manifest(root, "domain-one", id="../another-id")
             self.assertEqual(discover_domains(root)["domains"], [])
 
+    def test_malformed_status_and_kind_do_not_break_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._manifest(root, "domain-one", status=["active"], kind={"service": True})
+            self._manifest(root, "domain-two")
+            result = discover_domains(root)
+            self.assertEqual(result["total"], 2)
+            first = next(item for item in result["domains"] if item["id"] == "domain-one")
+            self.assertEqual(first["manifest_status"], "unknown")
+            self.assertEqual(first["kind"], "unknown")
+            self.assertIsNone(first["installed"])
+
 
 if __name__ == "__main__":
     unittest.main()
