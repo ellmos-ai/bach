@@ -3105,6 +3105,13 @@ class ControlHandler(BaseHTTPRequestHandler):
             chat_id = body.get("chat_id", "gui-web")
             try:
                 _profile_request(_optional_agent_id(body.get("agent_id")), chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "chat_id": chat_id, "error": "Profilbindung nicht verifizierbar"}, 503)
+                return
+            try:
                 archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
             except RuntimeError as exc:
                 self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 503)

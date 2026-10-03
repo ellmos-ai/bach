@@ -143,6 +143,13 @@ class ProfileChatBindingTests(unittest.TestCase):
                 response = httpx.get(url + "&agent_id=1", headers={"Authorization": "Bearer fixture"}, timeout=3)
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["session"]["messages"][0]["content"], "Privat")
+                clear_url = f"http://127.0.0.1:{server.server_port}/api/clear"
+                headers = {"Authorization": "Bearer fixture"}
+                self.assertEqual(httpx.post(clear_url, json={"chat_id": chat_id},
+                                            headers=headers, timeout=3).status_code, 409)
+                self.assertEqual(httpx.post(clear_url, json={"chat_id": chat_id, "agent_id": 2},
+                                            headers=headers, timeout=3).status_code, 409)
+                self.assertEqual(runtime.session_store.load_state(chat_id)["messages"][0]["content"], "Privat")
             finally:
                 server.shutdown()
                 server.server_close()
