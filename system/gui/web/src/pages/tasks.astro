@@ -28,14 +28,17 @@ import BachLayout from "../layouts/BachLayout.astro";
   <!-- Filter Bar -->
   <div class="card" style="padding:0.75rem 1.25rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div style="display:flex;gap:0.5rem;" id="filter-buttons">
-      <button class="btn btn-primary filter-btn active" data-filter="all">Alle Tasks</button>
+      <button class="btn filter-btn" data-filter="all">Alle Tasks</button>
       <button class="btn filter-btn" data-filter="user">👤 Persönlich (User)</button>
       <button class="btn filter-btn" data-filter="auto">🤖 Automatisiert (Ticket-Master / Worker)</button>
-      <button class="btn filter-btn" data-filter="open">⏳ Nur Offene</button>
+      <button class="btn btn-primary filter-btn active" data-filter="open" aria-pressed="true">⏳ Nur offene</button>
       <button class="btn filter-btn" data-filter="done">✅ Erledigte</button>
     </div>
-    <div style="color:var(--text-muted);font-size:0.85rem;" id="tasks-count-badge">
-      Lade...
+    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+      <span style="color:var(--text-muted);font-size:0.85rem;" id="tasks-count-badge">Lade...</span>
+      <button class="btn" id="tasks-prev-page" type="button" disabled>← Zurück</button>
+      <span id="tasks-page-label" aria-live="polite">Seite 1</span>
+      <button class="btn" id="tasks-next-page" type="button" disabled>Weitere →</button>
     </div>
   </div>
 
@@ -102,19 +105,35 @@ import BachLayout from "../layouts/BachLayout.astro";
 
   <script is:inline>
     let allTasks = [];
-    let currentFilter = 'all';
+    let currentFilter = 'open';
+    let currentOffset = 0;
+    let hasMoreTasks = false;
+    const pageSize = 100;
 
     async function loadTasks() {
       const container = document.getElementById('tasks-table-container');
       try {
-        const res = await fetch('/api/tasks');
+        const status = currentFilter === 'open' ? 'nonterminal'
+          : currentFilter === 'done' ? 'done' : 'all';
+        const query = new URLSearchParams({ status, limit: String(pageSize), offset: String(currentOffset) });
+        const res = await fetch('/api/tasks?' + query);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        allTasks = data.tasks || data || [];
+        if (data.success !== true || !Array.isArray(data.tasks)) throw new Error('Ungültige Task-Antwort');
+        allTasks = data.tasks;
+        hasMoreTasks = data.has_more === true;
         renderTasks();
       } catch (e) {
-        container.innerHTML = `<p style="text-align:center;padding:2rem;color:var(--error);">Fehler beim Laden der Tasks: ${e.message}</p>`;
+        container.textContent = 'Tasks konnten nicht geladen werden.';
+        hasMoreTasks = false;
+        updateTaskPagination();
       }
+    }
+
+    function updateTaskPagination() {
+      document.getElementById('tasks-prev-page').disabled = currentOffset === 0;
+      document.getElementById('tasks-next-page').disabled = !hasMoreTasks;
+      document.getElementById('tasks-page-label').textContent = `Seite ${Math.floor(currentOffset / pageSize) + 1}`;
     }
 
     function renderTasks() {
@@ -122,19 +141,22 @@ import BachLayout from "../layouts/BachLayout.astro";
       let filtered = allTasks;
 
       const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
-      const isDoneStatus = status => status === 'done' || status === 'completed' || status === 'closed';
+      const normalizedStatus = status => String(status || '').trim().toLowerCase();
+      const isDoneStatus = status => ['done', 'completed', 'closed'].includes(normalizedStatus(status));
+      const isTerminalStatus = status => ['done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate'].includes(normalizedStatus(status));
 
       if (currentFilter === 'user') {
         filtered = allTasks.filter(t => getAssignee(t) === 'user');
       } else if (currentFilter === 'auto') {
         filtered = allTasks.filter(t => getAssignee(t) !== 'user');
       } else if (currentFilter === 'open') {
-        filtered = allTasks.filter(t => !isDoneStatus(t.status));
+        filtered = allTasks.filter(t => !isTerminalStatus(t.status));
       } else if (currentFilter === 'done') {
         filtered = allTasks.filter(t => isDoneStatus(t.status));
       }
 
-      document.getElementById('tasks-count-badge').textContent = `${filtered.length} Tasks angezeigt (Gesamt: ${allTasks.length})`;
+      document.getElementById('tasks-count-badge').textContent = `${filtered.length} von ${allTasks.length} geladenen Tasks angezeigt`;
+      updateTaskPagination();
 
       if (filtered.length === 0) {
         container.innerHTML = '<p style="text-align:center;padding:3rem;color:var(--text-muted);">Keine Tasks für diesen Filter gefunden.</p>';
@@ -156,6 +178,7 @@ import BachLayout from "../layouts/BachLayout.astro";
           <tbody>
             ${filtered.map(t => {
               const isDone = isDoneStatus(t.status);
+              const isTerminal = isTerminalStatus(t.status);
               const prioColor = (t.priority === 'P1' || t.priority === 'hoch' || t.priority === 'kritisch') ? 'var(--error)' : 'var(--text-muted)';
               const rawAssignee = t.assigned_to || t.assignee || 'Unzugewiesen';
               const isUser = rawAssignee.toLowerCase() === 'user';
@@ -178,11 +201,11 @@ import BachLayout from "../layouts/BachLayout.astro";
                     <span class="badge ${isDone ? 'badge-success' : 'badge-warning'}">${escapeHtml(t.status || 'open')}</span>
                   </td>
                   <td style="padding:0.75rem 0.5rem;text-align:right;">
-                    ${!isDone ? `
+                    ${!isTerminal ? `
                       <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="completeTask(${t.id})">
                         ✓ Erledigt
                       </button>
-                    ` : '<span style="color:var(--success);font-size:0.8rem;">✓ Done</span>'}
+                    ` : (isDone ? '<span style="color:var(--success);font-size:0.8rem;">✓ Erledigt</span>' : '<span style="color:var(--text-muted);font-size:0.8rem;">Beendet</span>')}
                   </td>
                 </tr>
               `;
@@ -195,11 +218,26 @@ import BachLayout from "../layouts/BachLayout.astro";
     // Filter Buttons
     document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          b.classList.remove('active', 'btn-primary');
+          b.setAttribute('aria-pressed', 'false');
+        });
         btn.classList.add('active', 'btn-primary');
+        btn.setAttribute('aria-pressed', 'true');
         currentFilter = btn.getAttribute('data-filter');
-        renderTasks();
+        currentOffset = 0;
+        loadTasks();
       });
+    });
+    document.getElementById('tasks-prev-page').addEventListener('click', () => {
+      if (currentOffset === 0) return;
+      currentOffset = Math.max(0, currentOffset - pageSize);
+      loadTasks();
+    });
+    document.getElementById('tasks-next-page').addEventListener('click', () => {
+      if (!hasMoreTasks) return;
+      currentOffset += pageSize;
+      loadTasks();
     });
 
     async function submitNewTask(e) {

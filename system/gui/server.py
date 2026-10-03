@@ -1714,7 +1714,8 @@ async def api_get_tasks(
     category: str = None,
     assigned_to: str = None,
     priority: str = None,
-    limit: int = 100
+    limit: int = 100,
+    offset: int = 0
 ):
     """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
     try:
@@ -1724,7 +1725,9 @@ async def api_get_tasks(
         # (z.B. "in_progress,progress" oder "done,completed,closed")
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
-        if status and status.lower() != "all":
+        if status and status.lower() == "nonterminal":
+            query += " AND LOWER(COALESCE(status, '')) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+        elif status and status.lower() != "all":
             STATUS_ALIASES = {
                 "in_progress": ["in_progress", "progress"],
                 "pending": ["pending", "open"],
@@ -1770,10 +1773,13 @@ async def api_get_tasks(
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
 
-        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
         
         rows = conn.execute(query, params).fetchall()
+        has_more = limit > 0 and len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
         tasks = rows_to_list(rows)
 
         # image_data nicht in Liste senden (Performance), nur Flag
@@ -1797,7 +1803,8 @@ async def api_get_tasks(
                     pass
 
         conn.close()
-        return {"success": True, "tasks": tasks, "count": len(tasks)}
+        return {"success": True, "tasks": tasks, "count": len(tasks), "has_more": has_more,
+                "offset": max(0, offset)}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
