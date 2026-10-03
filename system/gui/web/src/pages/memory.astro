@@ -987,6 +987,17 @@ const mermaidCode = `flowchart TD
     if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
   }
 
+  function escapeHtml(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value ?? '');
+    return node.innerHTML;
+  }
+
+  function safeId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id >= 0 ? id : 0;
+  }
+
   function toggleAddLessonForm() {
     const f = document.getElementById('form-add-lesson');
     if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
@@ -1018,13 +1029,13 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${facts.map(f => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${f.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${f.category || 'general'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${f.key}</strong></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all;">${f.value}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${(f.confidence || 1.0).toFixed(2)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(f.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(f.category || 'general')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(f.key)}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all;">${escapeHtml(f.value)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${Number(f.confidence ?? 1).toFixed(2)}</td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);">
-                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteFact(${f.id})">Löschen</button>
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteFact(${safeId(f.id)})">Löschen</button>
                 </td>
               </tr>
             `).join('')}
@@ -1032,7 +1043,7 @@ const mermaidCode = `flowchart TD
         </table>
       `;
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Fakten konnten nicht geladen werden.';
     }
   }
 
@@ -1100,14 +1111,14 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${lessons.map(l => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${l.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${l.category || 'general'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${l.title}</strong></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:320px;word-break:break-word;">${l.content || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(l.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(l.category || 'general')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(l.title)}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:320px;word-break:break-word;">${escapeHtml(l.content || '-')}</td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge ${l.is_active ? 'badge-success' : 'badge-secondary'}">${l.is_active ? 'Ja' : 'Nein'}</span></td>
                 <td style="padding:0.5rem;border-bottom:1px solid var(--border);white-space:nowrap;">
-                  <button class="btn btn-sm btn-secondary" style="padding:0.2rem 0.5rem;" onclick="toggleLesson(${l.id})">Umschalten</button>
-                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteLesson(${l.id})">Löschen</button>
+                  <button class="btn btn-sm btn-secondary" style="padding:0.2rem 0.5rem;" onclick="toggleLesson(${safeId(l.id)})">Umschalten</button>
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteLesson(${safeId(l.id)})">Löschen</button>
                 </td>
               </tr>
             `).join('')}
@@ -1115,7 +1126,7 @@ const mermaidCode = `flowchart TD
         </table>
       `;
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Lessons konnten nicht geladen werden.';
     }
   }
 
@@ -1182,17 +1193,17 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${items.map(w => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${w.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${w.type || 'context'}</span></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.content}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.created_at || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(w.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${escapeHtml(w.type || 'context')}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(w.content)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(w.created_at || '-')}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       ` : '<p class="text-muted" style="padding:1rem;">Arbeitsgedächtnis aktuell leer.</p>';
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Arbeitsgedächtnis konnte nicht geladen werden.';
     }
   }
 
@@ -1209,18 +1220,18 @@ const mermaidCode = `flowchart TD
           <tbody>
             ${sessions.map(s => `
               <tr>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${s.id}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><code>${s.session_id ? s.session_id.substring(0, 16) + '...' : '-'}</code></td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.started_at || '-'}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.ended_at || '-'}</td>
-                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${s.summary || 'Arbeitssitzung'}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${safeId(s.id)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><code>${escapeHtml(s.session_id ? String(s.session_id).substring(0, 16) + '...' : '-')}</code></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(s.started_at || '-')}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${escapeHtml(s.ended_at || '-')}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${escapeHtml(s.summary || 'Arbeitssitzung')}</strong></td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       ` : '<p class="text-muted" style="padding:1rem;">Keine Sitzungen verzeichnet.</p>';
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Sitzungen konnten nicht geladen werden.';
     }
   }
 
