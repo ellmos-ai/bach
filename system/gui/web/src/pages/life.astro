@@ -1,6 +1,7 @@
 ---
 // src/pages/life.astro - Life-Zentrale (Kalender mit 4 Ansichten, Deine Routinen, Meine Aufgaben, Selbstmanagement)
 import BachLayout from "../layouts/BachLayout.astro";
+import TaskCreateForm from "../components/TaskCreateForm.astro";
 ---
 
 <BachLayout title="Life-Zentrale" currentPath="/life">
@@ -170,14 +171,18 @@ import BachLayout from "../layouts/BachLayout.astro";
             <h3><span class="icon">👤</span> Meine persönlichen Aufgaben</h3>
             <p class="card-desc">Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)</p>
           </div>
-          <div style="display:flex;gap:0.5rem;">
-            <select id="filter-user-tasks-status" onchange="loadUserTasks()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
-              <option value="">Alle Status</option>
-              <option value="todo" selected>Offen / Todo</option>
-              <option value="in_progress">In Bearbeitung</option>
-              <option value="done">Erledigt</option>
-            </select>
-            <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Im Taskboard öffnen ↗</a>
+          <div class="life-task-actions">
+            <label for="filter-user-tasks-status">Status
+              <select id="filter-user-tasks-status">
+                <option value="nonterminal" selected>Nur offene</option>
+                <option value="">Alle Status</option>
+                <option value="in_progress">In Bearbeitung</option>
+                <option value="done">Erledigt (done)</option>
+                <option value="completed">Erledigt (completed)</option>
+              </select>
+            </label>
+            <TaskCreateForm id="life-task-create" label="Neue Aufgabe für mich" defaultAssignee="user" fixedAssignee={true} />
+            <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Taskboard ↗</a>
           </div>
         </div>
         <div id="user-tasks-container">
@@ -397,6 +402,13 @@ import BachLayout from "../layouts/BachLayout.astro";
     .routine-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.5rem 1rem; }
     .routine-adapters { margin-top:1.25rem; border-top:1px solid var(--border); padding-top:1rem; font-size:.83rem; }
     .routine-adapters button:disabled { opacity:.7; cursor:not-allowed; }
+    .life-task-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:.5rem; }
+    .life-task-actions label { display:flex; align-items:center; gap:.4rem; font-size:.82rem; }
+    .life-task-actions select { min-width:0; max-width:100%; padding:.4rem .6rem; color:var(--text); background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--radius-sm); }
+    .life-task-list { display:grid; gap:.5rem; }
+    .life-task-row { min-width:0; padding:.75rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-dark); overflow-wrap:anywhere; }
+    .life-task-row p { margin:.2rem 0; color:var(--text-muted); }
+    .life-task-meta { display:block; color:var(--text-muted); font-size:.78rem; }
 
     /* Calendar Controls Bar */
     .calendar-controls-bar {
@@ -1190,51 +1202,63 @@ import BachLayout from "../layouts/BachLayout.astro";
     // ── MEINE AUFGABEN ──
     async function loadUserTasks() {
       const container = document.getElementById('user-tasks-container');
-      const statusFilter = document.getElementById('filter-user-tasks-status')?.value || '';
-      if (!container) return;
-
+      const filter = document.getElementById('filter-user-tasks-status');
+      if (!container || !filter) return;
+      container.replaceChildren();
+      const loading = document.createElement('p');
+      loading.className = 'loading-state';
+      loading.textContent = 'Lade persönliche Aufgaben …';
+      container.append(loading);
       try {
-        let url = '/api/tasks?assigned_to=user&limit=30';
-        if (statusFilter) url += `&status=${statusFilter}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const tasks = data.tasks || [];
-
-        if (tasks.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);padding:1rem;text-align:center;">Keine offenen Aufgaben für Benutzer gefunden.</p>';
+        const url = new URL('/api/tasks', location.origin);
+        url.searchParams.set('assigned_to', 'user');
+        url.searchParams.set('limit', '30');
+        if (filter.value) url.searchParams.set('status', filter.value);
+        const response = await lifeApiFetch(url.pathname + url.search);
+        if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+          ? 'Bitte über die Geräteanmeldung anmelden.'
+          : `Aufgaben konnten nicht geladen werden (HTTP ${response.status}).`);
+        const data = await response.json();
+        if (!Array.isArray(data.tasks)) throw new Error('Die Aufgabenantwort ist ungültig.');
+        container.replaceChildren();
+        if (!data.tasks.length) {
+          const empty = document.createElement('p');
+          empty.className = 'loading-state';
+          empty.textContent = 'Für diese Auswahl sind keine persönlichen Aufgaben vorhanden.';
+          container.append(empty);
           return;
         }
-
-        container.innerHTML = `
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:60px;">ID</th>
-                <th>Titel & Beschreibung</th>
-                <th style="width:110px;">Status</th>
-                <th style="width:80px;">Priorität</th>
-                <th style="width:120px;">Kategorie</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tasks.map(t => `
-                <tr>
-                  <td style="font-family:monospace;color:var(--text-muted);">#${t.id}</td>
-                  <td>
-                    <strong>${escapeHtml(t.title || 'Ohne Titel')}</strong>
-                    ${t.description ? `<p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">${escapeHtml(t.description.slice(0, 80))}...</p>` : ''}
-                  </td>
-                  <td><span class="badge ${t.status === 'done' || t.status === 'completed' ? 'badge-success' : 'badge-accent'}">${escapeHtml(t.status || 'todo')}</span></td>
-                  <td style="font-weight:600;color:var(--text);">${t.priority || 2}</td>
-                  <td><span class="badge badge-secondary" style="font-size:0.7rem;">${escapeHtml(t.category || '-')}</span></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        `;
-      } catch (e) {
-        container.innerHTML = `<p style="color:var(--error);padding:1rem;">Fehler beim Laden: ${e.message}</p>`;
+        const list = document.createElement('div');
+        list.className = 'life-task-list';
+        for (const task of data.tasks) {
+          const id = Number(task.id);
+          if (!Number.isSafeInteger(id) || id < 1) continue;
+          const row = document.createElement('article');
+          row.className = 'life-task-row';
+          const title = document.createElement('strong');
+          title.textContent = `#${id} · ${String(task.title || 'Ohne Titel')}`;
+          const description = document.createElement('p');
+          description.textContent = String(task.description || '').slice(0, 240);
+          const meta = document.createElement('span');
+          meta.className = 'life-task-meta';
+          meta.textContent = [task.status || 'Status unbekannt', task.priority || 'Priorität unbekannt', task.category || 'Kategorie unbekannt'].map(String).join(' · ');
+          row.append(title, description, meta);
+          list.append(row);
+        }
+        container.append(list);
+        if (data.has_more === true) {
+          const more = document.createElement('p');
+          more.className = 'life-task-meta';
+          more.textContent = 'Weitere Aufgaben sind im Taskboard verfügbar.';
+          container.append(more);
+        }
+      } catch (error) {
+        container.replaceChildren();
+        const failed = document.createElement('p');
+        failed.className = 'load-status';
+        failed.setAttribute('role', 'alert');
+        failed.textContent = error instanceof Error ? error.message : 'Aufgaben konnten nicht geladen werden.';
+        container.append(failed);
       }
     }
 
@@ -1322,6 +1346,10 @@ import BachLayout from "../layouts/BachLayout.astro";
       document.getElementById('routine-cancel')?.addEventListener('click', () => document.getElementById('life-routine-form').classList.add('hidden'));
       document.getElementById('filter-routine-cat')?.addEventListener('change', renderPersonalRoutines);
       document.getElementById('life-routine-form')?.addEventListener('submit', savePersonalRoutine);
+      document.getElementById('filter-user-tasks-status')?.addEventListener('change', loadUserTasks);
+      document.addEventListener('bach:task-created', event => {
+        if (event.detail?.assigned_to === 'user') loadUserTasks();
+      });
 
       const btnStart = document.getElementById('btn-timer-start');
       const btnReset = document.getElementById('btn-timer-reset');

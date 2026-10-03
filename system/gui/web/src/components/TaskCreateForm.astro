@@ -3,13 +3,14 @@ interface Props {
   id: string;
   label?: string;
   defaultAssignee?: string;
+  fixedAssignee?: boolean;
 }
-const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
+const { id, label = "Neue Aufgabe", defaultAssignee = "user", fixedAssignee = false } = Astro.props;
 ---
 
 <button type="button" class="btn btn-primary" data-task-create-open={id}>+ {label}</button>
 <dialog id={id} class="task-create-dialog" aria-label="Neue Aufgabe erstellen">
-  <form method="dialog" data-task-create-form data-default-assignee={defaultAssignee}>
+  <form method="dialog" data-task-create-form data-default-assignee={defaultAssignee} data-fixed-assignee={fixedAssignee ? "true" : "false"}>
     <header class="task-create-heading">
       <div>
         <h2>Neue Aufgabe erstellen</h2>
@@ -33,7 +34,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
         <input name="category" placeholder="z. B. Organisation" autocomplete="off" />
       </label>
       <label>Zugewiesen an
-        <select name="assigned_to" data-task-assignee><option value="user">Benutzer</option></select>
+        <select name="assigned_to" data-task-assignee disabled={fixedAssignee}><option value="user">Benutzer</option></select>
       </label>
       <label>Erstellt von
         <input name="created_by" value="user" readonly aria-description="Die Oberfläche erstellt Aufgaben als Benutzer." />
@@ -93,6 +94,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
       const error = form.querySelector('[data-task-create-error]');
       const assignee = form.querySelector('[data-task-assignee]');
       const fallback = form.dataset.defaultAssignee || 'user';
+      const fixedAssignee = form.dataset.fixedAssignee === 'true';
       const showError = message => { error.textContent = message; error.hidden = !message; };
       document.querySelectorAll('[data-task-create-open]').forEach(button => {
         if (button.dataset.taskCreateOpen === dialog.id) {
@@ -100,7 +102,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
         }
       });
       form.querySelectorAll('[data-task-create-cancel]').forEach(button => button.addEventListener('click', () => dialog.close()));
-      fetch('/api/assignees').then(async response => {
+      if (!fixedAssignee) fetch('/api/assignees').then(async response => {
         if (!response.ok) throw new Error('Zuweisungen nicht erreichbar');
         const body = await response.json();
         if (!Array.isArray(body.assignees)) throw new Error('Zuweisungen nicht verfügbar');
@@ -128,7 +130,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
         const text = key => String(values.get(key) || '').trim();
         const payload = {
           title:text('title'), priority:text('priority'), category:text('category') || 'general',
-          assigned_to:text('assigned_to') || 'user', created_by:'user',
+          assigned_to:fixedAssignee ? fallback : (text('assigned_to') || 'user'), created_by:'user',
           description:text('description'), status:'pending'
         };
         for (const key of ['due_date','depends_on','required_model','assigned_slot']) {
@@ -137,7 +139,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
         try {
           const response = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
           const result = await response.json().catch(() => ({}));
-          if (!response.ok || result.success !== true || !Number.isInteger(Number(result.id))) {
+          if (!response.ok || result.success !== true || !Number.isSafeInteger(Number(result.id)) || Number(result.id) < 1) {
             throw new Error(result.detail || result.error || `Aufgabe konnte nicht erstellt werden (HTTP ${response.status}).`);
           }
           const check = await fetch('/api/tasks/' + encodeURIComponent(result.id));
