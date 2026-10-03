@@ -355,8 +355,16 @@ class TestServerTaskClaimAPI:
         monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data")
         monkeypatch.setattr(srv, "BACH_DIR", tmp_path)
         monkeypatch.setattr(srv, "GUI_DIR", tmp_path / "gui")
-
-        return TestClient(srv.app, raise_server_exceptions=False)
+        monkeypatch.setattr(
+            srv,
+            "validate_token",
+            lambda token: {"id": 1} if token == "task-claim-fixture" else None,
+        )
+        return TestClient(
+            srv.app,
+            raise_server_exceptions=False,
+            headers={"Authorization": "Bearer task-claim-fixture"},
+        )
 
     def test_put_api_claim_conflict_returns_claim_failed_http_200(self, client, task_db):
         """PUT /api/tasks/{id} mit status=in_progress gegen beanspruchten Task liefert claim_failed bei HTTP 200."""

@@ -24,7 +24,9 @@ from hub.mount import MountHandler
 def client(tmp_path, monkeypatch):
     (tmp_path / "user").mkdir()
     monkeypatch.setattr(server, "BACH_DIR", tmp_path)
-    return TestClient(server.app, raise_server_exceptions=False)
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "mounts-fixture" else None)
+    return TestClient(server.app, raise_server_exceptions=False,
+                      headers={"Authorization": "Bearer mounts-fixture"})
 
 
 @pytest.mark.skipif(TestClient is None, reason="FastAPI not installed")

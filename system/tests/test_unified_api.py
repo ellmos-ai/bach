@@ -13,16 +13,48 @@ Covers:
 """
 import json
 import sqlite3
+from contextlib import closing
 import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
 from gui.server import app
+from gui import device_auth
+from gui.api import compare_race_adapter, unified_api
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(tmp_path, monkeypatch):
+    # Exercise real authentication and schema reads against a private fixture DB.
+    # GET routes must not create or seed production tables for these tests.
+    db_path = tmp_path / "unified.db"
+    token = "test-only-unified-api-token"
+
+    def connection():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", connection)
+    monkeypatch.setattr(unified_api, "BACH_DB", db_path)
+    monkeypatch.setattr(unified_api, "_agent_studio_tables_ready", False)
+    monkeypatch.setattr(unified_api, "_marblerun_tables_ready", False)
+    for name in ("DOMAINS_ROOT", "TOOLS_ROOT", "MCP_ROOT", "CONTROL_ROOT",
+                 "REPOS_ROOT", "SKILLS_ROOT"):
+        monkeypatch.setattr(unified_api, name, None)
+    monkeypatch.setenv("GARDENER_DATA", str(tmp_path / "gardener"))
+    monkeypatch.setenv("USMC_DB_PATH", str(tmp_path / "usmc.db"))
+    monkeypatch.setattr(compare_race_adapter, "_config_path", lambda: None)
+    with closing(connection()) as conn:
+        device_auth.init_devices_db(conn)
+        conn.execute(
+            "INSERT INTO devices (name, token_hash, status) VALUES (?, ?, 'active')",
+            ("fixture", device_auth._hash_token(token)),
+        )
+        unified_api._ensure_agent_studio_tables(conn)
+        unified_api._ensure_marblerun_tables(conn)
+        conn.commit()
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 def test_agent_studio_blueprints(client):
@@ -64,6 +96,7 @@ def test_agent_studio_blueprints(client):
     mat_resp = client.post(f"/api/agent-studio/blueprints/{custom_item['id']}/materialize")
     assert mat_resp.status_code == 200
     assert mat_resp.json()["success"] is True
+    assert mat_resp.json()["status"] == "configured"
 
     # 5. Delete custom blueprint
     del_resp = client.delete(f"/api/agent-studio/blueprints/{custom_item['id']}")
@@ -125,12 +158,11 @@ def test_marblerun_chains_and_agents_map(client):
     target = next((c for c in chains if c["name"] == "test_chain_workflow"), None)
     assert target is not None
 
-    # 3. Run chain
+    # 3. Execution remains unavailable until a real dispatcher is wired.
     run_resp = client.post(f"/api/marblerun/chains/{target['id']}/run", json={"input": "Hello Chain"})
-    assert run_resp.status_code == 200
-    run_data = run_resp.json()
-    assert run_data["success"] is True
-    assert run_data["steps_executed"] == 2
+    assert run_resp.status_code == 501
+    with closing(sqlite3.connect(unified_api.BACH_DB)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM marblerun_runs").fetchone()[0] == 0
 
     # 4. Agents-Map graph
     map_resp = client.get("/api/marblerun/agents-map")
@@ -184,11 +216,8 @@ def test_deep_memory_and_compare_race(client):
         "prompt": "Explain quantum computing briefly",
         "models": ["claude", "gemini"]
     })
-    assert race_resp.status_code == 200
-    race_data = race_resp.json()
-    assert "candidates" in race_data
-    assert len(race_data["candidates"]) == 2
-    assert "winner" in race_data
+    assert race_resp.status_code == 501
+    assert "candidates" not in race_resp.json()
 
 
 def test_domains(client):

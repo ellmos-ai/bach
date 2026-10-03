@@ -176,13 +176,16 @@ def test_fastapi_endpoints_and_middleware(monkeypatch, tmp_path):
 
     client = TestClient(app)
 
-    # 1. When no active devices exist: fail-open for unconfigured systems
+    # 1. Unconfigured systems do not expose device administration anonymously.
     res = client.get("/api/devices")
-    assert res.status_code == 200
-    assert res.json() == {"devices": []}
+    assert res.status_code == 401
+
+    # First-device provisioning is a local administration operation.
+    bootstrap_token = create_device("Local Bootstrap", connection=conn)
 
     # 2. Register a new device via POST /api/devices
-    res = client.post("/api/devices", json={"name": "Laptop-Work"})
+    res = client.post("/api/devices", json={"name": "Laptop-Work"},
+                      headers={"Authorization": f"Bearer {bootstrap_token}"})
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
@@ -202,11 +205,11 @@ def test_fastapi_endpoints_and_middleware(monkeypatch, tmp_path):
     res = client.get("/api/devices", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     devs = res.json()["devices"]
-    assert len(devs) == 1
-    assert devs[0]["name"] == "Laptop-Work"
+    assert len(devs) == 2
+    assert any(device["name"] == "Laptop-Work" for device in devs)
 
-    # 6. Exempt endpoint /api/status works without token
-    res = client.get("/api/status")
+    # 6. The public navigation configuration works without token.
+    res = client.get("/api/nav/config")
     assert res.status_code == 200
 
     # 7. Verify endpoint POST /api/devices/verify

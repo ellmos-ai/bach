@@ -219,7 +219,9 @@ def client(test_db, monkeypatch):
     tools_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(srv, "TOOLS_DIR", tools_dir)
 
-    return TestClient(srv.app, raise_server_exceptions=False)
+    monkeypatch.setattr(srv, "validate_token", lambda token: {"id": 1} if token == "smoke-fixture" else None)
+    return TestClient(srv.app, raise_server_exceptions=False,
+                      headers={"Authorization": "Bearer smoke-fixture"})
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -602,6 +604,8 @@ class TestGUIServerNoDB:
         monkeypatch.setattr(srv, "BACH_DB", missing)
         monkeypatch.setattr(srv, "USER_DB", missing)
 
-        test_client = TestClient(srv.app, raise_server_exceptions=False)
+        monkeypatch.setattr(srv, "validate_token", lambda token: {"id": 1} if token == "smoke-fixture" else None)
+        test_client = TestClient(srv.app, raise_server_exceptions=False,
+                                 headers={"Authorization": "Bearer smoke-fixture"})
         resp = test_client.get("/api/status")
         assert resp.status_code == 503
