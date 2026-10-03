@@ -892,7 +892,7 @@
                 </div>
                 <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-muted);">
                     <input type="checkbox" id="race-confirm-cost" onchange="updateRaceButton()" />
-                    Ich bestätige die Modellaufrufe innerhalb des angezeigten Budgets.
+                    Ich bestätige die Modellaufrufe innerhalb der angezeigten Aufrufgrenzen; eine separate Kostenfreigabe ist erforderlich.
                 </label>
                 <div>
                     <button class="btn btn-sm btn-primary" id="btn-run-race" onclick="executeCompareRace()" disabled title="Laufzeit und Budget werden geprüft" style="padding:8px 16px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px;">🏁 Race derzeit nicht verfügbar</button>
@@ -905,13 +905,13 @@
     <script>
     let raceStatus = null;
     const raceBlockerText = {
-        spend_authority_unavailable: 'Eine verbindliche Kostenfreigabe für Provideraufrufe fehlt.',
-        operator_gate_disabled: 'Die Freigabe für Modellaufrufe fehlt.',
-        call_budget_unconfigured: 'Das Aufrufbudget ist nicht konfiguriert.',
-        model_registry_missing: 'Die Modellkonfiguration fehlt.',
-        model_registry_invalid: 'Die Modellkonfiguration ist ungültig.',
-        sdk_or_config_unavailable: 'Compare-Race oder COMA ist nicht verfügbar.',
-        configured_lanes_insufficient: 'Weniger als zwei konfigurierte Spuren sind lokal verfügbar.'
+        spend_authority_unavailable: 'Die Kostenfreigabe ist noch nicht angebunden.',
+        operator_gate_disabled: 'Modellaufrufe sind noch nicht freigegeben.',
+        call_budget_unconfigured: 'Aufrufgrenzen sind noch nicht eingerichtet.',
+        model_registry_missing: 'Die Modellauswahl ist noch nicht eingerichtet.',
+        model_registry_invalid: 'Die Modellauswahl kann noch nicht geladen werden.',
+        sdk_or_config_unavailable: 'Die Modellverbindung ist noch nicht verfügbar.',
+        configured_lanes_insufficient: 'Es sind noch keine zwei Modelle verfügbar.'
     };
     function updateRaceButton() {
         const button = document.getElementById('btn-run-race');
@@ -948,7 +948,7 @@
             if (!list.childNodes.length) list.textContent = 'Keine konfigurierten Spuren gefunden.';
             const blockers = (raceStatus.blockers || []).map(code => raceBlockerText[code] || 'Konfiguration nicht verfügbar.');
             const budget = raceStatus.budget;
-            const note = budget ? `Budget: höchstens ${budget.max_lanes} Spuren, ${budget.max_seconds} Sekunden je Spur. Providerzugang ungeprüft.` : 'Kein Aufrufbudget festgelegt.';
+            const note = budget ? `Aufrufgrenzen: höchstens ${budget.max_lanes} Spuren, ${budget.max_seconds} Sekunden je Spur. Providerzugang ungeprüft.` : 'Keine Aufrufgrenzen festgelegt.';
             result.textContent = blockers.length ? `${blockers.join(' ')} ${note}` : note;
             updateRaceButton();
         } catch (_error) {
@@ -975,7 +975,7 @@
         if (!raceStatus || raceStatus.availability !== 'ready' || models.length < 2 ||
             models.length > raceStatus.budget.max_lanes ||
             !document.getElementById('race-confirm-cost').checked) {
-            alert('Bitte wähle mindestens zwei verfügbare Spuren und bestätige das Budget.');
+            alert('Bitte wähle mindestens zwei verfügbare Spuren und bestätige die Aufrufgrenzen.');
             return;
         }
         const resEl = document.getElementById('race-results-container');

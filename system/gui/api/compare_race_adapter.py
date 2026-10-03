@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import tempfile
@@ -165,6 +166,25 @@ def _worker_result(payload: dict[str, Any]) -> dict[str, Any]:
             "evidence": "live" if candidates and all(c["ok"] for c in candidates) else "partial"}
 
 
+def _terminate_worker_tree(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           capture_output=True, check=False, timeout=5,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if process.poll() is None:
+        process.kill()
+
+
 def execute_isolated(payload: dict[str, Any], device_id: int) -> dict[str, Any]:
     """Run SDK in a child so its temporary chdir cannot affect GUI requests."""
     state = readiness()
@@ -185,20 +205,32 @@ def execute_isolated(payload: dict[str, Any], device_id: int) -> dict[str, Any]:
         with authority.reserve(device_id=device_id, model_ids=tuple(names),
                                max_seconds=max_seconds, prompt_chars=len(prompt)):
             with tempfile.TemporaryDirectory(prefix="bach-race-lane-") as neutral_cwd:
-                finished = subprocess.run(
+                process = subprocess.Popen(
                     [sys.executable, "-m", "gui.api.compare_race_adapter", "--worker"],
-                    input=json.dumps(worker_payload), text=True, capture_output=True,
-                    timeout=max_seconds * len(names) + 30, check=False,
-                    cwd=neutral_cwd, env=env, **startup,
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, cwd=neutral_cwd, env=env,
+                    start_new_session=os.name != "nt", **startup,
                 )
-    except (OSError, subprocess.TimeoutExpired):
+                try:
+                    stdout, _stderr = process.communicate(
+                        input=json.dumps(worker_payload), timeout=max_seconds * len(names) + 30)
+                except subprocess.TimeoutExpired:
+                    _terminate_worker_tree(process)
+                    try:
+                        process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.communicate()
+                    raise RaceUnavailable("worker_timeout")
+                exit_code = process.returncode
+    except OSError:
         raise RaceUnavailable("worker_unavailable")
     except Exception as exc:
         raise RaceUnavailable("spend_authority_unavailable") from exc
-    if finished.returncode != 0:
+    if exit_code != 0:
         raise RaceUnavailable("worker_failed")
     try:
-        result = json.loads(finished.stdout)
+        result = json.loads(stdout)
     except json.JSONDecodeError:
         raise RaceUnavailable("worker_invalid_response")
     if not isinstance(result, dict) or not isinstance(result.get("candidates"), list):

@@ -55,7 +55,11 @@ Gerätetoken. Ein `confirm_cost`-Flag bestätigt nur die Anzeige und ersetzt
 weder Authentifizierung noch Reservierung.
 
 Ein Lauf benutzt sequentiell höchstens die ausgewählten Lanes, einen Durchgang
-und einen isolierten Child-Prozess. Ergebnisse behalten `evidence_kind`; nur
+und einen isolierten Child-Prozess. Bei Timeout beendet der Adapter dessen
+Prozessgruppe (macOS/Linux) beziehungsweise den Prozessbaum (`taskkill /T` unter
+Windows). Vom Provider selbst abgekoppelte Prozesse kann das Betriebssystem
+damit nicht sicher erfassen; die Zeitgrenze ist deshalb keine harte
+Kostenobergrenze. Ergebnisse behalten `evidence_kind`; nur
 erfolgreiche `live`-Antworten werden angezeigt. Eine Siegerentscheidung wird
 nicht aus Simulation, manuellem Ergebnis oder Fehler abgeleitet. Provideraufrufe
 und Mac-Deployment erfordern getrennte Abnahme durch den Owner.
