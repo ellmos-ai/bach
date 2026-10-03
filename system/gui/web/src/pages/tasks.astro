@@ -83,9 +83,11 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         <label>Zugewiesen an<select name="assigned_to"></select></label>
         <label>Erstellt von<input name="created_by" readonly /></label>
         <label>Abhängig von Task-IDs<input name="depends_on" inputmode="numeric" pattern="\s*\d+(\s*,\s*\d+)*\s*" /></label>
+        <label>Benötigtes Modell<input name="required_model" /></label>
+        <label>Agenten-Slot<input name="assigned_slot" /></label>
         <label class="task-edit-wide">Beschreibung<textarea name="description" rows="5"></textarea></label>
       </div>
-      <p class="muted">Fälligkeitsdatum, Modell und Slot werden angezeigt; diese Felder unterstützt die bestehende Bearbeitungs-API noch nicht.</p>
+      <p class="muted">Das Fälligkeitsdatum wird angezeigt; die bestehende Bearbeitungs-API unterstützt seine Änderung noch nicht.</p>
       <div class="task-detail-actions"><button type="button" class="btn" id="task-edit-cancel">Abbrechen</button><button type="submit" class="btn btn-primary">Änderungen speichern</button></div>
     </form>
   </section>
@@ -313,7 +315,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       if (!selectedTask) return;
       const form = document.getElementById('task-edit-form');
       const task = selectedTask;
-      for (const key of ['title','description','depends_on','created_by']) form.elements[key].value = String(task[key] || '');
+      for (const key of ['title','description','depends_on','created_by','required_model','assigned_slot']) form.elements[key].value = String(task[key] || '');
       form.elements.project.value = String(task.category || '');
       const priority = String(task.priority || 'P3');
       const prioritySelect = form.elements.priority;
@@ -351,7 +353,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       const id = Number(selectedTask.id);
       const values = new FormData(form);
       const payload = { changed_by:'gui' };
-      for (const key of ['title','priority','status','project','assigned_to','depends_on','description']) {
+      for (const key of ['title','priority','status','project','assigned_to','depends_on','description','required_model','assigned_slot']) {
         const value = String(values.get(key) || '').trim();
         const before = key === 'project' ? selectedTask.category : selectedTask[key];
         if (value !== String(before || '').trim()) payload[key] = value;

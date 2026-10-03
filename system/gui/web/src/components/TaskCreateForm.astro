@@ -143,8 +143,7 @@ const { id, label = "Neue Aufgabe", defaultAssignee = "user" } = Astro.props;
           const check = await fetch('/api/tasks/' + encodeURIComponent(result.id));
           if (!check.ok) throw new Error('Aufgabe wurde gespeichert, der Kontrollabruf ist fehlgeschlagen. Bitte Liste aktualisieren.');
           const stored = await check.json();
-          if (String(stored.title || '') !== payload.title || String(stored.assigned_to || '') !== payload.assigned_to
-              || String(stored.category || '') !== payload.category || String(stored.priority || '') !== payload.priority) {
+          if (Object.entries(payload).some(([key, expected]) => String(stored[key] ?? '').trim() !== String(expected).trim())) {
             throw new Error('Aufgabe wurde gespeichert, der Kontrollabruf weicht ab. Bitte Liste aktualisieren.');
           }
           dialog.close(); form.reset();
