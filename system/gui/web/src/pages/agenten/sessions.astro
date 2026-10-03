@@ -1,0 +1,268 @@
+---
+// src/pages/agenten/sessions.astro - Sessions & Protokolle (Rohberichte & Strukturierte Berichte)
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Sessions & Protokolle" currentPath="/agenten/sessions">
+  <div class="sessions-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">📜</span> Sessions & Protokolle</h1>
+        <p class="subtitle">Einsicht in Dialog-Sitzungen, Rohberichte und strukturierte Ergebnisberichte</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="loadSessions()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="rohberichte">📜 Rohberichte & Transkripte</button>
+      <button class="tab-btn" data-tab="ergebnisberichte">📑 Strukturierte Ergebnisberichte</button>
+    </div>
+
+    <!-- TAB 1: ROHBERICHTE -->
+    <div class="tab-pane active" id="pane-rohberichte">
+      <div class="glass-card">
+        <h3>Historische Dialog- und Agenten-Sitzungen</h3>
+        <p class="card-desc">Lückenlose Protokolle aus <code>memory_sessions</code></p>
+        <div id="sessions-list">
+          <p class="loading-state">Lade Sitzungen...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: ERGEBNISBERICHTE -->
+    <div class="tab-pane" id="pane-ergebnisberichte">
+      <div class="glass-card">
+        <h3>Meilensteine & Destillierte Zusammenfassungen</h3>
+        <p class="card-desc">Strukturierte Exporte und Lessons Learned</p>
+        <div class="reports-grid">
+          <div class="report-card">
+            <span class="report-badge">ARCHITEKTUR</span>
+            <h4>BACH & OCEAN Modular GUI Restrukturierung</h4>
+            <p>9-teiliges Menüsystem, Single Source of Truth und Kognitiver Schaltplan nach Baddeley.</p>
+            <div class="report-footer">
+              <span class="report-date">2026-10-03</span>
+              <a href="/artefakte" class="btn btn-sm btn-secondary">Zum Artefakt ↗</a>
+            </div>
+          </div>
+          <div class="report-card">
+            <span class="report-badge">SECURITY</span>
+            <h4>Policy P-001 & Fail-Closed Guardrails Audit</h4>
+            <p>Zertifizierter Schutz gegen autonome Remote-Pushes und Erhalt von Revisions-Sperren.</p>
+            <div class="report-footer">
+              <span class="report-date">2026-10-02</span>
+              <a href="/governance" class="btn btn-sm btn-secondary">Governance ↗</a>
+            </div>
+          </div>
+          <div class="report-card">
+            <span class="report-badge">MEM-ENGINE</span>
+            <h4>Kognitionsmodell & Hooker-Guard-Entkopplung</h4>
+            <p>Trennung von Heuristik (Pädagogik) und technischer Verdrahtung in der Laufzeit.</p>
+            <div class="report-footer">
+              <span class="report-date">2026-10-01</span>
+              <a href="/memory" class="btn btn-sm btn-secondary">Schaltplan ↗</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .sessions-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .tab-bar {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .tab-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .tab-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .tab-pane {
+    display: none;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .tab-pane.active {
+    display: flex;
+  }
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+  }
+  .glass-card h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.15rem;
+  }
+  .card-desc {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1.25rem 0;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .data-table th, .data-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .reports-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+  }
+  .report-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .report-badge {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .report-card h4 {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+  }
+  .report-card p {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1rem 0;
+    line-height: 1.4;
+  }
+  .report-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 0.5rem;
+  }
+  .report-date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+</style>
+
+<script is:inline>
+  function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById('pane-' + tab);
+        if (target) target.classList.add('active');
+      });
+    });
+  }
+
+  async function loadSessions() {
+    const container = document.getElementById('sessions-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/sessions?limit=25');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      if (sessions.length === 0) {
+        container.innerHTML = '<p class="text-muted">Keine vergangenen Sitzungen gefunden.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Session ID</th>
+              <th>Startzeit</th>
+              <th>Endzeit</th>
+              <th>Zusammenfassung</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sessions.map(s => `
+              <tr>
+                <td>#${s.id}</td>
+                <td><code>${s.session_id ? s.session_id.substring(0, 16) + '...' : '-'}</code></td>
+                <td>${s.started_at || '-'}</td>
+                <td>${s.ended_at || '-'}</td>
+                <td><strong>${s.summary || 'Reguläre Arbeitssitzung'}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setupTabs();
+    loadSessions();
+  });
+</script>

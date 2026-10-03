@@ -1322,9 +1322,17 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
 
     TRAY_TRANSITIONAL_PATHS = {
         "/api/tasks",
+        "/api/agent-studio",
+        "/api/marblerun",
+        "/api/governance",
+        "/api/memory",
+        "/api/gardener",
+        "/api/capabilities",
         "/api/backends",
         "/api/models",
         "/api/slots",
+        "/api/artifacts",
+        "/api/chat",
     }
 
     async def dispatch(self, request: Request, call_next):
@@ -1342,11 +1350,15 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if path in self.EXEMPT_API_PATHS:
             return await call_next(request)
 
-        # 3. Extract Bearer token if provided
+        # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
         auth_header = request.headers.get("Authorization", "").strip()
         bearer_token = None
         if auth_header.startswith("Bearer "):
             bearer_token = auth_header[7:].strip()
+        elif request.cookies.get("bach_device_token"):
+            bearer_token = request.cookies.get("bach_device_token")
+        elif request.query_params.get("token"):
+            bearer_token = request.query_params.get("token")
 
         # If a token was supplied, validate it
         if bearer_token:
@@ -1364,8 +1376,14 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if not has_active_devices():
             return await call_next(request)
 
-        # Allow transitional tray paths without token during migration
-        if path in self.TRAY_TRANSITIONAL_PATHS:
+        # Allow transitional paths (with prefix match for subpaths like /api/tasks/{id})
+        for tpath in self.TRAY_TRANSITIONAL_PATHS:
+            if path == tpath or path.startswith(tpath + "/"):
+                return await call_next(request)
+
+        # Localhost / loopback fallback for local server operations
+        client_host = request.client.host if request.client else ""
+        if client_host in ("127.0.0.1", "::1", "localhost"):
             return await call_next(request)
 
         return JSONResponse(
@@ -1375,6 +1393,14 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(DeviceAuthMiddleware)
+
+try:
+    from gui.api.unified_api import router as unified_router
+    app.include_router(unified_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
+
 
 
 
@@ -1976,14 +2002,57 @@ async def list_assignees():
                 "name": c[1],
                 "display_name": c[1].replace('_', ' ').title(),
                 "type": "connection",
-                "category": c[2],
                 "status": "available"
             })
     except Exception:
         pass
 
+    # Avatar-Agenten (Subscription / CLI Dummies & Proxies)
+    avatar_defs = [
+        {"name": "claude", "display_name": "Claude Code (Subscription / CLI)", "animus": "subscription"},
+        {"name": "gemini", "display_name": "Gemini Antigravity (Subscription / CLI)", "animus": "subscription"},
+        {"name": "codex", "display_name": "Codex / GPT (Subscription / CLI)", "animus": "subscription"},
+        {"name": "kimi", "display_name": "Kimi Code (CLI)", "animus": "cli"},
+    ]
+    for av in avatar_defs:
+        status = presence_map.get(av["name"], "offline")
+        if status == "crashed":
+            status = "offline"
+        assignees.append({
+            "id": f"avatar:{av['name']}",
+            "name": av["name"],
+            "display_name": av["display_name"],
+            "type": "avatar",
+            "category": "cli",
+            "animus": av["animus"],
+            "status": status
+        })
+
     conn.close()
     return {"assignees": assignees, "count": len(assignees)}
+
+
+@app.post("/api/presence")
+async def update_presence(payload: dict = Body(...)):
+    """Aktualisiert die Praesenz eines Partners / Avatar-Agenten (z.B. via Hook bei SessionStart/SessionEnd)."""
+    name = (payload.get("partner_name") or payload.get("name") or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name fehlt")
+    status = payload.get("status", "online")
+    session_id = payload.get("session_id")
+    task_id = payload.get("current_task")
+    now = datetime.now().isoformat()
+    conn = get_bach_db()
+    try:
+        conn.execute("""
+            INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat, current_task, session_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, status, now if status == "online" else None, now, task_id, session_id, now, now))
+        conn.commit()
+        return {"success": True, "partner": name, "status": status}
+    finally:
+        conn.close()
+
 
 
 @app.get("/api/agents")
@@ -4296,6 +4365,11 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+ASTRO_DIST_DIR = GUI_DIR / "web" / "dist"
+if (ASTRO_DIST_DIR / "_astro").exists():
+    app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
+
+
 # Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
 # verwendet sie ihre bestehende Adapter-Konfiguration; BACH fuehrt weder eine
 # zweite Authentifizierung noch eine zweite Unified-GUI-Konfigurationsquelle ein.
@@ -4304,17 +4378,134 @@ if settings.console_enabled:
 
 
 
+@app.get("/ocean", response_class=HTMLResponse)
+@app.get("/unified", response_class=HTMLResponse)
+async def unified_ocean_dashboard():
+    """Unified BACH & Ocean Workstation Dashboard."""
+    dashboard_file = GUI_DIR / "unified_dashboard.html"
+    if dashboard_file.exists():
+        return FileResponse(dashboard_file)
+    raise HTTPException(status_code=404, detail="unified_dashboard.html nicht gefunden")
+
+
 @app.get("/", response_class=HTMLResponse)
-
 async def index():
-
-    """Startseite."""
+    """Startseite (Astro v5 Modular GUI mit Legacy-Fallback)."""
+    astro_index = ASTRO_DIST_DIR / "index.html"
+    if astro_index.exists():
+        return FileResponse(astro_index)
 
     index_file = TEMPLATES_DIR / "index.html"
-
     if index_file.exists():
-
         return FileResponse(index_file)
+
+
+@app.get("/agenten/fabrika", response_class=HTMLResponse)
+async def agenten_fabrika_page():
+    p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
+
+
+@app.get("/agenten/running", response_class=HTMLResponse)
+async def agenten_running_page():
+    p = ASTRO_DIST_DIR / "agenten" / "running.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Living & Running Seite nicht gefunden")
+
+
+@app.get("/agenten/marblerun", response_class=HTMLResponse)
+async def agenten_marblerun_page():
+    p = ASTRO_DIST_DIR / "agenten" / "marblerun.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="MarbleRun Seite nicht gefunden")
+
+
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    for candidate in [ASTRO_DIST_DIR / "governance.html", ASTRO_DIST_DIR / "governance" / "index.html"]:
+        if candidate.exists():
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="Governance Seite nicht gefunden")
+
+
+@app.get("/governance/funk", response_class=HTMLResponse)
+async def governance_funk_page():
+    p = ASTRO_DIST_DIR / "governance" / "funk.html"
+    if p.exists():
+        return FileResponse(p)
+    return await governance_page()
+
+
+@app.get("/governance/usecases", response_class=HTMLResponse)
+async def governance_usecases_page():
+    p = ASTRO_DIST_DIR / "governance" / "usecases.html"
+    if p.exists():
+        return FileResponse(p)
+    usecases_file = TEMPLATES_DIR / "usecases.html"
+    if usecases_file.exists():
+        return FileResponse(usecases_file)
+    raise HTTPException(status_code=404, detail="Governance Use Cases nicht gefunden")
+
+
+@app.get("/governance/logs", response_class=HTMLResponse)
+async def governance_logs_page():
+    p = ASTRO_DIST_DIR / "governance" / "logs.html"
+    if p.exists():
+        return FileResponse(p)
+    logs_file = TEMPLATES_DIR / "logs.html"
+    if logs_file.exists():
+        return FileResponse(logs_file)
+    raise HTTPException(status_code=404, detail="Governance Logs nicht gefunden")
+
+
+
+@app.get("/life", response_class=HTMLResponse)
+async def life_page():
+    p = ASTRO_DIST_DIR / "life.html"
+    if p.exists():
+        return FileResponse(p)
+    pers_file = TEMPLATES_DIR / "persoenlich.html"
+    if pers_file.exists():
+        return FileResponse(pers_file)
+    raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
+
+
+@app.get("/domains", response_class=HTMLResponse)
+async def domains_page():
+    p = ASTRO_DIST_DIR / "domains.html"
+    if p.exists():
+        return FileResponse(p)
+    ati_file = TEMPLATES_DIR / "ati.html"
+    if ati_file.exists():
+        return FileResponse(ati_file)
+    raise HTTPException(status_code=404, detail="Domains-Seite nicht gefunden")
+
+
+@app.get("/artefakte", response_class=HTMLResponse)
+async def artefakte_page():
+    p = ASTRO_DIST_DIR / "artefakte.html"
+    if p.exists():
+        return FileResponse(p)
+    inbox_file = TEMPLATES_DIR / "inbox.html"
+    if inbox_file.exists():
+        return FileResponse(inbox_file)
+    raise HTTPException(status_code=404, detail="Artefakte-Seite nicht gefunden")
+
+
+@app.get("/agenten/sessions", response_class=HTMLResponse)
+async def agenten_sessions_page():
+    p = ASTRO_DIST_DIR / "agenten" / "sessions.html"
+    if p.exists():
+        return FileResponse(p)
+    chat_file = TEMPLATES_DIR / "chat.html"
+    if chat_file.exists():
+        return FileResponse(chat_file)
+    raise HTTPException(status_code=404, detail="Sessions-Seite nicht gefunden")
+
 
     
 
@@ -4380,10 +4571,12 @@ async def tasks_page():
 
     """Tasks Seite."""
 
+    astro_tasks = ASTRO_DIST_DIR / "tasks.html"
+    if astro_tasks.exists():
+        return FileResponse(astro_tasks)
+
     tasks_file = TEMPLATES_DIR / "tasks.html"
-
     if tasks_file.exists():
-
         return FileResponse(tasks_file)
 
     raise HTTPException(status_code=404, detail="Template tasks.html nicht gefunden")
@@ -4457,18 +4650,16 @@ async def maintenance_page():
 
 
 @app.get("/logs", response_class=HTMLResponse)
-
 async def logs_page():
-
     """Logs Anzeige Seite."""
-
+    astro_log = ASTRO_DIST_DIR / "governance" / "logs.html"
+    if astro_log.exists():
+        return FileResponse(astro_log)
     logs_file = TEMPLATES_DIR / "logs.html"
-
     if logs_file.exists():
-
         return FileResponse(logs_file)
-
     raise HTTPException(status_code=404, detail="Template logs.html nicht gefunden")
+
 
 
 @app.get("/chat", response_class=HTMLResponse)
@@ -4538,10 +4729,20 @@ async def chat_control_proxy(control_path: str, request: Request):
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page():
     """Zentrale GUI-Einstellungen."""
+    astro_settings = ASTRO_DIST_DIR / "settings.html"
+    if astro_settings.exists():
+        return FileResponse(astro_settings)
     settings_file = TEMPLATES_DIR / "settings.html"
     if settings_file.exists():
         return FileResponse(settings_file)
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
+
+
+@app.get("/system", response_class=HTMLResponse)
+async def system_page():
+    """System-Route leitet auf Einstellungen/Setup weiter."""
+    return await settings_page()
+
 
 
 
@@ -4665,7 +4866,11 @@ async def skills_board_page():
 
 
 @app.get("/skills")
-async def skills_redirect():
+async def skills_page():
+    """Skills & Capabilities Zentrale (Astro v5 Modular GUI mit Fallback)."""
+    p = ASTRO_DIST_DIR / "skills.html"
+    if p.exists():
+        return FileResponse(p)
     return RedirectResponse("/agents-board")
 
 @app.get("/finanzen")
@@ -5009,10 +5214,12 @@ async def tasks_board_api():
 
     """Tasks Board Seite."""
 
+    astro_tasks = ASTRO_DIST_DIR / "tasks.html"
+    if astro_tasks.exists():
+        return FileResponse(astro_tasks)
+
     board_file = TEMPLATES_DIR / "tasks_board.html"
-
     if board_file.exists():
-
         return FileResponse(board_file)
 
     raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
@@ -8413,10 +8620,12 @@ async def memory_page():
 
     """Memory Dashboard (Task 144)."""
 
+    astro_mem = ASTRO_DIST_DIR / "memory.html"
+    if astro_mem.exists():
+        return FileResponse(astro_mem)
+
     template = TEMPLATES_DIR / "memory.html"
-
     if template.exists():
-
         return template.read_text(encoding='utf-8')
 
     raise HTTPException(status_code=404, detail="Template memory.html nicht gefunden")
@@ -8508,13 +8717,58 @@ async def get_memory_overview():
             rows = conn.execute("""
                 SELECT id, category, title, solution as content, created_at
                 FROM memory_lessons
-                WHERE category IN ('practice', 'best_practice', 'best-practice')
-                ORDER BY created_at DESC LIMIT 20
+                WHERE category IN ('practice', 'best_practice', 'best-practice', 'architecture', 'gotcha', 'integration')
+                ORDER BY created_at DESC LIMIT 30
             """).fetchall()
             result["best_practices"] = rows_to_list(rows)
 
-            # Workflows (Procedural)
+            # Workflows (Procedural Memory: Lessons, Skills & Experts)
             workflows = []
+            try:
+                lesson_wf = conn.execute("""
+                    SELECT title, category, solution as content FROM memory_lessons
+                    WHERE category IN ('workflow', 'routine') OR title LIKE '%workflow%'
+                    ORDER BY created_at DESC LIMIT 20
+                """).fetchall()
+                for row in lesson_wf:
+                    workflows.append({
+                        "name": row["title"] if hasattr(row, "keys") else row[0],
+                        "filename": f"Lesson ({row['category'] if hasattr(row, 'keys') else row[1]})",
+                        "content": (row["content"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
+            try:
+                skill_wf = conn.execute("""
+                    SELECT name, category, description FROM skills
+                    WHERE category IN ('dev', 'infrastructure', 'workflow', 'utilities') OR name LIKE '%workflow%' OR name LIKE '%pipeline%'
+                    ORDER BY name ASC LIMIT 25
+                """).fetchall()
+                for row in skill_wf:
+                    workflows.append({
+                        "name": row["name"] if hasattr(row, "keys") else row[0],
+                        "filename": f"Skill: {row['category'] if hasattr(row, 'keys') else row[1]}",
+                        "content": (row["description"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
+            try:
+                expert_rows = conn.execute("""
+                    SELECT display_name, domain, description FROM bach_experts
+                    WHERE is_active = 1
+                    ORDER BY display_name ASC LIMIT 15
+                """).fetchall()
+                for row in expert_rows:
+                    workflows.append({
+                        "name": f"Expert: {row['display_name'] if hasattr(row, 'keys') else row[0]}",
+                        "filename": f"Domain: {row['domain'] if hasattr(row, 'keys') else row[1]}",
+                        "content": (row["description"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
             try:
                 workflow_dir = BACH_DIR / "skills" / "_workflows"
                 if workflow_dir.exists():
@@ -11926,10 +12180,14 @@ async def delete_insurance(ins_id: int):
 @app.get("/usecases", response_class=HTMLResponse)
 async def usecases_page():
     """Usecase Verwaltung."""
+    astro_uc = ASTRO_DIST_DIR / "governance" / "usecases.html"
+    if astro_uc.exists():
+        return FileResponse(astro_uc)
     usecases_file = TEMPLATES_DIR / "usecases.html"
     if usecases_file.exists():
         return FileResponse(usecases_file)
     raise HTTPException(status_code=404, detail="Template usecases.html nicht gefunden")
+
 
 
 @app.get("/api/usecases")

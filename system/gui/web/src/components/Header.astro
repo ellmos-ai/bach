@@ -1,0 +1,283 @@
+---
+// Header.astro - Single Source of Truth Navigation fuer BACH & OCEAN
+import navConfig from "../config/nav_config.json";
+
+interface Props {
+  currentPath?: string;
+}
+
+const { currentPath = "/" } = Astro.props;
+
+function isActive(href: string) {
+  if (!href || href === "#") return false;
+  // Clean query params for base path matching
+  const cleanHref = href.split("?")[0];
+  const cleanCurrent = currentPath.split("?")[0];
+  if (cleanHref === "/" && cleanCurrent === "/") return true;
+  return cleanHref !== "/" && cleanCurrent.startsWith(cleanHref);
+}
+
+function hasActiveChild(item: any) {
+  return item.children && item.children.some((c: any) => isActive(c.href));
+}
+---
+
+<header class="main-header" id="main-header">
+  <div class="header-left" style="display:flex;align-items:center;gap:1.5rem;">
+    <a href="/" class="logo" style="text-decoration: none;">
+      <span class="logo-icon">🎵</span>
+      <span class="logo-text">BACH <span style="font-size:0.75rem;opacity:0.6;font-weight:normal;">v3.13.0</span></span>
+    </a>
+
+    <nav class="main-nav" aria-label="Hauptnavigation">
+      {navConfig.map((item) => (
+        item.children ? (
+          <div class={`nav-dropdown${hasActiveChild(item) ? " active" : ""}`}>
+            <button class={`nav-item nav-dropdown-toggle${hasActiveChild(item) ? " active" : ""}`} type="button">
+              <span class="nav-icon">{item.icon}</span>
+              <span class="nav-label">
+                {item.id === "assistant" ? (
+                  <>
+                    <span class="nav-label-full">Persönlicher Assistent</span>
+                    <span class="nav-label-short">Assistent</span>
+                  </>
+                ) : item.id === "governance" ? (
+                  <>
+                    <span class="nav-label-full">Governance & Control</span>
+                    <span class="nav-label-short">Governance</span>
+                  </>
+                ) : item.id === "domains" ? (
+                  <>
+                    <span class="nav-label-full">Meine Domänen</span>
+                    <span class="nav-label-short">Domänen</span>
+                  </>
+                ) : (
+                  item.label
+                )}
+              </span>
+              <span class="dropdown-arrow">▾</span>
+            </button>
+            <div class="dropdown-menu">
+              {item.children.map((child: any) => (
+                <a
+                  href={child.href}
+                  target={child.target || undefined}
+                  rel={child.target === "_blank" ? "noopener noreferrer" : undefined}
+                  class={`dropdown-item${isActive(child.href) ? " active" : ""}`}
+                >
+                  <span class="dropdown-item-icon">{child.icon}</span>
+                  <div class="dropdown-item-text">
+                    <div class="dropdown-item-title">{child.label}</div>
+                    {child.description && <div class="dropdown-item-desc">{child.description}</div>}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <a href={item.href} class={`nav-item${isActive(item.href) ? " active" : ""}`}>
+            <span class="nav-icon">{item.icon}</span>
+            <span class="nav-label">{item.label}</span>
+          </a>
+        )
+      ))}
+    </nav>
+  </div>
+
+  <div class="header-right" style="display:flex;align-items:center;gap:1.25rem;">
+    <!-- Feste Schnellzugriffe (Kalender & Kontakte immer erreichbar) -->
+    <div class="quick-nav-actions" style="display:flex;align-items:center;gap:0.4rem;">
+      <a href="/life?tab=kalender" class="quick-action-btn" title="Kalender (Termine, Routinen & Aufgaben)" aria-label="Kalender">
+        <span style="font-size:1.15rem;">📅</span>
+      </a>
+      <a href="/kontakte" class="quick-action-btn" title="Kontakte & Netzwerk" aria-label="Kontakte">
+        <span style="font-size:1.15rem;">👥</span>
+      </a>
+    </div>
+
+    <!-- Theme Switcher -->
+    <div class="theme-switcher" id="theme-switcher">
+      <button class="theme-btn" data-theme="dark" title="Dunkler Modus (Dark)" type="button">🌙</button>
+      <button class="theme-btn" data-theme="light" title="Heller Modus (Light)" type="button">☀️</button>
+      <button class="theme-btn" data-theme="ocean" title="Ozean Modus (Ocean)" type="button">🌊</button>
+      <button class="theme-btn" data-theme="warm" title="Warmer Modus (Sepia/Warm)" type="button">🕯️</button>
+    </div>
+
+    <!-- Cluster Status Dot -->
+    <div class="header-status" style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text-muted);">
+      <span class="status-dot" id="header-status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;"></span>
+      <span id="header-status-text">Online</span>
+    </div>
+  </div>
+</header>
+
+<style>
+  .quick-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .quick-action-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .nav-icon {
+    font-size: 0.95rem;
+    margin-right: 0.25rem;
+  }
+  .nav-label-short {
+    display: none;
+  }
+  @media (max-width: 1450px) {
+    .nav-label-full {
+      display: none;
+    }
+    .nav-label-short {
+      display: inline;
+    }
+    .nav-item, .nav-dropdown-toggle {
+      padding: 0.35rem 0.45rem;
+      font-size: 0.78rem;
+    }
+  }
+  @media (max-width: 1250px) {
+    .main-nav {
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .main-nav::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  /* Boundary alignment to eliminate dropdown clipping */
+  .nav-dropdown:first-child .dropdown-menu,
+  .nav-dropdown:nth-child(2) .dropdown-menu {
+    left: 0;
+    transform: none;
+  }
+  .nav-dropdown:last-child .dropdown-menu,
+  .nav-dropdown:nth-last-child(2) .dropdown-menu {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .dropdown-menu {
+    min-width: 250px;
+    max-width: 320px;
+    padding: 0.4rem;
+    box-sizing: border-box;
+  }
+  .dropdown-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-normal);
+    text-decoration: none;
+    transition: background 0.15s ease;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+  .dropdown-item:hover, .dropdown-item.active {
+    background: var(--bg-hover);
+    color: var(--accent);
+  }
+  .dropdown-item-icon {
+    font-size: 1.15rem;
+    line-height: 1.2;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .dropdown-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .dropdown-item-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dropdown-item-desc {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+    max-width: 240px;
+    white-space: normal;
+    word-break: break-word;
+    margin-top: 2px;
+  }
+</style>
+
+<script is:inline>
+  // Theme Manager
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.removeAttribute('data-theme');
+    } else {
+      root.setAttribute('data-theme', theme);
+    }
+    localStorage.setItem('bach-theme', theme);
+
+    // Update button states
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
+    });
+  }
+
+  // Initialize Theme
+  const savedTheme = localStorage.getItem('bach-theme') || 'dark';
+  applyTheme(savedTheme);
+
+  // Wire Theme Buttons
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme');
+      if (theme) applyTheme(theme);
+    });
+  });
+
+  // Dropdown Handling
+  document.querySelectorAll('.nav-dropdown').forEach(dd => {
+    let timer = null;
+    dd.addEventListener('mouseenter', () => {
+      if (timer) clearTimeout(timer);
+      dd.classList.add('open');
+    });
+    dd.addEventListener('mouseleave', () => {
+      timer = setTimeout(() => dd.classList.remove('open'), 200);
+    });
+    const toggle = dd.querySelector('.nav-dropdown-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        dd.classList.toggle('open');
+      });
+    }
+  });
+
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.nav-dropdown')) {
+      document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+    }
+  });
+</script>

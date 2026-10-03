@@ -1,0 +1,1224 @@
+---
+// memory.astro - Kognitiver Memory-Schaltplan & Prozess-Topologie
+// Arbeitsgedächtnismodell (Baddeley) • Zentrale Exekutive mit Sensoren & Messtechnik
+// Selbstkontroll-Guards (Deterministische Skripte & Lebendige LLM-Guards)
+// Berechtigungskontrolle & Hooker-Injektoren (Reine Zustell-Pipeline)
+// Startprompt-Synthese (Einmaliger Boot-Bus) • Langzeitgedächtnis (bach.db)
+import BachLayout from "../layouts/BachLayout.astro";
+
+const mermaidCode = `flowchart TD
+    subgraph ZE ["1. Zentrale Exekutive & Messtechnik"]
+        EXEC["Zentrale Exekutive (Aufsicht & Willensbildung / SAS)"]
+        SENS["Sensoren & Messtechnik (Context-Reader, Token-Monitor, Stress-Detektor)"]
+        EXEC -->|"Aufsichts-Auftrag"| SENS
+    end
+
+    subgraph SK ["2. Selbstkontroll-Mechanismen (Die eigentlichen Kontrolleure)"]
+        DG["Deterministische Skript-Guards (P-001 Git-Sperre, Pfad-Locks, Regex-Filter)"]
+        LG["Lebendige LLM-Guards (/goal Evaluator, Disambiguierung, Konsistenz)"]
+        SENS -->|"Messdaten & Limits"| DG
+        SENS -->|"CoT-Auszüge & Drift"| LG
+    end
+
+    subgraph GATE ["3. Berechtigungskontrolle (Decision Gate)"]
+        DEC{"Injektion freigegeben?"}
+        DG -->|"Skript-Check OK"| DEC
+        LG -->|"Guard-Freigabe"| DEC
+    end
+
+    subgraph HOOK ["4. Hooker (Reine Injektoren / Zustell-Kanal)"]
+        HK["Hooker Injektor-Pipeline (Reine Zustellung ohne eigene Kontrolllogik)"]
+        DEC -->|"Autorisierter Payload (Gedanke / Faktenanker)"| HK
+    end
+
+    subgraph BOOT ["5. Startprompt-Synthese (Einmaliger Start)"]
+        SP["Startprompt: Agent (Rolle + Persona + Skills + Governance) + System + Aufgabe"]
+    end
+
+    subgraph CTX ["6. Zentrum: Aktives Kontextfenster"]
+        KW["Aktives Kontextfenster (Phonologische Schleife & CoT)"]
+        SP -->|"Einmaliger Boot-Bus"| KW
+        HK -->|"Einziger dynamischer Einlass"| KW
+    end
+
+    subgraph MEM ["7. Langzeitgedächtnis (bach.db)"]
+        LTM[("Langzeitgedächtnis (Fakten, Sessions, Lessons)")]
+        LTM -.->|"Pfad A: Boot-Kontext"| SP
+        KW -->|"Pfad B: Aktiver Tool-Pull (z.B. bach mem query)"| LTM
+        LTM -.->|"Pfad C: Reaktiv über Guards"| SK
+    end
+
+    subgraph LEARN ["8. Lern- & Konsolidierungssystem"]
+        CL["Kognitives Lernen (76% Rauschfilter)"]
+        KW -->|"Rohdaten-Strom"| CL
+        CL -->|"Destilliertes Wissen"| LTM
+    end`;
+---
+
+<BachLayout title="Kognitiver Memory-Schaltplan" currentPath="/memory">
+  <!-- Header mit echten kognitiven Status-Indikatoren -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;color:var(--text);">
+        🧠 Kognitiver Memory-Schaltplan & Prozess-Topologie
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Arbeitsgedächtnismodell (Baddeley) • Zentrale Exekutive mit Sensoren & Messtechnik • Selbstkontroll-Guards • Hooker-Zustellpipeline • Langzeitgedächtnis (bach.db)
+      </p>
+    </div>
+
+    <!-- Live Kognitions-Statuschips -->
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+      <span class="badge badge-success" id="chip-sys-status">● Kontextfenster Gesund</span>
+      <span class="badge" style="background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);">👑 Exekutive: SAS Aktiv</span>
+      <span class="badge" style="background:color-mix(in srgb, var(--accent-blue) 15%, transparent);color:var(--accent-blue);border:1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent);">🛡️ Guards: 2-Stufig</span>
+      <span class="badge" style="background:color-mix(in srgb, var(--success) 15%, transparent);color:var(--success);border:1px solid color-mix(in srgb, var(--success) 30%, transparent);">💉 Hooker: Zustell-Bereit</span>
+      <span class="badge" style="background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);" id="chip-tokens">🗣️ 1.420 / 200k Tokens (0.7%)</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 1. PROZESS-VISUALISIERUNG & SCHALTPLAN (THEME-AWARE SVG & MERMAID) -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card process-board" style="margin-bottom:2rem;border:1px solid var(--border);background:var(--bg-card);position:relative;overflow:hidden;padding:1.25rem;">
+
+    <!-- Oberer Steuerungsbalken mit Darstellungs-Umschalter -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem;border-bottom:1px solid var(--border);padding-bottom:0.75rem;">
+      <div style="display:flex;align-items:center;gap:0.6rem;">
+        <span style="font-size:1.3rem;">⚡</span>
+        <div>
+          <h2 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text);">
+            Kognitive Prozess-Topologie: Signale, Sensoren & Injektions-Engpass
+          </h2>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            Klick auf einen Baustein öffnet direkt den zugehörigen Inspektions- und Bearbeitungsbereich darunter.
+          </span>
+        </div>
+      </div>
+
+      <!-- Ansichten-Tabs -->
+      <div class="view-switcher" style="display:flex;gap:0.35rem;background:var(--bg-panel);padding:3px;border-radius:var(--radius-sm);border:1px solid var(--border);">
+        <button class="view-btn active" id="btn-view-svg" onclick="switchView('svg')" type="button">
+          📊 Interaktiver Prozess-Graph
+        </button>
+        <button class="view-btn" id="btn-view-mermaid" onclick="switchView('mermaid')" type="button">
+          🧜‍♀️ Mermaid Live-Diagramm
+        </button>
+        <button class="view-btn" id="btn-view-code" onclick="switchView('code')" type="button">
+          📋 Mermaid-Code & Export
+        </button>
+      </div>
+    </div>
+
+    <!-- ANSICHT 1: INTERAKTIVER VEKTOR-PROZESS-GRAPH (SVG) -->
+    <div id="view-svg-container" class="diagram-viewport" style="width:100%;overflow-x:auto;">
+      <svg id="cognitive-svg" viewBox="0 0 1100 680" style="width:100%;min-width:960px;height:auto;display:block;">
+        <defs>
+          <!-- Marker für Pfeilspitzen (Standard, Accent, Success, Warning) -->
+          <marker id="arrow-default" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--text-dim)"></path>
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent)"></path>
+          </marker>
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent-blue)"></path>
+          </marker>
+          <marker id="arrow-success" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--success)"></path>
+          </marker>
+          <marker id="arrow-warning" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--warning)"></path>
+          </marker>
+        </defs>
+
+        <!-- ── VERBINDUNGSLINIEN (SIGNAL-BUSSE) ── -->
+        <!-- ZE -> Sensoren -->
+        <path d="M 550,56 L 550,86" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrow-accent)" fill="none" class="flow-wire"></path>
+        <text x="558" y="75" class="svg-wire-label" fill="var(--text-muted)" font-size="10">Aufsichts-Auftrag</text>
+
+        <!-- Sensoren -> Guards -->
+        <path d="M 450,135 L 350,175" stroke="var(--border-hover)" stroke-width="2" marker-end="url(#arrow-default)" fill="none" class="flow-wire"></path>
+        <text x="355" y="152" class="svg-wire-label" fill="var(--text-muted)" font-size="9.5">Limits & PreTool</text>
+
+        <path d="M 650,135 L 750,175" stroke="var(--border-hover)" stroke-width="2" marker-end="url(#arrow-default)" fill="none" class="flow-wire"></path>
+        <text x="690" y="152" class="svg-wire-label" fill="var(--text-muted)" font-size="9.5">CoT-Auszüge & Drift</text>
+
+        <!-- Guards -> Berechtigungskontrolle (Diamond) -->
+        <path d="M 350,225 L 490,265" stroke="var(--border-hover)" stroke-width="2" marker-end="url(#arrow-default)" fill="none" class="flow-wire"></path>
+        <path d="M 750,225 L 610,265" stroke="var(--border-hover)" stroke-width="2" marker-end="url(#arrow-default)" fill="none" class="flow-wire"></path>
+
+        <!-- Berechtigungskontrolle -> Hooker (Injektor) -->
+        <path d="M 550,300 L 550,345" stroke="var(--success)" stroke-width="2.5" marker-end="url(#arrow-success)" fill="none" class="flow-wire" stroke-dasharray="4 2"></path>
+        <text x="558" y="325" class="svg-wire-label" fill="var(--success)" font-size="10" font-weight="600">Autorisierter Payload</text>
+
+        <!-- Hooker -> Kontextfenster -->
+        <path d="M 550,395 L 550,440" stroke="var(--success)" stroke-width="3" marker-end="url(#arrow-success)" fill="none" class="flow-wire"></path>
+        <text x="558" y="420" class="svg-wire-label" fill="var(--success)" font-size="10.5" font-weight="bold">Physische Injektion</text>
+
+        <!-- Startprompt -> Kontextfenster (Boot-Bus) -->
+        <path d="M 170,395 L 170,470 L 370,470" stroke="var(--accent-blue)" stroke-width="2.5" marker-end="url(#arrow-blue)" fill="none" class="flow-wire"></path>
+        <text x="180" y="462" class="svg-wire-label" fill="var(--accent-blue)" font-size="10" font-weight="600">Einmaliger Boot-Bus</text>
+
+        <!-- Kontextfenster -> Lernen -->
+        <path d="M 550,520 L 550,565" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-accent)" fill="none" class="flow-wire"></path>
+        <text x="558" y="546" class="svg-wire-label" fill="var(--text-muted)" font-size="10">Rohdaten-Strom</text>
+
+        <!-- Lernen -> Langzeitgedächtnis -->
+        <path d="M 670,590 L 890,590" stroke="var(--success)" stroke-width="2" marker-end="url(#arrow-success)" fill="none" class="flow-wire"></path>
+        <text x="710" y="582" class="svg-wire-label" fill="var(--text-muted)" font-size="10">Destillierte Fakten & Lessons</text>
+
+        <!-- Kontextfenster -> Langzeitgedächtnis (Aktiver Tool-Pull) -->
+        <path d="M 730,475 L 890,475" stroke="var(--warning)" stroke-width="2" marker-end="url(#arrow-warning)" fill="none" class="flow-wire"></path>
+        <text x="745" y="467" class="svg-wire-label" fill="var(--warning)" font-size="10" font-weight="600">Aktiver Tool-Pull (Pull-Request)</text>
+
+        <!-- Langzeitgedächtnis -> Startprompt (Pfad A) -->
+        <path d="M 975,445 L 975,340 L 250,340" stroke="var(--accent-blue)" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow-blue)" fill="none" class="flow-wire"></path>
+        <text x="810" y="334" class="svg-wire-label" fill="var(--accent-blue)" font-size="9.5">Pfad A: Initiales Wissen</text>
+
+        <!-- Langzeitgedächtnis -> Guards (Pfad C) -->
+        <path d="M 975,445 L 975,200 L 870,200" stroke="var(--text-dim)" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrow-default)" fill="none" class="flow-wire"></path>
+        <text x="885" y="193" class="svg-wire-label" fill="var(--text-muted)" font-size="9">Pfad C: Reaktiv</text>
+
+        <!-- ── KNOTEN & ELEMENTE ── -->
+
+        <!-- 1. ZENTRALE EXEKUTIVE -->
+        <g class="svg-node" data-target="ze" style="cursor:pointer;" onclick="selectInspector('ze')">
+          <rect x="350" y="12" width="400" height="44" rx="8" class="node-box node-box-ze"></rect>
+          <text x="550" y="32" text-anchor="middle" class="node-title" font-weight="700" font-size="13">👑 ZENTRALE EXEKUTIVE (Aufsicht & Willensbildung)</text>
+          <text x="550" y="47" text-anchor="middle" class="node-sub" font-size="9.5">Norman & Shallice (SAS) • Miller TOTE (/plan, /goal) • Notfall-Circuit-Breaker</text>
+        </g>
+
+        <!-- 2. SENSOREN & MESSTECHNIK -->
+        <g class="svg-node" data-target="sensors" style="cursor:pointer;" onclick="selectInspector('sensors')">
+          <rect x="360" y="86" width="380" height="48" rx="8" class="node-box"></rect>
+          <text x="550" y="105" text-anchor="middle" class="node-title" font-weight="600" font-size="12">📡 Sensoren & Messtechnik (der Exekutive)</text>
+          <text x="550" y="122" text-anchor="middle" class="node-sub" font-size="9.5">Context-Reader Tool • Token- & Health-Monitor • CoT-Loop & Stress-Detektor</text>
+        </g>
+
+        <!-- 3A. DETERMINISTISCHE SKRIPT-GUARDS -->
+        <g class="svg-node" data-target="guards" style="cursor:pointer;" onclick="selectInspector('guards')">
+          <rect x="180" y="175" width="280" height="52" rx="8" class="node-box"></rect>
+          <text x="320" y="196" text-anchor="middle" class="node-title" font-weight="600" font-size="11.5">⚙️ Deterministische Skript-Guards</text>
+          <text x="320" y="213" text-anchor="middle" class="node-sub" font-size="9">P-001 Push-Sperre • Pfad-Locks • Regex & Limits</text>
+        </g>
+
+        <!-- 3B. LEBENDIGE LLM-GUARDS -->
+        <g class="svg-node" data-target="guards" style="cursor:pointer;" onclick="selectInspector('guards')">
+          <rect x="640" y="175" width="280" height="52" rx="8" class="node-box"></rect>
+          <text x="780" y="196" text-anchor="middle" class="node-title" font-weight="600" font-size="11.5">🧠 Lebendige LLM-Guards (Aufsichts-Modell)</text>
+          <text x="780" y="213" text-anchor="middle" class="node-sub" font-size="9">Goal-Evaluator (/goal) • Disambiguierung • Anti-Konfabulation</text>
+        </g>
+
+        <!-- 4. BERECHTIGUNGSKONTROLLE (DIAMOND) -->
+        <g class="svg-node" data-target="auth" style="cursor:pointer;" onclick="selectInspector('auth')">
+          <polygon points="550,250 630,280 550,310 470,280" class="node-diamond"></polygon>
+          <text x="550" y="278" text-anchor="middle" class="node-title" font-weight="700" font-size="11">Entscheidung</text>
+          <text x="550" y="291" text-anchor="middle" class="node-sub" font-size="8.5">Injektion erlaubt?</text>
+        </g>
+
+        <!-- 5. HOOKER (REINER INJEKTOR) -->
+        <g class="svg-node" data-target="hooker" style="cursor:pointer;" onclick="selectInspector('hooker')">
+          <rect x="400" y="345" width="300" height="50" rx="8" class="node-box node-box-hooker"></rect>
+          <text x="550" y="366" text-anchor="middle" class="node-title" font-weight="700" font-size="12">💉 HOOKER (Reine Injektoren / Zustell-Kanal)</text>
+          <text x="550" y="382" text-anchor="middle" class="node-sub" font-size="9.5">Reines Ausführungsorgan • Keine Kontrolllogik • Sichere Zustellung</text>
+        </g>
+
+        <!-- 6. STARTPROMPT-SYNTHESE (LINKS) -->
+        <g class="svg-node" data-target="start" style="cursor:pointer;" onclick="selectInspector('start')">
+          <rect x="50" y="345" width="280" height="50" rx="8" class="node-box node-box-start"></rect>
+          <text x="190" y="365" text-anchor="middle" class="node-title" font-weight="700" font-size="11.5">🚀 Startprompt-Synthese (Boot-Bus)</text>
+          <text x="190" y="381" text-anchor="middle" class="node-sub" font-size="9">Agent (Rolle+Skills+Governance) + System + Intent</text>
+        </g>
+
+        <!-- 7. DAS ZENTRUM: AKTIVES KONTEXTFENSTER -->
+        <g class="svg-node active-node" data-target="ctx" style="cursor:pointer;" onclick="selectInspector('ctx')">
+          <rect x="370" y="440" width="360" height="80" rx="14" class="node-box node-box-center"></rect>
+          <text x="550" y="468" text-anchor="middle" class="node-title-center" font-weight="800" font-size="15">🗣️ ZENTRUM: AKTIVES KONTEXTFENSTER</text>
+          <text x="550" y="488" text-anchor="middle" class="node-sub-center" font-size="10.5">Phonologische Schleife • CoT-Planung • Arbeitsgedächtnis</text>
+          <text x="550" y="505" text-anchor="middle" class="node-sub-center" font-size="9" fill="var(--accent)">Einlass nur über Boot-Bus (Start) ODER autorisierte Hooker-Injektion!</text>
+        </g>
+
+        <!-- 8. LERN- & KONSOLIDIERUNGSSYSTEM -->
+        <g class="svg-node" data-target="learn" style="cursor:pointer;" onclick="selectInspector('learn')">
+          <rect x="430" y="565" width="240" height="52" rx="8" class="node-box"></rect>
+          <text x="550" y="586" text-anchor="middle" class="node-title" font-weight="700" font-size="11.5">🌙 Kognitives Lernen & Konsolidierung</text>
+          <text x="550" y="603" text-anchor="middle" class="node-sub" font-size="9.5">76% Rauschfilter • Lessons Learned • Best Practices</text>
+        </g>
+
+        <!-- 9. LANGZEITGEDÄCHTNIS (RECHTS UNTEN) -->
+        <g class="svg-node" data-target="ltm" style="cursor:pointer;" onclick="selectInspector('ltm')">
+          <rect x="890" y="445" width="170" height="172" rx="10" class="node-box node-box-db"></rect>
+          <text x="975" y="475" text-anchor="middle" class="node-title" font-weight="700" font-size="12">💾 Langzeitgedächtnis</text>
+          <text x="975" y="492" text-anchor="middle" class="node-sub" font-size="9.5" font-family="monospace">bach.db</text>
+          <line x1="910" y1="504" x2="1040" y2="504" stroke="var(--border)"></line>
+          <text x="920" y="525" class="node-sub" font-size="9">• 3 Zugriffspfade</text>
+          <text x="920" y="545" class="node-sub" font-size="9">• memory_facts</text>
+          <text x="920" y="565" class="node-sub" font-size="9">• memory_lessons</text>
+          <text x="920" y="585" class="node-sub" font-size="9">• memory_sessions</text>
+          <text x="920" y="605" class="node-sub" font-size="9">• memory_working</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- ANSICHT 2: MERMAID LIVE-DIAGRAMM -->
+    <div id="view-mermaid-container" style="display:none;padding:1rem;background:var(--bg-panel);border-radius:var(--radius-md);overflow-x:auto;">
+      <div id="mermaid-render-target" style="display:flex;justify-content:center;">
+        <span style="color:var(--text-muted);font-size:0.875rem;">Lade Mermaid Prozess-Graph...</span>
+      </div>
+    </div>
+
+    <!-- ANSICHT 3: MERMAID CODE & EXPORT -->
+    <div id="view-code-container" style="display:none;padding:1rem;background:var(--bg-panel);border-radius:var(--radius-md);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+        <strong style="font-size:0.875rem;color:var(--text);">Mermaid Syntax (Vollständig & Valide):</strong>
+        <button class="btn btn-secondary btn-sm" onclick="copyMermaidCode()" type="button" id="btn-copy-mermaid">
+          📋 Code kopieren
+        </button>
+      </div>
+      <pre id="mermaid-raw-code" style="background:var(--bg-dark);color:var(--text);padding:1rem;border-radius:var(--radius-sm);font-family:monospace;font-size:0.8rem;overflow-x:auto;border:1px solid var(--border);line-height:1.5;">{mermaidCode}</pre>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 2. SYNCHRONISIERTE INSPEKTOR-TABS (TIEFENINSPEKTION & DETAILS) -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card" style="border:1px solid var(--border);padding:1.5rem;background:var(--bg-card);">
+
+    <!-- Tab Navigation -->
+    <div style="display:flex;gap:0.4rem;border-bottom:1px solid var(--border);padding-bottom:0.75rem;margin-bottom:1.5rem;overflow-x:auto;">
+      <button class="insp-tab-btn active" id="tab-btn-ctx" onclick="selectInspector('ctx')">🗣️ 1. Kontextfenster</button>
+      <button class="insp-tab-btn" id="tab-btn-ze" onclick="selectInspector('ze')">👑 2. Zentrale Exekutive</button>
+      <button class="insp-tab-btn" id="tab-btn-sensors" onclick="selectInspector('sensors')">📡 3. Sensoren & Messtechnik</button>
+      <button class="insp-tab-btn" id="tab-btn-guards" onclick="selectInspector('guards')">🛡️ 4. Selbstkontroll-Guards</button>
+      <button class="insp-tab-btn" id="tab-btn-auth" onclick="selectInspector('auth')">⚖️ 5. Berechtigung & Hooker</button>
+      <button class="insp-tab-btn" id="tab-btn-start" onclick="selectInspector('start')">🚀 6. Startprompt</button>
+      <button class="insp-tab-btn" id="tab-btn-learn" onclick="selectInspector('learn')">🌙 7. Lernen</button>
+      <button class="insp-tab-btn" id="tab-btn-ltm" onclick="selectInspector('ltm')">💾 8. Langzeitgedächtnis</button>
+    </div>
+
+    <!-- PANEL 1: ZENTRUM - AKTIVES KONTEXTFENSTER -->
+    <div class="insp-panel" id="panel-ctx" style="display:block;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+        <div>
+          <h3 style="margin:0;font-size:1.2rem;color:var(--text);">🗣️ Das Aktive Kontextfenster (Phonologische Schleife)</h3>
+          <span style="font-size:0.8rem;color:var(--text-muted);">
+            Das Herzstück des Modells: Arbeitsgedächtnismodell (Baddeley) • CoT-Planung & Innerer Monolog
+          </span>
+        </div>
+        <span class="badge badge-accent">1.420 / 200.000 Tokens (0.71%)</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;margin-bottom:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Mentale Gesundheit & Puffer</h4>
+          <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:var(--text-muted);">Token-Sparmodus:</span>
+              <strong style="color:var(--success);">Normalbetrieb (&lt;10% belegt)</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:var(--text-muted);">PreCompact-Frühwarnung:</span>
+              <strong style="color:var(--success);">Inaktiv (Puffer frei)</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:var(--text-muted);">Clean Handoff (Übergabe):</span>
+              <strong style="color:var(--accent-blue);">Bereit bei &gt;80% Füllstand</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Das Grundgesetz der Laufzeit</h4>
+          <p style="font-size:0.825rem;color:var(--text-muted);margin-bottom:0.5rem;line-height:1.5;">
+            Nach dem initialen Booten gibt es <strong>KEINEN unkontrollierten Input</strong> direkt in das Kontextfenster.
+            Alles, was nachträglich hinein will, muss zwingend über die <strong>Guards freigegeben</strong> und durch die <strong>Hooker-Pipeline</strong> zugestellt werden!
+          </p>
+          <span class="badge badge-success">Fail-Closed Ingress-Schutz Aktiv</span>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Aktiver Chain-of-Thought (Innerer Sprachstrom)</h4>
+        <pre style="background:var(--bg-dark);color:var(--text);padding:0.75rem;border-radius:var(--radius-sm);font-size:0.8rem;font-family:monospace;margin:0;overflow-x:auto;border:1px solid var(--border);">[Stream:CenterHub] Startprompt verifiziert: Rolle 'Senior Software Architect' gebootet.
+[Stream:CenterHub] Sensoren aktiv -> Messtechnik meldet 0 Loops, 0 Stress.
+[Stream:CenterHub] PreToolUse-Guard prüft Befehl -> P-001 Lock intakt (0 Push-Aktivitäten).
+[Stream:CenterHub] Kontextfenster stabil. Phonologische Schleife arbeitet fehlerfrei.</pre>
+      </div>
+    </div>
+
+    <!-- PANEL 2: ZENTRALE EXEKUTIVE -->
+    <div class="insp-panel" id="panel-ze" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">👑 Zentrale Exekutive (Aufsicht & Willensbildung)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Theoretische Fundierung: <strong>Norman & Shallice (SAS)</strong> für Aufsicht und Notfalleingriffe, <strong>Miller, Galanter & Pribram (TOTE)</strong> für Zielkontrolle.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Supervisory Attentional System (SAS)</h4>
+          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
+            <li><strong style="color:var(--text);">Policies & Governance:</strong> Verbindliche P-001 (Fail-Closed) bis P-007</li>
+            <li><strong style="color:var(--text);">Notfallabschaltung (Circuit Breaker):</strong> Sofortiger Stop bei Regelverletzungen</li>
+            <li><strong style="color:var(--text);">Decision-Avatar:</strong> Einbindung des Menschen bei P-10 Clicker-Entscheidungen</li>
+          </ul>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Kybernetischer TOTE-Regelkreis</h4>
+          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
+            <li><strong style="color:var(--text);">Test 1:</strong> Soll-Zustand erfassen (/goal Checkliste)</li>
+            <li><strong style="color:var(--text);">Operate:</strong> Teilschritte ausführen (/plan Dekomposition)</li>
+            <li><strong style="color:var(--text);">Test 2:</strong> Ergebnis gegen Kriterienkatalog prüfen</li>
+            <li><strong style="color:var(--text);">Exit:</strong> Beenden erst nach belegter Zielerreichung</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 3: SENSOREN & MESSTECHNIK -->
+    <div class="insp-panel" id="panel-sensors" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">📡 Sensoren & Messtechnik (der Exekutive)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Die Messtechnik beobachtet das Modell von außen und innen, ohne selbst Aktionen zu sperren oder zu injizieren. Sie liefert die Rohbefunde an die Guards.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--text);font-size:0.9rem;">1. Context-Reader Tool</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Liest kontinuierlich Auszüge des Kontextfensters zur kognitiven Lagebeurteilung.</p>
+          <span class="badge badge-success">Messung: Nominal</span>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--text);font-size:0.9rem;">2. Token- & Health-Monitor</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Überwacht Token-Verbrauch, Belegungsquote und warnt vor Füllständen &gt;80%.</p>
+          <span class="badge badge-success">0.71% Belegt</span>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--text);font-size:0.9rem;">3. CoT-Loop & Drift-Detektor</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Erkennt zirkuläre Gedankenschleifen, repetitive Suchanfragen und zögerliche Formulierungen.</p>
+          <span class="badge badge-success">0 Loops erkannt</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 4: SELBSTKONTROLL-GUARDS -->
+    <div class="insp-panel" id="panel-guards" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">🛡️ Selbstkontroll-Guards (Die eigentlichen Kontrolleure)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Hier liegt die Entscheidungskompetenz: Zweistufig getrennt in schnelle deterministische Skripte und reflexive LLM-Aufsicht.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">A) Deterministische Skript-Guards</h4>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+            Regelbasierte, extrem schnelle Prüfungen vor jeder Werkzeugausführung:
+          </p>
+          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
+            <li><strong style="color:var(--text);">PreToolUse-Guard:</strong> Erzwingt P-001 (Kein unautorisierter Git-Push)</li>
+            <li><strong style="color:var(--text);">Pfad- & Lock-Master:</strong> Blockiert Schreibzugriffe auf geschützte Pfade</li>
+            <li><strong style="color:var(--text);">Regex & Leak-Filter:</strong> Filtert Secret-Muster und Token-Spikes</li>
+          </ul>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">B) Lebendige LLM-Guards (Aufsichts-Modell)</h4>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+            Eigenständige Supervisor-Modelle (wie beim <code>/goal</code>-Prüfer):
+          </p>
+          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
+            <li><strong style="color:var(--text);">Goal-Evaluator:</strong> Verifiziert Zwischenergebnisse gegen Kriterien</li>
+            <li><strong style="color:var(--text);">Disambiguierungs-Wächter:</strong> Erkennt Akkommodationsdruck und triggert <code>/grill-me</code></li>
+            <li><strong style="color:var(--text);">Anti-Konfabulations-Gate:</strong> Vergleicht Claims gegen reale Quellen</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 5: BERECHTIGUNG & HOOKER -->
+    <div class="insp-panel" id="panel-auth" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">⚖️ Berechtigungskontrolle & Hooker (Zustell-Pipeline)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Klare Aufgabentrennung: Das Berechtigungsgatter erteilt die Freigabe – der Hooker ist das reine Ausführungsorgan zur Zustellung.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Berechtigungs-Entscheidungsgatter</h4>
+          <p style="font-size:0.825rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.75rem;">
+            Logik: <code>[Sensor-Befund] + [Skript- & LLM-Guard Pass] ➔ Autorisierung</code>.
+            Erst wenn beide Guards zustimmen, wird der Payload (z. B. ein korrigierender Gedanke oder ein Faktenanker) freigegeben.
+          </p>
+          <span class="badge badge-success">Fail-Closed Gate Aktiv</span>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Der Hooker als reine Zustell-Pipeline</h4>
+          <p style="font-size:0.825rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.75rem;">
+            Der Hooker besitzt <strong>keine eigene Kontrolllogik</strong>. Er empfängt das autorisierte Paket und führt die technische Injektion direkt in das Kontextfenster aus.
+          </p>
+          <div style="font-size:0.75rem;font-family:monospace;background:var(--bg-dark);padding:0.5rem;border-radius:4px;border:1px solid var(--border);">
+            Payload freigegeben ➔ Hooker liefert: [Gedanke/Fakt] ➔ Kontextfenster
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 6: STARTPROMPT-SYNTHESE -->
+    <div class="insp-panel" id="panel-start" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">🚀 Startprompt-Synthese (Einmaliger Boot-Bus)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Die Syntheseformel vor Session-Start. Nach dem Booten ist dieser Bus geschlossen.
+      </p>
+
+      <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.25rem;margin-bottom:1rem;">
+        <div style="font-family:monospace;font-size:1rem;color:var(--text);margin-bottom:0.5rem;">
+          Startprompt = <strong style="color:var(--accent);">Agent</strong> + (<strong style="color:var(--accent-blue);">Systemprompt</strong>) + (<strong style="color:var(--warning);">Aufgabenprompt</strong>)
+        </div>
+        <div style="font-family:monospace;font-size:0.875rem;color:var(--text-muted);">
+          wobei: <strong style="color:var(--accent);">Agent</strong> = Rolle + Persona + Skills + Governance (P-001/P-004 Locks)
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:0.75rem;font-size:0.825rem;">
+        <div style="background:var(--bg-panel);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <strong style="color:var(--text);">Agenten-Fabrik:</strong> Rolle, Modus, Tool-Whitelists
+        </div>
+        <div style="background:var(--bg-panel);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <strong style="color:var(--text);">Systemprompt:</strong> Host-Pfade, Windows/Mac-Besonderheiten
+        </div>
+        <div style="background:var(--bg-panel);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <strong style="color:var(--text);">Disambiguitäts-Leitplanke:</strong> „Nichtwissen offen benennen ist sicher“
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 7: KOGNITIVES LERNEN -->
+    <div class="insp-panel" id="panel-learn" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">🌙 Kognitives Lernen & Rauschreduktion</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        <strong>Ohne Lernen kein Langzeitgedächtnis!</strong> Rohtext der Session wird analysiert, verdichtet und nach Rauschfilterung persisiert.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Duale Erfolgs-Achsen</h4>
+          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
+            <li><strong style="color:var(--text);">Achse 1: Nutzer-Erfolg:</strong> Operator-Intent getroffen? Disambiguierung geglückt?</li>
+            <li><strong style="color:var(--text);">Achse 2: Aufgaben-Erfolg:</strong> Tests grün? Keine Lock-Verletzungen? Token-Effizienz?</li>
+          </ul>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Filter & Destillation</h4>
+          <p style="font-size:0.825rem;color:var(--text-muted);line-height:1.5;">
+            76% Rauschreduktion: Rohtext ➔ Speicherung an Meilensteinen ➔ Lesson Learned ➔ Best Practice ➔ Eintrag in <code>bach.db</code>.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 8: LANGZEITGEDÄCHTNIS -->
+    <div class="insp-panel" id="panel-ltm" style="display:none;">
+      <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">💾 Langzeitgedächtnis (3 Zugriffspfade in bach.db)</h3>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
+        Die drei sauberen Wege zwischen Arbeitsgedächtnis und persistenter Datenbank:
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;margin-bottom:1rem;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--accent-blue);font-size:0.9rem;">Pfad A: Boot-Kontext</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Wird einmalig beim Start in den Startprompt kompiliert.</p>
+        </div>
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--warning);font-size:0.9rem;">Pfad B: Aktiver Tool-Pull</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Modell sucht aktiv via <code>bach mem query</code> im inneren Monolog.</p>
+        </div>
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+          <strong style="color:var(--success);font-size:0.9rem;">Pfad C: Reaktiv über Guards</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">Sensor meldet Bedarf ➔ Guard autorisiert ➔ Hooker injiziert.</p>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Aktive Datenbank-Bestände (bach.db)</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:0.5rem;text-align:center;">
+          <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-facts">50</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">memory_facts</div>
+          </div>
+          <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-lessons">50</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">memory_lessons</div>
+          </div>
+          <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-sessions">9.359</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">memory_sessions</div>
+          </div>
+          <div style="padding:0.5rem;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="stat-working">136</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">memory_working</div>
+          </div>
+        </div>
+
+        <!-- Interaktiver Tabellen-Inspektor & Editor fuer bach.db -->
+        <div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1.25rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+            <h4 style="margin:0;font-size:1.05rem;color:var(--text);display:flex;align-items:center;gap:0.4rem;">
+              <span>🔍</span> Interaktive bach.db Tabellen-Inspektion & Bearbeitung
+            </h4>
+            <div style="display:flex;gap:0.35rem;">
+              <button class="db-tab-btn active" data-dbtab="facts" onclick="switchDbTab('facts')">Fakten</button>
+              <button class="db-tab-btn" data-dbtab="lessons" onclick="switchDbTab('lessons')">Lessons</button>
+              <button class="db-tab-btn" data-dbtab="working" onclick="switchDbTab('working')">Working</button>
+              <button class="db-tab-btn" data-dbtab="sessions" onclick="switchDbTab('sessions')">Sessions</button>
+            </div>
+          </div>
+
+          <!-- TAB: FACTS -->
+          <div id="dbtab-facts" class="dbtab-pane">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+              <span style="font-size:0.8rem;color:var(--text-muted);">Tabelle: <code>memory_facts</code></span>
+              <button class="btn btn-sm btn-primary" onclick="toggleAddFactForm()">+ Neuer Fakt</button>
+            </div>
+            <!-- Add Fact Form -->
+            <form id="form-add-fact" style="display:none;background:rgba(255,255,255,0.02);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:1rem;" onsubmit="event.preventDefault(); submitNewFact();">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                <div>
+                  <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Kategorie</label>
+                  <input type="text" id="new-fact-cat" placeholder="z. B. system, user, architektur" required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Schlüssel (Key)</label>
+                  <input type="text" id="new-fact-key" placeholder="z. B. preferred_os, git_guard" required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+                </div>
+              </div>
+              <div style="margin-bottom:0.75rem;">
+                <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Wert (Value)</label>
+                <input type="text" id="new-fact-val" placeholder="Wert oder Inhalt des Fakts..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+              </div>
+              <button type="submit" class="btn btn-sm btn-primary">Fakt speichern</button>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAddFactForm()">Abbrechen</button>
+            </form>
+            <div id="facts-table-container">
+              <p class="loading-state">Lade Fakten...</p>
+            </div>
+          </div>
+
+          <!-- TAB: LESSONS -->
+          <div id="dbtab-lessons" class="dbtab-pane" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+              <span style="font-size:0.8rem;color:var(--text-muted);">Tabelle: <code>memory_lessons</code></span>
+              <button class="btn btn-sm btn-primary" onclick="toggleAddLessonForm()">+ Neue Lesson</button>
+            </div>
+            <!-- Add Lesson Form -->
+            <form id="form-add-lesson" style="display:none;background:rgba(255,255,255,0.02);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:1rem;" onsubmit="event.preventDefault(); submitNewLesson();">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                <div>
+                  <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Kategorie</label>
+                  <input type="text" id="new-lesson-cat" placeholder="z. B. best_practice, bugfix, workflow" required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Titel / Problem</label>
+                  <input type="text" id="new-lesson-title" placeholder="Kurzbeschreibung..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+                </div>
+              </div>
+              <div style="margin-bottom:0.75rem;">
+                <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Lösung / Best Practice (Solution)</label>
+                <textarea id="new-lesson-solution" rows="2" placeholder="Gefundene Lösung oder Verhaltensregel..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);"></textarea>
+              </div>
+              <button type="submit" class="btn btn-sm btn-primary">Lesson speichern</button>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAddLessonForm()">Abbrechen</button>
+            </form>
+            <div id="lessons-table-container">
+              <p class="loading-state">Lade Lessons...</p>
+            </div>
+          </div>
+
+          <!-- TAB: WORKING -->
+          <div id="dbtab-working" class="dbtab-pane" style="display:none;">
+            <div id="working-table-container">
+              <p class="loading-state">Lade Arbeitsgedächtnis...</p>
+            </div>
+          </div>
+
+          <!-- TAB: SESSIONS -->
+          <div id="dbtab-sessions" class="dbtab-pane" style="display:none;">
+            <div id="sessions-table-container">
+              <p class="loading-state">Lade Sitzungen...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</BachLayout>
+
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     THEME-AWARE STYLING (DARK, LIGHT, OCEAN, WARM)
+     ═══════════════════════════════════════════════════════════════ */
+
+  .process-board {
+    background: var(--bg-card);
+    transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+  }
+
+  /* View Switcher Buttons */
+  .view-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--duration) var(--ease);
+  }
+
+  .view-btn.active {
+    background: var(--bg-card);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .view-btn:hover:not(.active) {
+    color: var(--text);
+  }
+
+  /* SVG Node Styling */
+  .node-box {
+    fill: var(--bg-panel);
+    stroke: var(--border);
+    stroke-width: 1.5;
+    transition: all 180ms ease;
+  }
+
+  .node-diamond {
+    fill: var(--bg-panel);
+    stroke: var(--warning);
+    stroke-width: 1.5;
+    transition: all 180ms ease;
+  }
+
+  .node-box-ze {
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+
+  .node-box-hooker {
+    stroke: var(--success);
+    stroke-width: 2;
+  }
+
+  .node-box-start {
+    stroke: var(--accent-blue);
+    stroke-width: 1.5;
+  }
+
+  .node-box-center {
+    fill: var(--bg-elevated);
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+
+  .node-box-db {
+    stroke: var(--border);
+  }
+
+  .node-title {
+    fill: var(--text);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  .node-sub {
+    fill: var(--text-muted);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  .node-title-center {
+    fill: var(--text);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  .node-sub-center {
+    fill: var(--text-muted);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  .svg-wire-label {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  /* Hover & Active Node State */
+  .svg-node:hover .node-box,
+  .svg-node:hover .node-diamond {
+    stroke: var(--accent-light);
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.15));
+  }
+
+  .svg-node.active-node .node-box,
+  .svg-node.active-node .node-diamond {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+
+  /* Inspector Tabs */
+  .insp-tab-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0.5rem 0.85rem;
+    font-size: 0.825rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--duration) var(--ease);
+  }
+
+  .insp-tab-btn.active {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border-bottom: 2px solid var(--accent);
+  }
+
+  .insp-tab-btn:hover:not(.active) {
+    color: var(--text);
+    background: var(--bg-panel);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     HIGH-CONTRAST LIGHT MODE SPECIFICS
+     ═══════════════════════════════════════════════════════════════ */
+  :global([data-theme="light"]) .process-board {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  }
+
+  :global([data-theme="light"]) .node-box {
+    fill: #ffffff;
+    stroke: #cbd5e1;
+  }
+
+  :global([data-theme="light"]) .node-diamond {
+    fill: #ffffff;
+    stroke: #d97706;
+  }
+
+  :global([data-theme="light"]) .node-box-center {
+    fill: #f8fafc;
+    stroke: #c83a4e;
+  }
+
+  :global([data-theme="light"]) .node-box-ze {
+    stroke: #c83a4e;
+  }
+
+  :global([data-theme="light"]) .node-box-hooker {
+    stroke: #16a34a;
+  }
+
+  :global([data-theme="light"]) .node-title,
+  :global([data-theme="light"]) .node-title-center {
+    fill: #0f172a;
+  }
+
+  :global([data-theme="light"]) .node-sub,
+  :global([data-theme="light"]) .node-sub-center {
+    fill: #475569;
+  }
+
+  :global([data-theme="light"]) .svg-wire-label {
+    fill: #334155;
+  }
+
+  :global([data-theme="light"]) .flow-wire {
+    opacity: 0.9;
+  }
+</style>
+
+<script is:inline>
+  // ═══════════════════════════════════════════════════════════════
+  // CLIENT INTERACTIVITY: VIEW SWITCHER & INSPECTOR TABS
+  // ═══════════════════════════════════════════════════════════════
+
+  function selectInspector(tabKey) {
+    // 1. Alle Tabs deselektieren
+    document.querySelectorAll('.insp-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.insp-panel').forEach(p => p.style.display = 'none');
+
+    // 2. Ziel-Tab aktivieren
+    const targetBtn = document.getElementById('tab-btn-' + tabKey);
+    const targetPanel = document.getElementById('panel-' + tabKey);
+    if (targetBtn) targetBtn.classList.add('active');
+    if (targetPanel) targetPanel.style.display = 'block';
+
+    // 3. SVG Node hervorheben
+    document.querySelectorAll('.svg-node').forEach(node => {
+      node.classList.remove('active-node');
+      if (node.getAttribute('data-target') === tabKey) {
+        node.classList.add('active-node');
+      }
+    });
+  }
+
+  function switchView(viewMode) {
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('btn-view-' + viewMode);
+    if (btn) btn.classList.add('active');
+
+    const svgC = document.getElementById('view-svg-container');
+    const mrmC = document.getElementById('view-mermaid-container');
+    const cdeC = document.getElementById('view-code-container');
+
+    if (svgC) svgC.style.display = (viewMode === 'svg') ? 'block' : 'none';
+    if (mrmC) mrmC.style.display = (viewMode === 'mermaid') ? 'block' : 'none';
+    if (cdeC) cdeC.style.display = (viewMode === 'code') ? 'block' : 'none';
+
+    if (viewMode === 'mermaid') {
+      renderMermaidDiagram();
+    }
+  }
+
+  // Mermaid Rendering mit Theme-Anpassung
+  let mermaidLoaded = false;
+  async function renderMermaidDiagram() {
+    const target = document.getElementById('mermaid-render-target');
+    if (!target) return;
+
+    try {
+      const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      const themeName = isLight ? 'default' : 'dark';
+
+      if (!mermaidLoaded) {
+        const module = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+        window.mermaid = module.default;
+        mermaidLoaded = true;
+      }
+
+      window.mermaid.initialize({
+        startOnLoad: false,
+        theme: themeName,
+        securityLevel: 'loose',
+        flowchart: { curve: 'basis', htmlLabels: true }
+      });
+
+      const rawCode = document.getElementById('mermaid-raw-code').innerText;
+      const { svg } = await window.mermaid.render('mermaid-svg-chart', rawCode);
+      target.innerHTML = svg;
+    } catch (err) {
+      target.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;padding:1rem;">
+        Mermaid-Renderer offline oder blockiert. Nutze den interaktiven Prozess-Graphen. (Info: ${err.message})
+      </div>`;
+    }
+  }
+
+  function copyMermaidCode() {
+    const raw = document.getElementById('mermaid-raw-code').innerText;
+    navigator.clipboard.writeText(raw).then(() => {
+      const btn = document.getElementById('btn-copy-mermaid');
+      if (btn) {
+        btn.innerText = '✅ Kopiert!';
+        setTimeout(() => { btn.innerText = '📋 Code kopieren'; }, 2000);
+      }
+    });
+  }
+
+  // Theme-Beobachter für SVG und Mermaid
+  const themeObserver = new MutationObserver(() => {
+    const mrmC = document.getElementById('view-mermaid-container');
+    if (mrmC && mrmC.style.display !== 'none' && mermaidLoaded) {
+      renderMermaidDiagram();
+    }
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // Initialdaten laden
+  async function loadCognitiveState() {
+    try {
+      const res = await fetch('/api/memory/cognitive-state');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.langzeit_gedaechtnis) {
+          const lzg = data.langzeit_gedaechtnis;
+          if (lzg.facts) document.getElementById('stat-facts').innerText = lzg.facts.count;
+          if (lzg.lessons) document.getElementById('stat-lessons').innerText = lzg.lessons.count;
+          if (lzg.sessions) document.getElementById('stat-sessions').innerText = lzg.sessions.count.toLocaleString();
+          if (lzg.working) document.getElementById('stat-working').innerText = lzg.working.count;
+        }
+      }
+    } catch (e) {
+      // Fallback auf statische Werte
+    }
+  }
+
+  // Interaktive DB Tabellen Umschaltung & CRUD
+  function switchDbTab(tab) {
+    document.querySelectorAll('.db-tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-dbtab') === tab);
+    });
+    document.querySelectorAll('.dbtab-pane').forEach(p => p.style.display = 'none');
+    const target = document.getElementById('dbtab-' + tab);
+    if (target) target.style.display = 'block';
+
+    if (tab === 'facts') loadFactsTable();
+    else if (tab === 'lessons') loadLessonsTable();
+    else if (tab === 'working') loadWorkingTable();
+    else if (tab === 'sessions') loadSessionsTable();
+  }
+
+  function toggleAddFactForm() {
+    const f = document.getElementById('form-add-fact');
+    if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function toggleAddLessonForm() {
+    const f = document.getElementById('form-add-lesson');
+    if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function loadFactsTable() {
+    const container = document.getElementById('facts-table-container');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/facts?limit=50');
+      const data = await res.json();
+      const facts = data.facts || [];
+      if (!facts.length) {
+        container.innerHTML = '<p class="text-muted" style="padding:1rem;">Keine Fakten in memory_facts gefunden.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table" style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">ID</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Kategorie</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Key</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Value</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Konfidenz</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${facts.map(f => `
+              <tr>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${f.id}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${f.category || 'general'}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${f.key}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all;">${f.value}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${(f.confidence || 1.0).toFixed(2)}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteFact(${f.id})">Löschen</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+    }
+  }
+
+  async function submitNewFact() {
+    const category = document.getElementById('new-fact-cat').value.trim();
+    const key = document.getElementById('new-fact-key').value.trim();
+    const value = document.getElementById('new-fact-val').value.trim();
+    if (!key || !value) return;
+    try {
+      const res = await fetch('/api/memory/facts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, key, value, confidence: 1.0 })
+      });
+      if (res.ok) {
+        toggleAddFactForm();
+        document.getElementById('new-fact-key').value = '';
+        document.getElementById('new-fact-val').value = '';
+        loadFactsTable();
+        loadCognitiveState();
+      } else {
+        alert('Fehler beim Speichern des Fakts');
+      }
+    } catch (e) {
+      alert('Netzwerkfehler: ' + e.message);
+    }
+  }
+
+  async function deleteFact(id) {
+    if (!confirm('Fakt wirklich löschen?')) return;
+    try {
+      const res = await fetch('/api/memory/facts/' + id, { method: 'DELETE' });
+      if (res.ok) {
+        loadFactsTable();
+        loadCognitiveState();
+      }
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  async function loadLessonsTable() {
+    const container = document.getElementById('lessons-table-container');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/lessons?limit=50');
+      const data = await res.json();
+      const lessons = data.lessons || [];
+      if (!lessons.length) {
+        container.innerHTML = '<p class="text-muted" style="padding:1rem;">Keine aktiven Lessons in memory_lessons.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table" style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">ID</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Kategorie</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Titel / Problem</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Lösung / Best Practice</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Aktiv</th>
+              <th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lessons.map(l => `
+              <tr>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${l.id}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${l.category || 'general'}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${l.title}</strong></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);max-width:320px;word-break:break-word;">${l.content || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge ${l.is_active ? 'badge-success' : 'badge-secondary'}">${l.is_active ? 'Ja' : 'Nein'}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);white-space:nowrap;">
+                  <button class="btn btn-sm btn-secondary" style="padding:0.2rem 0.5rem;" onclick="toggleLesson(${l.id})">Umschalten</button>
+                  <button class="btn btn-sm btn-secondary" style="color:var(--danger);padding:0.2rem 0.5rem;" onclick="deleteLesson(${l.id})">Löschen</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+    }
+  }
+
+  async function submitNewLesson() {
+    const category = document.getElementById('new-lesson-cat').value.trim();
+    const title = document.getElementById('new-lesson-title').value.trim();
+    const solution = document.getElementById('new-lesson-solution').value.trim();
+    if (!title || !solution) return;
+    try {
+      const res = await fetch('/api/memory/lessons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, title, solution })
+      });
+      if (res.ok) {
+        toggleAddLessonForm();
+        document.getElementById('new-lesson-title').value = '';
+        document.getElementById('new-lesson-solution').value = '';
+        loadLessonsTable();
+        loadCognitiveState();
+      } else {
+        alert('Fehler beim Speichern der Lesson');
+      }
+    } catch (e) {
+      alert('Netzwerkfehler: ' + e.message);
+    }
+  }
+
+  async function toggleLesson(id) {
+    try {
+      const res = await fetch('/api/memory/lessons/' + id + '/toggle', { method: 'POST' });
+      if (res.ok) {
+        loadLessonsTable();
+        loadCognitiveState();
+      }
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  async function deleteLesson(id) {
+    if (!confirm('Lesson wirklich löschen?')) return;
+    try {
+      const res = await fetch('/api/memory/lessons/' + id, { method: 'DELETE' });
+      if (res.ok) {
+        loadLessonsTable();
+        loadCognitiveState();
+      }
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  async function loadWorkingTable() {
+    const container = document.getElementById('working-table-container');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/working');
+      const data = await res.json();
+      const items = data.working || [];
+      container.innerHTML = items.length ? `
+        <table class="data-table" style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead><tr><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">ID</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Typ</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Inhalt</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Erstellt</th></tr></thead>
+          <tbody>
+            ${items.map(w => `
+              <tr>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${w.id}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><span class="badge badge-accent">${w.type || 'context'}</span></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.content}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${w.created_at || '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="text-muted" style="padding:1rem;">Arbeitsgedächtnis aktuell leer.</p>';
+    } catch (e) {
+      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+    }
+  }
+
+  async function loadSessionsTable() {
+    const container = document.getElementById('sessions-table-container');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/sessions?limit=20');
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      container.innerHTML = sessions.length ? `
+        <table class="data-table" style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead><tr><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">ID</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Session ID</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Start</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Ende</th><th style="padding:0.5rem;text-align:left;border-bottom:1px solid var(--border);">Summary</th></tr></thead>
+          <tbody>
+            ${sessions.map(s => `
+              <tr>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">#${s.id}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><code>${s.session_id ? s.session_id.substring(0, 16) + '...' : '-'}</code></td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.started_at || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);">${s.ended_at || '-'}</td>
+                <td style="padding:0.5rem;border-bottom:1px solid var(--border);"><strong>${s.summary || 'Arbeitssitzung'}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="text-muted" style="padding:1rem;">Keine Sitzungen verzeichnet.</p>';
+    } catch (e) {
+      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadCognitiveState();
+    loadFactsTable();
+  });
+</script>

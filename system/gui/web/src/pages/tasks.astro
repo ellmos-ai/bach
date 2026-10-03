@@ -1,0 +1,245 @@
+---
+// tasks.astro - Das moderne BACH Aufgabenboard mit Filterung
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Aufgaben & Tasks" currentPath="/tasks">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        📋 Aufgaben & Taskboard
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Zentrales Aufgabenmanagement • Mac Studio Master-DB • Trennung zwischen manuellen & automatisierten Tickets
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:0.5rem;">
+      <button class="btn btn-primary" id="btn-new-task" onclick="document.getElementById('modal-new-task').classList.remove('hidden')">
+        <span>+</span> Neuer Task
+      </button>
+      <button class="btn" onclick="loadTasks()">
+        <span>🔄</span> Aktualisieren
+      </button>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="card" style="padding:0.75rem 1.25rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+    <div style="display:flex;gap:0.5rem;" id="filter-buttons">
+      <button class="btn btn-primary filter-btn active" data-filter="all">Alle Tasks</button>
+      <button class="btn filter-btn" data-filter="user">👤 Persönlich (User)</button>
+      <button class="btn filter-btn" data-filter="auto">🤖 Automatisiert (Ticket-Master / Worker)</button>
+      <button class="btn filter-btn" data-filter="open">⏳ Nur Offene</button>
+      <button class="btn filter-btn" data-filter="done">✅ Erledigte</button>
+    </div>
+    <div style="color:var(--text-muted);font-size:0.85rem;" id="tasks-count-badge">
+      Lade...
+    </div>
+  </div>
+
+  <!-- Task List -->
+  <div class="card">
+    <div id="tasks-table-container">
+      <p style="text-align:center;padding:3rem;color:var(--text-muted);">Lade Tasks vom Cluster...</p>
+    </div>
+  </div>
+
+  <!-- New Task Modal (hidden by default) -->
+  <div id="modal-new-task" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;">
+    <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:550px;padding:2rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:1rem;color:var(--text);">✨ Neuen Task anlegen</h2>
+
+      <form id="form-new-task" onsubmit="submitNewTask(event)" style="display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Aufgabe</label>
+          <input type="text" id="task-title" required style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" placeholder="z. B. Steuererklärung prüfen" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Zuweisung (Assignee)</label>
+            <select id="task-assignee" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="user">👤 User (Persönlich)</option>
+              <option value="OLLAMA" selected>🦙 OLLAMA (Worker)</option>
+              <option value="BUDDHA">🧘 Buddha (Assistent)</option>
+              <option value="ATI">🛠️ ATI (Entwickler)</option>
+              <option value="bach">🎵 BACH (System)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Priorität</label>
+            <select id="task-prio" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="normal" selected>Normal</option>
+              <option value="hoch">Hoch</option>
+              <option value="kritisch">Kritisch</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung (Optional)</label>
+          <textarea id="task-desc" rows="3" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" placeholder="Kontext oder Kriterien..."></textarea>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:0.5rem;">
+          <button type="button" class="btn" onclick="document.getElementById('modal-new-task').classList.add('hidden')">Abbrechen</button>
+          <button type="submit" class="btn btn-primary">Task erstellen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <style>
+    .hidden { display: none !important; }
+    .filter-btn.active {
+      background: var(--accent) !important;
+      color: #0b0d14 !important;
+      border-color: var(--accent) !important;
+    }
+  </style>
+
+  <script is:inline>
+    let allTasks = [];
+    let currentFilter = 'all';
+
+    async function loadTasks() {
+      const container = document.getElementById('tasks-table-container');
+      try {
+        const res = await fetch('/api/tasks');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        allTasks = data.tasks || data || [];
+        renderTasks();
+      } catch (e) {
+        container.innerHTML = `<p style="text-align:center;padding:2rem;color:var(--error);">Fehler beim Laden der Tasks: ${e.message}</p>`;
+      }
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('tasks-table-container');
+      let filtered = allTasks;
+
+      const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
+
+      if (currentFilter === 'user') {
+        filtered = allTasks.filter(t => getAssignee(t) === 'user');
+      } else if (currentFilter === 'auto') {
+        filtered = allTasks.filter(t => getAssignee(t) !== 'user');
+      } else if (currentFilter === 'open') {
+        filtered = allTasks.filter(t => t.status !== 'done' && t.status !== 'closed');
+      } else if (currentFilter === 'done') {
+        filtered = allTasks.filter(t => t.status === 'done' || t.status === 'closed');
+      }
+
+      document.getElementById('tasks-count-badge').textContent = `${filtered.length} Tasks angezeigt (Gesamt: ${allTasks.length})`;
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<p style="text-align:center;padding:3rem;color:var(--text-muted);">Keine Tasks für diesen Filter gefunden.</p>';
+        return;
+      }
+
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);color:var(--text-muted);text-align:left;">
+              <th style="padding:0.75rem 0.5rem;width:70px;">ID</th>
+              <th style="padding:0.75rem 0.5rem;">Aufgabe</th>
+              <th style="padding:0.75rem 0.5rem;width:140px;">Zuständig</th>
+              <th style="padding:0.75rem 0.5rem;width:100px;">Prio</th>
+              <th style="padding:0.75rem 0.5rem;width:100px;">Status</th>
+              <th style="padding:0.75rem 0.5rem;width:120px;text-align:right;">Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map(t => {
+              const isDone = t.status === 'done' || t.status === 'closed';
+              const prioColor = (t.priority === 'P1' || t.priority === 'hoch' || t.priority === 'kritisch') ? 'var(--error)' : 'var(--text-muted)';
+              const rawAssignee = t.assigned_to || t.assignee || 'Unzugewiesen';
+              const isUser = rawAssignee.toLowerCase() === 'user';
+              const badgeClass = isUser ? 'badge-accent' : 'badge-success';
+
+              return `
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.03);opacity:${isDone ? '0.55' : '1'};">
+                  <td style="padding:0.75rem 0.5rem;font-family:monospace;color:var(--text-muted);">#${t.id}</td>
+                  <td style="padding:0.75rem 0.5rem;">
+                    <div style="font-weight:600;color:var(--text);${isDone ? 'text-decoration:line-through;' : ''}">${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
+                    ${t.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">${escapeHtml(t.description.slice(0, 100))}</div>` : ''}
+                  </td>
+                  <td style="padding:0.75rem 0.5rem;">
+                    <span class="badge ${badgeClass}">${escapeHtml(rawAssignee)}</span>
+                  </td>
+                  <td style="padding:0.75rem 0.5rem;color:${prioColor};font-weight:600;">
+                    ${escapeHtml(t.priority || 'normal')}
+                  </td>
+                  <td style="padding:0.75rem 0.5rem;">
+                    <span class="badge ${isDone ? 'badge-success' : 'badge-warning'}">${escapeHtml(t.status || 'open')}</span>
+                  </td>
+                  <td style="padding:0.75rem 0.5rem;text-align:right;">
+                    ${!isDone ? `
+                      <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="completeTask(${t.id})">
+                        ✓ Erledigt
+                      </button>
+                    ` : '<span style="color:var(--success);font-size:0.8rem;">✓ Done</span>'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // Filter Buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+        btn.classList.add('active', 'btn-primary');
+        currentFilter = btn.getAttribute('data-filter');
+        renderTasks();
+      });
+    });
+
+    async function submitNewTask(e) {
+      e.preventDefault();
+      const title = document.getElementById('task-title').value.trim();
+      const assignee = document.getElementById('task-assignee').value;
+      const priority = document.getElementById('task-prio').value;
+      const desc = document.getElementById('task-desc').value.trim();
+
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, assignee, priority, description: desc })
+        });
+        if (res.ok) {
+          document.getElementById('modal-new-task').classList.add('hidden');
+          document.getElementById('form-new-task').reset();
+          loadTasks();
+        } else {
+          alert('Fehler beim Erstellen des Tasks');
+        }
+      } catch (err) {
+        alert('Netzwerkfehler: ' + err.message);
+      }
+    }
+
+    async function completeTask(id) {
+      try {
+        const res = await fetch(`/api/tasks/${id}/complete`, { method: 'POST' });
+        if (res.ok) loadTasks();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function escapeHtml(t) {
+      if (t == null) return '';
+      return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.addEventListener('DOMContentLoaded', loadTasks);
+  </script>
+</BachLayout>

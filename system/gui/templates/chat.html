@@ -779,6 +779,7 @@
                 </div>
 
                 <div class="chat-status" id="chat-status">
+                    <button id="btn-compare-race" onclick="openCompareRaceModal()" title="Compare-Race: Provider-Anbindung offen" style="background:var(--bg-card);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:0.78rem;font-weight:600;display:flex;align-items:center;gap:4px;margin-right:6px;">🏁 Compare-Race · offen</button>
                     <div class="status-chip">
                         <span class="dot" id="conn-dot"></span>
                         <span id="s-backend">–</span>
@@ -865,6 +866,103 @@
             </div>
         </div>
     </div>
+
+    <!-- Compare-Race Modal -->
+    <div id="compare-race-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-card" style="max-width: 800px; height: auto; max-height: 85vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+                        <span>🏁</span> Chat Compare-Race (Multi-Modell Evaluation)
+                    </h3>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
+                        Die Provider-Anbindung fehlt noch. Es liegen keine echten Modellantworten, Laufzeiten oder Bewertungen vor.
+                    </div>
+                </div>
+                <button class="modal-close-btn" onclick="closeCompareRaceModal()" title="Schließen">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Test-Prompt für das Race:</label>
+                    <textarea id="race-prompt" rows="3" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem;" placeholder="Gib hier den Prompt ein, den die Modelle im Wettkampf beantworten sollen..."></textarea>
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Kandidaten-Modelle:</label>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"><input type="checkbox" class="race-model-cb" value="claude" checked /> Claude</label>
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"><input type="checkbox" class="race-model-cb" value="gemini" checked /> Gemini</label>
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"><input type="checkbox" class="race-model-cb" value="gpt" checked /> GPT</label>
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"><input type="checkbox" class="race-model-cb" value="ollama" checked /> Ollama</label>
+                    </div>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-primary" id="btn-run-race" disabled title="Provider-Anbindung fehlt" style="padding:8px 16px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px;">🏁 Race derzeit nicht verfügbar</button>
+                </div>
+                <div id="race-results-container" style="margin-top: 8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function openCompareRaceModal() {
+        const m = document.getElementById('compare-race-modal');
+        if (m) m.style.display = 'flex';
+    }
+    function closeCompareRaceModal() {
+        const m = document.getElementById('compare-race-modal');
+        if (m) m.style.display = 'none';
+    }
+    async function executeCompareRace() {
+        const prompt = document.getElementById('race-prompt').value.trim();
+        if (!prompt) {
+            alert('Bitte gib zuerst einen Prompt ein.');
+            return;
+        }
+        const models = Array.from(document.querySelectorAll('.race-model-cb:checked')).map(cb => cb.value);
+        if (models.length === 0) {
+            alert('Bitte wähle mindestens ein Modell aus.');
+            return;
+        }
+        const resEl = document.getElementById('race-results-container');
+        resEl.textContent = 'Compare-Race wird geprüft...';
+        try {
+            const res = await fetch('/api/chat/compare-race', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, models })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const grid = document.createElement('div');
+                grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px';
+                for (const c of data.candidates) {
+                    const isWin = c.model === data.winner;
+                    const card = document.createElement('div');
+                    card.style.cssText = `background:var(--bg-dark);border:1px solid ${isWin ? 'var(--accent)' : 'var(--border)'};border-radius:8px;padding:12px`;
+                    const name = document.createElement('strong');
+                    name.textContent = String(c.model ?? 'Unbekannt');
+                    const score = document.createElement('div');
+                    score.textContent = `Latenz: ${c.latency_ms}ms • Score: ${c.score}`;
+                    const response = document.createElement('div');
+                    response.textContent = String(c.response ?? '');
+                    card.append(name, score, response);
+                    if (isWin) {
+                        const winner = document.createElement('strong');
+                        winner.textContent = ' 🏆 SIEGER';
+                        card.append(winner);
+                    }
+                    grid.append(card);
+                }
+                resEl.replaceChildren(grid);
+            } else {
+                const error = await res.json().catch(() => ({}));
+                resEl.textContent = error.detail || 'Compare-Race ist derzeit nicht verfügbar.';
+            }
+        } catch (e) {
+            resEl.textContent = `Netzwerkfehler: ${e.message}`;
+        }
+    }
+    </script>
 
     <div id="toast-container" class="toast-container"></div>
 

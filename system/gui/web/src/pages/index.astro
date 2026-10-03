@@ -1,0 +1,243 @@
+---
+// index.astro - Das moderne, modulare BACH Dashboard
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Dashboard" currentPath="/">
+  <!-- Top Welcome & Cluster Banner -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        Willkommen im <span style="color:var(--accent);">BACH & OCEAN</span> Cockpit
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Zentrale Multi-Agenten-Workstation • Cluster-Status nach Live-Prüfung
+      </p>
+    </div>
+
+    <!-- Cluster Pill -->
+    <div style="display:inline-flex;align-items:center;gap:0.75rem;background:var(--bg-panel);border:1px solid var(--border);border-radius:100px;padding:0.4rem 1rem;">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--success);box-shadow:0 0 8px var(--success);"></span>
+      <span style="font-size:0.82rem;font-weight:600;color:var(--text);">Mac Studio (100.119.69.90:8000)</span>
+      <span class="badge">Status unbekannt</span>
+    </div>
+  </div>
+
+  <!-- Primary Stat Cards Grid -->
+  <div class="grid grid-cols-3" style="margin-bottom:1.5rem;">
+    <!-- System Status -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📊 System Status</h2>
+        <span class="badge badge-accent">API-Daten</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:1rem;text-align:center;">
+        <div>
+          <span style="display:block;font-size:2rem;font-weight:800;color:var(--accent);" id="stat-tasks">-</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Offene Tasks</span>
+        </div>
+        <div>
+          <span style="display:block;font-size:2rem;font-weight:800;color:var(--accent-blue);" id="stat-messages">–</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Ungelesene</span>
+        </div>
+        <div>
+          <span style="display:block;font-size:2rem;font-weight:800;color:var(--warning);" id="stat-deadlines">–</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Fristen</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aktive Agenten -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">🤖 Aktive Agenten</h2>
+        <a href="/agenten/running" class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">Verwalten →</a>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem;text-align:center;">
+        <div>
+          <span style="display:block;font-size:2rem;font-weight:800;color:var(--success);" id="stat-agents-active">–</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Laufstatus unbekannt</span>
+        </div>
+        <div>
+          <span style="display:block;font-size:2rem;font-weight:800;color:var(--accent-blue);" id="stat-agents-total">–</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Schablonen</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cluster & Daemons -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">⚡ Dienste & Daemons</h2>
+        <span class="badge" id="stat-overall-status">Status unbekannt</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.85rem;">
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+          <span style="color:var(--text-muted);">BACH GUI Server:</span>
+          <span style="color:var(--text-muted);font-weight:600;">Diese Oberfläche geladen</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+          <span style="color:var(--text-muted);">Chat Tray & Bridge:</span>
+          <span style="color:var(--text-muted);font-weight:600;">Status unbekannt</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0;">
+          <span style="color:var(--text-muted);">Ollama Worker Node:</span>
+          <span style="color:var(--text-muted);font-weight:600;">Status unbekannt</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Action Navigation Hub -->
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title">🚀 Schnellstart & Arbeitsbereiche</h2>
+      <span style="font-size:0.8rem;color:var(--text-muted);">Direktzugriff</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
+      <a href="/tasks" class="btn btn-primary">
+        <span>📋</span> Tasks & Aufgabenboard
+      </a>
+      <a href="/agenten/fabrika" class="btn">
+        <span>🤖</span> Agenten-Fabrika
+      </a>
+      <a href="/agenten/running" class="btn">
+        <span>⚡</span> Living & Running
+      </a>
+      <a href="/agenten/marblerun" class="btn">
+        <span>⛓️</span> MarbleRun Ketten
+      </a>
+      <a href="/governance" class="btn">
+        <span>🛡️</span> Governance CONTROL
+      </a>
+      <a href="/memory" class="btn">
+        <span>🧠</span> Deep Memory & Wissen
+      </a>
+      <a href="/chat" class="btn">
+        <span>💬</span> Buddha Chat
+      </a>
+      <a href="/financial" class="btn">
+        <span>💰</span> Finanzen & Fristen
+      </a>
+    </div>
+  </div>
+
+  <!-- Main Content Split: Recent Tasks & Deadlines / Systems -->
+  <div class="grid grid-cols-2">
+    <!-- Aktuelle Tasks -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📋 Aktuelle Tasks</h2>
+        <a href="/tasks" class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">Alle anzeigen →</a>
+      </div>
+      <div id="tasks-container" style="display:flex;flex-direction:column;gap:0.75rem;">
+        <p style="color:var(--text-muted);text-align:center;padding:2rem;">Lade Tasks vom Mac Studio...</p>
+      </div>
+    </div>
+
+    <!-- Governance & Active Locks Snapshot -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">🛡️ Governance & Lock-Status</h2>
+        <a href="/governance" class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">CONTROL Room →</a>
+      </div>
+      <div id="governance-container" style="display:flex;flex-direction:column;gap:0.75rem;">
+        <div style="padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--success);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="color:var(--text);font-size:0.875rem;">Policy P-001 (Fail-Closed)</strong>
+            <span class="badge">Nicht geprüft</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
+            Kein unautorisierter Git-Push; absolute Sicherheit auf gesperrten Pfaden.
+          </p>
+        </div>
+
+        <div style="padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--accent-blue);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="color:var(--text);font-size:0.875rem;">Policy P-007 (Proof-Note Freigabe)</strong>
+            <span class="badge">Nicht geprüft</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
+            Forschungs-Freigaben gemaess 4-Kriterien-Gate abgesichert.
+          </p>
+        </div>
+
+        <div style="padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--success);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="color:var(--text);font-size:0.875rem;">Lock-Master Haltefristen</strong>
+            <span class="badge">Status unbekannt</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
+            Sperren vor jeder Aktion über den autoritativen Lock-Check prüfen.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</BachLayout>
+
+<script is:inline>
+  // Live Dashboard Data Fetcher
+  async function loadDashboardData() {
+    try {
+      // 1. Fetch Tasks
+      const tasksRes = await fetch("/api/tasks");
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json();
+        const tasks = tasksData.tasks || tasksData || [];
+
+        // Count open tasks
+        const openTasks = tasks.filter(t => t.status !== "done" && t.status !== "closed");
+        document.getElementById("stat-tasks").textContent = openTasks.length;
+
+        // Render Recent Tasks (up to 5)
+        const container = document.getElementById("tasks-container");
+        if (openTasks.length === 0) {
+          container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1.5rem;">Keine offenen Tasks vorhanden.</p>';
+        } else {
+          container.innerHTML = openTasks.slice(0, 5).map(t => {
+            const prioBadge = t.priority === "hoch" || t.priority === "kritisch"
+              ? '<span class="badge badge-error">Prio: Hoch</span>'
+              : '<span class="badge badge-accent">Normal</span>';
+            const assignee = t.assignee || "Unzugewiesen";
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--accent);">
+                <div>
+                  <div style="font-weight:600;font-size:0.875rem;color:var(--text);">#${t.id}: ${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
+                    Zuständig: <strong>${escapeHtml(assignee)}</strong> • Status: ${escapeHtml(t.status || 'open')}
+                  </div>
+                </div>
+                <div>${prioBadge}</div>
+              </div>
+            `;
+          }).join("");
+        }
+      }
+    } catch (e) {
+      console.warn("Tasks API offline oder Timeout:", e);
+      document.getElementById("stat-tasks").textContent = "!";
+    }
+
+    try {
+      // 2. Fetch Blueprints & Living Agents
+      const bpRes = await fetch("/api/agent-studio/blueprints");
+      if (bpRes.ok) {
+        const bpData = await bpRes.json();
+        const blueprints = bpData.blueprints || [];
+        document.getElementById("stat-agents-total").textContent = blueprints.length;
+      }
+
+      // Blueprint-Präsenz ist kein Nachweis eines gestarteten Workers.
+    } catch (e) {
+      console.warn("Agent Studio API Fehler:", e);
+    }
+  }
+
+  function escapeHtml(text) {
+    if (text == null) return "";
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  window.addEventListener("DOMContentLoaded", loadDashboardData);
+</script>

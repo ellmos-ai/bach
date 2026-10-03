@@ -288,11 +288,7 @@
                     alert("Token ist ungültig oder widerrufen: " + (data.reason || "Unbekannter Grund"));
                 }
             } catch (err) {
-                // If offline or initial setup, store directly
-                localStorage.setItem(STORAGE_KEY, token);
-                input.value = "";
-                updateAuthUI();
-                loadDevices();
+                alert("Token konnte nicht geprüft werden. Bitte Verbindung prüfen und erneut anmelden.");
             }
         }
 

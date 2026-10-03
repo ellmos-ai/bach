@@ -1,0 +1,1227 @@
+---
+// src/pages/life.astro - Life-Zentrale (Kalender mit 4 Ansichten, Deine Routinen, Meine Aufgaben, Selbstmanagement)
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Life-Zentrale" currentPath="/life">
+  <div class="life-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">🌱</span> Life-Zentrale</h1>
+        <p class="subtitle">Ganzheitliches Selbstmanagement, 4-Ansichten-Kalender, Deine Routinen und Lebensbereiche</p>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-accent">BACH Life OS</span>
+        <span class="badge badge-success">Self-Regulation Active</span>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="kalender">📅 Kalender (4 Ansichten)</button>
+      <button class="tab-btn" data-tab="routinen">⏰ Deine Routinen</button>
+      <button class="tab-btn" data-tab="aufgaben">👤 Meine Aufgaben</button>
+      <button class="tab-btn" data-tab="selbstmanagement">🎯 Selbstmanagement & ADHS</button>
+      <button class="tab-btn" data-tab="finanzen">💰 Finanzen</button>
+      <button class="tab-btn" data-tab="balance">☯️ Lebensbereiche</button>
+      <button class="tab-btn" data-tab="gesundheit">🩺 Gesundheit</button>
+    </div>
+
+    <!-- TAB 1: KALENDER MIT 4 ANSICHTEN -->
+    <div class="tab-pane active" id="pane-kalender">
+      <div class="calendar-controls-bar">
+        <!-- 4 Ansichten Switcher (Segmented Pills) -->
+        <div class="cal-views-segmented">
+          <button class="cal-view-btn" data-view="day">📅 Tagesansicht</button>
+          <button class="cal-view-btn" data-view="week">🗓️ Wochenansicht</button>
+          <button class="cal-view-btn active" data-view="month">📆 Monatsansicht</button>
+          <button class="cal-view-btn" data-view="year">🌐 Jahresüberblick</button>
+        </div>
+
+        <!-- Date Navigation Controls -->
+        <div class="cal-nav-group">
+          <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(-1)">◀ Vorheriger</button>
+          <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(0)">Heute</button>
+          <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(1)">Nächster ▶</button>
+          <h2 id="cal-period-heading" style="margin:0 0.5rem;font-size:1.15rem;font-weight:700;color:var(--text);">Oktober 2026</h2>
+        </div>
+
+        <!-- Add Event Button -->
+        <button class="btn btn-primary btn-sm" onclick="openAddEventModal()">
+          <span>+</span> Neuer Termin
+        </button>
+      </div>
+
+      <!-- VIEW 1: TAGESANSICHT (24h Timeline) -->
+      <div class="cal-view-pane" id="view-day" style="display:none;">
+        <div class="glass-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0.75rem;">
+            <div>
+              <h3 id="day-view-date-title" style="margin:0;font-size:1.1rem;color:var(--text);">Heute</h3>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Stunden-Raster & fällige Tagesblöcke</p>
+            </div>
+            <span class="badge badge-accent" id="day-event-count">0 Termine</span>
+          </div>
+
+          <div class="day-timeline-container" id="day-timeline-slots">
+            <!-- Hourly slots injected by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: WOCHENANSICHT (7-Spalten) -->
+      <div class="cal-view-pane" id="view-week" style="display:none;">
+        <div class="glass-card" style="padding:1rem;">
+          <div class="week-grid-container" id="week-columns-grid">
+            <!-- 7 columns Mo-So injected by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: MONATSANSICHT (Matrix Raster) -->
+      <div class="cal-view-pane active" id="view-month">
+        <div class="glass-card" style="padding:1rem;">
+          <div class="month-weekdays-header">
+            <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
+          </div>
+          <div class="month-days-matrix" id="month-days-grid">
+            <!-- Days 1..31 injected by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 4: JAHRESÜBERBLICK (12 Mini-Monate in 4 Quartalen) -->
+      <div class="cal-view-pane" id="view-year" style="display:none;">
+        <div class="glass-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+            <div>
+              <h3 id="year-title" style="margin:0;font-size:1.2rem;color:var(--text);">Jahresüberblick 2026</h3>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">Termindichte & Quartalsrhythmus</p>
+            </div>
+            <div style="display:flex;gap:0.75rem;font-size:0.8rem;">
+              <span class="badge badge-accent">Q1: Fokus</span>
+              <span class="badge badge-accent">Q2: Ausbau</span>
+              <span class="badge badge-accent">Q3: Review</span>
+              <span class="badge badge-accent">Q4: Ernte</span>
+            </div>
+          </div>
+
+          <div class="year-quarters-grid" id="year-quarters-container">
+            <!-- 12 mini months injected by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: DEINE ROUTINEN -->
+    <div class="tab-pane" id="pane-routinen">
+      <div class="glass-card">
+        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <div>
+            <h3><span class="icon">⏰</span> Deine persönlichen Lebens- & Haushaltsroutinen</h3>
+            <p class="card-desc">Feste rhythmische Gewohnheiten und wiederkehrende Aufgaben aus <code>household_routines</code></p>
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <select id="filter-routine-cat" onchange="filterPersonalRoutines()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
+              <option value="">Alle Kategorien</option>
+              <option value="Haushalt">Haushalt</option>
+              <option value="Gesundheit">Gesundheit</option>
+              <option value="Finanzen">Finanzen</option>
+              <option value="Fokus">Fokus & Mindset</option>
+            </select>
+            <a href="/routinen?tab=personal" class="btn btn-secondary btn-sm">Vollansicht Routinen ↗</a>
+          </div>
+        </div>
+
+        <div class="routines-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Routine</th>
+                <th>Intervall</th>
+                <th>Kategorie</th>
+                <th>Nächste Fälligkeit</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="personal-routines-body">
+              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Lade Deine Routinen...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: MEINE AUFGABEN -->
+    <div class="tab-pane" id="pane-aufgaben">
+      <div class="glass-card">
+        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <div>
+            <h3><span class="icon">👤</span> Meine persönlichen Aufgaben</h3>
+            <p class="card-desc">Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)</p>
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <select id="filter-user-tasks-status" onchange="loadUserTasks()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
+              <option value="">Alle Status</option>
+              <option value="todo" selected>Offen / Todo</option>
+              <option value="in_progress">In Bearbeitung</option>
+              <option value="done">Erledigt</option>
+            </select>
+            <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Im Taskboard öffnen ↗</a>
+          </div>
+        </div>
+        <div id="user-tasks-container">
+          <p class="loading-state">Lade persönliche Aufgaben aus bach.db...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: SELBSTMANAGEMENT & ADHS -->
+    <div class="tab-pane" id="pane-selbstmanagement">
+      <div class="card-grid">
+        <div class="glass-card">
+          <h3><span class="icon">🧠</span> Neurodivergenz & Exekutiv-Entlastung</h3>
+          <p class="card-desc">Kompensation von Arbeitsgedächtnis-Überlastung durch visuelle Schienen</p>
+          <div class="feature-item">
+            <strong>1. Die 20-Minuten-Regel (Time-Boxing)</strong>
+            <p>Beginne jede Aufgabe mit der Absicht, nur 20 Minuten daran zu arbeiten. Der Einstiegswiderstand sinkt dadurch um 80%.</p>
+          </div>
+          <div class="feature-item">
+            <strong>2. Radikale Reizreduktion (76%-Filter)</strong>
+            <p>Schließe alle Tabs, die nicht zum aktuellen Schritt gehören. Nutze das Denkarium als Zwischenablage für spontane Impulse.</p>
+          </div>
+          <div class="feature-item">
+            <strong>3. Body-Doubling mit Buddha</strong>
+            <p>Nutze den persönlichen Assistenten im Chat als stillen Begleiter. Formuliere den nächsten Minischritt laut im Prompt.</p>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <h3><span class="icon">⏱️</span> Fokus-Timer & Arbeits-Intervall</h3>
+          <div class="timer-widget">
+            <div class="timer-display" id="timer-display">25:00</div>
+            <div class="timer-controls">
+              <button class="btn btn-primary" id="btn-timer-start">Start</button>
+              <button class="btn btn-secondary" id="btn-timer-reset">Reset</button>
+            </div>
+            <div class="timer-modes">
+              <span class="timer-tag active">25m Fokus</span>
+              <span class="timer-tag">5m Pause</span>
+              <span class="timer-tag">15m Deep Rest</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: FINANZEN -->
+    <div class="tab-pane" id="pane-finanzen">
+      <div class="glass-card">
+        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <div>
+            <h3><span class="icon">💰</span> Finanzen & Budget-Dashboard</h3>
+            <p class="card-desc">Einnahmen, Ausgaben und Liquiditätsstatus</p>
+          </div>
+          <a href="/financial" class="btn btn-secondary">Vollständiges Finanzmodul ↗</a>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Monatsbudget</div>
+            <div class="stat-value">Stabil</div>
+            <div class="stat-sub">Ausgaben im Soll</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Offene Belege</div>
+            <div class="stat-value">2</div>
+            <div class="stat-sub">Theodor Steuer wartet</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Rücklagen-Quote</div>
+            <div class="stat-value">Grün</div>
+            <div class="stat-sub">Sicherheitsnetz intakt</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: LEBENSBEREICHE -->
+    <div class="tab-pane" id="pane-balance">
+      <div class="glass-card">
+        <h3><span class="icon">☯️</span> Lebenskreise & Balance-Audit</h3>
+        <p class="card-desc">Zyklische Bewertung der 5 tragenden Lebenssäulen</p>
+        <div class="balance-bars">
+          <div class="balance-item">
+            <div class="balance-header">
+              <span>Arbeit, Code & Erschaffen</span>
+              <span>85%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 85%;"></div></div>
+          </div>
+          <div class="balance-item">
+            <div class="balance-header">
+              <span>Gesundheit & Physis</span>
+              <span>70%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 70%;"></div></div>
+          </div>
+          <div class="balance-item">
+            <div class="balance-header">
+              <span>Beziehungen & Umfeld</span>
+              <span>75%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 75%;"></div></div>
+          </div>
+          <div class="balance-item">
+            <div class="balance-header">
+              <span>Finanzen & Ordnung</span>
+              <span>90%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 90%;"></div></div>
+          </div>
+          <div class="balance-item">
+            <div class="balance-header">
+              <span>Sinn, Reflexion & Philosophie</span>
+              <span>80%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 80%;"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 7: GESUNDHEIT -->
+    <div class="tab-pane" id="pane-gesundheit">
+      <div class="glass-card">
+        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <div>
+            <h3><span class="icon">🩺</span> Gesundheit, Vitalwerte & Förderpläne</h3>
+            <p class="card-desc">Ernährung, Bewegung, Schlafrhythmus und medizinische Dokumente</p>
+          </div>
+          <a href="/gesundheit" class="btn btn-secondary">Zum Gesundheitsmodul ↗</a>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-muted);">
+          Alle Gesundheitsdaten sind lokal gesichert und unterliegen striktem Mandanten-Schutz.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NEUER TERMIN ANLEGEN -->
+  <div id="modal-add-event" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:2000;">
+    <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:500px;padding:1.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+      <h3 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">📅 Neuer Kalendertermin</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.25rem;">
+        Wird in <code>assistant_calendar</code> gespeichert.
+      </p>
+
+      <form id="form-new-cal-event" onsubmit="event.preventDefault(); submitNewEvent();" style="display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel des Termins *</label>
+          <input type="text" id="ne-title" required placeholder="z. B. System-Review & Testing" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Datum *</label>
+            <input type="date" id="ne-date" required style="width:100%;padding:0.55rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Start-Uhrzeit *</label>
+            <input type="time" id="ne-time" value="10:00" required style="width:100%;padding:0.55rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Kategorie</label>
+            <select id="ne-type" style="width:100%;padding:0.55rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="termin">Termin / Meeting</option>
+              <option value="fokusblock">Fokusblock (Deep Work)</option>
+              <option value="privat">Privat / Erholung</option>
+              <option value="gesundheit">Gesundheit / Sport</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Ort / Tool</label>
+            <input type="text" id="ne-location" placeholder="z. B. Remote / Zoom / Office" style="width:100%;padding:0.55rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Notiz / Agenda</label>
+          <textarea id="ne-description" rows="2" placeholder="Optionale Details zum Ablauf..." style="width:100%;padding:0.55rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;"></textarea>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeAddEventModal()">Abbrechen</button>
+          <button type="submit" class="btn btn-primary">Termin speichern ➔</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <style>
+    .hidden { display: none !important; }
+    .life-container {
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .page-header h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      margin: 0.25rem 0 0 0;
+      font-size: 0.875rem;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 0.4rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tab-btn {
+      padding: 0.65rem 1.15rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 700;
+    }
+    .tab-pane {
+      display: none;
+    }
+    .tab-pane.active {
+      display: block;
+    }
+    .glass-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+    }
+
+    /* Calendar Controls Bar */
+    .calendar-controls-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .cal-views-segmented {
+      display: inline-flex;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 3px;
+      gap: 3px;
+    }
+    .cal-view-btn {
+      padding: 0.4rem 0.9rem;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 20px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .cal-view-btn:hover {
+      color: var(--text);
+    }
+    .cal-view-btn.active {
+      background: var(--accent);
+      color: #0b0d14;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.35);
+    }
+    .cal-nav-group {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    /* Day View Timeline */
+    .day-timeline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .day-slot {
+      display: flex;
+      border-top: 1px solid var(--border);
+      min-height: 44px;
+      align-items: flex-start;
+      padding: 4px 0;
+    }
+    .day-slot-time {
+      width: 65px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      padding-top: 4px;
+    }
+    .day-slot-content {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    /* Week Columns Grid */
+    .week-grid-container {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0.5rem;
+      min-height: 480px;
+    }
+    .week-col {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .week-col.today {
+      border-color: var(--accent);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+    .week-col-header {
+      padding: 0.5rem;
+      text-align: center;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .week-col-body {
+      padding: 0.4rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      overflow-y: auto;
+    }
+
+    /* Month Days Matrix */
+    .month-weekdays-header {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.5rem;
+    }
+    .month-days-matrix {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      min-height: 420px;
+    }
+    .month-day-cell {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      min-height: 75px;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.15s ease;
+    }
+    .month-day-cell:hover {
+      background: rgba(255,255,255,0.03);
+    }
+    .month-day-cell.today {
+      border-color: var(--accent);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+    }
+    .month-day-cell.other-month {
+      opacity: 0.35;
+    }
+    .month-day-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+    .cal-event-chip {
+      display: block;
+      font-size: 0.7rem;
+      padding: 2px 5px;
+      border-radius: 3px;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    .chip-termin { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+    .chip-fokus { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
+    .chip-routine { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+    /* Year Grid */
+    .year-quarters-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+    }
+    .mini-month-card {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem;
+    }
+    .mini-month-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+    .mini-month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      text-align: center;
+      font-size: 0.65rem;
+    }
+    .mini-day {
+      padding: 2px 0;
+      border-radius: 2px;
+      color: var(--text-muted);
+    }
+    .mini-day.has-event {
+      background: var(--accent);
+      color: #0b0d14;
+      font-weight: 700;
+    }
+
+    /* Common */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    .timer-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 0;
+      gap: 1rem;
+    }
+    .timer-display {
+      font-size: 3.5rem;
+      font-weight: 700;
+      font-family: monospace;
+      color: var(--accent);
+    }
+    .timer-controls, .timer-modes {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .timer-tag {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: var(--radius-sm);
+      background: var(--bg-hover);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .timer-tag.active {
+      background: var(--accent);
+      color: #0b0d14;
+      font-weight: 600;
+    }
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0.25rem 0;
+    }
+    .balance-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .balance-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 0.35rem;
+    }
+    .progress-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--success) 100%);
+      border-radius: 4px;
+    }
+  </style>
+
+  <script is:inline>
+    function escapeHtml(t) {
+      if (t == null) return '';
+      return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── CALENDAR STATE & 4-VIEW RENDERER ──
+    let _calView = 'month'; // 'day' | 'week' | 'month' | 'year'
+    let _currentDate = new Date();
+    let _loadedEvents = [];
+
+    const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+    const WEEKDAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+    async function loadCalendarEvents() {
+      try {
+        const year = _currentDate.getFullYear();
+        const month = String(_currentDate.getMonth() + 1).padStart(2, '0');
+        const day = String(_currentDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const res = await fetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=true`);
+        if (res.ok) {
+          const data = await res.json();
+          _loadedEvents = data.events || [];
+        } else {
+          _loadedEvents = [];
+        }
+      } catch (e) {
+        console.error('Fehler beim Laden der Kalenderdaten:', e);
+        _loadedEvents = [];
+      }
+      renderActiveCalendarView();
+    }
+
+    function renderActiveCalendarView() {
+      updatePeriodHeading();
+      if (_calView === 'day') renderDayView();
+      else if (_calView === 'week') renderWeekView();
+      else if (_calView === 'month') renderMonthView();
+      else if (_calView === 'year') renderYearView();
+    }
+
+    function updatePeriodHeading() {
+      const heading = document.getElementById('cal-period-heading');
+      if (!heading) return;
+      const y = _currentDate.getFullYear();
+      const m = MONTH_NAMES[_currentDate.getMonth()];
+      const d = _currentDate.getDate();
+
+      if (_calView === 'day') {
+        const wd = WEEKDAY_NAMES[(_currentDate.getDay() + 6) % 7];
+        heading.textContent = `${wd}, ${d}. ${m} ${y}`;
+      } else if (_calView === 'week') {
+        const monday = getMonday(_currentDate);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        heading.textContent = `KW ${getWeekNumber(_currentDate)} (${monday.getDate()}.${monday.getMonth()+1}. - ${sunday.getDate()}.${sunday.getMonth()+1}.${y})`;
+      } else if (_calView === 'month') {
+        heading.textContent = `${m} ${y}`;
+      } else if (_calView === 'year') {
+        heading.textContent = `Jahr ${y}`;
+      }
+    }
+
+    function navigateCalendar(delta) {
+      if (delta === 0) {
+        _currentDate = new Date();
+      } else {
+        if (_calView === 'day') {
+          _currentDate.setDate(_currentDate.getDate() + delta);
+        } else if (_calView === 'week') {
+          _currentDate.setDate(_currentDate.getDate() + (delta * 7));
+        } else if (_calView === 'month') {
+          _currentDate.setMonth(_currentDate.getMonth() + delta);
+        } else if (_calView === 'year') {
+          _currentDate.setFullYear(_currentDate.getFullYear() + delta);
+        }
+      }
+      loadCalendarEvents();
+    }
+
+    // ── 1. TAGESANSICHT ──
+    function renderDayView() {
+      const container = document.getElementById('day-timeline-slots');
+      const title = document.getElementById('day-view-date-title');
+      const badge = document.getElementById('day-event-count');
+      if (!container) return;
+
+      const y = _currentDate.getFullYear();
+      const m = String(_currentDate.getMonth() + 1).padStart(2, '0');
+      const d = String(_currentDate.getDate()).padStart(2, '0');
+      const datePrefix = `${y}-${m}-${d}`;
+
+      const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(datePrefix));
+      badge.textContent = `${dayEvents.length} Termine`;
+      title.textContent = `${d}. ${MONTH_NAMES[_currentDate.getMonth()]} ${y}`;
+
+      let html = '';
+      for (let hour = 6; hour <= 22; hour++) {
+        const hourStr = String(hour).padStart(2, '0') + ':00';
+        const slotEvents = dayEvents.filter(e => {
+          const t = (e.start_datetime || '').slice(11, 16);
+          const h = parseInt(t.split(':')[0] || '-1', 10);
+          return h === hour;
+        });
+
+        html += `
+          <div class="day-slot">
+            <div class="day-slot-time">${hourStr}</div>
+            <div class="day-slot-content">
+              ${slotEvents.map(e => `
+                <div style="background:var(--bg-card);border:1px solid var(--accent);border-left:4px solid var(--accent);padding:0.4rem 0.75rem;border-radius:4px;font-size:0.8rem;">
+                  <strong style="color:var(--text);">${escapeHtml(e.title)}</strong>
+                  ${e.location ? `<span style="color:var(--text-muted);font-size:0.75rem;"> @ ${escapeHtml(e.location)}</span>` : ''}
+                  <span class="badge ${e.is_routine ? 'badge-success' : 'badge-accent'}" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.event_type || 'Termin')}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    // ── 2. WOCHENANSICHT ──
+    function renderWeekView() {
+      const grid = document.getElementById('week-columns-grid');
+      if (!grid) return;
+
+      const monday = getMonday(_currentDate);
+      const todayStr = (new Date()).toISOString().slice(0, 10);
+
+      let html = '';
+      for (let i = 0; i < 7; i++) {
+        const cur = new Date(monday);
+        cur.setDate(monday.getDate() + i);
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const isoDate = `${y}-${m}-${d}`;
+        const isToday = isoDate === todayStr;
+
+        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(isoDate));
+
+        html += `
+          <div class="week-col ${isToday ? 'today' : ''}">
+            <div class="week-col-header" style="${isToday ? 'color:var(--accent);font-weight:700;' : ''}">
+              ${WEEKDAY_NAMES[i]} ${d}.${m}.
+              ${isToday ? '<span style="display:block;font-size:0.65rem;color:var(--accent);">● Heute</span>' : ''}
+            </div>
+            <div class="week-col-body">
+              ${dayEvents.map(e => {
+                const time = (e.start_datetime || '').slice(11, 16);
+                const chipClass = e.is_routine ? 'chip-routine' : (e.event_type === 'fokusblock' ? 'chip-fokus' : 'chip-termin');
+                return `
+                  <div class="cal-event-chip ${chipClass}" title="${escapeHtml(e.title)} (${time})">
+                    <strong>${time ? time + ' ' : ''}</strong>${escapeHtml(e.title)}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+      grid.innerHTML = html;
+    }
+
+    // ── 3. MONATSANSICHT ──
+    function renderMonthView() {
+      const grid = document.getElementById('month-days-grid');
+      if (!grid) return;
+
+      const year = _currentDate.getFullYear();
+      const month = _currentDate.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+
+      // Monday offset (0=Mo, 6=So)
+      const startOffset = (firstDay.getDay() + 6) % 7;
+      const totalDays = lastDay.getDate();
+
+      const todayStr = (new Date()).toISOString().slice(0, 10);
+      let html = '';
+
+      // Leading empty cells
+      for (let i = 0; i < startOffset; i++) {
+        html += `<div class="month-day-cell other-month"></div>`;
+      }
+
+      for (let day = 1; day <= totalDays; day++) {
+        const dStr = String(day).padStart(2, '0');
+        const mStr = String(month + 1).padStart(2, '0');
+        const iso = `${year}-${mStr}-${dStr}`;
+        const isToday = iso === todayStr;
+
+        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(iso));
+
+        html += `
+          <div class="month-day-cell ${isToday ? 'today' : ''}" onclick="selectDayFromMonth('${iso}')">
+            <div class="month-day-num" style="${isToday ? 'color:var(--accent);font-weight:800;' : ''}">${day}</div>
+            <div style="flex:1;overflow-y:auto;">
+              ${dayEvents.slice(0, 3).map(e => {
+                const chipClass = e.is_routine ? 'chip-routine' : (e.event_type === 'fokusblock' ? 'chip-fokus' : 'chip-termin');
+                return `<div class="cal-event-chip ${chipClass}">${escapeHtml(e.title)}</div>`;
+              }).join('')}
+              ${dayEvents.length > 3 ? `<div style="font-size:0.65rem;color:var(--text-muted);text-align:right;">+${dayEvents.length - 3} weitere</div>` : ''}
+            </div>
+          </div>
+        `;
+      }
+      grid.innerHTML = html;
+    }
+
+    function selectDayFromMonth(iso) {
+      _currentDate = new Date(iso);
+      switchCalendarView('day');
+    }
+
+    // ── 4. JAHRESÜBERBLICK ──
+    function renderYearView() {
+      const container = document.getElementById('year-quarters-container');
+      const yearTitle = document.getElementById('year-title');
+      if (!container) return;
+      const year = _currentDate.getFullYear();
+      if (yearTitle) yearTitle.textContent = `Jahresüberblick ${year}`;
+
+      let html = '';
+      for (let m = 0; m < 12; m++) {
+        const mName = MONTH_NAMES[m];
+        const daysInMonth = new Date(year, m + 1, 0).getDate();
+        const mPrefix = `${year}-${String(m+1).padStart(2, '0')}`;
+        const mEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(mPrefix));
+
+        html += `
+          <div class="mini-month-card">
+            <div class="mini-month-title">
+              <span>${mName}</span>
+              <span class="badge ${mEvents.length ? 'badge-accent' : 'badge-secondary'}" style="font-size:0.65rem;">${mEvents.length} Termine</span>
+            </div>
+            <div class="mini-month-grid">
+              ${Array.from({length: daysInMonth}, (_, i) => {
+                const day = i + 1;
+                const dStr = String(day).padStart(2, '0');
+                const iso = `${mPrefix}-${dStr}`;
+                const hasEv = mEvents.some(e => (e.start_datetime || '').startsWith(iso));
+                return `<div class="mini-day ${hasEv ? 'has-event' : ''}">${day}</div>`;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    function switchCalendarView(viewName) {
+      _calView = viewName;
+      document.querySelectorAll('.cal-view-btn').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.querySelector(`.cal-view-btn[data-view="${viewName}"]`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      document.querySelectorAll('.cal-view-pane').forEach(p => p.style.display = 'none');
+      const activePane = document.getElementById('view-' + viewName);
+      if (activePane) activePane.style.display = 'block';
+
+      loadCalendarEvents();
+    }
+
+    function getMonday(d) {
+      const date = new Date(d);
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+      return new Date(date.setDate(diff));
+    }
+
+    function getWeekNumber(d) {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+      return Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+    }
+
+    // ── MODAL ADD EVENT ──
+    function openAddEventModal() {
+      const todayStr = _currentDate.toISOString().slice(0, 10);
+      document.getElementById('ne-date').value = todayStr;
+      document.getElementById('modal-add-event').classList.remove('hidden');
+    }
+
+    function closeAddEventModal() {
+      document.getElementById('modal-add-event').classList.add('hidden');
+    }
+
+    async function submitNewEvent() {
+      const title = document.getElementById('ne-title').value.trim();
+      const date = document.getElementById('ne-date').value;
+      const time = document.getElementById('ne-time').value;
+      const event_type = document.getElementById('ne-type').value;
+      const location = document.getElementById('ne-location').value.trim();
+      const description = document.getElementById('ne-description').value.trim();
+
+      const start_datetime = `${date} ${time}:00`;
+
+      try {
+        const res = await fetch('/api/calendar/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, start_datetime, event_type, location, description })
+        });
+        if (res.ok) {
+          closeAddEventModal();
+          loadCalendarEvents();
+        } else {
+          alert('Fehler beim Speichern des Termins.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    // ── DEINE ROUTINEN (Personal Routines) ──
+    let _allPersonalRoutines = [];
+
+    async function loadPersonalRoutines() {
+      const tbody = document.getElementById('personal-routines-body');
+      if (!tbody) return;
+      try {
+        const res = await fetch('/api/calendar/events?include_routines=true');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const routines = (data.events || []).filter(e => e.is_routine);
+        _allPersonalRoutines = routines;
+        renderPersonalRoutines(routines);
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Fehler beim Laden: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderPersonalRoutines(routines) {
+      const tbody = document.getElementById('personal-routines-body');
+      if (!tbody) return;
+      if (routines.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine persönlichen Routinen gefunden.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = routines.map(r => `
+        <tr>
+          <td><strong>${escapeHtml(r.title)}</strong></td>
+          <td>${escapeHtml(r.recurrence_rule || 'taeglich')}</td>
+          <td><span class="badge badge-accent">${escapeHtml(r.location || 'Haushalt')}</span></td>
+          <td style="font-family:monospace;font-size:0.8rem;">${escapeHtml(r.start_datetime || '-')}</td>
+          <td><span class="badge badge-success">${escapeHtml(r.status || 'aktiv')}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    function filterPersonalRoutines() {
+      const cat = document.getElementById('filter-routine-cat').value;
+      if (!cat) {
+        renderPersonalRoutines(_allPersonalRoutines);
+      } else {
+        const filtered = _allPersonalRoutines.filter(r => (r.location || '').toLowerCase() === cat.toLowerCase());
+        renderPersonalRoutines(filtered);
+      }
+    }
+
+    // ── MEINE AUFGABEN ──
+    async function loadUserTasks() {
+      const container = document.getElementById('user-tasks-container');
+      const statusFilter = document.getElementById('filter-user-tasks-status')?.value || '';
+      if (!container) return;
+
+      try {
+        let url = '/api/tasks?assigned_to=user&limit=30';
+        if (statusFilter) url += `&status=${statusFilter}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const tasks = data.tasks || [];
+
+        if (tasks.length === 0) {
+          container.innerHTML = '<p style="color:var(--text-muted);padding:1rem;text-align:center;">Keine offenen Aufgaben für Benutzer gefunden.</p>';
+          return;
+        }
+
+        container.innerHTML = `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:60px;">ID</th>
+                <th>Titel & Beschreibung</th>
+                <th style="width:110px;">Status</th>
+                <th style="width:80px;">Priorität</th>
+                <th style="width:120px;">Kategorie</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tasks.map(t => `
+                <tr>
+                  <td style="font-family:monospace;color:var(--text-muted);">#${t.id}</td>
+                  <td>
+                    <strong>${escapeHtml(t.title || 'Ohne Titel')}</strong>
+                    ${t.description ? `<p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">${escapeHtml(t.description.slice(0, 80))}...</p>` : ''}
+                  </td>
+                  <td><span class="badge ${t.status === 'done' || t.status === 'completed' ? 'badge-success' : 'badge-accent'}">${escapeHtml(t.status || 'todo')}</span></td>
+                  <td style="font-weight:600;color:var(--text);">${t.priority || 2}</td>
+                  <td><span class="badge badge-secondary" style="font-size:0.7rem;">${escapeHtml(t.category || '-')}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--error);padding:1rem;">Fehler beim Laden: ${e.message}</p>`;
+      }
+    }
+
+    // ── MAIN TAB SETUP ──
+    function setupTabs() {
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      const tabPanes = document.querySelectorAll('.tab-pane');
+
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-tab');
+          tabButtons.forEach(b => b.classList.remove('active'));
+          tabPanes.forEach(p => p.classList.remove('active'));
+
+          btn.classList.add('active');
+          const targetPane = document.getElementById('pane-' + tab);
+          if (targetPane) targetPane.classList.add('active');
+
+          const url = new URL(window.location);
+          url.searchParams.set('tab', tab);
+          window.history.replaceState({}, '', url);
+
+          if (tab === 'kalender') loadCalendarEvents();
+          if (tab === 'routinen') loadPersonalRoutines();
+          if (tab === 'aufgaben') loadUserTasks();
+        });
+      });
+
+      // View Buttons in Kalender
+      document.querySelectorAll('.cal-view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const view = btn.getAttribute('data-view');
+          switchCalendarView(view);
+        });
+      });
+
+      // Handle query param
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialTab = urlParams.get('tab');
+      if (initialTab) {
+        const matchBtn = document.querySelector(`.tab-btn[data-tab="${initialTab}"]`);
+        if (matchBtn) matchBtn.click();
+      }
+    }
+
+    // ── TIMER ──
+    let timerInterval = null;
+    let secondsLeft = 25 * 60;
+
+    function updateTimerDisplay() {
+      const display = document.getElementById('timer-display');
+      if (!display) return;
+      const m = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+      const s = (secondsLeft % 60).toString().padStart(2, '0');
+      display.textContent = `${m}:${s}`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      setupTabs();
+      loadCalendarEvents();
+
+      const btnStart = document.getElementById('btn-timer-start');
+      const btnReset = document.getElementById('btn-timer-reset');
+
+      if (btnStart) {
+        btnStart.addEventListener('click', () => {
+          if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            btnStart.textContent = 'Weiter';
+          } else {
+            btnStart.textContent = 'Pause';
+            timerInterval = setInterval(() => {
+              if (secondsLeft > 0) {
+                secondsLeft--;
+                updateTimerDisplay();
+              } else {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                alert('Fokus-Intervall beendet! Zeit für eine Pause.');
+              }
+            }, 1000);
+          }
+        });
+      }
+
+      if (btnReset) {
+        btnReset.addEventListener('click', () => {
+          if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+          }
+          secondsLeft = 25 * 60;
+          updateTimerDisplay();
+          if (btnStart) btnStart.textContent = 'Start';
+        });
+      }
+    });
+  </script>
+</BachLayout>

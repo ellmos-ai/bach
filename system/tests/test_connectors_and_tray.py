@@ -737,6 +737,20 @@ class TestBACHTray:
         # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
         assert not hasattr(tray, "webchat_url")
 
+    def test_branding_support(self):
+        with patch.dict('sys.modules', {
+            'pystray': MagicMock(),
+            'PIL': MagicMock(),
+            'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(),
+            'PIL.ImageFont': MagicMock(),
+        }):
+            from hub._services.chat.chat_tray import BACHTray
+            tray_bach = BACHTray(brand="bach")
+            assert tray_bach.brand == "bach"
+            tray_ocean = BACHTray(brand="ocean")
+            assert tray_ocean.brand == "ocean"
+
     def test_custom_activity_and_gui_urls(self):
         with patch.dict('sys.modules', {
             'pystray': MagicMock(),

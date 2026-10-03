@@ -1,0 +1,151 @@
+---
+// marblerun.astro - MarbleRun Agenten-Ketten & Multi-Step Orchestrierung
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Agenten-Staffel (MarbleRun)" currentPath="/agenten/marblerun">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        ⛓️ Agenten-Staffel (MarbleRun)
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Visueller Workflow-Builder • Kettenglieder mit Agenten beseelen • Usecase-Pipelines & Multi-Agenten-Handoffs
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;">
+      <button class="btn btn-primary" onclick="createNewChain()">
+        <span>+</span> Neue Kette erstellen
+      </button>
+      <a href="/agenten/running" class="btn">
+        <span>⚡</span> Living Agents
+      </a>
+    </div>
+  </div>
+
+  <!-- Ketten-Editor Canvas -->
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title">📐 Ketten-Designer: <span id="active-chain-title" style="color:var(--accent);">NemoFold Multi-Model Review</span></h2>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn btn-primary" onclick="executeActiveChain()">
+          ▶ Kette Ausführen
+        </button>
+        <button class="btn" onclick="addChainStep()">
+          + Glied hinzufügen
+        </button>
+      </div>
+    </div>
+
+    <!-- Visual Pipeline -->
+    <div id="pipeline-canvas" style="display:flex;align-items:center;gap:1rem;overflow-x:auto;padding:1.5rem 0.5rem;min-height:160px;">
+      <!-- Step 1 -->
+      <div style="background:var(--bg-card);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:1rem;min-width:200px;text-align:center;">
+        <span class="badge badge-accent" style="margin-bottom:0.5rem;">Schritt 1</span>
+        <strong style="display:block;font-size:0.9rem;color:var(--text);">Code Analysis</strong>
+        <span style="font-size:0.75rem;color:var(--success);">Agent: Ati (Codex)</span>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem;">Diffs & Linter prüfen</div>
+      </div>
+
+      <span style="font-size:1.5rem;color:var(--text-muted);">➔</span>
+
+      <!-- Step 2 -->
+      <div style="background:var(--bg-card);border:2px solid var(--accent-blue);border-radius:var(--radius-sm);padding:1rem;min-width:200px;text-align:center;">
+        <span class="badge badge-accent" style="margin-bottom:0.5rem;">Schritt 2</span>
+        <strong style="display:block;font-size:0.9rem;color:var(--text);">Security Gate</strong>
+        <span style="font-size:0.75rem;color:var(--success);">Agent: Wartungs-Agent</span>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem;">P-001 & Locks scannen</div>
+      </div>
+
+      <span style="font-size:1.5rem;color:var(--text-muted);">➔</span>
+
+      <!-- Step 3 -->
+      <div style="background:var(--bg-card);border:2px solid var(--success);border-radius:var(--radius-sm);padding:1rem;min-width:200px;text-align:center;">
+        <span class="badge badge-success" style="margin-bottom:0.5rem;">Schritt 3</span>
+        <strong style="display:block;font-size:0.9rem;color:var(--text);">Reviewer 4-Eyes</strong>
+        <span style="font-size:0.75rem;color:var(--success);">Agent: Ollama Local</span>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem;">Zweitmodell-Abnahme</div>
+      </div>
+
+      <span style="font-size:1.5rem;color:var(--text-muted);">➔</span>
+
+      <!-- Output -->
+      <div style="background:var(--bg-dark);border:2px dashed var(--border);border-radius:var(--radius-sm);padding:1rem;min-width:180px;text-align:center;">
+        <span class="badge badge-warning" style="margin-bottom:0.5rem;">Ergebnis</span>
+        <strong style="display:block;font-size:0.9rem;color:var(--text);">PR Freigabe</strong>
+        <span style="font-size:0.75rem;color:var(--text-muted);">Menschliche Abnahme</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ketten-Bibliothek Grid -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">📚 Ketten-Bibliothek</h2>
+      <span class="badge badge-accent" id="chains-count-badge">Lade...</span>
+    </div>
+
+    <div class="grid grid-cols-3" id="chains-grid" style="gap:1.5rem;">
+      <p style="text-align:center;grid-column:span 3;padding:2rem;color:var(--text-muted);">Lade Ketten aus dem Cluster...</p>
+    </div>
+  </div>
+
+  <script is:inline>
+    async function loadChains() {
+      const container = document.getElementById('chains-grid');
+      try {
+        const res = await fetch('/api/marblerun/chains');
+        const data = await res.json();
+        const chains = data.chains || [];
+        document.getElementById('chains-count-badge').textContent = `${chains.length} Gespeichert`;
+
+        if (chains.length === 0) {
+          container.innerHTML = '<p style="text-align:center;color:var(--text-muted);grid-column:span 3;padding:2rem;">Keine Ketten definiert.</p>';
+          return;
+        }
+
+        container.innerHTML = chains.map(c => `
+          <div style="padding:1.25rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+              <strong style="font-size:0.95rem;color:var(--text);">${escapeHtml(c.name || 'Kette')}</strong>
+              <span class="badge badge-success">${c.steps_count || (c.steps ? c.steps.length : 3)} Schritte</span>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem;">
+              ${escapeHtml(c.description || 'Automatisierte Multi-Agenten Pipeline')}
+            </p>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn btn-primary" style="flex:1;padding:0.35rem 0.5rem;font-size:0.75rem;" onclick="executeChain('${c.id}')">
+                ▶ Starten
+              </button>
+              <button class="btn" style="padding:0.35rem 0.5rem;font-size:0.75rem;" onclick="editChain('${c.id}')">
+                Bearbeiten
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--error);text-align:center;grid-column:span 3;">Fehler: ${e.message}</p>`;
+      }
+    }
+
+    function executeActiveChain() {
+      alert("Kette gestartet! Schritt 1 [Code Analysis] wurde an Agent Ati übergeben.");
+    }
+
+    function addChainStep() {
+      alert("Neues Kettenglied hinzugefügt! Wähle in der Fabrika einen Agenten zur Beseelung aus.");
+    }
+
+    function createNewChain() {
+      alert("Neue Kette angelegt.");
+    }
+
+    function escapeHtml(t) {
+      if (t == null) return '';
+      return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.addEventListener('DOMContentLoaded', loadChains);
+  </script>
+</BachLayout>

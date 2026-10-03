@@ -1,0 +1,194 @@
+---
+// src/pages/artefakte.astro - Artefakte & Exporte Übersicht
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Artefakte & Exporte" currentPath="/artefakte">
+  <div class="artefakte-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">🎨</span> Artefakte & Exporte</h1>
+        <p class="subtitle">Zentrale Übersicht aller generierten Dokumente, Berichte, Spezifikationen und UI-Artefakte</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="loadArtefakte()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Quick Filter -->
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">Alle Formate</button>
+      <button class="filter-btn" data-filter="MD">Markdown (MD)</button>
+      <button class="filter-btn" data-filter="HTML">HTML-Mockups</button>
+      <button class="filter-btn" data-filter="JSON">JSON-Daten</button>
+    </div>
+
+    <!-- Artefakte Grid -->
+    <div class="artefakte-grid" id="artefakte-grid">
+      <p class="loading-state">Lade Artefakte...</p>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .artefakte-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .filter-bar {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .filter-btn {
+    padding: 0.4rem 0.85rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.825rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .filter-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .filter-btn.active {
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .artefakte-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+  }
+  .artefakt-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+  }
+  .artefakt-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .artefakt-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .artefakt-icon {
+    font-size: 1.75rem;
+  }
+  .artefakt-title h3 {
+    margin: 0;
+    font-size: 1rem;
+    word-break: break-word;
+  }
+  .artefakt-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.2rem 0 0 0;
+  }
+  .artefakt-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+  }
+</style>
+
+<script is:inline>
+  let allArtefakte = [];
+
+  async function loadArtefakte() {
+    const grid = document.getElementById('artefakte-grid');
+    if (!grid) return;
+    try {
+      const res = await fetch('/api/artefakte');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      allArtefakte = data.artefakte || [];
+      renderArtefakte(allArtefakte);
+    } catch (e) {
+      grid.innerHTML = `<p class="text-danger">Fehler beim Laden: ${e.message}</p>`;
+    }
+  }
+
+  function renderArtefakte(items) {
+    const grid = document.getElementById('artefakte-grid');
+    if (!grid) return;
+    if (items.length === 0) {
+      grid.innerHTML = '<p class="text-muted">Keine Artefakte für diesen Filter gefunden.</p>';
+      return;
+    }
+    grid.innerHTML = items.map(a => `
+      <div class="artefakt-card" data-type="${a.type}">
+        <div>
+          <div class="artefakt-header">
+            <span class="artefakt-icon">${a.icon || '📄'}</span>
+            <div class="artefakt-title">
+              <h3>${a.title}</h3>
+              <p class="artefakt-meta">${a.category} · ${(a.size_bytes / 1024).toFixed(1)} KB</p>
+            </div>
+          </div>
+          <code style="font-size:0.75rem;color:var(--text-muted);word-break:break-all;">${a.filename}</code>
+        </div>
+        <div class="artefakt-footer">
+          <span class="badge badge-accent">${a.type}</span>
+          <button class="btn btn-sm btn-secondary" onclick="alert('Artefakt:\\n${a.path}')">Details</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadArtefakte();
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+        if (filter === 'all') {
+          renderArtefakte(allArtefakte);
+        } else {
+          renderArtefakte(allArtefakte.filter(a => a.type === filter));
+        }
+      });
+    });
+  });
+</script>

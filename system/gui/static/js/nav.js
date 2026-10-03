@@ -61,45 +61,64 @@ if (typeof escapeHtml === 'undefined') {
 }
 
 const NAV_ITEMS = [
-    { href: "/", label: "Dashboard" },
-    { label: "Aufgaben", children: [
-        { href: "/tasks-board", label: "Tasks" },
-        { href: "/routinen?tab=bach", label: "BACH-Routinen" },
+    { id: "dashboard", href: "/", label: "Dashboard", icon: "🎵" },
+    { id: "tasks", label: "Aufgaben", icon: "📋", children: [
+        { href: "/tasks", label: "Aufgaben & Taskboard", icon: "📝", description: "Zentrales Aufgabenboard mit Status & Filtern" },
+        { href: "/routinen?tab=bach", label: "Bachroutinen", icon: "🎼", description: "Automatisierte System- & Wartungsroutinen" },
+        { href: "/routinen?tab=ocean", label: "Oceanroutinen", icon: "🌊", description: "Verteilte Schwarm- & Hintergrundzyklen" },
     ]},
-    { label: "Persönlicher Assistent", children: [
-        { href: "/persoenlich", label: "Dashboard" },
-        { href: "/chat", label: "Buddha Chat" },
-        { href: "/prompt-library", label: "Deine Prompts" },
-        { href: "/routinen?tab=personal", label: "Deine Routinen" },
-        { href: "/kontakte", label: "Kontakte" },
-        { href: "/denkarium", label: "Denkarium", external: true },
-        { href: "/wiki", label: "Wiki" },
+    { id: "assistant", label: "Persönlicher Assistent", shortLabel: "Assistent", icon: "🧘", children: [
+        { href: "/persoenlich", label: "Assistenten-Dashboard", icon: "📊", description: "Status, Haltung und Fokus von Buddha" },
+        { href: "/chat", label: "Buddha Chat (Compare-Race)", icon: "💬", description: "Multi-Modell Dialog & Race-Evaluation" },
+        { href: "/prompt-library", label: "Profil & Prompts", icon: "📚", description: "Systemprompts & Persönlichkeitsprofile" },
+        { href: "/denkarium", label: "Denkarium", icon: "🔮", description: "Externes Gedankenlabor (neuer Tab)", external: true },
+        { href: "/kontakte", label: "Kontakte", icon: "👥", description: "Adressbuch & Netzwerk" },
+        { href: "/wiki", label: "Wiki", icon: "📖", description: "Persönliche Wissensbasis" },
     ]},
-    { label: "Agenten", children: [
-        { href: "/chat", label: "Chats" },
-        { href: "/agents-board", label: "Agents Board" },
-        { href: "/reports", label: "📑 Berichte" },
-        { href: "/memory", label: "Memory" },
-        { href: "/tokens", label: "Tokens" },
-        { href: "#", portRel: 8081, path: "/activity", label: "Models", external: true },
-        { href: "/tools", label: "Tools" },
+    { id: "life", label: "Life", icon: "🌱", children: [
+        { href: "/life", label: "Life-Zentrale", icon: "🌿", description: "Ganzheitliche Lebensübersicht" },
+        { href: "/life?tab=kalender", label: "Kalender (Tag, Woche, Monat, Jahr)", icon: "📅", description: "Tages-, Wochen-, Monatsansicht & Jahresüberblick" },
+        { href: "/life?tab=routinen", label: "Deine Routinen", icon: "⏰", description: "Persönliche Lebens-, Haushalts- und Tagesroutinen" },
+        { href: "/tasks?assigned_to=user", label: "Meine Aufgaben", icon: "👤", description: "Gefiltert auf persönliche Aufgaben" },
+        { href: "/life?tab=selbstmanagement", label: "Selbstmanagement & ADHS", icon: "🎯", description: "Fokusstrategien und Entlastungsmethoden" },
+        { href: "/financial", label: "Finanzen & Budget", icon: "💰", description: "Einnahmen, Ausgaben und Prognosen" },
+        { href: "/life?tab=balance", label: "Lebenskreise & Reflexion", icon: "☯️", description: "Work-Life-Balance & Selbsteinschätzung" },
+        { href: "/gesundheit", label: "Gesundheit & Vitalität", icon: "🩺", description: "Tracking, Wohlbefinden und Pläne" },
     ]},
-    { label: "Meine Domänen", children: [
-        { href: "/financial", label: "Finanzen" },
-        { href: "/ati", label: "🛠️ ATI Entwickler" },
-        { href: "/steuer", label: "⚖️ Theodor Steuer" },
-        { href: "/gesundheit", label: "🩺 Gesundheit" },
+    { id: "agenten", label: "Agenten", icon: "🤖", children: [
+        { href: "/agenten/fabrika", label: "Agenten-Fabrik", icon: "🏭", description: "Baukasten: Einzelagenten, Swarm & Ketten" },
+        { href: "/agenten/running", label: "Living & Running", icon: "⚡", description: "Aktive Instanzen, Beseelungen & Health" },
+        { href: "/agenten/sessions", label: "Sessions & Protokolle", icon: "📜", description: "Rohberichte und Zusammenfassungen" },
+        { href: "/messages", label: "Messages (User Inbox)", icon: "✉️", description: "Direktnachrichten von Agenten an dich" },
+        { href: "/agents-board", label: "Agents-Board (Skill-Katalog)", icon: "📊", description: "Aufgabenzuweisung & 388+ Skills" },
+        { href: "/skills", label: "Skill- & Tool-Center", icon: "🔌", description: "Steckdosenleiste, MCP Cookbooks & Rollback" },
+        { href: "/memory", label: "Memory", icon: "🧠", description: "Kognitiver Schaltplan, Arbeitsgedächtnis & Fakten" },
     ]},
-    { href: "/inbox", label: "Dateien" },
-    { label: "System", children: [
-        { href: "/settings", label: "Einstellungen" },
-        { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
-        { href: "/usecases", label: "Use Cases" },
-        { href: "/daemon", label: "Automation" },
-        { href: "/control/", label: "Unified GUI", external: true },
-        { href: "/maintenance", label: "Wartung" },
-        { href: "/logs", label: "Logs" },
-        { href: "/help", label: "Help" },
+    { id: "domains", label: "Meine Domänen", shortLabel: "Domänen", icon: "🌐", children: [
+        { href: "/domains", label: "Domänen & Fachmodule", icon: "🧩", description: "Slot-Dashboard: AI-Media, PC-Tools" },
+        { href: "/financial", label: "Finanzen", icon: "💰", description: "Budget & Finanzplanung" },
+        { href: "/ati", label: "ATI Entwickler", icon: "🛠️", description: "Code-Entwicklung & Entwickler-Tasks" },
+        { href: "/steuer", label: "Theodor Steuer", icon: "⚖️", description: "Steuer-Assistent, Belege & Abschreibungen" },
+        { href: "/gesundheit", label: "Förderplaner & Diagnostik", icon: "🩺", description: "Pädagogische & therapeutische Pläne" },
+    ]},
+    { id: "files", label: "Dateien", icon: "📁", children: [
+        { href: "/inbox", label: "Inbox & Dateiverwaltung", icon: "📥", description: "Upload, Sync & Cloud-Speicher" },
+        { href: "/artefakte", label: "Artefakte & Exporte", icon: "🎨", description: "Generierte Berichte, Diagramme & Mockups" },
+    ]},
+    { id: "governance", label: "Governance & Control", shortLabel: "Governance", icon: "🛡️", children: [
+        { href: "/governance", label: "Governance CONTROL Room", icon: "🏛️", description: "Zentrale Sicherheitsregeln & Audit" },
+        { href: "/governance?tab=locks", label: "Lock-Master & Decision-Clicker", icon: "🔒", description: "Fail-Closed Sperren & P-001 Prüfungen" },
+        { href: "/governance/funk", label: "Agentenfunk", icon: "📻", description: "Inter-Agenten-Signale & Handshakes" },
+        { href: "/governance/usecases", label: "Use Cases & Workflows", icon: "🎯", description: "Definierte Einsatzszenarien & Pfade" },
+        { href: "/governance/logs", label: "Logs & Audit", icon: "📜", description: "Echtzeit-Streams aller System-Events" },
+        { href: "/help", label: "Hilfe & Dokumentation", icon: "❓", description: "Handbücher, Architektur-Guides & Shortcuts" },
+    ]},
+    { id: "system", label: "System", icon: "⚙️", children: [
+        { href: "/settings", label: "Einstellungen & Setup", icon: "🔧", description: "Installer, Modulschaltplan, Trithon, Salt" },
+        { href: "/tools", label: "Tools & CLI-Werkzeuge", icon: "🔨", description: "Ausführbare Helfer & Diagnose-Tools" },
+        { href: "/daemon", label: "Daemon & Chains", icon: "⛓️", description: "Hintergrund-Dienste & Trigger" },
+        { href: "/system?tab=ocean", label: "Ocean-Ausbaustufen", icon: "🌊", description: "Stufenplan & Cluster-Status" },
+        { href: "/maintenance", label: "Wartung & Integrität", icon: "🩺", description: "Datenbank-Bereinigung & Healthchecks" },
     ]},
 ];
 
@@ -131,44 +150,67 @@ function initNavigation() {
     }
 
     const navHtml = NAV_ITEMS.map(item => {
+        const iconHtml = item.icon ? `<span class="nav-icon">${item.icon}</span>` : '';
+        const fullLabel = item.label;
+        const shortLabel = item.shortLabel || item.label;
+        const labelHtml = item.shortLabel
+            ? `<span class="nav-label"><span class="nav-label-full">${escapeHtml(fullLabel)}</span><span class="nav-label-short">${escapeHtml(shortLabel)}</span></span>`
+            : `<span class="nav-label">${escapeHtml(fullLabel)}</span>`;
+
         if (item.children) {
             const parentActive = hasActiveChild(item) ? ' active' : '';
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
-                const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+                const target = child.external || child.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
                 let href = child.href;
                 if (child.portRel) {
                     const host = window.location.hostname || 'localhost';
                     href = `http://${host}:${child.portRel}${child.path || ''}`;
                 }
-                return `<a href="${href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
+                const childIcon = child.icon ? `<span class="dropdown-item-icon">${child.icon}</span>` : '';
+                const descHtml = child.description ? `<div class="dropdown-item-desc">${escapeHtml(child.description)}</div>` : '';
+                return `<a href="${href}"${target} class="dropdown-item${childActive}">
+                    ${childIcon}
+                    <div class="dropdown-item-text">
+                        <div class="dropdown-item-title">${escapeHtml(child.label)}</div>
+                        ${descHtml}
+                    </div>
+                </a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
-                <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
+                <button class="nav-item nav-dropdown-toggle${parentActive}" type="button">
+                    ${iconHtml}${labelHtml} <span class="dropdown-arrow">▾</span>
+                </button>
                 <div class="dropdown-menu">${childHtml}</div>
             </div>`;
         }
         const active = isActive(item.href) ? ' active' : '';
-        const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
+        const target = item.external || item.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
         let itemHref = item.href;
         if (item.portRel) {
             const host = window.location.hostname || 'localhost';
             itemHref = `http://${host}:${item.portRel}${item.path || ''}`;
         }
-        return `<a href="${itemHref}"${target} class="nav-item${active}">${item.label}</a>`;
+        return `<a href="${itemHref}"${target} class="nav-item${active}">${iconHtml}${labelHtml}</a>`;
     }).join('\n            ');
 
     const currentTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
     header.innerHTML = `
-        <div class="logo">
-            <span class="logo-icon">🎵</span>
-            <span class="logo-text">BACH v${BACH_VERSION}</span>
+        <div class="header-left">
+            <a href="/" class="logo" style="text-decoration:none;">
+                <span class="logo-icon">🎵</span>
+                <span class="logo-text">BACH <span style="font-size:0.75rem;opacity:0.6;font-weight:normal;">v${BACH_VERSION}</span></span>
+            </a>
+            <nav class="main-nav" aria-label="Hauptnavigation">
+                ${navHtml}
+            </nav>
         </div>
-        <nav class="main-nav">
-            ${navHtml}
-        </nav>
-        <div style="display:flex;align-items:center;">
+        <div class="header-right" style="display:flex;align-items:center;gap:0.75rem;">
+            <div class="quick-nav-actions" style="display:flex;align-items:center;gap:0.35rem;">
+                <a href="/life?tab=kalender" class="quick-action-btn" title="Kalender (Termine, Routinen & Aufgaben)" aria-label="Kalender">📅</a>
+                <a href="/kontakte" class="quick-action-btn" title="Kontakte & Netzwerk" aria-label="Kontakte">👥</a>
+            </div>
             <div class="theme-switcher" id="theme-switcher">
                 <button class="theme-btn${currentTheme === 'dark' ? ' active' : ''}" data-theme="dark" title="Dark">🌙</button>
                 <button class="theme-btn${currentTheme === 'light' ? ' active' : ''}" data-theme="light" title="Light">☀️</button>

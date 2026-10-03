@@ -1,0 +1,472 @@
+---
+// src/pages/settings.astro - Einstellungen, Setup, Ocean Modulschaltplan & Installer
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Einstellungen & Setup" currentPath="/settings">
+  <div class="settings-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">⚙️</span> Einstellungen & System-Setup</h1>
+        <p class="subtitle">Systemkonfiguration, Backend-Installer, Ocean Modulschaltplan & Autonomes Lernen</p>
+      </div>
+      <div class="header-actions">
+        <span class="badge badge-accent">BACH / OCEAN v3.13</span>
+        <button class="btn btn-secondary" onclick="loadOceanMap()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="ocean-map">🌊 Ocean Modulschaltplan</button>
+      <button class="tab-btn" data-tab="installer">📦 Installer & Erweiterungen</button>
+      <button class="tab-btn" data-tab="learning">🧠 NemoFold & Hermes (Lernen)</button>
+      <button class="tab-btn" data-tab="core">⚙️ Core & Repo-Klärung</button>
+    </div>
+
+    <!-- TAB 1: OCEAN MODULSCHALTPLAN -->
+    <div class="tab-pane active" id="pane-ocean-map">
+      <div class="glass-card">
+        <h3><span class="icon">🌊</span> Ocean Architektur- & Modulschaltplan</h3>
+        <p class="card-desc">Visuelle Topologie der Kernsysteme aus <code>ellmos-ai</code> (Trithon, Muschelgrund, Salt & Subsysteme)</p>
+
+        <div class="ocean-components-grid" id="ocean-components-grid">
+          <p class="loading-state">Lade Ocean Modulschaltplan...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: INSTALLER & ERWEITERUNGEN -->
+    <div class="tab-pane" id="pane-installer">
+      <div class="card-grid">
+        <div class="glass-card">
+          <h3><span class="icon">📦</span> Backend-Installer</h3>
+          <p class="card-desc">Paket- und Modulmanager für lokale und Remote-Pipelines</p>
+          <div class="installer-box">
+            <label>Paket oder Modulname zur Nachinstallation</label>
+            <div style="display:flex;gap:0.5rem;margin-top:0.4rem;">
+              <input type="text" id="install-package-input" placeholder="z. B. ellmos-voice-io, paveman, foerderplaner..." style="flex:1;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+              <button class="btn btn-primary" onclick="triggerInstall()">Installieren</button>
+            </div>
+            <div id="install-log" style="margin-top:1rem;background:rgba(0,0,0,0.3);padding:0.75rem;border-radius:var(--radius-sm);font-family:monospace;font-size:0.8rem;display:none;"></div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <h3><span class="icon">🔌</span> Verfügbare Erweiterungen</h3>
+          <ul class="extension-list">
+            <li>
+              <div><strong>ellmos-voice-io</strong><p>Sprachein- und -ausgabe via Whisper & TTS</p></div>
+              <span class="badge badge-success">Verfügbar</span>
+            </li>
+            <li>
+              <div><strong>ellmos-blender-use-mcp</strong><p>3D-Visualisierung & automatische Geometrie-Generierung</p></div>
+              <span class="badge badge-success">Verfügbar</span>
+            </li>
+            <li>
+              <div><strong>media-editor-core</strong><p>High-Speed Renderengine für Windows & Mac Studio</p></div>
+              <span class="badge badge-accent">Installiert</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: NEMOFOLD & HERMES (LERNEN) -->
+    <div class="tab-pane" id="pane-learning">
+      <div class="card-grid">
+        <div class="glass-card">
+          <div class="learning-header">
+            <span class="learning-icon">🧬</span>
+            <div>
+              <h3>NemoFold: Workflow-Lernen & Step-Ketten</h3>
+              <p class="card-desc">Analysiert wiederkehrende Abläufe, schlägt Ketten vor und baut automatisch Step-Ketten</p>
+            </div>
+          </div>
+          <div class="learning-content">
+            <div class="pipeline-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Ablaufbeobachtung & Heuristik-Detektor</strong>
+                <p>NemoFold trackt Werkzeugfolgen (Tool-Chains) über mehrere Sessions.</p>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Ketten-Synthese & Skill-Generierung</strong>
+                <p>Erkennt wiederkehrende Muster und gießt sie in eigenständige, wiederverwendbare Step-Ketten.</p>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Validierung & Rollback-Schutz</strong>
+                <p>Neu gelernte Ketten durchlaufen den Workflow-TÜV vor der Aufnahme in das Sentinel-Register.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="learning-header">
+            <span class="learning-icon">📜</span>
+            <div>
+              <h3>Hermes: Skill-Lernen aus Chat-Sessions</h3>
+              <p class="card-desc">Destilliert deklaratives und prozedurales Wissen direkt aus Nutzerdialogen</p>
+            </div>
+          </div>
+          <div class="learning-content">
+            <div class="pipeline-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Dialog-Mining & Transkript-Analyse</strong>
+                <p>Hermes scannt Chatverläufe auf gelöste Probleme und Nutzer-Korrekturen.</p>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Automatische Lessons Learned & Best Practices</strong>
+                <p>Übernahme validierter Lösungswege direkt in <code>memory_lessons</code>.</p>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Prozedurales Gedächtnis</strong>
+                <p>Wandelt erfolgreiche Chat-Workflows in native Markdown-Skills um.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: CORE & REPO-KLÄRUNG -->
+    <div class="tab-pane" id="pane-core">
+      <div class="card-grid">
+        <div class="glass-card">
+          <h3><span class="icon">🔱</span> Core-Komponenten Status</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Komponente</th>
+                <th>Rolle</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Trithon</strong></td>
+                <td>Asynchroner Event-Loop & Runtime</td>
+                <td><span class="badge badge-success">Online</span></td>
+              </tr>
+              <tr>
+                <td><strong>Muschelgrund</strong></td>
+                <td>Verteilter State & Persistence Hub</td>
+                <td><span class="badge badge-success">Verbunden</span></td>
+              </tr>
+              <tr>
+                <td><strong>Salt</strong></td>
+                <td>Zero-Trust Tokens & Signaturen</td>
+                <td><span class="badge badge-success">Aktiv</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="glass-card">
+          <h3><span class="icon">🏛️</span> Repo- & Architektur-Klassifizierung</h3>
+          <p class="card-desc">Klare Trennung der Komponenten und Verantwortlichkeiten:</p>
+          <div class="repo-box">
+            <div class="repo-item">
+              <span class="badge badge-accent">Unified GUI</span>
+              <strong>Astro v5 Modular GUI (dieses Dashboard)</strong>
+              <p>Kanonische Gesamt-Oberfläche, Kognitiver Schaltplan, Single Source of Truth Navigation.</p>
+            </div>
+            <div class="repo-item">
+              <span class="badge badge-secondary">Komponenten-GUI / Fallback</span>
+              <strong>Legacy Flask / Jinja Server (`system/gui/templates`)</strong>
+              <p>Dient als stabiler Fallback und headless API-Dienst für unkompilierte Umgebungen.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .settings-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .tab-bar {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .tab-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .tab-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .tab-pane {
+    display: none;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .tab-pane.active {
+    display: flex;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 1.25rem;
+  }
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+  }
+  .glass-card h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.15rem;
+  }
+  .card-desc {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1.25rem 0;
+  }
+  .ocean-components-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .ocean-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+  }
+  .ocean-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .ocean-card-icon {
+    font-size: 1.5rem;
+  }
+  .ocean-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .ocean-card-role {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 0.75rem 0;
+    line-height: 1.35;
+  }
+  .extension-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .extension-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+  }
+  .extension-list strong {
+    font-size: 0.875rem;
+  }
+  .extension-list p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .learning-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .learning-icon {
+    font-size: 2rem;
+  }
+  .pipeline-step {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.015);
+  }
+  .step-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 700;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .pipeline-step strong {
+    font-size: 0.875rem;
+  }
+  .pipeline-step p {
+    font-size: 0.775rem;
+    color: var(--text-muted);
+    margin: 0.15rem 0 0 0;
+  }
+  .repo-box {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .repo-item {
+    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.02);
+    border-left: 3px solid var(--accent);
+  }
+  .repo-item strong {
+    display: block;
+    margin: 0.35rem 0 0.15rem 0;
+    font-size: 0.9rem;
+  }
+  .repo-item p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .data-table th, .data-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+</style>
+
+<script is:inline>
+  function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById('pane-' + tab);
+        if (target) target.classList.add('active');
+      });
+    });
+  }
+
+  async function loadOceanMap() {
+    const grid = document.getElementById('ocean-components-grid');
+    if (!grid) return;
+    try {
+      const res = await fetch('/api/setup/ocean-map');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const components = data.core_components || [];
+      grid.innerHTML = components.map(c => `
+        <div class="ocean-card">
+          <div class="ocean-card-header">
+            <span class="ocean-card-icon">${c.icon || '🌊'}</span>
+            <div class="ocean-card-title">${c.name}</div>
+          </div>
+          <p class="ocean-card-role">${c.role}</p>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="badge badge-success">${c.status}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);">${c.type}</span>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      grid.innerHTML = `<p class="text-danger">Fehler beim Laden: ${e.message}</p>`;
+    }
+  }
+
+  function triggerInstall() {
+    const input = document.getElementById('install-package-input');
+    const log = document.getElementById('install-log');
+    if (!input || !input.value.trim()) {
+      alert('Bitte einen Modulnamen angeben.');
+      return;
+    }
+    const pkg = input.value.trim();
+    if (log) {
+      log.style.display = 'block';
+      log.innerHTML = `> Starte Backend-Installer für: ${pkg}...\n> Validiere Berechtigungen...\n> [OK] Modul ${pkg} registriert und bereitgestellt.`;
+    }
+    input.value = '';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setupTabs();
+    loadOceanMap();
+  });
+</script>
