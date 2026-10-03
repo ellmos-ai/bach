@@ -196,7 +196,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
         <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
           <button type="button" class="btn" onclick="saveBlueprint()">💾 Schablone & Governance speichern</button>
-          <button type="button" class="btn btn-primary" onclick="openBeseelenModal()">✨ Schablone Beseelen (➔ Living)</button>
+          <button type="button" class="btn btn-primary" onclick="openBeseelenModal()">✨ Schablone als Konfiguration vormerken</button>
         </div>
       </div>
     </div>
@@ -328,44 +328,42 @@ import BachLayout from "../../layouts/BachLayout.astro";
   <!-- Modal: Beseelung an Animus -->
   <div id="modal-beseelen" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;">
     <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:550px;padding:2rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
-      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">✨ Agenten Beseelen</h2>
+      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">Schablone vormerken</h2>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.25rem;">
-        Verknüpfe die Schablone mit einem konkreten Modell (Animus), um sie als lebenden Agenten zu aktivieren.
+        Die Schablone erscheint danach als konfiguriert in Living & Running. Ein Agentenprozess wird dadurch nicht gestartet.
       </p>
 
       <div style="display:flex;flex-direction:column;gap:1rem;">
+        <p style="font-size:0.8rem;color:var(--text-muted);">Modell, Animus-Typ und Fallback sind für einzelne Schablonen noch nicht angebunden. Diese Auswahl wird erst mit einer bestätigten Speicherung freigeschaltet.</p>
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Animus-Typ</label>
-          <select id="animus-type" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+          <select id="animus-type" disabled style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
             <option value="api">API (z. B. Anthropic Claude, OpenAI, Google)</option>
             <option value="mcp">MCP Worker (Lokales oder Cluster Tool)</option>
             <option value="cli">CLI Worker (z. B. claude-code CLI, agy CLI)</option>
             <option value="subscription">Subscription / Avatar Agent (Selbstwartend)</option>
           </select>
         </div>
-
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Primäres Modell</label>
-          <select id="animus-model" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+          <select id="animus-model" disabled style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
             <option value="ollama/qwen2.5-coder:32b">🦙 Ollama: Qwen 2.5 Coder 32B (Mac Studio Local)</option>
             <option value="claude-3-7-sonnet">🧠 Claude 3.7 Sonnet (Anthropic API)</option>
             <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash (Google API)</option>
             <option value="codex-cli">💻 Codex CLI (OpenAI)</option>
           </select>
         </div>
-
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Tokenlimit-Fallback</label>
-          <select id="animus-fallback" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+          <select id="animus-fallback" disabled style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
             <option value="ollama/qwen2.5-coder:32b" selected>Automatisch auf Mac Studio Ollama ausweichen</option>
             <option value="pause">Pausieren und Meldung an Governance</option>
             <option value="gemini-2.0-flash">Auf schnelles Flash-Modell wechseln</option>
           </select>
         </div>
-
         <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1rem;">
           <button type="button" class="btn" onclick="document.getElementById('modal-beseelen').classList.add('hidden')">Abbrechen</button>
-          <button type="button" class="btn btn-primary" onclick="confirmBeseelen()">Beseelung aktivieren ➔</button>
+          <button type="button" class="btn btn-primary" onclick="confirmBeseelen()">Konfiguration vormerken</button>
         </div>
       </div>
     </div>
@@ -448,7 +446,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
       picker.innerHTML = _allBlueprints.map(b => {
         const isSel = _selectedTeamMembers.has(b.name);
-        return `<button type="button" class="blueprint-chip ${isSel ? 'selected' : ''}" onclick="toggleTeamMember('${escapeHtml(b.name)}')">
+        return `<button type="button" class="blueprint-chip ${isSel ? 'selected' : ''}" onclick="toggleTeamMemberById(${Number(b.id)})">
           <span>${isSel ? '✓' : '+'}</span>
           <span>${escapeHtml(b.name)}</span>
           <span style="opacity:0.7;font-size:0.7rem;">(${escapeHtml(b.persona_role || b.role || 'Agent')})</span>
@@ -456,7 +454,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }).join('');
     }
 
-    function toggleTeamMember(name) {
+    function toggleTeamMemberById(id) {
+      const blueprint = _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) return;
+      const name = blueprint.name;
       if (_selectedTeamMembers.has(name)) {
         _selectedTeamMembers.delete(name);
       } else {
@@ -534,8 +535,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
             </div>
             <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona_prompt || b.description || '').slice(0, 80))}...</p>
             <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:0.5rem;">
-              <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor('${b.id}')">Bearbeiten</button>
-              <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal('${b.name}')">Beseelen ✨</button>
+              <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor(${Number(b.id)})">Bearbeiten</button>
+              <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal(${Number(b.id)})">Vormerken ✨</button>
             </div>
           </div>
         `).join('');
@@ -568,16 +569,34 @@ import BachLayout from "../../layouts/BachLayout.astro";
       document.getElementById('bp-name').focus();
     }
 
-    function openBeseelenModal(name) {
+    let selectedBlueprintId = null;
+
+    function openBeseelenModal(id) {
+      const blueprint = id == null
+        ? _allBlueprints.find(b => b.name === document.getElementById('bp-name').value.trim().toLowerCase())
+        : _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) { alert('Bitte speichere zuerst die Schablone.'); return; }
+      selectedBlueprintId = Number(blueprint.id);
       document.getElementById('modal-beseelen').classList.remove('hidden');
     }
 
     async function confirmBeseelen() {
-      const model = document.getElementById('animus-model').value;
-      const animusType = document.getElementById('animus-type').value;
-      alert(`Schablone erfolgreich an Animus [${model} / ${animusType}] gebunden! Agent erscheint nun in Living & Running.`);
-      document.getElementById('modal-beseelen').classList.add('hidden');
-      window.location.href = '/agenten/running';
+      if (!Number.isInteger(selectedBlueprintId)) return;
+      try {
+        const response = await fetch(`/api/agent-studio/blueprints/${selectedBlueprintId}/materialize`, { method: 'POST' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result.success !== true || result.status !== 'configured') throw new Error('Keine Bestätigung der Konfiguration');
+        const check = await fetch('/api/agent-studio/blueprints');
+        if (!check.ok) throw new Error('Readback HTTP ' + check.status);
+        const blueprint = ((await check.json()).blueprints || []).find(b => Number(b.id) === selectedBlueprintId);
+        if (!blueprint || Number(blueprint.is_materialized) !== 1) throw new Error('Konfiguration nicht bestätigt');
+        document.getElementById('modal-beseelen').classList.add('hidden');
+        alert('Schablone als Konfiguration vorgemerkt. Kein Agentenprozess gestartet.');
+        window.location.href = '/agenten/running';
+      } catch (error) {
+        alert('Konfiguration konnte nicht bestätigt werden: ' + error.message);
+      }
     }
 
     function applyGovProfile(profile) {
