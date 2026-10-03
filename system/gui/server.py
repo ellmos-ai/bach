@@ -1708,6 +1708,11 @@ async def api_get_tasks(
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
 
+        # Keep count as the returned page size; total describes the same filters
+        # before pagination (the dashboard only requests five recent tasks).
+        total = conn.execute(
+            query.replace("SELECT *", "SELECT COUNT(*)", 1), params
+        ).fetchone()[0]
         query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
         params.append(limit)
         
@@ -1735,7 +1740,7 @@ async def api_get_tasks(
                     pass
 
         conn.close()
-        return {"success": True, "tasks": tasks, "count": len(tasks)}
+        return {"success": True, "tasks": tasks, "count": len(tasks), "total": total}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 

@@ -19,6 +19,13 @@
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## GUI-Dashboard-Korrektur 2026-10-03 (Task #1693, Review ausstehend)
+
+- Die Astro-Startseite zählt offene Tasks über einen gefilterten API-Gesamtwert vor der Pagination, zeigt die kanonische Zuständigkeit und behandelt Ladefehler mit einem erneuten Versuch.
+- Die Darstellung nutzt ein kleines eigenständiges Frontend-Modul mit Vertragstests; die bestehenden API-Felder bleiben kompatibel. Dies ist ein begrenzter Stabilitätsschritt innerhalb der GUI-Roadmap.
+- Lieferung über einen separaten PR. Promptboard-/Tray-Integration, modulare Installer und die offenen Compare-Race-Aufgaben bleiben eigene Arbeitspakete; daraus wird kein abgeschlossener Live-Test abgeleitet.
+- Diagnose-Folgeaufgabe #1694: Taskänderungen und Abschluss aus Rheingold-Workern zum Lead propagieren; lokaler Cache und Lead-Status dürfen nicht auseinanderlaufen. Separat vom Recurring-/ID-Kollisions-Slice #1346 bearbeiten.
+
 ## Review 2026-10-01 (Daily Care & Dev Check)
 
 Automatisierter Daily Care & Dev Check. Befund und Status:
