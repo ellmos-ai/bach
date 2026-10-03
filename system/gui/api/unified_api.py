@@ -2255,66 +2255,10 @@ async def toggle_memory_lesson(lesson_id: int):
 
 @router.get("/domains/installed")
 async def get_installed_domains():
-    """Scant installierte Fachmodule aus OneDrive und lokale Software."""
-    domains = []
-    base_dir = Path(r"C:\Users\User\OneDrive\.TOPICS\.AI\.MODULES\.DOMAINS")
-    icon_map = {
-        "ai-media-editor": "🎬",
-        "anonymizer": "🎭",
-        "clip-storyboard-director": "🎞️",
-        "doc-services": "📄",
-        "ellmos-market-data": "📈",
-        "foerderplaner": "🩺",
-        "law-checker": "⚖️",
-        "media-editor-core": "🎥",
-        "paveman": "🛣️",
-        "report-forge": "📑",
-        "steuer-assistent": "💰",
-        "steuer-suite": "🏛️",
-        "worksheet-generator": "📝",
-    }
-    desc_map = {
-        "ai-media-editor": "Multi-Track Video, KI-Schnitt, B-Roll & Waveform-Pipeline",
-        "anonymizer": "DSGVO-konforme Anonymisierung von Klientenberichten & Texten",
-        "clip-storyboard-director": "Szenen- und Storyboard-Planung fuer Medienproduktionen",
-        "doc-services": "PDF-, OCR-, Markdown- und Dokumentenkonvertierungsdienste",
-        "ellmos-market-data": "Echtzeit- und historische Marktdatenanalyse fuer Finanzen",
-        "foerderplaner": "Therapeutische Foerderplanung, Diagnostik & Zielvereinbarungen",
-        "law-checker": "Juristische Paragraphen- und Urteilspruefung (BGB, SGB, StGB)",
-        "media-editor-core": "High-Performance Video-Rendering-Kern fuer Windows & Mac",
-        "paveman": "Strassen- und Verkehrsdaten-Analysewerkzeug",
-        "report-forge": "Automatisierte Generierung formalisierter Foerder- und Gutachterberichte",
-        "steuer-assistent": "Automatisierte Belegpruefung, EStG-Kategorisierung & EUR",
-        "steuer-suite": "Vollstaendige Steuererklaerungs- und Bilanzsuite",
-        "worksheet-generator": "Paedagogische Arbeitsblatt- und Uebungsblatt-Generierung",
-    }
-    if base_dir.exists():
-        for d in sorted(base_dir.iterdir()):
-            if d.is_dir() and not d.name.startswith("."):
-                name = d.name
-                readme = d / "README.md"
-                has_readme = readme.exists()
-                domains.append({
-                    "id": name,
-                    "name": name.replace("-", " ").title(),
-                    "folder": str(d),
-                    "icon": icon_map.get(name, "📦"),
-                    "description": desc_map.get(name, "Fachmodul fuer spezifische Domaenenprozesse"),
-                    "status": "ready",
-                    "type": "fachmodul",
-                    "has_readme": has_readme
-                })
-    # Zusaetzliche Domänen aus repos
-    repo_domains = [
-        {"id": "ati", "name": "ATI Entwickler", "icon": "🛠️", "description": "Einheitliche Taskdatenbank & Code-Workbench", "status": "active", "type": "developer"},
-        {"id": "theodor-steuer", "name": "Theodor Steuer", "icon": "⚖️", "description": "Steuer-Assistent & Elster-Schnittstelle", "status": "active", "type": "tax"},
-        {"id": "gesundheit", "name": "Gesundheit & Foerderung", "icon": "🩺", "description": "Klientenakte, Verlauf & Psychologie", "status": "active", "type": "health"},
-    ]
-    for rd in repo_domains:
-        if not any(x["id"] == rd["id"] for x in domains):
-            domains.append(rd)
-    return {"domains": domains, "total": len(domains)}
+    """Public manifest inventory; installed/runtime state needs separate evidence."""
+    from gui.api.domain_catalog import discover_domains
 
+    return discover_domains()
 
 @router.get("/artefakte")
 async def get_artefakte():
