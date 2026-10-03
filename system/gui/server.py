@@ -1330,7 +1330,6 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
 
     TRAY_TRANSITIONAL_PATHS = {
         "/api/tasks",
-        "/api/agent-studio",
         "/api/marblerun",
         "/api/governance",
         "/api/memory",
@@ -1375,9 +1374,11 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         elif request.query_params.get("token"):
             bearer_token = request.query_params.get("token")
 
-        # Memory responses include private facts and session notes. The
-        # transitional prefix and loopback fallback must not expose them.
-        if path == "/api/memory" or path.startswith("/api/memory/") or path == "/api/gardener" or path.startswith("/api/gardener/"):
+        # Memory and Agent Studio responses contain private notes and persona
+        # prompts. Transitional and loopback fallbacks must not expose them.
+        if (path == "/api/memory" or path.startswith("/api/memory/")
+                or path == "/api/gardener" or path.startswith("/api/gardener/")
+                or path == "/api/agent-studio" or path.startswith("/api/agent-studio/")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(
