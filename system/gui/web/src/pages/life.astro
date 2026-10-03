@@ -12,7 +12,7 @@ import BachLayout from "../layouts/BachLayout.astro";
       </div>
       <div class="header-badges">
         <span class="badge badge-accent">BACH Life OS</span>
-        <span class="badge badge-success">Self-Regulation Active</span>
+        <span class="badge badge-secondary">Persönliche Bereiche</span>
       </div>
     </div>
 
@@ -51,6 +51,12 @@ import BachLayout from "../layouts/BachLayout.astro";
           <span>+</span> Neuer Termin
         </button>
       </div>
+      <div class="calendar-source-filters" role="group" aria-label="Terminquellen">
+        <label><input id="cal-source-user" type="checkbox" checked /> Nutzertermine</label>
+        <label><input id="cal-source-system" type="checkbox" checked /> BACH/Ocean-Systemtermine</label>
+        <label><input id="cal-source-unknown" type="checkbox" checked /> Ältere Termine ohne Herkunft</label>
+      </div>
+      <p id="calendar-load-status" class="load-status" role="status" aria-live="polite"></p>
 
       <!-- VIEW 1: TAGESANSICHT (24h Timeline) -->
       <div class="cal-view-pane" id="view-day" style="display:none;">
@@ -96,13 +102,10 @@ import BachLayout from "../layouts/BachLayout.astro";
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
             <div>
               <h3 id="year-title" style="margin:0;font-size:1.2rem;color:var(--text);">Jahresüberblick 2026</h3>
-              <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">Termindichte & Quartalsrhythmus</p>
+               <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">Jeder Kalendertag als eigenes Kästchen</p>
             </div>
             <div style="display:flex;gap:0.75rem;font-size:0.8rem;">
-              <span class="badge badge-accent">Q1: Fokus</span>
-              <span class="badge badge-accent">Q2: Ausbau</span>
-              <span class="badge badge-accent">Q3: Review</span>
-              <span class="badge badge-accent">Q4: Ernte</span>
+               <span class="badge badge-secondary">12 Monate</span>
             </div>
           </div>
 
@@ -467,7 +470,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       display: flex;
       align-items: center;
       gap: 0.4rem;
+      flex-wrap: wrap;
     }
+    .calendar-source-filters { display:flex; flex-wrap:wrap; gap:.65rem 1.25rem; margin:0 0 .75rem; }
+    .calendar-source-filters label { display:inline-flex; align-items:center; gap:.4rem; font-size:.84rem; color:var(--text); }
+    .calendar-source-filters input { accent-color:var(--accent); }
+    .load-status { min-height:1.25rem; margin:.35rem 0 .75rem; color:var(--text-muted); font-size:.82rem; }
 
     /* Day View Timeline */
     .day-timeline-container {
@@ -479,11 +487,14 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .day-slot {
       display: flex;
-      border-top: 1px solid var(--border);
-      min-height: 44px;
+      border: 1px solid rgba(56, 189, 248, .18);
+      background: rgba(56, 189, 248, .055);
+      border-radius:var(--radius-sm);
+      min-height: 48px;
       align-items: flex-start;
-      padding: 4px 0;
+      padding: 4px 8px;
     }
+    .day-slot:hover, .day-slot.current-hour { background:rgba(56,189,248,.16); border-color:var(--accent); }
     .day-slot-time {
       width: 65px;
       font-size: 0.75rem;
@@ -502,10 +513,18 @@ import BachLayout from "../layouts/BachLayout.astro";
     /* Week Columns Grid */
     .week-grid-container {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 0.5rem;
-      min-height: 480px;
+      grid-template-columns: 58px repeat(7, minmax(105px, 1fr));
+      min-width: 800px;
+      border:1px solid var(--border);
+      border-radius:var(--radius-sm);
     }
+    #view-week .glass-card { overflow-x:auto; }
+    .week-time, .week-hour-cell, .week-day-heading { border-right:1px solid var(--border); border-bottom:1px solid var(--border); padding:.3rem; }
+    .week-time { color:var(--text-muted); font-size:.73rem; font-variant-numeric:tabular-nums; }
+    .week-day-heading { background:var(--bg-card); text-align:center; font-weight:700; font-size:.8rem; }
+    .week-hour-cell { min-height:54px; background:var(--bg-dark); min-width:0; }
+    .week-hour-cell:hover, .week-hour-cell.current-hour { background:rgba(56,189,248,.1); }
+    .week-day-heading.today, .week-hour-cell.today { border-color:var(--accent); }
     .week-col {
       background: var(--bg-dark);
       border: 1px solid var(--border);
@@ -549,19 +568,23 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .month-days-matrix {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-rows: repeat(6, minmax(100px, 1fr));
       gap: 4px;
-      min-height: 420px;
     }
     .month-day-cell {
       background: var(--bg-dark);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      min-height: 75px;
+      min-height: 100px;
+      min-width: 0;
       padding: 4px;
       display: flex;
       flex-direction: column;
       transition: background 0.15s ease;
+      text-align:left;
+      color:var(--text);
+      font:inherit;
     }
     .month-day-cell:hover {
       background: rgba(255,255,255,0.03);
@@ -616,20 +639,30 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .mini-month-grid {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 2px;
       text-align: center;
       font-size: 0.65rem;
     }
     .mini-day {
-      padding: 2px 0;
+      aspect-ratio: 1;
+      display:grid;
+      place-items:center;
       border-radius: 2px;
       color: var(--text-muted);
+      border:1px solid var(--border);
     }
+    .mini-day.empty { border-color:transparent; }
     .mini-day.has-event {
       background: var(--accent);
       color: #0b0d14;
       font-weight: 700;
+    }
+    @media (max-width: 700px) {
+      .month-days-matrix { grid-template-rows:repeat(6, minmax(72px, 1fr)); }
+      .month-day-cell { min-height:72px; }
+      .year-quarters-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+      .cal-event-chip { overflow-wrap:anywhere; }
     }
 
     /* Common */
@@ -716,6 +749,26 @@ import BachLayout from "../layouts/BachLayout.astro";
       return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function lifeApiFetch(path, options = {}) {
+      let token = '';
+      try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
+      const headers = new Headers(options.headers || {});
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return fetch(path, { ...options, headers });
+    }
+
+    function localDateKey(date) {
+      return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    }
+
+    function visibleCalendarEvents() {
+      const allowed = new Set();
+      for (const source of ['user', 'system', 'unknown']) {
+        if (document.getElementById(`cal-source-${source}`)?.checked) allowed.add(source);
+      }
+      return _loadedEvents.filter(event => allowed.has(['user','system'].includes(event.origin) ? event.origin : 'unknown'));
+    }
+
     // ── CALENDAR STATE & 4-VIEW RENDERER ──
     let _calView = 'month'; // 'day' | 'week' | 'month' | 'year'
     let _currentDate = new Date();
@@ -726,21 +779,23 @@ import BachLayout from "../layouts/BachLayout.astro";
 
     async function loadCalendarEvents() {
       try {
-        const year = _currentDate.getFullYear();
-        const month = String(_currentDate.getMonth() + 1).padStart(2, '0');
-        const day = String(_currentDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-
-        const res = await fetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=true`);
+        const dateStr = localDateKey(_currentDate);
+        const status = document.getElementById('calendar-load-status');
+        status.textContent = 'Lade Termine …';
+        const res = await lifeApiFetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=false`);
         if (res.ok) {
           const data = await res.json();
-          _loadedEvents = data.events || [];
+          _loadedEvents = Array.isArray(data.events) ? data.events : [];
+          status.textContent = _loadedEvents.length ? '' : 'Für diesen Zeitraum sind keine Termine eingetragen.';
         } else {
           _loadedEvents = [];
+          status.textContent = res.status === 401 || res.status === 403
+            ? 'Termine konnten nicht geladen werden. Bitte über die Geräteanmeldung anmelden.'
+            : `Termine konnten nicht geladen werden (HTTP ${res.status}).`;
         }
       } catch (e) {
-        console.error('Fehler beim Laden der Kalenderdaten:', e);
         _loadedEvents = [];
+        document.getElementById('calendar-load-status').textContent = 'Termine konnten wegen eines Netzwerkfehlers nicht geladen werden.';
       }
       renderActiveCalendarView();
     }
@@ -804,12 +859,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       const d = String(_currentDate.getDate()).padStart(2, '0');
       const datePrefix = `${y}-${m}-${d}`;
 
-      const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(datePrefix));
+      const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(datePrefix));
       badge.textContent = `${dayEvents.length} Termine`;
       title.textContent = `${d}. ${MONTH_NAMES[_currentDate.getMonth()]} ${y}`;
 
       let html = '';
-      for (let hour = 6; hour <= 22; hour++) {
+      for (let hour = 0; hour <= 23; hour++) {
         const hourStr = String(hour).padStart(2, '0') + ':00';
         const slotEvents = dayEvents.filter(e => {
           const t = (e.start_datetime || '').slice(11, 16);
@@ -818,14 +873,14 @@ import BachLayout from "../layouts/BachLayout.astro";
         });
 
         html += `
-          <div class="day-slot">
+          <div class="day-slot ${datePrefix === localDateKey(new Date()) && hour === new Date().getHours() ? 'current-hour' : ''}">
             <div class="day-slot-time">${hourStr}</div>
             <div class="day-slot-content">
               ${slotEvents.map(e => `
                 <div style="background:var(--bg-card);border:1px solid var(--accent);border-left:4px solid var(--accent);padding:0.4rem 0.75rem;border-radius:4px;font-size:0.8rem;">
                   <strong style="color:var(--text);">${escapeHtml(e.title)}</strong>
                   ${e.location ? `<span style="color:var(--text-muted);font-size:0.75rem;"> @ ${escapeHtml(e.location)}</span>` : ''}
-                  <span class="badge ${e.is_routine ? 'badge-success' : 'badge-accent'}" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.event_type || 'Termin')}</span>
+                  <span class="badge badge-accent" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.origin === 'user' ? 'Nutzertermin' : e.origin === 'system' ? 'Systemtermin' : 'Herkunft unbekannt')}</span>
                 </div>
               `).join('')}
             </div>
@@ -839,41 +894,25 @@ import BachLayout from "../layouts/BachLayout.astro";
     function renderWeekView() {
       const grid = document.getElementById('week-columns-grid');
       if (!grid) return;
-
       const monday = getMonday(_currentDate);
-      const todayStr = (new Date()).toISOString().slice(0, 10);
-
-      let html = '';
+      const todayStr = localDateKey(new Date());
+      const days = [];
       for (let i = 0; i < 7; i++) {
         const cur = new Date(monday);
         cur.setDate(monday.getDate() + i);
-        const y = cur.getFullYear();
-        const m = String(cur.getMonth() + 1).padStart(2, '0');
-        const d = String(cur.getDate()).padStart(2, '0');
-        const isoDate = `${y}-${m}-${d}`;
-        const isToday = isoDate === todayStr;
-
-        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(isoDate));
-
-        html += `
-          <div class="week-col ${isToday ? 'today' : ''}">
-            <div class="week-col-header" style="${isToday ? 'color:var(--accent);font-weight:700;' : ''}">
-              ${WEEKDAY_NAMES[i]} ${d}.${m}.
-              ${isToday ? '<span style="display:block;font-size:0.65rem;color:var(--accent);">● Heute</span>' : ''}
-            </div>
-            <div class="week-col-body">
-              ${dayEvents.map(e => {
-                const time = (e.start_datetime || '').slice(11, 16);
-                const chipClass = e.is_routine ? 'chip-routine' : (e.event_type === 'fokusblock' ? 'chip-fokus' : 'chip-termin');
-                return `
-                  <div class="cal-event-chip ${chipClass}" title="${escapeHtml(e.title)} (${time})">
-                    <strong>${time ? time + ' ' : ''}</strong>${escapeHtml(e.title)}
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
+        days.push({ date: localDateKey(cur), label: `${WEEKDAY_NAMES[i]} ${cur.getDate()}.${cur.getMonth()+1}.` });
+      }
+      let html = '<div class="week-time" aria-hidden="true"></div>';
+      html += days.map(d => `<div class="week-day-heading ${d.date === todayStr ? 'today' : ''}">${d.label}</div>`).join('');
+      for (let hour = 0; hour < 24; hour++) {
+        html += `<div class="week-time">${String(hour).padStart(2, '0')}:00</div>`;
+        for (const day of days) {
+          const events = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(day.date)
+            && Number.parseInt((e.start_datetime || '').slice(11,13),10) === hour);
+          html += `<div class="week-hour-cell ${day.date === todayStr ? 'today' : ''} ${day.date === todayStr && hour === new Date().getHours() ? 'current-hour' : ''}">
+            ${events.map(e => `<div class="cal-event-chip chip-termin" title="${escapeHtml(e.title)}"><strong>${escapeHtml((e.start_datetime || '').slice(11,16))}</strong> ${escapeHtml(e.title)}</div>`).join('')}
+          </div>`;
+        }
       }
       grid.innerHTML = html;
     }
@@ -892,7 +931,7 @@ import BachLayout from "../layouts/BachLayout.astro";
       const startOffset = (firstDay.getDay() + 6) % 7;
       const totalDays = lastDay.getDate();
 
-      const todayStr = (new Date()).toISOString().slice(0, 10);
+      const todayStr = localDateKey(new Date());
       let html = '';
 
       // Leading empty cells
@@ -906,10 +945,10 @@ import BachLayout from "../layouts/BachLayout.astro";
         const iso = `${year}-${mStr}-${dStr}`;
         const isToday = iso === todayStr;
 
-        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(iso));
+        const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(iso));
 
         html += `
-          <div class="month-day-cell ${isToday ? 'today' : ''}" onclick="selectDayFromMonth('${iso}')">
+          <button type="button" class="month-day-cell ${isToday ? 'today' : ''}" data-date="${iso}" aria-label="${day}. ${MONTH_NAMES[month]} ${year}, ${dayEvents.length} Termine">
             <div class="month-day-num" style="${isToday ? 'color:var(--accent);font-weight:800;' : ''}">${day}</div>
             <div style="flex:1;overflow-y:auto;">
               ${dayEvents.slice(0, 3).map(e => {
@@ -918,14 +957,19 @@ import BachLayout from "../layouts/BachLayout.astro";
               }).join('')}
               ${dayEvents.length > 3 ? `<div style="font-size:0.65rem;color:var(--text-muted);text-align:right;">+${dayEvents.length - 3} weitere</div>` : ''}
             </div>
-          </div>
+          </button>
         `;
       }
+      for (let i = startOffset + totalDays; i < 42; i++) {
+        html += '<div class="month-day-cell other-month" aria-hidden="true"></div>';
+      }
       grid.innerHTML = html;
+      grid.querySelectorAll('button[data-date]').forEach(button => button.addEventListener('click', () => selectDayFromMonth(button.dataset.date)));
     }
 
     function selectDayFromMonth(iso) {
-      _currentDate = new Date(iso);
+      const [year, month, day] = iso.split('-').map(Number);
+      _currentDate = new Date(year, month - 1, day);
       switchCalendarView('day');
     }
 
@@ -942,7 +986,8 @@ import BachLayout from "../layouts/BachLayout.astro";
         const mName = MONTH_NAMES[m];
         const daysInMonth = new Date(year, m + 1, 0).getDate();
         const mPrefix = `${year}-${String(m+1).padStart(2, '0')}`;
-        const mEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(mPrefix));
+        const mEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(mPrefix));
+        const startOffset = (new Date(year, m, 1).getDay() + 6) % 7;
 
         html += `
           <div class="mini-month-card">
@@ -951,12 +996,13 @@ import BachLayout from "../layouts/BachLayout.astro";
               <span class="badge ${mEvents.length ? 'badge-accent' : 'badge-secondary'}" style="font-size:0.65rem;">${mEvents.length} Termine</span>
             </div>
             <div class="mini-month-grid">
+              ${Array.from({length: startOffset}, () => '<span class="mini-day empty" aria-hidden="true"></span>').join('')}
               ${Array.from({length: daysInMonth}, (_, i) => {
                 const day = i + 1;
                 const dStr = String(day).padStart(2, '0');
                 const iso = `${mPrefix}-${dStr}`;
                 const hasEv = mEvents.some(e => (e.start_datetime || '').startsWith(iso));
-                return `<div class="mini-day ${hasEv ? 'has-event' : ''}">${day}</div>`;
+                 return `<div class="mini-day ${hasEv ? 'has-event' : ''}" title="${day}. ${mName}">${day}</div>`;
               }).join('')}
             </div>
           </div>
@@ -995,7 +1041,7 @@ import BachLayout from "../layouts/BachLayout.astro";
 
     // ── MODAL ADD EVENT ──
     function openAddEventModal() {
-      const todayStr = _currentDate.toISOString().slice(0, 10);
+      const todayStr = localDateKey(_currentDate);
       document.getElementById('ne-date').value = todayStr;
       document.getElementById('modal-add-event').classList.remove('hidden');
     }
@@ -1015,16 +1061,18 @@ import BachLayout from "../layouts/BachLayout.astro";
       const start_datetime = `${date} ${time}:00`;
 
       try {
-        const res = await fetch('/api/calendar/events', {
+        const res = await lifeApiFetch('/api/calendar/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, start_datetime, event_type, location, description })
         });
         if (res.ok) {
+          const saved = await res.json();
+          if (!saved.ok || !Number.isInteger(saved.id)) throw new Error('Speicherung wurde nicht bestätigt.');
           closeAddEventModal();
-          loadCalendarEvents();
+          await loadCalendarEvents();
         } else {
-          alert('Fehler beim Speichern des Termins.');
+          alert(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `Termin konnte nicht gespeichert werden (HTTP ${res.status}).`);
         }
       } catch (e) {
         alert('Netzwerkfehler: ' + e.message);
@@ -1159,6 +1207,9 @@ import BachLayout from "../layouts/BachLayout.astro";
           const view = btn.getAttribute('data-view');
           switchCalendarView(view);
         });
+      });
+      document.querySelectorAll('.calendar-source-filters input').forEach(input => {
+        input.addEventListener('change', renderActiveCalendarView);
       });
 
       // Handle query param

@@ -2427,7 +2427,8 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
             external_id TEXT,
             created_at TEXT,
             updated_at TEXT,
-            dist_type TEXT
+            dist_type TEXT,
+            event_origin TEXT NOT NULL DEFAULT 'unknown'
         )
     """)
     conn.execute("""
@@ -2453,7 +2454,8 @@ async def get_calendar_events(
     conn = _get_conn()
     conn.row_factory = sqlite3.Row
     try:
-        _ensure_calendar_tables(conn)
+        # Legacy databases may lack event_origin. Reading never migrates them.
+        # Distribution type is not evidence of a user's or system's authorship.
         query = "SELECT * FROM assistant_calendar WHERE 1=1"
         params = []
 
@@ -2471,25 +2473,35 @@ async def get_calendar_events(
                 params.append(f"{year_prefix}%")
 
         query += " ORDER BY start_datetime ASC"
-        rows = conn.execute(query, params).fetchall()
-        events = [dict(r) for r in rows]
+        try:
+            rows = conn.execute(query, params).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table: assistant_calendar" not in str(exc):
+                raise
+            rows = []
+        events = []
+        for row in rows:
+            event = dict(row)
+            event["origin"] = event.get("event_origin") if event.get("event_origin") in {"user", "system"} else "unknown"
+            events.append(event)
 
         if include_routines:
             try:
-                r_rows = conn.execute("SELECT id, name, frequency, category, next_due FROM household_routines WHERE is_active = 1").fetchall()
+                r_rows = conn.execute("SELECT id, name, frequency, category, next_due FROM household_routines WHERE is_active = 1 AND next_due IS NOT NULL AND TRIM(next_due) != ''").fetchall()
                 for r in r_rows:
                     events.append({
                         "id": f"routine_{r['id']}",
                         "title": r["name"],
                         "event_type": "routine",
-                        "start_datetime": r["next_due"] or f"{date or datetime.now().strftime('%Y-%m-%d')} 08:00:00",
+                        "start_datetime": r["next_due"],
                         "end_datetime": None,
                         "location": r["category"],
                         "description": f"Lebensroutine: {r['frequency']} ({r['category']})",
                         "status": "aktiv",
                         "is_recurring": 1,
                         "recurrence_rule": r["frequency"],
-                        "is_routine": True
+                        "is_routine": True,
+                        "origin": "unknown",
                     })
             except Exception:
                 pass
@@ -2520,15 +2532,17 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
     conn = _get_conn()
     try:
         _ensure_calendar_tables(conn)
+        if "event_origin" not in {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)")}:
+            raise HTTPException(status_code=503, detail="Kalenderschema benötigt die additive Herkunftsmigration")
         cursor = conn.cursor()
         now = datetime.now().isoformat()
         cursor.execute("""
             INSERT INTO assistant_calendar (
                 title, event_type, start_datetime, end_datetime, location,
                 description, status, reminder_minutes, is_recurring,
-                recurrence_rule, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now))
+                recurrence_rule, created_at, updated_at, event_origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now, "user"))
         new_id = cursor.lastrowid
         conn.commit()
         return {"ok": True, "id": new_id, "title": title}
