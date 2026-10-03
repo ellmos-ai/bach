@@ -1389,7 +1389,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if (path == "/api/inbox" or path.startswith("/api/inbox/")
                 or path == "/api/mounts" or path.startswith("/api/mounts/")
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
-                or path == "/api/artefakte"):
+                or path == "/api/artefakte"
+                or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
+                or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
@@ -1462,6 +1465,14 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
 
+try:
+    from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
+    app.include_router(core_system_agents_router)
+    app.include_router(prompt_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
+
 
 
 
@@ -1488,6 +1499,50 @@ async def get_gui_brand():
     from gui.branding import read_gui_brand
 
     return read_gui_brand()
+
+
+@app.get("/api/gui/capabilities")
+async def get_gui_capabilities():
+    """Describe registered GUI adapters without inventing runtime availability."""
+    from datetime import datetime, timezone
+    from gui.branding import read_gui_brand
+
+    observed = datetime.now(timezone.utc).isoformat()
+    registered_paths = {getattr(route, "path", None) for route in app.routes}
+    endpoints = {
+        "ellmos-system-gui": "/",
+        "tasks": "/api/tasks",
+        "agent-studio": "/api/agent-studio/blueprints",
+        "memory": "/api/memory/search",
+        "domains": "/api/domains/installed",
+        "core-system-agents": "/api/system/core-agents",
+        "core-prompts": "/api/system/core-prompts",
+        "hardware-cockpit": "/api/system/cluster-cockpit",
+    }
+    modules = {}
+    for module_id, endpoint in endpoints.items():
+        present = endpoint in registered_paths
+        modules[module_id] = {
+            "adapter_registered": present,
+            "runtime_verified": None,
+            "available": None if present else False,
+            "reason_code": "route_registered_runtime_not_probed" if present else "adapter_not_registered",
+            "observed_at": observed if present else None,
+        }
+    return {
+        "schema": "ellmos-system-gui.capabilities.v1",
+        "schema_version": 1,
+        "kit": {
+            "revision": None, "version": None, "archive_sha256": None,
+            "verified": None, "installed": None,
+            "installed_files_verified": None, "served": None,
+            "reason_code": "release_identity_not_probed",
+        },
+        "brand": read_gui_brand(),
+        "modules": modules,
+        "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
+        "observed_at": observed,
+    }
 
 
 @app.get("/api/status")

@@ -2489,115 +2489,29 @@ async def delete_calendar_event(event_id: int):
 
 @router.get("/system/cluster-cockpit")
 async def get_cluster_cockpit():
-    """Gibt den zusammenhängenden Status von Trithon, Muschelgrund, Salt & der Fackel zurück."""
-    pref = "compute"
-    try:
-        from hub.compute_lock import get_fackel_preference
-        pref = get_fackel_preference()
-    except Exception:
-        pass
+    """Read-only observations: owner, priority, compute report and capacity."""
+    from gui.api.cluster_status import build_cluster_cockpit
 
-    compute_active = False
-    try:
-        from hub.compute_lock import check_compute_active
-        compute_active = check_compute_active()
-    except Exception:
-        compute_active = False
-
-    stand = {
-        "messbar": False,
-        "kapazitaet_gib": 0,
-        "belegt_gib": 0,
-        "modelle": [],
-        "belegt_fackeln": 0,
-        "frei_fackeln": 10,
-        "quelle": "unbekannt"
-    }
-    try:
-        from hub._services import fackel
-        stand = fackel.stand()
-    except Exception:
-        pass
-
-    models = stand.get("modelle", [])
-    flame_animated = bool(models) and not compute_active
-    current_holder = models[0] if models else ("Rechenjobs (Compute-Lock aktiv)" if compute_active else "Unbekannt")
-
-    competitors = []
-    if compute_active:
-        competitors.append("Rechenjobs (GPU/MLX Compute aktiv)")
-    if pref == "compute":
-        competitors.append("Compute-Vorrang gesetzt")
-    else:
-        competitors.append("Ollama-Vorrang gesetzt")
-
-    conn = _get_conn()
-    tasks_count = 0
-    user_tasks_count = 0
-    try:
-        tasks_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        user_tasks_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE assigned_to = 'user'").fetchone()[0]
-    except Exception:
-        pass
-    finally:
-        conn.close()
-
-    return {
-        "trithon": {
-            "status": "unknown",
-            "name": "Trithon Engine",
-            "icon": "🔱",
-            "label": "Konfiguration und Laufzeit nicht geprüft",
-            "cluster_host": None,
-            "endpoints": []
-        },
-        "muschelgrund": {
-            "status": "unknown",
-            "name": "Muschelgrund",
-            "icon": "🐚",
-            "label": "Aufgaben- und Speicheranbindung nicht geprüft",
-            "total_tasks": tasks_count,
-            "user_tasks": user_tasks_count,
-            "synced": None
-        },
-        "salt": {
-            "status": "unknown",
-            "name": "Salt Auth",
-            "icon": "🧂",
-            "label": "Server Lease (Token-Validiert)",
-            "lease_status": "Unbekannt",
-            "client": None
-        },
-        "fackel": {
-            "preference": pref,
-            "flame_animated": flame_animated,
-            "compute_active": compute_active,
-            "current_holder": current_holder,
-            "competitors": competitors,
-            "models_loaded": models,
-            "kapazitaet_gib": stand.get("kapazitaet_gib", 0),
-            "belegt_gib": stand.get("belegt_gib", 0),
-            "belegt_fackeln": stand.get("belegt_fackeln", 0),
-            "frei_fackeln": stand.get("frei_fackeln", 10),
-            "messbar": stand.get("messbar", False),
-            "quelle": stand.get("quelle", "unbekannt")
-        }
-    }
+    return build_cluster_cockpit(Path(BACH_DB))
 
 
 @router.post("/system/fackel")
-async def toggle_fackel(payload: Dict[str, Any] = Body(default={})):
-    """Schaltet die Fackel-Priorität zwischen Ollama und Compute um."""
-    new_pref = payload.get("preference")
+async def set_fackel_priority(payload: Dict[str, Any] = Body(default={})):
+    """Set resource priority explicitly; this does not acquire the Fackel."""
+    requested = payload.get("preference")
+    if requested not in ("compute", "ollama"):
+        raise HTTPException(status_code=400, detail="Vorrang muss compute oder ollama sein")
     try:
         from hub.compute_lock import get_fackel_preference, set_fackel_preference
-        if not new_pref:
-            cur = get_fackel_preference()
-            new_pref = "compute" if cur == "ollama" else "ollama"
-        set_fackel_preference(new_pref)
-        return {"ok": True, "preference": new_pref}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "preference": new_pref or "compute"}
+
+        set_fackel_preference(requested, quelle="gui")
+        observed = get_fackel_preference(migrate=False)
+        if observed != requested:
+            raise RuntimeError("priority_readback_mismatch")
+        return {"ok": True, "preference": observed, "ownership_changed": False}
+    except Exception:
+        logger.exception("Fackel priority persistence/readback failed")
+        raise HTTPException(status_code=503, detail="Vorrang konnte nicht bestätigt werden")
 
 
 @router.post("/agenten/teams/{team_id}/beseelen")

@@ -12,6 +12,7 @@ Manages configuration and live metadata for:
 """
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
@@ -524,6 +525,192 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         return worker
 
     raise KeyError(f"Slot or worker {slot_id!r} not found")
+
+
+CORE_SYSTEM_AGENT_IDS = tuple(DEFAULT_CORE_SLOTS)
+CORE_SYSTEM_AGENT_ICONS = {
+    "buddha_chat": "💬",
+    "buddha_always_on": "⚡",
+    "buddha_connector": "📱",
+}
+CORE_EDITABLE_FIELDS = frozenset({
+    "name", "icon", "backend", "model", "mode", "think",
+    "max_tool_rounds", "pause_after", "pause_minutes",
+})
+CORE_KNOWN_BACKENDS = frozenset({
+    "ollama", "ollama-cloud", "lmstudio", "hermes",
+    "claude", "claude-api", "codex", "openai",
+})
+
+
+def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("System-Agentenkonfiguration hat kein gültiges Slots-Schema")
+    slots = config["slots"]
+    if any(not isinstance(slots.get(slot_id), dict) for slot_id in CORE_SYSTEM_AGENT_IDS):
+        raise ValueError("Mindestens eine feste System-Agenten-ID fehlt")
+    version = hashlib.sha256(raw).hexdigest()
+    public_slots = []
+    for slot_id in CORE_SYSTEM_AGENT_IDS:
+        slot = slots[slot_id]
+        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        public_slots.append({
+            "id": slot_id,
+            "system": True,
+            "deletable": False,
+            "name": slot.get("name", defaults["name"]),
+            "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS[slot_id]),
+            "backend": slot.get("backend"),
+            "model": slot.get("model"),
+            "mode": slot.get("mode"),
+            "think": slot.get("think"),
+            "max_tool_rounds": slot.get("max_tool_rounds"),
+            "pause_after": slot.get("pause_after"),
+            "pause_minutes": slot.get("pause_minutes"),
+            "configured_enabled": slot.get("enabled"),
+            "living": None,
+            "running": None,
+            "runtime_reason_code": "runtime_not_probed",
+        })
+    return {
+        "schema": "bach.core-system-agents.v1",
+        "configuration_version": version,
+        "updated_at": config.get("updated_at"),
+        "agents": public_slots,
+        "supported_backend_ids": sorted(CORE_KNOWN_BACKENDS),
+    }
+
+
+def core_system_agents_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Read only the allowlisted fields of the existing Control slots file."""
+    target = _resolve_path(path)
+    return _core_snapshot_from_bytes(target.read_bytes())
+
+
+def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(changes, dict) or not changes or set(changes) - CORE_EDITABLE_FIELDS:
+        raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
+    result: dict[str, Any] = {}
+    for field, value in changes.items():
+        if field in {"name", "icon", "backend", "model", "mode"}:
+            limit = 8 if field == "icon" else 120
+            if (not isinstance(value, str) or not value.strip()
+                    or len(value) > limit or any(ord(c) < 32 for c in value)):
+                raise ValueError(f"{field} muss ein kurzer, lesbarer Text sein")
+            value = value.strip()
+            if field == "backend" and value not in CORE_KNOWN_BACKENDS:
+                raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
+            if field == "mode" and value not in {"safe", "full"}:
+                raise ValueError("Modus muss safe oder full sein")
+        elif field == "think":
+            if not isinstance(value, bool):
+                raise ValueError("think muss wahr oder falsch sein")
+        else:
+            upper = 100 if field == "max_tool_rounds" else 1440
+            lower = 0
+            if type(value) is not int or not lower <= value <= upper:
+                raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
+        result[field] = value
+    return result
+
+
+@_serialized_mutation
+def change_core_system_agent(
+    slot_id: str, expected_version: str, changes: dict[str, Any] | None = None,
+    *, reset: bool = False, path: str | None = None,
+) -> dict[str, Any]:
+    """Atomically update existing Core config only; never start a worker."""
+    if slot_id not in CORE_SYSTEM_AGENT_IDS:
+        raise KeyError("Unbekannte System-Agenten-ID")
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    if expected_version != snapshot["configuration_version"]:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    slot = config["slots"][slot_id]
+    if reset:
+        if changes:
+            raise ValueError("Reset akzeptiert keine gleichzeitigen Änderungen")
+        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
+        updates["icon"] = CORE_SYSTEM_AGENT_ICONS[slot_id]
+    else:
+        updates = _validated_core_edits(changes)
+    slot.update(updates)
+    save_slots_config(config, path)
+    return core_system_agents_snapshot(path)
+
+
+def _core_prompt_definitions() -> dict[str, str]:
+    return {
+        "system_default": DEFAULT_SYSTEM_PROMPT,
+        **{"role_" + role_id: body for role_id, body in DEFAULT_ROLE_PROMPTS.items()},
+    }
+
+
+def core_prompt_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Project immutable source defaults and user overrides from Control config."""
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("Control-Konfiguration ist ungültig")
+    custom = config.get("prompts", {})
+    if not isinstance(custom, dict):
+        raise ValueError("Prompt-Overrides sind ungültig")
+    definitions = _core_prompt_definitions()
+    prompts = {}
+    for key, default in definitions.items():
+        override = custom.get(key)
+        if override is not None and not isinstance(override, str):
+            raise ValueError("Prompt-Override ist ungültig")
+        prompts[key] = {
+            "key": key,
+            "default": default,
+            "effective": override if override is not None else default,
+            "is_custom": override is not None,
+        }
+    source_bytes = json.dumps(definitions, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return {
+        "schema": "bach.core-prompts.v1",
+        "configuration_version": hashlib.sha256(raw).hexdigest(),
+        "source_version": hashlib.sha256(source_bytes).hexdigest(),
+        "prompts": prompts,
+    }
+
+
+@_serialized_mutation
+def change_core_prompt(
+    key: str, expected_version: str, *, text: str | None = None,
+    reset: bool = False, path: str | None = None,
+) -> dict[str, Any]:
+    """CAS update a known override; reset removes only that override."""
+    definitions = _core_prompt_definitions()
+    if key not in definitions:
+        raise KeyError("Unbekannte Prompt-ID")
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("Control-Konfiguration ist ungültig")
+    custom = config.setdefault("prompts", {})
+    if not isinstance(custom, dict):
+        raise ValueError("Prompt-Overrides sind ungültig")
+    if reset:
+        if text is not None:
+            raise ValueError("Reset nimmt keinen Prompttext an")
+        custom.pop(key, None)
+    else:
+        if (not isinstance(text, str) or not text.strip()
+                or len(text) > 50000 or "\x00" in text):
+            raise ValueError("Prompttext fehlt oder ist ungültig")
+        custom[key] = text
+    save_slots_config(config, path)
+    return core_prompt_snapshot(path)
 
 
 @_serialized_mutation
