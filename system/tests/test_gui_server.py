@@ -323,4 +323,4 @@ class TestChatControlResolution:
         assert "readiness.available === true" in template
         assert "/readiness?chat_id=" in template
         assert "readiness.available !== true" in template
-        assert "if (!text || sending || !backendAvailable) return;" in template
+        assert "if (!text || sending || !backendAvailable || profileSelectionError) return;" in template
