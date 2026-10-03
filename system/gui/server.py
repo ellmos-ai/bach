@@ -1341,7 +1341,6 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/backends",
         "/api/models",
         "/api/slots",
-        "/api/artifacts",
         "/api/chat",
     }
 
@@ -1388,7 +1387,9 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         # Inbox paths expose private file names, previews and sorting actions.
         # Require a registered device even on loopback and with no devices set up.
         if (path == "/api/inbox" or path.startswith("/api/inbox/")
-                or path == "/api/mounts" or path.startswith("/api/mounts/")):
+                or path == "/api/mounts" or path.startswith("/api/mounts/")
+                or path == "/api/artifacts" or path.startswith("/api/artifacts/")
+                or path == "/api/artefakte"):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})

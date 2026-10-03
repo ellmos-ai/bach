@@ -189,12 +189,6 @@ PLUGINS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.PLUGINS")),
 ])
 
-EXPORTS_ROOT = _find_existing_path([
-    Path(_SYSTEM_ROOT / "exports"),
-    Path(os.path.expanduser("~/.bach/exports")),
-    Path("C:/Users/User/.gemini/antigravity-cli/brain"),
-])
-
 SYNC_ROOT = _find_existing_path([
     Path("C:/Users/User/OneDrive/.SYNC"),
     Path(os.path.expanduser("~/OneDrive/.SYNC")),
@@ -204,36 +198,6 @@ GARDENER_ROOT = _find_existing_path([
     Path("C:/Users/User/.gardener"),
     Path(os.path.expanduser("~/.gardener")),
 ])
-
-
-def _is_safe_artifact_path(candidate: Path) -> bool:
-    """Verifies that the requested path is inside safe permitted project directories."""
-    resolved = candidate.resolve()
-    # Reject directory traversal tricks
-    resolved_str = str(resolved).lower()
-    for forbidden in (".git", "id_rsa", "id_ed25519", "credentials", "token", ".env", "password"):
-        if forbidden in resolved.name.lower() or f"/{forbidden}/" in resolved_str or f"\\{forbidden}\\" in resolved_str:
-            return False
-
-    allowed_roots = [
-        _SYSTEM_ROOT.resolve(),
-        Path(os.path.expanduser("~/.bach")).resolve(),
-        Path("C:/Users/User/.gemini/antigravity-cli/brain").resolve(),
-    ]
-    if EXPORTS_ROOT:
-        allowed_roots.append(EXPORTS_ROOT.resolve())
-    if DOMAINS_ROOT:
-        allowed_roots.append(DOMAINS_ROOT.resolve())
-    if CONTROL_ROOT:
-        allowed_roots.append(CONTROL_ROOT.resolve())
-
-    for root in allowed_roots:
-        try:
-            resolved.relative_to(root)
-            return True
-        except ValueError:
-            continue
-    return False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1219,91 +1183,53 @@ async def get_domains():
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/artifacts")
-async def list_artifacts(limit: int = 50):
-    """Listet erzeugte Artefakte, Berichte und Deliverables auf."""
-    artifacts = []
-    candidate_dirs = [
-        _SYSTEM_ROOT / "exports",
-        _SYSTEM_ROOT / "user" / "exports",
-        Path("C:/Users/User/.gemini/antigravity-cli/brain"),
-    ]
-    if EXPORTS_ROOT and EXPORTS_ROOT not in candidate_dirs:
-        candidate_dirs.append(EXPORTS_ROOT)
-
-    for c_dir in candidate_dirs:
-        if c_dir and c_dir.exists():
-            for f in sorted(c_dir.glob("*.*"), key=lambda x: x.stat().st_mtime if x.is_file() else 0, reverse=True):
-                if f.is_file() and not f.name.startswith(".") and _is_safe_artifact_path(f):
-                    artifacts.append({
-                        "name": f.name,
-                        "size_bytes": f.stat().st_size,
-                        "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                        "path": str(f),
-                        "type": f.suffix.lstrip(".").lower() or "txt",
-                        "parent": f.parent.name
-                    })
-                if len(artifacts) >= limit:
-                    break
-        if len(artifacts) >= limit:
-            break
-
-    # Brain-Artefakte flach pruefen
-    brain_dir = Path("C:/Users/User/.gemini/antigravity-cli/brain")
-    if brain_dir.exists() and len(artifacts) < limit:
-        try:
-            for sub in sorted(brain_dir.iterdir(), key=lambda x: x.stat().st_mtime if x.is_dir() else 0, reverse=True)[:5]:
-                if sub.is_dir() and not sub.name.startswith("."):
-                    for f in sorted(sub.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]:
-                        if f.is_file() and _is_safe_artifact_path(f):
-                            artifacts.append({
-                                "name": f.name,
-                                "size_bytes": f.stat().st_size,
-                                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                                "path": str(f),
-                                "type": f.suffix.lstrip(".").lower() or "txt",
-                                "parent": sub.name
-                            })
-                        if len(artifacts) >= limit:
-                            break
-                if len(artifacts) >= limit:
-                    break
-        except Exception:
-            pass
-
-    return {"artifacts": artifacts, "count": len(artifacts)}
+async def list_artifacts(request: Request, limit: int = Query(50, ge=1, le=100)):
+    """List real files from the narrow BACH export root for registered devices."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import catalog, ArtifactUnavailable
+    try:
+        return catalog(limit)
+    except ArtifactUnavailable:
+        return {"availability": "unavailable", "reason": "export_directory_unreadable",
+                "source": "bach_exports", "artifacts": [], "count": 0}
 
 
 @router.get("/artifacts/content")
-async def get_artifact_content(path: str = Query(...)):
-    """Liest den Text-/Markdown-Inhalt eines Artefakts sicher aus."""
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if not _is_safe_artifact_path(p):
-        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
-
+async def get_artifact_content(request: Request, artifact_id: str = Query(...)):
+    """Preview UTF-8 text from a catalogued file without exposing a local path."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import read_artifact, TEXT_SUFFIXES, ArtifactUnavailable
     try:
-        content = p.read_text(encoding="utf-8", errors="ignore")
-        return {
-            "name": p.name,
-            "path": str(p),
-            "size": len(content),
-            "content": content[:50000],  # Erste 50k Zeichen zur Vorschau
-            "truncated": len(content) > 50000
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lesefehler: {e}")
+        content, item = read_artifact(artifact_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Artefakt nicht gefunden")
+    except ArtifactUnavailable:
+        raise HTTPException(status_code=503, detail="Exportquelle nicht verfügbar")
+    if "." + item["type"] not in TEXT_SUFFIXES:
+        raise HTTPException(status_code=415, detail="Vorschau für diesen Dateityp nicht verfügbar")
+    text = content.decode("utf-8", errors="replace")
+    return {"id": artifact_id, "name": item["name"], "size": len(content),
+            "content": text[:50000], "truncated": len(text) > 50000}
 
 
 @router.get("/artifacts/download")
-async def download_artifact(path: str = Query(...)):
-    """Ermoeglicht den sicheren 1-Klick-Download eines Artefakts."""
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if not _is_safe_artifact_path(p):
-        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
-    return FileResponse(p, filename=p.name)
+async def download_artifact(request: Request, artifact_id: str = Query(...)):
+    """Download a verified, catalogued file after device authorization."""
+    _require_memory_device(request)
+    from urllib.parse import quote
+    from fastapi.responses import Response
+    from gui.api.artifact_catalog import read_artifact, content_type, ArtifactUnavailable
+    try:
+        content, item = read_artifact(artifact_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Artefakt nicht gefunden")
+    except ArtifactUnavailable:
+        raise HTTPException(status_code=503, detail="Exportquelle nicht verfügbar")
+    return Response(
+        content=content, media_type=content_type(item),
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(item["name"]),
+                 "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2261,42 +2187,26 @@ async def get_installed_domains():
     return discover_domains()
 
 @router.get("/artefakte")
-async def get_artefakte():
-    """Liefert generierte Artefakte, Dokumente und Exporte."""
-    artefakte = []
-    # 1. Antigravity Brain Artefakte
-    brain_dir = Path(r"C:\Users\User\.gemini\antigravity-cli\brain\c40ce54b-0d3e-4015-9de5-d90d0d16364e")
-    if brain_dir.exists():
-        for f in brain_dir.iterdir():
-            if f.is_file() and f.suffix in [".md", ".html", ".svg", ".json", ".txt"]:
-                artefakte.append({
-                    "id": f.stem,
-                    "filename": f.name,
-                    "title": f.stem.replace("_", " ").title(),
-                    "path": str(f),
-                    "size_bytes": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                    "type": f.suffix.lstrip(".").upper(),
-                    "category": "Brain-Artefakt",
-                    "icon": "📄" if f.suffix == ".md" else ("🌐" if f.suffix == ".html" else "📊")
-                })
-    # 2. Repo-Architektur-Docs
-    repo_docs = Path(r"C:\_Local_DEV\repos\bach\docs\architecture")
-    if repo_docs.exists():
-        for f in repo_docs.iterdir():
-            if f.is_file() and f.suffix == ".md":
-                artefakte.append({
-                    "id": f.stem,
-                    "filename": f.name,
-                    "title": f.stem.replace("_", " ").title(),
-                    "path": str(f),
-                    "size_bytes": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                    "type": "MD",
-                    "category": "Architektur",
-                    "icon": "🏛️"
-                })
-    return {"artefakte": artefakte, "count": len(artefakte)}
+async def get_artefakte(request: Request):
+    """Compatibility DTO for the Astro artifact page, backed by the same safe catalog."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import catalog, ArtifactUnavailable
+    try:
+        data = catalog(100)
+    except ArtifactUnavailable:
+        data = {"availability": "unavailable", "reason": "export_directory_unreadable",
+                "artifacts": [], "count": 0}
+    artifacts = [
+        {"id": item["id"], "filename": item["name"], "title": item["name"],
+         "size_bytes": item["size_bytes"], "modified": item["modified"],
+         "type": item["type"].upper(),
+         "category": "BACH Exportverzeichnis · Herkunft ungeprüft",
+         "icon": "💾" if item["type"] in {"json", "csv"} else "📄"}
+        for item in data["artifacts"]
+    ]
+    return {"availability": data["availability"], "reason": data.get("reason"),
+            "artefakte": artifacts, "count": len(artifacts),
+            "observed_at": data.get("observed_at")}
 
 
 @router.get("/agenten/teams")
