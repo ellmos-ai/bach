@@ -56,6 +56,10 @@ html {
     text-rendering: optimizeLegibility;
 }
 
+/* Long labels and paths must stay inside the viewport on every page. */
+body, .container, .main-content { min-width: 0; overflow-wrap: break-word; }
+pre { max-width: 100%; overflow-x: auto; }
+
 body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     background: var(--bg-dark);
@@ -122,6 +126,9 @@ body {
     gap: 0.15rem;
     align-items: center;
     flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 auto;
 }
 
 .nav-item {
@@ -182,6 +189,13 @@ body {
     .main-nav::-webkit-scrollbar {
         display: none;
     }
+}
+
+@media (max-width: 760px) {
+    .main-header { flex-wrap: wrap; padding: 0.5rem; }
+    .header-left, .header-right { flex: 1 1 100%; min-width: 0; }
+    .main-nav { overflow-x: auto; }
+    .nav-item { flex-shrink: 0; }
 }
 
 /* ── Dropdown Navigation ── */
