@@ -1395,7 +1395,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/governance/audit"
-                or path == "/api/daemon" or path.startswith("/api/daemon/")):
+                or path == "/api/daemon" or path.startswith("/api/daemon/")
+                or (path == "/api/settings/theme" and request.method == "PUT")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
@@ -4503,10 +4504,16 @@ async def get_gui_theme():
 async def update_gui_theme(payload: ThemeUpdate):
     """Validate and persist the dashboard theme in user_config.json."""
     try:
-        result = ThemeHandler(BACH_DIR).set_theme(payload.theme, payload.custom)
-        return {"success": True, **result}
+        handler = ThemeHandler(BACH_DIR)
+        result = handler.set_theme(payload.theme, payload.custom)
+        persisted = handler.get_theme()
+        if persisted["theme"] != result["theme"] or persisted["custom"] != result["custom"]:
+            raise HTTPException(status_code=503, detail="Theme-Speicherung nicht bestätigt")
+        return {"success": True, **persisted}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="Theme-Speicherung nicht verfügbar") from exc
 
 
 # ═══════════════════════════════════════════════════════════════
