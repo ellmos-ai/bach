@@ -165,7 +165,9 @@ def _project_control_prompts(payload: dict[str, Any]) -> dict[str, Any]:
         "configuration_version": version if mutation_supported else None,
         "source_version": source_version,
         "mutation_supported": mutation_supported,
-        "source": "live_chat_control",
+        "source": ("versioned_control_config" if mutation_supported else
+                   "in_memory_defaults" if payload.get("source") == "in_memory_defaults" else
+                   "legacy_unversioned"),
         "prompts": prompts,
     }
 

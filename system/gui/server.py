@@ -1356,7 +1356,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed"} and request.method == "GET"):
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
             return await call_next(request)
 
         # The browser authenticates as a registered device. The proxy supplies

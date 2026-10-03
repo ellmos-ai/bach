@@ -2845,6 +2845,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._html(render_activity_dashboard())
 
         elif path == "/api/slots":
+            if not self._allow_control_request():
+                return
             try:
                 cfg = load_slots_config()
                 slots = cfg.get("slots", {})
@@ -2919,12 +2921,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/prompts":
+            if not self._allow_control_request():
+                return
             try:
                 self._json(_control_prompt_response())
             except (OSError, ValueError, TypeError):
-                # Legacy Activity may show in-memory defaults, but this is
-                # not a writable/live revision for the new GUI.
-                self._json({"ok": True, "templates": get_prompt_templates()})
+                # In-memory defaults are a preview, not an attested active revision.
+                self._json({"ok": True, "source": "in_memory_defaults",
+                            "templates": get_prompt_templates()})
 
         elif path == "/api/chat/history":
             chat_id = parse_qs(parsed_url.query).get("chat_id", [""])[0]
