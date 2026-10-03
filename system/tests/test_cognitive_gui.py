@@ -4,6 +4,7 @@
 import pytest
 from fastapi.testclient import TestClient
 import sys
+import sqlite3
 from pathlib import Path
 
 # Add system directory to path
@@ -12,7 +13,8 @@ sys.path.insert(0, str(SYS_DIR))
 sys.path.insert(0, str(SYS_DIR / "gui"))
 
 from gui.server import app
-from gui.device_auth import _hash_token, GET_CONNECTION, init_devices_db
+from gui import device_auth
+from gui.device_auth import _hash_token, init_devices_db
 
 client = TestClient(app)
 TOKEN = "test-only-cognitive-gui-token-20261003"
@@ -20,8 +22,16 @@ AUTH_HEADER = {"Authorization": f"Bearer {TOKEN}"}
 
 
 @pytest.fixture(autouse=True)
-def setup_device_auth():
-    conn = GET_CONNECTION()
+def setup_device_auth(tmp_path, monkeypatch):
+    db_path = tmp_path / "devices.db"
+
+    def get_test_connection():
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", get_test_connection)
+    conn = get_test_connection()
     init_devices_db(conn)
     token_hash = _hash_token(TOKEN)
     conn.execute(
