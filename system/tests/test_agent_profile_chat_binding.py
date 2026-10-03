@@ -114,9 +114,9 @@ class ProfileChatBindingTests(unittest.TestCase):
             return conn
 
         with patch.object(server, "get_bach_db", connection), patch.object(
-            server, "has_active_devices", lambda: False
+            server, "validate_token", lambda token: {"id": 1} if token == "profile-fixture" else None
         ):
-            response = TestClient(server.app).get("/api/agents")
+            response = TestClient(server.app, headers={"Authorization": "Bearer profile-fixture"}).get("/api/agents")
         self.assertEqual(response.status_code, 200)
         agents = {agent["id"]: agent for agent in response.json()["agents"]}
         self.assertIs(agents[1]["profile_chat_ready"], True)
