@@ -42,6 +42,7 @@ class OceanMemoryAuthTest(unittest.TestCase):
                     unified_api._require_memory_device(request_with_token("revoked-token"))
                 self.assertEqual(revoked.exception.status_code, 403)
                 unified_api._require_memory_device(request_with_token("fixture-token"))
+                unified_api._require_memory_device(request_with_token(" fixture-token "))
             self.assertEqual(db_path.stat().st_mtime_ns, before)
 
     def test_middleware_protects_legacy_memory_routes(self):

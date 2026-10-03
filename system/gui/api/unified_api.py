@@ -110,10 +110,10 @@ def _lock_cache_snapshot() -> Dict[str, Any]:
 def _require_memory_device(request: Request) -> None:
     """Authorize private search with an active device token using a RO query."""
     header = request.headers.get("Authorization", "")
-    token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "")
+    token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Device token required")
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_hash = hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
     try:
         with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
             conn.execute("PRAGMA query_only = ON")
