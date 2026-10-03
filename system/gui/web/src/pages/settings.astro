@@ -1,6 +1,7 @@
 ---
 // src/pages/settings.astro - Einstellungen, Setup, Ocean Modulschaltplan & Installer
 import BachLayout from "../layouts/BachLayout.astro";
+import SystemClusterStatus from "../components/SystemClusterStatus.astro";
 ---
 
 <BachLayout title="Einstellungen & Setup" currentPath="/settings">
@@ -146,35 +147,7 @@ import BachLayout from "../layouts/BachLayout.astro";
     <!-- TAB 4: CORE & REPO-KLÄRUNG -->
     <div class="tab-pane" id="pane-core">
       <div class="card-grid">
-        <div class="glass-card">
-          <h3><span class="icon">🔱</span> Core-Komponenten Status</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Komponente</th>
-                <th>Rolle</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Trithon</strong></td>
-                <td>Asynchroner Event-Loop & Runtime</td>
-                <td><span class="badge badge-success">Online</span></td>
-              </tr>
-              <tr>
-                <td><strong>Muschelgrund</strong></td>
-                <td>Verteilter State & Persistence Hub</td>
-                <td><span class="badge badge-success">Verbunden</span></td>
-              </tr>
-              <tr>
-                <td><strong>Salt</strong></td>
-                <td>Zero-Trust Tokens & Signaturen</td>
-                <td><span class="badge badge-success">Aktiv</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <SystemClusterStatus />
 
         <div class="glass-card">
           <h3><span class="icon">🏛️</span> Repo- & Architektur-Klassifizierung</h3>

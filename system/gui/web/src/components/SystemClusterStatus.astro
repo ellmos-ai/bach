@@ -1,0 +1,53 @@
+<div class="card" id="system-cluster-status" style="margin-bottom:1.5rem;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;">
+    <div>
+      <h3 class="card-title">🔱 Trithon, Muschelgrund & Salt</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0.35rem 0 0;">
+        Konfiguration und Laufstatus werden erst mit passenden Modulprüfungen angezeigt.
+      </p>
+    </div>
+    <button class="btn btn-sm" type="button" onclick="refreshSystemCluster()">Aktualisieren</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
+    <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:0.5rem;"><span aria-hidden="true">🔱</span><strong>Trithon Engine</strong></div>
+      <p id="system-trithon-detail" style="font-size:0.78rem;color:var(--text-muted);">Konfiguration und Laufzeit nicht geprüft</p>
+      <span class="badge" id="system-trithon-status">Status unbekannt</span>
+    </div>
+    <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:0.5rem;"><span aria-hidden="true">🐚</span><strong>Muschelgrund</strong></div>
+      <p id="system-muschelgrund-detail" style="font-size:0.78rem;color:var(--text-muted);">Aufgaben- und Speicheranbindung nicht geprüft</p>
+      <span class="badge" id="system-muschelgrund-status">Sync unbekannt</span>
+    </div>
+    <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:0.5rem;"><span aria-hidden="true">🧂</span><strong>Salt Lease</strong></div>
+      <p id="system-salt-detail" style="font-size:0.78rem;color:var(--text-muted);">Lease- und Claim-Anbindung nicht geprüft</p>
+      <span class="badge" id="system-salt-status">Status unbekannt</span>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  async function refreshSystemCluster() {
+    const detail = (id, value) => { document.getElementById(id).textContent = value; };
+    try {
+      const response = await fetch('/api/system/cluster-cockpit');
+      if (!response.ok) throw new Error('Status nicht erreichbar');
+      const data = await response.json();
+      detail('system-trithon-detail', 'Konfiguration und Laufzeit nicht geprüft');
+      detail('system-trithon-status', data.trithon?.status === 'active' && data.trithon?.observed_at ? 'Aktiv' : 'Status unbekannt');
+      detail('system-muschelgrund-detail', 'Aufgaben- und Speicheranbindung nicht geprüft');
+      detail('system-muschelgrund-status', data.muschelgrund?.synced === true && data.muschelgrund?.observed_at ? 'Synchron' : 'Sync unbekannt');
+      detail('system-salt-detail', data.salt?.lease_status === 'Valid' && data.salt?.observed_at ? 'Lease verifiziert' : 'Lease- und Claim-Anbindung nicht geprüft');
+      detail('system-salt-status', data.salt?.lease_status === 'Valid' && data.salt?.observed_at ? 'Validiert' : 'Status unbekannt');
+    } catch (_) {
+      detail('system-trithon-detail', 'Konfiguration und Laufzeit nicht geprüft');
+      detail('system-trithon-status', 'Status unbekannt');
+      detail('system-muschelgrund-detail', 'Aufgaben- und Speicheranbindung nicht geprüft');
+      detail('system-muschelgrund-status', 'Sync unbekannt');
+      detail('system-salt-detail', 'Lease- und Claim-Anbindung nicht geprüft');
+      detail('system-salt-status', 'Status unbekannt');
+    }
+  }
+  window.addEventListener('DOMContentLoaded', refreshSystemCluster);
+</script>

@@ -2667,15 +2667,15 @@ async def get_cluster_cockpit():
             "status": "unknown",
             "name": "Trithon Engine",
             "icon": "🔱",
-            "label": "Servermodus nicht geprüft",
-            "cluster_host": "100.119.69.90:8000",
-            "endpoints": [":8000 (Astro/API)", ":8081 (Control)", ":11434 (Ollama)"]
+            "label": "Konfiguration und Laufzeit nicht geprüft",
+            "cluster_host": None,
+            "endpoints": []
         },
         "muschelgrund": {
             "status": "unknown",
             "name": "Muschelgrund",
             "icon": "🐚",
-            "label": "Zentralisierte Task- & Ticketline",
+            "label": "Aufgaben- und Speicheranbindung nicht geprüft",
             "total_tasks": tasks_count,
             "user_tasks": user_tasks_count,
             "synced": None
@@ -2686,7 +2686,7 @@ async def get_cluster_cockpit():
             "icon": "🧂",
             "label": "Server Lease (Token-Validiert)",
             "lease_status": "Unbekannt",
-            "client": "ASUS-GEI"
+            "client": None
         },
         "fackel": {
             "preference": pref,

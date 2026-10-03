@@ -1326,6 +1326,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/status",
         "/api/health",
         "/api/devices/verify",
+        "/api/gui/backend-origin",
+        "/api/gui/brand",
     }
 
     TRAY_TRANSITIONAL_PATHS = {
@@ -1444,6 +1446,23 @@ except Exception as e:
 
 # ═══════════════════════════════════════════════════════════════
 
+
+
+@app.get("/api/gui/backend-origin")
+async def get_gui_backend_origin():
+    """Non-secret declaration plus live read-only probe of this API's BACH DB."""
+    from gui.backend_origin import observe_backend_origin
+    from gui.api import unified_api
+
+    return observe_backend_origin(BACH_DB, unified_api.BACH_DB)
+
+
+@app.get("/api/gui/brand")
+async def get_gui_brand():
+    """Return validated non-secret branding for this GUI consumer."""
+    from gui.branding import read_gui_brand
+
+    return read_gui_brand()
 
 
 @app.get("/api/status")

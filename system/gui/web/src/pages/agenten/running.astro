@@ -10,7 +10,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         ⚡ Living & Running
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Server-Status (Trithon, Muschelgrund, Salt, Fackel) • Beseelung von Avatar-Agenten, Teams & Staffeln • Core-Slots & Live-Aktivitäten
+        Agentenprofile, Teams & Staffeln • Compute-Vorrang • Core-Slots & Live-Aktivitäten
       </p>
     </div>
 
@@ -30,12 +30,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
   </div>
 
-  <!-- 1. CLUSTER & STATUS COCKPIT: TRITHON, MUSCHELGRUND, SALT & DIE FACKEL -->
+  <!-- 1. HARDWARE-FACKEL: COMPUTE-VORRANG BEI AGENTEN -->
   <div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.95) 100%);border:1px solid var(--border);">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <div style="display:flex;align-items:center;gap:0.6rem;">
         <span style="font-size:1.4rem;">🏛️</span>
-        <h2 class="card-title" style="margin:0;">Cluster Cockpit & Hardware-Fackel</h2>
+        <h2 class="card-title" style="margin:0;">Hardware-Fackel & Compute-Vorrang</h2>
       </div>
       <div style="display:flex;align-items:center;gap:0.75rem;">
         <div class="live-pill" style="display:inline-flex;align-items:center;gap:6px;font-size:0.75rem;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:12px;border:1px solid var(--border);">
@@ -45,57 +45,6 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:1rem;">
-      <!-- Trithon -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🔱</span>
-            <strong style="color:var(--text);">Trithon Engine</strong>
-          </div>
-          <span class="badge" id="trithon-badge">Status unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Servermodus und Cluster-Dispatch: Status wird geprüft
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="trithon-host">
-          Host: nicht verifiziert
-        </div>
-      </div>
-
-      <!-- Muschelgrund -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🐚</span>
-            <strong style="color:var(--text);">Muschelgrund</strong>
-          </div>
-          <span class="badge" id="muschelgrund-badge">Sync unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Zentralisierte Task- & Ticketline • Geteilter State zwischen Bach & Ocean
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="muschelgrund-info">
-          Tasks: Lade...
-        </div>
-      </div>
-
-      <!-- Salt -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🧂</span>
-            <strong style="color:var(--text);">Salt Lease</strong>
-          </div>
-          <span class="badge" id="salt-badge">Lease unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Server Lease & Zero-Trust Token • ASUS-GEI Cluster-Handshake
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="salt-info">
-          Session: nicht verifiziert
-        </div>
-      </div>
-
       <!-- Die Fackel (Hardware & Inferenz-Zuteiler) -->
       <div class="status-card" id="fackel-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);position:relative;overflow:hidden;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
@@ -386,29 +335,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
       { id: "ollama/gemma4:26b-mlx", label: "💻 Gemma 4 26B (MLX)" }
     ];
 
-    // ── 1. CLUSTER & FACKEL STATUS ──
+    // ── 1. FACKEL STATUS ──
     async function loadClusterCockpit() {
       try {
         const res = await fetch('/api/system/cluster-cockpit');
         if (!res.ok) return;
         const data = await res.json();
-
-        // Trithon
-        if (data.trithon) {
-          document.getElementById('trithon-badge').textContent = data.trithon.status === 'active' ? 'Aktiv (Servermodus)' : 'Status unbekannt';
-          document.getElementById('trithon-host').textContent = `Host: ${data.trithon.cluster_host || 'nicht verifiziert'} • Loop: nicht geprüft`;
-        }
-
-        // Muschelgrund
-        if (data.muschelgrund) {
-          document.getElementById('muschelgrund-info').textContent = `Tasks gesamt: ${data.muschelgrund.total_tasks} | Meine: ${data.muschelgrund.user_tasks}`;
-          document.getElementById('muschelgrund-badge').textContent = data.muschelgrund.synced === true ? 'Synchron' : 'Sync unbekannt';
-        }
-
-        if (data.salt) {
-          document.getElementById('salt-badge').textContent = data.salt.lease_status === 'Valid' ? 'Validiert' : 'Lease unbekannt';
-          document.getElementById('salt-info').textContent = `Session: ${data.salt.lease_status || 'nicht verifiziert'}`;
-        }
 
         // Fackel
         if (data.fackel) {
