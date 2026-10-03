@@ -58,6 +58,13 @@ class LifeCalendarTests(unittest.TestCase):
         events = asyncio.run(unified_api.get_calendar_events(view="day", date="2026-10-03", include_routines=True))["events"]
         self.assertEqual(events, [])
 
+    def test_week_query_only_returns_its_seven_days(self):
+        for title, when in (("Vorher", "2026-09-27 09:00:00"), ("Montag", "2026-09-28 09:00:00"),
+                            ("Sonntag", "2026-10-04 09:00:00"), ("Danach", "2026-10-05 09:00:00")):
+            asyncio.run(unified_api.create_calendar_event({"title": title, "start_datetime": when}))
+        events = asyncio.run(unified_api.get_calendar_events(view="week", date="2026-10-03", include_routines=False))["events"]
+        self.assertEqual([event["title"] for event in events], ["Montag", "Sonntag"])
+
     def test_private_calendar_requires_device_token_even_on_loopback(self):
         from gui import server
 

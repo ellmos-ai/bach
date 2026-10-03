@@ -22,7 +22,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -2463,6 +2463,15 @@ async def get_calendar_events(
             if view == "day":
                 query += " AND start_datetime BETWEEN ? AND ?"
                 params.extend([f"{date} 00:00:00", f"{date} 23:59:59"])
+            elif view == "week":
+                try:
+                    selected = datetime.strptime(date, "%Y-%m-%d")
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail="Ungültiges Kalenderdatum") from exc
+                monday = selected - timedelta(days=selected.weekday())
+                next_monday = monday + timedelta(days=7)
+                query += " AND start_datetime >= ? AND start_datetime < ?"
+                params.extend([monday.strftime("%Y-%m-%d 00:00:00"), next_monday.strftime("%Y-%m-%d 00:00:00")])
             elif view == "month" and len(date) >= 7:
                 month_prefix = date[:7]
                 query += " AND start_datetime LIKE ?"
