@@ -80,6 +80,8 @@
         .btn-secondary { background: var(--border, #333); color: var(--text, #fff); }
         .btn-danger { background: var(--error); color: white; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .action-note { color: var(--text-muted, #aaa); font-size: 0.8rem; }
 
         .section {
             background: var(--bg-card, #1e1e1e);
@@ -332,6 +334,7 @@
             </select>
             <button class="btn btn-primary" onclick="showAddContactModal()">+ Neuer Kontakt</button>
             <button class="btn btn-secondary" type="button" disabled title="Der Export muss vor der Freigabe an einen sicheren Download-Endpunkt gebunden werden.">Export (in Arbeit)</button>
+            <span class="action-note">Für den Export fehlen ein sicherer Download und eine Berechtigungsprüfung.</span>
         </div>
 
         <div class="contacts-workspace">
