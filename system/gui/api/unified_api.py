@@ -2441,20 +2441,22 @@ async def get_ocean_module_map():
     """Liefert die Ocean-Modulschaltplan-Architektur aus ellmos-ai."""
     return {
         "title": "Ocean Architektur- & Modulschaltplan",
-        "version": "2.4.0",
+        "source": "architecture_examples",
+        "live_discovery": False,
+        "observed_at": None,
         "core_components": [
-            {"id": "trithon", "name": "Trithon", "type": "runtime_engine", "status": "active", "icon": "🔱", "role": "Asynchroner Prozess- und Event-Loop Core"},
-            {"id": "muschelgrund", "name": "Muschelgrund", "type": "persistence", "status": "active", "icon": "🐚", "role": "Zentraler verteilter State & Storage Hub"},
-            {"id": "salt", "name": "Salt", "type": "cryptography", "status": "active", "icon": "🧂", "role": "Kryptografische Signierung, Tokens & Zero-Trust Auth"},
-            {"id": "ellmos-homebase", "name": "Ellmos HomeBase", "type": "mcp_hub", "status": "active", "icon": "🏠", "role": "Memory, Stigmergy & Schwarm-Orchestrierung"},
-            {"id": "ellmos-controlcenter", "name": "ControlCenter", "type": "governance", "status": "active", "icon": "🎛️", "role": "Profile, Bundles & Permission Governance"},
-            {"id": "ellmos-servercommander", "name": "ServerCommander", "type": "ops", "status": "active", "icon": "🖥️", "role": "Deployment, Mail, Cluster-Logs & Health"},
-            {"id": "ellmos-filecommander", "name": "FileCommander", "type": "filesystem", "status": "active", "icon": "📂", "role": "Cloud-Lock-sichere Dateiverwaltung & OCR"},
-            {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "active", "icon": "💻", "role": "AST-Analyse, Import-Diagnose & Refactoring"}
+            {"id": "trithon", "name": "Trithon", "type": "system", "status": "unknown", "icon": "🔱", "role": "Instanz- und Verbundkonfiguration: Vertrag in Klärung"},
+            {"id": "muschelgrund", "name": "Muschelgrund", "type": "system", "status": "unknown", "icon": "🐚", "role": "Aufgaben- und Speicherort: Vertrag in Klärung"},
+            {"id": "salt", "name": "Salt", "type": "system", "status": "unknown", "icon": "🧂", "role": "Lease- und Claim-Vertrag: Prüfung ausstehend"},
+            {"id": "ellmos-homebase", "name": "Ellmos HomeBase", "type": "mcp_hub", "status": "unknown", "icon": "🏠", "role": "Memory- und Orchestrierungsanbindung: Prüfung ausstehend"},
+            {"id": "ellmos-controlcenter", "name": "ControlCenter", "type": "governance", "status": "unknown", "icon": "🎛️", "role": "Governance-Anbindung: Prüfung ausstehend"},
+            {"id": "ellmos-servercommander", "name": "ServerCommander", "type": "ops", "status": "unknown", "icon": "🖥️", "role": "Betriebsanbindung: Prüfung ausstehend"},
+            {"id": "ellmos-filecommander", "name": "FileCommander", "type": "filesystem", "status": "unknown", "icon": "📂", "role": "Dateidienst-Anbindung: Prüfung ausstehend"},
+            {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "unknown", "icon": "💻", "role": "Codeanalyse-Anbindung: Prüfung ausstehend"}
         ],
         "subsystems": [
-            {"name": "Nemofold", "category": "Workflow-Lernen", "status": "ready", "description": "Lernen von Workflows, Schlagen von Ketten & Step-Ketten"},
-            {"name": "Hermes", "category": "Skill-Destillation", "status": "ready", "description": "Extraktion wiederverwendbarer Skills aus Chat-Sessions"}
+            {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
+            {"name": "Hermes", "category": "Skill-Destillation", "status": "unknown", "description": "Konzept: freigegebene Skills aus Dialogen"}
         ]
     }
 
