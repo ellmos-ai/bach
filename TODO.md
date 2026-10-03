@@ -2,6 +2,16 @@
 
 ## Offene Aufgaben
 
+### [BACH-SEC-DEPS-01] GUI-Abhängigkeitslücken vor dem nächsten Release schließen
+- **Ziel:** Die 14 offenen GitHub-Dependabot-Alerts vom 2026-10-03 abarbeiten, ohne den vorhandenen Update-PR zu duplizieren.
+- **Quelle:** [PR #188](https://github.com/ellmos-ai/bach/pull/188), Alerts #29–#42 für `system/gui/web/package-lock.json`; [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).
+- **Stand:** PR #188 enthält Astro 7.3.5, sharp 0.35.5 und esbuild 0.28.2 außerhalb der betroffenen Bereiche von 13 Alerts. `http-cache-semantics` bleibt dort bei 4.2.0; für Alert #42 nennt GitHub aktuell keine gepatchte Version. Die vorhandene CI prüft keinen Astro-Build.
+- **Akzeptanzkriterien:** PR #188 nach unabhängigem Review und erfolgreichem GUI-Build integrieren; verbleibenden Cache-Alert durch einen verifizierten Upstream-Fix oder eine überprüfte Entfernung des betroffenen Abhängigkeitspfads schließen. Anschließend Lockfile und GitHub-Alertstatus erneut prüfen.
+- **Offen:** Kein Abhängigkeitsupdate integriert, keine Ausnutzbarkeit im produktiven Deployment bewiesen. Der fehlende Patch ist ein Release-Blocker und keine Risikofreigabe.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+
 ### [BACH-SEC-ROTATE-01] Widerruf des früher offengelegten GUI-Gerätetokens belegen
 - **Ziel:** Die im GUI-Deploymentbericht genannte frühere Token-Offenlegung operativ abschließen. Das Entfernen aus Quelltexten und Builds widerruft ein Credential nicht.
 - **Quelle:** `system/gui/GUI_DEPLOYMENT_RECEIPT_2026-10-03.md`, Abschnitt „Verbleibende Grenzen“; Release-Privacy-Audit vom 2026-10-03.
