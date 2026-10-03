@@ -1726,7 +1726,7 @@ async def api_get_tasks(
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         if status and status.lower() == "nonterminal":
-            query += " AND LOWER(COALESCE(status, '')) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
         elif status and status.lower() != "all":
             STATUS_ALIASES = {
                 "in_progress": ["in_progress", "progress"],
