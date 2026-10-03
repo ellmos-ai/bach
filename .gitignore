@@ -164,6 +164,11 @@ __pycache__/
 *.pyd
 .Python
 .cache/
+.pytest_cache/
+.ruff_cache/
+**/.astro/
+.playwright-cli/
+/test-results/
 /.testtmp/
 *.log
 *.bak-*
@@ -230,6 +235,14 @@ logs/daily/
 PLAN.txt
 **/PLAN.txt
 task-*-status.md
+AUFGABEN.txt
+/TEST.txt
+TESTERGEBNISSE.txt
+PRIVAT.txt
+PRIVATE.txt
+desktop.ini
+npm_recovery_codes.txt
+token.json
 
 # === AGENT WORKFLOWS (Lokal) ===
 .agent/

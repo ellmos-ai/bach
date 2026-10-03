@@ -384,7 +384,32 @@
 
 </main>
 
+<script src="/static/js/device-fetch.js"></script>
 <script>
+    // API/DB values are plain text, including values in quoted data attributes.
+    // This encoder must not be used to build JavaScript or event-handler source.
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[character]);
+    }
+
+    function numericId(value) {
+        if (typeof value !== 'string' && typeof value !== 'number') return null;
+        if (!/^[1-9]\d*$/.test(String(value))) return null;
+        const id = Number(value);
+        return Number.isSafeInteger(id) ? id : null;
+    }
+
+    function bindIdActions(container, actionName, handler) {
+        container.querySelectorAll(`button[data-action="${actionName}"]`).forEach(button => {
+            button.addEventListener('click', () => {
+                const id = numericId(button.dataset.id);
+                if (id !== null) handler(id);
+            });
+        });
+    }
+
     function switchTab(tabName) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
@@ -427,18 +452,18 @@
             tasks.forEach(t => {
                 const prioClass = t.priority === 'P1' ? 'badge-p1' : (t.priority === 'P2' ? 'badge-p2' : 'badge-p3');
                 html += `<tr>
-                    <td>#${t.id}</td>
-                    <td><strong>${t.title}</strong></td>
-                    <td><span class="badge ${prioClass}">${t.priority || 'P3'}</span></td>
-                    <td>${t.category || '-'}</td>
-                    <td>${t.status || 'open'}</td>
-                    <td><code>${t.assigned_to || 'bach'}</code></td>
+                    <td>#${escapeHtml(t.id)}</td>
+                    <td><strong>${escapeHtml(t.title)}</strong></td>
+                    <td><span class="badge ${prioClass}">${escapeHtml(t.priority || 'P3')}</span></td>
+                    <td>${escapeHtml(t.category || '-')}</td>
+                    <td>${escapeHtml(t.status || 'open')}</td>
+                    <td><code>${escapeHtml(t.assigned_to || 'bach')}</code></td>
                 </tr>`;
             });
             html += `</tbody></table>`;
             container.innerHTML = html;
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler beim Laden der Tasks: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler beim Laden der Tasks: ${escapeHtml(e.message)}</p>`;
         }
     }
 
@@ -451,27 +476,32 @@
             let html = '';
             all.forEach(bp => {
                 const animusClass = 'badge-' + (bp.animus_type === 'subscription' ? 'sub' : (bp.animus_type === 'cli' ? 'cli' : 'api'));
+                const id = numericId(bp.id);
                 html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px; border-left:3px solid var(--accent-blue);">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong>${bp.title || bp.name}</strong>
-                        <span class="badge ${animusClass}">${bp.animus_type}</span>
+                        <strong>${escapeHtml(bp.title || bp.name)}</strong>
+                        <span class="badge ${animusClass}">${escapeHtml(bp.animus_type)}</span>
                     </div>
-                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${bp.description || bp.persona_role || ''}</p>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${escapeHtml(bp.description || bp.persona_role || '')}</p>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:0.75rem; color:var(--text-muted);">Modus: ${bp.modus}</span>
-                        <button class="btn btn-sm btn-emerald" onclick="materializeAgent(${bp.id})">Materialisieren</button>
+                        <span style="font-size:0.75rem; color:var(--text-muted);">Modus: ${escapeHtml(bp.modus)}</span>
+                        <button class="btn btn-sm btn-emerald" data-action="materialize" data-id="${id ?? ''}" ${id === null ? 'disabled' : ''}>Materialisieren</button>
                     </div>
                 </div>`;
             });
             container.innerHTML = html;
+            bindIdActions(container, 'materialize', materializeAgent);
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${escapeHtml(e.message)}</p>`;
         }
     }
 
     async function materializeAgent(id) {
+        id = numericId(id);
+        if (id === null) return;
         try {
             const res = await fetch(`/api/agent-studio/blueprints/${id}/materialize`, { method: 'POST' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             alert(data.message || 'Agent materialisiert!');
             loadLiving();
@@ -491,18 +521,18 @@
                 const isOnline = a.status === 'online' || a.status === 'active' || a.status === 'living';
                 html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px; border-left:3px solid ${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong>${a.title || a.name}</strong>
-                        <span class="badge" style="background:${isOnline ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.1)'}; color:${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">${a.status}</span>
+                        <strong>${escapeHtml(a.title || a.name)}</strong>
+                        <span class="badge" style="background:${isOnline ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.1)'}; color:${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">${escapeHtml(a.status)}</span>
                     </div>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">
-                        <span>Animus: <code>${a.animus}</code></span> |
-                        <span>Aufgabe: ${a.current_task || 'Keine zugewiesen'}</span>
+                        <span>Animus: <code>${escapeHtml(a.animus)}</code></span> |
+                        <span>Aufgabe: ${escapeHtml(a.current_task || 'Keine zugewiesen')}</span>
                     </div>
                 </div>`;
             });
             container.innerHTML = html;
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${escapeHtml(e.message)}</p>`;
         }
     }
 
@@ -512,21 +542,21 @@
         try {
             const res = await fetch('/api/capabilities');
             const data = await res.json();
-            statsEl.innerHTML = `<span class="badge badge-api">${data.stats.total_skills} Skills</span> <span class="badge badge-cli">${data.stats.total_tools} Tools</span> <span class="badge badge-sub">${data.stats.total_mcps} MCPs</span>`;
+            statsEl.innerHTML = `<span class="badge badge-api">${escapeHtml(data.stats.total_skills)} Skills</span> <span class="badge badge-cli">${escapeHtml(data.stats.total_tools)} Tools</span> <span class="badge badge-sub">${escapeHtml(data.stats.total_mcps)} MCPs</span>`;
             let html = '<div class="grid-3">';
             for (const [cat, skills] of Object.entries(data.skills_by_category)) {
                 html += `<div style="background:#0f172a; padding:12px; border-radius:8px;">
-                    <h4 style="color:var(--accent-cyan); margin-bottom:8px; text-transform:uppercase; font-size:0.8rem;">${cat} (${skills.length})</h4>
+                    <h4 style="color:var(--accent-cyan); margin-bottom:8px; text-transform:uppercase; font-size:0.8rem;">${escapeHtml(cat)} (${skills.length})</h4>
                     <ul style="list-style:none; font-size:0.8rem;">`;
                 skills.slice(0, 8).forEach(s => {
-                    html += `<li style="padding:4px 0; border-bottom:1px solid #1e293b;"><strong>${s.name}</strong></li>`;
+                    html += `<li style="padding:4px 0; border-bottom:1px solid #1e293b;"><strong>${escapeHtml(s.name)}</strong></li>`;
                 });
                 html += `</ul></div>`;
             }
             html += '</div>';
             container.innerHTML = html;
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${escapeHtml(e.message)}</p>`;
         }
     }
 
@@ -542,24 +572,29 @@
             }
             let html = '';
             chains.forEach(ch => {
+                const id = numericId(ch.id);
                 html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong>${ch.title || ch.name}</strong>
-                        <button class="btn btn-sm btn-emerald" onclick="runChain(${ch.id})">▶ Ausführen</button>
+                        <strong>${escapeHtml(ch.title || ch.name)}</strong>
+                        <button class="btn btn-sm btn-emerald" data-action="run-chain" data-id="${id ?? ''}" ${id === null ? 'disabled' : ''}>▶ Ausführen</button>
                     </div>
-                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${ch.description || ''}</p>
-                    <div style="font-size:0.75rem; color:var(--accent-cyan);">Schritte: ${(ch.steps || []).map(s => s.name).join(' ➔ ')}</div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${escapeHtml(ch.description || '')}</p>
+                    <div style="font-size:0.75rem; color:var(--accent-cyan);">Schritte: ${escapeHtml((ch.steps || []).map(s => s.name).join(' ➔ '))}</div>
                 </div>`;
             });
             container.innerHTML = html;
+            bindIdActions(container, 'run-chain', runChain);
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${escapeHtml(e.message)}</p>`;
         }
     }
 
     async function runChain(id) {
+        id = numericId(id);
+        if (id === null) return;
         try {
             const res = await fetch(`/api/marblerun/chains/${id}/run`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({input: 'Pipeline Start'}) });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             alert(`Kette ${data.chain_name} erfolgreich ausgeführt (${data.steps_executed} Schritte)!`);
         } catch (e) {
@@ -572,15 +607,15 @@
         try {
             const res = await fetch('/api/marblerun/agents-map');
             const data = await res.json();
-            let html = `<div style="margin-bottom:12px;"><span class="badge badge-api">${data.stats.total_nodes} Knoten</span> <span class="badge badge-sub">${data.stats.total_links} Kanten</span></div>`;
+            let html = `<div style="margin-bottom:12px;"><span class="badge badge-api">${escapeHtml(data.stats.total_nodes)} Knoten</span> <span class="badge badge-sub">${escapeHtml(data.stats.total_links)} Kanten</span></div>`;
             html += `<div style="background:#0f172a; padding:14px; border-radius:8px;">`;
             data.nodes.forEach(n => {
-                html += `<span class="badge" style="background:#1e293b; margin:4px; display:inline-block;">🟢 ${n.label} (${n.animus})</span>`;
+                html += `<span class="badge" style="background:#1e293b; margin:4px; display:inline-block;">🟢 ${escapeHtml(n.label)} (${escapeHtml(n.animus)})</span>`;
             });
             html += `</div>`;
             container.innerHTML = html;
         } catch (e) {
-            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${escapeHtml(e.message)}</p>`;
         }
     }
 
@@ -590,7 +625,7 @@
             const locksData = await locksRes.json();
             let locksHtml = '<table><thead><tr><th>Sperr-Objekt</th><th>Typ</th><th>Status</th></tr></thead><tbody>';
             (locksData.locks || []).forEach(l => {
-                locksHtml += `<tr><td><strong>${l.name}</strong></td><td>${l.type}</td><td><span class="badge badge-p1">${l.status}</span></td></tr>`;
+                locksHtml += `<tr><td><strong>${escapeHtml(l.name)}</strong></td><td>${escapeHtml(l.type)}</td><td><span class="badge badge-p1">${escapeHtml(l.status)}</span></td></tr>`;
             });
             locksHtml += '</tbody></table>';
             document.getElementById('locks-container').innerHTML = locksHtml;
@@ -599,7 +634,7 @@
             const polData = await polRes.json();
             let polHtml = '<table><thead><tr><th>ID</th><th>Name</th><th>Durchsetzung</th><th>Beschreibung</th></tr></thead><tbody>';
             (polData.policies || []).forEach(p => {
-                polHtml += `<tr><td><code>${p.id}</code></td><td><strong>${p.name}</strong></td><td><span class="badge badge-cli">${p.enforcement}</span></td><td>${p.desc}</td></tr>`;
+                polHtml += `<tr><td><code>${escapeHtml(p.id)}</code></td><td><strong>${escapeHtml(p.name)}</strong></td><td><span class="badge badge-cli">${escapeHtml(p.enforcement)}</span></td><td>${escapeHtml(p.desc)}</td></tr>`;
             });
             polHtml += '</tbody></table>';
             document.getElementById('policies-container').innerHTML = polHtml;
@@ -608,7 +643,7 @@
             const decData = await decRes.json();
             let decHtml = '<div class="grid-3">';
             (decData.decisions || []).slice(0, 9).forEach(d => {
-                decHtml += `<div style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.8rem;"><strong>${d.title}</strong><div style="color:var(--text-muted); font-size:0.7rem;">${d.id}</div></div>`;
+                decHtml += `<div style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.8rem;"><strong>${escapeHtml(d.title)}</strong><div style="color:var(--text-muted); font-size:0.7rem;">${escapeHtml(d.id)}</div></div>`;
             });
             decHtml += '</div>';
             document.getElementById('decisions-container').innerHTML = decHtml;
@@ -627,12 +662,12 @@
             const data = await res.json();
             let html = '<ul style="list-style:none; font-size:0.85rem; margin-top:8px;">';
             (data.results || []).forEach(r => {
-                html += `<li style="padding:6px 0; border-bottom:1px solid #334155;">📌 <strong>${r.name}</strong> <span class="badge badge-api">${r.type || 'entry'}</span></li>`;
+                html += `<li style="padding:6px 0; border-bottom:1px solid #334155;">📌 <strong>${escapeHtml(r.name)}</strong> <span class="badge badge-api">${escapeHtml(r.type || 'entry')}</span></li>`;
             });
             html += '</ul>';
             resEl.innerHTML = html;
         } catch (e) {
-            resEl.innerHTML = 'Fehler: ' + e.message;
+            resEl.textContent = 'Fehler: ' + e.message;
         }
     }
 
@@ -643,9 +678,9 @@
             let html = '<div class="grid-2">';
             (data.knowledge_folders || []).forEach(f => {
                 html += `<div style="background:#0f172a; padding:12px; border-radius:8px; border-left:3px solid var(--accent-purple);">
-                    <strong>${f.label}</strong>
-                    <div style="font-size:0.75rem; color:var(--text-muted);">${f.path}</div>
-                    <div style="font-size:0.8rem; margin-top:6px;"><span class="badge badge-sub">${f.file_count} Docs</span></div>
+                    <strong>${escapeHtml(f.label)}</strong>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(f.path)}</div>
+                    <div style="font-size:0.8rem; margin-top:6px;"><span class="badge badge-sub">${escapeHtml(f.file_count)} Docs</span></div>
                 </div>`;
             });
             html += '</div>';
@@ -667,16 +702,16 @@
                 body: JSON.stringify({prompt: prompt, models: ['claude', 'gemini', 'codex', 'ollama']})
             });
             const data = await res.json();
-            let html = `<div style="margin-bottom:8px;">🏆 <strong>Gewinner: ${data.winner.toUpperCase()}</strong></div>`;
+            let html = `<div style="margin-bottom:8px;">🏆 <strong>Gewinner: ${escapeHtml(String(data.winner ?? '').toUpperCase())}</strong></div>`;
             (data.candidates || []).forEach(c => {
                 html += `<div style="background:#0f172a; padding:10px; border-radius:6px; margin-bottom:6px; font-size:0.8rem;">
-                    <strong>${c.model.toUpperCase()}</strong> (${c.latency_ms}ms | Score: ${c.score}):
-                    <p style="color:var(--text-muted); margin-top:4px;">${c.response}</p>
+                    <strong>${escapeHtml(String(c.model ?? '').toUpperCase())}</strong> (${escapeHtml(c.latency_ms)}ms | Score: ${escapeHtml(c.score)}):
+                    <p style="color:var(--text-muted); margin-top:4px;">${escapeHtml(c.response)}</p>
                 </div>`;
             });
             resEl.innerHTML = html;
         } catch (e) {
-            resEl.innerHTML = 'Fehler: ' + e.message;
+            resEl.textContent = 'Fehler: ' + e.message;
         }
     }
 
@@ -687,34 +722,65 @@
             const data = await res.json();
             let html = '<ul style="list-style:none; font-size:0.85rem;">';
             (data.artifacts || []).forEach(a => {
-                html += `<li style="padding:8px; border-bottom:1px solid #334155; cursor:pointer;" onclick="previewArtifact('${encodeURIComponent(a.path)}', '${a.name}')">
-                    <strong>📄 ${a.name}</strong> <span class="badge badge-cli">${a.type}</span>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${(a.size_bytes / 1024).toFixed(1)} KB | ${a.modified}</div>
+                html += `<li style="padding:8px; border-bottom:1px solid #334155; cursor:pointer;" data-artifact-path="${escapeHtml(a.path)}" data-artifact-name="${escapeHtml(a.name)}">
+                    <strong>📄 ${escapeHtml(a.name)}</strong> <span class="badge badge-cli">${escapeHtml(a.type)}</span>
+                    <div style="font-size:0.7rem; color:var(--text-muted);">${(a.size_bytes / 1024).toFixed(1)} KB | ${escapeHtml(a.modified)}</div>
                 </li>`;
             });
             html += '</ul>';
             listEl.innerHTML = html;
+            listEl.querySelectorAll('[data-artifact-path]').forEach(item => {
+                item.addEventListener('click', () => previewArtifact(item.dataset.artifactPath, item.dataset.artifactName));
+            });
         } catch (e) {
-            listEl.innerHTML = 'Fehler: ' + e.message;
+            listEl.textContent = 'Fehler: ' + e.message;
         }
     }
 
-    async function previewArtifact(encodedPath, name) {
+    async function previewArtifact(path, name) {
         const titleEl = document.getElementById('artifact-preview-title');
         const bodyEl = document.getElementById('artifact-preview-body');
         const downloadBtn = document.getElementById('artifact-download-btn');
-        titleEl.innerText = 'Vorschau: ' + name;
-        bodyEl.innerText = 'Lade Vorschau...';
+        titleEl.textContent = 'Vorschau: ' + name;
+        bodyEl.textContent = 'Lade Vorschau...';
+        downloadBtn.style.display = 'none';
         try {
+            const encodedPath = encodeURIComponent(path);
             const res = await fetch(`/api/artifacts/content?path=${encodedPath}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            bodyEl.innerText = data.content || '(Leerer Inhalt)';
+            bodyEl.textContent = data.content || '(Leerer Inhalt)';
+            downloadBtn.dataset.artifactPath = path;
+            downloadBtn.dataset.artifactName = name;
             downloadBtn.style.display = 'inline-block';
-            downloadBtn.href = `/api/artifacts/download?path=${encodedPath}`;
         } catch (e) {
-            bodyEl.innerText = 'Fehler beim Laden: ' + e.message;
+            bodyEl.textContent = 'Fehler beim Laden: ' + e.message;
         }
     }
+
+    async function downloadArtifact(path, name) {
+        try {
+            // Private API downloads need the same Authorization header as previews.
+            const res = await fetch(`/api/artifacts/download?path=${encodeURIComponent(path)}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const objectUrl = URL.createObjectURL(await res.blob());
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = name || 'artifact';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        } catch (e) {
+            document.getElementById('artifact-preview-body').textContent = 'Fehler beim Download: ' + e.message;
+        }
+    }
+
+    document.getElementById('artifact-download-btn').addEventListener('click', event => {
+        event.preventDefault();
+        const button = event.currentTarget;
+        if (button.dataset.artifactPath) downloadArtifact(button.dataset.artifactPath, button.dataset.artifactName);
+    });
 
     // Initial load & hash navigation
     window.addEventListener('hashchange', () => {

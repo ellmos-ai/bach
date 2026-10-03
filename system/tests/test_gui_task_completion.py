@@ -84,7 +84,8 @@ class TaskCompletionApiTests(unittest.TestCase):
 
         # Prevent the completion guard from consulting any developer worktree.
         worker_git.get_worktrees_dir = lambda: self.root / "worktrees"
-        self.client = TestClient(srv.app, raise_server_exceptions=False)
+        self.client = TestClient(srv.app, raise_server_exceptions=False,
+                                 headers={"Authorization": "Bearer task-fixture"})
 
     def tearDown(self):
         try:

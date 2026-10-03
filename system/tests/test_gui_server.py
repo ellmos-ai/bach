@@ -54,10 +54,12 @@ def test_gui_proxy_forwards_history_and_readiness(client, monkeypatch, path):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """FastAPI TestClient for the BACH GUI app."""
     from fastapi.testclient import TestClient
-    return TestClient(server.app, raise_server_exceptions=False)
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "gui-fixture" else None)
+    return TestClient(server.app, raise_server_exceptions=False,
+                      headers={"Authorization": "Bearer gui-fixture"})
 
 
 @pytest.fixture

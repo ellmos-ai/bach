@@ -150,26 +150,18 @@ async def get_nav_config():
 
 DOMAINS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
 ])
 
 TOOLS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
 ])
 
 MCP_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MCP")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MCP"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MCP"),
 ])
 
 CONTROL_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/_control-center/_CONTROL")),
-    Path("C:/Users/User/OneDrive/.TOPICS/_control-center/_CONTROL"),
-    Path("/Users/lukas/OneDrive/.TOPICS/_control-center/_CONTROL"),
 ])
 
 REPOS_ROOT = _find_existing_path([
@@ -207,18 +199,24 @@ GARDENER_ROOT = _find_existing_path([
 
 
 def _is_safe_artifact_path(candidate: Path) -> bool:
-    """Verifies that the requested path is inside safe permitted project directories."""
+    """Allow deliverables and documentation, never arbitrary runtime files."""
     resolved = candidate.resolve()
     # Reject directory traversal tricks
     resolved_str = str(resolved).lower()
-    for forbidden in (".git", "id_rsa", "id_ed25519", "credentials", "token", ".env", "password"):
+    for forbidden in (".git", "id_rsa", "id_ed25519", "credentials", "secrets", "token", ".env", "password"):
         if forbidden in resolved.name.lower() or f"/{forbidden}/" in resolved_str or f"\\{forbidden}\\" in resolved_str:
             return False
 
+    if resolved.suffix.lower() not in {
+        ".md", ".txt", ".json", ".csv", ".html", ".pdf", ".docx", ".xlsx",
+        ".png", ".jpg", ".jpeg", ".webp", ".svg",
+    }:
+        return False
+
     allowed_roots = [
-        _SYSTEM_ROOT.resolve(),
-        Path(os.path.expanduser("~/.bach")).resolve(),
-        Path("C:/Users/User/.gemini/antigravity-cli/brain").resolve(),
+        (_SYSTEM_ROOT / "docs").resolve(),
+        (_SYSTEM_ROOT / "exports").resolve(),
+        (_SYSTEM_ROOT / "user" / "exports").resolve(),
     ]
     if EXPORTS_ROOT:
         allowed_roots.append(EXPORTS_ROOT.resolve())

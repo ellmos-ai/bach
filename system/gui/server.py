@@ -1228,7 +1228,7 @@ app.add_middleware(
 
     CORSMiddleware,
 
-    allow_origins=["*"],
+    allow_origins=[],
 
     allow_credentials=False,
 
@@ -1311,7 +1311,7 @@ except ImportError:
 
 
 class DeviceAuthMiddleware(BaseHTTPMiddleware):
-    """Enforces Bearer token device authentication on API routes when devices exist."""
+    """Require device credentials for private APIs, including loopback clients."""
 
     EXEMPT_PREFIXES = (
         "/tokens",
@@ -1323,23 +1323,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
     )
 
     EXEMPT_API_PATHS = {
-        "/api/status",
         "/api/health",
         "/api/devices/verify",
-    }
-
-    TRAY_TRANSITIONAL_PATHS = {
-        "/api/tasks",
-        "/api/marblerun",
-        "/api/governance",
-        "/api/memory",
-        "/api/gardener",
-        "/api/capabilities",
-        "/api/backends",
-        "/api/models",
-        "/api/slots",
-        "/api/artifacts",
-        "/api/chat",
     }
 
     async def dispatch(self, request: Request, call_next):
@@ -1348,6 +1333,14 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         # 1. Non-API routes pass through
         if not path.startswith("/api/"):
             return await call_next(request)
+
+        # A browser talking to localhost is still a loopback client. Reject
+        # cross-origin requests before credentials or any API handler runs.
+        origin = request.headers.get("origin")
+        same_origin = f"{request.url.scheme}://{request.url.netloc}"
+        if ((origin is not None and origin != same_origin)
+                or request.headers.get("sec-fetch-site") == "cross-site"):
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
 
         for prefix in self.EXEMPT_PREFIXES:
             if path.startswith(prefix):
@@ -1364,15 +1357,13 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 and path.removeprefix("/api/chat-control/") in CHAT_CONTROL_PATHS):
             return await call_next(request)
 
-        # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
+        # 3. Credentials belong in headers or cookies, never URLs.
         auth_header = request.headers.get("Authorization", "").strip()
         bearer_token = None
         if auth_header.startswith("Bearer "):
             bearer_token = auth_header[7:].strip()
         elif request.cookies.get("bach_device_token"):
             bearer_token = request.cookies.get("bach_device_token")
-        elif request.query_params.get("token"):
-            bearer_token = request.query_params.get("token")
 
         # Memory and Agent Studio responses contain private notes and persona
         # prompts. Transitional and loopback fallbacks must not expose them.
@@ -1405,21 +1396,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             request.state.device = device
             return await call_next(request)
 
-        # If no token was supplied:
-        # Check if any active devices exist in the database
-        if not has_active_devices():
-            return await call_next(request)
-
-        # Allow transitional paths (with prefix match for subpaths like /api/tasks/{id})
-        for tpath in self.TRAY_TRANSITIONAL_PATHS:
-            if path == tpath or path.startswith(tpath + "/"):
-                return await call_next(request)
-
-        # Localhost / loopback fallback for local server operations
-        client_host = request.client.host if request.client else ""
-        if client_host in ("127.0.0.1", "::1", "localhost"):
-            return await call_next(request)
-
+        # Unconfigured and loopback systems fail closed too. Initial device
+        # provisioning is an explicit local administration action.
         return JSONResponse(
             status_code=401,
             content={"error": "Missing device authorization token", "detail": "Unauthorized"},
