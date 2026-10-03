@@ -104,7 +104,7 @@ class TestUnifiedDashboardXss(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = DASHBOARD.read_text(encoding="utf-8")
-        cls.script = re.search(r"<script>(.*?)</script>", cls.source, re.S).group(1)
+        cls.script = re.search(r"<script>(.*?)</script>", cls.source, re.S | re.I).group(1)
 
     def execute(self, **options):
         result = subprocess.run(

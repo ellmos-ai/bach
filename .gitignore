@@ -145,6 +145,8 @@ id_ed25519.*
 /system/tools/testing/results/
 
 # === ONEDRIVE CONFLICT COPIES (Nie committen!) ===
+* (Konfliktkopie)*
+* (conflicted copy)*
 *-WORKSTATION-LG.*
 *-ASUS-GEI.*
 *-Mac Studio.*
