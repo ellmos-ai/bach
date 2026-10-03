@@ -122,15 +122,16 @@ import BachLayout from "../layouts/BachLayout.astro";
       let filtered = allTasks;
 
       const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
+      const isDoneStatus = status => status === 'done' || status === 'completed' || status === 'closed';
 
       if (currentFilter === 'user') {
         filtered = allTasks.filter(t => getAssignee(t) === 'user');
       } else if (currentFilter === 'auto') {
         filtered = allTasks.filter(t => getAssignee(t) !== 'user');
       } else if (currentFilter === 'open') {
-        filtered = allTasks.filter(t => t.status !== 'done' && t.status !== 'closed');
+        filtered = allTasks.filter(t => !isDoneStatus(t.status));
       } else if (currentFilter === 'done') {
-        filtered = allTasks.filter(t => t.status === 'done' || t.status === 'closed');
+        filtered = allTasks.filter(t => isDoneStatus(t.status));
       }
 
       document.getElementById('tasks-count-badge').textContent = `${filtered.length} Tasks angezeigt (Gesamt: ${allTasks.length})`;
@@ -154,7 +155,7 @@ import BachLayout from "../layouts/BachLayout.astro";
           </thead>
           <tbody>
             ${filtered.map(t => {
-              const isDone = t.status === 'done' || t.status === 'closed';
+              const isDone = isDoneStatus(t.status);
               const prioColor = (t.priority === 'P1' || t.priority === 'hoch' || t.priority === 'kritisch') ? 'var(--error)' : 'var(--text-muted)';
               const rawAssignee = t.assigned_to || t.assignee || 'Unzugewiesen';
               const isUser = rawAssignee.toLowerCase() === 'user';
@@ -228,10 +229,20 @@ import BachLayout from "../layouts/BachLayout.astro";
 
     async function completeTask(id) {
       try {
-        const res = await fetch(`/api/tasks/${id}/complete`, { method: 'POST' });
-        if (res.ok) loadTasks();
+        const res = await fetch('/api/tasks/' + encodeURIComponent(id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'completed', changed_by: 'gui' })
+        });
+        if (res.ok) {
+          loadTasks();
+          return;
+        }
+
+        const result = await res.json().catch(() => ({}));
+        alert(result.detail || 'Task konnte nicht abgeschlossen werden.');
       } catch (err) {
-        console.error(err);
+        alert('Netzwerkfehler: ' + err.message);
       }
     }
 

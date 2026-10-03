@@ -249,8 +249,11 @@ def apply_task_field_changes(
                     f"Task #{task_id} hat Codeänderungen, kann aber erst mit eingetragenem PR auf completed gesetzt werden."
                 )
 
-        updates.append("completed_at = ?")
-        values.append(now)
+        # Keep the original completion instant on repeated completion requests.
+        # Legacy terminal rows without a timestamp are repaired on the next write.
+        if not existing_row.get("completed_at"):
+            updates.append("completed_at = ?")
+            values.append(now)
     elif status_value in IN_PROGRESS_STATUSES and not existing_row.get("started_at"):
         # Nur beim ERSTEN Uebergang setzen -- ein wiederholtes in_progress
         # (z.B. nach einem Rueckfall auf 'open'/'pending') darf den Erststart

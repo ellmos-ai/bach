@@ -1869,7 +1869,9 @@ async def update_task(task_id: int, update: TaskUpdate):
                                         changed_by=changed_by,
                                         allow_reopen=bool(update.allow_reopen)):
                 did_update = True
-        except GateReopenBlocked as exc:
+        except (GateReopenBlocked, ValueError) as exc:
+            # Business-rule conflicts (for example the missing-PR completion guard)
+            # are client-resolvable conflicts, not internal server errors.
             raise HTTPException(status_code=409, detail=str(exc))
 
         if did_update:
