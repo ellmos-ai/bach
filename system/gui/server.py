@@ -4601,10 +4601,7 @@ async def agenten_sessions_page():
     p = ASTRO_DIST_DIR / "agenten" / "sessions.html"
     if p.exists():
         return FileResponse(p)
-    chat_file = TEMPLATES_DIR / "chat.html"
-    if chat_file.exists():
-        return FileResponse(chat_file)
-    raise HTTPException(status_code=404, detail="Sessions-Seite nicht gefunden")
+    raise HTTPException(status_code=503, detail="Sessions-Seite noch nicht gebaut")
 
 
     
