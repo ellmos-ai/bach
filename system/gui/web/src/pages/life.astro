@@ -119,38 +119,45 @@ import BachLayout from "../layouts/BachLayout.astro";
     <!-- TAB 2: DEINE ROUTINEN -->
     <div class="tab-pane" id="pane-routinen">
       <div class="glass-card">
-        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <div class="card-header-action">
           <div>
-            <h3><span class="icon">⏰</span> Deine persönlichen Lebens- & Haushaltsroutinen</h3>
-            <p class="card-desc">Feste rhythmische Gewohnheiten und wiederkehrende Aufgaben aus <code>household_routines</code></p>
+            <h3><span class="icon">⏰</span> Deine Routinen</h3>
+            <p class="card-desc">Persönliche Routinen aus deiner Nutzerdatenbank. Systemjobs von BACH und Ocean werden getrennt verwaltet.</p>
           </div>
-          <div style="display:flex;gap:0.5rem;">
-            <select id="filter-routine-cat" onchange="filterPersonalRoutines()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
-              <option value="">Alle Kategorien</option>
-              <option value="Haushalt">Haushalt</option>
-              <option value="Gesundheit">Gesundheit</option>
-              <option value="Finanzen">Finanzen</option>
-              <option value="Fokus">Fokus & Mindset</option>
-            </select>
-            <a href="/routinen?tab=personal" class="btn btn-secondary btn-sm">Vollansicht Routinen ↗</a>
+          <div class="routine-actions">
+            <button type="button" id="routine-add" class="btn btn-primary btn-sm">+ Neue Routine</button>
+            <button type="button" id="routine-refresh" class="btn btn-secondary btn-sm">Aktualisieren</button>
           </div>
         </div>
-
-        <div class="routines-table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Routine</th>
-                <th>Intervall</th>
-                <th>Kategorie</th>
-                <th>Nächste Fälligkeit</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="personal-routines-body">
-              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Lade Deine Routinen...</td></tr>
-            </tbody>
-          </table>
+        <p id="routine-load-status" class="load-status" role="status" aria-live="polite">Lade Routinen …</p>
+        <div class="routine-stats" aria-label="Routinenstatus">
+          <span>Gesamt: <strong id="routine-stat-total">–</strong></span>
+          <span>Aktiv: <strong id="routine-stat-active">–</strong></span>
+          <span>Heute fällig: <strong id="routine-stat-due">–</strong></span>
+          <span>Überfällig: <strong id="routine-stat-overdue">–</strong></span>
+        </div>
+        <label class="routine-filter">Kategorie
+          <select id="filter-routine-cat"><option value="">Alle Kategorien</option></select>
+        </label>
+        <div id="personal-routines-list" class="routine-list"></div>
+        <form id="life-routine-form" class="routine-form hidden" aria-label="Routine bearbeiten">
+          <h4 id="life-routine-form-title">Neue Routine</h4>
+          <input id="routine-edit-id" type="hidden" />
+          <label>Name * <input id="routine-name" required maxlength="200" /></label>
+          <label>Beschreibung <textarea id="routine-description" rows="2"></textarea></label>
+          <div class="routine-form-grid">
+            <label>Kategorie <input id="routine-category" value="Haushalt" /></label>
+            <label>Priorität <select id="routine-priority"><option value="1">Hoch</option><option value="2" selected>Mittel</option><option value="3">Niedrig</option></select></label>
+            <label>Intervall <select id="routine-interval"><option value="taeglich">Täglich</option><option value="woechentlich" selected>Wöchentlich</option><option value="monatlich">Monatlich</option><option value="jaehrlich">Jährlich</option></select></label>
+            <label>Alle X Einheiten <input id="routine-interval-value" type="number" min="1" value="1" required /></label>
+            <label>Spezifischer Tag <input id="routine-specific-day" /></label>
+            <label>Dauer in Minuten <input id="routine-duration" type="number" min="0" /></label>
+          </div>
+          <div class="routine-actions"><button type="submit" class="btn btn-primary btn-sm">Speichern</button><button id="routine-cancel" type="button" class="btn btn-secondary btn-sm">Abbrechen</button></div>
+        </form>
+        <div class="routine-adapters">
+          <a href="/routinen?tab=bach">BACH/Ocean-Systemjobs getrennt öffnen ↗</a>
+          <button type="button" disabled title="Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen.">Routinika öffnen – Anbindung in Arbeit</button>
         </div>
       </div>
     </div>
@@ -429,6 +436,20 @@ import BachLayout from "../layouts/BachLayout.astro";
       border-radius: var(--radius-md);
       padding: 1.5rem;
     }
+    .card-header-action, .routine-actions, .routine-adapters { display:flex; justify-content:space-between; align-items:center; gap:.6rem; flex-wrap:wrap; }
+    .routine-actions, .routine-adapters { justify-content:flex-start; }
+    .routine-stats { display:flex; flex-wrap:wrap; gap:.65rem 1.25rem; padding:.75rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--radius-sm); }
+    .routine-filter { display:flex; align-items:center; gap:.5rem; margin:1rem 0; }
+    .routine-filter select, .routine-form input, .routine-form textarea, .routine-form select { min-width:0; max-width:100%; padding:.5rem; background:var(--bg-dark); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; }
+    .routine-list { display:grid; gap:.65rem; }
+    .routine-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.65rem; padding:.85rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-dark); }
+    .routine-row strong { overflow-wrap:anywhere; }
+    .routine-meta { display:block; color:var(--text-muted); font-size:.82rem; margin-top:.2rem; overflow-wrap:anywhere; }
+    .routine-form { margin-top:1.25rem; padding:1rem; border:1px solid var(--accent); border-radius:var(--radius-sm); }
+    .routine-form label { display:flex; flex-direction:column; gap:.3rem; margin:.5rem 0; }
+    .routine-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.5rem 1rem; }
+    .routine-adapters { margin-top:1.25rem; border-top:1px solid var(--border); padding-top:1rem; font-size:.83rem; }
+    .routine-adapters button:disabled { opacity:.7; cursor:not-allowed; }
 
     /* Calendar Controls Bar */
     .calendar-controls-bar {
@@ -1079,50 +1100,133 @@ import BachLayout from "../layouts/BachLayout.astro";
       }
     }
 
-    // ── DEINE ROUTINEN (Personal Routines) ──
+    // ── PERSÖNLICHE ROUTINEN: tatsächlicher /api/routines-Vertrag ──
     let _allPersonalRoutines = [];
+    const routineStatus = () => document.getElementById('routine-load-status');
 
     async function loadPersonalRoutines() {
-      const tbody = document.getElementById('personal-routines-body');
-      if (!tbody) return;
+      routineStatus().textContent = 'Lade Routinen …';
       try {
-        const res = await fetch('/api/calendar/events?include_routines=true');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const res = await lifeApiFetch('/api/routines');
+        if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
         const data = await res.json();
-        const routines = (data.events || []).filter(e => e.is_routine);
-        _allPersonalRoutines = routines;
-        renderPersonalRoutines(routines);
-      } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Fehler beim Laden: ${e.message}</td></tr>`;
+        if (data.success !== true || !Array.isArray(data.routines)) throw new Error('Routinen konnten nicht geladen werden.');
+        _allPersonalRoutines = data.routines;
+        for (const key of ['total', 'active', 'due_today', 'overdue']) {
+          const label = key === 'due_today' ? 'due' : key;
+          document.getElementById(`routine-stat-${label}`).textContent = String(data.stats?.[key] ?? '–');
+        }
+        const filter = document.getElementById('filter-routine-cat');
+        const prior = filter.value;
+        filter.replaceChildren(new Option('Alle Kategorien', ''));
+        for (const category of [...new Set(data.routines.map(r => r.category).filter(Boolean))].sort()) {
+          filter.add(new Option(String(category), String(category)));
+        }
+        filter.value = prior;
+        routineStatus().textContent = '';
+        renderPersonalRoutines();
+        return data.routines;
+      } catch (error) {
+        _allPersonalRoutines = [];
+        document.getElementById('personal-routines-list').replaceChildren();
+        routineStatus().textContent = error.message || 'Routinen konnten nicht geladen werden.';
+        return null;
       }
     }
 
-    function renderPersonalRoutines(routines) {
-      const tbody = document.getElementById('personal-routines-body');
-      if (!tbody) return;
-      if (routines.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine persönlichen Routinen gefunden.</td></tr>';
+    function routineButton(label, action) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary btn-sm';
+      button.textContent = label;
+      button.addEventListener('click', action);
+      return button;
+    }
+
+    function renderPersonalRoutines() {
+      const container = document.getElementById('personal-routines-list');
+      container.replaceChildren();
+      const category = document.getElementById('filter-routine-cat').value;
+      const routines = _allPersonalRoutines.filter(r => !category || r.category === category);
+      if (!routines.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Keine Routinen für diese Auswahl vorhanden.';
+        container.append(empty);
         return;
       }
-      tbody.innerHTML = routines.map(r => `
-        <tr>
-          <td><strong>${escapeHtml(r.title)}</strong></td>
-          <td>${escapeHtml(r.recurrence_rule || 'taeglich')}</td>
-          <td><span class="badge badge-accent">${escapeHtml(r.location || 'Haushalt')}</span></td>
-          <td style="font-family:monospace;font-size:0.8rem;">${escapeHtml(r.start_datetime || '-')}</td>
-          <td><span class="badge badge-success">${escapeHtml(r.status || 'aktiv')}</span></td>
-        </tr>
-      `).join('');
+      for (const routine of routines) {
+        const id = Number(routine.id);
+        if (!Number.isSafeInteger(id) || id < 1) continue;
+        const row = document.createElement('article');
+        row.className = 'routine-row';
+        const info = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = String(routine.name ?? 'Unbenannte Routine');
+        const meta = document.createElement('span');
+        meta.className = 'routine-meta';
+        meta.textContent = [routine.category, routine.interval_type, routine.next_due_at ? `Nächste Fälligkeit: ${routine.next_due_at}` : 'Keine Fälligkeit', routine.is_active ? 'Aktiv' : 'Inaktiv'].filter(Boolean).join(' · ');
+        info.append(title, meta);
+        const actions = document.createElement('div');
+        actions.className = 'routine-actions';
+        if (routine.is_active && (routine.is_due_today || routine.is_overdue)) actions.append(routineButton('Erledigt', () => changeRoutine(`/api/routines/${id}/complete`, 'POST', id, 'Routine erledigt.')));
+        actions.append(routineButton('Bearbeiten', () => openRoutineForm(routine)));
+        actions.append(routineButton('Löschen', () => { if (confirm('Routine wirklich löschen?')) changeRoutine(`/api/routines/${id}`, 'DELETE', id, 'Routine gelöscht.'); }));
+        row.append(info, actions);
+        container.append(row);
+      }
     }
 
-    function filterPersonalRoutines() {
-      const cat = document.getElementById('filter-routine-cat').value;
-      if (!cat) {
-        renderPersonalRoutines(_allPersonalRoutines);
-      } else {
-        const filtered = _allPersonalRoutines.filter(r => (r.location || '').toLowerCase() === cat.toLowerCase());
-        renderPersonalRoutines(filtered);
+    function openRoutineForm(routine = null) {
+      const form = document.getElementById('life-routine-form');
+      form.reset();
+      document.getElementById('routine-edit-id').value = routine ? String(routine.id) : '';
+      document.getElementById('life-routine-form-title').textContent = routine ? 'Routine bearbeiten' : 'Neue Routine';
+      for (const [field, value] of Object.entries({
+        name: routine?.name || '', description: routine?.description || '', category: routine?.category || 'Haushalt',
+        priority: routine?.priority || 2, interval: routine?.interval_type || 'woechentlich',
+        'interval-value': routine?.interval_value || 1, 'specific-day': routine?.specific_day || '',
+        duration: routine?.duration_minutes ?? '',
+      })) document.getElementById(`routine-${field}`).value = value;
+      form.classList.remove('hidden');
+      document.getElementById('routine-name').focus();
+    }
+
+    async function changeRoutine(path, method, id, successText, body = null) {
+      try {
+        const res = await lifeApiFetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+        if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
+        const ack = await res.json();
+        if (ack.success !== true) throw new Error('Die Änderung wurde nicht bestätigt.');
+        const recordId = method === 'POST' && path === '/api/routines' ? Number(ack.id) : id;
+        if (body && (!Number.isSafeInteger(recordId) || recordId < 1)) throw new Error('Die Speicherung hat keine gültige Routine-ID bestätigt.');
+        const readback = await loadPersonalRoutines();
+        if (!readback) throw new Error('Änderung bestätigt, aber die aktuelle Liste konnte nicht gelesen werden.');
+        if (method === 'DELETE' && readback.some(r => Number(r.id) === id)) throw new Error('Die gelöschte Routine ist noch vorhanden.');
+        if (body && !readback.some(r => Number(r.id) === recordId && r.name === body.name)) throw new Error('Die gespeicherte Routine konnte nicht zurückgelesen werden.');
+        routineStatus().textContent = successText;
+        document.getElementById('life-routine-form').classList.add('hidden');
+      } catch (error) { routineStatus().textContent = error.message || 'Änderung fehlgeschlagen.'; }
+    }
+
+    function savePersonalRoutine(event) {
+      event.preventDefault();
+      const idText = document.getElementById('routine-edit-id').value;
+      const id = idText ? Number(idText) : null;
+      const title = document.getElementById('routine-name').value.trim();
+      const intervalValue = Number(document.getElementById('routine-interval-value').value);
+      if (!title || !Number.isSafeInteger(intervalValue) || intervalValue < 1) {
+        routineStatus().textContent = 'Name und gültiges Intervall sind erforderlich.';
+        return;
       }
+      const body = {
+        name: title, description: document.getElementById('routine-description').value,
+        category: document.getElementById('routine-category').value.trim() || 'Haushalt',
+        priority: Number(document.getElementById('routine-priority').value),
+        interval_type: document.getElementById('routine-interval').value, interval_value: intervalValue,
+        specific_day: document.getElementById('routine-specific-day').value.trim() || null,
+        duration_minutes: document.getElementById('routine-duration').value ? Number(document.getElementById('routine-duration').value) : null,
+      };
+      changeRoutine(id ? `/api/routines/${id}` : '/api/routines', id ? 'PUT' : 'POST', id, 'Routine gespeichert.', body);
     }
 
     // ── MEINE AUFGABEN ──
@@ -1236,6 +1340,11 @@ import BachLayout from "../layouts/BachLayout.astro";
     document.addEventListener('DOMContentLoaded', () => {
       setupTabs();
       loadCalendarEvents();
+      document.getElementById('routine-add')?.addEventListener('click', () => openRoutineForm());
+      document.getElementById('routine-refresh')?.addEventListener('click', loadPersonalRoutines);
+      document.getElementById('routine-cancel')?.addEventListener('click', () => document.getElementById('life-routine-form').classList.add('hidden'));
+      document.getElementById('filter-routine-cat')?.addEventListener('change', renderPersonalRoutines);
+      document.getElementById('life-routine-form')?.addEventListener('submit', savePersonalRoutine);
 
       const btnStart = document.getElementById('btn-timer-start');
       const btnReset = document.getElementById('btn-timer-reset');

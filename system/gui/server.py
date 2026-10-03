@@ -1388,6 +1388,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         # Memory and Agent Studio responses contain private notes and persona
         # prompts. Transitional and loopback fallbacks must not expose them.
         if (path == "/api/calendar" or path.startswith("/api/calendar/")
+                or path == "/api/routines" or path.startswith("/api/routines/")
                 or path == "/api/memory" or path.startswith("/api/memory/")
                 or path == "/api/gardener" or path.startswith("/api/gardener/")
                 or path == "/api/agent-studio" or path.startswith("/api/agent-studio/")):
