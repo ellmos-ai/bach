@@ -24,6 +24,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2 class="card-title">Verifizierte Agentenprofile</h2></div>
+    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Die Auswahl hier startet keinen Agentenprozess.</p>
+    <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
+  </div>
+
   <!-- 1. CLUSTER & STATUS COCKPIT: TRITHON, MUSCHELGRUND, SALT & DIE FACKEL -->
   <div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.95) 100%);border:1px solid var(--border);">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -649,8 +655,26 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
+    async function loadTrustedProfiles() {
+      const container = document.getElementById('trusted-profile-list');
+      try {
+        const response = await fetch('/api/agents');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.success !== true || !Array.isArray(data.agents)) throw new Error('Profilantwort ungültig');
+        const profiles = data.agents.filter(agent => agent.profile_chat_ready === true &&
+          Number.isSafeInteger(Number(agent.id)) && Number(agent.id) > 0);
+        container.innerHTML = profiles.length
+          ? profiles.map(agent => `<a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a>`).join('')
+          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine verifizierten Chatprofile verfügbar.</span>';
+      } catch (error) {
+        container.textContent = 'Profile können derzeit nicht geprüft werden: ' + error.message;
+      }
+    }
+
     async function refreshAll(interactive = false) {
       await Promise.all([
+        loadTrustedProfiles(),
         loadClusterCockpit(),
         loadTeamsBeseelen(),
         loadStaffelnBeseelen(),

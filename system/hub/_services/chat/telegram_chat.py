@@ -2147,6 +2147,14 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
         normalized = str(chat_id or "")
         registered_worker = _registered_worker_slot(normalized)
+        from hub._services.chat.agent_profile_context import profile_chat_id_agent
+        if profile_chat_id_agent(normalized) is not None:
+            if registered_worker is not None or get_worker_slot(normalized) is not None:
+                raise ValueError("Profil-Chat-ID ist bereits als Worker-Slot gebunden")
+            if runtime.session_store is None:
+                raise ValueError("Profilstore fehlt")
+            if runtime.session_store.load_state(chat_id)["binding"] is None:
+                return runtime.backend, (_global_defaults.get("model") or runtime.backend.get_default_model())
         if (
             _is_strict_worker_id(normalized)
             and registered_worker is None
@@ -2329,6 +2337,48 @@ def _backend_inventory() -> dict[str, dict]:
             value=_copy_backend_inventory(backends),
         )
         return _copy_backend_inventory(backends)
+
+
+def _optional_agent_id(value, *, query: bool = False):
+    """Keep absent legacy requests unchanged; reject bool, aliases and fuzzy IDs."""
+    if value is None:
+        return None
+    if query:
+        if type(value) is not str or not value.isascii() or not value.isdecimal() or value.startswith("0"):
+            raise ValueError("agent_id muss eine positive Ganzzahl sein")
+        value = int(value)
+    if type(value) is not int or value <= 0:
+        raise ValueError("agent_id muss eine positive Ganzzahl sein")
+    return value
+
+
+def _profile_request(agent_id, chat_id):
+    from hub._services.chat.agent_profile_context import (
+        ProfileUnavailable, profile_chat_id_agent, resolve_profile,
+    )
+    if agent_id is None:
+        if str(chat_id).startswith("agent:"):
+            raise ProfileUnavailable("Profilbindung fehlt")
+        return None
+    if profile_chat_id_agent(chat_id) != agent_id:
+        raise ProfileUnavailable("Profil-Chat-ID stimmt nicht mit agent_id überein")
+    if runtime is None or runtime.session_store is None:
+        raise ProfileUnavailable("Dauerhafter Profilstore fehlt")
+    binding, text = resolve_profile(agent_id)
+    state = runtime.session_store.load_state(chat_id)
+    if state["binding"] not in (None, binding) or (state["binding"] is None and state["messages"]):
+        raise ProfileUnavailable("Chatverlauf gehört zu einem anderen Kontext")
+    ram = runtime.sessions.get(chat_id)
+    if ram is not None and (getattr(ram, "profile_binding", None) != binding):
+        raise ProfileUnavailable("RAM-Chat gehört zu einem anderen Kontext")
+    return binding, text
+
+
+def _query_agent_id(parsed_url):
+    values = parse_qs(parsed_url.query, keep_blank_values=True).get("agent_id", [])
+    if len(values) > 1:
+        raise ValueError("agent_id darf nur einmal vorkommen")
+    return _optional_agent_id(values[0], query=True) if values else None
 
 
 def _control_chat_response(answer) -> tuple[dict, int]:
@@ -2636,6 +2686,15 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/readiness":
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
             try:
+                agent_id = _query_agent_id(parsed_url)
+                if agent_id is None:
+                    _profile_request(None, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
+            if agent_id is not None and not self._allow_control_request():
+                return
+            try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
             except WorkerBindingError as exc:
                 self._json({"ok": False, "error": str(exc)}, 503)
@@ -2647,12 +2706,26 @@ class ControlHandler(BaseHTTPRequestHandler):
                 selected_backend,
                 model,
             )
-            self._json({
+            result = {
                 "available": available,
                 "status": availability_status,
                 "backend_id": backend_identifier(selected_backend),
                 "model": model,
-            })
+            }
+            if agent_id is not None:
+                try:
+                    binding, _text = _profile_request(agent_id, chat_id)
+                    capability = {"agent_id": agent_id, "available": True,
+                        "context_class": binding["context_class"],
+                        "db_version": binding["db_version"],
+                        "source_version": binding["source_version"]}
+                except Exception:
+                    capability = {"agent_id": agent_id, "available": False,
+                        "context_class": "agent-profile", "db_version": None,
+                        "source_version": None, "reason": "Profilkontext nicht verfügbar"}
+                result["profile_capability"] = capability
+                result["can_chat"] = bool(available and capability["available"])
+            self._json(result)
 
         elif path == "/api/models":
             try:
@@ -2665,13 +2738,38 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/history":
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["gui-web"])[0]
-            self._json({"ok": True, "chat_id": chat_id, "messages": runtime.history(chat_id)})
+            try:
+                agent_id = _query_agent_id(parsed_url)
+                if agent_id is not None and not self._allow_control_request():
+                    return
+                agent_context = _profile_request(agent_id, chat_id)
+                bound = (agent_context is not None and
+                    runtime.session_store.load_state(chat_id)["binding"] == agent_context[0])
+                messages = runtime.history(chat_id) if agent_context is None or bound else []
+                response = {"ok": True, "chat_id": chat_id, "messages": messages}
+                if agent_context is not None:
+                    response.update({"agent_id": agent_context[0]["agent_id"],
+                        "context_class": "agent-profile", "binding_confirmed": bound})
+                self._json(response)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+            except Exception:
+                self._json({"ok": False, "error": "Profilverlauf nicht verifizierbar"}, 503)
 
         elif path == "/api/sessions":
             limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
             if runtime.session_store:
                 try:
+                    agent_id = _query_agent_id(parsed_url)
+                    if agent_id is not None and not self._allow_control_request():
+                        return
                     snapshots = runtime.session_store.list_snapshots(limit=limit)
+                    if agent_id is not None:
+                        _profile_request(agent_id, f"agent:{agent_id}:" + "0" * 32)
+                        snapshots = [s for s in snapshots if s.get("agent_id") == agent_id
+                            and s.get("context_class") == "agent-profile"]
+                    else:
+                        snapshots = [s for s in snapshots if s.get("context_class") != "agent-profile"]
                     self._json({"ok": True, "sessions": snapshots})
                 except Exception as e:
                     self._json({"error": str(e)}, 500)
@@ -2687,6 +2785,21 @@ class ControlHandler(BaseHTTPRequestHandler):
                 try:
                     snap = runtime.session_store.get_snapshot_by_id(sid)
                     if snap:
+                        binding = snap.get("binding")
+                        agent_id = _query_agent_id(parsed_url)
+                        if binding is not None:
+                            if agent_id != binding["agent_id"]:
+                                self._json({"error": "Profilbindung erforderlich"}, 409)
+                                return
+                            if not self._allow_control_request():
+                                return
+                            current, _text = _profile_request(agent_id, snap["chat_id"])
+                            if current != binding:
+                                self._json({"error": "Profilquelle nicht mehr verifiziert"}, 409)
+                                return
+                        elif agent_id is not None:
+                            self._json({"error": "Snapshot gehört keinem Agentenprofil"}, 409)
+                            return
                         self._json({"ok": True, "session": snap})
                     else:
                         self._json({"error": "Snapshot nicht gefunden"}, 404)
@@ -2787,17 +2900,21 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "chat_id erforderlich"}, 400)
             else:
                 try:
+                    agent_context = _profile_request(_query_agent_id(parsed_url), chat_id)
+                    bound = (agent_context is not None and
+                        runtime.session_store.load_state(chat_id)["binding"] == agent_context[0])
                     msgs = []
-                    session = runtime.sessions.get(chat_id)
-                    if session and session.messages:
-                        msgs = session.messages
-                    elif runtime.session_store:
-                        msgs = runtime._load_messages(chat_id)
-                    self._json({
-                        "ok": True,
-                        "chat_id": chat_id,
-                        "messages": msgs,
-                    })
+                    if agent_context is None or bound:
+                        session = runtime.sessions.get(chat_id)
+                        if session and session.messages:
+                            msgs = session.messages
+                        elif runtime.session_store:
+                            msgs = runtime._load_messages(chat_id)
+                    response = {"ok": True, "chat_id": chat_id, "messages": msgs}
+                    if agent_context is not None:
+                        response.update({"agent_id": agent_context[0]["agent_id"],
+                            "context_class": "agent-profile", "binding_confirmed": bound})
+                    self._json(response)
                 except Exception as e:
                     self._json({"error": str(e)}, 500)
 
@@ -2907,12 +3024,25 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/chat":
             prompt = body.get("prompt", "")
             chat_id = body.get("chat_id", "api-delegate")
+            try:
+                agent_id = _optional_agent_id(body.get("agent_id"))
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
             depth = int(self.headers.get("X-Delegation-Depth", "0"))
             if not prompt:
                 self._json({"error": "prompt erforderlich"}, 400)
                 return
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
+                return
+            try:
+                agent_context = _profile_request(agent_id, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
                 return
             try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
@@ -2936,18 +3066,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 loop = asyncio.new_event_loop()
                 try:
+                    process_kwargs = {"backend": selected_backend, "model": model}
+                    if agent_context is not None:
+                        process_kwargs["agent_context"] = agent_context
                     answer = loop.run_until_complete(
-                        runtime.process(
-                            prompt,
-                            chat_id,
-                            backend=selected_backend,
-                            model=model,
-                        )
+                        runtime.process(prompt, chat_id, **process_kwargs)
                     )
                 finally:
                     loop.close()
                 if not isinstance(answer, FailedAnswer):
                     response, status = _control_chat_response(answer)
+                    if agent_context is not None and status == 200:
+                        response.update({"agent_id": agent_context[0]["agent_id"],
+                            "context_class": "agent-profile", "binding_confirmed": True})
                     self._json(response, status)
                 else:
                     text = str(answer)
@@ -2973,6 +3104,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/clear":
             chat_id = body.get("chat_id", "gui-web")
             try:
+                _profile_request(_optional_agent_id(body.get("agent_id")), chat_id)
                 archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
             except RuntimeError as exc:
                 self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 503)
@@ -2982,6 +3114,15 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/fork":
             chat_id = body.get("chat_id", "gui-web")
             try:
+                agent_id = _optional_agent_id(body.get("agent_id"))
+                agent_context = _profile_request(agent_id, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
+                return
+            try:
                 snapshot_id = int(body.get("snapshot_id", 0))
             except (TypeError, ValueError):
                 snapshot_id = 0
@@ -2989,8 +3130,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "snapshot_id erforderlich"}, 400)
                 return
             try:
-                count = runtime.fork_session(chat_id, snapshot_id)
-                self._json({"ok": True, "chat_id": chat_id, "snapshot_id": snapshot_id, "messages_count": count})
+                count = runtime.fork_session(chat_id, snapshot_id, agent_context=agent_context)
+                response = {"ok": True, "chat_id": chat_id, "snapshot_id": snapshot_id, "messages_count": count}
+                if agent_context is not None:
+                    response.update({"agent_id": agent_context[0]["agent_id"],
+                        "context_class": "agent-profile", "binding_confirmed": True})
+                self._json(response)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 

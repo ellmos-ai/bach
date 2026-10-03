@@ -2116,6 +2116,13 @@ async def api_list_agents():
         for agent in agents:
 
             agent["experts"] = [e for e in experts if e["agent_id"] == agent["id"]]
+            agent["profile_chat_ready"] = False
+            try:
+                from hub._services.chat.agent_profile_context import resolve_profile
+                binding, _profile_text = resolve_profile(int(agent["id"]))
+                agent["profile_chat_ready"] = binding["agent_id"] == int(agent["id"])
+            except (ValueError, TypeError, OSError):
+                pass
 
             # Dashboard URL Fallback/Konstruktion
 

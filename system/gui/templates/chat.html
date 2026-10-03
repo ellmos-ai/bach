@@ -971,12 +971,35 @@
     <script>
     (function() {
         const CHAT_API = '/api/chat-control';
+        const selectedAgentParams = new URLSearchParams(window.location.search);
+        const selectedAgentValues = selectedAgentParams.getAll('agent_id');
+        const selectedAgentRaw = selectedAgentValues[0] || '';
+        const profileAgentId = selectedAgentValues.length === 1 && /^[1-9][0-9]*$/.test(selectedAgentRaw)
+            && Number.isSafeInteger(Number(selectedAgentRaw)) ? Number(selectedAgentRaw) : null;
+        const profileSelectionError = selectedAgentValues.length > 0 && profileAgentId === null;
+        const profileStorageKey = profileAgentId
+            ? 'bach_agent_chat_' + profileAgentId : 'bach_active_web_chat_id';
+        function newProfileChatId() {
+            const bytes = new Uint8Array(16);
+            window.crypto.getRandomValues(bytes);
+            return 'agent:' + profileAgentId + ':'
+                + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+        function profileQuery() {
+            return profileAgentId ? '&agent_id=' + encodeURIComponent(profileAgentId) : '';
+        }
+        function profileConfirmed(data) {
+            return !profileAgentId || (data && data.binding_confirmed === true
+                && data.agent_id === profileAgentId && data.context_class === 'agent-profile');
+        }
         function controlHeaders(method, jsonBody = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
-            if (method !== 'GET' && method !== 'HEAD') {
+            if (method !== 'GET' && method !== 'HEAD' || profileAgentId) {
                 let token = localStorage.getItem('bach-control-api-token') || '';
                 if (!token) {
-                    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
+                    token = window.prompt(profileAgentId
+                        ? 'Control-API-Token für das Agentenprofil:'
+                        : 'Control-API-Token für schreibende Aktionen:') || '';
                     if (token) localStorage.setItem('bach-control-api-token', token.trim());
                 }
                 token = token.trim();
@@ -984,7 +1007,12 @@
             }
             return headers;
         }
-        let currentChatId = localStorage.getItem('bach_active_web_chat_id') || ('web-' + Date.now());
+        const rememberedChatId = localStorage.getItem(profileStorageKey);
+        const rememberedProfileChat = profileAgentId && rememberedChatId &&
+            new RegExp('^agent:' + profileAgentId + ':[a-f0-9]{32}$').test(rememberedChatId);
+        let currentChatId = profileSelectionError ? '' : (profileAgentId
+            ? (rememberedProfileChat ? rememberedChatId : newProfileChatId())
+            : (rememberedChatId || ('web-' + Date.now())));
 
         const sidebar = document.getElementById('sidebar');
         const sidebarOpenBtn = document.getElementById('btn-sidebar-open');
@@ -1001,7 +1029,10 @@
         const typingEl = document.getElementById('typing');
         let sending = false;
         let backendAvailable = false;
+        let profileUnavailable = false;
         let webSessions = [];
+        if (profileAgentId) currentChatTitleEl.textContent = "Agentenprofil #" + profileAgentId;
+        if (profileSelectionError) currentChatTitleEl.textContent = "Ungültige Agenten-ID";
 
         function escapeHtml(str) {
             return String(str || '').replace(/[&<>"']/g, function(m) {
@@ -1025,7 +1056,9 @@
 
         function updateComposerAvailability() {
             sendBtn.disabled = sending || !backendAvailable;
-            sendBtn.title = backendAvailable ? 'Senden' : 'Backend nicht verfügbar';
+            sendBtn.title = backendAvailable ? 'Senden' :
+                (profileSelectionError ? 'Ungültige Agenten-ID' :
+                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
             sendBtn.setAttribute('aria-label', sendBtn.title);
         }
 
@@ -1084,12 +1117,16 @@
 
         // ── Multi-Session Management ──
         async function loadWebSessions() {
+            if (profileSelectionError) return;
             try {
-                const resp = await fetch(CHAT_API + '/sessions?limit=80');
+                const resp = await fetch(CHAT_API + '/sessions?limit=80' + profileQuery(),
+                    { headers: controlHeaders('GET') });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
                     // Filter specifically for web chats
                     webSessions = data.sessions.filter(s => {
+                        if (profileAgentId) return s.agent_id === profileAgentId && s.context_class === "agent-profile"
+                            && !(s.session_id || "").includes(":archived:");
                         const name = (s.name || '').toLowerCase();
                         const sid = (s.session_id || '').toLowerCase();
                         const cid = (s.chat_id || '').toLowerCase();
@@ -1143,12 +1180,14 @@
         }
 
         async function selectWebSession(s) {
+            if (profileAgentId && (s.agent_id !== profileAgentId || s.context_class !== 'agent-profile')) return;
             const targetChatId = s.chat_id || ('web-snap-' + s.id);
             currentChatId = targetChatId;
-            localStorage.setItem('bach_active_web_chat_id', currentChatId);
+            localStorage.setItem(profileStorageKey, currentChatId);
 
             const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
-            currentChatTitleEl.textContent = displayTitle;
+            currentChatTitleEl.textContent = profileAgentId
+                ? 'Agentenprofil #' + profileAgentId + ' · ' + displayTitle : displayTitle;
 
             renderSidebarSessions();
 
@@ -1160,8 +1199,10 @@
                 // First try direct history
                 let loaded = false;
                 if (s.chat_id) {
-                    const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id));
+                    const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id) + profileQuery(),
+                        { headers: controlHeaders('GET') });
                     const hData = await hResp.json();
+                    if (profileAgentId && (!hResp.ok || !profileConfirmed(hData))) throw new Error("Profilverlauf nicht bestätigt");
                     if (hData.ok && Array.isArray(hData.messages) && hData.messages.length > 0) {
                         setTyping(false);
                         if (emptyState) emptyState.style.display = 'none';
@@ -1171,7 +1212,7 @@
                 }
 
                 // If not in RAM, load from snapshot by ID
-                if (!loaded && s.id) {
+                if (!loaded && s.id && !profileAgentId) {
                     const snapResp = await fetch(CHAT_API + '/session?id=' + s.id);
                     const snapData = await snapResp.json();
                     setTyping(false);
@@ -1196,9 +1237,10 @@
         }
 
         function startNewChat() {
-            currentChatId = 'web-' + Date.now();
-            localStorage.setItem('bach_active_web_chat_id', currentChatId);
-            currentChatTitleEl.textContent = 'Neuer Chat';
+            if (profileSelectionError) return;
+            currentChatId = profileAgentId ? newProfileChatId() : ('web-' + Date.now());
+            localStorage.setItem(profileStorageKey, currentChatId);
+            currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
 
             messagesEl.innerHTML = '';
             if (emptyState) {
@@ -1220,6 +1262,7 @@
         });
 
         async function loadActiveChat() {
+            if (profileSelectionError) return;
             if (currentChatId) {
                 // Check if currentChatId exists in webSessions
                 const match = webSessions.find(s => s.chat_id === currentChatId);
@@ -1230,17 +1273,21 @@
             }
             // Otherwise load current history
             try {
-                const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId));
+                const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET') });
                 const data = await resp.json();
+                if (profileAgentId && (!resp.ok || (data.messages && data.messages.length > 0 && !profileConfirmed(data))))
+                    throw new Error("Profilverlauf nicht bestätigt");
                 if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
                     if (emptyState) emptyState.style.display = 'none';
                     messagesEl.innerHTML = '';
                     for (const m of data.messages) {
                         addMessage(m.content || '', m.role === 'user' ? 'user' : 'bot');
                     }
-                    currentChatTitleEl.textContent = data.messages[0].content.slice(0, 36) + '…';
+                    currentChatTitleEl.textContent = (profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · ' : '')
+                        + data.messages[0].content.slice(0, 36) + '…';
                 } else {
-                    currentChatTitleEl.textContent = 'Neuer Chat';
+                    currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
                 }
             } catch (e) {
                 console.warn('Active chat load error:', e);
@@ -1258,25 +1305,33 @@
 
         async function send() {
             const text = inputEl.value.trim();
-            if (!text || sending || !backendAvailable) return;
+            if (!text || sending || !backendAvailable || profileSelectionError) return;
 
             sending = true;
             updateComposerAvailability();
 
-            if (currentChatTitleEl.textContent === 'Neuer Chat') {
+            if (currentChatTitleEl.textContent === 'Neuer Chat' ||
+                (profileAgentId && currentChatTitleEl.textContent.endsWith('· Neuer Chat'))) {
                 const snippet = text.slice(0, 38) + (text.length > 38 ? '…' : '');
-                currentChatTitleEl.textContent = snippet;
+                currentChatTitleEl.textContent = profileAgentId
+                    ? 'Agentenprofil #' + profileAgentId + ' · ' + snippet : snippet;
             }
 
             try {
                 const readinessResponse = await fetch(
-                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET') }
                 );
                 const readiness = await readinessResponse.json();
-                if (!readinessResponse.ok || readiness.available !== true) {
+                profileUnavailable = !!(profileAgentId && readiness.profile_capability?.available === false);
+                if (!readinessResponse.ok || readiness.available !== true ||
+                    (profileAgentId && (readiness.can_chat !== true ||
+                        readiness.profile_capability?.agent_id !== profileAgentId))) {
                     backendAvailable = false;
                     addMessage(
-                        readiness.status || readiness.error || 'Backend nicht verfügbar',
+                        (profileAgentId && readiness.profile_capability?.available === false)
+                            ? 'Agentenprofil nicht verfügbar'
+                            : (readiness.status || readiness.error || 'Backend nicht verfügbar'),
                         'error'
                     );
                     return;
@@ -1290,7 +1345,8 @@
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
-                    body: JSON.stringify({ prompt: text, chat_id: currentChatId })
+                    body: JSON.stringify({ prompt: text, chat_id: currentChatId,
+                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
                 });
                 const data = await resp.json();
                 setTyping(false);
@@ -1302,12 +1358,13 @@
                     updateComposerAvailability();
                 }
 
-                if (data.ok && data.answer) {
+                if (data.ok && data.answer && profileConfirmed(data)) {
                     addMessage(data.answer, 'bot');
                     // Reload sessions in background to update titles and timestamps
                     loadWebSessions();
                 } else {
-                    addMessage(data.error || data.detail || 'Unbekannter Fehler', 'error');
+                    addMessage(data.ok && profileAgentId ? 'Profilbindung in Antwort nicht bestätigt' :
+                        (data.error || data.detail || 'Unbekannter Fehler'), 'error');
                 }
             } catch (e) {
                 setTyping(false);
@@ -1482,22 +1539,31 @@
         })();
 
         async function refreshStatus() {
+            if (profileSelectionError) {
+                backendAvailable = false;
+                updateComposerAvailability();
+                return;
+            }
             try {
                 const r = await fetch(CHAT_API + '/status');
                 if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
                 const readinessResponse = await fetch(
-                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET') }
                 );
                 if (!readinessResponse.ok) throw new Error('Backendstatus nicht erreichbar');
                 const readiness = await readinessResponse.json();
-                backendAvailable = readiness.available === true;
+                profileUnavailable = !!(profileAgentId && readiness.profile_capability?.available === false);
+                backendAvailable = readiness.available === true && (!profileAgentId ||
+                    (readiness.can_chat === true && readiness.profile_capability?.agent_id === profileAgentId));
 
                 const connectionDot = document.getElementById('conn-dot');
                 connectionDot.className = backendAvailable ? 'dot' : 'dot offline';
                 connectionDot.title = backendAvailable
-                    ? 'Backend verfügbar'
-                    : 'Backend nicht verfügbar';
+                    ? (profileAgentId ? 'Profil und Backend verfügbar' : 'Backend verfügbar')
+                    : (profileAgentId && readiness.profile_capability?.available === false
+                        ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
 
                 const backendName = s.backend_id || String(s.backend || '').replace('Backend', '');
                 const backendStatus = readiness.status || 'nicht verfügbar';
@@ -1544,13 +1610,17 @@
         }
 
         async function loadProtocolsList() {
+            if (profileSelectionError) return;
             if (!protocolsListEl) return;
             protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Lade Protokolle...</div>';
             try {
-                const resp = await fetch(CHAT_API + '/sessions?limit=60');
+                const resp = await fetch(CHAT_API + '/sessions?limit=60' + profileQuery(),
+                    { headers: controlHeaders('GET') });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
-                    currentModalSnapshots = data.sessions;
+                    currentModalSnapshots = profileAgentId
+                        ? data.sessions.filter(s => s.agent_id === profileAgentId && s.context_class === "agent-profile")
+                        : data.sessions;
                     renderProtocolsList();
                 } else {
                     protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--error); font-size: 0.8rem;">Keine Protokolle gefunden</div>';
@@ -1607,8 +1677,12 @@
             detailMessagesEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Lade Transkript...</div>';
 
             try {
-                const resp = await fetch(CHAT_API + '/session?id=' + id);
+                const resp = await fetch(CHAT_API + '/session?id=' + id + profileQuery(),
+                    { headers: controlHeaders('GET') });
                 const data = await resp.json();
+                if (profileAgentId && (!resp.ok || data.session?.binding?.agent_id !== profileAgentId ||
+                    data.session?.binding?.context_class !== 'agent-profile'))
+                    throw new Error('Profilbindung des Transkripts nicht bestätigt');
                 if (data.ok && data.session) {
                     const messages = data.session.messages || [];
                     detailMessagesEl.innerHTML = '';
@@ -1636,25 +1710,33 @@
         }
 
         async function forkSelectedProtocol() {
+            if (profileSelectionError) return;
             if (!selectedModalSnapshotId) return;
             if (!confirm('Möchtest du diese Session in deinen aktiven Web-Chat übernehmen? (Deine aktuelle Session wird dabei archiviert)')) {
                 return;
             }
             btnForkSession.disabled = true;
+            const forkChatId = profileAgentId ? newProfileChatId() : currentChatId;
             try {
                 const resp = await fetch(CHAT_API + '/fork', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
-                    body: JSON.stringify({ chat_id: currentChatId, snapshot_id: selectedModalSnapshotId })
+                    body: JSON.stringify({ chat_id: forkChatId, snapshot_id: selectedModalSnapshotId,
+                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
                 });
                 const data = await resp.json();
-                if (data.ok) {
+                if (data.ok && profileConfirmed(data)) {
+                    if (profileAgentId) {
+                        currentChatId = forkChatId;
+                        localStorage.setItem(profileStorageKey, currentChatId);
+                    }
                     closeProtocols();
                     await loadWebSessions();
                     await loadActiveChat();
                     showToast(`Session #${selectedModalSnapshotId} erfolgreich übernommen (${data.messages_count} Nachrichten).`);
                 } else {
-                    showToast('Fork fehlgeschlagen: ' + (data.error || 'Unbekannt'));
+                    showToast('Fork fehlgeschlagen: ' + (data.ok && profileAgentId
+                        ? 'Profilbindung nicht bestätigt' : (data.error || 'Unbekannt')));
                 }
             } catch (e) {
                 showToast('Fehler: ' + e.message);
