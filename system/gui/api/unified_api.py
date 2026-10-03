@@ -242,6 +242,42 @@ def _is_safe_artifact_path(candidate: Path) -> bool:
 
 _agent_studio_tables_ready = False
 
+_AGENT_STUDIO_READ_COLUMNS = {
+    "agent_blueprints": {"id", "name", "title", "persona_role", "skills_json",
+                         "contractus_json", "governance_json", "is_template",
+                         "is_materialized", "animus_type", "modus"},
+    "partner_presence": {"partner_name", "status", "current_task", "last_heartbeat"},
+    "marblerun_chains": {"name", "steps_json", "is_active"},
+}
+
+
+def _get_agent_studio_ro_conn() -> sqlite3.Connection:
+    conn = None
+    try:
+        conn = sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+        conn.execute("PRAGMA query_only = ON")
+        conn.row_factory = sqlite3.Row
+        return conn
+    except (OSError, sqlite3.Error):
+        if conn is not None:
+            conn.close()
+        raise HTTPException(status_code=503, detail="Agenten-Daten nicht verfügbar")
+
+
+def _read_schema_ready(conn: sqlite3.Connection, tables: tuple[str, ...]) -> None:
+    """Inspect known table names and columns without bootstrap or seed writes."""
+    try:
+        for table in tables:
+            required = _AGENT_STUDIO_READ_COLUMNS[table]
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                            (table,)).fetchone() is None:
+                raise ValueError("missing_table")
+            columns = {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+            if not required.issubset(columns):
+                raise ValueError("missing_columns")
+    except (sqlite3.Error, KeyError, ValueError):
+        raise HTTPException(status_code=503, detail="Agenten-Daten noch nicht initialisiert")
+
 def _ensure_agent_studio_tables(conn: sqlite3.Connection):
     global _agent_studio_tables_ready
     if _agent_studio_tables_ready:
@@ -412,10 +448,9 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
 @router.get("/agent-studio/blueprints")
 async def list_agent_blueprints():
     """Listet alle Schablonen und individuellen Agenten-Blueprints aus der Fabrika."""
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints",))
         rows = conn.execute("""
             SELECT * FROM agent_blueprints
             ORDER BY is_template DESC, name ASC
@@ -600,10 +635,9 @@ async def materialize_blueprint(blueprint_id: int):
 @router.get("/agent-studio/living")
 async def get_living_agents():
     """Gibt alle aktiven Kreaturen / Living & Running Agenten inkl. Praesenz und Animus-Typ zurueck."""
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints", "partner_presence"))
         # Blueprints & Presence verknuepfen
         bp_rows = conn.execute("SELECT * FROM agent_blueprints WHERE is_materialized = 1").fetchall()
         presence_rows = conn.execute("SELECT * FROM partner_presence").fetchall()
@@ -911,11 +945,9 @@ async def get_agents_map():
     links = []
 
     # 1. Agenten-Knoten
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
-        _ensure_marblerun_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints", "marblerun_chains"))
         blueprints = conn.execute("SELECT * FROM agent_blueprints").fetchall()
         for bp in blueprints:
             nodes.append({
