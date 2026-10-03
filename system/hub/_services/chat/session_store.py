@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from .agent_profile_context import binding_metadata
+
 
 CHAT_SNAPSHOT_TYPE = "chat-transcript.v1"
 CHAT_SESSION_PREFIX = "chat-runtime:v1:"
+_BINDING_FIELDS = ("context_class", "agent_id", "exact_slug", "db_version", "source_version", "profile_sha256")
 _ALLOWED_ROLES = frozenset({"system", "user", "assistant", "tool"})
 _ALLOWED_ANSWER_STATUSES = frozenset({"success", "failed"})
 
@@ -89,7 +92,7 @@ class SQLiteChatSessionStore:
             return [first] + normalised[-(self.max_messages - 1):]
         return normalised[-self.max_messages:]
 
-    def load(self, chat_id: str) -> list[dict]:
+    def load_state(self, chat_id: str) -> dict:
         session_id = self.session_id(chat_id)
         conn = self._connect()
         try:
@@ -105,24 +108,32 @@ class SQLiteChatSessionStore:
             conn.close()
 
         if row is None:
-            return []
+            return {"messages": [], "binding": None}
         try:
             payload = json.loads(row["snapshot_data"] or "{}")
         except (TypeError, json.JSONDecodeError) as exc:
             raise ChatSessionStoreError("chat transcript snapshot is invalid JSON") from exc
         if not isinstance(payload, dict) or payload.get("version") != 1:
             raise ChatSessionStoreError("unsupported chat transcript snapshot version")
-        return self._normalise_messages(payload.get("messages", []))
+        binding = binding_metadata({k: payload[k] for k in _BINDING_FIELDS if k in payload} or None)
+        return {"messages": self._normalise_messages(payload.get("messages", [])), "binding": binding}
 
-    def save(self, chat_id: str, messages: Iterable[dict], name: str = "Chat transcript") -> None:
+    def load(self, chat_id: str) -> list[dict]:
+        return self.load_state(chat_id)["messages"]
+
+    def save(self, chat_id: str, messages: Iterable[dict], name: str = "Chat transcript",
+             *, binding: dict | None = None) -> None:
         session_id = self.session_id(chat_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        binding = binding_metadata(binding)
+        normalised = self._normalise_messages(messages)
         payload = json.dumps(
             {
                 "version": 1,
                 "chat_id": str(chat_id),
-                "messages": self._normalise_messages(messages),
+                "messages": normalised,
                 "updated_at": timestamp,
+                **(binding or {}),
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -132,11 +143,18 @@ class SQLiteChatSessionStore:
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                "SELECT id FROM session_snapshots "
+                "SELECT id, snapshot_data FROM session_snapshots "
                 "WHERE session_id = ? AND snapshot_type = ? "
                 "ORDER BY id DESC LIMIT 1",
                 (session_id, CHAT_SNAPSHOT_TYPE),
             ).fetchone()
+            if row is not None:
+                previous = json.loads(row["snapshot_data"] or "{}")
+                if not isinstance(previous, dict) or previous.get("version") != 1:
+                    raise ChatSessionStoreError("existing transcript is invalid")
+                prior_binding = binding_metadata({k: previous[k] for k in _BINDING_FIELDS if k in previous} or None)
+                if prior_binding != binding or (prior_binding is None and binding is not None and previous.get("messages")):
+                    raise ChatSessionStoreError("chat profile binding cannot change or absorb global history")
             if row is None:
                 conn.execute(
                     "INSERT INTO session_snapshots "
@@ -152,8 +170,10 @@ class SQLiteChatSessionStore:
                     (payload, timestamp, name, snapshot_id),
                 )
             conn.commit()
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, ValueError, TypeError, ChatSessionStoreError) as exc:
             conn.rollback()
+            if isinstance(exc, ChatSessionStoreError):
+                raise
             raise ChatSessionStoreError(f"cannot persist chat transcript: {exc}") from exc
         finally:
             conn.close()
@@ -193,11 +213,12 @@ class SQLiteChatSessionStore:
 
     def archive_and_delete(
         self, chat_id: str, ram_messages: Iterable[dict] | None = None,
-        name_prefix: str = "Archiviert",
+        name_prefix: str = "Archiviert", *, binding: dict | None = None,
     ) -> int | None:
         """Atomically preserve DB and differing RAM transcripts before clear."""
         session_id = self.session_id(chat_id)
         ram = self._normalise_messages(list(ram_messages or []))
+        binding = binding_metadata(binding)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         conn = self._connect()
         try:
@@ -219,6 +240,9 @@ class SQLiteChatSessionStore:
                     raise ChatSessionStoreError("cannot archive invalid chat snapshot") from exc
                 if not isinstance(payload, dict) or payload.get("version") != 1:
                     raise ChatSessionStoreError("cannot archive unsupported chat snapshot")
+                durable_binding = binding_metadata({k: payload[k] for k in _BINDING_FIELDS if k in payload} or None)
+                if durable_binding != binding:
+                    raise ChatSessionStoreError("archive binding differs from active session")
                 durable = self._normalise_messages(payload.get("messages", []))
 
             archived_ids = []
@@ -239,7 +263,7 @@ class SQLiteChatSessionStore:
             if ram and ram != durable:
                 ram_data = json.dumps(
                     {"version": 1, "chat_id": str(chat_id),
-                     "messages": ram, "updated_at": timestamp},
+                     "messages": ram, "updated_at": timestamp, **(binding or {})},
                     ensure_ascii=False, separators=(",", ":"),
                 )
                 archive("RAM", ram_data)
@@ -265,7 +289,9 @@ class SQLiteChatSessionStore:
         try:
             cur = conn.execute(
                 "SELECT id, session_id, name, created_at, length(snapshot_data) as data_len, "
-                "json_extract(snapshot_data, '$.chat_id') as chat_id "
+                "json_extract(snapshot_data, '$.chat_id') as chat_id, "
+                "json_extract(snapshot_data, '$.agent_id') as agent_id, "
+                "json_extract(snapshot_data, '$.context_class') as context_class "
                 "FROM session_snapshots "
                 "WHERE snapshot_type = ? "
                 "ORDER BY id DESC LIMIT ?",
@@ -277,6 +303,8 @@ class SQLiteChatSessionStore:
                     "id": r["id"],
                     "session_id": r["session_id"],
                     "chat_id": r["chat_id"] or "",
+                    "agent_id": r["agent_id"],
+                    "context_class": r["context_class"],
                     "name": r["name"],
                     "created_at": r["created_at"],
                     "size_bytes": r["data_len"],
@@ -308,6 +336,7 @@ class SQLiteChatSessionStore:
                 "created_at": row["created_at"],
                 "messages": payload.get("messages", []),
                 "updated_at": payload.get("updated_at"),
+                "binding": binding_metadata({k: payload[k] for k in _BINDING_FIELDS if k in payload} or None),
             }
         except sqlite3.Error as exc:
             raise ChatSessionStoreError(f"cannot get chat transcript {snapshot_id}: {exc}") from exc
