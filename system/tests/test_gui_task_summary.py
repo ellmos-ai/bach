@@ -88,3 +88,26 @@ def test_database_failure_does_not_claim_zero_tasks(client, monkeypatch):
     result = client.get("/api/tasks?status=pending,in_progress&limit=5").json()
     assert result["success"] is False
     assert "total" not in result
+
+
+@pytest.mark.parametrize("priority", ["P1", "1", "HIGH", " hoch ", "kritisch"])
+def test_high_priority_aliases_are_not_lost_before_dashboard_limit(client, priority):
+    from gui import server
+
+    conn = server.get_bach_db()
+    try:
+        conn.execute(
+            "INSERT INTO tasks (title,status,priority,created_at) "
+            "VALUES ('Urgent alias task','pending',?,'2026-10-01')", (priority,),
+        )
+        conn.executemany(
+            "INSERT INTO tasks (title,status,priority,created_at) "
+            "VALUES ('Low priority task','pending','P4','2026-10-03')",
+            [() for _ in range(6)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    result = client.get("/api/tasks?status=pending,in_progress&limit=5").json()
+    assert result["tasks"][0]["title"] == "Urgent alias task"
+    assert result["total"] == 20

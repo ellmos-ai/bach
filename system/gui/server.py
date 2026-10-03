@@ -1713,7 +1713,12 @@ async def api_get_tasks(
         total = conn.execute(
             query.replace("SELECT *", "SELECT COUNT(*)", 1), params
         ).fetchone()[0]
-        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
+        query += """ ORDER BY CASE
+            WHEN UPPER(TRIM(priority)) IN ('P1','1','HIGH','HOCH','KRITISCH') THEN 1
+            WHEN UPPER(TRIM(priority)) IN ('P2','2','MEDIUM','MITTEL','WICHTIG') THEN 2
+            WHEN UPPER(TRIM(priority)) IN ('P3','3','LOW','NIEDRIG','NORMAL') THEN 3
+            WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
+            ELSE 5 END ASC, created_at DESC LIMIT ?"""
         params.append(limit)
         
         rows = conn.execute(query, params).fetchall()
