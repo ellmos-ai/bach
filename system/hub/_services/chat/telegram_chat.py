@@ -2737,11 +2737,11 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/history":
+            if not self._allow_control_request():
+                return
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["gui-web"])[0]
             try:
                 agent_id = _query_agent_id(parsed_url)
-                if agent_id is not None and not self._allow_control_request():
-                    return
                 agent_context = _profile_request(agent_id, chat_id)
                 bound = (agent_context is not None and
                     runtime.session_store.load_state(chat_id)["binding"] == agent_context[0])
@@ -2757,12 +2757,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "Profilverlauf nicht verifizierbar"}, 503)
 
         elif path == "/api/sessions":
+            if not self._allow_control_request():
+                return
             limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
             if runtime.session_store:
                 try:
                     agent_id = _query_agent_id(parsed_url)
-                    if agent_id is not None and not self._allow_control_request():
-                        return
                     snapshots = runtime.session_store.list_snapshots(limit=limit)
                     if agent_id is not None:
                         _profile_request(agent_id, f"agent:{agent_id}:" + "0" * 32)
@@ -2777,6 +2777,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "Kein SessionStore konfiguriert"}, 500)
 
         elif path == "/api/session":
+            if not self._allow_control_request():
+                return
             try:
                 sid = int(parse_qs(parsed_url.query).get("id", [0])[0])
             except ValueError:
@@ -2790,8 +2792,6 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if binding is not None:
                             if agent_id != binding["agent_id"]:
                                 self._json({"error": "Profilbindung erforderlich"}, 409)
-                                return
-                            if not self._allow_control_request():
                                 return
                             current, _text = _profile_request(agent_id, snap["chat_id"])
                             if current != binding:

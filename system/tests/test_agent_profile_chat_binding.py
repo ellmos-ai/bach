@@ -153,10 +153,16 @@ class ProfileChatBindingTests(unittest.TestCase):
                 '{"name":"persoenlicher-assistent","pid":321,"process_create_time":1.0}',
                 encoding="utf-8")
             with patch.object(agent_process_provider, "inspect_process_identity", return_value=("owned", object())), patch.object(
-                AgentLauncherHandler, "_is_agent_running", return_value=321
-            ):
+                AgentLauncherHandler, "_is_agent_running", side_effect=AssertionError("externe Registry darf nicht starten")
+            ), patch.dict("os.environ", {"BACH_USE_EXTERNAL_AGENT_REGISTRY": "0"}):
                 response = client.get("/api/agents/runtime", headers=headers)
             self.assertEqual(response.json()["agents"][0]["process_state"], "running")
+            with patch.object(agent_process_provider, "inspect_process_identity", return_value=("owned", object())), patch.object(
+                AgentLauncherHandler, "_is_agent_running", side_effect=AssertionError("externe Registry darf nicht starten")
+            ), patch.dict("os.environ", {"BACH_USE_EXTERNAL_AGENT_REGISTRY": "1"}):
+                response = client.get("/api/agents/runtime", headers=headers)
+            self.assertEqual(response.json()["agents"][0]["process_state"], "unavailable")
+            self.assertEqual(response.json()["agents"][0]["reason"], "external_registry_not_probed")
 
     def test_profile_snapshot_requires_id_and_control_token(self):
         from hub._services.chat import telegram_chat as control
@@ -165,7 +171,8 @@ class ProfileChatBindingTests(unittest.TestCase):
         chat_id = "agent:1:" + "e" * 32
         binding, _text = profiles.resolve_profile(1)
         runtime.session_store.save(chat_id, [{"role": "user", "content": "Privat"}], binding=binding)
-        snapshot = runtime.session_store.list_snapshots()[0]
+        runtime.session_store.save("gui-web", [{"role": "user", "content": "Global privat"}])
+        snapshot = next(s for s in runtime.session_store.list_snapshots() if s["agent_id"] == 1)
         server = control.QuietHTTPServer(("127.0.0.1", 0), control.ControlHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         with patch.object(control, "runtime", runtime), patch.object(
@@ -174,13 +181,30 @@ class ProfileChatBindingTests(unittest.TestCase):
             thread.start()
             try:
                 url = f"http://127.0.0.1:{server.server_port}/api/session?id={snapshot['id']}"
-                self.assertEqual(httpx.get(url, timeout=3).status_code, 409)
+                self.assertEqual(httpx.get(url, timeout=3).status_code, 401)
                 self.assertEqual(httpx.get(url + "&agent_id=1", timeout=3).status_code, 401)
-                response = httpx.get(url + "&agent_id=1", headers={"Authorization": "Bearer fixture"}, timeout=3)
+                headers = {"Authorization": "Bearer fixture"}
+                self.assertEqual(httpx.get(url, headers=headers, timeout=3).status_code, 409)
+                response = httpx.get(url + "&agent_id=1", headers=headers, timeout=3)
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["session"]["messages"][0]["content"], "Privat")
+                history_url = f"http://127.0.0.1:{server.server_port}/api/history?chat_id={chat_id}"
+                sessions_url = f"http://127.0.0.1:{server.server_port}/api/sessions"
+                for private_url in (history_url, sessions_url):
+                    self.assertEqual(httpx.get(private_url, timeout=3).status_code, 401)
+                    self.assertEqual(httpx.get(private_url,
+                                                headers={"Authorization": "Bearer fake"}, timeout=3).status_code, 401)
+                self.assertEqual(httpx.get(history_url, headers=headers, timeout=3).status_code, 409)
+                self.assertEqual(httpx.get(sessions_url, headers=headers, timeout=3).status_code, 200)
+                global_url = f"http://127.0.0.1:{server.server_port}/api/history?chat_id=gui-web"
+                self.assertEqual(httpx.get(global_url, timeout=3).status_code, 401)
+                self.assertEqual(httpx.get(global_url,
+                                            headers={"Authorization": "Bearer fake"}, timeout=3).status_code, 401)
+                self.assertEqual(httpx.get(global_url, headers=headers, timeout=3).json()["messages"][0]["content"],
+                                 "Global privat")
+                self.assertEqual(httpx.get(history_url + "&agent_id=2", headers=headers, timeout=3).status_code, 409)
+                self.assertEqual(httpx.get(history_url + "&agent_id=1", headers=headers, timeout=3).json()["messages"][0]["content"], "Privat")
                 clear_url = f"http://127.0.0.1:{server.server_port}/api/clear"
-                headers = {"Authorization": "Bearer fixture"}
                 self.assertEqual(httpx.post(clear_url, json={"chat_id": chat_id},
                                             headers=headers, timeout=3).status_code, 409)
                 self.assertEqual(httpx.post(clear_url, json={"chat_id": chat_id, "agent_id": 2},

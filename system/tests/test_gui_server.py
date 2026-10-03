@@ -30,7 +30,9 @@ def test_gui_proxy_forwards_history_and_readiness(client, monkeypatch, path):
         async def __aexit__(self, *args):
             pass
 
-        async def get(self, url):
+        async def get(self, url, headers=None):
+            if url.endswith("/auth/check"):
+                return httpx.Response(200, json={"authenticated": (headers or {}).get("authorization") == "Bearer control-test"})
             return httpx.Response(200, json={"service": "bach-chat-control", "telegram_verified": False})
 
         async def request(self, method, url, **kwargs):
@@ -39,7 +41,8 @@ def test_gui_proxy_forwards_history_and_readiness(client, monkeypatch, path):
 
     monkeypatch.setattr(server, "_chat_control_base_url", lambda: "http://127.0.0.1:8127/api")
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: Upstream())
-    response = client.get(f"/api/chat-control/{path}?chat_id=gui-web")
+    response = client.get(f"/api/chat-control/{path}?chat_id=gui-web",
+                          headers={"Authorization": "Bearer control-test"} if path == "history" else None)
     assert response.status_code == 200
     assert response.json() == payload
     assert seen == [("GET", f"http://127.0.0.1:8127/api/{path}", {"chat_id": "gui-web"})]

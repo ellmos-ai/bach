@@ -992,13 +992,14 @@
             return !profileAgentId || (data && data.binding_confirmed === true
                 && data.agent_id === profileAgentId && data.context_class === 'agent-profile');
         }
-        function controlHeaders(method, jsonBody = false) {
+        function controlHeaders(method, jsonBody = false, privateRead = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
-            if (method !== 'GET' && method !== 'HEAD' || profileAgentId) {
+            if (method !== 'GET' && method !== 'HEAD' || profileAgentId || privateRead) {
                 let token = localStorage.getItem('bach-control-api-token') || '';
                 if (!token) {
                     token = window.prompt(profileAgentId
                         ? 'Control-API-Token für das Agentenprofil:'
+                        : privateRead ? 'Control-API-Token für Chat-Verläufe:'
                         : 'Control-API-Token für schreibende Aktionen:') || '';
                     if (token) localStorage.setItem('bach-control-api-token', token.trim());
                 }
@@ -1120,7 +1121,7 @@
             if (profileSelectionError) return;
             try {
                 const resp = await fetch(CHAT_API + '/sessions?limit=80' + profileQuery(),
-                    { headers: controlHeaders('GET') });
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
                     // Filter specifically for web chats
@@ -1200,7 +1201,7 @@
                 let loaded = false;
                 if (s.chat_id) {
                     const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id) + profileQuery(),
-                        { headers: controlHeaders('GET') });
+                        { headers: controlHeaders('GET', false, true) });
                     const hData = await hResp.json();
                     if (profileAgentId && (!hResp.ok || !profileConfirmed(hData))) throw new Error("Profilverlauf nicht bestätigt");
                     if (hData.ok && Array.isArray(hData.messages) && hData.messages.length > 0) {
@@ -1213,7 +1214,8 @@
 
                 // If not in RAM, load from snapshot by ID
                 if (!loaded && s.id && !profileAgentId) {
-                    const snapResp = await fetch(CHAT_API + '/session?id=' + s.id);
+                    const snapResp = await fetch(CHAT_API + '/session?id=' + s.id,
+                        { headers: controlHeaders('GET', false, true) });
                     const snapData = await snapResp.json();
                     setTyping(false);
                     if (snapData.ok && snapData.session && Array.isArray(snapData.session.messages)) {
@@ -1274,7 +1276,7 @@
             // Otherwise load current history
             try {
                 const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
-                    { headers: controlHeaders('GET') });
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (profileAgentId && (!resp.ok || (data.messages && data.messages.length > 0 && !profileConfirmed(data))))
                     throw new Error("Profilverlauf nicht bestätigt");
@@ -1615,7 +1617,7 @@
             protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Lade Protokolle...</div>';
             try {
                 const resp = await fetch(CHAT_API + '/sessions?limit=60' + profileQuery(),
-                    { headers: controlHeaders('GET') });
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
                     currentModalSnapshots = profileAgentId
@@ -1678,7 +1680,7 @@
 
             try {
                 const resp = await fetch(CHAT_API + '/session?id=' + id + profileQuery(),
-                    { headers: controlHeaders('GET') });
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (profileAgentId && (!resp.ok || data.session?.binding?.agent_id !== profileAgentId ||
                     data.session?.binding?.context_class !== 'agent-profile'))

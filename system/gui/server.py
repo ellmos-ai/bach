@@ -211,15 +211,23 @@ def _chat_control_base_url() -> str | None:
             )
         except (OSError, ValueError, TypeError):
             same_root = False
-        chat = discovery.get("services", {}).get("chat", {})
-        host = str(chat.get("host") or "")
-        try:
-            port = int(chat.get("actual_port"))
-        except (TypeError, ValueError):
-            port = 0
-        if same_root and host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
-            return f"http://127.0.0.1:{port}/api"
-        return None
+        services = discovery.get("services")
+        if not same_root or not isinstance(services, dict):
+            return None
+        if "chat" in services:
+            chat = services["chat"]
+            if not isinstance(chat, dict):
+                return None
+            host = str(chat.get("host") or "")
+            try:
+                port = int(chat.get("actual_port"))
+            except (TypeError, ValueError):
+                port = 0
+            if host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
+                return f"http://127.0.0.1:{port}/api"
+            return None
+        # Older Startspine discovery can register only the bridge. The proxy
+        # checks the fallback listener's typed chat-control identity each time.
 
     try:
         port = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
@@ -2190,20 +2198,26 @@ async def api_agent_runtime(request: Request):
         pid_file = handler.pid_dir / f"{slug}.pid"
         if not pid_file.exists():
             state = "not_started"
+            reason = None
         else:
+            reason = None
             pid_data = handler._load_pid_data(slug)
             identity, _process = inspect_process_identity(pid_data)
             if identity == "owned":
-                try:
-                    confirmed_pid = handler._is_agent_running(slug)
-                except Exception:
-                    confirmed_pid = 0
-                state = "running" if confirmed_pid == pid_data.get("pid") else "unavailable"
+                # inspect_process_identity verifies PID and birth time. Do not
+                # construct the optional external registry on a read-only route.
+                external_enabled = os.environ.get("BACH_USE_EXTERNAL_AGENT_REGISTRY", "").strip().lower() in {
+                    "1", "true", "yes", "on"
+                }
+                state = "unavailable" if external_enabled else "running"
+                if external_enabled:
+                    reason = "external_registry_not_probed"
             elif identity == "gone":
                 state = "ended"
             else:
                 state = identity
-        states.append({"agent_id": agent_id, "process_state": state, "running": state == "running"})
+        states.append({"agent_id": agent_id, "process_state": state, "running": state == "running",
+                       **({"reason": reason} if reason else {})})
     return {"success": True, "agents": states}
 
 
@@ -4788,6 +4802,17 @@ async def chat_control_proxy(control_path: str, request: Request):
                 status_payload = None
             if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
                 raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
+            if request.method == "GET" and control_path in {"history", "sessions", "session"}:
+                if not upstream_headers:
+                    raise HTTPException(status_code=401, detail="Control-API-Token erforderlich")
+                auth_response = await client.get(f"{base_url}/auth/check", headers=upstream_headers)
+                try:
+                    auth_payload = auth_response.json()
+                except ValueError:
+                    auth_payload = None
+                if (auth_response.status_code != 200 or not isinstance(auth_payload, dict)
+                        or auth_payload.get("authenticated") is not True):
+                    raise HTTPException(status_code=401, detail="Control-API-Token ungültig")
             if control_path == "status" and request.method == "GET":
                 upstream = status_response
             else:
