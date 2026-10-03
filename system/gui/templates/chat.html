@@ -762,8 +762,8 @@
                 <button class="btn-footer-protocols" id="btn-open-all-protocols" title="Telegram- und Worker-Protokolle einsehen">
                     <span>📜</span> Alle Protokolle (Telegram/Worker)
                 </button>
-                <a id="btn-open-activity-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-footer-protocols" style="text-decoration:none; margin-top:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Aktivitätsanzeige & Worker-Dashboard (Port 8081) öffnen">
-                    <span>⚙️</span> Worker-Dashboard (8081) ↗
+                <a id="btn-open-activity-link" href="/agenten/running" class="btn-footer-protocols" style="text-decoration:none; margin-top:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Living / Running öffnen">
+                    <span>⚙️</span> Living / Running ↗
                 </a>
             </div>
         </aside>
@@ -779,6 +779,7 @@
                 </div>
 
                 <div class="chat-status" id="chat-status">
+                    <a id="chat-device-login" href="/token-dashboard" hidden>Gerät anmelden</a>
                     <button id="btn-compare-race" onclick="openCompareRaceModal()" title="Compare-Race: Verfügbarkeit prüfen" style="background:var(--bg-card);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:0.78rem;font-weight:600;display:flex;align-items:center;gap:4px;margin-right:6px;">🏁 Compare-Race · prüfen</button>
                     <div class="status-chip">
                         <span class="dot" id="conn-dot"></span>
@@ -1045,20 +1046,11 @@
         }
         function controlHeaders(method, jsonBody = false, privateRead = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
-            if (method !== 'GET' && method !== 'HEAD' || profileAgentId || privateRead) {
-                let token = localStorage.getItem('bach-control-api-token') || '';
-                if (!token) {
-                    token = window.prompt(profileAgentId
-                        ? 'Control-API-Token für das Agentenprofil:'
-                        : privateRead ? 'Control-API-Token für Chat-Verläufe:'
-                        : 'Control-API-Token für schreibende Aktionen:') || '';
-                    if (token) localStorage.setItem('bach-control-api-token', token.trim());
-                }
-                token = token.trim();
-                if (token) headers['Authorization'] = 'Bearer ' + token;
-            }
+            const token = (localStorage.getItem('bach_device_token') || '').trim();
+            if (token) headers['Authorization'] = 'Bearer ' + token;
             return headers;
         }
+        localStorage.removeItem('bach-control-api-token');
         const rememberedChatId = localStorage.getItem(profileStorageKey);
         const rememberedProfileChat = profileAgentId && rememberedChatId &&
             new RegExp('^agent:' + profileAgentId + ':[a-f0-9]{32}$').test(rememberedChatId);
@@ -1597,8 +1589,11 @@
                 updateComposerAvailability();
                 return;
             }
+            let authenticationRequired = false;
             try {
-                const r = await fetch(CHAT_API + '/status');
+                const r = await fetch(CHAT_API + '/status', { headers: controlHeaders('GET') });
+                authenticationRequired = r.status === 401 || r.status === 403;
+                document.getElementById('chat-device-login').hidden = !authenticationRequired;
                 if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
                 const readinessResponse = await fetch(
@@ -1628,7 +1623,8 @@
             } catch (e) {
                 backendAvailable = false;
                 document.getElementById('conn-dot').className = 'dot offline';
-                document.getElementById('s-backend').textContent = 'Offline';
+                document.getElementById('s-backend').textContent = authenticationRequired
+                    ? 'Geräteanmeldung erforderlich' : 'Offline';
                 document.getElementById('s-model').textContent = '–';
                 document.getElementById('s-mode').textContent = '–';
             } finally {
@@ -1818,12 +1814,6 @@
         });
 
         // ── Init ──
-        const btnActivityLink = document.getElementById('btn-open-activity-link');
-        if (btnActivityLink) {
-            const h = window.location.hostname || 'localhost';
-            btnActivityLink.href = `http://${h}:8081/activity`;
-        }
-
         function loadHistory() {
             return loadActiveChat();
         }

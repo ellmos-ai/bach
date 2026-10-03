@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
 from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
 
@@ -1359,11 +1360,19 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if path in self.EXEMPT_API_PATHS or (path == "/api/nav/config" and request.method == "GET"):
             return await call_next(request)
 
-        # Chat-Control uses its own Bearer credential. The allowlisted proxy
-        # forwards it to ControlHandler, which authorizes mutations and private
-        # profile reads; interpreting it as a device token here blocks the chat.
+        # The browser authenticates as a registered device. The proxy supplies
+        # its separate Control credential only on the trusted loopback hop.
         if (path.startswith("/api/chat-control/") and request.method in {"GET", "POST"}
                 and path.removeprefix("/api/chat-control/") in CHAT_CONTROL_PATHS):
+            auth_header = request.headers.get("Authorization", "").strip()
+            device_token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+                            else request.cookies.get("bach_device_token"))
+            if not device_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(device_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
             return await call_next(request)
 
         # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
@@ -4795,6 +4804,9 @@ async def chat_control_proxy(control_path: str, request: Request):
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
+    control_authorization = get_control_api_auth_header()
+    if not control_authorization:
+        raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung nicht verfügbar")
     # Task #1338: STT kann das Whisper-Modell nachladen (einmalig ~Minuten) —
     # daher ein deutlich hoeherer Timeout als fuer Status-/Steuerpfade.
     if control_path == "chat":
@@ -4805,9 +4817,7 @@ async def chat_control_proxy(control_path: str, request: Request):
         timeout = 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            upstream_headers = {}
-            if request.headers.get("authorization"):
-                upstream_headers["authorization"] = request.headers["authorization"]
+            upstream_headers = {"authorization": control_authorization}
             status_url = f"{base_url}/status"
             if upstream_headers:
                 status_response = await client.get(status_url, headers=upstream_headers)
@@ -4820,8 +4830,6 @@ async def chat_control_proxy(control_path: str, request: Request):
             if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
                 raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
             if request.method == "GET" and control_path in {"history", "sessions", "session"}:
-                if not upstream_headers:
-                    raise HTTPException(status_code=401, detail="Control-API-Token erforderlich")
                 auth_response = await client.get(f"{base_url}/auth/check", headers=upstream_headers)
                 try:
                     auth_payload = auth_response.json()
@@ -4829,7 +4837,7 @@ async def chat_control_proxy(control_path: str, request: Request):
                     auth_payload = None
                 if (auth_response.status_code != 200 or not isinstance(auth_payload, dict)
                         or auth_payload.get("authenticated") is not True):
-                    raise HTTPException(status_code=401, detail="Control-API-Token ungültig")
+                    raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung fehlgeschlagen")
             if control_path == "status" and request.method == "GET":
                 upstream = status_response
             else:
