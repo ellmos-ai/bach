@@ -25,7 +25,6 @@ from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
 from .lang import t
-from filelock import FileLock, Timeout
 
 try:
     import yaml
@@ -93,10 +92,11 @@ class AgentLauncherHandler(BaseHandler):
         digest = hashlib.sha256(technical.encode("utf-8")).hexdigest()
         claim_path = self.pid_dir / f".agent-claim-{digest}.lock"
         try:
+            from filelock import FileLock, Timeout
             self.pid_dir.mkdir(parents=True, exist_ok=True)
             claim = FileLock(str(claim_path))
             claim.acquire(timeout=0)
-        except (Timeout, OSError) as exc:
+        except Exception as exc:
             return self._action_response(
                 action,
                 requested,

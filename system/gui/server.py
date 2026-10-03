@@ -2149,6 +2149,57 @@ async def api_list_agents():
 
 
 
+@app.get("/api/agents/runtime")
+async def api_agent_runtime(request: Request):
+    """Read only: report launcher-owned processes for verified local profiles."""
+    authorization = request.headers.get("authorization", "")
+    token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+    if not token or not validate_token(token):
+        raise HTTPException(status_code=401, detail="Geräteanmeldung erforderlich")
+
+    from hub.agent_launcher import AgentLauncherHandler
+    from hub.agent_process_provider import inspect_process_identity
+    from hub._services.chat.agent_profile_context import resolve_profile
+
+    handler = AgentLauncherHandler(BACH_DIR)
+    registered = {item["name"] for item in handler._scan_agents()}
+    conn = get_bach_db()
+    try:
+        rows = conn.execute("SELECT id FROM bach_agents").fetchall()
+    finally:
+        conn.close()
+
+    states = []
+    for row in rows:
+        agent_id = int(row["id"])
+        try:
+            binding, _text = resolve_profile(agent_id)
+        except (ValueError, TypeError, OSError):
+            continue
+        slug = binding["exact_slug"]
+        if slug not in registered:
+            states.append({"agent_id": agent_id, "process_state": "unavailable", "running": False})
+            continue
+        pid_file = handler.pid_dir / f"{slug}.pid"
+        if not pid_file.exists():
+            state = "not_started"
+        else:
+            pid_data = handler._load_pid_data(slug)
+            identity, _process = inspect_process_identity(pid_data)
+            if identity == "owned":
+                try:
+                    confirmed_pid = handler._is_agent_running(slug)
+                except Exception:
+                    confirmed_pid = 0
+                state = "running" if confirmed_pid == pid_data.get("pid") else "unavailable"
+            elif identity == "gone":
+                state = "ended"
+            else:
+                state = identity
+        states.append({"agent_id": agent_id, "process_state": state, "running": state == "running"})
+    return {"success": True, "agents": states}
+
+
 @app.put("/api/agents/{agent_id}/toggle")
 
 async def api_toggle_agent(agent_id: int):

@@ -122,6 +122,42 @@ class ProfileChatBindingTests(unittest.TestCase):
         self.assertIs(agents[1]["profile_chat_ready"], True)
         self.assertIs(agents[2]["profile_chat_ready"], False)
 
+    def test_runtime_status_requires_device_and_owned_pid(self):
+        from hub.agent_launcher import AgentLauncherHandler
+        from hub import agent_process_provider
+
+        base = Path(self.temp.name) / "system"
+        skill_dir = base / "agents" / "persoenlicher-assistent"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("fixture", encoding="utf-8")
+        pid_dir = base / "data" / "agent_pids"
+        pid_dir.mkdir(parents=True)
+
+        def connection():
+            conn = sqlite3.connect(self.db)
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        with patch.object(server, "BACH_DIR", base), patch.object(server, "get_bach_db", connection), patch.object(
+            server, "has_active_devices", lambda: False
+        ), patch.object(server, "validate_token", lambda token: {"id": 1} if token == "fixture" else None):
+            client = TestClient(server.app)
+            self.assertEqual(client.get("/api/agents/runtime").status_code, 401)
+            headers = {"Authorization": "Bearer fixture"}
+            response = client.get("/api/agents/runtime", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["agents"], [
+                {"agent_id": 1, "process_state": "not_started", "running": False}
+            ])
+            (pid_dir / "persoenlicher-assistent.pid").write_text(
+                '{"name":"persoenlicher-assistent","pid":321,"process_create_time":1.0}',
+                encoding="utf-8")
+            with patch.object(agent_process_provider, "inspect_process_identity", return_value=("owned", object())), patch.object(
+                AgentLauncherHandler, "_is_agent_running", return_value=321
+            ):
+                response = client.get("/api/agents/runtime", headers=headers)
+            self.assertEqual(response.json()["agents"][0]["process_state"], "running")
+
     def test_profile_snapshot_requires_id_and_control_token(self):
         from hub._services.chat import telegram_chat as control
 

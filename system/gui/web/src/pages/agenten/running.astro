@@ -26,7 +26,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
   <div class="card" style="margin-bottom:1.5rem;">
     <div class="card-header"><h2 class="card-title">Verifizierte Agentenprofile</h2></div>
-    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Die Auswahl hier startet keinen Agentenprozess.</p>
+    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Start und Stopp eines Agentenprozesses sind hier derzeit nicht freigegeben.</p>
     <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
   </div>
 
@@ -664,8 +664,25 @@ import BachLayout from "../../layouts/BachLayout.astro";
         if (data.success !== true || !Array.isArray(data.agents)) throw new Error('Profilantwort ungültig');
         const profiles = data.agents.filter(agent => agent.profile_chat_ready === true &&
           Number.isSafeInteger(Number(agent.id)) && Number(agent.id) > 0);
+        let runtimeById = new Map();
+        let runtimeNote = 'Geräteanmeldung für Prozessstatus erforderlich';
+        try {
+          const runtimeResponse = await fetch('/api/agents/runtime');
+          if (runtimeResponse.ok) {
+            const runtimeData = await runtimeResponse.json();
+            if (runtimeData.success === true && Array.isArray(runtimeData.agents)) {
+              runtimeById = new Map(runtimeData.agents.map(item => [Number(item.agent_id), item.process_state]));
+              runtimeNote = 'Prozessstatus nicht prüfbar';
+            }
+          }
+        } catch (_error) {
+          runtimeNote = 'Prozessstatus nicht prüfbar';
+        }
+        const stateLabels = { running: 'Prozess läuft', not_started: 'Kein Prozess bestätigt',
+          ended: 'Prozess beendet', unverified: 'Identität nicht bestätigt',
+          mismatch: 'Prozessabweichung', unavailable: 'Prozessstatus nicht prüfbar' };
         container.innerHTML = profiles.length
-          ? profiles.map(agent => `<a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a>`).join('')
+          ? profiles.map(agent => `<span><a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a><small style="display:block;margin-top:0.3rem;color:var(--text-muted);">${stateLabels[runtimeById.get(Number(agent.id))] || runtimeNote}</small></span>`).join('')
           : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine verifizierten Chatprofile verfügbar.</span>';
       } catch (error) {
         container.textContent = 'Profile können derzeit nicht geprüft werden: ' + error.message;
