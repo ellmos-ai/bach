@@ -496,7 +496,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     function loadPresetTemplate(key) {
       if (!key || !PRESETS[key]) return;
       const p = PRESETS[key];
-      document.getElementById('bp-name').value = p.name;
+      document.getElementById('bp-name').value = `${p.name} (eigene)`;
+      document.getElementById('bp-name').readOnly = false;
       document.getElementById('bp-persona').value = p.persona;
       document.getElementById('bp-turns').value = p.turns;
       document.getElementById('bp-modus').value = p.modus;
@@ -504,6 +505,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     function resetForm() {
       document.getElementById('bp-name').value = '';
+      document.getElementById('bp-name').readOnly = false;
       document.getElementById('bp-persona').value = '';
       document.getElementById('bp-template-select').value = '';
       document.getElementById('bp-turns').value = 15;
@@ -528,9 +530,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <strong style="font-size:0.9rem;color:var(--text);">${escapeHtml(b.name)}</strong>
-              <span class="badge badge-accent">${escapeHtml(b.role || 'Schablone')}</span>
+              <span class="badge badge-accent">${escapeHtml(b.persona_role || 'Schablone')}</span>
             </div>
-            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona || b.description || '').slice(0, 80))}...</p>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona_prompt || b.description || '').slice(0, 80))}...</p>
             <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:0.5rem;">
               <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor('${b.id}')">Bearbeiten</button>
               <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal('${b.name}')">Beseelen ✨</button>
@@ -540,6 +542,30 @@ import BachLayout from "../../layouts/BachLayout.astro";
       } catch (e) {
         container.innerHTML = `<p style="color:var(--error);font-size:0.8rem;">Fehler: ${e.message}</p>`;
       }
+    }
+
+    function loadBlueprintToEditor(id) {
+      const blueprint = _allBlueprints.find(b => String(b.id) === String(id));
+      if (!blueprint) { alert('Schablone nicht gefunden. Bitte Liste neu laden.'); return; }
+      document.getElementById('bp-name').value = blueprint.name;
+      document.getElementById('bp-name').readOnly = true;
+      document.getElementById('bp-persona').value = blueprint.persona_prompt || '';
+      document.getElementById('bp-turns').value = blueprint.contractus?.turns ?? 15;
+      document.getElementById('bp-modus').value = blueprint.modus || 'casualis';
+      const profile = document.getElementById('bp-gov-profile');
+      if (profile && blueprint.governance?.profile) profile.value = blueprint.governance.profile;
+      const skills = new Set(blueprint.skills || []);
+      document.querySelectorAll('#skills-selector input[type="checkbox"]').forEach(box => {
+        box.checked = skills.has(box.value);
+      });
+      const tools = new Set(blueprint.governance?.tool_whitelist || []);
+      document.getElementById('tool-read').checked = tools.has('read_files');
+      document.getElementById('tool-write').checked = tools.has('write_files');
+      document.getElementById('tool-cmd').checked = tools.has('execute_command');
+      document.getElementById('tool-git').checked = tools.has('git_guarded_p001');
+      document.getElementById('tool-mcp').checked = tools.has('mcp_cookbooks');
+      document.getElementById('tool-web').checked = tools.has('web_fetch');
+      document.getElementById('bp-name').focus();
     }
 
     function openBeseelenModal(name) {
@@ -602,6 +628,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
       if (document.getElementById('tool-web')?.checked) allowedTools.push('web_fetch');
 
       if (!name) { alert('Bitte gib einen Schablonen-Namen an.'); return; }
+      const existing = _allBlueprints.find(b => b.name === name.toLowerCase());
+      const visibleSkills = new Set(Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]'), box => box.value));
+      const selectedSkills = Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]:checked'), box => box.value);
+      for (const skill of existing?.skills || []) {
+        if (!visibleSkills.has(skill)) selectedSkills.push(skill);
+      }
 
       const governance = {
         profile: govProfile,
@@ -616,19 +648,28 @@ import BachLayout from "../../layouts/BachLayout.astro";
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name,
-            role: name,
-            persona,
-            skills: ["git-hygiene", "lock-master"],
-            contractus: { turns },
+            title: existing?.title || name,
+            description: existing?.description || '',
+            persona_role: existing?.persona_role || name,
+            persona_prompt: persona,
+            skills: selectedSkills,
+            animus_type: existing?.animus_type || 'subscription',
+            contractus: { ...(existing?.contractus || {}), turns },
             modus,
-            governance
+            governance: { ...(existing?.governance || {}), ...governance }
           })
         });
         if (res.ok) {
-          alert('Schablone & Governance erfolgreich gespeichert!');
-          loadBlueprints();
+          const check = await fetch('/api/agent-studio/blueprints');
+          if (!check.ok) throw new Error('Readback HTTP ' + check.status);
+          const saved = ((await check.json()).blueprints || []).find(b => b.name === name.toLowerCase());
+          if (!saved || saved.persona_prompt !== persona || saved.persona_role !== (existing?.persona_role || name)) {
+            throw new Error('Persona und Rolle wurden nicht bestätigt');
+          }
+          await loadBlueprints();
+          alert('Schablone & Governance gespeichert. Persona bestätigt.');
         } else {
-          alert('Fehler beim Speichern der Schablone');
+          alert('Fehler beim Speichern der Schablone (HTTP ' + res.status + ')');
         }
       } catch (err) {
         alert('Netzwerkfehler: ' + err.message);
