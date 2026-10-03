@@ -65,7 +65,12 @@ let navigationState = 'loading';
 let navClickBound = false;
 
 function safeNavHref(href) {
-    return typeof href === 'string' && href.startsWith('/') && !href.startsWith('//') ? href : '/';
+    if (typeof href !== 'string' || !href.startsWith('/') || /[\\\u0000-\u001f\u007f]/.test(href)) return '/';
+    try {
+        return new URL(href, window.location.href).origin === window.location.origin ? href : '/';
+    } catch (_) {
+        return '/';
+    }
 }
 
 async function loadNavigationConfig() {
@@ -342,6 +347,6 @@ if (typeof module !== 'undefined') {
     module.exports = {
         initNavigation, updateNavStatus, loadNavStatus, setTheme, previewTheme,
         commitTheme, persistThemePreference,
-        loadThemePreference, normalizeTheme, loadNavigationConfig, BACH_VERSION
+        loadThemePreference, normalizeTheme, loadNavigationConfig, safeNavHref, BACH_VERSION
     };
 }
