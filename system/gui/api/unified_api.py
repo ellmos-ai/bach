@@ -2531,9 +2531,10 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
 
     conn = _get_conn()
     try:
-        _ensure_calendar_tables(conn)
-        if "event_origin" not in {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)")}:
+        existing = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistant_calendar'").fetchone()
+        if existing and "event_origin" not in {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)")}:
             raise HTTPException(status_code=503, detail="Kalenderschema benötigt die additive Herkunftsmigration")
+        _ensure_calendar_tables(conn)
         cursor = conn.cursor()
         now = datetime.now().isoformat()
         cursor.execute("""

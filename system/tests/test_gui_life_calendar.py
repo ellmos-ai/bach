@@ -48,6 +48,8 @@ class LifeCalendarTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             asyncio.run(unified_api.create_calendar_event({"title":"Neu", "start_datetime":"2026-10-03 09:00:00"}))
         self.assertEqual(error.exception.status_code, 503)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM sqlite_master WHERE name='household_routines'").fetchone())
 
     def test_routine_without_due_date_is_not_a_fabricated_event(self):
         with closing(sqlite3.connect(self.db)) as conn:
