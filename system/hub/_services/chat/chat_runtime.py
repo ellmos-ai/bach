@@ -384,6 +384,8 @@ class ChatSession(_ModuleChatSession):
         self.allow_tools: bool = True
         self.worker_slot_reader: Any = None
         self.custom_system_prompt: str = ""
+        self.profile_binding: dict | None = None
+        self.profile_context_text: str = ""
         self.chat_id: str = ""
         self.operator_control: Any = None
 
@@ -502,6 +504,11 @@ class ChatRuntime(_ModuleChatRuntime):
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
             return []
+        if str(chat_id).startswith("agent:"):
+            state = self.session_store.load_state(chat_id)
+            if state["binding"] is None:
+                raise ValueError("Der Profilkontext fehlt vor dem Restore")
+            return self._restore_message_status(state["messages"])
         try:
             messages = self.session_store.load(chat_id)
             self._persistence_error = None
@@ -589,11 +596,14 @@ class ChatRuntime(_ModuleChatRuntime):
             self.session_store.save(
                 chat_id,
                 self._messages_for_store(messages),
-                name=name,
+                name=name, binding=getattr(session, "profile_binding", None),
             )
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
+            if getattr(session, "profile_binding", None) is not None:
+                self.sessions.pop(chat_id, None)
+                raise RuntimeError("Profiltranskript konnte nicht dauerhaft gespeichert werden") from exc
             log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
 
     def _persist_session(self, chat_id: str, session: ChatSession) -> None:
@@ -604,11 +614,14 @@ class ChatRuntime(_ModuleChatRuntime):
             self.session_store.save(
                 chat_id,
                 self._messages_for_store(session.messages),
-                name=name,
+                name=name, binding=getattr(session, "profile_binding", None),
             )
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
+            if getattr(session, "profile_binding", None) is not None:
+                self.sessions.pop(chat_id, None)
+                raise RuntimeError("Profiltranskript konnte nicht dauerhaft gespeichert werden") from exc
             log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
 
     def persistence_status(self) -> dict:
@@ -619,7 +632,52 @@ class ChatRuntime(_ModuleChatRuntime):
             "error": self._persistence_error or "",
         }
 
+    def bind_profile_session(self, chat_id: str, agent_context: tuple[dict, str]) -> None:
+        from .agent_profile_context import binding_metadata, profile_chat_id_agent, require_current_binding
+        binding, profile_text = agent_context
+        binding = binding_metadata(binding)
+        current_binding, current_text = require_current_binding(binding)
+        if current_binding != binding or current_text != profile_text:
+            raise ValueError("Profilquelle hat sich vor dem Turn geändert")
+        if (profile_chat_id_agent(chat_id) != binding["agent_id"] or not profile_text
+                or self.session_store is None):
+            raise ValueError("Profil-Chat-ID, Kontext oder dauerhafter Store fehlt")
+        state = self.session_store.load_state(chat_id)
+        prior = state["binding"]
+        ram = self.sessions.get(chat_id)
+        if prior is None:
+            if state["messages"] or (ram is not None and ram.messages):
+                raise ValueError("Bestehender globaler Verlauf darf kein Profil übernehmen")
+            self.session_store.save(chat_id, [], binding=binding)
+            self.sessions.pop(chat_id, None)
+        elif prior != binding or (ram is not None and getattr(ram, "profile_binding", None) != binding):
+            raise ValueError("Profilbindung darf nicht gewechselt werden")
+        session = self.get_session(chat_id)
+        if session.worker_slot_reader is not None or (session.custom_system_prompt and not session.profile_context_text):
+            raise ValueError("Slot- und Profilprompt sind nicht kombinierbar")
+        session.profile_binding = binding
+        session.profile_context_text = profile_text
+
     def get_session(self, chat_id: str) -> ChatSession:
+        if str(chat_id).startswith("agent:"):
+            if self.session_store is None:
+                raise ValueError("Profilstore fehlt")
+            state = self.session_store.load_state(chat_id)
+            if state["binding"] is None:
+                raise ValueError("Profilbindung fehlt")
+            cached = self.sessions.get(chat_id)
+            if cached is not None:
+                if getattr(cached, "profile_binding", None) != state["binding"]:
+                    raise ValueError("RAM-Profilbindung stimmt nicht mit dem Store überein")
+                return cached
+            session = ChatSession()
+            session.chat_id = chat_id
+            session.model = self.backend.get_default_model() if hasattr(self.backend, "get_default_model") else ""
+            session.messages = self._restore_message_status(state["messages"])
+            session.profile_binding = state["binding"]
+            session.last_active = time.time()
+            self.sessions[chat_id] = session
+            return session
         now = time.time()
         if chat_id in self._sessions:
             s = self._sessions[chat_id]
@@ -672,6 +730,10 @@ class ChatRuntime(_ModuleChatRuntime):
             session.operator_control = None
         if not hasattr(session, "custom_system_prompt"):
             session.custom_system_prompt = ""
+        if not hasattr(session, "profile_binding"):
+            session.profile_binding = None
+        if not hasattr(session, "profile_context_text"):
+            session.profile_context_text = ""
         if not hasattr(session, "backend"):
             session.backend = None
         if not hasattr(session, "max_tool_rounds"):
@@ -709,7 +771,9 @@ class ChatRuntime(_ModuleChatRuntime):
             prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
             try:
                 archived_id = self.session_store.archive_and_delete(
-                    chat_id, session.messages if session else None, prefix
+                    chat_id, session.messages if session else None, prefix,
+                    binding=(getattr(session, "profile_binding", None) if session else
+                        self.session_store.load_state(chat_id)["binding"] if str(chat_id).startswith("agent:") else None)
                 )
                 self._persistence_error = None
             except Exception as exc:
@@ -793,12 +857,21 @@ class ChatRuntime(_ModuleChatRuntime):
             await asyncio.sleep(0.025)
 
     @staticmethod
+    async def _enter_profile_turn(gate: _ChatTurnGate) -> None:
+        while True:
+            with gate.condition:
+                if not gate.clearing and gate.active_turns == 0:
+                    gate.active_turns = 1
+                    return
+            await asyncio.sleep(0.025)
+
+    @staticmethod
     def _leave_chat_turn(gate: _ChatTurnGate) -> None:
         with gate.condition:
             gate.active_turns -= 1
             gate.condition.notify_all()
 
-    def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
+    def fork_session(self, target_chat_id: str, snapshot_id: int, *, agent_context=None) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
         if not self.session_store:
             raise RuntimeError("Kein SessionStore verfügbar")
@@ -806,6 +879,27 @@ class ChatRuntime(_ModuleChatRuntime):
         if not snap:
             raise ValueError(f"Snapshot ID {snapshot_id} nicht gefunden")
         messages = self._restore_message_status(snap.get("messages", []))
+        source_binding = snap.get("binding")
+        if agent_context is not None:
+            from .agent_profile_context import profile_chat_id_agent
+            binding, text = agent_context
+            if profile_chat_id_agent(target_chat_id) != binding["agent_id"] or source_binding != binding:
+                raise ValueError("Fork darf Profil oder Kontextklasse nicht wechseln")
+            target = self.session_store.load_state(target_chat_id)
+            if target["binding"] is not None or target["messages"] or target_chat_id in self.sessions:
+                raise ValueError("Profil-Fork benötigt eine neue leere Ziel-Session")
+            s = ChatSession()
+            s.chat_id = target_chat_id
+            s.model = self.backend.get_default_model()
+            s.messages = list(messages)
+            s.profile_binding = binding
+            s.profile_context_text = text
+            s.last_active = time.time()
+            self._persist_session(target_chat_id, s)
+            self.sessions[target_chat_id] = s
+            return len(messages)
+        if source_binding is not None or str(target_chat_id).startswith("agent:"):
+            raise ValueError("Ein Profil-Snapshot darf keinen globalen Fork erzeugen")
 
         # Aktuelle Ziel-Session vor dem Fork sichern
         curr = self.sessions.get(target_chat_id)
@@ -844,7 +938,7 @@ class ChatRuntime(_ModuleChatRuntime):
             if m.get("role") in ("user", "assistant")
         ]
 
-    def build_system_prompt(self, session: ChatSession) -> str:
+    def build_system_prompt(self, session: ChatSession, *, profile_context: str = "") -> str:
         capabilities = """
 Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.
 
@@ -922,7 +1016,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(run, operation) führt Wartung aus (registry, skills, docs, backup, clean, memory, recurring)
 - maintain(health) zeigt den Gesamtstatus
 """
-        s = self.base_system + "\n\n" + capabilities
+        base = self.base_system
+        if profile_context:
+            base += ("\n\nDu bist das ausdrücklich ausgewählte BACH-Agentenprofil. Antworte auf Deutsch. "
+                     "Die globalen Modus- und Werkzeuggrenzen gelten unverändert.")
+        s = base + "\n\n" + capabilities
+        if profile_context:
+            s += "\n\n--- AUSGEWÄHLTES AGENTENPROFIL ---\n" + profile_context
         s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
         return s
 
@@ -996,10 +1096,23 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return None
 
     async def process(self, text: str, chat_id: str, *, backend=None, model=None,
-                      skip_compute_gate: bool = False, **kwargs) -> str:
+                      skip_compute_gate: bool = False, agent_context=None, **kwargs) -> str:
+        from .agent_profile_context import profile_chat_id_agent
+        profile_id = profile_chat_id_agent(chat_id)
+        if str(chat_id).startswith("agent:") and profile_id is None:
+            return FailedAnswer("Profil-Chat-ID ist ungültig")
+        if profile_id is not None and agent_context is None:
+            return FailedAnswer("Profilbindung fehlt")
+        if agent_context is not None and profile_id is None:
+            return FailedAnswer("Profilkontext benötigt eine Profil-Chat-ID")
         gate = self._chat_turn_gate(chat_id)
-        await self._enter_chat_turn(gate)
+        if agent_context is not None:
+            await self._enter_profile_turn(gate)
+        else:
+            await self._enter_chat_turn(gate)
         try:
+            if agent_context is not None:
+                self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
                 text, chat_id, backend=backend, model=model,
                 skip_compute_gate=skip_compute_gate, **kwargs,
@@ -1030,6 +1143,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        if str(chat_id).startswith("agent:"):
+            if not session.profile_binding or not session.profile_context_text:
+                raise ValueError("Profilkontext fehlt vor Inferenz")
+            session.model = selected_model
+            session.custom_system_prompt = self.build_system_prompt(
+                session, profile_context=session.profile_context_text)
         capability_error = self._worker_backend_gate(session, selected_backend)
         if capability_error is not None:
             session.messages.extend([
@@ -1059,11 +1178,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 model=selected_model,
             )
 
-        bach_ctx = self._get_bach_context(text)
+        bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
         # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
         # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
         # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
-        hook_ctx = self._get_memory_hook_context(text, chat_id)
+        hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)
 
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):

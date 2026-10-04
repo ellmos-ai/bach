@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BACH - Kontakte</title>
+    <title>Kontakte | System GUI</title>
     <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
@@ -80,6 +80,8 @@
         .btn-secondary { background: var(--border, #333); color: var(--text, #fff); }
         .btn-danger { background: var(--error); color: white; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .action-note { color: var(--text-muted, #aaa); font-size: 0.8rem; }
 
         .section {
             background: var(--bg-card, #1e1e1e);
@@ -99,7 +101,7 @@
             align-items: center;
         }
 
-        .filter-bar select {
+        .actions select {
             padding: 0.5rem;
             border-radius: 4px;
             border: 1px solid var(--border, #333);
@@ -188,7 +190,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.7);
-            z-index: 1000;
+            z-index: 1200;
             align-items: center;
             justify-content: center;
         }
@@ -251,14 +253,69 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
+        .contacts-workspace {
+            display: grid;
+            grid-template-columns: minmax(270px, 360px) minmax(0, 1fr);
+            gap: 1rem;
+            min-height: 460px;
+        }
+        .contact-list-panel, .preview-panel {
+            min-width: 0;
+            background: var(--bg-card, #1e1e1e);
+            border: 1px solid var(--border, #333);
+            border-radius: 8px;
+        }
+        .contact-list-panel { overflow: hidden; }
+        .contact-list-panel h2, .preview-header { margin: 0; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border, #333); }
+        .contact-list { max-height: min(68vh, 780px); overflow-y: auto; }
+        .contact-row {
+            display: block; width: 100%; padding: 0.9rem 1.25rem; text-align: left;
+            background: transparent; color: var(--text, #fff); border: 0;
+            border-bottom: 1px solid var(--border, #333); cursor: pointer;
+        }
+        .contact-row:hover, .contact-row[aria-pressed="true"] { background: var(--bg-hover, #27364b); }
+        .contact-row[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent-blue, #68a8e8); }
+        .contact-row-name { display: block; font-weight: 650; }
+        .contact-row-meta { display: block; margin-top: 0.2rem; color: var(--text-muted, #aaa); font-size: 0.86rem; }
+        .preview-panel { padding-bottom: 1.25rem; }
+        .preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+        .preview-header h2 { margin: 0; font-size: 1.35rem; }
+        .preview-subtitle { margin: 0.3rem 0 0; color: var(--text-muted, #aaa); }
+        .preview-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .preview-body { padding: 1.25rem; }
+        .preview-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem; margin: 0; }
+        .preview-field { min-width: 0; overflow-wrap: anywhere; }
+        .preview-field dt { color: var(--text-muted, #aaa); font-size: 0.82rem; margin-bottom: 0.2rem; }
+        .preview-field dd { margin: 0; white-space: pre-wrap; }
+        .preview-field.wide { grid-column: 1 / -1; }
+        .preview-empty, .list-message { color: var(--text-muted, #aaa); padding: 1.25rem; margin: 0; }
+        .preview-close { display: none; }
+        .preview-backdrop { display: none; }
+        .contact-row:focus-visible, .btn:focus-visible, .search-box:focus-visible,
+        .actions select:focus-visible { outline: 2px solid var(--accent-blue, #68a8e8); outline-offset: 2px; }
+        @media (max-width: 760px) {
+            .contacts-workspace { display: block; }
+            .contact-list { max-height: none; }
+            .preview-panel {
+                position: fixed; z-index: 1100; inset: auto 0 0; max-height: 88vh;
+                overflow-y: auto; border-radius: 12px 12px 0 0; transform: translateY(105%);
+                visibility: hidden; transition: transform 0.18s ease, visibility 0.18s ease;
+            }
+            .preview-panel.open { transform: translateY(0); visibility: visible; }
+            .preview-backdrop.open { display: block; position: fixed; z-index: 1099; inset: 0; background: rgba(0,0,0,0.65); }
+            .preview-close { display: inline-flex; }
+            .preview-fields { grid-template-columns: 1fr; }
+        }
+        @media (prefers-reduced-motion: reduce) { .preview-panel { transition: none; } }
     </style>
 </head>
 <body>
     <header class="main-header" id="main-header"></header>
 
     <main class="kontakte-content">
-        <h1 class="page-title">Kontakte-Verwaltung</h1>
-        <p class="subtitle">Persoenliche und berufliche Kontakte organisieren</p>
+        <h1 class="page-title">Kontakte</h1>
+        <p class="subtitle">Kontakt auswählen, Details ansehen und bei Bedarf bearbeiten.</p>
 
         <!-- Stats -->
         <div class="stats-grid">
@@ -266,45 +323,43 @@
                 <div class="stat-value" id="stat-total">-</div>
                 <div class="stat-label">Kontakte</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-health">-</div>
-                <div class="stat-label">Gesundheit</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-business">-</div>
-                <div class="stat-label">Geschaeftlich</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-personal">-</div>
-                <div class="stat-label">Privat</div>
-            </div>
+            <div class="stat-card"><div class="stat-value" id="stat-visible">-</div><div class="stat-label">In der Auswahl</div></div>
         </div>
 
         <!-- Actions -->
         <div class="actions">
-            <input type="text" class="search-box" id="search-input" placeholder="Suchen nach Name, Organisation..." onkeyup="filterContacts()">
-            <select id="filter-category" onchange="loadContacts()">
+            <input type="search" class="search-box" id="search-input" aria-label="Kontakte durchsuchen" placeholder="Name, Organisation oder E-Mail suchen">
+            <select id="filter-category" aria-label="Kategorie filtern">
                 <option value="">Alle Kategorien</option>
-                <option value="Gesundheit">Gesundheit</option>
-                <option value="Geschaeftlich">Geschaeftlich</option>
-                <option value="Privat">Privat</option>
-                <option value="Familie">Familie</option>
-                <option value="Sonstiges">Sonstiges</option>
             </select>
             <button class="btn btn-primary" onclick="showAddContactModal()">+ Neuer Kontakt</button>
-            <button class="btn btn-secondary" onclick="exportContacts()">Export</button>
+            <button class="btn btn-secondary" type="button" disabled title="Der Export muss vor der Freigabe an einen sicheren Download-Endpunkt gebunden werden.">Export (in Arbeit)</button>
+            <span class="action-note">Für den Export fehlen ein sicherer Download und eine Berechtigungsprüfung.</span>
         </div>
 
-        <!-- Kontakte -->
-        <div class="section">
-            <h2>Kontakte</h2>
-            <div class="contact-grid" id="contacts-grid">
-                Lade...
-            </div>
+        <div class="contacts-workspace">
+            <section class="contact-list-panel" aria-label="Kontaktliste">
+                <h2>Kontaktliste</h2>
+                <div class="contact-list" id="contacts-list" role="group" aria-label="Kontakte" aria-busy="true">
+                    <p class="list-message">Kontakte werden geladen …</p>
+                </div>
+            </section>
+            <div class="preview-backdrop" id="preview-backdrop"></div>
+            <section class="preview-panel" id="contact-preview" aria-label="Kontaktvorschau" tabindex="-1">
+                <div class="preview-header">
+                    <div><h2 id="preview-title">Kontaktvorschau</h2><p class="preview-subtitle" id="preview-subtitle">Wählen Sie einen Kontakt aus der Liste.</p></div>
+                    <div class="preview-actions">
+                        <button type="button" class="btn btn-secondary btn-sm preview-close" id="preview-close">Schließen</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="preview-edit" disabled>Bearbeiten</button>
+                        <button type="button" class="btn btn-danger btn-sm" id="preview-delete" disabled>Löschen</button>
+                    </div>
+                </div>
+                <div class="preview-body" id="preview-body"><p class="preview-empty">Noch kein Kontakt ausgewählt.</p></div>
+            </section>
         </div>
     </main>
 
-    <!-- Modal: Kontakt hinzufuegen/bearbeiten -->
+    <!-- Modal: Kontakt hinzufügen/bearbeiten -->
     <div class="modal" id="contact-modal">
         <div class="modal-content">
             <h3 id="contact-modal-title">Neuer Kontakt</h3>
@@ -338,7 +393,7 @@
                         <select id="contact-category">
                             <option value="Sonstiges">Sonstiges</option>
                             <option value="Gesundheit">Gesundheit</option>
-                            <option value="Geschaeftlich">Geschaeftlich</option>
+                            <option value="Geschaeftlich">Geschäftlich</option>
                             <option value="Privat">Privat</option>
                             <option value="Familie">Familie</option>
                         </select>
@@ -373,7 +428,7 @@
 
                 <div class="section-title">Adresse</div>
                 <div class="form-group">
-                    <label>Strasse</label>
+                    <label>Straße</label>
                     <input type="text" id="contact-street" placeholder="Musterstr. 123">
                 </div>
                 <div class="form-row">
@@ -398,7 +453,7 @@
                 </div>
                 <div class="form-group">
                     <label>Notizen</label>
-                    <textarea id="contact-notes" rows="2" placeholder="Zusaetzliche Informationen"></textarea>
+                    <textarea id="contact-notes" rows="2" placeholder="Zusätzliche Informationen"></textarea>
                 </div>
 
                 <div class="form-actions">
@@ -412,89 +467,217 @@
     <script>
         const API_BASE = '/api/contacts';
         let allContacts = [];
+        let selectedContactId = null;
+        const mobilePreview = window.matchMedia('(max-width: 760px)');
 
-        function esc(str) {
-            if (!str) return '';
-            const d = document.createElement('div');
-            d.textContent = str;
-            return d.innerHTML;
+        function contactName(contact) {
+            return String(contact.name || `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Ohne Namen');
+        }
+
+        function categoryLabel(value) {
+            return value === 'Geschaeftlich' ? 'Geschäftlich' : value;
+        }
+
+        function contactId(contact) {
+            const id = Number(contact.id);
+            return Number.isSafeInteger(id) && id > 0 ? id : null;
+        }
+
+        function listMessage(message) {
+            const list = document.getElementById('contacts-list');
+            const p = document.createElement('p');
+            p.className = 'list-message';
+            p.textContent = message;
+            list.replaceChildren(p);
+        }
+
+        function apiFetch(url, options = {}) {
+            const headers = new Headers(options.headers || {});
+            try {
+                const token = localStorage.getItem('bach_device_token');
+                if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+            } catch (_) { /* Public reads still use the server's normal auth response. */ }
+            return fetch(url, { ...options, headers });
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('search-input').addEventListener('input', filterContacts);
+            document.getElementById('filter-category').addEventListener('change', filterContacts);
+            document.getElementById('preview-close').addEventListener('click', closePreview);
+            document.getElementById('preview-backdrop').addEventListener('click', closePreview);
+            document.getElementById('preview-edit').addEventListener('click', () => {
+                if (selectedContactId !== null) editContact(selectedContactId);
+            });
+            document.getElementById('preview-delete').addEventListener('click', () => {
+                if (selectedContactId !== null) deleteContact(selectedContactId);
+            });
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape') {
+                    if (document.getElementById('contact-modal').classList.contains('active')) closeContactModal();
+                    else closePreview();
+                }
+            });
             loadContacts();
         });
 
         async function loadContacts() {
+            const list = document.getElementById('contacts-list');
+            list.setAttribute('aria-busy', 'true');
+            listMessage('Kontakte werden geladen …');
             try {
-                const category = document.getElementById('filter-category').value;
-                let url = `${API_BASE}?`;
-                if (category) url += `category=${category}&`;
-
-                const res = await fetch(url);
+                const res = await apiFetch(API_BASE);
+                if (res.status === 401 || res.status === 403) throw new Error('auth_required');
+                if (!res.ok) throw new Error('request_failed');
                 const data = await res.json();
-
-                // Stats
-                document.getElementById('stat-total').textContent = data.stats?.total || 0;
-                document.getElementById('stat-health').textContent = data.stats?.health || 0;
-                document.getElementById('stat-business').textContent = data.stats?.business || 0;
-                document.getElementById('stat-personal').textContent = data.stats?.personal || 0;
-
-                allContacts = data.contacts || [];
-                renderContacts(allContacts);
-
+                if (!data.success || !Array.isArray(data.contacts)) throw new Error('response_failed');
+                allContacts = data.contacts;
+                document.getElementById('stat-total').textContent = String(allContacts.length);
+                refreshCategories();
+                filterContacts();
             } catch (e) {
-                console.error('Kontakte-Fehler:', e);
-                document.getElementById('contacts-grid').innerHTML = '<p>Fehler beim Laden</p>';
+                allContacts = [];
+                selectedContactId = null;
+                document.getElementById('stat-total').textContent = '—';
+                document.getElementById('stat-visible').textContent = '—';
+                listMessage(e.message === 'auth_required'
+                    ? 'Für Kontakte ist eine Geräteanmeldung erforderlich.'
+                    : 'Kontakte konnten nicht geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.');
+                if (e.message === 'auth_required') {
+                    const login = document.createElement('a');
+                    login.href = '/token-dashboard';
+                    login.textContent = 'Gerät anmelden';
+                    document.getElementById('contacts-list').append(login);
+                }
+                renderPreview(null);
+                closePreview();
+            } finally {
+                list.setAttribute('aria-busy', 'false');
             }
         }
 
+        function refreshCategories() {
+            const select = document.getElementById('filter-category');
+            const current = select.value;
+            select.replaceChildren(new Option('Alle Kategorien', ''));
+            const categories = [...new Set(allContacts.map(c => String(c.category || '').trim()).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, 'de'));
+            for (const category of categories) select.add(new Option(categoryLabel(category), category));
+            select.value = categories.includes(current) ? current : '';
+        }
+
         function filterContacts() {
-            const search = document.getElementById('search-input').value.toLowerCase();
+            const search = document.getElementById('search-input').value.trim().toLocaleLowerCase('de');
+            const category = document.getElementById('filter-category').value;
             const filtered = allContacts.filter(c => {
-                const searchText = `${c.first_name || ''} ${c.last_name || ''} ${c.name || ''} ${c.organization || ''} ${c.subcategory || ''}`.toLowerCase();
-                return searchText.includes(search);
+                const searchText = `${c.first_name || ''} ${c.last_name || ''} ${c.name || ''} ${c.organization || ''} ${c.email || ''}`.toLocaleLowerCase('de');
+                return (!category || c.category === category) && searchText.includes(search);
             });
             renderContacts(filtered);
         }
 
         function renderContacts(contacts) {
-            const grid = document.getElementById('contacts-grid');
-
-            if (!contacts || contacts.length === 0) {
-                grid.innerHTML = '<p>Keine Kontakte gefunden</p>';
+            document.getElementById('stat-visible').textContent = String(contacts.length);
+            const list = document.getElementById('contacts-list');
+            if (!contacts.length) {
+                selectedContactId = null;
+                listMessage(allContacts.length ? 'Keine Treffer. Passen Sie Suche oder Kategorie an.' : 'Noch keine Kontakte vorhanden. Legen Sie einen neuen Kontakt an.');
+                renderPreview(null);
+                closePreview();
                 return;
             }
+            if (!contacts.some(c => contactId(c) === selectedContactId)) selectedContactId = contactId(contacts[0]);
+            const rows = contacts.map(c => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'contact-row';
+                row.setAttribute('aria-pressed', String(contactId(c) === selectedContactId));
+                const name = document.createElement('span');
+                name.className = 'contact-row-name';
+                name.textContent = contactName(c);
+                const meta = document.createElement('span');
+                meta.className = 'contact-row-meta';
+                meta.textContent = [c.organization, categoryLabel(c.category)].filter(Boolean).join(' · ') || 'Kontakt';
+                row.append(name, meta);
+                row.addEventListener('click', () => {
+                    selectedContactId = contactId(c);
+                    for (const item of list.querySelectorAll('.contact-row')) item.setAttribute('aria-pressed', String(item === row));
+                    renderPreview(c);
+                    if (mobilePreview.matches) openPreview();
+                });
+                return row;
+            });
+            list.replaceChildren(...rows);
+            renderPreview(contacts.find(c => contactId(c) === selectedContactId) || null);
+        }
 
-            grid.innerHTML = contacts.map(c => {
-                const name = esc(c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unbenannt');
-                const tags = c.tags ? c.tags.split(',').map(t => `<span class="badge tag">${esc(t.trim())}</span>`).join('') : '';
+        function previewField(list, label, value, wide = false) {
+            if (value === null || value === undefined || String(value).trim() === '') return;
+            const wrap = document.createElement('div');
+            wrap.className = wide ? 'preview-field wide' : 'preview-field';
+            const term = document.createElement('dt');
+            term.textContent = label;
+            const detail = document.createElement('dd');
+            detail.textContent = String(value);
+            wrap.append(term, detail);
+            list.append(wrap);
+        }
 
-                return `
-                    <div class="contact-card">
-                        <div class="contact-header">
-                            <div>
-                                <h4 class="contact-name">${name}</h4>
-                                ${c.organization ? `<div class="contact-org">${c.position ? esc(c.position) + ' - ' : ''}${esc(c.organization)}</div>` : ''}
-                            </div>
-                            <div style="display: flex; gap: 0.25rem;">
-                                <button class="btn btn-secondary btn-sm" onclick="editContact(${c.id})">Edit</button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id})">X</button>
-                            </div>
-                        </div>
-                        <div class="contact-details">
-                            ${c.phone ? `<div class="item"><span class="icon">T</span> ${esc(c.phone)}</div>` : ''}
-                            ${c.phone_mobile ? `<div class="item"><span class="icon">M</span> ${esc(c.phone_mobile)}</div>` : ''}
-                            ${c.email ? `<div class="item"><span class="icon">@</span> ${esc(c.email)}</div>` : ''}
-                            ${c.city ? `<div class="item"><span class="icon">A</span> ${c.street ? esc(c.street) + ', ' : ''}${esc(c.zip_code || '')} ${esc(c.city)}</div>` : ''}
-                        </div>
-                        <div class="contact-tags">
-                            <span class="badge category">${esc(c.category || 'Sonstiges')}</span>
-                            ${c.subcategory ? `<span class="badge tag">${esc(c.subcategory)}</span>` : ''}
-                            ${tags}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+        function renderPreview(c) {
+            document.getElementById('preview-title').textContent = c ? contactName(c) : 'Kontaktvorschau';
+            document.getElementById('preview-subtitle').textContent = c
+                ? [c.position, c.organization, categoryLabel(c.category)].filter(Boolean).join(' · ')
+                : 'Wählen Sie einen Kontakt aus der Liste.';
+            document.getElementById('preview-edit').disabled = !c || contactId(c) === null;
+            document.getElementById('preview-delete').disabled = !c || contactId(c) === null;
+            const body = document.getElementById('preview-body');
+            if (!c) {
+                const empty = document.createElement('p');
+                empty.className = 'preview-empty';
+                empty.textContent = 'Noch kein Kontakt ausgewählt.';
+                body.replaceChildren(empty);
+                return;
+            }
+            const fields = document.createElement('dl');
+            fields.className = 'preview-fields';
+            previewField(fields, 'Vorname', c.first_name);
+            previewField(fields, 'Nachname', c.last_name);
+            previewField(fields, 'Telefon', c.phone);
+            previewField(fields, 'Mobil', c.phone_mobile);
+            previewField(fields, 'E-Mail', c.email);
+            previewField(fields, 'Website', c.website);
+            previewField(fields, 'Unterkategorie', c.subcategory);
+            previewField(fields, 'Geburtstag', c.birthday);
+            previewField(fields, 'Adresse', [c.street, c.zip_code, c.city].filter(Boolean).join(', '), true);
+            previewField(fields, 'Tags', c.tags, true);
+            previewField(fields, 'Notizen', c.notes, true);
+            if (!fields.children.length) {
+                const empty = document.createElement('p');
+                empty.className = 'preview-empty';
+                empty.textContent = 'Für diesen Kontakt sind noch keine weiteren Angaben hinterlegt.';
+                body.replaceChildren(empty);
+            } else body.replaceChildren(fields);
+        }
+
+        function openPreview() {
+            const preview = document.getElementById('contact-preview');
+            preview.classList.add('open');
+            preview.setAttribute('role', 'dialog');
+            preview.setAttribute('aria-modal', 'true');
+            document.getElementById('preview-backdrop').classList.add('open');
+            document.getElementById('preview-close').focus();
+        }
+
+        function closePreview() {
+            const preview = document.getElementById('contact-preview');
+            const wasOpen = preview.classList.contains('open');
+            preview.classList.remove('open');
+            preview.removeAttribute('role');
+            preview.removeAttribute('aria-modal');
+            document.getElementById('preview-backdrop').classList.remove('open');
+            if (wasOpen) {
+                const selected = document.querySelector('.contact-row[aria-pressed="true"]');
+                if (selected) selected.focus();
+            }
         }
 
         function showAddContactModal() {
@@ -502,6 +685,7 @@
             document.getElementById('contact-form').reset();
             document.getElementById('contact-edit-id').value = '';
             document.getElementById('contact-modal').classList.add('active');
+            document.getElementById('contact-first-name').focus();
         }
 
         function closeContactModal() {
@@ -510,10 +694,11 @@
 
         async function editContact(id) {
             try {
-                const res = await fetch(`${API_BASE}/${id}`);
+                const res = await apiFetch(`${API_BASE}/${id}`);
+                if (!res.ok) throw new Error('request_failed');
                 const data = await res.json();
                 const c = data.contact;
-                if (!c) return;
+                if (!data.success || !c) throw new Error('response_failed');
 
                 document.getElementById('contact-modal-title').textContent = 'Kontakt bearbeiten';
                 document.getElementById('contact-edit-id').value = id;
@@ -534,8 +719,10 @@
                 document.getElementById('contact-tags').value = c.tags || '';
                 document.getElementById('contact-notes').value = c.notes || '';
 
+                closePreview();
                 document.getElementById('contact-modal').classList.add('active');
-            } catch (e) { console.error(e); }
+                document.getElementById('contact-first-name').focus();
+            } catch (e) { alert('Kontakt konnte nicht zum Bearbeiten geladen werden.'); }
         }
 
         async function saveContact(event) {
@@ -568,35 +755,31 @@
             try {
                 const url = id ? `${API_BASE}/${id}` : API_BASE;
                 const method = id ? 'PUT' : 'POST';
-                const res = await fetch(url, {
+                const res = await apiFetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                if ((await res.json()).success) {
+                const result = await res.json();
+                if (!res.ok || !result.success) throw new Error('save_failed');
+                if (!id && Number.isSafeInteger(Number(result.id))) selectedContactId = Number(result.id);
+                if (result.success) {
                     closeContactModal();
-                    loadContacts();
+                    await loadContacts();
                 }
-            } catch (e) { alert('Fehler beim Speichern'); }
+            } catch (e) { alert('Kontakt konnte nicht gespeichert werden. Prüfen Sie die Anmeldung und versuchen Sie es erneut.'); }
         }
 
         async function deleteContact(id) {
-            if (!confirm('Kontakt wirklich loeschen?')) return;
+            if (!confirm('Kontakt wirklich löschen?')) return;
             try {
-                const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
-                if ((await res.json()).success) loadContacts();
-            } catch (e) { console.error(e); }
+                const res = await apiFetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+                if (!res.ok || !(await res.json()).success) throw new Error('delete_failed');
+                closePreview();
+                await loadContacts();
+            } catch (e) { alert('Kontakt konnte nicht gelöscht werden.'); }
         }
 
-        async function exportContacts() {
-            try {
-                const res = await fetch(`${API_BASE}/export`);
-                const data = await res.json();
-                if (data.success) {
-                    alert('Export erstellt: ' + data.file);
-                }
-            } catch (e) { alert('Export fehlgeschlagen'); }
-        }
     </script>
 
     <script src="/static/js/nav.js?v=4"></script>

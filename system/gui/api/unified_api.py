@@ -14,6 +14,7 @@ Provides modular endpoints for:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import logging
@@ -21,7 +22,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,6 +43,7 @@ from hub.bach_paths import BACH_DB, BACH_ROOT
 BACH_DIR = BACH_ROOT
 
 router = APIRouter(prefix="/api", tags=["unified"])
+_COMPARE_RACE_LOCK = asyncio.Lock()
 
 
 def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
@@ -107,7 +109,7 @@ def _lock_cache_snapshot() -> Dict[str, Any]:
         return {**unavailable, "error": "lock_cache_invalid"}
 
 
-def _require_memory_device(request: Request) -> None:
+def _require_memory_device(request: Request) -> int:
     """Authorize private search with an active device token using a RO query."""
     header = request.headers.get("Authorization", "")
     token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "").strip()
@@ -125,6 +127,7 @@ def _require_memory_device(request: Request) -> None:
         raise HTTPException(status_code=503, detail="Device authorization unavailable")
     if row is None:
         raise HTTPException(status_code=403, detail="Device token invalid or revoked")
+    return int(row[0])
 
 
 @router.get("/nav/config")
@@ -186,12 +189,6 @@ PLUGINS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.PLUGINS")),
 ])
 
-EXPORTS_ROOT = _find_existing_path([
-    Path(_SYSTEM_ROOT / "exports"),
-    Path(os.path.expanduser("~/.bach/exports")),
-    Path("C:/Users/User/.gemini/antigravity-cli/brain"),
-])
-
 SYNC_ROOT = _find_existing_path([
     Path("C:/Users/User/OneDrive/.SYNC"),
     Path(os.path.expanduser("~/OneDrive/.SYNC")),
@@ -203,41 +200,47 @@ GARDENER_ROOT = _find_existing_path([
 ])
 
 
-def _is_safe_artifact_path(candidate: Path) -> bool:
-    """Verifies that the requested path is inside safe permitted project directories."""
-    resolved = candidate.resolve()
-    # Reject directory traversal tricks
-    resolved_str = str(resolved).lower()
-    for forbidden in (".git", "id_rsa", "id_ed25519", "credentials", "token", ".env", "password"):
-        if forbidden in resolved.name.lower() or f"/{forbidden}/" in resolved_str or f"\\{forbidden}\\" in resolved_str:
-            return False
-
-    allowed_roots = [
-        _SYSTEM_ROOT.resolve(),
-        Path(os.path.expanduser("~/.bach")).resolve(),
-        Path("C:/Users/User/.gemini/antigravity-cli/brain").resolve(),
-    ]
-    if EXPORTS_ROOT:
-        allowed_roots.append(EXPORTS_ROOT.resolve())
-    if DOMAINS_ROOT:
-        allowed_roots.append(DOMAINS_ROOT.resolve())
-    if CONTROL_ROOT:
-        allowed_roots.append(CONTROL_ROOT.resolve())
-
-    for root in allowed_roots:
-        try:
-            resolved.relative_to(root)
-            return True
-        except ValueError:
-            continue
-    return False
-
-
 # ═══════════════════════════════════════════════════════════════
 # 1. AGENT STUDIO (FABRIKA, BLUEPRINTS, ANIMUS MATRIX)
 # ═══════════════════════════════════════════════════════════════
 
 _agent_studio_tables_ready = False
+
+_AGENT_STUDIO_READ_COLUMNS = {
+    "agent_blueprints": {"id", "name", "title", "persona_role", "skills_json",
+                         "contractus_json", "governance_json", "is_template",
+                         "is_materialized", "animus_type", "modus"},
+    "partner_presence": {"partner_name", "status", "current_task", "last_heartbeat"},
+    "marblerun_chains": {"name", "steps_json", "is_active"},
+}
+
+
+def _get_agent_studio_ro_conn() -> sqlite3.Connection:
+    conn = None
+    try:
+        conn = sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+        conn.execute("PRAGMA query_only = ON")
+        conn.row_factory = sqlite3.Row
+        return conn
+    except (OSError, sqlite3.Error):
+        if conn is not None:
+            conn.close()
+        raise HTTPException(status_code=503, detail="Agenten-Daten nicht verfügbar")
+
+
+def _read_schema_ready(conn: sqlite3.Connection, tables: tuple[str, ...]) -> None:
+    """Inspect known table names and columns without bootstrap or seed writes."""
+    try:
+        for table in tables:
+            required = _AGENT_STUDIO_READ_COLUMNS[table]
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                            (table,)).fetchone() is None:
+                raise ValueError("missing_table")
+            columns = {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+            if not required.issubset(columns):
+                raise ValueError("missing_columns")
+    except (sqlite3.Error, KeyError, ValueError):
+        raise HTTPException(status_code=503, detail="Agenten-Daten noch nicht initialisiert")
 
 def _ensure_agent_studio_tables(conn: sqlite3.Connection):
     global _agent_studio_tables_ready
@@ -409,10 +412,9 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
 @router.get("/agent-studio/blueprints")
 async def list_agent_blueprints():
     """Listet alle Schablonen und individuellen Agenten-Blueprints aus der Fabrika."""
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints",))
         rows = conn.execute("""
             SELECT * FROM agent_blueprints
             ORDER BY is_template DESC, name ASC
@@ -597,10 +599,9 @@ async def materialize_blueprint(blueprint_id: int):
 @router.get("/agent-studio/living")
 async def get_living_agents():
     """Gibt alle aktiven Kreaturen / Living & Running Agenten inkl. Praesenz und Animus-Typ zurueck."""
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints", "partner_presence"))
         # Blueprints & Presence verknuepfen
         bp_rows = conn.execute("SELECT * FROM agent_blueprints WHERE is_materialized = 1").fetchall()
         presence_rows = conn.execute("SELECT * FROM partner_presence").fetchall()
@@ -908,11 +909,9 @@ async def get_agents_map():
     links = []
 
     # 1. Agenten-Knoten
-    conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    conn = _get_agent_studio_ro_conn()
     try:
-        _ensure_agent_studio_tables(conn)
-        _ensure_marblerun_tables(conn)
+        _read_schema_ready(conn, ("agent_blueprints", "marblerun_chains"))
         blueprints = conn.execute("SELECT * FROM agent_blueprints").fetchall()
         for bp in blueprints:
             nodes.append({
@@ -1014,6 +1013,43 @@ async def get_governance_status():
     }
 
 
+@router.get("/governance/audit")
+async def get_governance_audit(request: Request, limit: int = Query(50, ge=1, le=100)):
+    """Read task-history metadata only; values and caller-supplied actor stay private."""
+    _require_memory_device(request)
+    try:
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            rows = conn.execute(
+                "SELECT rowid, task_id, action, field_changed, changed_at "
+                "FROM task_history ORDER BY rowid DESC LIMIT ?", (limit,)
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return {"availability": "unavailable", "reason": "task_history_unavailable",
+                "source": "task_history", "events": [], "count": 0}
+
+    events = []
+    for audit_id, task_id, action, field, timestamp in rows:
+        try:
+            task_number = int(task_id)
+            event_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).isoformat()
+            if task_number < 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        events.append({
+            "id": int(audit_id),
+            "task_id": task_number,
+            "action": action if action in {"field_change", "status_change"} else "other",
+            "field": field if isinstance(field, str) and re.fullmatch(r"[a-z_]{1,40}", field) else "unknown",
+            "changed_at": event_time,
+        })
+    return {"availability": "available", "source": "task_history",
+            "actor_verified": False, "values_included": False,
+            "events": events, "count": len(events),
+            "observed_at": datetime.now(timezone.utc).isoformat()}
+
+
 @router.get("/governance/locks")
 async def list_governance_locks():
     """Gibt alle detaillierten Sperren und Haltefristen zurueck."""
@@ -1109,13 +1145,27 @@ async def search_federated_memory(request: Request, q: str = Query(..., min_leng
     return search_memory(q.strip(), limit, BACH_DB)
 
 
+@router.get("/chat/compare-race/status")
+async def compare_race_status(request: Request):
+    from .compare_race_adapter import readiness
+    _require_memory_device(request)
+    return readiness()
+
+
 @router.post("/chat/compare-race")
-async def compare_race(payload: Dict[str, Any] = Body(...)):
-    """Do not claim a model comparison until real provider calls exist."""
-    prompt = payload.get("prompt", "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt fehlt")
-    raise HTTPException(status_code=501, detail="Compare-Race ist noch nicht mit Modell-Providern verbunden.")
+async def compare_race(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Run configured SDK lanes only after device, cost, and call-budget gates."""
+    from .compare_race_adapter import RaceUnavailable, execute_isolated
+    device_id = _require_memory_device(request)
+    if _COMPARE_RACE_LOCK.locked():
+        raise HTTPException(status_code=409, detail="Ein Compare-Race läuft bereits.")
+    async with _COMPARE_RACE_LOCK:
+        try:
+            return await asyncio.to_thread(execute_isolated, payload, device_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Prompt oder Modellauswahl ungültig.")
+        except RaceUnavailable as exc:
+            raise HTTPException(status_code=501, detail=exc.code)
 
 
 @router.get("/domains")
@@ -1170,91 +1220,53 @@ async def get_domains():
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/artifacts")
-async def list_artifacts(limit: int = 50):
-    """Listet erzeugte Artefakte, Berichte und Deliverables auf."""
-    artifacts = []
-    candidate_dirs = [
-        _SYSTEM_ROOT / "exports",
-        _SYSTEM_ROOT / "user" / "exports",
-        Path("C:/Users/User/.gemini/antigravity-cli/brain"),
-    ]
-    if EXPORTS_ROOT and EXPORTS_ROOT not in candidate_dirs:
-        candidate_dirs.append(EXPORTS_ROOT)
-
-    for c_dir in candidate_dirs:
-        if c_dir and c_dir.exists():
-            for f in sorted(c_dir.glob("*.*"), key=lambda x: x.stat().st_mtime if x.is_file() else 0, reverse=True):
-                if f.is_file() and not f.name.startswith(".") and _is_safe_artifact_path(f):
-                    artifacts.append({
-                        "name": f.name,
-                        "size_bytes": f.stat().st_size,
-                        "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                        "path": str(f),
-                        "type": f.suffix.lstrip(".").lower() or "txt",
-                        "parent": f.parent.name
-                    })
-                if len(artifacts) >= limit:
-                    break
-        if len(artifacts) >= limit:
-            break
-
-    # Brain-Artefakte flach pruefen
-    brain_dir = Path("C:/Users/User/.gemini/antigravity-cli/brain")
-    if brain_dir.exists() and len(artifacts) < limit:
-        try:
-            for sub in sorted(brain_dir.iterdir(), key=lambda x: x.stat().st_mtime if x.is_dir() else 0, reverse=True)[:5]:
-                if sub.is_dir() and not sub.name.startswith("."):
-                    for f in sorted(sub.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]:
-                        if f.is_file() and _is_safe_artifact_path(f):
-                            artifacts.append({
-                                "name": f.name,
-                                "size_bytes": f.stat().st_size,
-                                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                                "path": str(f),
-                                "type": f.suffix.lstrip(".").lower() or "txt",
-                                "parent": sub.name
-                            })
-                        if len(artifacts) >= limit:
-                            break
-                if len(artifacts) >= limit:
-                    break
-        except Exception:
-            pass
-
-    return {"artifacts": artifacts, "count": len(artifacts)}
+async def list_artifacts(request: Request, limit: int = Query(50, ge=1, le=100)):
+    """List real files from the narrow BACH export root for registered devices."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import catalog, ArtifactUnavailable
+    try:
+        return catalog(limit)
+    except ArtifactUnavailable:
+        return {"availability": "unavailable", "reason": "export_directory_unreadable",
+                "source": "bach_exports", "artifacts": [], "count": 0}
 
 
 @router.get("/artifacts/content")
-async def get_artifact_content(path: str = Query(...)):
-    """Liest den Text-/Markdown-Inhalt eines Artefakts sicher aus."""
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if not _is_safe_artifact_path(p):
-        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
-
+async def get_artifact_content(request: Request, artifact_id: str = Query(...)):
+    """Preview UTF-8 text from a catalogued file without exposing a local path."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import read_artifact, TEXT_SUFFIXES, ArtifactUnavailable
     try:
-        content = p.read_text(encoding="utf-8", errors="ignore")
-        return {
-            "name": p.name,
-            "path": str(p),
-            "size": len(content),
-            "content": content[:50000],  # Erste 50k Zeichen zur Vorschau
-            "truncated": len(content) > 50000
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lesefehler: {e}")
+        content, item = read_artifact(artifact_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Artefakt nicht gefunden")
+    except ArtifactUnavailable:
+        raise HTTPException(status_code=503, detail="Exportquelle nicht verfügbar")
+    if "." + item["type"] not in TEXT_SUFFIXES:
+        raise HTTPException(status_code=415, detail="Vorschau für diesen Dateityp nicht verfügbar")
+    text = content.decode("utf-8", errors="replace")
+    return {"id": artifact_id, "name": item["name"], "size": len(content),
+            "content": text[:50000], "truncated": len(text) > 50000}
 
 
 @router.get("/artifacts/download")
-async def download_artifact(path: str = Query(...)):
-    """Ermoeglicht den sicheren 1-Klick-Download eines Artefakts."""
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if not _is_safe_artifact_path(p):
-        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
-    return FileResponse(p, filename=p.name)
+async def download_artifact(request: Request, artifact_id: str = Query(...)):
+    """Download a verified, catalogued file after device authorization."""
+    _require_memory_device(request)
+    from urllib.parse import quote
+    from fastapi.responses import Response
+    from gui.api.artifact_catalog import read_artifact, content_type, ArtifactUnavailable
+    try:
+        content, item = read_artifact(artifact_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Artefakt nicht gefunden")
+    except ArtifactUnavailable:
+        raise HTTPException(status_code=503, detail="Exportquelle nicht verfügbar")
+    return Response(
+        content=content, media_type=content_type(item),
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(item["name"]),
+                 "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2206,104 +2218,32 @@ async def toggle_memory_lesson(lesson_id: int):
 
 @router.get("/domains/installed")
 async def get_installed_domains():
-    """Scant installierte Fachmodule aus OneDrive und lokale Software."""
-    domains = []
-    base_dir = Path(r"C:\Users\User\OneDrive\.TOPICS\.AI\.MODULES\.DOMAINS")
-    icon_map = {
-        "ai-media-editor": "🎬",
-        "anonymizer": "🎭",
-        "clip-storyboard-director": "🎞️",
-        "doc-services": "📄",
-        "ellmos-market-data": "📈",
-        "foerderplaner": "🩺",
-        "law-checker": "⚖️",
-        "media-editor-core": "🎥",
-        "paveman": "🛣️",
-        "report-forge": "📑",
-        "steuer-assistent": "💰",
-        "steuer-suite": "🏛️",
-        "worksheet-generator": "📝",
-    }
-    desc_map = {
-        "ai-media-editor": "Multi-Track Video, KI-Schnitt, B-Roll & Waveform-Pipeline",
-        "anonymizer": "DSGVO-konforme Anonymisierung von Klientenberichten & Texten",
-        "clip-storyboard-director": "Szenen- und Storyboard-Planung fuer Medienproduktionen",
-        "doc-services": "PDF-, OCR-, Markdown- und Dokumentenkonvertierungsdienste",
-        "ellmos-market-data": "Echtzeit- und historische Marktdatenanalyse fuer Finanzen",
-        "foerderplaner": "Therapeutische Foerderplanung, Diagnostik & Zielvereinbarungen",
-        "law-checker": "Juristische Paragraphen- und Urteilspruefung (BGB, SGB, StGB)",
-        "media-editor-core": "High-Performance Video-Rendering-Kern fuer Windows & Mac",
-        "paveman": "Strassen- und Verkehrsdaten-Analysewerkzeug",
-        "report-forge": "Automatisierte Generierung formalisierter Foerder- und Gutachterberichte",
-        "steuer-assistent": "Automatisierte Belegpruefung, EStG-Kategorisierung & EUR",
-        "steuer-suite": "Vollstaendige Steuererklaerungs- und Bilanzsuite",
-        "worksheet-generator": "Paedagogische Arbeitsblatt- und Uebungsblatt-Generierung",
-    }
-    if base_dir.exists():
-        for d in sorted(base_dir.iterdir()):
-            if d.is_dir() and not d.name.startswith("."):
-                name = d.name
-                readme = d / "README.md"
-                has_readme = readme.exists()
-                domains.append({
-                    "id": name,
-                    "name": name.replace("-", " ").title(),
-                    "folder": str(d),
-                    "icon": icon_map.get(name, "📦"),
-                    "description": desc_map.get(name, "Fachmodul fuer spezifische Domaenenprozesse"),
-                    "status": "ready",
-                    "type": "fachmodul",
-                    "has_readme": has_readme
-                })
-    # Zusaetzliche Domänen aus repos
-    repo_domains = [
-        {"id": "ati", "name": "ATI Entwickler", "icon": "🛠️", "description": "Einheitliche Taskdatenbank & Code-Workbench", "status": "active", "type": "developer"},
-        {"id": "theodor-steuer", "name": "Theodor Steuer", "icon": "⚖️", "description": "Steuer-Assistent & Elster-Schnittstelle", "status": "active", "type": "tax"},
-        {"id": "gesundheit", "name": "Gesundheit & Foerderung", "icon": "🩺", "description": "Klientenakte, Verlauf & Psychologie", "status": "active", "type": "health"},
-    ]
-    for rd in repo_domains:
-        if not any(x["id"] == rd["id"] for x in domains):
-            domains.append(rd)
-    return {"domains": domains, "total": len(domains)}
+    """Public manifest inventory; installed/runtime state needs separate evidence."""
+    from gui.api.domain_catalog import discover_domains
 
+    return discover_domains()
 
 @router.get("/artefakte")
-async def get_artefakte():
-    """Liefert generierte Artefakte, Dokumente und Exporte."""
-    artefakte = []
-    # 1. Antigravity Brain Artefakte
-    brain_dir = Path(r"C:\Users\User\.gemini\antigravity-cli\brain\c40ce54b-0d3e-4015-9de5-d90d0d16364e")
-    if brain_dir.exists():
-        for f in brain_dir.iterdir():
-            if f.is_file() and f.suffix in [".md", ".html", ".svg", ".json", ".txt"]:
-                artefakte.append({
-                    "id": f.stem,
-                    "filename": f.name,
-                    "title": f.stem.replace("_", " ").title(),
-                    "path": str(f),
-                    "size_bytes": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                    "type": f.suffix.lstrip(".").upper(),
-                    "category": "Brain-Artefakt",
-                    "icon": "📄" if f.suffix == ".md" else ("🌐" if f.suffix == ".html" else "📊")
-                })
-    # 2. Repo-Architektur-Docs
-    repo_docs = Path(r"C:\_Local_DEV\repos\bach\docs\architecture")
-    if repo_docs.exists():
-        for f in repo_docs.iterdir():
-            if f.is_file() and f.suffix == ".md":
-                artefakte.append({
-                    "id": f.stem,
-                    "filename": f.name,
-                    "title": f.stem.replace("_", " ").title(),
-                    "path": str(f),
-                    "size_bytes": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                    "type": "MD",
-                    "category": "Architektur",
-                    "icon": "🏛️"
-                })
-    return {"artefakte": artefakte, "count": len(artefakte)}
+async def get_artefakte(request: Request):
+    """Compatibility DTO for the Astro artifact page, backed by the same safe catalog."""
+    _require_memory_device(request)
+    from gui.api.artifact_catalog import catalog, ArtifactUnavailable
+    try:
+        data = catalog(100)
+    except ArtifactUnavailable:
+        data = {"availability": "unavailable", "reason": "export_directory_unreadable",
+                "artifacts": [], "count": 0}
+    artifacts = [
+        {"id": item["id"], "filename": item["name"], "title": item["name"],
+         "size_bytes": item["size_bytes"], "modified": item["modified"],
+         "type": item["type"].upper(),
+         "category": "BACH Exportverzeichnis · Herkunft ungeprüft",
+         "icon": "💾" if item["type"] in {"json", "csv"} else "📄"}
+        for item in data["artifacts"]
+    ]
+    return {"availability": data["availability"], "reason": data.get("reason"),
+            "artefakte": artifacts, "count": len(artifacts),
+            "observed_at": data.get("observed_at")}
 
 
 @router.get("/agenten/teams")
@@ -2392,20 +2332,22 @@ async def get_ocean_module_map():
     """Liefert die Ocean-Modulschaltplan-Architektur aus ellmos-ai."""
     return {
         "title": "Ocean Architektur- & Modulschaltplan",
-        "version": "2.4.0",
+        "source": "architecture_examples",
+        "live_discovery": False,
+        "observed_at": None,
         "core_components": [
-            {"id": "trithon", "name": "Trithon", "type": "runtime_engine", "status": "active", "icon": "🔱", "role": "Asynchroner Prozess- und Event-Loop Core"},
-            {"id": "muschelgrund", "name": "Muschelgrund", "type": "persistence", "status": "active", "icon": "🐚", "role": "Zentraler verteilter State & Storage Hub"},
-            {"id": "salt", "name": "Salt", "type": "cryptography", "status": "active", "icon": "🧂", "role": "Kryptografische Signierung, Tokens & Zero-Trust Auth"},
-            {"id": "ellmos-homebase", "name": "Ellmos HomeBase", "type": "mcp_hub", "status": "active", "icon": "🏠", "role": "Memory, Stigmergy & Schwarm-Orchestrierung"},
-            {"id": "ellmos-controlcenter", "name": "ControlCenter", "type": "governance", "status": "active", "icon": "🎛️", "role": "Profile, Bundles & Permission Governance"},
-            {"id": "ellmos-servercommander", "name": "ServerCommander", "type": "ops", "status": "active", "icon": "🖥️", "role": "Deployment, Mail, Cluster-Logs & Health"},
-            {"id": "ellmos-filecommander", "name": "FileCommander", "type": "filesystem", "status": "active", "icon": "📂", "role": "Cloud-Lock-sichere Dateiverwaltung & OCR"},
-            {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "active", "icon": "💻", "role": "AST-Analyse, Import-Diagnose & Refactoring"}
+            {"id": "trithon", "name": "Trithon", "type": "system", "status": "unknown", "icon": "🔱", "role": "Instanz- und Verbundkonfiguration: Vertrag in Klärung"},
+            {"id": "muschelgrund", "name": "Muschelgrund", "type": "system", "status": "unknown", "icon": "🐚", "role": "Aufgaben- und Speicherort: Vertrag in Klärung"},
+            {"id": "salt", "name": "Salt", "type": "system", "status": "unknown", "icon": "🧂", "role": "Lease- und Claim-Vertrag: Prüfung ausstehend"},
+            {"id": "ellmos-homebase", "name": "Ellmos HomeBase", "type": "mcp_hub", "status": "unknown", "icon": "🏠", "role": "Memory- und Orchestrierungsanbindung: Prüfung ausstehend"},
+            {"id": "ellmos-controlcenter", "name": "ControlCenter", "type": "governance", "status": "unknown", "icon": "🎛️", "role": "Governance-Anbindung: Prüfung ausstehend"},
+            {"id": "ellmos-servercommander", "name": "ServerCommander", "type": "ops", "status": "unknown", "icon": "🖥️", "role": "Betriebsanbindung: Prüfung ausstehend"},
+            {"id": "ellmos-filecommander", "name": "FileCommander", "type": "filesystem", "status": "unknown", "icon": "📂", "role": "Dateidienst-Anbindung: Prüfung ausstehend"},
+            {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "unknown", "icon": "💻", "role": "Codeanalyse-Anbindung: Prüfung ausstehend"}
         ],
         "subsystems": [
-            {"name": "Nemofold", "category": "Workflow-Lernen", "status": "ready", "description": "Lernen von Workflows, Schlagen von Ketten & Step-Ketten"},
-            {"name": "Hermes", "category": "Skill-Destillation", "status": "ready", "description": "Extraktion wiederverwendbarer Skills aus Chat-Sessions"}
+            {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
+            {"name": "Hermes", "category": "Skill-Destillation", "status": "unknown", "description": "Konzept: freigegebene Skills aus Dialogen"}
         ]
     }
 
@@ -2432,7 +2374,8 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
             external_id TEXT,
             created_at TEXT,
             updated_at TEXT,
-            dist_type TEXT
+            dist_type TEXT,
+            event_origin TEXT NOT NULL DEFAULT 'unknown'
         )
     """)
     conn.execute("""
@@ -2458,7 +2401,8 @@ async def get_calendar_events(
     conn = _get_conn()
     conn.row_factory = sqlite3.Row
     try:
-        _ensure_calendar_tables(conn)
+        # Legacy databases may lack event_origin. Reading never migrates them.
+        # Distribution type is not evidence of a user's or system's authorship.
         query = "SELECT * FROM assistant_calendar WHERE 1=1"
         params = []
 
@@ -2466,6 +2410,15 @@ async def get_calendar_events(
             if view == "day":
                 query += " AND start_datetime BETWEEN ? AND ?"
                 params.extend([f"{date} 00:00:00", f"{date} 23:59:59"])
+            elif view == "week":
+                try:
+                    selected = datetime.strptime(date, "%Y-%m-%d")
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail="Ungültiges Kalenderdatum") from exc
+                monday = selected - timedelta(days=selected.weekday())
+                next_monday = monday + timedelta(days=7)
+                query += " AND start_datetime >= ? AND start_datetime < ?"
+                params.extend([monday.strftime("%Y-%m-%d 00:00:00"), next_monday.strftime("%Y-%m-%d 00:00:00")])
             elif view == "month" and len(date) >= 7:
                 month_prefix = date[:7]
                 query += " AND start_datetime LIKE ?"
@@ -2476,25 +2429,35 @@ async def get_calendar_events(
                 params.append(f"{year_prefix}%")
 
         query += " ORDER BY start_datetime ASC"
-        rows = conn.execute(query, params).fetchall()
-        events = [dict(r) for r in rows]
+        try:
+            rows = conn.execute(query, params).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table: assistant_calendar" not in str(exc):
+                raise
+            rows = []
+        events = []
+        for row in rows:
+            event = dict(row)
+            event["origin"] = event.get("event_origin") if event.get("event_origin") in {"user", "system"} else "unknown"
+            events.append(event)
 
         if include_routines:
             try:
-                r_rows = conn.execute("SELECT id, name, frequency, category, next_due FROM household_routines WHERE is_active = 1").fetchall()
+                r_rows = conn.execute("SELECT id, name, frequency, category, next_due FROM household_routines WHERE is_active = 1 AND next_due IS NOT NULL AND TRIM(next_due) != ''").fetchall()
                 for r in r_rows:
                     events.append({
                         "id": f"routine_{r['id']}",
                         "title": r["name"],
                         "event_type": "routine",
-                        "start_datetime": r["next_due"] or f"{date or datetime.now().strftime('%Y-%m-%d')} 08:00:00",
+                        "start_datetime": r["next_due"],
                         "end_datetime": None,
                         "location": r["category"],
                         "description": f"Lebensroutine: {r['frequency']} ({r['category']})",
                         "status": "aktiv",
                         "is_recurring": 1,
                         "recurrence_rule": r["frequency"],
-                        "is_routine": True
+                        "is_routine": True,
+                        "origin": "unknown",
                     })
             except Exception:
                 pass
@@ -2524,6 +2487,9 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
 
     conn = _get_conn()
     try:
+        existing = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistant_calendar'").fetchone()
+        if existing and "event_origin" not in {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)")}:
+            raise HTTPException(status_code=503, detail="Kalenderschema benötigt die additive Herkunftsmigration")
         _ensure_calendar_tables(conn)
         cursor = conn.cursor()
         now = datetime.now().isoformat()
@@ -2531,9 +2497,9 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
             INSERT INTO assistant_calendar (
                 title, event_type, start_datetime, end_datetime, location,
                 description, status, reminder_minutes, is_recurring,
-                recurrence_rule, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now))
+                recurrence_rule, created_at, updated_at, event_origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now, "user"))
         new_id = cursor.lastrowid
         conn.commit()
         return {"ok": True, "id": new_id, "title": title}
@@ -2560,115 +2526,29 @@ async def delete_calendar_event(event_id: int):
 
 @router.get("/system/cluster-cockpit")
 async def get_cluster_cockpit():
-    """Gibt den zusammenhängenden Status von Trithon, Muschelgrund, Salt & der Fackel zurück."""
-    pref = "compute"
-    try:
-        from hub.compute_lock import get_fackel_preference
-        pref = get_fackel_preference()
-    except Exception:
-        pass
+    """Read-only observations: owner, priority, compute report and capacity."""
+    from gui.api.cluster_status import build_cluster_cockpit
 
-    compute_active = False
-    try:
-        from hub.compute_lock import check_compute_active
-        compute_active = check_compute_active()
-    except Exception:
-        compute_active = False
-
-    stand = {
-        "messbar": False,
-        "kapazitaet_gib": 0,
-        "belegt_gib": 0,
-        "modelle": [],
-        "belegt_fackeln": 0,
-        "frei_fackeln": 10,
-        "quelle": "unbekannt"
-    }
-    try:
-        from hub._services import fackel
-        stand = fackel.stand()
-    except Exception:
-        pass
-
-    models = stand.get("modelle", [])
-    flame_animated = bool(models) and not compute_active
-    current_holder = models[0] if models else ("Rechenjobs (Compute-Lock aktiv)" if compute_active else "Unbekannt")
-
-    competitors = []
-    if compute_active:
-        competitors.append("Rechenjobs (GPU/MLX Compute aktiv)")
-    if pref == "compute":
-        competitors.append("Compute-Vorrang gesetzt")
-    else:
-        competitors.append("Ollama-Vorrang gesetzt")
-
-    conn = _get_conn()
-    tasks_count = 0
-    user_tasks_count = 0
-    try:
-        tasks_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        user_tasks_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE assigned_to = 'user'").fetchone()[0]
-    except Exception:
-        pass
-    finally:
-        conn.close()
-
-    return {
-        "trithon": {
-            "status": "unknown",
-            "name": "Trithon Engine",
-            "icon": "🔱",
-            "label": "Servermodus nicht geprüft",
-            "cluster_host": "100.119.69.90:8000",
-            "endpoints": [":8000 (Astro/API)", ":8081 (Control)", ":11434 (Ollama)"]
-        },
-        "muschelgrund": {
-            "status": "unknown",
-            "name": "Muschelgrund",
-            "icon": "🐚",
-            "label": "Zentralisierte Task- & Ticketline",
-            "total_tasks": tasks_count,
-            "user_tasks": user_tasks_count,
-            "synced": None
-        },
-        "salt": {
-            "status": "unknown",
-            "name": "Salt Auth",
-            "icon": "🧂",
-            "label": "Server Lease (Token-Validiert)",
-            "lease_status": "Unbekannt",
-            "client": "ASUS-GEI"
-        },
-        "fackel": {
-            "preference": pref,
-            "flame_animated": flame_animated,
-            "compute_active": compute_active,
-            "current_holder": current_holder,
-            "competitors": competitors,
-            "models_loaded": models,
-            "kapazitaet_gib": stand.get("kapazitaet_gib", 0),
-            "belegt_gib": stand.get("belegt_gib", 0),
-            "belegt_fackeln": stand.get("belegt_fackeln", 0),
-            "frei_fackeln": stand.get("frei_fackeln", 10),
-            "messbar": stand.get("messbar", False),
-            "quelle": stand.get("quelle", "unbekannt")
-        }
-    }
+    return build_cluster_cockpit(Path(BACH_DB))
 
 
 @router.post("/system/fackel")
-async def toggle_fackel(payload: Dict[str, Any] = Body(default={})):
-    """Schaltet die Fackel-Priorität zwischen Ollama und Compute um."""
-    new_pref = payload.get("preference")
+async def set_fackel_priority(payload: Dict[str, Any] = Body(default={})):
+    """Set resource priority explicitly; this does not acquire the Fackel."""
+    requested = payload.get("preference")
+    if requested not in ("compute", "ollama"):
+        raise HTTPException(status_code=400, detail="Vorrang muss compute oder ollama sein")
     try:
         from hub.compute_lock import get_fackel_preference, set_fackel_preference
-        if not new_pref:
-            cur = get_fackel_preference()
-            new_pref = "compute" if cur == "ollama" else "ollama"
-        set_fackel_preference(new_pref)
-        return {"ok": True, "preference": new_pref}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "preference": new_pref or "compute"}
+
+        set_fackel_preference(requested, quelle="gui")
+        observed = get_fackel_preference(migrate=False)
+        if observed != requested:
+            raise RuntimeError("priority_readback_mismatch")
+        return {"ok": True, "preference": observed, "ownership_changed": False}
+    except Exception:
+        logger.exception("Fackel priority persistence/readback failed")
+        raise HTTPException(status_code=503, detail="Vorrang konnte nicht bestätigt werden")
 
 
 @router.post("/agenten/teams/{team_id}/beseelen")

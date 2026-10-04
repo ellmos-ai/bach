@@ -45,14 +45,15 @@ class OceanMemoryAuthTest(unittest.TestCase):
                 unified_api._require_memory_device(request_with_token(" fixture-token "))
             self.assertEqual(db_path.stat().st_mtime_ns, before)
 
-    def test_middleware_protects_legacy_memory_routes(self):
+    def test_middleware_protects_private_memory_and_agent_studio_routes(self):
         middleware = server.DeviceAuthMiddleware(server.app)
 
         async def next_response(_request):
             return PlainTextResponse("ok")
 
         with patch.object(server, "validate_token", side_effect=lambda token: {"id": 1} if token == "active" else None):
-            for path in ("/api/memory/facts", "/api/memory/facts/1", "/api/gardener/search"):
+            for path in ("/api/memory/facts", "/api/memory/facts/1", "/api/gardener/search",
+                         "/api/agent-studio/blueprints", "/api/agent-studio/living"):
                 scope = {"type": "http", "method": "GET", "path": path,
                          "headers": [], "query_string": b""}
                 missing = asyncio.run(middleware.dispatch(Request(scope), next_response))

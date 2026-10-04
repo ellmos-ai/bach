@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import subprocess
 import urllib.request
 
@@ -51,6 +52,8 @@ def _ollama_url() -> str:
 
 def _sysctl_bytes(name: str) -> int:
     """sysctl-Wert (in MB) als Bytes; 0 = nicht gesetzt oder nicht vorhanden."""
+    if sys.platform != "darwin":
+        return 0
     try:
         p = subprocess.run(["sysctl", "-n", name], capture_output=True,
                            text=True, timeout=5)
@@ -67,6 +70,8 @@ def _metal_bytes() -> int:
     Laufzeit nicht, und ein Subprozess je Abfrage waere Verschwendung.
     """
     global _metal_cache
+    if sys.platform != "darwin":
+        return 0
     if _metal_cache is not None:
         return _metal_cache
     _metal_cache = 0
@@ -90,6 +95,24 @@ def _ps_models() -> list[dict]:
             return json.load(r).get("models") or []
     except Exception:
         return []
+
+
+def probe_loaded_models() -> tuple[bool, list[str]]:
+    """Read Ollama's loaded models with an explicit connection result.
+
+    A transport or schema error is unknown, never a verified zero.
+    Model names are capacity observations, not hardware-holder identities.
+    """
+    try:
+        with urllib.request.urlopen(_ollama_url() + "/api/ps", timeout=5) as response:
+            payload = json.load(response)
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            return False, []
+        names = [model.get("name") for model in payload["models"]
+                 if isinstance(model, dict) and isinstance(model.get("name"), str)]
+        return True, names
+    except Exception:
+        return False, []
 
 
 def _ist_meins(geladen: str, modell: str) -> bool:

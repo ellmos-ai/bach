@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-10-01 | **Version:** 4.3.68 | **Review:** 2026-10-01 (Daily Care & Dev Check)
+**Stand:** 2026-10-03 | **Version:** 4.3.69 | **Review:** 2026-10-03 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -19,6 +19,38 @@
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-10-03 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20261003_164801` für Partner `gemini` im Silent-Modus gestartet und via `session end` sauber beendet (7 Änderungen im Directory-Scan erfasst, Auto-Snapshot erstellt, Continuation-Context intakt, 0 offene Sessions).
+  - Working Memory Cleanup: 0 abgelaufene Einträge; 182 Einträge analysiert (18 <7d, 7 7-14d, 157 >14d).
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (PRs #185-#189 integriert: Ocean GUI deployment, Agent Studio GET routes read only, honest session summaries, Compare-Race worker tree bounds & guarded SDK adapter).
+- **Fehlerbehebung & CI-Härtung:**
+  - *Test-Regression in `test_hook_provider_wiring.py` behoben:* Assert auf `self._get_memory_hook_context(text, chat_id)` angepasst, sodass die Profile-Guard-Bedingung `hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)` aus Commit `3b6609c` valide geprüft wird.
+  - *Hermetische Test-Isolation & TestLibraryAPI in `conftest.py` gehärtet:* Pfad-Fehlauflösung von `system_dir` in `_ensure_distribution_manifest` korrigiert (Verdopplung von `system/` entfernt) und Bereitstellung der `schema.sql`-Tabellen für isolierte Testläufe verankert, wodurch `TestLibraryAPI` und In-Process-API-Aufrufe (`bach_api.task`, `bach_api.memory`, `bach_api.prompt`, `app.execute`) 100% deterministisch grün laufen.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+  - Topologie-Audit via `system-explorer` liefert 100% fehlerfreie Evidenz (0 Drift).
+- **Task-Audit & Erledigung:**
+  - Tasks #1214 (Stale `.db-wal` Bereinigung in `system/data/`), #1204 & #1205 (Dead-Code `self.webchat_url` auf Port 8080 verifiziert entfernt/auf `/chat` konsolidiert), #1202 (`chat.html:738` mit `main-header`-Klasse verifiziert) und #1134 (Memory-Archiv geprüft) erledigt.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **Testsuite-Vollprüfung (100% grün):**
+  - 349/349 Tests bestanden in 251.44s (Core-Suite inkl. TestLibraryAPI, Provider- & Wiring-Suite, Upgrade-Suite, Side-Effects-Suite).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Backup: Frisches lokales Backup `userdata_2026-10-03_171021.zip` (0.81 MB) erfolgreich erstellt.
+  - Dokumentations-Report `Doc_Update_Report_2026-10-03_16-49.md` erstellt.
+- **OpenClaw Competitive Watch (Stand v2026.9.7):**
+  - Stand `v2026.9.7` (30. September 2026) verifiziert (Stabilität für lange Konversationen, OpenAI Agents API, "Sign in with ChatGPT" Beta, erweiterte Update-Backups mit Rollback-Schutz, Desktop/Mobile-Kontinuität). Relevanz für BACHs Session-Continuation Snapshots, atomare Release- & Rollback-Grenzen (`distribution_releases` v3.14.0) und Task #1118 (OPS-RUN-001) bestätigt.
 ## GUI-Dashboard-Korrektur 2026-10-03 (Task #1693, Review ausstehend)
 
 - Die Astro-Startseite zählt offene Tasks über einen gefilterten API-Gesamtwert vor der Pagination, zeigt die kanonische Zuständigkeit und behandelt Ladefehler mit einem erneuten Versuch.

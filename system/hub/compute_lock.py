@@ -460,7 +460,7 @@ def _record_fackel_activity(
         log.warning("Could not record fackel activity: %s", e)
 
 
-def get_fackel_preference(path: Optional[str] = None) -> str:
+def get_fackel_preference(path: Optional[str] = None, *, migrate: bool = True) -> str:
     """Return the current Fackel (resource priority) preference.
 
     Order of resolution:
@@ -502,6 +502,8 @@ def get_fackel_preference(path: Optional[str] = None) -> str:
                 data = json.loads(legacy.read_text(encoding="utf-8"))
                 legacy_pref = str(data.get("preference", "")).lower().strip()
                 if legacy_pref in VALID_FACKEL_PREFERENCES:
+                    if not migrate:
+                        return legacy_pref
                     # One-time migration to new location (atomic write)
                     try:
                         f.parent.mkdir(parents=True, exist_ok=True)

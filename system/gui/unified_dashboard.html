@@ -375,7 +375,7 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title" id="artifact-preview-title">Artefakt-Vorschau</h2>
-                    <a id="artifact-download-btn" class="btn btn-sm" style="display:none; text-decoration:none;" href="#">📥 Download</a>
+                    <button id="artifact-download-btn" class="btn btn-sm" type="button" style="display:none;">📥 Download</button>
                 </div>
                 <div id="artifact-preview-body" class="code-preview">Wähle links ein Artefakt aus.</div>
             </div>
@@ -680,39 +680,89 @@
         }
     }
 
+    function artifactAuthHeaders() {
+        const token = localStorage.getItem('bach_device_token');
+        if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
+        return { Authorization: 'Bearer ' + token };
+    }
+
+    async function artifactRequest(url) {
+        const res = await fetch(url, { headers: artifactAuthHeaders(), cache: 'no-store' });
+        if (res.status === 401 || res.status === 403) {
+            throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res;
+    }
+
     async function loadArtifacts() {
         const listEl = document.getElementById('artifacts-list');
+        listEl.textContent = 'Lade Exportverzeichnis…';
         try {
-            const res = await fetch('/api/artifacts?limit=30');
-            const data = await res.json();
-            let html = '<ul style="list-style:none; font-size:0.85rem;">';
-            (data.artifacts || []).forEach(a => {
-                html += `<li style="padding:8px; border-bottom:1px solid #334155; cursor:pointer;" onclick="previewArtifact('${encodeURIComponent(a.path)}', '${a.name}')">
-                    <strong>📄 ${a.name}</strong> <span class="badge badge-cli">${a.type}</span>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${(a.size_bytes / 1024).toFixed(1)} KB | ${a.modified}</div>
-                </li>`;
+            const data = await (await artifactRequest('/api/artifacts?limit=30')).json();
+            if (!Array.isArray(data.artifacts)) throw new Error('Ungültige Katalogantwort');
+            listEl.replaceChildren();
+            if (data.availability !== 'available') {
+                listEl.textContent = 'Exportverzeichnis nicht verfügbar.';
+                return;
+            }
+            if (!data.artifacts.length) {
+                listEl.textContent = 'Keine unterstützten Dateien im Exportverzeichnis.';
+                return;
+            }
+            const list = document.createElement('ul');
+            list.style.cssText = 'list-style:none;font-size:0.85rem';
+            data.artifacts.forEach(item => {
+                const row = document.createElement('li');
+                row.style.cssText = 'padding:8px;border-bottom:1px solid #334155';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.style.cssText = 'width:100%;text-align:left;background:none;border:0;color:inherit;cursor:pointer';
+                button.textContent = (['json', 'csv'].includes(item.type) ? '💾 ' : '📄 ') + item.name +
+                    ' · ' + (Number(item.size_bytes) / 1024).toFixed(1) + ' KB · Herkunft ungeprüft';
+                button.addEventListener('click', () => previewArtifact(item));
+                row.append(button);
+                list.append(row);
             });
-            html += '</ul>';
-            listEl.innerHTML = html;
-        } catch (e) {
-            listEl.innerHTML = 'Fehler: ' + e.message;
+            listEl.append(list);
+        } catch (error) {
+            listEl.textContent = 'Artefakte nicht verfügbar: ' + error.message;
         }
     }
 
-    async function previewArtifact(encodedPath, name) {
+    async function previewArtifact(item) {
         const titleEl = document.getElementById('artifact-preview-title');
         const bodyEl = document.getElementById('artifact-preview-body');
         const downloadBtn = document.getElementById('artifact-download-btn');
-        titleEl.innerText = 'Vorschau: ' + name;
-        bodyEl.innerText = 'Lade Vorschau...';
+        titleEl.textContent = 'Vorschau: ' + item.name;
+        bodyEl.textContent = 'Lade Vorschau…';
+        downloadBtn.style.display = 'none';
+        downloadBtn.onclick = async event => {
+            event.preventDefault();
+            try {
+                const res = await artifactRequest('/api/artifacts/download?artifact_id=' + encodeURIComponent(item.id));
+                const url = URL.createObjectURL(await res.blob());
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = item.name;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (error) {
+                bodyEl.textContent = 'Download fehlgeschlagen: ' + error.message;
+            }
+        };
+        downloadBtn.removeAttribute('href');
+        downloadBtn.style.display = 'inline-block';
+        if (!['md', 'txt', 'json', 'csv'].includes(item.type)) {
+            bodyEl.textContent = 'Für dieses Format gibt es keine Textvorschau.';
+            return;
+        }
         try {
-            const res = await fetch(`/api/artifacts/content?path=${encodedPath}`);
-            const data = await res.json();
-            bodyEl.innerText = data.content || '(Leerer Inhalt)';
-            downloadBtn.style.display = 'inline-block';
-            downloadBtn.href = `/api/artifacts/download?path=${encodedPath}`;
-        } catch (e) {
-            bodyEl.innerText = 'Fehler beim Laden: ' + e.message;
+            const data = await (await artifactRequest('/api/artifacts/content?artifact_id=' + encodeURIComponent(item.id))).json();
+            bodyEl.textContent = data.content || '(Leere Datei)';
+            if (data.truncated) bodyEl.textContent += '\n\n[Vorschau gekürzt]';
+        } catch (error) {
+            bodyEl.textContent = 'Vorschau nicht verfügbar: ' + error.message;
         }
     }
 

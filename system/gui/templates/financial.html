@@ -9,10 +9,14 @@
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         .financial-content {
-            padding: 1.5rem;
+            padding: clamp(0.75rem, 2vw, 1.5rem);
             width: 100%;
+            max-width: 1440px;
+            min-width: 0;
             margin: 0 auto;
         }
+        .financial-content .tab-content, .financial-content .section,
+        .financial-content .stat-card { min-width: 0; }
 
         .page-title {
             margin: 0 0 0.5rem 0;
@@ -26,7 +30,7 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
@@ -43,18 +47,15 @@
             font-size: 1.75rem;
             font-weight: bold;
             color: var(--accent-blue);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: anywhere;
+            font-size: clamp(1.1rem, 4vw, 1.75rem);
         }
 
         .stat-label {
             color: var(--text-muted, #888);
             font-size: 0.85rem;
             margin-top: 0.5rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: anywhere;
         }
 
         .stat-card.steuer {
@@ -88,6 +89,8 @@
             border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 1.5rem;
+            min-width: 0;
+            overflow-x: auto;
         }
 
         .section h2 {
@@ -98,6 +101,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
 
         .data-table {
@@ -183,6 +188,8 @@
             align-items: center;
             padding: 1rem;
             border-bottom: 1px solid var(--border-color, #333);
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
 
         .subscription-card:last-child {
@@ -363,6 +370,9 @@
             display: flex;
             border-bottom: 1px solid var(--border-color, #333);
             margin-bottom: 1rem;
+            max-width: 100%;
+            overflow-x: auto;
+            scrollbar-width: thin;
         }
 
         .tab {
@@ -370,6 +380,8 @@
             cursor: pointer;
             border-bottom: 2px solid transparent;
             color: var(--text-muted, #888);
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
 
         .tab:hover {
@@ -387,6 +399,15 @@
 
         .tab-content.active {
             display: block;
+        }
+        .report-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; margin-top: 1.5rem; }
+        .report-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        #report-preview-pane, #report-preview-content, #email-view-body { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+        @media (max-width: 700px) {
+            .financial-content { padding: 0.75rem; }
+            .report-options-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+            .account-actions { flex-wrap: wrap; }
+            .section { padding: 1rem; }
         }
     </style>
 </head>
@@ -493,7 +514,7 @@
         <div class="tab-content" id="tab-subscriptions">
             <div class="section">
                 <h2>
-                    Abonnements & Vertraege
+                    Abonnements & Verträge
                     <button class="btn btn-primary btn-sm" onclick="showAddContractModal()">+ Neu</button>
                 </h2>
                 <div id="subscriptions">Lade...</div>
@@ -601,7 +622,7 @@
                     Bankkonten
                     <button class="btn btn-primary btn-sm" onclick="showAddBankAccountModal()">+ Neues Konto</button>
                 </h2>
-                <p class="subtitle" style="margin-top: -0.5rem;">Verwalte deine Bankkonten fuer die Finanzverwaltung</p>
+                <p class="subtitle" style="margin-top: -0.5rem;">Verwalte deine Bankkonten für die Finanzverwaltung</p>
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -675,8 +696,8 @@
             <div class="section">
                 <h2>📊 Financial Report Generator</h2>
                 <div class="card" style="margin-bottom: 2rem; padding: 1.5rem;">
-                    <p>Erstelle professionelle Berichte ueber deine Einnahmen, Ausgaben und Abonnements.</p>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem;">
+                    <p>Erstelle Berichte über deine Einnahmen, Ausgaben und Abonnements.</p>
+                    <div class="report-options-grid">
                         <div>
                             <h3>Optionen</h3>
                             <div class="form-group" style="margin-bottom: 1rem;">
@@ -698,7 +719,7 @@
                                     <option value="csv">CSV (Excel-kompatibel)</option>
                                 </select>
                             </div>
-                            <div style="display: flex; gap: 0.5rem;">
+                            <div class="report-actions">
                                 <button class="btn btn-primary" onclick="generateReportFromTab()">Report
                                     generieren</button>
                                 <button class="btn btn-secondary" onclick="previewReport()">Vorschau</button>
@@ -708,7 +729,7 @@
                             style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 1rem; border: 1px solid var(--border);">
                             <h4 style="margin-top:0;">Vorschau</h4>
                             <div id="report-preview-content" style="font-size: 0.85rem; color: var(--text-muted);">
-                                Waehle Optionen und klicke auf Vorschau...
+                                Wähle Optionen und klicke auf Vorschau …
                             </div>
                         </div>
                     </div>
@@ -1016,7 +1037,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Naechste Zahlung</label>
+                    <label>Nächste Zahlung</label>
                     <input type="date" id="contract-naechste_zahlung">
                 </div>
                 <div class="form-actions">
@@ -1285,7 +1306,7 @@
                 }
 
                 tbody.innerHTML = data.emails.map(email => `
-                    <tr ondblclick="showEmailContent(${email.id})" style="cursor: pointer;" title="Doppelklick fuer Inhalt">
+                    <tr ondblclick="showEmailContent(${email.id})" style="cursor: pointer;" title="Doppelklick für Inhalt">
                         <td>
                             <strong>${escapeHtml(email.provider_name)}</strong>
                             ${email.steuer_relevant ? '<span class="badge steuer">Steuer</span>' : ''}
@@ -1315,7 +1336,7 @@
                     const cRes = await fetch(`${API_BASE}/contracts`);
                     const cData = await cRes.json();
                     if (cData.contracts && cData.contracts.length > 0) {
-                        html += '<h3 style="margin-bottom:0.5rem;">Vertraege (fin_contracts)</h3>';
+                        html += '<h3 style="margin-bottom:0.5rem;">Verträge (fin_contracts)</h3>';
                         html += cData.contracts.map(c => `
                             <div class="subscription-card">
                                 <div class="sub-info">
@@ -1324,7 +1345,7 @@
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 1rem;">
                                     <div class="sub-price">${c.betrag ? c.betrag.toFixed(2) : '?'} ${c.waehrung || 'EUR'}</div>
-                                    <div style="font-size:0.75rem;color:var(--text-muted);">Naechste: ${c.naechste_zahlung || '-'}</div>
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Nächste: ${c.naechste_zahlung || '-'}</div>
                                     <div style="display: flex; gap: 0.25rem;">
                                         <button class="btn btn-sm btn-secondary" onclick="editContract(${c.id})">Edit</button>
                                         <button class="btn btn-sm btn-danger" onclick="deleteContract(${c.id})">X</button>
@@ -1476,7 +1497,7 @@
                 const tbody = document.getElementById('bankkonten-table');
 
                 if (!data.accounts || data.accounts.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5">Keine Bankkonten hinterlegt. Klicke auf "+ Neues Konto" um ein Konto hinzuzufuegen.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5">Keine Bankkonten hinterlegt. Klicke auf "+ Neues Konto", um ein Konto hinzuzufügen.</td></tr>';
                     return;
                 }
 
@@ -1583,7 +1604,7 @@
                 document.getElementById('stat-credits-monthly').textContent = monthlyPayments.toLocaleString('de-DE', {style: 'currency', currency: 'EUR'});
 
                 if (!data.credits || data.credits.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7">Keine Kredite hinterlegt. Klicke auf "+ Neuer Kredit" um einen Kredit hinzuzufuegen.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7">Keine Kredite hinterlegt. Klicke auf "+ Neuer Kredit", um einen Kredit hinzuzufügen.</td></tr>';
                     return;
                 }
 

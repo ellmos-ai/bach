@@ -1,5 +1,5 @@
 ---
-// src/pages/agenten/sessions.astro - Sessions & Protokolle (Rohberichte & Strukturierte Berichte)
+// src/pages/agenten/sessions.astro - Sitzungsübersicht mit belegten Zusammenfassungen
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
 
@@ -8,7 +8,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="page-header">
       <div class="header-content">
         <h1><span class="icon">📜</span> Sessions & Protokolle</h1>
-        <p class="subtitle">Einsicht in Dialog-Sitzungen, Rohberichte und strukturierte Ergebnisberichte</p>
+        <p class="subtitle">Einsicht in gespeicherte Sitzungszusammenfassungen</p>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary" onclick="loadSessions()">🔄 Aktualisieren</button>
@@ -17,7 +17,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     <!-- Tab Bar -->
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="rohberichte">📜 Rohberichte & Transkripte</button>
+      <button class="tab-btn active" data-tab="rohberichte">📜 Sitzungsübersicht</button>
       <button class="tab-btn" data-tab="ergebnisberichte">📑 Strukturierte Ergebnisberichte</button>
     </div>
 
@@ -25,7 +25,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="tab-pane active" id="pane-rohberichte">
       <div class="glass-card">
         <h3>Historische Dialog- und Agenten-Sitzungen</h3>
-        <p class="card-desc">Lückenlose Protokolle aus <code>memory_sessions</code></p>
+        <p class="card-desc">Zeitpunkte und Zusammenfassungen aus <code>memory_sessions</code>; vollständige Transkripte sind hier nicht angebunden.</p>
         <div id="sessions-list">
           <p class="loading-state">Lade Sitzungen...</p>
         </div>
@@ -36,34 +36,25 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div class="tab-pane" id="pane-ergebnisberichte">
       <div class="glass-card">
         <h3>Meilensteine & Destillierte Zusammenfassungen</h3>
-        <p class="card-desc">Strukturierte Exporte und Lessons Learned</p>
+        <p class="card-desc">Für strukturierte Ergebnisberichte ist hier noch keine Datenquelle angebunden.</p>
         <div class="reports-grid">
           <div class="report-card">
-            <span class="report-badge">ARCHITEKTUR</span>
-            <h4>BACH & OCEAN Modular GUI Restrukturierung</h4>
-            <p>9-teiliges Menüsystem, Single Source of Truth und Kognitiver Schaltplan nach Baddeley.</p>
-            <div class="report-footer">
-              <span class="report-date">2026-10-03</span>
-              <a href="/artefakte" class="btn btn-sm btn-secondary">Zum Artefakt ↗</a>
-            </div>
+            <span class="report-badge">BEISPIEL</span>
+            <h4>Architekturbericht</h4>
+            <p>Beispielplatz für einen strukturierten Bericht. Kein gespeichertes Dokument verbunden.</p>
+            <div class="report-footer"><span class="report-date">Quelle nicht verbunden</span></div>
           </div>
           <div class="report-card">
-            <span class="report-badge">SECURITY</span>
-            <h4>Policy P-001 & Fail-Closed Guardrails Audit</h4>
-            <p>Zertifizierter Schutz gegen autonome Remote-Pushes und Erhalt von Revisions-Sperren.</p>
-            <div class="report-footer">
-              <span class="report-date">2026-10-02</span>
-              <a href="/governance" class="btn btn-sm btn-secondary">Governance ↗</a>
-            </div>
+            <span class="report-badge">BEISPIEL</span>
+            <h4>Sicherheitsbericht</h4>
+            <p>Beispielplatz für einen strukturierten Bericht. Kein gespeichertes Dokument verbunden.</p>
+            <div class="report-footer"><span class="report-date">Quelle nicht verbunden</span></div>
           </div>
           <div class="report-card">
-            <span class="report-badge">MEM-ENGINE</span>
-            <h4>Kognitionsmodell & Hooker-Guard-Entkopplung</h4>
-            <p>Trennung von Heuristik (Pädagogik) und technischer Verdrahtung in der Laufzeit.</p>
-            <div class="report-footer">
-              <span class="report-date">2026-10-01</span>
-              <a href="/memory" class="btn btn-sm btn-secondary">Schaltplan ↗</a>
-            </div>
+            <span class="report-badge">BEISPIEL</span>
+            <h4>Gedächtnisbericht</h4>
+            <p>Beispielplatz für einen strukturierten Bericht. Kein gespeichertes Dokument verbunden.</p>
+            <div class="report-footer"><span class="report-date">Quelle nicht verbunden</span></div>
           </div>
         </div>
       </div>
@@ -205,6 +196,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
 </style>
 
 <script is:inline>
+  function escapeSessionText(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   function setupTabs() {
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabPanes = document.querySelectorAll('.tab-pane');
@@ -227,6 +222,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       const res = await fetch('/api/memory/sessions?limit=25');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      if (data.error) throw new Error('Sitzungsquelle nicht verfügbar');
       const sessions = data.sessions || [];
       if (sessions.length === 0) {
         container.innerHTML = '<p class="text-muted">Keine vergangenen Sitzungen gefunden.</p>';
@@ -246,18 +242,18 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <tbody>
             ${sessions.map(s => `
               <tr>
-                <td>#${s.id}</td>
-                <td><code>${s.session_id ? s.session_id.substring(0, 16) + '...' : '-'}</code></td>
-                <td>${s.started_at || '-'}</td>
-                <td>${s.ended_at || '-'}</td>
-                <td><strong>${s.summary || 'Reguläre Arbeitssitzung'}</strong></td>
+                <td>#${escapeSessionText(s.id)}</td>
+                <td><code>${escapeSessionText(s.session_id ? s.session_id.substring(0, 16) + '...' : '-')}</code></td>
+                <td>${escapeSessionText(s.started_at || '-')}</td>
+                <td>${escapeSessionText(s.ended_at || '-')}</td>
+                <td><strong>${escapeSessionText(s.summary || 'Keine Zusammenfassung')}</strong></td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       `;
     } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
+      container.textContent = 'Sitzungen konnten nicht geladen werden.';
     }
   }
 

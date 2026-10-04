@@ -7,6 +7,7 @@ Prüft:
 - Prioritätsfilter gruppiert numerische/unbekannte Werte korrekt
 - Status-Gruppen im Board (pending/open/blocked, in_progress/progress, done/completed/closed)
 """
+import gc
 import os
 import sys
 import sqlite3
@@ -95,7 +96,8 @@ def client():
     from system.gui.server import app
     from fastapi.testclient import TestClient
 
-    yield TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
     # Cleanup
     if original_db is None:
@@ -103,6 +105,7 @@ def client():
     else:
         os.environ["BACH_DB"] = original_db
     sys.modules.pop("hub.bach_paths", None)
+    gc.collect()
     try:
         os.unlink(db_path)
     except FileNotFoundError:
@@ -174,3 +177,32 @@ def test_status_all_returns_everything(client):
     assert res.status_code == 200
     data = res.json()
     assert data["count"] == 8
+
+
+def test_nonterminal_filter_keeps_open_aliases_and_excludes_terminal_statuses(client):
+    db_path = os.environ["BACH_DB"]
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO tasks (title, status, priority, created_at) VALUES (?, ?, 'P4', datetime('now'))",
+            [("Cancelled Task", "cancelled"), ("Duplicate Task", "duplicate"),
+             ("Other Open Task", "awaiting_review")],
+        )
+    try:
+        response = client.get("/api/tasks?status=nonterminal")
+        assert response.status_code == 200
+        titles = {task["title"] for task in response.json()["tasks"]}
+        assert {"Open Task", "Pending Task", "Progress Task", "In Progress Task",
+                "Blocked Task", "Other Open Task"}.issubset(titles)
+        assert not titles.intersection({"Done Task", "Completed Task", "Closed Task",
+                                        "Cancelled Task", "Duplicate Task"})
+    finally:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DELETE FROM tasks WHERE title IN ('Cancelled Task', 'Duplicate Task', 'Other Open Task')")
+
+
+def test_nonterminal_pagination_exposes_remaining_open_tasks(client):
+    first = client.get("/api/tasks?status=nonterminal&limit=3&offset=0").json()
+    second = client.get("/api/tasks?status=nonterminal&limit=3&offset=3").json()
+    assert first["success"] is True and first["has_more"] is True and len(first["tasks"]) == 3
+    assert second["success"] is True and second["has_more"] is False and len(second["tasks"]) == 2
+    assert {row["id"] for row in first["tasks"]}.isdisjoint({row["id"] for row in second["tasks"]})

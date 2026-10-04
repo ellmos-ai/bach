@@ -10,7 +10,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         ⚡ Living & Running
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Server-Status (Trithon, Muschelgrund, Salt, Fackel) • Beseelung von Avatar-Agenten, Teams & Staffeln • Core-Slots & Live-Aktivitäten
+        Agentenprofile, Teams & Staffeln • Compute-Vorrang • Core-Slots & Live-Aktivitäten
       </p>
     </div>
 
@@ -24,95 +24,52 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
-  <!-- 1. CLUSTER & STATUS COCKPIT: TRITHON, MUSCHELGRUND, SALT & DIE FACKEL -->
-  <div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.95) 100%);border:1px solid var(--border);">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-      <div style="display:flex;align-items:center;gap:0.6rem;">
-        <span style="font-size:1.4rem;">🏛️</span>
-        <h2 class="card-title" style="margin:0;">Cluster Cockpit & Hardware-Fackel</h2>
+  <!-- Hardwarebeobachtung steht vor den Agentenkarten. Vorrang ist kein Besitz. -->
+  <section class="card hardware-torch" aria-labelledby="hardware-torch-title">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title" id="hardware-torch-title">Hardware-Fackel & Compute-Vorrang</h2>
+        <p class="torch-intro">Besitz, Vorrang, Compute-Meldung und Ollama-Belegung sind getrennte Nachweise.</p>
       </div>
-      <div style="display:flex;align-items:center;gap:0.75rem;">
-        <div class="live-pill" style="display:inline-flex;align-items:center;gap:6px;font-size:0.75rem;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:12px;border:1px solid var(--border);">
-          <span class="pulse-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-muted);"></span> Aktualisierung alle 4 s
+      <span class="badge" id="torch-observed-at">Nicht geprüft</span>
+    </div>
+    <div class="torch-grid">
+      <div class="torch-panel torch-owner" role="status" aria-live="polite">
+        <svg id="hardware-flame" class="torch-svg" viewBox="0 0 64 80" role="img" aria-labelledby="torch-svg-title">
+          <title id="torch-svg-title">Hardware-Fackel ohne bestätigten Besitz</title>
+          <path class="torch-flame-outer" d="M31 4c7 14 5 22 2 28 10-3 13-12 14-16 17 18 17 42 4 55-11 11-32 11-43-1C-2 59 2 41 15 28c1 9 3 14 8 17-2-16 1-29 8-41Z"/>
+          <path class="torch-flame-inner" d="M33 39c2 7 6 10 9 15 5 11-1 22-11 22-10 0-16-11-11-21 2-5 8-10 13-16Z"/>
+        </svg>
+        <div>
+          <strong>Hardware-Besitz</strong>
+          <p id="fackel-holder">Nicht geprüft</p>
+          <small id="fackel-owner-reason">Ein aktueller Halternachweis fehlt.</small>
         </div>
+      </div>
+      <div class="torch-panel">
+        <strong>Compute-Vorrang</strong>
+        <p id="fackel-priority">Nicht geprüft</p>
+        <button id="btn-toggle-fackel" class="btn btn-sm" type="button" onclick="toggleFackel()" disabled>Vorrang ändern</button>
+        <small>Diese Einstellung erwirbt keine Fackel und startet keinen Agenten.</small>
+      </div>
+      <div class="torch-panel">
+        <strong>Compute-Lock</strong>
+        <p id="fackel-compute">Nicht geprüft</p>
+        <small>Eine Meldung über Rechenjobs ist kein Besitznachweis.</small>
+      </div>
+      <div class="torch-panel">
+        <strong>Ollama-Kapazität</strong>
+        <p id="fackel-capacity">Nicht geprüft</p>
+        <small>Geladene Modelle und belegte Einheiten sind kein globaler GPU-Zähler.</small>
       </div>
     </div>
+    <p id="fackel-feedback" class="torch-feedback" role="status" aria-live="polite"></p>
+  </section>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:1rem;">
-      <!-- Trithon -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🔱</span>
-            <strong style="color:var(--text);">Trithon Engine</strong>
-          </div>
-          <span class="badge" id="trithon-badge">Status unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Servermodus und Cluster-Dispatch: Status wird geprüft
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="trithon-host">
-          Host: nicht verifiziert
-        </div>
-      </div>
-
-      <!-- Muschelgrund -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🐚</span>
-            <strong style="color:var(--text);">Muschelgrund</strong>
-          </div>
-          <span class="badge" id="muschelgrund-badge">Sync unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Zentralisierte Task- & Ticketline • Geteilter State zwischen Bach & Ocean
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="muschelgrund-info">
-          Tasks: Lade...
-        </div>
-      </div>
-
-      <!-- Salt -->
-      <div class="status-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="font-size:1.3rem;">🧂</span>
-            <strong style="color:var(--text);">Salt Lease</strong>
-          </div>
-          <span class="badge" id="salt-badge">Lease unbekannt</span>
-        </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.5rem 0;">
-          Server Lease & Zero-Trust Token • ASUS-GEI Cluster-Handshake
-        </p>
-        <div style="font-size:0.72rem;color:var(--accent);font-family:monospace;" id="salt-info">
-          Session: nicht verifiziert
-        </div>
-      </div>
-
-      <!-- Die Fackel (Hardware & Inferenz-Zuteiler) -->
-      <div class="status-card" id="fackel-card" style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);position:relative;overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-          <span id="fackel-flame-icon" class="flame-icon extinguished" style="font-size:1.5rem;display:inline-block;">💨</span>
-            <strong style="color:var(--text);">Die Fackel</strong>
-          </div>
-          <button id="btn-toggle-fackel" class="btn btn-sm" style="font-size:0.75rem;padding:0.25rem 0.6rem;" onclick="toggleFackel()">
-            Vorrang: Lade...
-          </button>
-        </div>
-        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.4rem;">
-          <strong>Aktueller Halter:</strong> <span id="fackel-holder" style="color:var(--text);font-weight:600;">Lade...</span>
-        </div>
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.4rem;">
-          <strong>Warteschlange / Konkurrenz:</strong> <span id="fackel-competitors" style="color:var(--warning);">Unbekannt</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;color:var(--accent);font-family:monospace;border-top:1px dashed var(--border);padding-top:0.4rem;">
-          <span id="fackel-speicher">Messstand unbekannt</span>
-          <span id="fackel-status-text" class="badge">Status unbekannt</span>
-        </div>
-      </div>
-    </div>
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2 class="card-title">Verifizierte Agentenprofile</h2></div>
+    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Start und Stopp eines Agentenprozesses sind hier derzeit nicht freigegeben.</p>
+    <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
   </div>
 
   <!-- 2. TEAMS BESEELEn (SWARM-AI) & AGENTEN-STAFFELN (MARBLERUN) BESEELEn -->
@@ -150,171 +107,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
-  <!-- 3. CORE MODELL-SLOTS (Aus dem alten Activity Board) -->
-  <div class="card" style="margin-bottom:1.5rem;">
+  <!-- Drei feste System-Agenten, direkt aus der vorhandenen Control-Konfiguration. -->
+  <section class="card" aria-labelledby="core-agents-title">
     <div class="card-header">
-      <h2 class="card-title">🎛️ Core Modell-Slots (Chat, Always-On, Connector)</h2>
-      <span class="badge badge-accent">Activity Core</span>
+      <h2 class="card-title" id="core-agents-title">System-Agenten</h2>
+      <span class="badge badge-accent">Drei feste technische IDs</span>
     </div>
-    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.25rem;">
-      Zentrale Slot-Steuerung für interaktiven Chat, Hintergrundworker und Messaging-Konnektoren:
-    </p>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
-      <!-- Slot 1: Buddha Chat -->
-      <div class="slot-card" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.25rem;display:flex;flex-direction:column;gap:0.75rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <strong style="color:var(--text);font-size:0.95rem;">💬 Buddha Chat</strong>
-            <span style="font-size:0.75rem;color:var(--text-muted);display:block;">Interaktiver Dialog (WebChat & Tray)</span>
-          </div>
-          <span class="badge" id="badge-slot-chat" style="color:var(--text-muted);border-color:var(--border);background:var(--bg-card);">Nicht geprüft</span>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Backend</label>
-            <select id="chat-backend" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-              <option value="ollama">💻 Ollama (lokal MLX)</option>
-              <option value="ollama-cloud">☁️ Ollama Cloud (:cloud)</option>
-              <option value="claude">Claude CLI / API</option>
-              <option value="codex">Codex / GPT CLI</option>
-              <option value="gemini">Gemini API</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Modell</label>
-            <input type="text" id="chat-model" value="qwen3.8:27b-mlx" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" />
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Max Turns</label>
-            <select id="chat-turns" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-              <option value="12">12 Runden</option>
-              <option value="20">20 Runden</option>
-              <option value="30">30 Runden</option>
-              <option value="0">Unbegrenzt</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Modus & Denken</label>
-            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.2rem;">
-              <select id="chat-mode" style="flex:1;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-                <option value="safe">Safe (Lesen)</option>
-                <option value="full">Full (Schreiben)</option>
-              </select>
-              <label style="font-size:0.75rem;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="chat-think" checked /> Think</label>
-            </div>
-          </div>
-        </div>
-
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:0.5rem;font-size:0.75rem;color:var(--text-muted);">
-          Aktivität: <span id="chat-activity" style="color:var(--text);">Bereit für Interaktion</span>
-        </div>
-
-        <button class="btn btn-sm btn-primary" onclick="saveCoreSlot('buddha_chat')">💾 Slot Speichern</button>
-      </div>
-
-      <!-- Slot 2: Buddha Always-On -->
-      <div class="slot-card" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.25rem;display:flex;flex-direction:column;gap:0.75rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <strong style="color:var(--text);font-size:0.95rem;">⚡ Buddha Always-On</strong>
-            <span style="font-size:0.75rem;color:var(--text-muted);display:block;">Hintergrundworker für Tasks</span>
-          </div>
-          <div style="display:flex;gap:4px;">
-            <span class="badge" id="badge-slot-always" style="color:var(--text-muted);border-color:var(--border);background:var(--bg-card);">Nicht geprüft</span>
-            <button class="btn btn-sm" style="padding:0.15rem 0.4rem;font-size:0.7rem;" onclick="toggleAlwaysOn()">Toggle</button>
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Backend</label>
-            <select id="always-backend" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-              <option value="ollama">💻 Ollama (lokal MLX)</option>
-              <option value="ollama-cloud">☁️ Ollama Cloud (:cloud)</option>
-              <option value="claude">Claude CLI / API</option>
-              <option value="codex">Codex / GPT CLI</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Modell</label>
-            <input type="text" id="always-model" value="qwen3.8:27b-mlx" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" />
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Pause nach</label>
-            <input type="number" id="always-pause-after" value="5" min="1" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" />
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Pausendauer (Min)</label>
-            <input type="number" id="always-pause-minutes" value="1" min="1" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" />
-          </div>
-        </div>
-
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:0.5rem;font-size:0.75rem;color:var(--text-muted);">
-          Aktivität: <span id="always-activity" style="color:var(--text);">Wartet auf Idle-Schwelle</span>
-        </div>
-
-        <button class="btn btn-sm btn-primary" onclick="saveCoreSlot('buddha_always_on')">💾 Slot Speichern</button>
-      </div>
-
-      <!-- Slot 3: Buddha Connector -->
-      <div class="slot-card" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.25rem;display:flex;flex-direction:column;gap:0.75rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <strong style="color:var(--text);font-size:0.95rem;">📱 Buddha Connector</strong>
-            <span style="font-size:0.75rem;color:var(--text-muted);display:block;">Messaging (Telegram & WhatsApp)</span>
-          </div>
-          <span class="badge" id="badge-slot-conn" style="color:var(--text-muted);border-color:var(--border);background:var(--bg-card);">Nicht geprüft</span>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Backend</label>
-            <select id="conn-backend" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-              <option value="ollama">💻 Ollama (lokal MLX)</option>
-              <option value="ollama-cloud">☁️ Ollama Cloud (:cloud)</option>
-              <option value="claude">Claude CLI / API</option>
-              <option value="codex">Codex / GPT CLI</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Modell</label>
-            <input type="text" id="conn-model" value="qwen3.8:27b-mlx" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" />
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Max Turns</label>
-            <select id="conn-turns" style="width:100%;padding:0.4rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-              <option value="10">10 Runden</option>
-              <option value="15">15 Runden</option>
-              <option value="20">20 Runden</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">Provider</label>
-            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.4rem;">
-              Telegram: Nicht geprüft · WhatsApp: Nicht geprüft
-            </div>
-          </div>
-        </div>
-
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:0.5rem;font-size:0.75rem;color:var(--text-muted);">
-          Aktivität: <span id="conn-activity" style="color:var(--text-muted);">Nicht geprüft</span>
-        </div>
-
-        <button class="btn btn-sm btn-primary" onclick="saveCoreSlot('buddha_connector')">💾 Slot Speichern</button>
-      </div>
-    </div>
-  </div>
+    <p class="core-explanation">Buddha Chat, Always-On und Connector verwenden die bestehende Slot-Konfiguration. Speichern ändert Einstellungen; Living und Running erfordern eigene Laufzeitnachweise.</p>
+    <div id="core-agent-feedback" role="status" aria-live="polite"></div>
+    <div id="core-agent-cards" class="core-grid"><p class="loading-state">System-Agenten werden geprüft…</p></div>
+  </section>
 
   <!-- 4. LIVE-AKTIVITÄT & WORKER TIMELINE -->
   <div class="card">
@@ -342,26 +144,30 @@ import BachLayout from "../../layouts/BachLayout.astro";
   </div>
 
   <style>
-    @keyframes flameFlicker {
-      0% {
-        transform: scale(1) rotate(-1deg);
-        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8)) drop-shadow(0 0 12px rgba(239, 68, 68, 0.6));
-      }
-      50% {
-        transform: scale(1.12) rotate(2deg);
-        filter: drop-shadow(0 0 10px rgba(245, 158, 11, 1)) drop-shadow(0 0 20px rgba(239, 68, 68, 0.8));
-      }
-      100% {
-        transform: scale(1) rotate(-1deg);
-        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8)) drop-shadow(0 0 12px rgba(239, 68, 68, 0.6));
-      }
-    }
-    .flame-icon.animated {
-      animation: flameFlicker 1.8s infinite ease-in-out;
-    }
-    .flame-icon.extinguished {
-      filter: grayscale(1) opacity(0.4);
-      animation: none !important;
+    .hardware-torch { margin-bottom: 1.5rem; }
+    .torch-intro, .core-explanation { color: var(--text-muted); font-size: .85rem; margin: .4rem 0 1rem; }
+    .torch-grid, .core-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: .85rem; }
+    .torch-panel, .core-agent-card { min-width: 0; padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-dark); }
+    .torch-panel p { margin: .5rem 0; overflow-wrap: anywhere; }
+    .torch-panel small, .core-agent-card small { display: block; color: var(--text-muted); line-height: 1.4; overflow-wrap: anywhere; }
+    .torch-owner { display: flex; align-items: center; gap: 1rem; }
+    .torch-svg { width: 52px; height: 68px; flex: none; fill: none; stroke: var(--text-muted); stroke-width: 2px; opacity: .65; }
+    .torch-svg .torch-flame-inner { display: none; }
+    .torch-svg.is-owned { opacity: 1; stroke: #f97316; fill: #fbbf24; }
+    .torch-svg.is-owned .torch-flame-inner { display: block; fill: #fef08a; stroke: #f97316; }
+    .torch-feedback { min-height: 1.4em; color: var(--text-muted); font-size: .8rem; margin: .8rem 0 0; }
+    .core-agent-card { display: flex; flex-direction: column; gap: .7rem; }
+    .core-agent-card h3 { margin: 0; overflow-wrap: anywhere; }
+    .core-agent-card label { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--text-muted); }
+    .core-agent-card input, .core-agent-card select { min-width: 0; width: 100%; padding: .4rem; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; }
+    .core-agent-card .core-check { flex-direction: row; align-items: center; }
+    .core-agent-card .core-check input { width: auto; }
+    .core-agent-card .core-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+    .core-agent-card .core-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: auto; }
+    @media (max-width: 520px) { .core-agent-card .core-fields { grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: no-preference) {
+      .torch-svg.is-owned { animation: torch-glow 1.8s ease-in-out infinite alternate; }
+      @keyframes torch-glow { from { filter: drop-shadow(0 0 2px #f97316); } to { filter: drop-shadow(0 0 12px #f97316); } }
     }
   </style>
 
@@ -380,74 +186,270 @@ import BachLayout from "../../layouts/BachLayout.astro";
       { id: "ollama/gemma4:26b-mlx", label: "💻 Gemma 4 26B (MLX)" }
     ];
 
-    // ── 1. CLUSTER & FACKEL STATUS ──
+    let currentPriority = null;
+    let coreConfigVersion = null;
+    let coreAgents = [];
+
+    function setTorchUnknown(message) {
+      currentPriority = null;
+      const flame = document.getElementById('hardware-flame');
+      flame.classList.remove('is-owned');
+      document.getElementById('torch-svg-title').textContent = 'Hardware-Fackel ohne bestätigten Besitz';
+      document.getElementById('fackel-holder').textContent = message;
+      document.getElementById('fackel-owner-reason').textContent = 'Ein aktueller Halternachweis fehlt.';
+      document.getElementById('fackel-priority').textContent = 'Nicht geprüft';
+      document.getElementById('fackel-compute').textContent = 'Nicht geprüft';
+      document.getElementById('fackel-capacity').textContent = 'Nicht geprüft';
+      document.getElementById('btn-toggle-fackel').disabled = true;
+      document.getElementById('torch-observed-at').textContent = 'Nicht geprüft';
+    }
+
     async function loadClusterCockpit() {
       try {
         const res = await fetch('/api/system/cluster-cockpit');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-
-        // Trithon
-        if (data.trithon) {
-          document.getElementById('trithon-badge').textContent = data.trithon.status === 'active' ? 'Aktiv (Servermodus)' : 'Status unbekannt';
-          document.getElementById('trithon-host').textContent = `Host: ${data.trithon.cluster_host || 'nicht verifiziert'} • Loop: nicht geprüft`;
-        }
-
-        // Muschelgrund
-        if (data.muschelgrund) {
-          document.getElementById('muschelgrund-info').textContent = `Tasks gesamt: ${data.muschelgrund.total_tasks} | Meine: ${data.muschelgrund.user_tasks}`;
-          document.getElementById('muschelgrund-badge').textContent = data.muschelgrund.synced === true ? 'Synchron' : 'Sync unbekannt';
-        }
-
-        if (data.salt) {
-          document.getElementById('salt-badge').textContent = data.salt.lease_status === 'Valid' ? 'Validiert' : 'Lease unbekannt';
-          document.getElementById('salt-info').textContent = `Session: ${data.salt.lease_status || 'nicht verifiziert'}`;
-        }
-
-        // Fackel
-        if (data.fackel) {
-          const f = data.fackel;
-          const flameEl = document.getElementById('fackel-flame-icon');
-          const toggleBtn = document.getElementById('btn-toggle-fackel');
-          const statusText = document.getElementById('fackel-status-text');
-
-          if (!f.messbar) {
-            flameEl.className = 'flame-icon extinguished';
-            flameEl.textContent = '💨';
-            statusText.textContent = 'Status unbekannt';
-            statusText.className = 'badge';
-          } else if (f.flame_animated) {
-            flameEl.className = 'flame-icon animated';
-            flameEl.textContent = '🔥';
-            statusText.textContent = 'Ollama Aktiv';
-            statusText.className = 'badge badge-success';
-          } else {
-            flameEl.className = 'flame-icon extinguished';
-            flameEl.textContent = '💨';
-            statusText.textContent = f.compute_active ? 'Compute-Lock aktiv' : 'Kein Modell als geladen gemeldet';
-            statusText.className = 'badge badge-error';
-          }
-
-          document.getElementById('fackel-holder').textContent = f.current_holder || 'Kein Modell';
-          document.getElementById('fackel-competitors').textContent = (f.competitors && f.competitors.length > 0) ? f.competitors.join(', ') : 'Keine Konkurrenz';
-          document.getElementById('fackel-speicher').textContent = f.messbar ? `${f.belegt_fackeln || 0} von 10 Fackeln belegt (${f.belegt_gib || 0} GiB)` : 'Messstand unbekannt';
-
-          toggleBtn.textContent = f.preference === 'ollama' ? '🔥 Ollama Vorrang' : '⚙️ Compute Vorrang';
-          toggleBtn.className = f.preference === 'ollama' ? 'btn btn-sm btn-success' : 'btn btn-sm btn-secondary';
-        }
-      } catch (e) {
-        console.error('Cluster Cockpit Fehler:', e);
+        const f = data.fackel;
+        if (!f || !f.ownership || !f.capacity || !f.compute_lock) throw new Error('Statusantwort unvollständig');
+        const owner = f.ownership;
+        const ownerTime = Date.parse(owner.observed_at || '');
+        const freshOwner = Number.isFinite(ownerTime) && Math.abs(Date.now() - ownerTime) <= 300000;
+        const owned = owner.state === 'owned_by_this_system' && owner.holder_is_this_system === true && owner.flame === true && freshOwner;
+        const flame = document.getElementById('hardware-flame');
+        flame.classList.toggle('is-owned', owned);
+        document.getElementById('torch-svg-title').textContent = owned ? 'Hardware-Fackel: eigenes System hält sie' : 'Hardware-Fackel ohne bestätigten eigenen Besitz';
+        document.getElementById('fackel-holder').textContent = owned ? String(owner.holder || 'Eigenes System') :
+          owner.state === 'foreign' && freshOwner ? String(owner.holder || 'Fremdes System') :
+          owner.state === 'stale' ? 'Status veraltet' : 'Nicht geprüft';
+        document.getElementById('fackel-owner-reason').textContent = owned ? 'Frischer Halternachweis für dieses System.' :
+          owner.state === 'foreign' && freshOwner ? 'Ein anderes System hält die Fackel.' :
+          owner.state === 'stale' ? 'Der letzte Halternachweis ist zu alt.' : 'Der Hardware-Halteradapter fehlt oder liefert keinen Beleg.';
+        currentPriority = ['compute', 'ollama'].includes(f.priority?.value) ? f.priority.value : null;
+        document.getElementById('fackel-priority').textContent = currentPriority === 'compute' ? 'Compute' :
+          currentPriority === 'ollama' ? 'Ollama' : 'Nicht geprüft';
+        const button = document.getElementById('btn-toggle-fackel');
+        button.disabled = !currentPriority;
+        button.textContent = currentPriority === 'compute' ? 'Ollama-Vorrang setzen' :
+          currentPriority === 'ollama' ? 'Compute-Vorrang setzen' : 'Vorrang nicht verfügbar';
+        const lock = f.compute_lock;
+        document.getElementById('fackel-compute').textContent = lock.state === 'reported_unverified' ?
+          `Lockdatei meldet ${Number(lock.reported_jobs) || 0} Job(s); Identität nicht geprüft` :
+          lock.state === 'none_reported' ? 'Frische Lockdatei meldet keine Jobs' :
+          lock.state === 'stale' ? 'Status veraltet' : 'Nicht geprüft';
+        const cap = f.capacity;
+        document.getElementById('fackel-capacity').textContent = cap.state === 'measured' ?
+          `${Number(cap.loaded_model_count) || 0} geladene Modelle · ${Number(cap.occupied_units) || 0} Einheiten · ${Number(cap.used_gib) || 0} GiB` :
+          cap.state === 'partial' ? 'Ollama antwortet; Speicher nicht messbar' : 'Nicht geprüft';
+        const observed = Date.parse(data.observed_at || '');
+        document.getElementById('torch-observed-at').textContent = Number.isFinite(observed) ?
+          'Geprüft ' + new Date(observed).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'}) : 'Nicht geprüft';
+      } catch (_error) {
+        setTorchUnknown('Nicht geprüft');
       }
     }
 
     async function toggleFackel() {
+      if (!currentPriority) return;
+      const desired = currentPriority === 'compute' ? 'ollama' : 'compute';
+      const button = document.getElementById('btn-toggle-fackel');
+      const feedback = document.getElementById('fackel-feedback');
+      button.disabled = true;
+      feedback.textContent = 'Vorrang wird gespeichert…';
       try {
-        const res = await fetch('/api/system/fackel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-        if (res.ok) {
-          loadClusterCockpit();
+        const res = await fetch('/api/system/fackel', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({preference: desired})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ok !== true || data.preference !== desired || data.ownership_changed !== false) {
+          throw new Error('Speicherung nicht bestätigt');
         }
-      } catch (e) {
-        alert('Fackel Toggle fehlgeschlagen: ' + e.message);
+        await loadClusterCockpit();
+        if (currentPriority !== desired) throw new Error('Readback weicht ab');
+        feedback.textContent = 'Vorrang gespeichert. Der Fackelbesitz wurde nicht verändert.';
+      } catch (_error) {
+        feedback.textContent = 'Vorrang konnte nicht bestätigt werden.';
+        await loadClusterCockpit();
+      }
+    }
+
+    function coreElement(tag, text, className = '') {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = String(text);
+      return node;
+    }
+
+    function coreField(card, field, labelText, value, type = 'text', options = []) {
+      const label = coreElement('label', labelText);
+      let input;
+      if (type === 'select') {
+        input = document.createElement('select');
+        const values = options.includes(String(value)) ? options : [String(value), ...options];
+        for (const choice of values) {
+          const option = document.createElement('option');
+          option.value = choice;
+          option.textContent = choice + (options.includes(choice) ? '' : ' · bestehend, nicht geprüft');
+          input.append(option);
+        }
+        input.value = String(value);
+      } else {
+        input = document.createElement('input');
+        input.type = type;
+        if (type === 'checkbox') input.checked = value === true;
+        else input.value = value == null ? '' : String(value);
+        if (type === 'number') { input.min = field === 'max_tool_rounds' ? '0' : '1'; input.max = field === 'max_tool_rounds' ? '100' : '1440'; }
+        if (type === 'text') input.maxLength = field === 'icon' ? 8 : 120;
+      }
+      input.dataset.coreField = field;
+      label.append(input);
+      if (type === 'checkbox') label.className = 'core-check';
+      card.append(label);
+    }
+
+    function renderCoreAgents(data, changedId = null) {
+      const target = document.getElementById('core-agent-cards');
+      const previousCards = new Map([...target.querySelectorAll('[data-core-agent-id]')]
+        .map(card => [card.dataset.coreAgentId, card]));
+      const previousAgents = new Map(coreAgents.map(agent => [agent.id, agent]));
+      coreConfigVersion = data.configuration_version;
+      coreAgents = data.agents;
+      if (!changedId) target.replaceChildren();
+      for (const agent of coreAgents) {
+        const existing = changedId ? previousCards.get(agent.id) : null;
+        if (changedId && agent.id !== changedId && existing) {
+          const before = previousAgents.get(agent.id);
+          const keys = ['name', 'icon', 'backend', 'model', 'mode', 'think',
+            'max_tool_rounds', 'pause_after', 'pause_minutes'];
+          if (before && keys.some(key => before[key] !== agent[key])) existing.dataset.coreStale = 'true';
+          continue;
+        }
+        const card = coreElement('article', undefined, 'core-agent-card');
+        card.dataset.coreAgentId = agent.id;
+        card.append(coreElement('h3', `${agent.icon || '◇'} ${agent.name || agent.id}`));
+        card.append(coreElement('small', `Technische ID: ${agent.id} · nicht löschbar`));
+        const state = agent.configured_enabled === true ? 'Konfiguration aktiviert' :
+          agent.configured_enabled === false ? 'Konfiguration deaktiviert' : 'Konfiguration vorhanden';
+        card.append(coreElement('small', `${state} · Living: nicht geprüft · Running: nicht geprüft`));
+        const fields = coreElement('div', undefined, 'core-fields');
+        coreField(fields, 'name', 'Anzeigename', agent.name);
+        coreField(fields, 'icon', 'Icon', agent.icon);
+        coreField(fields, 'backend', 'Backend-ID', agent.backend, 'select', data.supported_backend_ids || []);
+        coreField(fields, 'model', 'Modell-ID', agent.model);
+        coreField(fields, 'mode', 'Modus', agent.mode, 'select', ['safe', 'full']);
+        coreField(fields, 'think', 'Think', agent.think, 'checkbox');
+        coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
+        coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
+        coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
+        card.append(fields);
+        const actions = coreElement('div', undefined, 'core-actions');
+        const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
+        save.type = 'button';
+        save.addEventListener('click', () => saveCoreSlot(agent.id));
+        actions.append(save);
+        const reset = coreElement('button', 'Standards wiederherstellen', 'btn btn-sm');
+        reset.type = 'button';
+        reset.addEventListener('click', () => resetCoreSlot(agent.id));
+        actions.append(reset);
+        card.append(actions);
+        if (existing) existing.replaceWith(card);
+        else target.append(card);
+      }
+    }
+
+    async function loadCoreSlots() {
+      const target = document.getElementById('core-agent-cards');
+      try {
+        const res = await fetch('/api/system/core-agents');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents) ||
+            data.agents.length !== 3 || typeof data.configuration_version !== 'string') throw new Error('System-Agentenantwort ungültig');
+        renderCoreAgents(data);
+      } catch (error) {
+        coreConfigVersion = null;
+        target.replaceChildren(coreElement('p', error.message.includes('401') ?
+          'Geräteanmeldung erforderlich. Einstellungen sind derzeit nicht verfügbar.' :
+          'System-Agentenkonfiguration nicht verfügbar. Die vorhandenen Profile bleiben erhalten.'));
+      }
+    }
+
+    function showCoreSaveFailure(message) {
+      const feedback = document.getElementById('core-agent-feedback');
+      const reload = coreElement('button', 'Zustand neu laden (verwirft Eingaben)', 'btn btn-sm');
+      reload.type = 'button';
+      reload.addEventListener('click', () => loadCoreSlots());
+      feedback.replaceChildren(coreElement('span', message + ' Eingaben bleiben bis zum Neuladen erhalten. '), reload);
+    }
+
+    async function saveCoreSlot(slotId) {
+      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
+      if (!card || !coreConfigVersion) return;
+      if (card.dataset.coreStale === 'true') {
+        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
+        return;
+      }
+      const original = coreAgents.find(item => item.id === slotId);
+      if (!original) return;
+      const changes = {};
+      for (const input of card.querySelectorAll('[data-core-field]')) {
+        const field = input.dataset.coreField;
+        const previous = original[field];
+        if (input.type === 'checkbox') {
+          if (previous == null && !input.checked) continue;
+          if (input.checked !== previous) changes[field] = input.checked;
+        } else if (input.type === 'number') {
+          if (input.value.trim() === '' && previous == null) continue;
+          const current = input.value.trim() === '' ? null : Number(input.value);
+          if (current !== previous) changes[field] = current;
+        } else {
+          const current = input.value.trim();
+          if (current !== String(previous ?? '').trim()) changes[field] = current;
+        }
+      }
+      const feedback = document.getElementById('core-agent-feedback');
+      if (Object.keys(changes).length === 0) {
+        feedback.textContent = 'Keine Änderungen zum Speichern.';
+        return;
+      }
+      feedback.textContent = 'Einstellungen werden gespeichert…';
+      try {
+        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId), {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({configuration_version: coreConfigVersion, changes})
+        });
+        const data = await res.json();
+        const saved = data.agents?.find(item => item.id === slotId);
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !saved || Object.entries(changes).some(([key, value]) => saved[key] !== value)) throw new Error('Speicherung nicht bestätigt');
+        renderCoreAgents(data, slotId);
+        feedback.textContent = 'Konfiguration gespeichert. Andere Eingaben bleiben erhalten. Kein Agent wurde dadurch gestartet.';
+      } catch (_error) {
+        showCoreSaveFailure('Speicherung nicht bestätigt. Bei einem Versionskonflikt müssen Sie vor erneutem Speichern den Zustand laden.');
+      }
+    }
+
+    async function resetCoreSlot(slotId) {
+      if (!coreConfigVersion || !window.confirm('Nur die editierbaren Einstellungen dieses System-Agenten zurücksetzen?')) return;
+      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
+      if (card?.dataset.coreStale === 'true') {
+        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
+        return;
+      }
+      const feedback = document.getElementById('core-agent-feedback');
+      feedback.textContent = 'Standards werden wiederhergestellt…';
+      try {
+        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/reset', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({configuration_version: coreConfigVersion})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !data.agents?.some(item => item.id === slotId)) throw new Error('Reset nicht bestätigt');
+        renderCoreAgents(data, slotId);
+        feedback.textContent = 'Einstellungen zurückgesetzt. Andere Eingaben, Aufgaben, Sitzungen und Geräte bleiben erhalten.';
+      } catch (_error) {
+        showCoreSaveFailure('Reset nicht bestätigt. Bitte Serverzustand prüfen.');
       }
     }
 
@@ -605,15 +607,6 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
-    // ── 4. CORE SLOTS SPEICHERN ──
-    async function saveCoreSlot(slotId) {
-      alert(`Für [${slotId}] ist noch kein Speicher-Endpunkt verbunden. Es wurde nichts gespeichert.`);
-    }
-
-    async function toggleAlwaysOn() {
-      alert('Für Always-On ist noch kein Schalt-Endpunkt verbunden. Der Status wurde nicht geändert.');
-    }
-
     // ── 5. LIVE AKTIVITÄT ──
     async function refreshActivity() {
       const tbody = document.getElementById('activity-tbody');
@@ -630,13 +623,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
         tbody.innerHTML = tasks.slice(0, 6).map(t => {
           const timeStr = t.created_at ? t.created_at.slice(11, 16) : '--:--';
           const akteur = t.assigned_to || t.assigned_agent || 'Operator';
-          const model = t.required_model || 'qwen3.8:27b-mlx';
+          const model = t.required_model || 'Nicht angegeben';
           const st = t.status || 'todo';
           const badgeClass = st === 'completed' || st === 'done' ? 'badge-success' : (st === 'running' ? 'badge-accent' : 'badge-warning');
 
           return `
             <tr>
-              <td style="color:var(--text-muted);font-family:monospace;font-size:0.8rem;">${timeStr}</td>
+              <td style="color:var(--text-muted);font-family:monospace;font-size:0.8rem;">${escapeHtml(timeStr)}</td>
               <td><strong>${escapeHtml(akteur)}</strong></td>
               <td>${escapeHtml(t.title || 'Task')}</td>
               <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent);">${escapeHtml(model)}</span></td>
@@ -645,16 +638,52 @@ import BachLayout from "../../layouts/BachLayout.astro";
           `;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Fehler beim Laden der Aktivitäten: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Aktivitäten konnten nicht geladen werden.</td></tr>`;
+      }
+    }
+
+    async function loadTrustedProfiles() {
+      const container = document.getElementById('trusted-profile-list');
+      try {
+        const response = await fetch('/api/agents');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.success !== true || !Array.isArray(data.agents)) throw new Error('Profilantwort ungültig');
+        const profiles = data.agents.filter(agent => agent.profile_chat_ready === true &&
+          Number.isSafeInteger(Number(agent.id)) && Number(agent.id) > 0);
+        let runtimeById = new Map();
+        let runtimeNote = 'Geräteanmeldung für Prozessstatus erforderlich';
+        try {
+          const runtimeResponse = await fetch('/api/agents/runtime');
+          if (runtimeResponse.ok) {
+            const runtimeData = await runtimeResponse.json();
+            if (runtimeData.success === true && Array.isArray(runtimeData.agents)) {
+              runtimeById = new Map(runtimeData.agents.map(item => [Number(item.agent_id), item.process_state]));
+              runtimeNote = 'Prozessstatus nicht prüfbar';
+            }
+          }
+        } catch (_error) {
+          runtimeNote = 'Prozessstatus nicht prüfbar';
+        }
+        const stateLabels = { running: 'Prozess läuft', not_started: 'Kein Prozess bestätigt',
+          ended: 'Prozess beendet', unverified: 'Identität nicht bestätigt',
+          mismatch: 'Prozessabweichung', unavailable: 'Prozessstatus nicht prüfbar' };
+        container.innerHTML = profiles.length
+          ? profiles.map(agent => `<span><a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a><small style="display:block;margin-top:0.3rem;color:var(--text-muted);">${stateLabels[runtimeById.get(Number(agent.id))] || runtimeNote}</small></span>`).join('')
+          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine verifizierten Chatprofile verfügbar.</span>';
+      } catch (error) {
+        container.textContent = 'Profile können derzeit nicht geprüft werden: ' + error.message;
       }
     }
 
     async function refreshAll(interactive = false) {
       await Promise.all([
+        loadTrustedProfiles(),
         loadClusterCockpit(),
         loadTeamsBeseelen(),
         loadStaffelnBeseelen(),
-        refreshActivity()
+        refreshActivity(),
+        loadCoreSlots()
       ]);
       if (interactive) {
         // Subtle confirmation
@@ -664,8 +693,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     window.addEventListener('DOMContentLoaded', () => {
       refreshAll();
-      // Auto-poll every 4s
-      setInterval(loadClusterCockpit, 4000);
+      // Observe hardware and task activity without resetting editable forms.
+      setInterval(loadClusterCockpit, 15000);
       setInterval(refreshActivity, 4000);
     });
   </script>
