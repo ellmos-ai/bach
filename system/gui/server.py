@@ -1112,6 +1112,14 @@ async def lifespan(app: FastAPI):
 
     print(f"           USER_DB:  {USER_DB}")
 
+    try:
+
+        init_financial_tables()
+
+    except Exception as exc:  # noqa: BLE001 - startup must not fail on optional tables
+
+        print(f"[BACH GUI] Financial-Tabellen nicht initialisiert: {type(exc).__name__}")
+
     
 
     # File Watcher für Live-Updates (Phase 4.3)
@@ -1319,15 +1327,56 @@ except ImportError:
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
-def _hostname(host_header: str) -> str:
-    """Return the lower-case hostname of a Host header value without port."""
-    value = (host_header or "").strip().lower()
+_DNS_LABEL_HOST = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$")
+
+
+def _split_host_port(value: str):
+    """Strictly parse "host", "host:port", "[v6]" or "[v6]:port"; None if malformed.
+
+    Anything else (userinfo, paths, suffixes after "]", bare IPv6, non-numeric or
+    out-of-range ports, odd characters) is rejected instead of being guessed at.
+    """
+    import ipaddress
+    value = (value or "").strip().lower()
+    port = None
     if value.startswith("["):
         end = value.find("]")
-        return value[1:end] if end > 0 else ""
-    if value.count(":") == 1:
-        value = value.rsplit(":", 1)[0]
-    return value.rstrip(".")
+        if end < 0:
+            return None
+        rest = value[end + 1:]
+        if rest:
+            if not rest.startswith(":"):
+                return None
+            port_text = rest[1:]
+        else:
+            port_text = ""
+        try:
+            host = ipaddress.IPv6Address(value[1:end]).compressed
+        except ValueError:
+            return None
+    else:
+        if value.count(":") > 1:
+            return None
+        host, _, port_text = value.partition(":")
+        host = host.rstrip(".")
+        try:
+            ipaddress.IPv4Address(host)
+        except ValueError:
+            if not _DNS_LABEL_HOST.match(host):
+                return None
+    if port_text:
+        if not (port_text.isascii() and port_text.isdigit()) or not 0 < int(port_text) < 65536:
+            return None
+        port = int(port_text)
+    elif value.endswith(":"):
+        return None
+    return (host, port) if host else None
+
+
+def _hostname(host_header: str) -> str:
+    """Normalised hostname of a Host header value without port; "" if malformed."""
+    parsed = _split_host_port(host_header)
+    return parsed[0] if parsed else ""
 
 
 def allowed_hosts() -> frozenset:
@@ -1343,15 +1392,66 @@ def host_is_allowed(host_header: str) -> bool:
     return bool(name) and name in allowed_hosts()
 
 
-def origin_matches_host(origin: str, host_header: str) -> bool:
-    """True if an Origin header names exactly the (already allowlisted) Host."""
+def origin_matches_host(origin: str, host_header: str, request_scheme: str = "ws") -> bool:
+    """True if an Origin is exactly the origin of this request: scheme, host and port.
+
+    ws -> http, wss -> https (behind a TLS-terminating proxy run uvicorn with
+    --proxy-headers so the scope scheme is right). Default ports are implied by the
+    scheme. "null", userinfo, paths and queries never match.
+    """
     from urllib.parse import urlsplit
     try:
-        netloc = urlsplit(origin).netloc.lower()
+        parts = urlsplit(origin)
+        origin_port = parts.port
+        origin_host = parts.hostname
     except ValueError:
         return False
-    return bool(netloc) and netloc == (host_header or "").strip().lower()
+    expected_scheme = {"ws": "http", "wss": "https", "http": "http", "https": "https"}.get(request_scheme)
+    if (parts.scheme != expected_scheme or not origin_host or parts.username is not None
+            or parts.password is not None or parts.path not in ("", "/")
+            or parts.query or parts.fragment):
+        return False
+    host = _split_host_port(host_header)
+    if host is None:
+        return False
+    default = 443 if expected_scheme == "https" else 80
+    if _hostname(origin_host if ":" not in origin_host else f"[{origin_host}]") != host[0]:
+        return False
+    return (origin_port or default) == (host[1] or default)
 
+
+# ── Never log WebSocket token subprotocols (Sec-WebSocket-Protocol) ──
+_WS_TOKEN_RE = re.compile(r"bach\.token\.[A-Za-z0-9_.~+/=-]+")
+_REDACT_LOGGERS = ("websockets", "uvicorn", "starlette", "fastapi", "asyncio")
+
+
+def _redact_ws_tokens(text: str) -> str:
+    return _WS_TOKEN_RE.sub("bach.token.[redacted]", text)
+
+
+def _install_log_redaction():
+    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens."""
+    import logging
+    previous = logging.getLogRecordFactory()
+    if getattr(previous, "_bach_redacts", False):
+        return
+
+    def factory(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        try:
+            if record.name.startswith(_REDACT_LOGGERS):
+                message = record.getMessage()
+                if "bach.token." in message:
+                    record.msg, record.args = _redact_ws_tokens(message), ()
+        except Exception:  # logging must never break the request
+            pass
+        return record
+
+    factory._bach_redacts = True
+    logging.setLogRecordFactory(factory)
+
+
+_install_log_redaction()
 
 WS_PROTOCOL = "bach.v1"
 WS_TOKEN_PROTOCOL_PREFIX = "bach.token."
@@ -1382,7 +1482,12 @@ async def authorize_websocket(websocket) -> bool:
     try:
         host = websocket.headers.get("host", "")
         origin = websocket.headers.get("origin")
-        ok = host_is_allowed(host) and (origin is None or origin_matches_host(origin, host))
+        # Browsers always send Origin on WebSocket handshakes: when present it must be
+        # this server's own origin (a "null" origin is rejected). Native clients send
+        # none; they stay allowed, but only with a valid device token below.
+        ok = host_is_allowed(host) and (
+            origin is None
+            or origin_matches_host(origin, host, websocket.scope.get("scheme", "ws")))
         if ok:
             token = websocket_device_token(websocket)
             ok = bool(token) and bool(validate_token(token))
@@ -7168,11 +7273,7 @@ async def financial_page():
 
     """Financial Mail Dashboard."""
 
-    # Tabellen initialisieren falls noetig
-
-    init_financial_tables()
-
-
+    # Tabellen werden beim Serverstart angelegt (lifespan), nie durch anonyme GETs.
 
     template = TEMPLATES_DIR / "financial.html"
 

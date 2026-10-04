@@ -265,3 +265,72 @@ def test_configured_host_is_allowed_and_others_still_are_not(client, monkeypatch
 def test_host_lookalikes_are_not_loopback(client):
     for host in ("localhost.evil.example", "127.0.0.1.evil.example", "evil.example:80@localhost"):
         assert client.get("/api/health", headers={"Host": host}).status_code == 403
+
+
+# ── Codex review follow-ups ──────────────────────────────────────────────
+
+def test_anonymous_financial_page_does_not_touch_the_database(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(server, "init_financial_tables", lambda: calls.append(1))
+    client.get("/financial")
+    assert calls == []
+
+
+@pytest.mark.parametrize("origin, host, scheme, expected", [
+    ("http://127.0.0.1:8000", "127.0.0.1:8000", "ws", True),
+    ("https://gui.example", "gui.example", "wss", True),
+    ("https://gui.example:443", "gui.example", "wss", True),
+    ("http://localhost", "localhost:80", "ws", True),
+    ("http://[::1]:8000", "[::1]:8000", "ws", True),
+    ("https://127.0.0.1:8000", "127.0.0.1:8000", "ws", False),   # scheme
+    ("http://127.0.0.1:9999", "127.0.0.1:8000", "ws", False),    # port
+    ("http://127.0.0.1", "127.0.0.1:8000", "ws", False),         # implied default port
+    ("http://evil.example:8000", "127.0.0.1:8000", "ws", False),  # host
+    ("null", "127.0.0.1:8000", "ws", False),
+    ("http://user@127.0.0.1:8000", "127.0.0.1:8000", "ws", False),
+    ("http://127.0.0.1:8000/path", "127.0.0.1:8000", "ws", False),
+    ("ftp://127.0.0.1:8000", "127.0.0.1:8000", "ws", False),
+    ("", "127.0.0.1:8000", "ws", False),
+])
+def test_origin_must_be_this_servers_own_origin(origin, host, scheme, expected):
+    assert server.origin_matches_host(origin, host, scheme) is expected
+
+
+def test_ws_origin_with_foreign_port_is_rejected(client):
+    headers = {**AUTH, "Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:9999"}
+    assert _rejected(client, headers=headers) == 1008
+    assert _rejected(client, headers={**AUTH, "Origin": "null"}) == 1008
+
+
+@pytest.mark.parametrize("host", [
+    "[::1]x", "[::1]:80x", "[::1", "[::1]]", "[::1]:", "::1", "localhost:", "localhost:abc",
+    "localhost:99999", "localhost:0", "local host", "a@localhost", "localhost/", "[zz]",
+    "[::1]:8000:1", "", "[::1]/x",
+])
+def test_malformed_host_headers_are_rejected(host):
+    assert server._hostname(host) == ""
+    assert not server.host_is_allowed(host)
+
+
+@pytest.mark.parametrize("host", ["[::1]", "[::1]:8000", "[0:0:0:0:0:0:0:1]:8000", "LOCALHOST.:8000"])
+def test_wellformed_loopback_hosts_are_allowed(host):
+    assert server.host_is_allowed(host)
+
+
+def test_websocket_token_subprotocol_is_never_logged(caplog):
+    import logging
+    with caplog.at_level(logging.DEBUG):
+        logging.getLogger("websockets.server").debug("< Sec-WebSocket-Protocol: bach.v1, bach.token.SECRETVALUE_1")
+        logging.getLogger("uvicorn.error").info("headers %s", ["bach.token.SECRETVALUE_2"])
+    text = caplog.text
+    assert "SECRETVALUE" not in text
+    assert "bach.token.[redacted]" in text
+
+
+def test_nav_config_error_does_not_leak_details(client, monkeypatch, tmp_path):
+    from gui.api import unified_api
+    broken = tmp_path / "nav_config.json"
+    broken.write_text("{ broken C:/secret/path", encoding="utf-8")
+    monkeypatch.setattr(unified_api, "_find_existing_path", lambda candidates: broken)
+    body = client.get("/api/nav/config").json()
+    assert body == {"error": "nav_config_unreadable", "areas": []}

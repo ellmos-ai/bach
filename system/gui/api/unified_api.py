@@ -142,8 +142,9 @@ async def get_nav_config():
         try:
             with open(cfg, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            return {"error": str(e), "areas": []}
+        except Exception:
+            logging.getLogger(__name__).exception("nav config unreadable: %s", cfg)
+            return {"error": "nav_config_unreadable", "areas": []}
     return {"areas": []}
 
 
