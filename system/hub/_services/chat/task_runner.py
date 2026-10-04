@@ -185,7 +185,8 @@ def main(argv: list[str] | None = None) -> int:
     from hub._services.chat.chat_runtime import ist_fertig
 
     runtime = tc.runtime
-    runtime.max_tool_rounds = 0
+    # Keep the configured positive limit. In ChatRuntime, 0 suppresses tool
+    # advertisement, so task execution would be unable to use tools.
     runtime.auto_continue = args.auto_continue
     tc._global_defaults["mode"] = args.mode
 

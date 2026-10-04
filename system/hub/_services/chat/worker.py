@@ -159,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         def resume_compute_jobs(p): pass
 
     runtime = tc.runtime
-    runtime.max_tool_rounds = 0
+    # Keep the configured positive limit. In ChatRuntime, 0 suppresses tool
+    # advertisement, so a background worker would be unable to use tools.
     runtime.auto_continue = 8
     tc._global_defaults["mode"] = args.mode
 
