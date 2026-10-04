@@ -1,7 +1,6 @@
 """Inherited host-process guard for Python children spawned by BACH tests."""
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -27,17 +26,10 @@ def _dangerous_command(command):
     else:
         executable = rendered
     executable_name = Path(executable).name
-    unguarded_python = re.compile(
-        r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
-        r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
-        r"[^\r\n;&|]*?-[a-z]*[eis][a-z]*(?:\s|$)",
-        re.IGNORECASE,
-    )
-    if unguarded_python.search(_render_command(command)):
+    from python_options import python_without_site_guard
+
+    if python_without_site_guard(command):
         return True
-    if executable_name.startswith("python") and isinstance(command, (list, tuple)):
-        if any(str(part) in {"-E", "-I", "-S"} for part in command[1:]):
-            return True
     if "onedrive" in executable and "/shutdown" in rendered:
         return True
     if any(token in executable for token in (
