@@ -1,0 +1,33 @@
+name: GUI web
+
+on:
+  pull_request:
+    paths:
+      - 'system/gui/web/**'
+      - '.github/workflows/gui-web.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'system/gui/web/**'
+      - '.github/workflows/gui-web.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: system/gui/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: system/gui/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build

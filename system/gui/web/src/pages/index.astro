@@ -170,47 +170,56 @@ import BachLayout from "../layouts/BachLayout.astro";
   </div>
 </BachLayout>
 
-<script is:inline>
+<script>
+  import { loadTaskSummary, taskPresentation, escapeHtml } from "../lib/task-summary.js";
+
   // Live Dashboard Data Fetcher
   async function loadDashboardData() {
     try {
       // 1. Fetch Tasks
-      const tasksRes = await fetch("/api/tasks");
-      if (tasksRes.ok) {
-        const tasksData = await tasksRes.json();
-        const tasks = tasksData.tasks || tasksData || [];
+      const { tasks: openTasks, total } = await loadTaskSummary();
+      const counter = document.getElementById("stat-tasks");
+      if (counter) {
+        counter.textContent = total === null ? "–" : String(total);
+        counter.title = total === null ? "Gesamtzahl nicht verfügbar" : "Offene Tasks";
+      }
 
-        // Count open tasks
-        const openTasks = tasks.filter(t => t.status !== "done" && t.status !== "closed");
-        document.getElementById("stat-tasks").textContent = openTasks.length;
-
-        // Render Recent Tasks (up to 5)
-        const container = document.getElementById("tasks-container");
-        if (openTasks.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1.5rem;">Keine offenen Tasks vorhanden.</p>';
-        } else {
-          container.innerHTML = openTasks.slice(0, 5).map(t => {
-            const prioBadge = t.priority === "hoch" || t.priority === "kritisch"
-              ? '<span class="badge badge-error">Prio: Hoch</span>'
-              : '<span class="badge badge-accent">Normal</span>';
-            const assignee = t.assignee || "Unzugewiesen";
-            return `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--accent);">
-                <div>
-                  <div style="font-weight:600;font-size:0.875rem;color:var(--text);">#${t.id}: ${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
-                  <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
-                    Zuständig: <strong>${escapeHtml(assignee)}</strong> • Status: ${escapeHtml(t.status || 'open')}
-                  </div>
+      // Render Recent Tasks (up to 5)
+      const container = document.getElementById("tasks-container");
+      if (!container) return;
+      if (openTasks.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1.5rem;">Keine offenen Tasks vorhanden.</p>';
+      } else {
+        container.innerHTML = openTasks.slice(0, 5).map(t => {
+          const { assignee, highPriority } = taskPresentation(t);
+          const prioBadge = highPriority
+            ? '<span class="badge badge-error">Prio: Hoch</span>'
+            : '<span class="badge badge-accent">Normal</span>';
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg-card);border-radius:var(--radius-sm);border-left:3px solid var(--accent);">
+              <div>
+                <div style="font-weight:600;font-size:0.875rem;color:var(--text);">#${escapeHtml(t.id)}: ${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">
+                  Zuständig: <strong>${escapeHtml(assignee)}</strong> • Status: ${escapeHtml(t.status || 'open')}
                 </div>
-                <div>${prioBadge}</div>
               </div>
-            `;
-          }).join("");
-        }
+              <div>${prioBadge}</div>
+            </div>
+          `;
+        }).join("");
       }
     } catch (e) {
-      console.warn("Tasks API offline oder Timeout:", e);
-      document.getElementById("stat-tasks").textContent = "!";
+      console.warn("Tasks API nicht verfügbar:", e);
+      const counter = document.getElementById("stat-tasks");
+      if (counter) {
+        counter.textContent = "!";
+        counter.title = "Tasks konnten nicht geladen werden";
+      }
+      const container = document.getElementById("tasks-container");
+      if (container) {
+        container.innerHTML = '<p role="status" style="color:var(--text-muted);text-align:center;padding:1.5rem;">Tasks konnten nicht geladen werden.</p><button type="button" class="btn btn-secondary" id="tasks-retry">Erneut laden</button>';
+        document.getElementById("tasks-retry")?.addEventListener("click", loadDashboardData);
+      }
     }
 
     try {
@@ -219,7 +228,8 @@ import BachLayout from "../layouts/BachLayout.astro";
       if (bpRes.ok) {
         const bpData = await bpRes.json();
         const blueprints = bpData.blueprints || [];
-        document.getElementById("stat-agents-total").textContent = blueprints.length;
+        const counter = document.getElementById("stat-agents-total");
+        if (counter) counter.textContent = String(blueprints.length);
       }
 
       // Blueprint-Präsenz ist kein Nachweis eines gestarteten Workers.
@@ -228,10 +238,9 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
   }
 
-  function escapeHtml(text) {
-    if (text == null) return "";
-    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadDashboardData, { once: true });
+  } else {
+    loadDashboardData();
   }
-
-  window.addEventListener("DOMContentLoaded", loadDashboardData);
 </script>

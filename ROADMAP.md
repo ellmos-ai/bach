@@ -51,6 +51,12 @@ Automatisierter Daily Care & Dev Check. Befund und Status:
   - Dokumentations-Report `Doc_Update_Report_2026-10-03_16-49.md` erstellt.
 - **OpenClaw Competitive Watch (Stand v2026.9.7):**
   - Stand `v2026.9.7` (30. September 2026) verifiziert (Stabilität für lange Konversationen, OpenAI Agents API, "Sign in with ChatGPT" Beta, erweiterte Update-Backups mit Rollback-Schutz, Desktop/Mobile-Kontinuität). Relevanz für BACHs Session-Continuation Snapshots, atomare Release- & Rollback-Grenzen (`distribution_releases` v3.14.0) und Task #1118 (OPS-RUN-001) bestätigt.
+## GUI-Dashboard-Korrektur 2026-10-03 (Task #1693, Review ausstehend)
+
+- Die Astro-Startseite zählt offene Tasks über einen gefilterten API-Gesamtwert vor der Pagination, zeigt die kanonische Zuständigkeit und behandelt Ladefehler mit einem erneuten Versuch.
+- Die Darstellung nutzt ein kleines eigenständiges Frontend-Modul mit Vertragstests; die bestehenden API-Felder bleiben kompatibel. Dies ist ein begrenzter Stabilitätsschritt innerhalb der GUI-Roadmap.
+- Lieferung über einen separaten PR. Promptboard-/Tray-Integration, modulare Installer und die offenen Compare-Race-Aufgaben bleiben eigene Arbeitspakete; daraus wird kein abgeschlossener Live-Test abgeleitet.
+- Diagnose-Folgeaufgabe #1694: Taskänderungen und Abschluss aus Rheingold-Workern zum Lead propagieren; lokaler Cache und Lead-Status dürfen nicht auseinanderlaufen. Separat vom Recurring-/ID-Kollisions-Slice #1346 bearbeiten.
 
 ## Review 2026-10-01 (Daily Care & Dev Check)
 
