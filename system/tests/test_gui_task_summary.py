@@ -38,8 +38,8 @@ def client(tmp_path, monkeypatch):
         return conn
 
     monkeypatch.setattr(server, "get_bach_db", connect)
-    monkeypatch.setattr(server, "has_active_devices", lambda: False)
-    test_client = TestClient(server.app)
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "summary-fixture" else None)
+    test_client = TestClient(server.app, headers={"Authorization": "Bearer summary-fixture"})
     try:
         yield test_client
     finally:
