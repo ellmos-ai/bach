@@ -12,6 +12,7 @@ import os
 import sys
 import sqlite3
 import tempfile
+from unittest.mock import patch
 from pathlib import Path
 
 import pytest
@@ -93,11 +94,20 @@ def client():
     for name in list(sys.modules.keys()):
         if name == "gui" or name.startswith("gui."):
             sys.modules.pop(name, None)
-    from system.gui.server import app
+    from system.gui import server
     from fastapi.testclient import TestClient
 
-    with TestClient(app) as test_client:
-        yield test_client
+    with patch.object(
+        server,
+        "validate_token",
+        side_effect=lambda token: {"id": 1}
+        if token == "tasks-board-fixture"
+        else None,
+    ):
+        yield TestClient(
+            server.app,
+            headers={"Authorization": "Bearer tasks-board-fixture"},
+        )
 
     # Cleanup
     if original_db is None:

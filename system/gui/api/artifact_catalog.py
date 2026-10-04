@@ -17,7 +17,7 @@ ALLOWED_SUFFIXES = frozenset({".md", ".txt", ".pdf", ".docx", ".csv", ".json", "
 TEXT_SUFFIXES = frozenset({".md", ".txt", ".csv", ".json"})
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_CANDIDATES = 1000
-_PRIVATE_NAME = re.compile(r"(?:^|[._-])(token|secret|credential|password|private|patient|health|medizin|klient)(?:[._-]|$)", re.I)
+_PRIVATE_NAME = re.compile(r"(?:^|[._-])(tokens?|secrets?|credentials?|passwords?|id_rsa|id_ed25519|private|patient|health|medizin|klient)(?:[._-]|$)", re.I)
 
 
 class ArtifactUnavailable(Exception):

@@ -637,7 +637,9 @@ class ConnectionManager:
 
         """Neue Verbindung akzeptieren."""
 
-        await websocket.accept()
+        offered = websocket.scope.get("subprotocols") or []
+
+        await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
 
         self.active_connections.append(websocket)
 
@@ -1110,6 +1112,14 @@ async def lifespan(app: FastAPI):
 
     print(f"           USER_DB:  {USER_DB}")
 
+    try:
+
+        init_financial_tables()
+
+    except Exception as exc:  # noqa: BLE001 - startup must not fail on optional tables
+
+        print(f"[BACH GUI] Financial-Tabellen nicht initialisiert: {type(exc).__name__}")
+
     
 
     # File Watcher für Live-Updates (Phase 4.3)
@@ -1230,7 +1240,7 @@ app.add_middleware(
 
     CORSMiddleware,
 
-    allow_origins=["*"],
+    allow_origins=[],
 
     allow_credentials=False,
 
@@ -1312,49 +1322,292 @@ except ImportError:
         validate_token = _mod.validate_token
 
 
-class DeviceAuthMiddleware(BaseHTTPMiddleware):
-    """Enforces Bearer token device authentication on API routes when devices exist."""
+# ── Perimeter helpers shared by HTTP middleware and the WebSocket handshake ──
 
-    EXEMPT_PREFIXES = (
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+_DNS_LABEL_HOST = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$")
+
+
+def _split_host_port(value: str):
+    """Strictly parse "host", "host:port", "[v6]" or "[v6]:port"; None if malformed.
+
+    Anything else (userinfo, paths, suffixes after "]", bare IPv6, non-numeric or
+    out-of-range ports, odd characters) is rejected instead of being guessed at.
+    """
+    import ipaddress
+    value = (value or "").strip().lower()
+    port = None
+    if value.startswith("["):
+        end = value.find("]")
+        if end < 0:
+            return None
+        rest = value[end + 1:]
+        if rest:
+            if not rest.startswith(":"):
+                return None
+            port_text = rest[1:]
+        else:
+            port_text = ""
+        try:
+            host = ipaddress.IPv6Address(value[1:end]).compressed
+        except ValueError:
+            return None
+    else:
+        if value.count(":") > 1:
+            return None
+        host, _, port_text = value.partition(":")
+        host = host.rstrip(".")
+        try:
+            ipaddress.IPv4Address(host)
+        except ValueError:
+            if not _DNS_LABEL_HOST.match(host):
+                return None
+    if port_text:
+        if not (port_text.isascii() and port_text.isdigit()) or not 0 < int(port_text) < 65536:
+            return None
+        port = int(port_text)
+    elif value.endswith(":"):
+        return None
+    return (host, port) if host else None
+
+
+def _hostname(host_header: str) -> str:
+    """Normalised hostname of a Host header value without port; "" if malformed."""
+    parsed = _split_host_port(host_header)
+    return parsed[0] if parsed else ""
+
+
+def allowed_hosts() -> frozenset:
+    """Hosts this GUI answers to: loopback plus BACH_GUI_ALLOWED_HOSTS (comma separated)."""
+    configured = os.environ.get("BACH_GUI_ALLOWED_HOSTS", "")
+    extra = {_hostname(item) for item in configured.split(",") if item.strip()}
+    return LOOPBACK_HOSTS | {item for item in extra if item}
+
+
+def host_is_allowed(host_header: str) -> bool:
+    """Host allowlist against DNS rebinding: an Origin derived from Host proves nothing."""
+    name = _hostname(host_header)
+    return bool(name) and name in allowed_hosts()
+
+
+def origin_matches_host(origin: str, host_header: str, request_scheme: str = "ws") -> bool:
+    """True if an Origin is exactly the origin of this request: scheme, host and port.
+
+    ws -> http, wss -> https (behind a TLS-terminating proxy run uvicorn with
+    --proxy-headers so the scope scheme is right). Default ports are implied by the
+    scheme. "null", userinfo, paths and queries never match.
+    """
+    from urllib.parse import urlsplit
+    try:
+        parts = urlsplit(origin)
+        origin_port = parts.port
+        origin_host = parts.hostname
+    except ValueError:
+        return False
+    expected_scheme = {"ws": "http", "wss": "https", "http": "http", "https": "https"}.get(request_scheme)
+    if (parts.scheme != expected_scheme or not origin_host or parts.username is not None
+            or parts.password is not None or parts.path not in ("", "/")
+            or parts.query or parts.fragment):
+        return False
+    host = _split_host_port(host_header)
+    if host is None:
+        return False
+    default = 443 if expected_scheme == "https" else 80
+    if _hostname(origin_host if ":" not in origin_host else f"[{origin_host}]") != host[0]:
+        return False
+    return (origin_port or default) == (host[1] or default)
+
+
+# ── Never log WebSocket token subprotocols (Sec-WebSocket-Protocol) ──
+_WS_TOKEN_RE = re.compile(r"bach\.token\.[A-Za-z0-9_.~+/=-]+")
+_REDACT_LOGGERS = ("websockets", "uvicorn", "starlette", "fastapi", "asyncio")
+
+
+def _redact_ws_tokens(text: str) -> str:
+    return _WS_TOKEN_RE.sub("bach.token.[redacted]", text)
+
+
+def _install_log_redaction():
+    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens."""
+    import logging
+    previous = logging.getLogRecordFactory()
+    if getattr(previous, "_bach_redacts", False):
+        return
+
+    def factory(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        try:
+            if record.name.startswith(_REDACT_LOGGERS):
+                message = record.getMessage()
+                if "bach.token." in message:
+                    record.msg, record.args = _redact_ws_tokens(message), ()
+        except Exception:  # logging must never break the request
+            pass
+        return record
+
+    factory._bach_redacts = True
+    logging.setLogRecordFactory(factory)
+
+
+_install_log_redaction()
+
+WS_PROTOCOL = "bach.v1"
+WS_TOKEN_PROTOCOL_PREFIX = "bach.token."
+
+
+def websocket_device_token(websocket) -> str:
+    """Device token of a WebSocket handshake: Authorization header, cookie or subprotocol.
+
+    Never from the URL (query strings end up in logs and history). Browsers cannot set
+    headers on WebSocket, so they pass ["bach.v1", "bach.token.<token>"] as subprotocols.
+    """
+    auth = websocket.headers.get("authorization", "").strip()
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    cookie = websocket.cookies.get("bach_device_token", "").strip()
+    if cookie:
+        return cookie
+    offered = websocket.scope.get("subprotocols") or []
+    if WS_PROTOCOL in offered:
+        for proto in offered:
+            if proto.startswith(WS_TOKEN_PROTOCOL_PREFIX):
+                return proto[len(WS_TOKEN_PROTOCOL_PREFIX):].strip()
+    return ""
+
+
+async def authorize_websocket(websocket) -> bool:
+    """Handshake check; on failure the socket is closed BEFORE it is accepted."""
+    try:
+        host = websocket.headers.get("host", "")
+        origin = websocket.headers.get("origin")
+        # Browsers always send Origin on WebSocket handshakes: when present it must be
+        # this server's own origin (a "null" origin is rejected). Native clients send
+        # none; they stay allowed, but only with a valid device token below.
+        ok = host_is_allowed(host) and (
+            origin is None
+            or origin_matches_host(origin, host, websocket.scope.get("scheme", "ws")))
+        if ok:
+            token = websocket_device_token(websocket)
+            ok = bool(token) and bool(validate_token(token))
+    except Exception:
+        ok = False  # fail closed, never report why
+    if not ok:
+        await websocket.close(code=1008)
+    return ok
+
+
+class DeviceAuthMiddleware(BaseHTTPMiddleware):
+    """Require device credentials for private APIs, including loopback clients."""
+
+    # DEFAULT-DENY: every path not listed here needs a registered device token.
+    # New routes are therefore protected automatically; making one public is a
+    # deliberate edit of these lists (and of tests/test_gui_perimeter.py).
+    #
+    # Page shells are static HTML (or redirects) that fetch their data from /api/
+    # with the token from localStorage; browsers cannot attach that token to a
+    # navigation, so the shells themselves must be public. They carry no user data.
+    PUBLIC_PAGE_PATHS = frozenset({
+        "/unified",
+        "/ocean",
+        "/",
+        "/agenten/fabrika",
+        "/agenten/running",
+        "/agenten/marblerun",
+        "/governance",
+        "/governance/funk",
+        "/governance/usecases",
+        "/governance/logs",
+        "/life",
+        "/domains",
+        "/artefakte",
+        "/agenten/sessions",
+        "/inbox",
+        "/daemon",
+        "/tasks",
+        "/messages",
+        "/reports",
+        "/help",
+        "/maintenance",
+        "/logs",
+        "/chat",
+        "/settings",
+        "/system",
+        "/wiki",
+        "/agents",
+        "/agents/ati",
+        "/ati",
+        "/partners",
+        "/agents/steuer",
+        "/agents/gesundheit",
+        "/agents/persoenlich",
+        "/agents/foerderplaner",
+        "/skills-board",
+        "/agents-board",
+        "/skills",
+        "/finanzen",
+        "/steuer",
+        "/gesundheit",
+        "/persoenlich",
+        "/routines",
+        "/denkarium",
         "/tokens",
         "/token-dashboard",
-        "/static/",
-        "/favicon.ico",
-        "/docs",
-        "/openapi.json",
-    )
+        "/tasks-board",
+        "/financial",
+        "/memory",
+        "/tools",
+        "/prompt-generator",
+        "/prompt-library",
+        "/usecases",
+        "/kontakte",
+        "/routinen",
+        "/anonymization",
+        "/workflow-tuev",
+    })
+    # Static assets (JS/CSS/images) without data.
+    PUBLIC_STATIC_PREFIXES = ("/static/",)
 
     EXEMPT_API_PATHS = {
-        "/api/status",
         "/api/health",
         "/api/devices/verify",
         "/api/gui/backend-origin",
         "/api/gui/brand",
     }
 
-    TRAY_TRANSITIONAL_PATHS = {
-        "/api/tasks",
-        "/api/marblerun",
-        "/api/governance",
-        "/api/memory",
-        "/api/gardener",
-        "/api/capabilities",
-        "/api/backends",
-        "/api/models",
-        "/api/slots",
-        "/api/chat",
-    }
+    async def _require_device(self, request: Request, call_next):
+        """Token gate for everything that is not explicitly public."""
+        auth_header = request.headers.get("Authorization", "").strip()
+        token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+                 else request.cookies.get("bach_device_token", "").strip())
+        if not token:
+            return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+        device = validate_token(token)
+        if not device:
+            return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+        request.state.device = device
+        return await call_next(request)
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # 1. Non-API routes pass through
+        # 1. Default-deny outside /api/: only the explicit page/asset allowlist passes.
+        #    (/docs, /openapi.json, /redoc and the /control mount need a token too.)
         if not path.startswith("/api/"):
-            return await call_next(request)
-
-        for prefix in self.EXEMPT_PREFIXES:
-            if path.startswith(prefix):
+            if ((request.method in ("GET", "HEAD")
+                    and (path in self.PUBLIC_PAGE_PATHS
+                         or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 return await call_next(request)
+            return await self._require_device(request, call_next)
+
+        # A browser talking to localhost is still a loopback client. Reject
+        # cross-origin requests before credentials or any API handler runs.
+        origin = request.headers.get("origin")
+        same_origin = f"{request.url.scheme}://{request.url.netloc}"
+        if ((origin is not None and origin != same_origin)
+                or request.headers.get("sec-fetch-site") == "cross-site"):
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
 
         # 2. Status & probe endpoints pass through
         if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
@@ -1375,15 +1628,13 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             request.state.device = device
             return await call_next(request)
 
-        # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
+        # 3. Credentials belong in headers or cookies, never URLs.
         auth_header = request.headers.get("Authorization", "").strip()
         bearer_token = None
         if auth_header.startswith("Bearer "):
             bearer_token = auth_header[7:].strip()
         elif request.cookies.get("bach_device_token"):
             bearer_token = request.cookies.get("bach_device_token")
-        elif request.query_params.get("token"):
-            bearer_token = request.query_params.get("token")
 
         # Inbox paths expose private file names, previews and sorting actions.
         # Require a registered device even on loopback and with no devices set up.
@@ -1439,21 +1690,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             request.state.device = device
             return await call_next(request)
 
-        # If no token was supplied:
-        # Check if any active devices exist in the database
-        if not has_active_devices():
-            return await call_next(request)
-
-        # Allow transitional paths (with prefix match for subpaths like /api/tasks/{id})
-        for tpath in self.TRAY_TRANSITIONAL_PATHS:
-            if path == tpath or path.startswith(tpath + "/"):
-                return await call_next(request)
-
-        # Localhost / loopback fallback for local server operations
-        client_host = request.client.host if request.client else ""
-        if client_host in ("127.0.0.1", "::1", "localhost"):
-            return await call_next(request)
-
+        # Unconfigured and loopback systems fail closed too. Initial device
+        # provisioning is an explicit local administration action.
         return JSONResponse(
             status_code=401,
             content={"error": "Missing device authorization token", "detail": "Unauthorized"},
@@ -1461,6 +1699,36 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(DeviceAuthMiddleware)
+
+
+class HostAllowlistMiddleware:
+    """Pure ASGI gate (HTTP and WebSocket): reject unknown Host headers (DNS rebinding).
+
+    An attacker's page rebinding its domain to 127.0.0.1 is same-origin to the browser, so
+    the Origin check alone cannot stop it; the Host header still names the attacker domain.
+    Runs outermost, before any credential or handler logic.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = dict(scope.get("headers") or []).get(b"host", b"").decode("latin-1")
+            if not host_is_allowed(host):
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    body = b"Host not allowed"
+                    await send({"type": "http.response.start", "status": 403,
+                                "headers": [(b"content-type", b"text/plain"),
+                                            (b"content-length", str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(HostAllowlistMiddleware)
 
 try:
     from gui.api.unified_api import router as unified_router
@@ -7015,11 +7283,7 @@ async def financial_page():
 
     """Financial Mail Dashboard."""
 
-    # Tabellen initialisieren falls noetig
-
-    init_financial_tables()
-
-
+    # Tabellen werden beim Serverstart angelegt (lifespan), nie durch anonyme GETs.
 
     template = TEMPLATES_DIR / "financial.html"
 
@@ -14101,7 +14365,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
     Usage (JavaScript):
 
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        // Handshake requires a device token (browsers: subprotocols).
+
+        const ws = new WebSocket('ws://localhost:8000/ws', ['bach.v1', 'bach.token.' + token]);
 
         ws.onmessage = (event) => {
 
@@ -14112,6 +14378,10 @@ async def websocket_endpoint(websocket: WebSocket):
         };
 
     """
+
+    if not await authorize_websocket(websocket):
+
+        return
 
     await ws_manager.connect(websocket)
 
@@ -14785,6 +15055,13 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
     try:
 
         import uvicorn
+
+        if host not in ("0.0.0.0", "::", ""):
+
+            # An explicitly chosen bind address is a deliberate Host for this GUI.
+
+            os.environ["BACH_GUI_ALLOWED_HOSTS"] = ",".join(
+                filter(None, [os.environ.get("BACH_GUI_ALLOWED_HOSTS", ""), host]))
 
         print(f"[BACH GUI] Starte Server auf http://{host}:{port}")
 

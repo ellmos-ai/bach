@@ -263,6 +263,8 @@ class TestChatRuntimeWiring:
 
     def test_process_calls_memory_hook(self):
         src = (HUB_DIR / "_services" / "chat" / "chat_runtime.py").read_text(encoding="utf-8")
+        # Profile-bound sessions gate this call; the source smoke check only
+        # verifies that the ordinary chat path still invokes the memory hook.
         assert "self._get_memory_hook_context(text, chat_id)" in src
         assert "--- MEMORY-HOOK ---" in src
 

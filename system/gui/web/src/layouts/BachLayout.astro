@@ -29,47 +29,7 @@ const pageTitle = title ? `${title} | System GUI` : "System GUI";
       })();
     </script>
 
-    <!-- Explicit device login; public API reads remain available without a token. -->
-    <script is:inline>
-      (function() {
-        // Global fetch patch for API requests
-        const originalFetch = window.fetch;
-        window.fetch = function(url, options = {}) {
-          const isApi = typeof url === 'string' && url.startsWith('/api/');
-          if (isApi) {
-            const token = localStorage.getItem("bach_device_token");
-            if (token) {
-              options.headers = options.headers || {};
-              if (options.headers instanceof Headers) {
-                if (!options.headers.has("Authorization")) {
-                  options.headers.set("Authorization", "Bearer " + token);
-                }
-              } else if (Array.isArray(options.headers)) {
-                options.headers.push(["Authorization", "Bearer " + token]);
-              } else {
-                if (!options.headers["Authorization"]) {
-                  options.headers["Authorization"] = "Bearer " + token;
-                }
-              }
-            }
-          }
-          return originalFetch(url, options).then(response => {
-            if (isApi && response.status === 401 && document.body && !document.getElementById('bach-auth-required')) {
-              const notice = document.createElement('div');
-              notice.id = 'bach-auth-required';
-              notice.style.cssText = 'padding:0.75rem 1rem;background:var(--bg-card);border-bottom:1px solid var(--warning);color:var(--text)';
-              notice.append('Für diese Aktion ist eine Geräteanmeldung erforderlich. ');
-              const login = document.createElement('a');
-              login.href = '/token-dashboard';
-              login.textContent = 'Gerät anmelden';
-              notice.append(login);
-              document.body.prepend(notice);
-            }
-            return response;
-          });
-        };
-      })();
-    </script>
+    <script is:inline src="/static/js/device-fetch.js"></script>
 
     <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

@@ -11,8 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gui.server import app
+from gui import server
 
-client = TestClient(app)
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "nav-fixture" else None)
+    return TestClient(app, headers={"Authorization": "Bearer nav-fixture"})
 
 NAV_CONFIG_PATH = Path(__file__).resolve().parent.parent / "gui" / "web" / "src" / "config" / "nav_config.json"
 
@@ -40,13 +45,13 @@ def load_all_nav_routes():
 
 
 @pytest.mark.parametrize("route", load_all_nav_routes())
-def test_all_nav_links_valid(route):
+def test_all_nav_links_valid(route, client):
     """Jede definierte Route in der Hauptnavigation muss HTTP 200 (oder gueltigen Redirect) liefern."""
     response = client.get(route, follow_redirects=True)
     assert response.status_code == 200, f"Route {route} schlug fehl mit Status {response.status_code}"
 
 
-def test_api_domains_installed():
+def test_api_domains_installed(client):
     """GET /api/domains/installed liefert die installierten Fachmodule."""
     res = client.get("/api/domains/installed")
     assert res.status_code == 200
@@ -55,15 +60,20 @@ def test_api_domains_installed():
     assert data["total"] > 0
 
 
-def test_api_artefakte():
+def test_api_artefakte(client, tmp_path, monkeypatch):
     """GET /api/artefakte liefert generierte Artefakte."""
+    from gui.api import artifact_catalog
+
+    monkeypatch.setattr(artifact_catalog, "ARTIFACT_ROOT", tmp_path)
+    # Device lookup against the production DB is covered by test_unified_api.
+    monkeypatch.setattr("gui.api.unified_api._require_memory_device", lambda request: 1)
     res = client.get("/api/artefakte")
     assert res.status_code == 200
     data = res.json()
     assert "artefakte" in data
 
 
-def test_api_agent_teams():
+def test_api_agent_teams(client):
     """GET /api/agenten/teams liefert Multi-Agenten-Teams."""
     res = client.get("/api/agenten/teams")
     assert res.status_code == 200
@@ -71,7 +81,7 @@ def test_api_agent_teams():
     assert "teams" in data
 
 
-def test_api_ocean_map():
+def test_api_ocean_map(client):
     """GET /api/setup/ocean-map liefert den Modulschaltplan."""
     res = client.get("/api/setup/ocean-map")
     assert res.status_code == 200

@@ -142,34 +142,27 @@ async def get_nav_config():
         try:
             with open(cfg, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            return {"error": str(e), "areas": []}
+        except Exception:
+            logging.getLogger(__name__).exception("nav config unreadable: %s", cfg)
+            return {"error": "nav_config_unreadable", "areas": []}
     return {"areas": []}
 
 
 
 DOMAINS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
 ])
 
 TOOLS_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
 ])
 
 MCP_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MCP")),
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MCP"),
-    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MCP"),
 ])
 
 CONTROL_ROOT = _find_existing_path([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/_control-center/_CONTROL")),
-    Path("C:/Users/User/OneDrive/.TOPICS/_control-center/_CONTROL"),
-    Path("/Users/lukas/OneDrive/.TOPICS/_control-center/_CONTROL"),
 ])
 
 REPOS_ROOT = _find_existing_path([

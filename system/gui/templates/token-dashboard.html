@@ -2,6 +2,7 @@
 <html lang="de">
 
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Geräte-Authentifizierung | BACH</title>
@@ -181,7 +182,15 @@
         <!-- Sektion 2: Neues Gerät anlegen -->
         <div class="auth-card">
             <h2>➕ Neues Gerät registrieren</h2>
-            <p>Registriere einen neuen Client (z. B. Handy, Workstation, Tray):</p>
+            <p>Nach der Anmeldung kannst du weitere Clients registrieren (z. B. Handy, Workstation, Tray).</p>
+            <details>
+                <summary>Erstes Gerät auf einer neuen Installation</summary>
+                <p>Öffne lokal im Verzeichnis <code>system/</code> eine Python-Konsole und führe aus:</p>
+                <pre>from gui.device_auth import create_device
+token = create_device("first-device")
+print(token)</pre>
+                <p>Übertrage den einmaligen Token privat in das Anmeldefeld oben. Speichere ihn nicht in URLs, Protokollen oder Quelltexten.</p>
+            </details>
             <div class="input-group">
                 <input type="text" id="new-device-name" placeholder="Gerätename (z. B. Workstation-LG, Handy)" />
                 <button class="btn btn-primary" onclick="registerNewDevice()">Gerät anlegen</button>
@@ -220,28 +229,7 @@
         </div>
     </div>
 
-    <script>
-        // Global Fetch-Wrapper: Fügt Bearer-Token an alle Requests an
-        const originalFetch = window.fetch;
-        window.fetch = function(url, options = {}) {
-            options.headers = options.headers || {};
-            const token = localStorage.getItem("bach_device_token");
-            if (token) {
-                if (options.headers instanceof Headers) {
-                    if (!options.headers.has("Authorization")) {
-                        options.headers.append("Authorization", "Bearer " + token);
-                    }
-                } else if (Array.isArray(options.headers)) {
-                    options.headers.push(["Authorization", "Bearer " + token]);
-                } else {
-                    if (!options.headers["Authorization"]) {
-                        options.headers["Authorization"] = "Bearer " + token;
-                    }
-                }
-            }
-            return originalFetch(url, options);
-        };
-
+        <script>
         const STORAGE_KEY = "bach_device_token";
 
         function updateAuthUI() {
@@ -273,9 +261,9 @@
 
             // Verify with backend
             try {
-                const resp = await originalFetch("/api/devices/verify", {
+                const resp = await fetch("/api/devices/verify", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
                     body: JSON.stringify({ token: token })
                 });
                 const data = await resp.json();
