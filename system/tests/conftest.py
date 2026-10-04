@@ -38,6 +38,8 @@ _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+# GUI Host allowlist (DNS-rebinding gate): Starlette's TestClient talks to "testserver".
+os.environ["BACH_GUI_ALLOWED_HOSTS"] = "testserver"
 os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
 os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
 os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")

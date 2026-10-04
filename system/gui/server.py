@@ -1595,6 +1595,36 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(DeviceAuthMiddleware)
 
+
+class HostAllowlistMiddleware:
+    """Pure ASGI gate (HTTP and WebSocket): reject unknown Host headers (DNS rebinding).
+
+    An attacker's page rebinding its domain to 127.0.0.1 is same-origin to the browser, so
+    the Origin check alone cannot stop it; the Host header still names the attacker domain.
+    Runs outermost, before any credential or handler logic.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = dict(scope.get("headers") or []).get(b"host", b"").decode("latin-1")
+            if not host_is_allowed(host):
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    body = b"Host not allowed"
+                    await send({"type": "http.response.start", "status": 403,
+                                "headers": [(b"content-type", b"text/plain"),
+                                            (b"content-length", str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(HostAllowlistMiddleware)
+
 try:
     from gui.api.unified_api import router as unified_router
     app.include_router(unified_router)
@@ -14914,6 +14944,13 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
     try:
 
         import uvicorn
+
+        if host not in ("0.0.0.0", "::", ""):
+
+            # An explicitly chosen bind address is a deliberate Host for this GUI.
+
+            os.environ["BACH_GUI_ALLOWED_HOSTS"] = ",".join(
+                filter(None, [os.environ.get("BACH_GUI_ALLOWED_HOSTS", ""), host]))
 
         print(f"[BACH GUI] Starte Server auf http://{host}:{port}")
 
