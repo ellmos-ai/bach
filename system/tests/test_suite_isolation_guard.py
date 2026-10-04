@@ -108,3 +108,44 @@ def test_destructive_process_reason_allows_script_arguments_with_options():
     assert conftest._destructive_process_reason("python system/bach.py --status") is None
     assert conftest._destructive_process_reason("python system/bach.py --memory status") is None
 
+
+def test_python_child_distinguishes_interpreter_and_program_options():
+    commands = [
+        [sys.executable, "-m", "http.server", "0", "--bind", "127.0.0.1"],
+        [sys.executable, "system/bach.py", "--status"],
+        [sys.executable, "-c", "pass", "-I"],
+        "python -m http.server 0 --bind 127.0.0.1",
+        [sys.executable, "-I", "-m", "http.server", "0"],
+        [sys.executable, "-E", "-c", "pass"],
+        [sys.executable, "-S", "-c", "pass"],
+        [sys.executable, "-uI", "-c", "pass"],
+        "python -S -c pass",
+        ["cmd.exe", "/c", "taskkill /PID 999999 /F"],
+        [sys.executable, "-X", "dev", "-I", "-c", "pass"],
+        [sys.executable, "-W", "ignore", "-S", "-c", "pass"],
+        [sys.executable, "--check-hash-based-pycs", "default", "-E", "-c", "pass"],
+        "python -X dev -I -c pass",
+        "python -W ignore -S -c pass",
+        [sys.executable, "-Ximporttime", "-c", "pass"],
+        [sys.executable, "-W", "ignore", "-c", "pass"],
+        [sys.executable, "-X", "importtime", "-m", "http.server", "0", "--bind", "127.0.0.1"],
+        "python -X importtime -m http.server 0 --bind 127.0.0.1",
+        [sys.executable, "--check-hash-based-pycs", "default", "-m", "http.server", "0"],
+        'python -c "import time; time.sleep(30)"',
+        'python -c "print(\'; python -I -c pass\')"',
+        'python -c "print(\'safe\')"; python -I -c pass',
+    ]
+    code = (
+        "import json, sitecustomize; "
+        f"commands = {commands!r}; "
+        "print(json.dumps([sitecustomize._dangerous_command(c) for c in commands]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    expected = [False] * 4 + [True] * 11 + [False] * 7 + [True]
+    assert json.loads(result.stdout) == expected
+    assert [conftest._destructive_process_reason(c) is not None for c in commands] == expected
