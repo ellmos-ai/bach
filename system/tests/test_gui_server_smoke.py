@@ -219,9 +219,10 @@ def client(test_db, monkeypatch):
     tools_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(srv, "TOOLS_DIR", tools_dir)
 
-    monkeypatch.setattr(srv, "validate_token", lambda token: {"id": 1} if token == "smoke-fixture" else None)
-    return TestClient(srv.app, raise_server_exceptions=False,
-                      headers={"Authorization": "Bearer smoke-fixture"})
+    return TestClient(
+        srv.app, raise_server_exceptions=False,
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
