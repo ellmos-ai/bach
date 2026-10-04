@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
+from starlette.websockets import WebSocketDisconnect
 
 from gui import server
 from gui.api import unified_api
@@ -121,3 +122,146 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
     assert [item["auth"] for item in seen] == [
         "Bearer fixture-device", "Bearer fixture-device", "Bearer control-fixture", None, None,
     ]
+
+TOKEN = "perimeter-fixture-token"
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == TOKEN else None)
+    return TestClient(server.app)
+
+
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def _rejected(client, **kwargs):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/ws", **kwargs):
+            pass
+    return exc.value.code
+
+
+# ── WebSocket ────────────────────────────────────────────────────────────
+
+def test_ws_without_token_is_rejected_before_any_event(client):
+    before = len(server.ws_manager.active_connections)
+    assert _rejected(client) == 1008
+    assert len(server.ws_manager.active_connections) == before
+
+
+def test_ws_with_invalid_token_is_rejected(client):
+    assert _rejected(client, headers={"Authorization": "Bearer nope"}) == 1008
+
+
+def test_ws_token_in_query_string_is_ignored(client):
+    assert _rejected(client, params={"token": TOKEN}) == 1008
+
+
+def test_ws_foreign_origin_is_rejected_even_with_token(client):
+    assert _rejected(client, headers={**AUTH, "Origin": "https://evil.example"}) == 1008
+
+
+def test_ws_foreign_host_is_rejected_even_with_token(client):
+    assert _rejected(client, headers={**AUTH, "Host": "evil.example"}) == 1008
+
+
+def test_ws_accepts_token_with_loopback_origin(client):
+    headers = {**AUTH, "Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000"}
+    with client.websocket_connect("/ws", headers=headers) as ws:
+        ws.send_text("ping")
+        assert ws.receive_json()["type"] == "pong"
+
+
+def test_ws_accepts_browser_subprotocol_token(client):
+    with client.websocket_connect("/ws", subprotocols=["bach.v1", "bach.token." + TOKEN]) as ws:
+        assert ws.accepted_subprotocol == "bach.v1"
+        ws.send_text("ping")
+        assert ws.receive_json()["type"] == "pong"
+
+
+def test_ws_token_subprotocol_without_version_protocol_is_rejected(client):
+    assert _rejected(client, subprotocols=["bach.token." + TOKEN]) == 1008
+
+
+def test_only_the_known_websocket_route_exists():
+    """A new WebSocket route must be reviewed: the HTTP middleware does not cover it."""
+    paths = {r.path for r in server.app.routes if type(r).__name__ == "APIWebSocketRoute"}
+    assert paths == {"/ws"}
+
+
+# ── Default-deny ─────────────────────────────────────────────────────────
+
+@pytest.fixture
+def dummy_routes():
+    async def dummy():
+        return {"ok": True}
+
+    server.app.add_api_route("/api/_perimeter_dummy", dummy, methods=["GET", "POST"])
+    server.app.add_api_route("/_perimeter_dummy_page", dummy, methods=["GET"])
+    yield
+    server.app.router.routes[:] = [
+        r for r in server.app.router.routes if "_perimeter_dummy" not in getattr(r, "path", "")
+    ]
+
+
+@pytest.mark.parametrize("path", ["/api/_perimeter_dummy", "/_perimeter_dummy_page"])
+def test_newly_registered_route_is_denied_without_token(client, dummy_routes, path):
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers={"Authorization": "Bearer nope"}).status_code in (401, 403)
+    assert client.get(path, headers=AUTH).status_code == 200
+
+
+def test_cookie_token_also_passes_the_gate(client, dummy_routes):
+    client.cookies.set("bach_device_token", TOKEN)
+    assert client.get("/_perimeter_dummy_page").status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json", "/control/", "/ws-not-a-page"])
+def test_docs_mounts_and_unknown_paths_need_a_token(client, path):
+    assert client.get(path).status_code in (401, 403)
+
+
+def test_mutating_methods_on_page_paths_need_a_token(client):
+    assert client.post("/").status_code == 401
+
+
+def test_public_allowlist_is_explicit_and_unauthenticated_shells_load(client):
+    assert "/token-dashboard" in server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
+    assert client.get("/token-dashboard").status_code not in (401, 403)
+    assert client.get("/api/health").status_code not in (401, 403)
+
+
+def test_every_registered_non_api_route_is_classified():
+    """Fails when a route is added without deciding whether it may be public."""
+    public = server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
+    protected = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/ws", "/control", "/static"}
+    for route in server.app.routes:
+        path = getattr(route, "path", None)
+        if path and not path.startswith("/api/") and "_perimeter_dummy" not in path:
+            assert path in public or path in protected, f"unclassified route {path}"
+
+
+# ── Host allowlist (DNS rebinding) ───────────────────────────────────────
+
+@pytest.mark.parametrize("path", ["/api/health", "/", "/token-dashboard"])
+def test_unknown_host_is_rejected_even_when_origin_matches(client, path):
+    headers = {"Host": "rebound.example", "Origin": "http://rebound.example"}
+    assert client.get(path, headers=headers).status_code == 403
+    assert client.get(path, headers={**headers, **AUTH}).status_code == 403
+
+
+@pytest.mark.parametrize("host", ["localhost", "localhost:8000", "127.0.0.1:8000", "[::1]:8000"])
+def test_loopback_hosts_are_allowed(client, host):
+    assert client.get("/api/health", headers={"Host": host}).status_code != 403
+
+
+def test_configured_host_is_allowed_and_others_still_are_not(client, monkeypatch):
+    monkeypatch.setenv("BACH_GUI_ALLOWED_HOSTS", "testserver, bach.tailnet.example:8000")
+    assert client.get("/api/health", headers={"Host": "bach.tailnet.example:8000"}).status_code != 403
+    assert client.get("/api/health", headers={"Host": "other.example"}).status_code == 403
+
+
+def test_host_lookalikes_are_not_loopback(client):
+    for host in ("localhost.evil.example", "127.0.0.1.evil.example", "evil.example:80@localhost"):
+        assert client.get("/api/health", headers={"Host": host}).status_code == 403

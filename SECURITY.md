@@ -31,6 +31,15 @@ and installations with no registered devices. Browser API requests must come
 from the GUI's own origin. Send tokens in an `Authorization: Bearer` header;
 query-string tokens are not accepted. Chat-Control keeps its separate credential.
 
+The gate is default-deny: only an explicit allowlist of static page shells and
+assets is public; every other path needs a device token, including new routes.
+The WebSocket (`/ws`) requires a device token at the handshake (header, cookie, or
+the `bach.v1` + `bach.token.<token>` subprotocols) and a same-origin `Origin`.
+The server answers only to loopback Host names. To reach the GUI under another
+name (for example over a VPN), list it in `BACH_GUI_ALLOWED_HOSTS`
+(comma-separated host names); an explicit `run_server(host=...)` bind address is
+added automatically.
+
 For a new installation, provision the first device locally from the `system/`
 directory using the existing library API:
 
