@@ -637,7 +637,9 @@ class ConnectionManager:
 
         """Neue Verbindung akzeptieren."""
 
-        await websocket.accept()
+        offered = websocket.scope.get("subprotocols") or []
+
+        await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
 
         self.active_connections.append(websocket)
 
@@ -1310,6 +1312,85 @@ except ImportError:
         list_devices = _mod.list_devices
         revoke_device = _mod.revoke_device
         validate_token = _mod.validate_token
+
+
+# ── Perimeter helpers shared by HTTP middleware and the WebSocket handshake ──
+
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _hostname(host_header: str) -> str:
+    """Return the lower-case hostname of a Host header value without port."""
+    value = (host_header or "").strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[1:end] if end > 0 else ""
+    if value.count(":") == 1:
+        value = value.rsplit(":", 1)[0]
+    return value.rstrip(".")
+
+
+def allowed_hosts() -> frozenset:
+    """Hosts this GUI answers to: loopback plus BACH_GUI_ALLOWED_HOSTS (comma separated)."""
+    configured = os.environ.get("BACH_GUI_ALLOWED_HOSTS", "")
+    extra = {_hostname(item) for item in configured.split(",") if item.strip()}
+    return LOOPBACK_HOSTS | {item for item in extra if item}
+
+
+def host_is_allowed(host_header: str) -> bool:
+    """Host allowlist against DNS rebinding: an Origin derived from Host proves nothing."""
+    name = _hostname(host_header)
+    return bool(name) and name in allowed_hosts()
+
+
+def origin_matches_host(origin: str, host_header: str) -> bool:
+    """True if an Origin header names exactly the (already allowlisted) Host."""
+    from urllib.parse import urlsplit
+    try:
+        netloc = urlsplit(origin).netloc.lower()
+    except ValueError:
+        return False
+    return bool(netloc) and netloc == (host_header or "").strip().lower()
+
+
+WS_PROTOCOL = "bach.v1"
+WS_TOKEN_PROTOCOL_PREFIX = "bach.token."
+
+
+def websocket_device_token(websocket) -> str:
+    """Device token of a WebSocket handshake: Authorization header, cookie or subprotocol.
+
+    Never from the URL (query strings end up in logs and history). Browsers cannot set
+    headers on WebSocket, so they pass ["bach.v1", "bach.token.<token>"] as subprotocols.
+    """
+    auth = websocket.headers.get("authorization", "").strip()
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    cookie = websocket.cookies.get("bach_device_token", "").strip()
+    if cookie:
+        return cookie
+    offered = websocket.scope.get("subprotocols") or []
+    if WS_PROTOCOL in offered:
+        for proto in offered:
+            if proto.startswith(WS_TOKEN_PROTOCOL_PREFIX):
+                return proto[len(WS_TOKEN_PROTOCOL_PREFIX):].strip()
+    return ""
+
+
+async def authorize_websocket(websocket) -> bool:
+    """Handshake check; on failure the socket is closed BEFORE it is accepted."""
+    try:
+        host = websocket.headers.get("host", "")
+        origin = websocket.headers.get("origin")
+        ok = host_is_allowed(host) and (origin is None or origin_matches_host(origin, host))
+        if ok:
+            token = websocket_device_token(websocket)
+            ok = bool(token) and bool(validate_token(token))
+    except Exception:
+        ok = False  # fail closed, never report why
+    if not ok:
+        await websocket.close(code=1008)
+    return ok
 
 
 class DeviceAuthMiddleware(BaseHTTPMiddleware):
@@ -14070,7 +14151,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
     Usage (JavaScript):
 
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        // Handshake requires a device token (browsers: subprotocols).
+
+        const ws = new WebSocket('ws://localhost:8000/ws', ['bach.v1', 'bach.token.' + token]);
 
         ws.onmessage = (event) => {
 
@@ -14081,6 +14164,10 @@ async def websocket_endpoint(websocket: WebSocket):
         };
 
     """
+
+    if not await authorize_websocket(websocket):
+
+        return
 
     await ws_manager.connect(websocket)
 
