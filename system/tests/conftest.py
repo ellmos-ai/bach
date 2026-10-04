@@ -79,8 +79,11 @@ def _ensure_distribution_manifest():
     if not db_path:
         return
 
-    system_dir = Path(__file__).resolve().parent.parent / "system"
+    system_dir = Path(__file__).resolve().parent.parent
     conn = sqlite3.connect(db_path)
+    schema_file = system_dir / "data" / "schema" / "schema.sql"
+    if schema_file.exists():
+        conn.executescript(schema_file.read_text(encoding="utf-8"))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS distribution_manifest (
             path TEXT PRIMARY KEY,

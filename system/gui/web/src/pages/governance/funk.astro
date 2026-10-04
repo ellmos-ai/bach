@@ -1,163 +1,57 @@
 ---
-// src/pages/governance/funk.astro - Agentenfunk (Inter-Agenten Kommunikation & Signale)
+// src/pages/governance/funk.astro — Agentenfunk-Vertragsplatz
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
 
 <BachLayout title="Agentenfunk | Governance" currentPath="/governance/funk">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+  <header class="funk-header">
     <div>
-      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
-        📻 Agentenfunk
-      </h1>
-      <p style="color:var(--text-muted);font-size:0.875rem;">
-        Inter-Agenten-Kommunikation • Peer-Signale • Multi-Agent Koordinations-Mesh (Gemini ↔ Claude ↔ GPT ↔ Kimi ↔ Ollama)
-      </p>
+      <h1>📻 Agentenfunk</h1>
+      <p>Nachrichten und Signale zwischen Agenten.</p>
     </div>
+    <span class="badge">Transportstatus unbekannt</span>
+  </header>
 
-    <div style="display:flex;gap:0.5rem;">
-      <span class="badge badge-accent" style="font-size:0.85rem;padding:0.4rem 0.8rem;">
-        ● Mesh Aktiv
-      </span>
-    </div>
-  </div>
-
-  <!-- Governance Modul-Tabs -->
-  <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;flex-wrap:wrap;">
+  <nav class="funk-nav" aria-label="Governance">
     <a href="/governance" class="btn btn-sm">🏛️ Control Room</a>
-    <a href="/governance/funk" class="btn btn-sm btn-primary">📻 Agentenfunk</a>
-    <a href="/governance/usecases" class="btn btn-sm">📑 Use Cases & Workflows</a>
-    <a href="/governance/logs" class="btn btn-sm">📜 Logs & Audit</a>
-  </div>
+    <a href="/governance/funk" class="btn btn-sm btn-primary" aria-current="page">📻 Agentenfunk</a>
+    <a href="/governance/usecases" class="btn btn-sm">📑 Use Cases</a>
+    <a href="/governance/logs" class="btn btn-sm">📜 Audit</a>
+  </nav>
 
-  <div class="grid grid-cols-3" style="gap:1.5rem;margin-bottom:1.5rem;">
-    <div class="card" style="text-align:center;padding:1.25rem;">
-      <div style="font-size:2rem;font-weight:800;color:var(--accent);">5</div>
-      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.25rem;">Verbundene Akteure</div>
-    </div>
-    <div class="card" style="text-align:center;padding:1.25rem;">
-      <div style="font-size:2rem;font-weight:800;color:var(--success);">0 ms</div>
-      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.25rem;">Mesh Latenz (Lokal)</div>
-    </div>
-    <div class="card" style="text-align:center;padding:1.25rem;">
-      <div style="font-size:2rem;font-weight:800;color:var(--accent-blue);">P-001</div>
-      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.25rem;">Signal-Verschlüsselung & Guard</div>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-2" style="gap:1.5rem;">
-    <!-- Sende-Konsole -->
-    <div class="card">
-      <div class="card-header">
-        <h2 class="card-title">📡 Signal / Befehl übertragen</h2>
-      </div>
-      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-        Sende strukturierte Anweisungen oder Status-Signale direkt in die Mailbox des Ziel-Agenten.
-      </p>
-
-      <form onsubmit="event.preventDefault(); transmitSignal();" style="display:flex;flex-direction:column;gap:1rem;">
-        <div>
-          <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Absender-Identität</label>
-          <input type="text" id="tx-sender" value="operator@ASUS-GEI" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Ziel-Akteur</label>
-          <select id="tx-recipient" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;">
-            <option value="all">Broadcast: Alle Agenten (*)</option>
-            <option value="claude">Claude (claude-code / Mac Studio & Laptop)</option>
-            <option value="gemini">Gemini (antigravity / ASUS-GEI)</option>
-            <option value="codex">GPT (Codex / Laptop)</option>
-            <option value="kimi">Kimi (kimi-code / ASUS-GEI)</option>
-            <option value="ollama">Ollama (Cluster Worker / Mac Studio)</option>
-          </select>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Signal-Typ</label>
-          <select id="tx-type" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;">
-            <option value="INFO">INFO: Status-Mitteilung</option>
-            <option value="HANDSHAKE">HANDSHAKE: Session-Übergabe / Synchronisation</option>
-            <option value="TASK_DISPATCH">TASK_DISPATCH: Aufgaben-Zuweisung</option>
-            <option value="LOCK_ALERT">LOCK_ALERT: Sperr-Benachrichtigung</option>
-          </select>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Signal-Inhalt (Payload)</label>
-          <textarea id="tx-payload" rows="4" placeholder="Nachricht, Session-Ref oder Dispatch-Instruktion..." required style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;resize:vertical;"></textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary" style="align-self:flex-start;">
-          ⚡ Signal abstrahlen
-        </button>
+  <div class="funk-grid">
+    <section class="card">
+      <h2>📡 Signal übertragen</h2>
+      <p>In Arbeit: Es fehlt ein geprüfter Empfänger- und Zustellvertrag. Ein lokaler Eintrag im Browser wäre noch keine zugestellte Nachricht.</p>
+      <form class="funk-form">
+        <label>Absender <input type="text" value="Geräteidentität noch nicht gebunden" disabled /></label>
+        <label>Ziel <select disabled><option>Empfängerregistrierung fehlt</option></select></label>
+        <label>Signaltyp <select disabled><option>Transportvertrag fehlt</option></select></label>
+        <label>Inhalt <textarea rows="4" placeholder="Nachrichtenversand noch nicht angebunden" disabled></textarea></label>
+        <button type="button" class="btn btn-primary" disabled>Signal senden</button>
       </form>
-    </div>
+    </section>
 
-    <!-- Live Funk-Protokoll & Tracing -->
-    <div class="card">
-      <div class="card-header">
-        <h2 class="card-title">📜 Funk-Log & Tracing-Stream</h2>
-        <span class="badge badge-success">Live</span>
-      </div>
-      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-        Chronologischer Signal-Monitor aller System-Akteure.
-      </p>
-
-      <div id="signal-stream" style="display:flex;flex-direction:column;gap:0.75rem;max-height:500px;overflow-y:auto;">
-        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
-          <div style="display:flex;justify-content:space-between;color:var(--accent);margin-bottom:0.25rem;">
-            <strong>gemini@ASUS-GEI ➔ claude@ASUS-GEI</strong>
-            <span style="font-size:0.7rem;color:var(--text-muted);">vor 25 Min</span>
-          </div>
-          <div style="color:var(--text-muted);">[HANDSHAKE] Ticket T-20261003-605028960 geclaimed. Restrukturierung aktiv.</div>
-        </div>
-
-        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
-          <div style="display:flex;justify-content:space-between;color:var(--success);margin-bottom:0.25rem;">
-            <strong>claude@ASUS-GEI ➔ all</strong>
-            <span style="font-size:0.7rem;color:var(--text-muted);">2026-09-27</span>
-          </div>
-          <div style="color:var(--text-muted);">[LOCK_ALERT] Policy P-001 Fail-Closed durchgesetzt: Keine autonomen Git-Pushes.</div>
-        </div>
-
-        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
-          <div style="display:flex;justify-content:space-between;color:var(--accent-blue);margin-bottom:0.25rem;">
-            <strong>bach@MacStudio ➔ ollama@MacStudio</strong>
-            <span style="font-size:0.7rem;color:var(--text-muted);">2026-10-02</span>
-          </div>
-          <div style="color:var(--text-muted);">[TASK_DISPATCH] Asynchrone Hintergrund-Triage für Tasks #1681 & #1682 aktiv.</div>
-        </div>
-      </div>
-    </div>
+    <section class="card">
+      <h2>📜 Zustellung &amp; Verlauf</h2>
+      <p>In Arbeit: Für einen Verlauf braucht die Oberfläche quittierte Sendungen, Empfängerbezug und eine zugriffsgeschützte Quelle. Derzeit liegt kein bestätigter Live-Feed vor.</p>
+      <p role="status" class="funk-state">Keine Transportmessung verfügbar</p>
+    </section>
   </div>
-
-  <script is:inline>
-    function transmitSignal() {
-      const sender = document.getElementById('tx-sender').value;
-      const recipient = document.getElementById('tx-recipient').value;
-      const type = document.getElementById('tx-type').value;
-      const payload = document.getElementById('tx-payload').value.trim();
-
-      if (!payload) return;
-
-      const stream = document.getElementById('signal-stream');
-      const item = document.createElement('div');
-      item.style.padding = '0.75rem';
-      item.style.background = 'var(--bg-dark)';
-      item.style.border = '1px solid var(--accent)';
-      item.style.borderRadius = 'var(--radius-sm)';
-      item.style.fontSize = '0.8rem';
-      item.innerHTML = `
-        <div style="display:flex;justify-content:space-between;color:var(--accent);margin-bottom:0.25rem;">
-          <strong>${sender} ➔ ${recipient}</strong>
-          <span style="font-size:0.7rem;color:var(--text-muted);">Gerade eben</span>
-        </div>
-        <div style="color:var(--text);font-weight:500;">[${type}] ${payload}</div>
-      `;
-      stream.insertBefore(item, stream.firstChild);
-
-      alert(`Signal [${type}] erfolgreich an [${recipient}] übertragen!`);
-      document.getElementById('tx-payload').value = '';
-    }
-  </script>
 </BachLayout>
+
+<style>
+  .funk-header { display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .funk-header h1 { font-size:1.75rem; margin:0 0 0.25rem; }
+  .funk-header p, .funk-grid p { color:var(--text-muted); line-height:1.5; }
+  .funk-nav { display:flex; gap:0.5rem; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem; }
+  .funk-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.5rem; }
+  .funk-grid .card { min-width:0; padding:1rem; }
+  .funk-grid h2 { font-size:1rem; }
+  .funk-form { display:grid; gap:0.75rem; }
+  .funk-form label { display:grid; gap:0.3rem; color:var(--text-muted); font-size:0.85rem; }
+  .funk-form input, .funk-form select, .funk-form textarea { width:100%; box-sizing:border-box; padding:0.5rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:5px; color:var(--text); }
+  .funk-form button { justify-self:start; }
+  .funk-state { border:1px solid var(--border); border-radius:5px; padding:0.75rem; }
+  @media(max-width:760px) { .funk-grid { grid-template-columns:minmax(0,1fr); } }
+</style>

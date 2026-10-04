@@ -8,10 +8,10 @@ import BachLayout from "../layouts/BachLayout.astro";
     <div class="page-header">
       <div class="header-content">
         <h1><span class="icon">🌐</span> Meine Domänen & Fachmodule</h1>
-        <p class="subtitle">Slot-Architektur für spezialisierte Fachdomänen, PC-Software & Entwickler-Werkzeuge</p>
+        <p class="subtitle">Fachmodule aus geprüften Modulmanifesten</p>
       </div>
       <div class="header-actions">
-        <span class="badge badge-accent">Slot-Architektur v2</span>
+        <span class="badge">Laufstatus ungeprüft</span>
         <button class="btn btn-secondary" onclick="loadDomains()">🔄 Aktualisieren</button>
       </div>
     </div>
@@ -19,42 +19,45 @@ import BachLayout from "../layouts/BachLayout.astro";
     <!-- Quick Stats -->
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-label">Installierte Fachmodule</div>
+        <div class="stat-label">Gefundene Fachmodule</div>
         <div class="stat-value" id="stat-count-modules">...</div>
-        <div class="stat-sub">OneDrive .DOMAINS Slot</div>
+        <div class="stat-sub">Öffentliche .DOMAINS-Manifeste</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Aktive Domänen</div>
-        <div class="stat-value" id="stat-count-active">3</div>
-        <div class="stat-sub">ATI, Steuer, Gesundheit</div>
+        <div class="stat-label">Installationsnachweis</div>
+        <div class="stat-value">?</div>
+        <div class="stat-sub">Installationsregister noch nicht angebunden</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">ControlCenter Status</div>
-        <div class="stat-value">Aktiv</div>
-        <div class="stat-sub">Lokale Software erkannt</div>
+        <div class="stat-label">Laufende Arbeiten</div>
+        <div class="stat-value">?</div>
+        <div class="stat-sub">Kein Arbeitsstatus-Provider angebunden</div>
       </div>
     </div>
 
     <!-- Fachmodule Grid -->
     <div class="section-title">
-      <h2><span class="icon">🧩</span> Installierte Fachmodule</h2>
-      <p class="section-desc">Module aus <code>OneDrive\.TOPICS\.AI\.MODULES\.DOMAINS</code></p>
+      <h2><span class="icon">🧩</span> Fachmodule im Manifestregister</h2>
+      <p class="section-desc">Ein Manifest belegt die Modulbeschreibung. Installation und laufende Arbeit werden getrennt geprüft.</p>
     </div>
 
     <div class="domains-grid" id="domains-grid">
-      <p class="loading-state">Scanne Fachmodule...</p>
+      <p class="loading-state">Lade Fachmodule...</p>
+    </div>
+    <div class="glass-card">
+      <h3>Domänen-Anbindung in Arbeit</h3>
+      <p>Die Manifestliste ist angebunden. Für „installiert“ fehlt ein autoritatives Installationsregister; für „arbeitet“ fehlt ein Domain-Job- oder Session-Provider. Fachliche Aktionen werden erst verlinkt, wenn Manifest-ID, Backend-Vertrag und Route eindeutig zusammenpassen.</p>
     </div>
 
-    <!-- ATI Entwickler Taskboard Section -->
+    <!-- Aufgabensteuerung ist ein Kontrollmodul, keine Fachdomäne. -->
     <div class="section-title" style="margin-top:2rem;">
-      <h2><span class="icon">🛠️</span> ATI Entwickler – Einheitliche Taskdatenbank</h2>
-      <p class="section-desc">Gefilterte Aufgaben für Code- und Infrastruktur-Entwicklung</p>
+      <h2><span class="icon">📋</span> Aufgabensteuerung</h2>
+      <p class="section-desc">Task Master ist ein Kontrollmodul mit den Rollen Tasksolver, Taskwriter, Maintainer und Operator.</p>
     </div>
 
     <div class="glass-card">
-      <div id="ati-tasks-container">
-        <p class="loading-state">Lade ATI-Entwicklungsaufgaben...</p>
-      </div>
+      <p>Das vorhandene Aufgabenboard liest die BACH-Taskdatenbank. Die Übernahme von Task-Master-Claims und Leases als autoritative Steuerung ist noch nicht angebunden; Ticket Master bleibt für Aufnahme und Triage vorgesehen. Bestehende ATI-Aufgaben bleiben erhalten.</p>
+      <a href="/tasks" class="btn btn-secondary">Aufgabenboard öffnen ↗</a>
     </div>
   </div>
 </BachLayout>
@@ -205,93 +208,58 @@ import BachLayout from "../layouts/BachLayout.astro";
 </style>
 
 <script is:inline>
+  function domainElement(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    node.textContent = String(value ?? '');
+    return node;
+  }
+
   async function loadDomains() {
     const grid = document.getElementById('domains-grid');
     const statModules = document.getElementById('stat-count-modules');
     if (!grid) return;
+    grid.replaceChildren(domainElement('p', 'loading-state', 'Lade Fachmodule...'));
     try {
       const res = await fetch('/api/domains/installed');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) throw new Error('domain_inventory_unavailable');
       const data = await res.json();
-      const domains = data.domains || [];
-      if (statModules) statModules.textContent = domains.length;
-
-      if (domains.length === 0) {
-        grid.innerHTML = '<p class="text-muted">Keine Fachmodule gefunden.</p>';
+      const domains = Array.isArray(data.domains) ? data.domains : [];
+      if (statModules) statModules.textContent = data.source_available ? String(domains.length) : '?';
+      grid.replaceChildren();
+      if (!data.source_available) {
+        grid.append(domainElement('p', 'text-muted', 'Manifestquelle nicht erreichbar. Modulregister am Host anbinden; Installations- und Arbeitsstatus bleiben ungeprüft.'));
         return;
       }
-
-      grid.innerHTML = domains.map(d => `
-        <div class="domain-card">
-          <div>
-            <div class="domain-header">
-              <span class="domain-icon">${d.icon || '📦'}</span>
-              <div class="domain-title-wrap">
-                <h3>${d.name}</h3>
-                <span class="domain-type-badge">${d.type || 'Fachmodul'}</span>
-              </div>
-            </div>
-            <p class="domain-desc">${d.description || 'Spezifisches Fachmodul.'}</p>
-          </div>
-          <div class="domain-footer">
-            <span class="badge ${d.status === 'active' ? 'badge-success' : 'badge-accent'}">${d.status}</span>
-            <div style="display:flex;gap:0.4rem;">
-              ${d.id === 'ati' ? '<a href="/ati" class="btn btn-sm btn-secondary">Workbench ↗</a>' : ''}
-              ${d.id === 'theodor-steuer' ? '<a href="/steuer" class="btn btn-sm btn-secondary">Steuer ↗</a>' : ''}
-              ${d.id === 'gesundheit' ? '<a href="/gesundheit" class="btn btn-sm btn-secondary">Klinik ↗</a>' : ''}
-              ${!['ati', 'theodor-steuer', 'gesundheit'].includes(d.id) ? `<button class="btn btn-sm btn-secondary" onclick="alert('Fachmodul ${d.name} bereit am Pfad:\\n${d.folder}')">Info</button>` : ''}
-            </div>
-          </div>
-        </div>
-      `).join('');
-    } catch (e) {
-      grid.innerHTML = `<p class="text-danger">Fehler beim Laden: ${e.message}</p>`;
+      if (!domains.length) {
+        grid.append(domainElement('p', 'text-muted', 'Keine öffentlichen Fachmodul-Manifeste gefunden. Modulregister prüfen.'));
+        return;
+      }
+      for (const domain of domains) {
+        const card = domainElement('div', 'domain-card', '');
+        const body = document.createElement('div');
+        const header = domainElement('div', 'domain-header', '');
+        header.append(domainElement('span', 'domain-icon', '🧩'));
+        const title = domainElement('div', 'domain-title-wrap', '');
+        title.append(domainElement('h3', '', domain.name || domain.id));
+        title.append(domainElement('span', 'domain-type-badge', domain.kind || 'Fachmodul'));
+        header.append(title);
+        body.append(header);
+        const capabilities = Array.isArray(domain.capabilities) ? domain.capabilities : [];
+        body.append(domainElement('p', 'domain-desc', capabilities.length
+          ? 'Manifest-Funktionen: ' + capabilities.join(', ')
+          : 'Keine Funktionen im öffentlichen Manifest angegeben.'));
+        const footer = domainElement('div', 'domain-footer', '');
+        footer.append(domainElement('span', 'badge', 'Manifest vorhanden'));
+        footer.append(domainElement('span', 'text-muted', 'Installation und Arbeit ungeprüft'));
+        card.append(body, footer);
+        grid.append(card);
+      }
+    } catch (_) {
+      if (statModules) statModules.textContent = '?';
+      grid.replaceChildren(domainElement('p', 'text-danger', 'Fachmodule nicht verfügbar. API- und Modulquelle prüfen.'));
     }
   }
 
-  async function loadAtiTasks() {
-    const container = document.getElementById('ati-tasks-container');
-    if (!container) return;
-    try {
-      const res = await fetch('/api/tasks?category=dev,code,ati&limit=15');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      const tasks = data.tasks || [];
-      if (tasks.length === 0) {
-        container.innerHTML = '<p class="text-muted" style="padding:1rem;">Keine offenen Entwicklungsaufgaben verzeichnet.</p>';
-        return;
-      }
-      container.innerHTML = `
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Task</th>
-              <th>Status</th>
-              <th>Priorität</th>
-              <th>Kategorie</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasks.map(t => `
-              <tr>
-                <td>#${t.id}</td>
-                <td><strong>${t.title}</strong></td>
-                <td><span class="badge ${t.status === 'done' ? 'badge-success' : 'badge-accent'}">${t.status}</span></td>
-                <td>${t.priority || 3}</td>
-                <td>${t.category || 'dev'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
-    } catch (e) {
-      container.innerHTML = `<p class="text-danger">Fehler: ${e.message}</p>`;
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    loadDomains();
-    loadAtiTasks();
-  });
+  document.addEventListener('DOMContentLoaded', loadDomains);
 </script>

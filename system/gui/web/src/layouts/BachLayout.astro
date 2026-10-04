@@ -9,7 +9,7 @@ interface Props {
 }
 
 const { title, currentPath = "/" } = Astro.props;
-const pageTitle = title ? `${title} | BACH Dashboard` : "BACH Dashboard";
+const pageTitle = title ? `${title} | System GUI` : "System GUI";
 ---
 
 <!DOCTYPE html>
@@ -51,8 +51,8 @@ const pageTitle = title ? `${title} | BACH Dashboard` : "BACH Dashboard";
 
     <footer style="margin-top:auto;border-top:1px solid var(--border);padding:1.25rem 1rem;text-align:center;font-size:0.75rem;color:var(--text-muted);background:var(--bg-panel);">
       <div style="display:flex;justify-content:space-between;align-items:center;max-width:1400px;margin:0 auto;">
-        <span>🎵 <strong>BACH & OCEAN</strong> Unified Workstation — Mac Studio Cluster</span>
-        <span>Astro v5 Modular GUI • REST API <code>:8000</code></span>
+        <span><strong data-gui-brand-product>System GUI</strong> · <span data-gui-brand-label>unverbunden</span></span>
+        <span>Modulare Oberfläche · Backendstatus nach Live-Prüfung</span>
       </div>
     </footer>
   </body>

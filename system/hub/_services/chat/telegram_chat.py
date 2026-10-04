@@ -117,6 +117,8 @@ from hub._services.chat.slots_config import (
     get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
     add_worker,
+    change_core_prompt,
+    core_prompt_snapshot,
     get_activity_history,
     get_prompt_templates,
     get_slot,
@@ -2112,6 +2114,37 @@ except ImportError:
 WEB_ACTIVITY_DASHBOARD = render_activity_dashboard()
 
 
+def _control_prompt_response() -> dict:
+    """One config-file snapshot in the legacy Activity shape plus CAS metadata."""
+    snapshot = core_prompt_snapshot()
+    prompts = snapshot["prompts"]
+    system = prompts["system_default"]
+    roles = {
+        key[len("role_"):]: {
+            "id": key[len("role_"):],
+            "text": value["effective"],
+            "default": value["default"],
+            "is_custom": value["is_custom"],
+        }
+        for key, value in prompts.items() if key.startswith("role_")
+    }
+    return {
+        "ok": True,
+        "configuration_version": snapshot["configuration_version"],
+        "source_version": snapshot["source_version"],
+        "templates": {
+            "system_default": {
+                "id": "system_default", "text": system["effective"],
+                "default": system["default"], "is_custom": system["is_custom"],
+            },
+            "roles": roles,
+        },
+    }
+
+
+
+
+
 def _get_active_session_state():
     try:
         sessions_copy = list(runtime.sessions.values())
@@ -2812,6 +2845,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._html(render_activity_dashboard())
 
         elif path == "/api/slots":
+            if not self._allow_control_request():
+                return
             try:
                 cfg = load_slots_config()
                 slots = cfg.get("slots", {})
@@ -2886,13 +2921,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/prompts":
+            if not self._allow_control_request():
+                return
             try:
-                self._json({
-                    "ok": True,
-                    "templates": get_prompt_templates(),
-                })
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                self._json(_control_prompt_response())
+            except (OSError, ValueError, TypeError):
+                # In-memory defaults are a preview, not an attested active revision.
+                self._json({"ok": True, "source": "in_memory_defaults",
+                            "templates": get_prompt_templates()})
 
         elif path == "/api/chat/history":
             chat_id = parse_qs(parsed_url.query).get("chat_id", [""])[0]
@@ -3504,25 +3540,53 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/prompts":
             key = str(body.get("key", "")).strip()
-            text = body.get("text", "")
-            if not key or text is None:
+            prompt_text = body.get("text", "")
+            if not key or prompt_text is None:
                 self._json({"error": "key und text erforderlich"}, 400)
                 return
             try:
-                update_prompt_template(key, text)
+                if "configuration_version" in body:
+                    change_core_prompt(key, body["configuration_version"], text=prompt_text)
+                else:
+                    update_prompt_template(key, prompt_text)
                 record_activity("system", f"Prompt-Vorlage {key} aktualisiert", "ok")
-                self._json({"ok": True, "key": key})
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                response = _control_prompt_response()
+                response["key"] = key
+                self._json(response)
+            except KeyError:
+                self._json({"error": "Unbekannte Prompt-ID"}, 404)
+            except RuntimeError as e:
+                if str(e) == "configuration_version_conflict":
+                    self._json({"error": "Konfiguration inzwischen geändert"}, 409)
+                else:
+                    self._json({"error": "Prompt konnte nicht gespeichert werden"}, 503)
+            except ValueError:
+                self._json({"error": "Ungültiger Prompttext oder Zustand"}, 400)
+            except Exception:
+                self._json({"error": "Prompt konnte nicht gespeichert werden"}, 503)
 
         elif path == "/api/prompts/reset":
             key = body.get("key")
             try:
-                reset_prompt_template(key)
+                if "configuration_version" in body:
+                    change_core_prompt(str(key or ""), body["configuration_version"], reset=True)
+                else:
+                    reset_prompt_template(key)
                 record_activity("system", f"Prompt-Vorlage(n) zurückgesetzt: {key or 'alle'}", "ok")
-                self._json({"ok": True, "key": key})
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                response = _control_prompt_response()
+                response["key"] = key
+                self._json(response)
+            except KeyError:
+                self._json({"error": "Unbekannte Prompt-ID"}, 404)
+            except RuntimeError as e:
+                if str(e) == "configuration_version_conflict":
+                    self._json({"error": "Konfiguration inzwischen geändert"}, 409)
+                else:
+                    self._json({"error": "Prompt konnte nicht zurückgesetzt werden"}, 503)
+            except ValueError:
+                self._json({"error": "Ungültiger Promptzustand"}, 400)
+            except Exception:
+                self._json({"error": "Prompt konnte nicht zurückgesetzt werden"}, 503)
 
         else:
             self._json({"error": "Not found"}, 404)

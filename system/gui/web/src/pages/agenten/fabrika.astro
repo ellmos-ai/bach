@@ -60,9 +60,30 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">System-Prompt / Persönlichkeit (Persona)</label>
-          <textarea id="bp-persona" rows="4" placeholder="Definiere die Rolle, Tonalität, Arbeitsweise und Grenzen des Agenten..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <textarea id="bp-persona" rows="4" placeholder="Der Standardprompt wird aus der aktiven Control-Konfiguration geladen." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <small id="bp-persona-source" style="display:block;margin-top:0.35rem;color:var(--text-muted);">Original-Standardprompt wird geprüft. Gespeicherte eigene Persona bleibt erhalten.</small>
         </div>
       </div>
+
+      <details class="card" id="core-prompt-library" style="margin:0 0 1rem;">
+        <summary style="cursor:pointer;font-weight:700;">Original-System- und Rollenprompts</summary>
+        <p style="color:var(--text-muted);font-size:0.82rem;">Quelle ist die bestehende Control-Konfiguration. Werkstandards bleiben unverändert; Speichern setzt die aktive eigene Anpassung. Eine Versionshistorie ist noch nicht angebunden. Zurücksetzen entfernt nur diese Anpassung und startet keinen Worker.</p>
+        <label for="core-prompt-key" style="display:block;margin:.75rem 0 .25rem;">Promptvorlage</label>
+        <select id="core-prompt-key" style="width:100%;padding:.55rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);" onchange="showCorePrompt()"></select>
+        <p id="core-prompt-status" role="status" style="font-size:.8rem;color:var(--text-muted);">Promptquelle wird geprüft…</p>
+        <label for="core-prompt-text" style="display:block;margin:.75rem 0 .25rem;">Aktiver Prompttext</label>
+        <textarea id="core-prompt-text" rows="8" style="width:100%;padding:.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);font-family:monospace;"></textarea>
+         <details style="margin-top:.75rem;">
+           <summary style="cursor:pointer;">Gemeldeten Werkstandard getrennt ansehen</summary>
+           <label for="core-prompt-default" style="display:block;margin:.5rem 0 .25rem;">Werkstandard der ausgewählten Quelle · nur lesen</label>
+           <textarea id="core-prompt-default" rows="8" readonly style="width:100%;padding:.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);font-family:monospace;"></textarea>
+         </details>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+          <button type="button" id="core-prompt-save" class="btn btn-sm btn-primary" onclick="saveCorePrompt()" disabled>Anpassung speichern</button>
+          <button type="button" id="core-prompt-reset" class="btn btn-sm" onclick="resetCorePrompt()" disabled>Auf Werkstandard zurücksetzen</button>
+          <button type="button" id="core-prompt-use" class="btn btn-sm" onclick="useCorePromptAsPersona()" disabled>Als Persona-Entwurf übernehmen</button>
+        </div>
+      </details>
 
       <!-- 2. Skills & Capabilities -->
       <div class="card">
@@ -467,10 +488,128 @@ import BachLayout from "../../layouts/BachLayout.astro";
       renderTeamBlueprintPicker(_allBlueprints);
     }
 
+
+    const NEUTRAL_PERSONA_DRAFT = 'Du bist ein konfigurierbarer Assistent. Ergänze hier deine konkrete Rolle, Arbeitsweise und Grenzen. Diese Persona ersetzt keine Systemregeln und aktiviert keinen Worker.';
+    let _corePromptData = null;
+
+    function corePromptMessage(message) {
+      document.getElementById('core-prompt-status').textContent = message;
+    }
+
+    function showCorePrompt() {
+      const key = document.getElementById('core-prompt-key').value;
+      const prompt = _corePromptData?.prompts?.[key];
+      const editor = document.getElementById('core-prompt-text');
+      editor.value = prompt?.effective || '';
+      document.getElementById('core-prompt-default').value = prompt?.default || '';
+      editor.disabled = !prompt;
+      for (const id of ['core-prompt-save', 'core-prompt-reset', 'core-prompt-use']) {
+        document.getElementById(id).disabled = !prompt ||
+          (id === 'core-prompt-use' && _corePromptData?.source === 'in_memory_defaults') ||
+          (id !== 'core-prompt-use' && _corePromptData?.mutation_supported !== true);
+      }
+      corePromptMessage(prompt ? (_corePromptData?.source === 'in_memory_defaults' ?
+        'Nur unbestätigte Speicher-Defaults. Keine aktive Control-Konfiguration nachgewiesen; Übernahme und Schreiben gesperrt.' :
+        _corePromptData?.mutation_supported !== true ?
+        'Unversionierte Control-Antwort: Prompt zur ausdrücklichen Vorschau, aktive Konfiguration nicht bestätigt. Schreiben gesperrt.' :
+        prompt.is_custom ? 'Aktive eigene Anpassung · Werkstandard bleibt separat erhalten.' :
+        'Aktiver Werkstandard aus der Control-Quelle.') : 'Promptquelle nicht verfügbar.');
+    }
+
+    async function loadCorePromptLibrary() {
+      try {
+        const res = await fetch('/api/system/core-prompts');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.schema !== 'bach.core-prompts.v1' || !data.prompts?.system_default ||
+            (data.mutation_supported === true && typeof data.configuration_version !== 'string')) throw new Error('Promptantwort ungültig');
+        const select = document.getElementById('core-prompt-key');
+        select.disabled = false;
+        const previous = select.value;
+        select.replaceChildren();
+        for (const key of Object.keys(data.prompts)) {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = key === 'system_default' ? 'Buddha-Systemprompt' :
+            'Rolle: ' + key.slice('role_'.length).replaceAll('_', ' ');
+          select.append(option);
+        }
+        _corePromptData = data;
+        select.value = data.prompts[previous] ? previous : 'system_default';
+        showCorePrompt();
+      } catch (_error) {
+        _corePromptData = null;
+        document.getElementById('core-prompt-key').disabled = true;
+        for (const id of ['core-prompt-save', 'core-prompt-reset', 'core-prompt-use']) {
+          document.getElementById(id).disabled = true;
+        }
+        corePromptMessage('Promptquelle nicht erreichbar. Vorhandene Eingaben bleiben sichtbar; Speichern und Übernehmen sind bis zur erneuten Prüfung gesperrt.');
+      }
+    }
+
+    async function saveCorePrompt() {
+      if (!_corePromptData) return;
+      const key = document.getElementById('core-prompt-key').value;
+      const value = document.getElementById('core-prompt-text').value;
+      if (!value.trim()) { corePromptMessage('Prompttext darf nicht leer sein.'); return; }
+      corePromptMessage('Anpassung wird gespeichert…');
+      try {
+        const res = await fetch('/api/system/core-prompts/' + encodeURIComponent(key), {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({configuration_version:_corePromptData.configuration_version,text:value})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            data.prompts?.[key]?.effective !== value || data.prompts?.[key]?.is_custom !== true) {
+          throw new Error('Readback nicht bestätigt');
+        }
+        _corePromptData = data;
+        showCorePrompt();
+        corePromptMessage('Eigene Anpassung gespeichert und aus der Control-Konfiguration bestätigt.');
+      } catch (_error) {
+        corePromptMessage('Speicherung nicht bestätigt; Entwurf bleibt im Editor. Konfiguration vor erneutem Speichern prüfen.');
+      }
+    }
+
+    async function resetCorePrompt() {
+      if (!_corePromptData) return;
+      const key = document.getElementById('core-prompt-key').value;
+      if (!window.confirm('Nur die aktive eigene Anpassung dieser Promptvorlage entfernen?')) return;
+      try {
+        const res = await fetch('/api/system/core-prompts/' + encodeURIComponent(key) + '/reset', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({configuration_version:_corePromptData.configuration_version})
+        });
+        const data = await res.json();
+        const prompt = data.prompts?.[key];
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !prompt || prompt.is_custom !== false || prompt.effective !== prompt.default) {
+          throw new Error('Readback nicht bestätigt');
+        }
+        _corePromptData = data;
+        showCorePrompt();
+        corePromptMessage('Aktive Anpassung entfernt; unveränderlicher Werkstandard ist wieder wirksam.');
+      } catch (_error) {
+        corePromptMessage('Zurücksetzen nicht bestätigt. Bitte Status neu laden.');
+      }
+    }
+
+    function useCorePromptAsPersona() {
+      const key = document.getElementById('core-prompt-key').value;
+      const prompt = _corePromptData?.prompts?.[key];
+      if (!prompt) return;
+      const target = document.getElementById('bp-persona');
+      if (target.value.trim() && target.value !== NEUTRAL_PERSONA_DRAFT &&
+          !window.confirm('Den vorhandenen Persona-Entwurf durch diesen Prompt ersetzen?')) return;
+      target.value = prompt.effective;
+      document.getElementById('bp-persona-source').textContent =
+        'Entwurf aus Original-Control-Prompt ' + key + '. Für andere Agenten Identität und Brand vor dem Speichern anpassen.';
+    }
+
     const PRESETS = {
       buddha: {
         name: "Buddha",
-        persona: "Du bist Buddha, der allwissende persönliche Assistent in BACH. Du nimmst Anfragen auf, filterst und routest sie verlässlich, denkst mit und hilfst dem Nutzer freundlich und präzise.",
+        persona: null, // Der echte Buddha-Prompt kommt ausschließlich aus der Control-Quelle.
         turns: 20,
         modus: "casualis"
       },
@@ -497,9 +636,20 @@ import BachLayout from "../../layouts/BachLayout.astro";
     function loadPresetTemplate(key) {
       if (!key || !PRESETS[key]) return;
       const p = PRESETS[key];
+      const sourcePrompt = key === 'buddha' ? _corePromptData?.prompts?.system_default?.effective : null;
+      if (key === 'buddha' && !sourcePrompt) {
+        document.getElementById('bp-persona-source').textContent = 'Buddha-Originalprompt ist nicht verfügbar; keine Ersatzpersona eingesetzt.';
+        return;
+      }
+      const currentPersona = document.getElementById('bp-persona').value;
+      if (currentPersona && currentPersona !== NEUTRAL_PERSONA_DRAFT &&
+          !window.confirm('Den bestehenden Persona-Entwurf durch diese Vorlage ersetzen?')) return;
       document.getElementById('bp-name').value = `${p.name} (eigene)`;
       document.getElementById('bp-name').readOnly = false;
-      document.getElementById('bp-persona').value = p.persona;
+      document.getElementById('bp-persona').value = sourcePrompt || p.persona;
+      document.getElementById('bp-persona-source').textContent = key === 'buddha' ?
+        'Original-Buddha-Prompt aus aktiver Control-Konfiguration. Eigene Änderungen bleiben editierbar.' :
+        'Beispielpersona; fachliche Registry-Anbindung noch nicht geprüft.';
       document.getElementById('bp-turns').value = p.turns;
       document.getElementById('bp-modus').value = p.modus;
     }
@@ -507,7 +657,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     function resetForm() {
       document.getElementById('bp-name').value = '';
       document.getElementById('bp-name').readOnly = false;
-      document.getElementById('bp-persona').value = '';
+      document.getElementById('bp-persona').value = NEUTRAL_PERSONA_DRAFT;
+      document.getElementById('bp-persona-source').textContent = 'Neutrale Bearbeitungsvorlage; kein bestätigter Laufzeitprompt.';
       document.getElementById('bp-template-select').value = '';
       document.getElementById('bp-turns').value = 15;
     }
@@ -828,6 +979,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      resetForm();
+      loadCorePromptLibrary();
       loadBlueprints();
       setupFabrikaTabs();
     });

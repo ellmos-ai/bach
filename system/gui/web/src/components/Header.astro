@@ -25,9 +25,11 @@ function hasActiveChild(item: any) {
 <header class="main-header" id="main-header">
   <div class="header-left" style="display:flex;align-items:center;gap:1.5rem;">
     <a href="/" class="logo" style="text-decoration: none;">
-      <span class="logo-icon">🎵</span>
-      <span class="logo-text">BACH <span style="font-size:0.75rem;opacity:0.6;font-weight:normal;">v3.13.0</span></span>
+      <span class="logo-icon" id="gui-brand-icon">◆</span>
+      <img id="gui-brand-image" alt="" hidden width="28" height="28" />
+      <span class="logo-text" id="gui-brand-label">System GUI</span>
     </a>
+    <span id="backend-origin-badge" class="backend-origin-badge" role="status" aria-live="polite">Backend unbekannt</span>
 
     <nav class="main-nav" aria-label="Hauptnavigation">
       {navConfig.map((item) => (
@@ -103,15 +105,22 @@ function hasActiveChild(item: any) {
       <button class="theme-btn" data-theme="warm" title="Warmer Modus (Sepia/Warm)" type="button">🕯️</button>
     </div>
 
-    <!-- Cluster Status Dot -->
-    <div class="header-status" style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text-muted);">
-      <span class="status-dot" id="header-status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;"></span>
-      <span id="header-status-text">Online</span>
-    </div>
   </div>
 </header>
 
 <style>
+  .backend-origin-badge {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    padding: 0.3rem 0.55rem;
+    white-space: nowrap;
+  }
+  .backend-origin-badge[data-verified="true"] {
+    border-color: var(--success);
+    color: var(--text);
+  }
   .quick-action-btn {
     display: inline-flex;
     align-items: center;
@@ -227,15 +236,81 @@ function hasActiveChild(item: any) {
 </style>
 
 <script is:inline>
+  async function refreshGuiBrand() {
+    try {
+      const response = await fetch('/api/gui/brand', { cache: 'no-store' });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (state.schema !== 'ellmos-system-gui.brand.v1') return;
+      if (typeof state.label !== 'string' || typeof state.product !== 'string'
+          || typeof state.logo_text !== 'string') return;
+      const label = state.label.trim();
+      const product = state.product.trim();
+      if (!label || !product || label.length > 48 || product.length > 48) return;
+      document.getElementById('gui-brand-label').textContent = label;
+      document.querySelectorAll('[data-gui-brand-label]').forEach(el => { el.textContent = label; });
+      document.querySelectorAll('[data-gui-brand-product]').forEach(el => { el.textContent = product; });
+      document.title = document.title.replace(/ \| System GUI$/, '') + ' | ' + product;
+      const icon = document.getElementById('gui-brand-icon');
+      icon.textContent = state.logo_text;
+      const img = document.getElementById('gui-brand-image');
+      if (typeof state.logo_path === 'string' && /^\/static\/branding\/[A-Za-z0-9._/-]+\.(png|webp)$/.test(state.logo_path)
+          && !state.logo_path.includes('..')) {
+        img.onerror = () => { img.hidden = true; icon.hidden = false; };
+        img.src = state.logo_path;
+        img.hidden = false;
+        icon.hidden = true;
+      }
+      if (!localStorage.getItem('bach-theme') && ['dark', 'light', 'ocean', 'warm'].includes(state.theme)) {
+        applyTheme(state.theme, false);
+      }
+    } catch (_) {
+      // The neutral shell remains usable when consumer metadata is unavailable.
+    }
+  }
+  refreshGuiBrand();
+
+  async function refreshBackendOriginBadge() {
+    const badge = document.getElementById('backend-origin-badge');
+    if (!badge) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch('/api/gui/backend-origin', { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error('Backend-Metadaten nicht erreichbar');
+      const state = await response.json();
+      const verified = state.connection_verified === true && state.schema_verified === true
+        && state.instance_verified === true && state.adapter_binding_verified === true;
+      if (verified && state.mode === 'server') {
+        badge.textContent = 'Backend: Server';
+      } else if (verified && state.mode === 'local') {
+        badge.textContent = 'Backend: Lokal';
+      } else {
+        badge.textContent = 'Backend unbekannt';
+      }
+      badge.dataset.verified = String(verified && (state.mode === 'server' || state.mode === 'local'));
+      badge.title = badge.dataset.verified === 'true' && state.instance_label
+        ? `${state.instance_label} · geprüft ${state.observed_at || ''}` : 'Backendquelle nicht verifiziert';
+    } catch (_) {
+      badge.textContent = 'Offline · Backend unbekannt';
+      badge.dataset.verified = 'false';
+      badge.title = 'Backend-Metadaten nicht erreichbar; kein Cache belegt';
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  refreshBackendOriginBadge();
+  setInterval(refreshBackendOriginBadge, 30000);
+
   // Theme Manager
-  function applyTheme(theme) {
+  function applyTheme(theme, persist = true) {
     const root = document.documentElement;
     if (theme === 'dark') {
       root.removeAttribute('data-theme');
     } else {
       root.setAttribute('data-theme', theme);
     }
-    localStorage.setItem('bach-theme', theme);
+    if (persist) localStorage.setItem('bach-theme', theme);
 
     // Update button states
     document.querySelectorAll('.theme-btn').forEach(btn => {
@@ -245,7 +320,7 @@ function hasActiveChild(item: any) {
 
   // Initialize Theme
   const savedTheme = localStorage.getItem('bach-theme') || 'dark';
-  applyTheme(savedTheme);
+  applyTheme(savedTheme, false);
 
   // Wire Theme Buttons
   document.querySelectorAll('.theme-btn').forEach(btn => {

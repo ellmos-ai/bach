@@ -30,10 +30,13 @@ const alerts = [];
 const downloads = [];
 const revoked = [];
 let failure = false;
-function element() {
-    return {innerHTML: '', textContent: '', value: input.payload,
-        dataset: {}, style: {}, listeners: {}, actionElements: [],
+function element(tag) {
+    return {tag: tag || 'div', innerHTML: '', textContent: '', value: input.payload,
+        dataset: {}, style: {}, listeners: {}, actionElements: [], children: [],
         addEventListener(type, callback) { this.listeners[type] = callback; },
+        append(...nodes) { this.children.push(...nodes); },
+        replaceChildren(...nodes) { this.children = [...nodes]; },
+        removeAttribute() {}, onclick: null,
         querySelectorAll() { return this.actionElements; },
         click() { downloads.push({href: this.href, name: this.download}); },
         remove() {}, classList: {add() {}, remove() {}}};
@@ -41,9 +44,12 @@ function element() {
 const document = {
     getElementById(id) { return nodes[id] ||= element(); },
     querySelectorAll() { return []; },
-    createElement() { return element(); }, body: {appendChild() {}}
+    createElement(tag) { return element(tag); }, body: {appendChild() {}}
 };
+const serialize = node => ({tag: node.tag, text: node.textContent, style: node.style,
+    children: (node.children || []).map(serialize)});
 const sandbox = {document, console: {error() {}},
+    localStorage: {getItem(key) { return key === 'bach_device_token' ? 'fixture-token' : null; }},
     window: {location: {hash: ''}, addEventListener() {}},
     history: {replaceState() {}}, alert(message) { alerts.push(message); },
     URL: {createObjectURL() { return 'blob:offline-test'; }, revokeObjectURL(url) { revoked.push(url); }},
@@ -73,12 +79,16 @@ vm.runInContext(input.script.replace('        loadTasks();\n    }\n', '\n    }\n
     }
     for (const args of input.materializeIds || []) await sandbox.materializeAgent(args);
     for (const args of input.chainIds || []) await sandbox.runChain(args);
-    if (input.preview) await sandbox.previewArtifact(...input.preview);
-    if (input.download) await sandbox.downloadArtifact(...input.download);
+    if (input.preview) await sandbox.previewArtifact(input.preview);
+    if (input.download) {
+        await sandbox.previewArtifact(input.download);
+        await nodes['artifact-download-btn'].onclick({preventDefault() {}});
+    }
     await new Promise(resolve => setImmediate(resolve));
     const output = {};
     for (const [id, node] of Object.entries(nodes)) {
-        output[id] = {html: node.innerHTML, text: node.textContent, dataset: node.dataset, style: node.style};
+        output[id] = {html: node.innerHTML, text: node.textContent, dataset: node.dataset, style: node.style,
+            children: (node.children || []).map(serialize)};
     }
     process.stdout.write(JSON.stringify({nodes: output, calls, alerts, downloads, revoked, pwned: sandbox.pwned || null}));
 })().catch(error => { console.error(error); process.exitCode = 1; });
@@ -138,7 +148,6 @@ class TestUnifiedDashboardXss(unittest.TestCase):
             ("searchGardener", "/api/gardener/search?q=" + self.execute_query(p), {"results": [{"name": p, "type": p}]}, ["gardener-results"]),
             ("loadMemoryDigest", "/api/memory/knowledge-digest", {"knowledge_folders": [dict.fromkeys(["label", "path", "file_count"], p)]}, ["knowledge-folders"]),
             ("runCompareRace", "/api/chat/compare-race", {"winner": p, "candidates": [dict.fromkeys(["model", "latency_ms", "score", "response"], p)]}, ["compare-results"]),
-            ("loadArtifacts", "/api/artifacts?limit=30", {"artifacts": [{"path": p, "name": p, "type": p, "modified": p, "size_bytes": p}]}, ["artifacts-list"]),
         ]
         for function, endpoint, response, ids in cases:
             with self.subTest(function=function):
@@ -200,28 +209,39 @@ class TestUnifiedDashboardXss(unittest.TestCase):
             posts = [call["url"] for call in clicked["calls"] if call["method"] == "POST"]
             self.assertEqual(posts, [expected])
 
-    def test_artifact_paths_and_names_do_not_become_code_or_urls(self):
-        path = "folder/a'b\"<&?#=Ä.txt"
+    ITEM = {"id": "a" * 32, "name": PAYLOAD, "type": "md", "size_bytes": 1024}
+
+    def test_artifact_listing_renders_names_as_text(self):
         out = self.execute(functions=["loadArtifacts"], responses={
-            "/api/artifacts?limit=30": {"artifacts": [{"path": path, "name": PAYLOAD}]},
-        }, actions=[{"container": "artifacts-list", "datasets": [{"artifactPath": path, "artifactName": PAYLOAD}]}])
+            "/api/artifacts?limit=30": {"availability": "available", "artifacts": [self.ITEM]},
+        })
+        self.assertIsNone(out["pwned"])
+        listing = out["nodes"]["artifacts-list"]
+        self.assertEqual(listing["html"], "")
+        button = listing["children"][0]["children"][0]["children"][0]
+        self.assertEqual(button["tag"], "button")
+        self.assertIn(PAYLOAD, button["text"])
+
+    def test_artifact_ids_not_paths_address_files_and_names_stay_text(self):
+        item = {**self.ITEM, "name": "a'b\"<&?#=Ä.txt"}
+        out = self.execute(preview=item, responses={})
         preview_call = next(call for call in out["calls"] if "/content?" in call["url"])
-        self.assertEqual(parse_qs(urlsplit(preview_call["url"]).query), {"path": [path]})
-        self.assertEqual(out["nodes"]["artifact-preview-title"]["text"], "Vorschau: " + PAYLOAD)
-        downloaded = self.execute(download=[path, PAYLOAD])
-        self.assertEqual(parse_qs(urlsplit(downloaded["calls"][0]["url"]).query), {"path": [path]})
-        self.assertEqual(downloaded["downloads"], [{"href": "blob:offline-test", "name": PAYLOAD}])
+        self.assertEqual(parse_qs(urlsplit(preview_call["url"]).query), {"artifact_id": [item["id"]]})
+        self.assertEqual(out["nodes"]["artifact-preview-title"]["text"], "Vorschau: " + item["name"])
+        downloaded = self.execute(download=item)
+        call = next(call for call in downloaded["calls"] if "/download?" in call["url"])
+        self.assertEqual(parse_qs(urlsplit(call["url"]).query), {"artifact_id": [item["id"]]})
+        self.assertEqual(downloaded["downloads"], [{"href": "blob:offline-test", "name": item["name"]}])
         self.assertEqual(downloaded["revoked"], ["blob:offline-test"])
-        preview = self.execute(preview=[path, PAYLOAD], responses={preview_call["url"]: {"content": PAYLOAD}})
+        preview = self.execute(preview=self.ITEM, responses={preview_call["url"].replace(item["id"], self.ITEM["id"]): {"content": PAYLOAD}})
         self.assertEqual(preview["nodes"]["artifact-preview-body"]["text"], PAYLOAD)
         self.assertEqual(preview["nodes"]["artifact-preview-body"]["html"], "")
 
     def test_failed_mutations_and_downloads_do_not_report_success(self):
-        out = self.execute(ok=False, materializeIds=[12], chainIds=[13], preview=["test.txt", "test"], download=["test.txt", "test"])
+        out = self.execute(ok=False, materializeIds=[12], chainIds=[13], preview=self.ITEM, download=self.ITEM)
         self.assertEqual(out["alerts"], ["Fehler: HTTP 403", "Fehler: HTTP 403"])
         self.assertEqual(out["downloads"], [])
-        self.assertEqual(out["nodes"]["artifact-download-btn"]["style"]["display"], "none")
-        self.assertEqual(out["nodes"]["artifact-preview-body"]["text"], "Fehler beim Download: HTTP 403")
+        self.assertTrue(out["nodes"]["artifact-preview-body"]["text"].startswith("Download fehlgeschlagen"))
 
     def test_auth_wrapper_precedes_script_and_no_dynamic_inline_handlers(self):
         self.assertLess(self.source.index('<script src="/static/js/device-fetch.js"></script>'), self.source.index("<script>"))

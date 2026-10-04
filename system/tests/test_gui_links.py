@@ -60,8 +60,13 @@ def test_api_domains_installed(client):
     assert data["total"] > 0
 
 
-def test_api_artefakte(client):
+def test_api_artefakte(client, tmp_path, monkeypatch):
     """GET /api/artefakte liefert generierte Artefakte."""
+    from gui.api import artifact_catalog
+
+    monkeypatch.setattr(artifact_catalog, "ARTIFACT_ROOT", tmp_path)
+    # Device lookup against the production DB is covered by test_unified_api.
+    monkeypatch.setattr("gui.api.unified_api._require_memory_device", lambda request: 1)
     res = client.get("/api/artefakte")
     assert res.status_code == 200
     data = res.json()

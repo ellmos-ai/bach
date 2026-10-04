@@ -1,6 +1,7 @@
 ---
 // src/pages/life.astro - Life-Zentrale (Kalender mit 4 Ansichten, Deine Routinen, Meine Aufgaben, Selbstmanagement)
 import BachLayout from "../layouts/BachLayout.astro";
+import TaskCreateForm from "../components/TaskCreateForm.astro";
 ---
 
 <BachLayout title="Life-Zentrale" currentPath="/life">
@@ -12,7 +13,7 @@ import BachLayout from "../layouts/BachLayout.astro";
       </div>
       <div class="header-badges">
         <span class="badge badge-accent">BACH Life OS</span>
-        <span class="badge badge-success">Self-Regulation Active</span>
+        <span class="badge badge-secondary">Persönliche Bereiche</span>
       </div>
     </div>
 
@@ -51,6 +52,12 @@ import BachLayout from "../layouts/BachLayout.astro";
           <span>+</span> Neuer Termin
         </button>
       </div>
+      <div class="calendar-source-filters" role="group" aria-label="Terminquellen">
+        <label><input id="cal-source-user" type="checkbox" checked /> Nutzertermine</label>
+        <label><input id="cal-source-system" type="checkbox" checked /> BACH/Ocean-Systemtermine</label>
+        <label><input id="cal-source-unknown" type="checkbox" checked /> Ältere Termine ohne Herkunft</label>
+      </div>
+      <p id="calendar-load-status" class="load-status" role="status" aria-live="polite"></p>
 
       <!-- VIEW 1: TAGESANSICHT (24h Timeline) -->
       <div class="cal-view-pane" id="view-day" style="display:none;">
@@ -96,13 +103,10 @@ import BachLayout from "../layouts/BachLayout.astro";
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
             <div>
               <h3 id="year-title" style="margin:0;font-size:1.2rem;color:var(--text);">Jahresüberblick 2026</h3>
-              <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">Termindichte & Quartalsrhythmus</p>
+               <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">Jeder Kalendertag als eigenes Kästchen</p>
             </div>
             <div style="display:flex;gap:0.75rem;font-size:0.8rem;">
-              <span class="badge badge-accent">Q1: Fokus</span>
-              <span class="badge badge-accent">Q2: Ausbau</span>
-              <span class="badge badge-accent">Q3: Review</span>
-              <span class="badge badge-accent">Q4: Ernte</span>
+               <span class="badge badge-secondary">12 Monate</span>
             </div>
           </div>
 
@@ -116,38 +120,45 @@ import BachLayout from "../layouts/BachLayout.astro";
     <!-- TAB 2: DEINE ROUTINEN -->
     <div class="tab-pane" id="pane-routinen">
       <div class="glass-card">
-        <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <div class="card-header-action">
           <div>
-            <h3><span class="icon">⏰</span> Deine persönlichen Lebens- & Haushaltsroutinen</h3>
-            <p class="card-desc">Feste rhythmische Gewohnheiten und wiederkehrende Aufgaben aus <code>household_routines</code></p>
+            <h3><span class="icon">⏰</span> Deine Routinen</h3>
+            <p class="card-desc">Persönliche Routinen aus deiner Nutzerdatenbank. Systemjobs von BACH und Ocean werden getrennt verwaltet.</p>
           </div>
-          <div style="display:flex;gap:0.5rem;">
-            <select id="filter-routine-cat" onchange="filterPersonalRoutines()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
-              <option value="">Alle Kategorien</option>
-              <option value="Haushalt">Haushalt</option>
-              <option value="Gesundheit">Gesundheit</option>
-              <option value="Finanzen">Finanzen</option>
-              <option value="Fokus">Fokus & Mindset</option>
-            </select>
-            <a href="/routinen?tab=personal" class="btn btn-secondary btn-sm">Vollansicht Routinen ↗</a>
+          <div class="routine-actions">
+            <button type="button" id="routine-add" class="btn btn-primary btn-sm">+ Neue Routine</button>
+            <button type="button" id="routine-refresh" class="btn btn-secondary btn-sm">Aktualisieren</button>
           </div>
         </div>
-
-        <div class="routines-table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Routine</th>
-                <th>Intervall</th>
-                <th>Kategorie</th>
-                <th>Nächste Fälligkeit</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="personal-routines-body">
-              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Lade Deine Routinen...</td></tr>
-            </tbody>
-          </table>
+        <p id="routine-load-status" class="load-status" role="status" aria-live="polite">Lade Routinen …</p>
+        <div class="routine-stats" aria-label="Routinenstatus">
+          <span>Gesamt: <strong id="routine-stat-total">–</strong></span>
+          <span>Aktiv: <strong id="routine-stat-active">–</strong></span>
+          <span>Heute fällig: <strong id="routine-stat-due">–</strong></span>
+          <span>Überfällig: <strong id="routine-stat-overdue">–</strong></span>
+        </div>
+        <label class="routine-filter">Kategorie
+          <select id="filter-routine-cat"><option value="">Alle Kategorien</option></select>
+        </label>
+        <div id="personal-routines-list" class="routine-list"></div>
+        <form id="life-routine-form" class="routine-form hidden" aria-label="Routine bearbeiten">
+          <h4 id="life-routine-form-title">Neue Routine</h4>
+          <input id="routine-edit-id" type="hidden" />
+          <label>Name * <input id="routine-name" required maxlength="200" /></label>
+          <label>Beschreibung <textarea id="routine-description" rows="2"></textarea></label>
+          <div class="routine-form-grid">
+            <label>Kategorie <input id="routine-category" value="Haushalt" /></label>
+            <label>Priorität <select id="routine-priority"><option value="1">Hoch</option><option value="2" selected>Mittel</option><option value="3">Niedrig</option></select></label>
+            <label>Intervall <select id="routine-interval"><option value="taeglich">Täglich</option><option value="woechentlich" selected>Wöchentlich</option><option value="monatlich">Monatlich</option><option value="jaehrlich">Jährlich</option></select></label>
+            <label>Alle X Einheiten <input id="routine-interval-value" type="number" min="1" value="1" required /></label>
+            <label>Spezifischer Tag <input id="routine-specific-day" /></label>
+            <label>Dauer in Minuten <input id="routine-duration" type="number" min="0" /></label>
+          </div>
+          <div class="routine-actions"><button type="submit" class="btn btn-primary btn-sm">Speichern</button><button id="routine-cancel" type="button" class="btn btn-secondary btn-sm">Abbrechen</button></div>
+        </form>
+        <div class="routine-adapters">
+          <a href="/routinen?tab=bach">BACH/Ocean-Systemjobs getrennt öffnen ↗</a>
+          <button type="button" disabled title="Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen.">Routinika öffnen – Anbindung in Arbeit</button>
         </div>
       </div>
     </div>
@@ -160,14 +171,18 @@ import BachLayout from "../layouts/BachLayout.astro";
             <h3><span class="icon">👤</span> Meine persönlichen Aufgaben</h3>
             <p class="card-desc">Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)</p>
           </div>
-          <div style="display:flex;gap:0.5rem;">
-            <select id="filter-user-tasks-status" onchange="loadUserTasks()" style="padding:0.4rem 0.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.825rem;">
-              <option value="">Alle Status</option>
-              <option value="todo" selected>Offen / Todo</option>
-              <option value="in_progress">In Bearbeitung</option>
-              <option value="done">Erledigt</option>
-            </select>
-            <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Im Taskboard öffnen ↗</a>
+          <div class="life-task-actions">
+            <label for="filter-user-tasks-status">Status
+              <select id="filter-user-tasks-status">
+                <option value="nonterminal" selected>Nur offene</option>
+                <option value="">Alle Status</option>
+                <option value="in_progress">In Bearbeitung</option>
+                <option value="done">Erledigt (done)</option>
+                <option value="completed">Erledigt (completed)</option>
+              </select>
+            </label>
+            <TaskCreateForm id="life-task-create" label="Neue Aufgabe für mich" defaultAssignee="user" fixedAssignee={true} />
+            <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Taskboard ↗</a>
           </div>
         </div>
         <div id="user-tasks-container">
@@ -181,34 +196,37 @@ import BachLayout from "../layouts/BachLayout.astro";
       <div class="card-grid">
         <div class="glass-card">
           <h3><span class="icon">🧠</span> Neurodivergenz & Exekutiv-Entlastung</h3>
-          <p class="card-desc">Kompensation von Arbeitsgedächtnis-Überlastung durch visuelle Schienen</p>
+          <p class="card-desc">Praktische Hilfen für selbst gewählte Arbeitsschritte</p>
           <div class="feature-item">
-            <strong>1. Die 20-Minuten-Regel (Time-Boxing)</strong>
-            <p>Beginne jede Aufgabe mit der Absicht, nur 20 Minuten daran zu arbeiten. Der Einstiegswiderstand sinkt dadurch um 80%.</p>
+            <strong>1. Kurzes Fokusintervall</strong>
+            <p>Wähle eine überschaubare Dauer und lege den nächsten Schritt fest. Der Timer läuft ausschließlich in deinem Browser.</p>
           </div>
           <div class="feature-item">
-            <strong>2. Radikale Reizreduktion (76%-Filter)</strong>
+            <strong>2. Reize reduzieren</strong>
             <p>Schließe alle Tabs, die nicht zum aktuellen Schritt gehören. Nutze das Denkarium als Zwischenablage für spontane Impulse.</p>
           </div>
           <div class="feature-item">
-            <strong>3. Body-Doubling mit Buddha</strong>
-            <p>Nutze den persönlichen Assistenten im Chat als stillen Begleiter. Formuliere den nächsten Minischritt laut im Prompt.</p>
+            <strong>3. Begleitung bei Bedarf</strong>
+            <p>Ein begleiteter Arbeitsmodus benötigt noch eine überprüfte Chat- und Datenschutzanbindung. Der Timer funktioniert bereits ohne Agentenaufruf.</p>
           </div>
+          <button type="button" disabled title="Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt.">UpToday öffnen – Anbindung in Arbeit</button>
         </div>
 
         <div class="glass-card">
           <h3><span class="icon">⏱️</span> Fokus-Timer & Arbeits-Intervall</h3>
           <div class="timer-widget">
-            <div class="timer-display" id="timer-display">25:00</div>
+            <div class="timer-display" id="timer-display" role="timer" aria-live="off">25:00</div>
             <div class="timer-controls">
               <button class="btn btn-primary" id="btn-timer-start">Start</button>
               <button class="btn btn-secondary" id="btn-timer-reset">Reset</button>
+              <button class="btn btn-secondary" id="btn-focus-window" type="button">Eigenes Fokusfenster öffnen</button>
             </div>
             <div class="timer-modes">
-              <span class="timer-tag active">25m Fokus</span>
-              <span class="timer-tag">5m Pause</span>
-              <span class="timer-tag">15m Deep Rest</span>
+              <button type="button" class="timer-tag active" data-seconds="1500">25 Minuten Fokus</button>
+              <button type="button" class="timer-tag" data-seconds="300">5 Minuten Pause</button>
+              <button type="button" class="timer-tag" data-seconds="900">15 Minuten Erholung</button>
             </div>
+            <p id="focus-window-status" class="load-status" role="status" aria-live="polite">Timer bereit.</p>
           </div>
         </div>
       </div>
@@ -220,72 +238,18 @@ import BachLayout from "../layouts/BachLayout.astro";
         <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
           <div>
             <h3><span class="icon">💰</span> Finanzen & Budget-Dashboard</h3>
-            <p class="card-desc">Einnahmen, Ausgaben und Liquiditätsstatus</p>
+            <p class="card-desc">Finanzdaten und Auswertungen im vorhandenen Finanzbereich</p>
           </div>
           <a href="/financial" class="btn btn-secondary">Vollständiges Finanzmodul ↗</a>
         </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label">Monatsbudget</div>
-            <div class="stat-value">Stabil</div>
-            <div class="stat-sub">Ausgaben im Soll</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Offene Belege</div>
-            <div class="stat-value">2</div>
-            <div class="stat-sub">Theodor Steuer wartet</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Rücklagen-Quote</div>
-            <div class="stat-value">Grün</div>
-            <div class="stat-sub">Sicherheitsnetz intakt</div>
-          </div>
-        </div>
+        <p class="load-status">Für Monatsbudget, Belege und Rücklagen gibt es hier noch keinen belegten, gemeinsamen Auswertungsvertrag. Im Finanzbereich sind die vorhandenen Konten-, Abonnement- und Finanzmail-Funktionen erreichbar.</p>
       </div>
     </div>
 
     <!-- TAB 6: LEBENSBEREICHE -->
     <div class="tab-pane" id="pane-balance">
       <div class="glass-card">
-        <h3><span class="icon">☯️</span> Lebenskreise & Balance-Audit</h3>
-        <p class="card-desc">Zyklische Bewertung der 5 tragenden Lebenssäulen</p>
-        <div class="balance-bars">
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Arbeit, Code & Erschaffen</span>
-              <span>85%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 85%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Gesundheit & Physis</span>
-              <span>70%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 70%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Beziehungen & Umfeld</span>
-              <span>75%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 75%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Finanzen & Ordnung</span>
-              <span>90%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 90%;"></div></div>
-          </div>
-          <div class="balance-item">
-            <div class="balance-header">
-              <span>Sinn, Reflexion & Philosophie</span>
-              <span>80%</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 80%;"></div></div>
-          </div>
-        </div>
+        <p class="card-desc">In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt.</p>
       </div>
     </div>
 
@@ -294,14 +258,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       <div class="glass-card">
         <div class="card-header-action" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
           <div>
-            <h3><span class="icon">🩺</span> Gesundheit, Vitalwerte & Förderpläne</h3>
-            <p class="card-desc">Ernährung, Bewegung, Schlafrhythmus und medizinische Dokumente</p>
-          </div>
-          <a href="/gesundheit" class="btn btn-secondary">Zum Gesundheitsmodul ↗</a>
-        </div>
-        <p style="font-size:0.85rem;color:var(--text-muted);">
-          Alle Gesundheitsdaten sind lokal gesichert und unterliegen striktem Mandanten-Schutz.
-        </p>
+             <h3><span class="icon">🩺</span> Gesundheit</h3>
+             <p class="card-desc">Gesundheitsbereich im Life-Tab – Fachanbindung in Arbeit</p>
+           </div>
+         </div>
+         <p>Die bisherige Gesundheitsansicht enthält nur geplante Funktionen. Für Vitalwerte, Arzttermine und Medikamente fehlen ein geprüfter Fachadapter, ein Datenvertrag und ein Gerätezugriffsvertrag. Hier werden keine Gesundheitsdaten gelesen oder angezeigt.</p>
+         <ul><li>Fachmodul und installierte Web-Oberfläche verifizieren</li><li>Autorisierte Gesundheits-API anbinden</li><li>Erst danach Eingabe und Anzeige ergänzen</li></ul>
       </div>
     </div>
   </div>
@@ -426,6 +388,27 @@ import BachLayout from "../layouts/BachLayout.astro";
       border-radius: var(--radius-md);
       padding: 1.5rem;
     }
+    .card-header-action, .routine-actions, .routine-adapters { display:flex; justify-content:space-between; align-items:center; gap:.6rem; flex-wrap:wrap; }
+    .routine-actions, .routine-adapters { justify-content:flex-start; }
+    .routine-stats { display:flex; flex-wrap:wrap; gap:.65rem 1.25rem; padding:.75rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--radius-sm); }
+    .routine-filter { display:flex; align-items:center; gap:.5rem; margin:1rem 0; }
+    .routine-filter select, .routine-form input, .routine-form textarea, .routine-form select { min-width:0; max-width:100%; padding:.5rem; background:var(--bg-dark); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; }
+    .routine-list { display:grid; gap:.65rem; }
+    .routine-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.65rem; padding:.85rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-dark); }
+    .routine-row strong { overflow-wrap:anywhere; }
+    .routine-meta { display:block; color:var(--text-muted); font-size:.82rem; margin-top:.2rem; overflow-wrap:anywhere; }
+    .routine-form { margin-top:1.25rem; padding:1rem; border:1px solid var(--accent); border-radius:var(--radius-sm); }
+    .routine-form label { display:flex; flex-direction:column; gap:.3rem; margin:.5rem 0; }
+    .routine-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.5rem 1rem; }
+    .routine-adapters { margin-top:1.25rem; border-top:1px solid var(--border); padding-top:1rem; font-size:.83rem; }
+    .routine-adapters button:disabled { opacity:.7; cursor:not-allowed; }
+    .life-task-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:.5rem; }
+    .life-task-actions label { display:flex; align-items:center; gap:.4rem; font-size:.82rem; }
+    .life-task-actions select { min-width:0; max-width:100%; padding:.4rem .6rem; color:var(--text); background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--radius-sm); }
+    .life-task-list { display:grid; gap:.5rem; }
+    .life-task-row { min-width:0; padding:.75rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-dark); overflow-wrap:anywhere; }
+    .life-task-row p { margin:.2rem 0; color:var(--text-muted); }
+    .life-task-meta { display:block; color:var(--text-muted); font-size:.78rem; }
 
     /* Calendar Controls Bar */
     .calendar-controls-bar {
@@ -467,7 +450,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       display: flex;
       align-items: center;
       gap: 0.4rem;
+      flex-wrap: wrap;
     }
+    .calendar-source-filters { display:flex; flex-wrap:wrap; gap:.65rem 1.25rem; margin:0 0 .75rem; }
+    .calendar-source-filters label { display:inline-flex; align-items:center; gap:.4rem; font-size:.84rem; color:var(--text); }
+    .calendar-source-filters input { accent-color:var(--accent); }
+    .load-status { min-height:1.25rem; margin:.35rem 0 .75rem; color:var(--text-muted); font-size:.82rem; }
 
     /* Day View Timeline */
     .day-timeline-container {
@@ -479,11 +467,14 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .day-slot {
       display: flex;
-      border-top: 1px solid var(--border);
-      min-height: 44px;
+      border: 1px solid rgba(56, 189, 248, .18);
+      background: rgba(56, 189, 248, .055);
+      border-radius:var(--radius-sm);
+      min-height: 48px;
       align-items: flex-start;
-      padding: 4px 0;
+      padding: 4px 8px;
     }
+    .day-slot:hover, .day-slot.current-hour { background:rgba(56,189,248,.16); border-color:var(--accent); }
     .day-slot-time {
       width: 65px;
       font-size: 0.75rem;
@@ -502,10 +493,18 @@ import BachLayout from "../layouts/BachLayout.astro";
     /* Week Columns Grid */
     .week-grid-container {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 0.5rem;
-      min-height: 480px;
+      grid-template-columns: 58px repeat(7, minmax(105px, 1fr));
+      min-width: 800px;
+      border:1px solid var(--border);
+      border-radius:var(--radius-sm);
     }
+    #view-week .glass-card { overflow-x:auto; }
+    .week-time, .week-hour-cell, .week-day-heading { border-right:1px solid var(--border); border-bottom:1px solid var(--border); padding:.3rem; }
+    .week-time { color:var(--text-muted); font-size:.73rem; font-variant-numeric:tabular-nums; }
+    .week-day-heading { background:var(--bg-card); text-align:center; font-weight:700; font-size:.8rem; }
+    .week-hour-cell { min-height:54px; background:var(--bg-dark); min-width:0; }
+    .week-hour-cell:hover, .week-hour-cell.current-hour { background:rgba(56,189,248,.1); }
+    .week-day-heading.today, .week-hour-cell.today { border-color:var(--accent); }
     .week-col {
       background: var(--bg-dark);
       border: 1px solid var(--border);
@@ -549,19 +548,23 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .month-days-matrix {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-rows: repeat(6, minmax(100px, 1fr));
       gap: 4px;
-      min-height: 420px;
     }
     .month-day-cell {
       background: var(--bg-dark);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      min-height: 75px;
+      min-height: 100px;
+      min-width: 0;
       padding: 4px;
       display: flex;
       flex-direction: column;
       transition: background 0.15s ease;
+      text-align:left;
+      color:var(--text);
+      font:inherit;
     }
     .month-day-cell:hover {
       background: rgba(255,255,255,0.03);
@@ -616,20 +619,30 @@ import BachLayout from "../layouts/BachLayout.astro";
     }
     .mini-month-grid {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 2px;
       text-align: center;
       font-size: 0.65rem;
     }
     .mini-day {
-      padding: 2px 0;
+      aspect-ratio: 1;
+      display:grid;
+      place-items:center;
       border-radius: 2px;
       color: var(--text-muted);
+      border:1px solid var(--border);
     }
+    .mini-day.empty { border-color:transparent; }
     .mini-day.has-event {
       background: var(--accent);
       color: #0b0d14;
       font-weight: 700;
+    }
+    @media (max-width: 700px) {
+      .month-days-matrix { grid-template-rows:repeat(6, minmax(72px, 1fr)); }
+      .month-day-cell { min-height:72px; }
+      .year-quarters-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+      .cal-event-chip { overflow-wrap:anywhere; }
     }
 
     /* Common */
@@ -654,6 +667,8 @@ import BachLayout from "../layouts/BachLayout.astro";
     .timer-controls, .timer-modes {
       display: flex;
       gap: 0.5rem;
+      flex-wrap:wrap;
+      justify-content:center;
     }
     .timer-tag {
       font-size: 0.75rem;
@@ -662,12 +677,21 @@ import BachLayout from "../layouts/BachLayout.astro";
       background: var(--bg-hover);
       color: var(--text-muted);
       cursor: pointer;
+      border:1px solid var(--border);
     }
     .timer-tag.active {
       background: var(--accent);
       color: #0b0d14;
       font-weight: 600;
     }
+    .life-container.standalone-focus { max-width:600px; }
+    .life-container.standalone-focus .page-header,
+    .life-container.standalone-focus .tab-bar,
+    .life-container.standalone-focus .tab-pane:not(#pane-selbstmanagement),
+    .life-container.standalone-focus #pane-selbstmanagement .glass-card:first-child,
+    .life-container.standalone-focus #btn-focus-window { display:none !important; }
+    .life-container.standalone-focus #pane-selbstmanagement { display:block; }
+    .life-container.standalone-focus .card-grid { grid-template-columns:minmax(0,1fr); }
     .stats-row {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -716,6 +740,26 @@ import BachLayout from "../layouts/BachLayout.astro";
       return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function lifeApiFetch(path, options = {}) {
+      let token = '';
+      try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
+      const headers = new Headers(options.headers || {});
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return fetch(path, { ...options, headers });
+    }
+
+    function localDateKey(date) {
+      return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    }
+
+    function visibleCalendarEvents() {
+      const allowed = new Set();
+      for (const source of ['user', 'system', 'unknown']) {
+        if (document.getElementById(`cal-source-${source}`)?.checked) allowed.add(source);
+      }
+      return _loadedEvents.filter(event => allowed.has(['user','system'].includes(event.origin) ? event.origin : 'unknown'));
+    }
+
     // ── CALENDAR STATE & 4-VIEW RENDERER ──
     let _calView = 'month'; // 'day' | 'week' | 'month' | 'year'
     let _currentDate = new Date();
@@ -726,21 +770,23 @@ import BachLayout from "../layouts/BachLayout.astro";
 
     async function loadCalendarEvents() {
       try {
-        const year = _currentDate.getFullYear();
-        const month = String(_currentDate.getMonth() + 1).padStart(2, '0');
-        const day = String(_currentDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-
-        const res = await fetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=true`);
+        const dateStr = localDateKey(_currentDate);
+        const status = document.getElementById('calendar-load-status');
+        status.textContent = 'Lade Termine …';
+        const res = await lifeApiFetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=false`);
         if (res.ok) {
           const data = await res.json();
-          _loadedEvents = data.events || [];
+          _loadedEvents = Array.isArray(data.events) ? data.events : [];
+          status.textContent = _loadedEvents.length ? '' : 'Für diesen Zeitraum sind keine Termine eingetragen.';
         } else {
           _loadedEvents = [];
+          status.textContent = res.status === 401 || res.status === 403
+            ? 'Termine konnten nicht geladen werden. Bitte über die Geräteanmeldung anmelden.'
+            : `Termine konnten nicht geladen werden (HTTP ${res.status}).`;
         }
       } catch (e) {
-        console.error('Fehler beim Laden der Kalenderdaten:', e);
         _loadedEvents = [];
+        document.getElementById('calendar-load-status').textContent = 'Termine konnten wegen eines Netzwerkfehlers nicht geladen werden.';
       }
       renderActiveCalendarView();
     }
@@ -784,9 +830,9 @@ import BachLayout from "../layouts/BachLayout.astro";
         } else if (_calView === 'week') {
           _currentDate.setDate(_currentDate.getDate() + (delta * 7));
         } else if (_calView === 'month') {
-          _currentDate.setMonth(_currentDate.getMonth() + delta);
+          _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() + delta, 1);
         } else if (_calView === 'year') {
-          _currentDate.setFullYear(_currentDate.getFullYear() + delta);
+          _currentDate = new Date(_currentDate.getFullYear() + delta, _currentDate.getMonth(), 1);
         }
       }
       loadCalendarEvents();
@@ -804,12 +850,12 @@ import BachLayout from "../layouts/BachLayout.astro";
       const d = String(_currentDate.getDate()).padStart(2, '0');
       const datePrefix = `${y}-${m}-${d}`;
 
-      const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(datePrefix));
+      const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(datePrefix));
       badge.textContent = `${dayEvents.length} Termine`;
       title.textContent = `${d}. ${MONTH_NAMES[_currentDate.getMonth()]} ${y}`;
 
       let html = '';
-      for (let hour = 6; hour <= 22; hour++) {
+      for (let hour = 0; hour <= 23; hour++) {
         const hourStr = String(hour).padStart(2, '0') + ':00';
         const slotEvents = dayEvents.filter(e => {
           const t = (e.start_datetime || '').slice(11, 16);
@@ -818,14 +864,14 @@ import BachLayout from "../layouts/BachLayout.astro";
         });
 
         html += `
-          <div class="day-slot">
+          <div class="day-slot ${datePrefix === localDateKey(new Date()) && hour === new Date().getHours() ? 'current-hour' : ''}">
             <div class="day-slot-time">${hourStr}</div>
             <div class="day-slot-content">
               ${slotEvents.map(e => `
                 <div style="background:var(--bg-card);border:1px solid var(--accent);border-left:4px solid var(--accent);padding:0.4rem 0.75rem;border-radius:4px;font-size:0.8rem;">
                   <strong style="color:var(--text);">${escapeHtml(e.title)}</strong>
                   ${e.location ? `<span style="color:var(--text-muted);font-size:0.75rem;"> @ ${escapeHtml(e.location)}</span>` : ''}
-                  <span class="badge ${e.is_routine ? 'badge-success' : 'badge-accent'}" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.event_type || 'Termin')}</span>
+                  <span class="badge badge-accent" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.origin === 'user' ? 'Nutzertermin' : e.origin === 'system' ? 'Systemtermin' : 'Herkunft unbekannt')}</span>
                 </div>
               `).join('')}
             </div>
@@ -839,41 +885,25 @@ import BachLayout from "../layouts/BachLayout.astro";
     function renderWeekView() {
       const grid = document.getElementById('week-columns-grid');
       if (!grid) return;
-
       const monday = getMonday(_currentDate);
-      const todayStr = (new Date()).toISOString().slice(0, 10);
-
-      let html = '';
+      const todayStr = localDateKey(new Date());
+      const days = [];
       for (let i = 0; i < 7; i++) {
         const cur = new Date(monday);
         cur.setDate(monday.getDate() + i);
-        const y = cur.getFullYear();
-        const m = String(cur.getMonth() + 1).padStart(2, '0');
-        const d = String(cur.getDate()).padStart(2, '0');
-        const isoDate = `${y}-${m}-${d}`;
-        const isToday = isoDate === todayStr;
-
-        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(isoDate));
-
-        html += `
-          <div class="week-col ${isToday ? 'today' : ''}">
-            <div class="week-col-header" style="${isToday ? 'color:var(--accent);font-weight:700;' : ''}">
-              ${WEEKDAY_NAMES[i]} ${d}.${m}.
-              ${isToday ? '<span style="display:block;font-size:0.65rem;color:var(--accent);">● Heute</span>' : ''}
-            </div>
-            <div class="week-col-body">
-              ${dayEvents.map(e => {
-                const time = (e.start_datetime || '').slice(11, 16);
-                const chipClass = e.is_routine ? 'chip-routine' : (e.event_type === 'fokusblock' ? 'chip-fokus' : 'chip-termin');
-                return `
-                  <div class="cal-event-chip ${chipClass}" title="${escapeHtml(e.title)} (${time})">
-                    <strong>${time ? time + ' ' : ''}</strong>${escapeHtml(e.title)}
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
+        days.push({ date: localDateKey(cur), label: `${WEEKDAY_NAMES[i]} ${cur.getDate()}.${cur.getMonth()+1}.` });
+      }
+      let html = '<div class="week-time" aria-hidden="true"></div>';
+      html += days.map(d => `<div class="week-day-heading ${d.date === todayStr ? 'today' : ''}">${d.label}</div>`).join('');
+      for (let hour = 0; hour < 24; hour++) {
+        html += `<div class="week-time">${String(hour).padStart(2, '0')}:00</div>`;
+        for (const day of days) {
+          const events = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(day.date)
+            && Number.parseInt((e.start_datetime || '').slice(11,13),10) === hour);
+          html += `<div class="week-hour-cell ${day.date === todayStr ? 'today' : ''} ${day.date === todayStr && hour === new Date().getHours() ? 'current-hour' : ''}">
+            ${events.map(e => `<div class="cal-event-chip chip-termin" title="${escapeHtml(e.title)}"><strong>${escapeHtml((e.start_datetime || '').slice(11,16))}</strong> ${escapeHtml(e.title)}</div>`).join('')}
+          </div>`;
+        }
       }
       grid.innerHTML = html;
     }
@@ -892,7 +922,7 @@ import BachLayout from "../layouts/BachLayout.astro";
       const startOffset = (firstDay.getDay() + 6) % 7;
       const totalDays = lastDay.getDate();
 
-      const todayStr = (new Date()).toISOString().slice(0, 10);
+      const todayStr = localDateKey(new Date());
       let html = '';
 
       // Leading empty cells
@@ -906,10 +936,10 @@ import BachLayout from "../layouts/BachLayout.astro";
         const iso = `${year}-${mStr}-${dStr}`;
         const isToday = iso === todayStr;
 
-        const dayEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(iso));
+        const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(iso));
 
         html += `
-          <div class="month-day-cell ${isToday ? 'today' : ''}" onclick="selectDayFromMonth('${iso}')">
+          <button type="button" class="month-day-cell ${isToday ? 'today' : ''}" data-date="${iso}" aria-label="${day}. ${MONTH_NAMES[month]} ${year}, ${dayEvents.length} Termine">
             <div class="month-day-num" style="${isToday ? 'color:var(--accent);font-weight:800;' : ''}">${day}</div>
             <div style="flex:1;overflow-y:auto;">
               ${dayEvents.slice(0, 3).map(e => {
@@ -918,14 +948,19 @@ import BachLayout from "../layouts/BachLayout.astro";
               }).join('')}
               ${dayEvents.length > 3 ? `<div style="font-size:0.65rem;color:var(--text-muted);text-align:right;">+${dayEvents.length - 3} weitere</div>` : ''}
             </div>
-          </div>
+          </button>
         `;
       }
+      for (let i = startOffset + totalDays; i < 42; i++) {
+        html += '<div class="month-day-cell other-month" aria-hidden="true"></div>';
+      }
       grid.innerHTML = html;
+      grid.querySelectorAll('button[data-date]').forEach(button => button.addEventListener('click', () => selectDayFromMonth(button.dataset.date)));
     }
 
     function selectDayFromMonth(iso) {
-      _currentDate = new Date(iso);
+      const [year, month, day] = iso.split('-').map(Number);
+      _currentDate = new Date(year, month - 1, day);
       switchCalendarView('day');
     }
 
@@ -942,7 +977,8 @@ import BachLayout from "../layouts/BachLayout.astro";
         const mName = MONTH_NAMES[m];
         const daysInMonth = new Date(year, m + 1, 0).getDate();
         const mPrefix = `${year}-${String(m+1).padStart(2, '0')}`;
-        const mEvents = _loadedEvents.filter(e => (e.start_datetime || '').startsWith(mPrefix));
+        const mEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(mPrefix));
+        const startOffset = (new Date(year, m, 1).getDay() + 6) % 7;
 
         html += `
           <div class="mini-month-card">
@@ -951,12 +987,13 @@ import BachLayout from "../layouts/BachLayout.astro";
               <span class="badge ${mEvents.length ? 'badge-accent' : 'badge-secondary'}" style="font-size:0.65rem;">${mEvents.length} Termine</span>
             </div>
             <div class="mini-month-grid">
+              ${Array.from({length: startOffset}, () => '<span class="mini-day empty" aria-hidden="true"></span>').join('')}
               ${Array.from({length: daysInMonth}, (_, i) => {
                 const day = i + 1;
                 const dStr = String(day).padStart(2, '0');
                 const iso = `${mPrefix}-${dStr}`;
                 const hasEv = mEvents.some(e => (e.start_datetime || '').startsWith(iso));
-                return `<div class="mini-day ${hasEv ? 'has-event' : ''}">${day}</div>`;
+                 return `<div class="mini-day ${hasEv ? 'has-event' : ''}" title="${day}. ${mName}">${day}</div>`;
               }).join('')}
             </div>
           </div>
@@ -995,7 +1032,7 @@ import BachLayout from "../layouts/BachLayout.astro";
 
     // ── MODAL ADD EVENT ──
     function openAddEventModal() {
-      const todayStr = _currentDate.toISOString().slice(0, 10);
+      const todayStr = localDateKey(_currentDate);
       document.getElementById('ne-date').value = todayStr;
       document.getElementById('modal-add-event').classList.remove('hidden');
     }
@@ -1015,116 +1052,213 @@ import BachLayout from "../layouts/BachLayout.astro";
       const start_datetime = `${date} ${time}:00`;
 
       try {
-        const res = await fetch('/api/calendar/events', {
+        const res = await lifeApiFetch('/api/calendar/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, start_datetime, event_type, location, description })
         });
         if (res.ok) {
+          const saved = await res.json();
+          if (!saved.ok || !Number.isInteger(saved.id)) throw new Error('Speicherung wurde nicht bestätigt.');
           closeAddEventModal();
-          loadCalendarEvents();
+          await loadCalendarEvents();
         } else {
-          alert('Fehler beim Speichern des Termins.');
+          alert(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `Termin konnte nicht gespeichert werden (HTTP ${res.status}).`);
         }
       } catch (e) {
         alert('Netzwerkfehler: ' + e.message);
       }
     }
 
-    // ── DEINE ROUTINEN (Personal Routines) ──
+    // ── PERSÖNLICHE ROUTINEN: tatsächlicher /api/routines-Vertrag ──
     let _allPersonalRoutines = [];
+    const routineStatus = () => document.getElementById('routine-load-status');
 
     async function loadPersonalRoutines() {
-      const tbody = document.getElementById('personal-routines-body');
-      if (!tbody) return;
+      routineStatus().textContent = 'Lade Routinen …';
       try {
-        const res = await fetch('/api/calendar/events?include_routines=true');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const res = await lifeApiFetch('/api/routines');
+        if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
         const data = await res.json();
-        const routines = (data.events || []).filter(e => e.is_routine);
-        _allPersonalRoutines = routines;
-        renderPersonalRoutines(routines);
-      } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Fehler beim Laden: ${e.message}</td></tr>`;
+        if (data.success !== true || !Array.isArray(data.routines)) throw new Error('Routinen konnten nicht geladen werden.');
+        _allPersonalRoutines = data.routines;
+        for (const key of ['total', 'active', 'due_today', 'overdue']) {
+          const label = key === 'due_today' ? 'due' : key;
+          document.getElementById(`routine-stat-${label}`).textContent = String(data.stats?.[key] ?? '–');
+        }
+        const filter = document.getElementById('filter-routine-cat');
+        const prior = filter.value;
+        filter.replaceChildren(new Option('Alle Kategorien', ''));
+        for (const category of [...new Set(data.routines.map(r => r.category).filter(Boolean))].sort()) {
+          filter.add(new Option(String(category), String(category)));
+        }
+        filter.value = prior;
+        routineStatus().textContent = '';
+        renderPersonalRoutines();
+        return data.routines;
+      } catch (error) {
+        _allPersonalRoutines = [];
+        document.getElementById('personal-routines-list').replaceChildren();
+        routineStatus().textContent = error.message || 'Routinen konnten nicht geladen werden.';
+        return null;
       }
     }
 
-    function renderPersonalRoutines(routines) {
-      const tbody = document.getElementById('personal-routines-body');
-      if (!tbody) return;
-      if (routines.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine persönlichen Routinen gefunden.</td></tr>';
+    function routineButton(label, action) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary btn-sm';
+      button.textContent = label;
+      button.addEventListener('click', action);
+      return button;
+    }
+
+    function renderPersonalRoutines() {
+      const container = document.getElementById('personal-routines-list');
+      container.replaceChildren();
+      const category = document.getElementById('filter-routine-cat').value;
+      const routines = _allPersonalRoutines.filter(r => !category || r.category === category);
+      if (!routines.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Keine Routinen für diese Auswahl vorhanden.';
+        container.append(empty);
         return;
       }
-      tbody.innerHTML = routines.map(r => `
-        <tr>
-          <td><strong>${escapeHtml(r.title)}</strong></td>
-          <td>${escapeHtml(r.recurrence_rule || 'taeglich')}</td>
-          <td><span class="badge badge-accent">${escapeHtml(r.location || 'Haushalt')}</span></td>
-          <td style="font-family:monospace;font-size:0.8rem;">${escapeHtml(r.start_datetime || '-')}</td>
-          <td><span class="badge badge-success">${escapeHtml(r.status || 'aktiv')}</span></td>
-        </tr>
-      `).join('');
+      for (const routine of routines) {
+        const id = Number(routine.id);
+        if (!Number.isSafeInteger(id) || id < 1) continue;
+        const row = document.createElement('article');
+        row.className = 'routine-row';
+        const info = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = String(routine.name ?? 'Unbenannte Routine');
+        const meta = document.createElement('span');
+        meta.className = 'routine-meta';
+        meta.textContent = [routine.category, routine.interval_type, routine.next_due_at ? `Nächste Fälligkeit: ${routine.next_due_at}` : 'Keine Fälligkeit', routine.is_active ? 'Aktiv' : 'Inaktiv'].filter(Boolean).join(' · ');
+        info.append(title, meta);
+        const actions = document.createElement('div');
+        actions.className = 'routine-actions';
+        if (routine.is_active && (routine.is_due_today || routine.is_overdue)) actions.append(routineButton('Erledigt', () => changeRoutine(`/api/routines/${id}/complete`, 'POST', id, 'Routine erledigt.')));
+        actions.append(routineButton('Bearbeiten', () => openRoutineForm(routine)));
+        actions.append(routineButton('Löschen', () => { if (confirm('Routine wirklich löschen?')) changeRoutine(`/api/routines/${id}`, 'DELETE', id, 'Routine gelöscht.'); }));
+        row.append(info, actions);
+        container.append(row);
+      }
     }
 
-    function filterPersonalRoutines() {
-      const cat = document.getElementById('filter-routine-cat').value;
-      if (!cat) {
-        renderPersonalRoutines(_allPersonalRoutines);
-      } else {
-        const filtered = _allPersonalRoutines.filter(r => (r.location || '').toLowerCase() === cat.toLowerCase());
-        renderPersonalRoutines(filtered);
+    function openRoutineForm(routine = null) {
+      const form = document.getElementById('life-routine-form');
+      form.reset();
+      document.getElementById('routine-edit-id').value = routine ? String(routine.id) : '';
+      document.getElementById('life-routine-form-title').textContent = routine ? 'Routine bearbeiten' : 'Neue Routine';
+      for (const [field, value] of Object.entries({
+        name: routine?.name || '', description: routine?.description || '', category: routine?.category || 'Haushalt',
+        priority: routine?.priority || 2, interval: routine?.interval_type || 'woechentlich',
+        'interval-value': routine?.interval_value || 1, 'specific-day': routine?.specific_day || '',
+        duration: routine?.duration_minutes ?? '',
+      })) document.getElementById(`routine-${field}`).value = value;
+      form.classList.remove('hidden');
+      document.getElementById('routine-name').focus();
+    }
+
+    async function changeRoutine(path, method, id, successText, body = null) {
+      try {
+        const res = await lifeApiFetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+        if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
+        const ack = await res.json();
+        if (ack.success !== true) throw new Error('Die Änderung wurde nicht bestätigt.');
+        const recordId = method === 'POST' && path === '/api/routines' ? Number(ack.id) : id;
+        if (body && (!Number.isSafeInteger(recordId) || recordId < 1)) throw new Error('Die Speicherung hat keine gültige Routine-ID bestätigt.');
+        const readback = await loadPersonalRoutines();
+        if (!readback) throw new Error('Änderung bestätigt, aber die aktuelle Liste konnte nicht gelesen werden.');
+        if (method === 'DELETE' && readback.some(r => Number(r.id) === id)) throw new Error('Die gelöschte Routine ist noch vorhanden.');
+        if (body && !readback.some(r => Number(r.id) === recordId && r.name === body.name)) throw new Error('Die gespeicherte Routine konnte nicht zurückgelesen werden.');
+        routineStatus().textContent = successText;
+        document.getElementById('life-routine-form').classList.add('hidden');
+      } catch (error) { routineStatus().textContent = error.message || 'Änderung fehlgeschlagen.'; }
+    }
+
+    function savePersonalRoutine(event) {
+      event.preventDefault();
+      const idText = document.getElementById('routine-edit-id').value;
+      const id = idText ? Number(idText) : null;
+      const title = document.getElementById('routine-name').value.trim();
+      const intervalValue = Number(document.getElementById('routine-interval-value').value);
+      if (!title || !Number.isSafeInteger(intervalValue) || intervalValue < 1) {
+        routineStatus().textContent = 'Name und gültiges Intervall sind erforderlich.';
+        return;
       }
+      const body = {
+        name: title, description: document.getElementById('routine-description').value,
+        category: document.getElementById('routine-category').value.trim() || 'Haushalt',
+        priority: Number(document.getElementById('routine-priority').value),
+        interval_type: document.getElementById('routine-interval').value, interval_value: intervalValue,
+        specific_day: document.getElementById('routine-specific-day').value.trim() || null,
+        duration_minutes: document.getElementById('routine-duration').value ? Number(document.getElementById('routine-duration').value) : null,
+      };
+      changeRoutine(id ? `/api/routines/${id}` : '/api/routines', id ? 'PUT' : 'POST', id, 'Routine gespeichert.', body);
     }
 
     // ── MEINE AUFGABEN ──
     async function loadUserTasks() {
       const container = document.getElementById('user-tasks-container');
-      const statusFilter = document.getElementById('filter-user-tasks-status')?.value || '';
-      if (!container) return;
-
+      const filter = document.getElementById('filter-user-tasks-status');
+      if (!container || !filter) return;
+      container.replaceChildren();
+      const loading = document.createElement('p');
+      loading.className = 'loading-state';
+      loading.textContent = 'Lade persönliche Aufgaben …';
+      container.append(loading);
       try {
-        let url = '/api/tasks?assigned_to=user&limit=30';
-        if (statusFilter) url += `&status=${statusFilter}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const tasks = data.tasks || [];
-
-        if (tasks.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);padding:1rem;text-align:center;">Keine offenen Aufgaben für Benutzer gefunden.</p>';
+        const url = new URL('/api/tasks', location.origin);
+        url.searchParams.set('assigned_to', 'user');
+        url.searchParams.set('limit', '30');
+        if (filter.value) url.searchParams.set('status', filter.value);
+        const response = await lifeApiFetch(url.pathname + url.search);
+        if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+          ? 'Bitte über die Geräteanmeldung anmelden.'
+          : `Aufgaben konnten nicht geladen werden (HTTP ${response.status}).`);
+        const data = await response.json();
+        if (!Array.isArray(data.tasks)) throw new Error('Die Aufgabenantwort ist ungültig.');
+        container.replaceChildren();
+        if (!data.tasks.length) {
+          const empty = document.createElement('p');
+          empty.className = 'loading-state';
+          empty.textContent = 'Für diese Auswahl sind keine persönlichen Aufgaben vorhanden.';
+          container.append(empty);
           return;
         }
-
-        container.innerHTML = `
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:60px;">ID</th>
-                <th>Titel & Beschreibung</th>
-                <th style="width:110px;">Status</th>
-                <th style="width:80px;">Priorität</th>
-                <th style="width:120px;">Kategorie</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tasks.map(t => `
-                <tr>
-                  <td style="font-family:monospace;color:var(--text-muted);">#${t.id}</td>
-                  <td>
-                    <strong>${escapeHtml(t.title || 'Ohne Titel')}</strong>
-                    ${t.description ? `<p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">${escapeHtml(t.description.slice(0, 80))}...</p>` : ''}
-                  </td>
-                  <td><span class="badge ${t.status === 'done' || t.status === 'completed' ? 'badge-success' : 'badge-accent'}">${escapeHtml(t.status || 'todo')}</span></td>
-                  <td style="font-weight:600;color:var(--text);">${t.priority || 2}</td>
-                  <td><span class="badge badge-secondary" style="font-size:0.7rem;">${escapeHtml(t.category || '-')}</span></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        `;
-      } catch (e) {
-        container.innerHTML = `<p style="color:var(--error);padding:1rem;">Fehler beim Laden: ${e.message}</p>`;
+        const list = document.createElement('div');
+        list.className = 'life-task-list';
+        for (const task of data.tasks) {
+          const id = Number(task.id);
+          if (!Number.isSafeInteger(id) || id < 1) continue;
+          const row = document.createElement('article');
+          row.className = 'life-task-row';
+          const title = document.createElement('strong');
+          title.textContent = `#${id} · ${String(task.title || 'Ohne Titel')}`;
+          const description = document.createElement('p');
+          description.textContent = String(task.description || '').slice(0, 240);
+          const meta = document.createElement('span');
+          meta.className = 'life-task-meta';
+          meta.textContent = [task.status || 'Status unbekannt', task.priority || 'Priorität unbekannt', task.category || 'Kategorie unbekannt'].map(String).join(' · ');
+          row.append(title, description, meta);
+          list.append(row);
+        }
+        container.append(list);
+        if (data.has_more === true) {
+          const more = document.createElement('p');
+          more.className = 'life-task-meta';
+          more.textContent = 'Weitere Aufgaben sind im Taskboard verfügbar.';
+          container.append(more);
+        }
+      } catch (error) {
+        container.replaceChildren();
+        const failed = document.createElement('p');
+        failed.className = 'load-status';
+        failed.setAttribute('role', 'alert');
+        failed.textContent = error instanceof Error ? error.message : 'Aufgaben konnten nicht geladen werden.';
+        container.append(failed);
       }
     }
 
@@ -1160,6 +1294,9 @@ import BachLayout from "../layouts/BachLayout.astro";
           switchCalendarView(view);
         });
       });
+      document.querySelectorAll('.calendar-source-filters input').forEach(input => {
+        input.addEventListener('change', renderActiveCalendarView);
+      });
 
       // Handle query param
       const urlParams = new URLSearchParams(window.location.search);
@@ -1173,6 +1310,8 @@ import BachLayout from "../layouts/BachLayout.astro";
     // ── TIMER ──
     let timerInterval = null;
     let secondsLeft = 25 * 60;
+    let timerDeadline = null;
+    let focusPopup = null;
 
     function updateTimerDisplay() {
       const display = document.getElementById('timer-display');
@@ -1182,45 +1321,100 @@ import BachLayout from "../layouts/BachLayout.astro";
       display.textContent = `${m}:${s}`;
     }
 
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      timerDeadline = null;
+    }
+
+    function tickTimer() {
+      if (timerDeadline === null) return;
+      secondsLeft = Math.max(0, Math.ceil((timerDeadline - performance.now()) / 1000));
+      updateTimerDisplay();
+      if (secondsLeft === 0) {
+        stopTimer();
+        document.getElementById('btn-timer-start').textContent = 'Start';
+        document.getElementById('focus-window-status').textContent = 'Intervall beendet.';
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       setupTabs();
       loadCalendarEvents();
+      document.getElementById('routine-add')?.addEventListener('click', () => openRoutineForm());
+      document.getElementById('routine-refresh')?.addEventListener('click', loadPersonalRoutines);
+      document.getElementById('routine-cancel')?.addEventListener('click', () => document.getElementById('life-routine-form').classList.add('hidden'));
+      document.getElementById('filter-routine-cat')?.addEventListener('change', renderPersonalRoutines);
+      document.getElementById('life-routine-form')?.addEventListener('submit', savePersonalRoutine);
+      document.getElementById('filter-user-tasks-status')?.addEventListener('change', loadUserTasks);
+      document.addEventListener('bach:task-created', event => {
+        if (event.detail?.assigned_to === 'user') loadUserTasks();
+      });
 
       const btnStart = document.getElementById('btn-timer-start');
       const btnReset = document.getElementById('btn-timer-reset');
-
-      if (btnStart) {
-        btnStart.addEventListener('click', () => {
-          if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            btnStart.textContent = 'Weiter';
-          } else {
-            btnStart.textContent = 'Pause';
-            timerInterval = setInterval(() => {
-              if (secondsLeft > 0) {
-                secondsLeft--;
-                updateTimerDisplay();
-              } else {
-                clearInterval(timerInterval);
-                timerInterval = null;
-                alert('Fokus-Intervall beendet! Zeit für eine Pause.');
+      btnStart?.addEventListener('click', () => {
+        if (timerInterval) {
+          tickTimer();
+          stopTimer();
+          btnStart.textContent = 'Weiter';
+        } else {
+          if (secondsLeft <= 0) secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+          timerDeadline = performance.now() + secondsLeft * 1000;
+          btnStart.textContent = 'Pause';
+          tickTimer();
+          timerInterval = setInterval(tickTimer, 250);
+        }
+      });
+      btnReset?.addEventListener('click', () => {
+        stopTimer();
+        secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+        updateTimerDisplay();
+        btnStart.textContent = 'Start';
+        document.getElementById('focus-window-status').textContent = 'Timer bereit.';
+      });
+      document.querySelectorAll('.timer-tag').forEach(button => button.addEventListener('click', () => {
+        stopTimer();
+        document.querySelectorAll('.timer-tag').forEach(tag => tag.classList.remove('active'));
+        button.classList.add('active');
+        secondsLeft = Number(button.dataset.seconds);
+        updateTimerDisplay();
+        btnStart.textContent = 'Start';
+      }));
+      if (new URLSearchParams(location.search).get('focus') === '1') {
+        document.querySelector('.life-container')?.classList.add('standalone-focus');
+        document.getElementById('focus-window-status').textContent = 'Eigenständiger Browser-Timer. Er wird nicht mit dem Hauptfenster synchronisiert.';
+      } else {
+        document.getElementById('btn-focus-window')?.addEventListener('click', () => {
+          const url = new URL('/life?tab=selbstmanagement&focus=1', location.origin);
+          if (url.origin !== location.origin) return;
+          focusPopup = window.open(url.href, 'life-focus-timer', 'width=500,height=580');
+          const status = document.getElementById('focus-window-status');
+          if (!focusPopup) { status.textContent = 'Das Browserfenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben.'; return; }
+          try {
+            focusPopup.focus();
+            status.textContent = 'Fokusfenster geöffnet. Beide Timer laufen unabhängig.';
+          } catch (_) {
+            focusPopup.close();
+            status.textContent = 'Fokusfenster konnte nicht sicher geöffnet werden.';
+          }
+        });
+        setInterval(() => {
+          if (focusPopup && focusPopup.closed) {
+            focusPopup = null;
+            document.getElementById('focus-window-status').textContent = 'Fokusfenster geschlossen. Der Timer hier ist unabhängig.';
+          } else if (focusPopup) {
+            try {
+              if (focusPopup.location.origin !== location.origin) {
+                focusPopup = null;
+                document.getElementById('focus-window-status').textContent = 'Fokusfenster ist nicht mehr mit dieser Seite verbunden.';
               }
-            }, 1000);
+            } catch (_) {
+              focusPopup = null;
+              document.getElementById('focus-window-status').textContent = 'Fokusfenster ist nicht mehr mit dieser Seite verbunden.';
+            }
           }
-        });
-      }
-
-      if (btnReset) {
-        btnReset.addEventListener('click', () => {
-          if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-          }
-          secondsLeft = 25 * 60;
-          updateTimerDisplay();
-          if (btnStart) btnStart.textContent = 'Start';
-        });
+        }, 1000);
       }
     });
   </script>

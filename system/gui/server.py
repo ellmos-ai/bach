@@ -29,6 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+import threading
 import httpx
 
 import sqlite3
@@ -46,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
 from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
 
@@ -1325,6 +1327,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
     EXEMPT_API_PATHS = {
         "/api/health",
         "/api/devices/verify",
+        "/api/gui/backend-origin",
+        "/api/gui/brand",
     }
 
     async def dispatch(self, request: Request, call_next):
@@ -1347,14 +1351,22 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS or (path == "/api/nav/config" and request.method == "GET"):
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
             return await call_next(request)
 
-        # Chat-Control uses its own Bearer credential. The allowlisted proxy
-        # forwards it to ControlHandler, which authorizes mutations and private
-        # profile reads; interpreting it as a device token here blocks the chat.
+        # The browser authenticates as a registered device. The proxy supplies
+        # its separate Control credential only on the trusted loopback hop.
         if (path.startswith("/api/chat-control/") and request.method in {"GET", "POST"}
                 and path.removeprefix("/api/chat-control/") in CHAT_CONTROL_PATHS):
+            auth_header = request.headers.get("Authorization", "").strip()
+            device_token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+                            else request.cookies.get("bach_device_token"))
+            if not device_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(device_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
             return await call_next(request)
 
         # 3. Credentials belong in headers or cookies, never URLs.
@@ -1365,9 +1377,32 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         elif request.cookies.get("bach_device_token"):
             bearer_token = request.cookies.get("bach_device_token")
 
+        # Inbox paths expose private file names, previews and sorting actions.
+        # Require a registered device even on loopback and with no devices set up.
+        if (path == "/api/inbox" or path.startswith("/api/inbox/")
+                or path == "/api/mounts" or path.startswith("/api/mounts/")
+                or path == "/api/artifacts" or path.startswith("/api/artifacts/")
+                or path == "/api/artefakte"
+                or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
+                or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
+                or path == "/api/governance/audit"
+                or path == "/api/daemon" or path.startswith("/api/daemon/")
+                or (path == "/api/settings/theme" and request.method == "PUT")):
+            private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
+            if not private_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(private_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
+            return await call_next(request)
+
         # Memory and Agent Studio responses contain private notes and persona
         # prompts. Transitional and loopback fallbacks must not expose them.
-        if (path == "/api/memory" or path.startswith("/api/memory/")
+        if (path == "/api/calendar" or path.startswith("/api/calendar/")
+                or path == "/api/routines" or path.startswith("/api/routines/")
+                or path == "/api/memory" or path.startswith("/api/memory/")
                 or path == "/api/gardener" or path.startswith("/api/gardener/")
                 or path == "/api/agent-studio" or path.startswith("/api/agent-studio/")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
@@ -1413,6 +1448,14 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
 
+try:
+    from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
+    app.include_router(core_system_agents_router)
+    app.include_router(prompt_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
+
 
 
 
@@ -1422,6 +1465,67 @@ except Exception as e:
 
 # ═══════════════════════════════════════════════════════════════
 
+
+
+@app.get("/api/gui/backend-origin")
+async def get_gui_backend_origin():
+    """Non-secret declaration plus live read-only probe of this API's BACH DB."""
+    from gui.backend_origin import observe_backend_origin
+    from gui.api import unified_api
+
+    return observe_backend_origin(BACH_DB, unified_api.BACH_DB)
+
+
+@app.get("/api/gui/brand")
+async def get_gui_brand():
+    """Return validated non-secret branding for this GUI consumer."""
+    from gui.branding import read_gui_brand
+
+    return read_gui_brand()
+
+
+@app.get("/api/gui/capabilities")
+async def get_gui_capabilities():
+    """Describe registered GUI adapters without inventing runtime availability."""
+    from datetime import datetime, timezone
+    from gui.branding import read_gui_brand
+
+    observed = datetime.now(timezone.utc).isoformat()
+    registered_paths = {getattr(route, "path", None) for route in app.routes}
+    endpoints = {
+        "ellmos-system-gui": "/",
+        "tasks": "/api/tasks",
+        "agent-studio": "/api/agent-studio/blueprints",
+        "memory": "/api/memory/search",
+        "domains": "/api/domains/installed",
+        "core-system-agents": "/api/system/core-agents",
+        "core-prompts": "/api/system/core-prompts",
+        "hardware-cockpit": "/api/system/cluster-cockpit",
+    }
+    modules = {}
+    for module_id, endpoint in endpoints.items():
+        present = endpoint in registered_paths
+        modules[module_id] = {
+            "adapter_registered": present,
+            "runtime_verified": None,
+            "available": None if present else False,
+            "reason_code": "route_registered_runtime_not_probed" if present else "adapter_not_registered",
+            "observed_at": observed if present else None,
+        }
+    return {
+        "schema": "ellmos-system-gui.capabilities.v1",
+        "schema_version": 1,
+        "kit": {
+            "revision": None, "version": None, "archive_sha256": None,
+            "verified": None, "installed": None,
+            "installed_files_verified": None, "served": None,
+            "reason_code": "release_identity_not_probed",
+        },
+        "brand": read_gui_brand(),
+        "modules": modules,
+        "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
+        "observed_at": observed,
+    }
 
 
 @app.get("/api/status")
@@ -1523,6 +1627,16 @@ async def get_status():
     except Exception as e:
         system_info = {"error": public_error_message()}
 
+    db_connected = None
+    try:
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve(strict=True).as_uri() + "?mode=ro", uri=True, timeout=2)) as probe:
+            probe.execute("PRAGMA query_only = ON")
+            if probe.execute("SELECT 1").fetchone() == (1,):
+                db_connected = True
+    except (OSError, sqlite3.Error):
+        pass
+
     return {
 
         "status": "online",
@@ -1530,7 +1644,7 @@ async def get_status():
         "version": "1.1.85",
 
         "timestamp": datetime.now().isoformat(),
-        "db_connected": True,
+        "db_connected": db_connected,
 
         "stats": {
 
@@ -1664,7 +1778,8 @@ async def api_get_tasks(
     category: str = None,
     assigned_to: str = None,
     priority: str = None,
-    limit: int = 100
+    limit: int = 100,
+    offset: int = 0
 ):
     """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
     try:
@@ -1674,7 +1789,9 @@ async def api_get_tasks(
         # (z.B. "in_progress,progress" oder "done,completed,closed")
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
-        if status and status.lower() != "all":
+        if status and status.lower() == "nonterminal":
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+        elif status and status.lower() != "all":
             STATUS_ALIASES = {
                 "in_progress": ["in_progress", "progress"],
                 "pending": ["pending", "open"],
@@ -1720,10 +1837,13 @@ async def api_get_tasks(
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
 
-        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
         
         rows = conn.execute(query, params).fetchall()
+        has_more = limit > 0 and len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
         tasks = rows_to_list(rows)
 
         # image_data nicht in Liste senden (Performance), nur Flag
@@ -1747,7 +1867,8 @@ async def api_get_tasks(
                     pass
 
         conn.close()
-        return {"success": True, "tasks": tasks, "count": len(tasks)}
+        return {"success": True, "tasks": tasks, "count": len(tasks), "has_more": has_more,
+                "offset": max(0, offset)}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -2766,34 +2887,24 @@ async def list_scheduler_runs(job_id: Optional[int] = None, limit: int = 20):
 
 
 
+_DAEMON_CONTROL_LOCK = threading.Lock()
+_GUI_DAEMON = None
+_GUI_DAEMON_STARTING = False
+
+
 @app.get("/api/daemon/status")
 
 async def get_daemon_status():
 
     """Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken."""
 
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    running = False
-    pid = None
-    pid_content = None
+    identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+    running = identity["running"]
+    pid = identity["pid"]
     started_at = None
-
-    if DAEMON_PID_FILE.exists():
-        try:
-            pid_content = DAEMON_PID_FILE.read_text().strip()
-            pid = int(pid_content)
-            import subprocess
-            if os.name == 'nt':
-                output = subprocess.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=subprocess.DEVNULL).decode('utf-8', errors='replace')
-                running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                running = True
-        except Exception:
-            pass
 
     config = {"interval": 15, "max_sessions": 3, "quiet_time": None}
     is_quiet = False
@@ -2809,46 +2920,47 @@ async def get_daemon_status():
                 if quiet_start and quiet_end:
                     config["quiet_time"] = f"{quiet_start}-{quiet_end}"
                     is_quiet = is_quiet_time(quiet_start, quiet_end)
-                started_at = cfg.get("started_at")
         except Exception:
             pass
 
-    runtime_str = "00:00:00"
-    sessions_generated = 0
-    next_session_in = 0
-    if running and started_at:
-        interval = config["interval"]
-        sessions_generated = get_extrapolated_session_count(started_at, interval)
-        next_session_in = get_next_session_seconds(started_at, interval)
-        runtime_str = get_runtime_string(started_at)
+    # A configured interval does not prove a session ran or when the loop began.
+    runtime_str = None
+    sessions_generated = None
+    next_session_in = None
 
-    conn = get_user_db()
-    stats = {"total_jobs": 0, "active_jobs": 0, "runs_today": 0, "failed_today": 0}
+    stats = {"total_jobs": None, "active_jobs": None, "runs_today": None, "failed_today": None}
     last_runs = []
+    stats_availability = "unavailable"
     try:
-        stats["total_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0]
-        stats["active_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0]
-        stats["runs_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
-        ).fetchone()[0]
-        stats["failed_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
-        ).fetchone()[0]
-        last_runs = conn.execute("""
-            SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
-            FROM scheduler_runs r
-            JOIN scheduler_jobs j ON r.job_id = j.id
-            ORDER BY r.started_at DESC LIMIT 5
-        """).fetchall()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            observed = {
+                "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
+                "active_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0],
+                "runs_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
+                ).fetchone()[0],
+                "failed_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
+                ).fetchone()[0],
+            }
+            observed_runs = conn.execute("""
+                SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
+                FROM scheduler_runs r
+                JOIN scheduler_jobs j ON r.job_id = j.id
+                ORDER BY r.started_at DESC LIMIT 5
+            """).fetchall()
+            stats, last_runs, stats_availability = observed, observed_runs, "available"
+    except (OSError, sqlite3.Error):
         pass
-    conn.close()
 
     return {
         "running": running,
         "pid": pid,
-        "pid_file": str(DAEMON_PID_FILE),
-        "pid_content": pid_content,
+        "identity": identity["identity"],
+        "identity_reason": identity["reason"],
+        "control_available": identity["control_available"],
         "started_at": started_at,
         "config": config,
         "runtime_str": runtime_str,
@@ -2856,115 +2968,64 @@ async def get_daemon_status():
         "next_session_in": next_session_in,
         "is_quiet_time": is_quiet,
         "stats": stats,
+        "stats_availability": stats_availability,
         "last_runs": rows_to_list(last_runs),
     }
 
 
-
-
-
 @app.post("/api/daemon/start")
-
 async def start_daemon(background_tasks: BackgroundTasks):
-
-    """Startet den Daemon-Service im Hintergrund."""
-
+    """Queue a GUI-owned scheduler only when no legacy or foreign PID is present."""
+    global _GUI_DAEMON_STARTING, _GUI_DAEMON
     from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-
-
-    # Pruefen ob bereits laeuft (mit PID-Validierung)
-
-    if DAEMON_PID_FILE.exists():
-        daemon_running = False
-        try:
-            pid = int(DAEMON_PID_FILE.read_text().strip())
-            if os.name == 'nt':
-                import subprocess as _sp
-                output = _sp.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=_sp.DEVNULL).decode('utf-8', errors='replace')
-                daemon_running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                daemon_running = True
-        except Exception:
-            DAEMON_PID_FILE.unlink(missing_ok=True)
-        if daemon_running:
-            return {"status": "already_running", "message": "Daemon laeuft bereits"}
-
-
+    with _DAEMON_CONTROL_LOCK:
+        if _GUI_DAEMON_STARTING:
+            raise HTTPException(status_code=409, detail="Daemon-Start läuft bereits")
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if identity["running"]:
+            return {"status": "already_running", "message": "Daemon-Prozessidentität bestätigt"}
+        if identity["identity"] != "stopped":
+            raise HTTPException(status_code=409, detail="Daemon-Identität nicht bestätigt; Start gesperrt")
+        _GUI_DAEMON_STARTING = True
 
     def run_daemon():
-
-        daemon = DaemonService()
-
-        daemon.run()
-
-
+        global _GUI_DAEMON_STARTING, _GUI_DAEMON
+        daemon = None
+        try:
+            daemon = DaemonService()
+            with _DAEMON_CONTROL_LOCK:
+                _GUI_DAEMON = daemon
+            daemon.run(owner_kind="gui")
+        finally:
+            with _DAEMON_CONTROL_LOCK:
+                if _GUI_DAEMON is daemon:
+                    _GUI_DAEMON = None
+                _GUI_DAEMON_STARTING = False
 
     background_tasks.add_task(run_daemon)
-
-    return {"status": "starting", "message": "Daemon wird gestartet..."}
-
-
-
+    return {"status": "starting", "message": "Daemon-Start eingereiht; Laufstatus erneut prüfen"}
 
 
 @app.post("/api/daemon/stop")
-
 async def stop_daemon():
+    """Request graceful stop only from the verified GUI-owned service object."""
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    """Stoppt den Daemon-Service."""
-
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
-
-
-
-    if not DAEMON_PID_FILE.exists():
-
-        return {"status": "not_running", "message": "Daemon laeuft nicht"}
-
-
-
-    # Signal senden (PID-File entfernen reicht meist)
-
-    try:
-
-        DAEMON_PID_FILE.unlink()
-
-        return {"status": "stopped", "message": "Stop-Signal gesendet"}
-
-    except Exception as e:
-
-        return {"status": "error", "message": public_error_message()}
-
-
-
+    with _DAEMON_CONTROL_LOCK:
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if not identity["running"] or not identity["control_available"] or _GUI_DAEMON is None:
+            raise HTTPException(status_code=409, detail="Steuerung ohne bestätigte lokale Prozessidentität gesperrt")
+        _GUI_DAEMON.stop()
+    return {"status": "stopping", "message": "Stop-Signal an bestätigten lokalen Daemon gesendet"}
 
 
 @app.post("/api/daemon/kill-all")
-
 async def kill_all_daemons():
-
-    """Beendet alle Daemon-Prozesse (Zombie-Praevention)."""
-
-    from gui.daemon_service import DaemonService
-
-
-
-    DaemonService.kill_all_daemons()
-
-    return {
-
-        "status": "ok",
-
-        "message": "Daemon-Prozesse wurden beendet"
-
-    }
-
-
-
+    """Broad process-name termination has no safe ownership contract."""
+    raise HTTPException(status_code=409, detail="Massenbeenden ohne Prozessidentität gesperrt")
 
 
 @app.post("/api/daemon/jobs/{job_id}/run")
@@ -4422,10 +4483,16 @@ async def get_gui_theme():
 async def update_gui_theme(payload: ThemeUpdate):
     """Validate and persist the dashboard theme in user_config.json."""
     try:
-        result = ThemeHandler(BACH_DIR).set_theme(payload.theme, payload.custom)
-        return {"success": True, **result}
+        handler = ThemeHandler(BACH_DIR)
+        result = handler.set_theme(payload.theme, payload.custom)
+        persisted = handler.get_theme()
+        if persisted["theme"] != result["theme"] or persisted["custom"] != result["custom"]:
+            raise HTTPException(status_code=503, detail="Theme-Speicherung nicht bestätigt")
+        return {"success": True, **persisted}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="Theme-Speicherung nicht verfügbar") from exc
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -4754,6 +4821,9 @@ async def chat_control_proxy(control_path: str, request: Request):
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
+    control_authorization = get_control_api_auth_header()
+    if not control_authorization:
+        raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung nicht verfügbar")
     # Task #1338: STT kann das Whisper-Modell nachladen (einmalig ~Minuten) —
     # daher ein deutlich hoeherer Timeout als fuer Status-/Steuerpfade.
     if control_path == "chat":
@@ -4764,9 +4834,7 @@ async def chat_control_proxy(control_path: str, request: Request):
         timeout = 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            upstream_headers = {}
-            if request.headers.get("authorization"):
-                upstream_headers["authorization"] = request.headers["authorization"]
+            upstream_headers = {"authorization": control_authorization}
             status_url = f"{base_url}/status"
             if upstream_headers:
                 status_response = await client.get(status_url, headers=upstream_headers)
@@ -4779,8 +4847,6 @@ async def chat_control_proxy(control_path: str, request: Request):
             if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
                 raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
             if request.method == "GET" and control_path in {"history", "sessions", "session"}:
-                if not upstream_headers:
-                    raise HTTPException(status_code=401, detail="Control-API-Token erforderlich")
                 auth_response = await client.get(f"{base_url}/auth/check", headers=upstream_headers)
                 try:
                     auth_payload = auth_response.json()
@@ -4788,7 +4854,7 @@ async def chat_control_proxy(control_path: str, request: Request):
                     auth_payload = None
                 if (auth_response.status_code != 200 or not isinstance(auth_payload, dict)
                         or auth_payload.get("authenticated") is not True):
-                    raise HTTPException(status_code=401, detail="Control-API-Token ungültig")
+                    raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung fehlgeschlagen")
             if control_path == "status" and request.method == "GET":
                 upstream = status_response
             else:

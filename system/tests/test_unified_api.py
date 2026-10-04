@@ -228,19 +228,28 @@ def test_domains(client):
     assert "software_count" in data
 
 
-def test_artifacts_and_security(client, tmp_path):
-    # List artifacts
+def test_artifacts_and_security(client, tmp_path, monkeypatch):
+    from gui.api import artifact_catalog
+
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    (exports / "report.md").write_text("# Report", encoding="utf-8")
+    (exports / "token.txt").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(artifact_catalog, "ARTIFACT_ROOT", exports)
+
     resp = client.get("/api/artifacts")
     assert resp.status_code == 200
-    assert "artifacts" in resp.json()
+    listed = resp.json()["artifacts"]
+    assert [a["name"] for a in listed] == ["report.md"]
+    assert "path" not in listed[0]
 
-    # Path traversal attack must be blocked (HTTP 403 or 404)
-    unsafe_resp = client.get("/api/artifacts/content?path=../../../../windows/system32/cmd.exe")
-    assert unsafe_resp.status_code in (403, 404)
+    ok = client.get("/api/artifacts/content", params={"artifact_id": listed[0]["id"]})
+    assert ok.status_code == 200 and ok.json()["content"] == "# Report"
 
-    # Sensitive pattern must be blocked
-    token_resp = client.get("/api/artifacts/content?path=C:/Users/User/.bach/token.txt")
-    assert token_resp.status_code in (403, 404)
+    # Paths are not an addressing scheme: traversal and sensitive names are rejected.
+    for bad in ("../../../../windows/system32/cmd.exe", "C:/Users/User/.bach/token.txt"):
+        assert client.get("/api/artifacts/content", params={"artifact_id": bad}).status_code in (403, 404)
+        assert client.get("/api/artifacts/content", params={"path": bad}).status_code in (403, 404, 422)
 
 
 def test_unified_ocean_dashboard_pages(client):

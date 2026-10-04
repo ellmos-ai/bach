@@ -1,6 +1,7 @@
 ---
 // tasks.astro - Das moderne BACH Aufgabenboard mit Filterung
 import BachLayout from "../layouts/BachLayout.astro";
+import TaskCreateForm from "../components/TaskCreateForm.astro";
 ---
 
 <BachLayout title="Aufgaben & Tasks" currentPath="/tasks">
@@ -10,15 +11,13 @@ import BachLayout from "../layouts/BachLayout.astro";
         📋 Aufgaben & Taskboard
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Zentrales Aufgabenmanagement • Mac Studio Master-DB • Trennung zwischen manuellen & automatisierten Tickets
+        Aufgaben aus der verbundenen Task-Datenbank · persönliche und zugewiesene Aufgaben
       </p>
     </div>
 
     <!-- Actions -->
     <div style="display:flex;gap:0.5rem;">
-      <button class="btn btn-primary" id="btn-new-task" onclick="document.getElementById('modal-new-task').classList.remove('hidden')">
-        <span>+</span> Neuer Task
-      </button>
+      <TaskCreateForm id="task-create-dialog" label="Neue Aufgabe" />
       <button class="btn" onclick="loadTasks()">
         <span>🔄</span> Aktualisieren
       </button>
@@ -28,68 +27,70 @@ import BachLayout from "../layouts/BachLayout.astro";
   <!-- Filter Bar -->
   <div class="card" style="padding:0.75rem 1.25rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div style="display:flex;gap:0.5rem;" id="filter-buttons">
-      <button class="btn btn-primary filter-btn active" data-filter="all">Alle Tasks</button>
+      <button class="btn filter-btn" data-filter="all">Alle Tasks</button>
       <button class="btn filter-btn" data-filter="user">👤 Persönlich (User)</button>
       <button class="btn filter-btn" data-filter="auto">🤖 Automatisiert (Ticket-Master / Worker)</button>
-      <button class="btn filter-btn" data-filter="open">⏳ Nur Offene</button>
+      <button class="btn btn-primary filter-btn active" data-filter="open" aria-pressed="true">⏳ Nur offene</button>
       <button class="btn filter-btn" data-filter="done">✅ Erledigte</button>
     </div>
-    <div style="color:var(--text-muted);font-size:0.85rem;" id="tasks-count-badge">
-      Lade...
+    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+      <span style="color:var(--text-muted);font-size:0.85rem;" id="tasks-count-badge">Lade...</span>
+      <button class="btn" id="tasks-prev-page" type="button" disabled>← Zurück</button>
+      <span id="tasks-page-label" aria-live="polite">Seite 1</span>
+      <button class="btn" id="tasks-next-page" type="button" disabled>Weitere →</button>
     </div>
   </div>
 
   <!-- Task List -->
-  <div class="card">
+  <div class="card task-table-scroll">
     <div id="tasks-table-container">
-      <p style="text-align:center;padding:3rem;color:var(--text-muted);">Lade Tasks vom Cluster...</p>
+      <p style="text-align:center;padding:3rem;color:var(--text-muted);">Lade Aufgaben...</p>
     </div>
   </div>
 
-  <!-- New Task Modal (hidden by default) -->
-  <div id="modal-new-task" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;">
-    <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:550px;padding:2rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
-      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:1rem;color:var(--text);">✨ Neuen Task anlegen</h2>
-
-      <form id="form-new-task" onsubmit="submitNewTask(event)" style="display:flex;flex-direction:column;gap:1rem;">
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Aufgabe</label>
-          <input type="text" id="task-title" required style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" placeholder="z. B. Steuererklärung prüfen" />
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Zuweisung (Assignee)</label>
-            <select id="task-assignee" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
-              <option value="user">👤 User (Persönlich)</option>
-              <option value="OLLAMA" selected>🦙 OLLAMA (Worker)</option>
-              <option value="BUDDHA">🧘 Buddha (Assistent)</option>
-              <option value="ATI">🛠️ ATI (Entwickler)</option>
-              <option value="bach">🎵 BACH (System)</option>
-            </select>
-          </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Priorität</label>
-            <select id="task-prio" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
-              <option value="normal" selected>Normal</option>
-              <option value="hoch">Hoch</option>
-              <option value="kritisch">Kritisch</option>
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung (Optional)</label>
-          <textarea id="task-desc" rows="3" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" placeholder="Kontext oder Kriterien..."></textarea>
-        </div>
-
-        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:0.5rem;">
-          <button type="button" class="btn" onclick="document.getElementById('modal-new-task').classList.add('hidden')">Abbrechen</button>
-          <button type="submit" class="btn btn-primary">Task erstellen</button>
-        </div>
-      </form>
+  <section class="card task-detail" id="task-detail" aria-live="polite" hidden>
+    <div class="task-detail-head">
+      <div><span id="task-detail-id" class="muted"></span><h2 id="task-detail-title"></h2></div>
+      <div class="task-detail-actions">
+        <button type="button" class="btn btn-primary" id="task-detail-edit">Bearbeiten</button>
+        <button type="button" class="btn" id="task-detail-close">Schließen</button>
+      </div>
     </div>
-  </div>
+    <p id="task-detail-error" role="alert" hidden></p>
+    <div id="task-detail-view">
+      <dl class="task-detail-grid">
+        <div><dt>Status</dt><dd id="task-view-status"></dd></div>
+        <div><dt>Priorität</dt><dd id="task-view-priority"></dd></div>
+        <div><dt>Kategorie</dt><dd id="task-view-category"></dd></div>
+        <div><dt>Zugewiesen an</dt><dd id="task-view-assigned_to"></dd></div>
+        <div><dt>Erstellt von</dt><dd id="task-view-created_by"></dd></div>
+        <div><dt>Zuletzt geändert von</dt><dd id="task-view-modified_by"></dd></div>
+        <div><dt>Fällig am</dt><dd id="task-view-due_date"></dd></div>
+        <div><dt>Abhängig von</dt><dd id="task-view-depends_on"></dd></div>
+        <div><dt>Benötigtes Modell</dt><dd id="task-view-required_model"></dd></div>
+        <div><dt>Agenten-Slot</dt><dd id="task-view-assigned_slot"></dd></div>
+        <div><dt>Erstellt am</dt><dd id="task-view-created_at"></dd></div>
+        <div><dt>Abgeschlossen am</dt><dd id="task-view-completed_at"></dd></div>
+      </dl>
+      <h3>Beschreibung</h3><p id="task-view-description" class="task-description"></p>
+    </div>
+    <form id="task-edit-form" hidden>
+      <div class="task-edit-grid">
+        <label class="task-edit-wide">Titel<input name="title" required /></label>
+        <label>Priorität<select name="priority"><option value="P1">P1 · Kritisch</option><option value="P2">P2 · Wichtig</option><option value="P3">P3 · Normal</option><option value="P4">P4 · Niedrig</option></select></label>
+        <label>Status<select name="status"><option value="pending">Offen</option><option value="completed">Erledigt</option></select></label>
+        <label>Kategorie<input name="project" /></label>
+        <label>Zugewiesen an<select name="assigned_to"></select></label>
+        <label>Erstellt von<input name="created_by" readonly /></label>
+        <label>Abhängig von Task-IDs<input name="depends_on" inputmode="numeric" pattern="\s*\d+(\s*,\s*\d+)*\s*" /></label>
+        <label>Benötigtes Modell<input name="required_model" /></label>
+        <label>Agenten-Slot<input name="assigned_slot" /></label>
+        <label class="task-edit-wide">Beschreibung<textarea name="description" rows="5"></textarea></label>
+      </div>
+      <p class="muted">Das Fälligkeitsdatum wird angezeigt; die bestehende Bearbeitungs-API unterstützt seine Änderung noch nicht.</p>
+      <div class="task-detail-actions"><button type="button" class="btn" id="task-edit-cancel">Abbrechen</button><button type="submit" class="btn btn-primary">Änderungen speichern</button></div>
+    </form>
+  </section>
 
   <style>
     .hidden { display: none !important; }
@@ -98,23 +99,55 @@ import BachLayout from "../layouts/BachLayout.astro";
       color: #0b0d14 !important;
       border-color: var(--accent) !important;
     }
+    .task-detail { margin-top:1.25rem; padding:1.25rem; }
+    .task-table-scroll { overflow-x:auto; }
+    .task-detail-head,.task-detail-actions { display:flex; justify-content:space-between; align-items:flex-start; gap:.7rem; flex-wrap:wrap; }
+    .task-detail-head h2 { margin:.2rem 0 1rem; overflow-wrap:anywhere; }
+    .task-detail-grid,.task-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem 1.25rem; }
+    .task-detail-grid>div { min-width:0; border-top:1px solid var(--border); padding:.45rem 0; }
+    .task-detail-grid dt,.muted { color:var(--text-muted); font-size:.8rem; }
+    .task-detail-grid dd { margin:.25rem 0 0; overflow-wrap:anywhere; }
+    .task-description { white-space:pre-wrap; overflow-wrap:anywhere; }
+    .task-edit-grid label { min-width:0; display:flex; flex-direction:column; gap:.35rem; }
+    .task-edit-grid input,.task-edit-grid select,.task-edit-grid textarea { min-width:0; width:100%; box-sizing:border-box; padding:.6rem; background:var(--bg-dark); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; }
+    .task-edit-wide { grid-column:1/-1; }
+    #task-detail-error { color:var(--error); overflow-wrap:anywhere; }
+    @media (max-width:620px) { .task-detail-grid,.task-edit-grid { grid-template-columns:minmax(0,1fr); } .task-edit-wide { grid-column:auto; } }
   </style>
 
   <script is:inline>
     let allTasks = [];
-    let currentFilter = 'all';
+    let currentFilter = new URLSearchParams(location.search).get('assigned_to')?.toLowerCase() === 'user' ? 'user' : 'open';
+    let currentOffset = 0;
+    let hasMoreTasks = false;
+    let selectedTask = null;
+    const pageSize = 100;
 
     async function loadTasks() {
       const container = document.getElementById('tasks-table-container');
       try {
-        const res = await fetch('/api/tasks');
+        const status = currentFilter === 'open' ? 'nonterminal'
+          : currentFilter === 'done' ? 'done' : 'all';
+        const query = new URLSearchParams({ status, limit: String(pageSize), offset: String(currentOffset) });
+        if (currentFilter === 'user') query.set('assigned_to', 'user');
+        const res = await fetch('/api/tasks?' + query);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        allTasks = data.tasks || data || [];
+        if (data.success !== true || !Array.isArray(data.tasks)) throw new Error('Ungültige Task-Antwort');
+        allTasks = data.tasks;
+        hasMoreTasks = data.has_more === true;
         renderTasks();
       } catch (e) {
-        container.innerHTML = `<p style="text-align:center;padding:2rem;color:var(--error);">Fehler beim Laden der Tasks: ${e.message}</p>`;
+        container.textContent = 'Tasks konnten nicht geladen werden.';
+        hasMoreTasks = false;
+        updateTaskPagination();
       }
+    }
+
+    function updateTaskPagination() {
+      document.getElementById('tasks-prev-page').disabled = currentOffset === 0;
+      document.getElementById('tasks-next-page').disabled = !hasMoreTasks;
+      document.getElementById('tasks-page-label').textContent = `Seite ${Math.floor(currentOffset / pageSize) + 1}`;
     }
 
     function renderTasks() {
@@ -122,19 +155,22 @@ import BachLayout from "../layouts/BachLayout.astro";
       let filtered = allTasks;
 
       const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
-      const isDoneStatus = status => status === 'done' || status === 'completed' || status === 'closed';
+      const normalizedStatus = status => String(status || '').trim().toLowerCase();
+      const isDoneStatus = status => ['done', 'completed', 'closed'].includes(normalizedStatus(status));
+      const isTerminalStatus = status => ['done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate'].includes(normalizedStatus(status));
 
       if (currentFilter === 'user') {
         filtered = allTasks.filter(t => getAssignee(t) === 'user');
       } else if (currentFilter === 'auto') {
         filtered = allTasks.filter(t => getAssignee(t) !== 'user');
       } else if (currentFilter === 'open') {
-        filtered = allTasks.filter(t => !isDoneStatus(t.status));
+        filtered = allTasks.filter(t => !isTerminalStatus(t.status));
       } else if (currentFilter === 'done') {
         filtered = allTasks.filter(t => isDoneStatus(t.status));
       }
 
-      document.getElementById('tasks-count-badge').textContent = `${filtered.length} Tasks angezeigt (Gesamt: ${allTasks.length})`;
+      document.getElementById('tasks-count-badge').textContent = `${filtered.length} von ${allTasks.length} geladenen Tasks angezeigt`;
+      updateTaskPagination();
 
       if (filtered.length === 0) {
         container.innerHTML = '<p style="text-align:center;padding:3rem;color:var(--text-muted);">Keine Tasks für diesen Filter gefunden.</p>';
@@ -156,6 +192,7 @@ import BachLayout from "../layouts/BachLayout.astro";
           <tbody>
             ${filtered.map(t => {
               const isDone = isDoneStatus(t.status);
+              const isTerminal = isTerminalStatus(t.status);
               const prioColor = (t.priority === 'P1' || t.priority === 'hoch' || t.priority === 'kritisch') ? 'var(--error)' : 'var(--text-muted)';
               const rawAssignee = t.assigned_to || t.assignee || 'Unzugewiesen';
               const isUser = rawAssignee.toLowerCase() === 'user';
@@ -163,7 +200,7 @@ import BachLayout from "../layouts/BachLayout.astro";
 
               return `
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.03);opacity:${isDone ? '0.55' : '1'};">
-                  <td style="padding:0.75rem 0.5rem;font-family:monospace;color:var(--text-muted);">#${t.id}</td>
+                  <td style="padding:0.75rem 0.5rem;font-family:monospace;color:var(--text-muted);">#${escapeHtml(t.id)}</td>
                   <td style="padding:0.75rem 0.5rem;">
                     <div style="font-weight:600;color:var(--text);${isDone ? 'text-decoration:line-through;' : ''}">${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
                     ${t.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">${escapeHtml(t.description.slice(0, 100))}</div>` : ''}
@@ -178,11 +215,12 @@ import BachLayout from "../layouts/BachLayout.astro";
                     <span class="badge ${isDone ? 'badge-success' : 'badge-warning'}">${escapeHtml(t.status || 'open')}</span>
                   </td>
                   <td style="padding:0.75rem 0.5rem;text-align:right;">
-                    ${!isDone ? `
-                      <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="completeTask(${t.id})">
+                    <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="openTask(${Number(t.id)})">Öffnen</button>
+                    ${!isTerminal ? `
+                      <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="completeTask(${Number(t.id)})">
                         ✓ Erledigt
                       </button>
-                    ` : '<span style="color:var(--success);font-size:0.8rem;">✓ Done</span>'}
+                    ` : (isDone ? '<span style="color:var(--success);font-size:0.8rem;">✓ Erledigt</span>' : '<span style="color:var(--text-muted);font-size:0.8rem;">Beendet</span>')}
                   </td>
                 </tr>
               `;
@@ -195,37 +233,151 @@ import BachLayout from "../layouts/BachLayout.astro";
     // Filter Buttons
     document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          b.classList.remove('active', 'btn-primary');
+          b.setAttribute('aria-pressed', 'false');
+        });
         btn.classList.add('active', 'btn-primary');
+        btn.setAttribute('aria-pressed', 'true');
         currentFilter = btn.getAttribute('data-filter');
-        renderTasks();
+        const url = new URL(location.href);
+        if (currentFilter === 'user') url.searchParams.set('assigned_to', 'user');
+        else url.searchParams.delete('assigned_to');
+        history.replaceState(null, '', url);
+        currentOffset = 0;
+        loadTasks();
       });
     });
+    document.getElementById('tasks-prev-page').addEventListener('click', () => {
+      if (currentOffset === 0) return;
+      currentOffset = Math.max(0, currentOffset - pageSize);
+      loadTasks();
+    });
+    document.getElementById('tasks-next-page').addEventListener('click', () => {
+      if (!hasMoreTasks) return;
+      currentOffset += pageSize;
+      loadTasks();
+    });
 
-    async function submitNewTask(e) {
-      e.preventDefault();
-      const title = document.getElementById('task-title').value.trim();
-      const assignee = document.getElementById('task-assignee').value;
-      const priority = document.getElementById('task-prio').value;
-      const desc = document.getElementById('task-desc').value.trim();
+    function detailError(message) {
+      const node = document.getElementById('task-detail-error');
+      node.textContent = message || '';
+      node.hidden = !message;
+    }
 
+    async function openTask(id) {
+      if (!Number.isSafeInteger(id) || id <= 0) return;
+      const panel = document.getElementById('task-detail');
+      panel.hidden = false;
+      detailError('');
       try {
-        const res = await fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, assignee, priority, description: desc })
-        });
-        if (res.ok) {
-          document.getElementById('modal-new-task').classList.add('hidden');
-          document.getElementById('form-new-task').reset();
-          loadTasks();
-        } else {
-          alert('Fehler beim Erstellen des Tasks');
+        const response = await fetch('/api/tasks/' + encodeURIComponent(id));
+        if (!response.ok) throw new Error(`Task #${id} konnte nicht geladen werden (HTTP ${response.status}).`);
+        const task = await response.json();
+        if (Number(task.id) !== id) throw new Error('Die Task-Antwort enthält eine andere ID.');
+        selectedTask = task;
+        document.getElementById('task-detail-id').textContent = `Task #${id}`;
+        document.getElementById('task-detail-title').textContent = String(task.title || 'Unbenannt');
+        for (const key of ['status','priority','category','assigned_to','created_by','modified_by','due_date','depends_on','required_model','assigned_slot','created_at','completed_at','description']) {
+          document.getElementById('task-view-' + key).textContent = task[key] == null || task[key] === '' ? '–' : String(task[key]);
         }
-      } catch (err) {
-        alert('Netzwerkfehler: ' + err.message);
+        document.getElementById('task-detail-view').hidden = false;
+        document.getElementById('task-edit-form').hidden = true;
+        panel.scrollIntoView({ behavior:'smooth', block:'start' });
+        return task;
+      } catch (cause) {
+        selectedTask = null;
+        detailError(cause instanceof Error ? cause.message : 'Task konnte nicht geladen werden.');
+        return null;
       }
     }
+
+    async function loadEditAssignees(select, current) {
+      select.replaceChildren();
+      const options = new Map([[String(current || 'user'), String(current || 'Benutzer')]]);
+      try {
+        const response = await fetch('/api/assignees');
+        if (!response.ok) throw new Error('Zuweisungen nicht erreichbar');
+        const data = await response.json();
+        if (!Array.isArray(data.assignees)) throw new Error('Zuweisungen nicht verfügbar');
+        for (const item of data.assignees) {
+          if (!item || typeof item.name !== 'string' || item.name.toLowerCase() === 'ati') continue;
+          options.set(item.name, String(item.display_name || item.name));
+        }
+      } catch (_) { detailError('Weitere Zuweisungen sind nicht erreichbar; die vorhandene Zuweisung bleibt erhalten.'); }
+      for (const [value, label] of options) {
+        const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option);
+      }
+      select.value = String(current || 'user');
+    }
+
+    document.getElementById('task-detail-edit').addEventListener('click', async () => {
+      if (!selectedTask) return;
+      const form = document.getElementById('task-edit-form');
+      const task = selectedTask;
+      for (const key of ['title','description','depends_on','created_by','required_model','assigned_slot']) form.elements[key].value = String(task[key] || '');
+      form.elements.project.value = String(task.category || '');
+      const priority = String(task.priority || 'P3');
+      const prioritySelect = form.elements.priority;
+      for (const option of Array.from(prioritySelect.options)) if (!['P1','P2','P3','P4'].includes(option.value)) option.remove();
+      if (!['P1','P2','P3','P4'].includes(priority)) {
+        const option = document.createElement('option'); option.value = priority; option.textContent = priority + ' (aktuelle Priorität)'; prioritySelect.append(option);
+      }
+      prioritySelect.value = priority;
+      const status = String(task.status || 'pending');
+      const statusSelect = form.elements.status;
+      for (const option of Array.from(statusSelect.options)) if (!['pending','completed'].includes(option.value)) option.remove();
+      if (!['pending','completed'].includes(status)) {
+        const option = document.createElement('option'); option.value = status; option.textContent = status + ' (aktueller Status)'; statusSelect.append(option);
+      }
+      statusSelect.value = status;
+      await loadEditAssignees(form.elements.assigned_to, task.assigned_to);
+      document.getElementById('task-detail-view').hidden = true;
+      form.hidden = false;
+      form.elements.title.focus();
+    });
+    document.getElementById('task-edit-cancel').addEventListener('click', () => {
+      document.getElementById('task-edit-form').hidden = true;
+      document.getElementById('task-detail-view').hidden = false;
+      detailError('');
+    });
+    document.getElementById('task-detail-close').addEventListener('click', () => {
+      selectedTask = null; document.getElementById('task-detail').hidden = true;
+    });
+    document.getElementById('task-edit-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!selectedTask || !event.currentTarget.reportValidity()) return;
+      const form = event.currentTarget;
+      const submit = form.querySelector('button[type="submit"]');
+      submit.disabled = true; detailError('');
+      const id = Number(selectedTask.id);
+      const values = new FormData(form);
+      const payload = { changed_by:'gui' };
+      for (const key of ['title','priority','status','project','assigned_to','depends_on','description','required_model','assigned_slot']) {
+        const value = String(values.get(key) || '').trim();
+        const before = key === 'project' ? selectedTask.category : selectedTask[key];
+        if (value !== String(before || '').trim()) payload[key] = value;
+      }
+      try {
+        if (Object.keys(payload).length === 1) { document.getElementById('task-edit-cancel').click(); return; }
+        const response = await fetch('/api/tasks/' + encodeURIComponent(id), {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.status !== 'updated') throw new Error(result.detail || result.error || `Änderung nicht gespeichert (HTTP ${response.status}).`);
+        const stored = await openTask(id);
+        if (!stored) throw new Error('Änderung gemeldet, der Kontrollabruf ist fehlgeschlagen.');
+        for (const [key, value] of Object.entries(payload)) {
+          if (key === 'changed_by') continue;
+          const actual = key === 'project' ? stored.category : stored[key];
+          if (String(actual ?? '').trim() !== String(value).trim()) {
+            throw new Error('Änderung gemeldet, aber der Kontrollabruf weicht ab. Bitte Task prüfen.');
+          }
+        }
+        await loadTasks();
+      } catch (cause) { detailError(cause instanceof Error ? cause.message : 'Änderung konnte nicht gespeichert werden.'); }
+      finally { submit.disabled = false; }
+    });
 
     async function completeTask(id) {
       try {
@@ -251,6 +403,19 @@ import BachLayout from "../layouts/BachLayout.astro";
       return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    window.addEventListener('DOMContentLoaded', loadTasks);
+    document.addEventListener('bach:task-created', event => {
+      currentOffset = 0;
+      loadTasks();
+      if (Number.isSafeInteger(event.detail?.id)) openTask(event.detail.id);
+    });
+    window.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.filter-btn').forEach(button => {
+        const active = button.dataset.filter === currentFilter;
+        button.classList.toggle('active', active);
+        button.classList.toggle('btn-primary', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      loadTasks();
+    });
   </script>
 </BachLayout>

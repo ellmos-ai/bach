@@ -73,17 +73,22 @@ def test_cors_never_exposes_private_content():
         assert "access-control-allow-origin" not in response.headers
 
 
-def test_artifact_guard_rejects_databases_keys_and_runtime(tmp_path, monkeypatch):
-    monkeypatch.setattr(unified_api, "_SYSTEM_ROOT", tmp_path)
-    monkeypatch.setattr(unified_api, "EXPORTS_ROOT", None)
-    monkeypatch.setattr(unified_api, "DOMAINS_ROOT", None)
-    monkeypatch.setattr(unified_api, "CONTROL_ROOT", None)
-    assert unified_api._is_safe_artifact_path(tmp_path / "exports" / "report.md")
-    assert unified_api._is_safe_artifact_path(tmp_path / "docs" / "README.md")
-    for name in ("bach.db", "user.sqlite", "server.pem", "bach_secrets.json", "token.txt"):
-        assert not unified_api._is_safe_artifact_path(tmp_path / "exports" / name)
-    assert not unified_api._is_safe_artifact_path(tmp_path / "data" / "memory.txt")
-    assert not unified_api._is_safe_artifact_path(tmp_path.parent / "private.md")
+def test_artifact_catalog_rejects_databases_keys_and_runtime(tmp_path, monkeypatch):
+    from gui.api import artifact_catalog
+
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    monkeypatch.setattr(artifact_catalog, "ARTIFACT_ROOT", exports)
+    (exports / "report.md").write_text("ok", encoding="utf-8")
+    for name in ("bach.db", "user.sqlite", "server.pem", "bach_secrets.json", "token.txt", ".hidden.md"):
+        (exports / name).write_text("secret", encoding="utf-8")
+    (tmp_path / "private.md").write_text("outside", encoding="utf-8")
+    names = {item["name"] for item in artifact_catalog.catalog()["artifacts"]}
+    assert names == {"report.md"}
+    # Opaque ids only: paths and names cannot address files outside the catalog.
+    for bad in ("../private.md", str(tmp_path / "private.md"), "bach.db", "0" * 32):
+        with pytest.raises(FileNotFoundError):
+            artifact_catalog.resolve_artifact(bad)
 
 
 def test_device_fetch_keeps_credentials_on_own_api_and_preserves_control_auth():
