@@ -1396,14 +1396,73 @@ async def authorize_websocket(websocket) -> bool:
 class DeviceAuthMiddleware(BaseHTTPMiddleware):
     """Require device credentials for private APIs, including loopback clients."""
 
-    EXEMPT_PREFIXES = (
+    # DEFAULT-DENY: every path not listed here needs a registered device token.
+    # New routes are therefore protected automatically; making one public is a
+    # deliberate edit of these lists (and of tests/test_gui_perimeter.py).
+    #
+    # Page shells are static HTML (or redirects) that fetch their data from /api/
+    # with the token from localStorage; browsers cannot attach that token to a
+    # navigation, so the shells themselves must be public. They carry no user data.
+    PUBLIC_PAGE_PATHS = frozenset({
+        "/unified",
+        "/ocean",
+        "/",
+        "/agenten/fabrika",
+        "/agenten/running",
+        "/agenten/marblerun",
+        "/governance",
+        "/governance/funk",
+        "/governance/usecases",
+        "/governance/logs",
+        "/life",
+        "/domains",
+        "/artefakte",
+        "/agenten/sessions",
+        "/inbox",
+        "/daemon",
+        "/tasks",
+        "/messages",
+        "/reports",
+        "/help",
+        "/maintenance",
+        "/logs",
+        "/chat",
+        "/settings",
+        "/system",
+        "/wiki",
+        "/agents",
+        "/agents/ati",
+        "/ati",
+        "/partners",
+        "/agents/steuer",
+        "/agents/gesundheit",
+        "/agents/persoenlich",
+        "/agents/foerderplaner",
+        "/skills-board",
+        "/agents-board",
+        "/skills",
+        "/finanzen",
+        "/steuer",
+        "/gesundheit",
+        "/persoenlich",
+        "/routines",
+        "/denkarium",
         "/tokens",
         "/token-dashboard",
-        "/static/",
-        "/favicon.ico",
-        "/docs",
-        "/openapi.json",
-    )
+        "/tasks-board",
+        "/financial",
+        "/memory",
+        "/tools",
+        "/prompt-generator",
+        "/prompt-library",
+        "/usecases",
+        "/kontakte",
+        "/routinen",
+        "/anonymization",
+        "/workflow-tuev",
+    })
+    # Static assets (JS/CSS/images) without data.
+    PUBLIC_STATIC_PREFIXES = ("/static/",)
 
     EXEMPT_API_PATHS = {
         "/api/health",
@@ -1412,12 +1471,30 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/gui/brand",
     }
 
+    async def _require_device(self, request: Request, call_next):
+        """Token gate for everything that is not explicitly public."""
+        auth_header = request.headers.get("Authorization", "").strip()
+        token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+                 else request.cookies.get("bach_device_token", "").strip())
+        if not token:
+            return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+        device = validate_token(token)
+        if not device:
+            return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+        request.state.device = device
+        return await call_next(request)
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # 1. Non-API routes pass through
+        # 1. Default-deny outside /api/: only the explicit page/asset allowlist passes.
+        #    (/docs, /openapi.json, /redoc and the /control mount need a token too.)
         if not path.startswith("/api/"):
-            return await call_next(request)
+            if ((request.method in ("GET", "HEAD")
+                    and (path in self.PUBLIC_PAGE_PATHS
+                         or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
+                return await call_next(request)
+            return await self._require_device(request, call_next)
 
         # A browser talking to localhost is still a loopback client. Reject
         # cross-origin requests before credentials or any API handler runs.
@@ -1426,10 +1503,6 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if ((origin is not None and origin != same_origin)
                 or request.headers.get("sec-fetch-site") == "cross-site"):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
-
-        for prefix in self.EXEMPT_PREFIXES:
-            if path.startswith(prefix):
-                return await call_next(request)
 
         # 2. Status & probe endpoints pass through
         if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
