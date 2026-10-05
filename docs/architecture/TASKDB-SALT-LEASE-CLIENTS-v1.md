@@ -129,7 +129,7 @@ except LeaseError as err:
 
 ## 4. Review-Korrekturen und Versionsbindung (Task #1728)
 
-- Eine konfigurierte Worker-Rolle hat Vorrang vor einem übergebenen SQLite-Handle. Fehlender/ungültiger fester Lead führt zur Ablehnung. `for_task_db(connection_factory)` öffnet eine lokale Verbindung nur im Lead-/isolierten Modus und schließt die eigene Verbindung am Ende. CLI, Python-API und Trithon nutzen diese Auswahl.
+- Eine konfigurierte Worker-Rolle hat Vorrang vor einem übergebenen SQLite-Handle. Fehlender/ungültiger fester Lead führt zur Ablehnung. Der gemeinsame Konfigurationsparser bewahrt eine deklarierte Worker-Rolle bei leerer URL; eine beschädigte vorhandene Konfiguration schaltet keine lokale Authority frei. `for_task_db(connection_factory)` öffnet eine lokale Verbindung nur im Lead-/isolierten Modus und schließt die eigene Verbindung am Ende. CLI, Python-API und Trithon nutzen diese Auswahl.
 - HTTP-Anfragen verwenden den registrierten Gerätekey als `Authorization: Bearer …`. Fehlender Key, ungültige Geräteauth, Transportfehler und unverständliche Antworten eröffnen keine lokale Ersatzlease. Fehlerausgaben enthalten keine rohen Antworttexte oder Anmeldedaten.
 - Acquire-ACKs korrelieren Task-ID, Worker und Host; Renew-ACKs zusätzlich die angefragte Lease-ID/Fence, Release-ACKs Task/Fence/Outcome/Status. Typen und Zeitstempel werden geprüft.
 - Die Sicherheitsmarge von 60 Sekunden bleibt auch kurz vor Ablauf erhalten. Ungültige Zeitstempel erhalten keine Ersatzfrist. Die lokale Frist wird konservativ ab Absendezeit berechnet; Transportwartezeit verlängert sie nicht.

@@ -295,7 +295,10 @@ class TaskLeaseClient:
         if lead_url or cfg.get("mode") == "worker":
             candidate = lead_url or cfg.get("lead_url")
             from urllib.parse import urlsplit
-            parts = urlsplit(str(candidate or ""))
+            try:
+                parts = urlsplit(str(candidate or ""))
+            except ValueError:
+                raise LeaseProtocolError("Fester Lead ist ungültig") from None
             if (parts.scheme not in {"http", "https"} or not parts.hostname
                     or parts.username or parts.password or parts.query or parts.fragment):
                 raise LeaseProtocolError("Fester Lead fehlt oder ist ungültig")

@@ -271,3 +271,32 @@ def test_trithon_worker_never_opens_projection_on_lead_failure(tmp_path,monkeypa
     assert not result["success"] and result["error"]=="offline"
     assert not ticket.db_path.exists()
     assert not any(json.loads(line).get("status")=="done" for line in ledger.read_text().splitlines())
+
+
+@pytest.mark.parametrize("payload",[dict(mode="worker",lead_url=None),dict(mode="worker",lead_url=""),dict(mode="worker"),dict(mode="lead"),dict(mode="isolated"),dict(mode="unknown"),"malformed",None])
+def test_real_worker_config_without_fixed_lead_never_opens_projection(tmp_path,monkeypatch,payload):
+    from hub import rheingold
+    config=tmp_path/"lead.json"
+    if payload is not None:config.write_text(json.dumps(payload) if isinstance(payload,dict) else payload,encoding="utf-8")
+    monkeypatch.setattr(rheingold,"LEAD_CONFIG_FILE",config)
+    monkeypatch.setattr(rheingold,"is_rheingold_lead",lambda:False)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD","1")
+    monkeypatch.setenv("BACH_MODE","worker")
+    for name in ("BACH_LEAD_URL","BACH_RHEINGOLD_URL","BACH_RHEINGOLD_DISABLED"):
+        monkeypatch.delenv(name,raising=False)
+    opened=[]
+    def projection():opened.append(True);return sqlite3.connect(":memory:")
+    with pytest.raises(LeaseError):TaskLeaseClient.for_task_db(projection)
+    assert not opened
+
+
+def test_explicit_isolated_config_still_allows_local_adapter(tmp_path,monkeypatch):
+    from hub import rheingold
+    config=tmp_path/"lead.json";config.write_text('{"mode":"isolated"}',encoding="utf-8")
+    monkeypatch.setattr(rheingold,"LEAD_CONFIG_FILE",config)
+    monkeypatch.setattr(rheingold,"is_rheingold_lead",lambda:False)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD","1")
+    monkeypatch.delenv("BACH_MODE",raising=False)
+    for name in ("BACH_LEAD_URL","BACH_RHEINGOLD_URL","BACH_RHEINGOLD_DISABLED"):
+        monkeypatch.delenv(name,raising=False)
+    assert TaskLeaseClient().mode=="local"
