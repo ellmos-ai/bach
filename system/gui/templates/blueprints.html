@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <script src="/static/js/device-fetch.js"></script>
+    <meta charset="UTF-8">
+    <title>BACH - Blueprints (Vorlagen-Bibliothek)</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .bp-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            box-sizing: border-box;
+        }
+        .bp-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .bp-card {
+            background: var(--bg-card, #1e293b);
+            border: 1px solid var(--border, #334155);
+            border-radius: 8px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .bp-card:hover {
+            border-color: var(--accent, #6366f1);
+            transform: translateY(-2px);
+        }
+        .bp-tab {
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            border: 1px solid var(--border, #334155);
+            background: transparent;
+            color: var(--text-muted, #94a3b8);
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .bp-tab.active {
+            background: var(--accent, #6366f1);
+            color: #fff;
+            border-color: var(--accent, #6366f1);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="bp-container">
+        <div class="bp-header">
+            <div>
+                <h1 style="margin: 0 0 0.25rem; font-size: 1.75rem;">📐 Blueprints & Vorlagen-Bibliothek</h1>
+                <p style="margin: 0; color: var(--text-muted, #94a3b8); font-size: 0.875rem;">
+                    Vorlagen für Agenten, Rollen, Skills, Workflows, Services und Contractus (GUX-024..027)
+                </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="/agenten/fabrika" class="btn btn-primary" style="text-decoration:none; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent, #6366f1); color: #fff;">🏭 Zur Fabrik</a>
+                <a href="/agenten/running" class="btn" style="text-decoration:none; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border, #334155); color: var(--text, #f8fafc);">⚡ Living & Running</a>
+            </div>
+        </div>
+
+        <div style="background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between; align-items: center;">
+                <input type="text" id="bp-search" placeholder="Blueprints durchsuchen..." oninput="filterList()" style="flex:1; min-width: 250px; padding: 0.6rem; border-radius: 6px; background: #0f172a; border: 1px solid #334155; color: #fff;" />
+                <div style="display: flex; gap: 0.5rem;">
+                    <label style="font-size:0.8rem; color:#94a3b8; display:flex; align-items:center; gap:0.3rem; cursor:pointer;">
+                        <input type="checkbox" id="filter-templates" onchange="filterList()" /> Nur Vorlagen
+                    </label>
+                    <label style="font-size:0.8rem; color:#94a3b8; display:flex; align-items:center; gap:0.3rem; cursor:pointer;">
+                        <input type="checkbox" id="filter-custom" onchange="filterList()" /> Nur Eigene
+                    </label>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.4rem; margin-top: 0.75rem; flex-wrap: wrap;">
+                <button class="bp-tab active" data-kind="all" onclick="selectKind('all')">Alle <span id="cnt-all">0</span></button>
+                <button class="bp-tab" data-kind="agent" onclick="selectKind('agent')">🤖 Agenten <span id="cnt-agent">0</span></button>
+                <button class="bp-tab" data-kind="role" onclick="selectKind('role')">🎭 Rollen <span id="cnt-role">0</span></button>
+                <button class="bp-tab" data-kind="skill" onclick="selectKind('skill')">🧩 Skills <span id="cnt-skill">0</span></button>
+                <button class="bp-tab" data-kind="workflow" onclick="selectKind('workflow')">⛓️ Workflows <span id="cnt-workflow">0</span></button>
+                <button class="bp-tab" data-kind="service" onclick="selectKind('service')">⚙️ Services <span id="cnt-service">0</span></button>
+                <button class="bp-tab" data-kind="contractus" onclick="selectKind('contractus')">📜 Contractus <span id="cnt-contractus">0</span></button>
+            </div>
+        </div>
+
+        <div id="blueprints-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;">
+            <p style="grid-column: 1/-1; text-align: center; color: #94a3b8; padding: 2rem;">Lade Blueprints...</p>
+        </div>
+    </div>
+
+    <script>
+        let _blueprints = [];
+        let _kind = 'all';
+
+        async function init() {
+            try {
+                const res = await (window.deviceFetch || fetch)('/api/agent-studio/blueprints');
+                const data = await res.json();
+                _blueprints = [...(data.templates || []), ...(data.blueprints || [])];
+                updateCounts();
+                filterList();
+            } catch (e) {
+                document.getElementById('blueprints-grid').innerHTML = '<p style="color:red; text-align:center;">Fehler beim Laden: ' + e.message + '</p>';
+            }
+        }
+
+        function updateCounts() {
+            const counts = { all: _blueprints.length, agent: 0, role: 0, skill: 0, workflow: 0, service: 0, contractus: 0 };
+            for (const b of _blueprints) {
+                const k = (b.kind || 'agent').toLowerCase();
+                if (counts[k] !== undefined) counts[k]++;
+            }
+            for (const [k, v] of Object.entries(counts)) {
+                const el = document.getElementById('cnt-' + k);
+                if (el) el.textContent = v;
+            }
+        }
+
+        function selectKind(k) {
+            _kind = k;
+            document.querySelectorAll('.bp-tab').forEach(t => t.classList.toggle('active', t.getAttribute('data-kind') === k));
+            filterList();
+        }
+
+        function filterList() {
+            const term = (document.getElementById('bp-search').value || '').toLowerCase().trim();
+            const tmpl = document.getElementById('filter-templates').checked;
+            const cust = document.getElementById('filter-custom').checked;
+
+            const list = _blueprints.filter(b => {
+                const k = (b.kind || 'agent').toLowerCase();
+                if (_kind !== 'all' && k !== _kind) return false;
+                if (tmpl && !b.is_template) return false;
+                if (cust && b.is_template) return false;
+                if (term) {
+                    const text = (b.name + ' ' + (b.title || '') + ' ' + (b.description || '')).toLowerCase();
+                    if (!text.includes(term)) return false;
+                }
+                return true;
+            });
+            render(list);
+        }
+
+        function render(list) {
+            const grid = document.getElementById('blueprints-grid');
+            if (list.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #94a3b8; padding: 2rem;">Keine Blueprints gefunden.</p>';
+                return;
+            }
+            grid.innerHTML = list.map(b => `
+                <div class="bp-card">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
+                            <span style="font-size:0.75rem; padding: 0.2rem 0.5rem; background: #0f172a; border-radius: 4px; border: 1px solid #334155;">${b.kind || 'agent'}</span>
+                            <span style="font-size:0.75rem; color: ${b.is_materialized ? '#10b981' : '#94a3b8'};">${b.is_materialized ? '● Living' : '○ Schablone'}</span>
+                        </div>
+                        <h3 style="margin: 0 0 0.3rem; font-size: 1.1rem; color: #f8fafc;">${escapeHtml(b.title || b.name)}</h3>
+                        <div style="font-size:0.75rem; font-family:monospace; color:#94a3b8; margin-bottom: 0.5rem;">ID: ${escapeHtml(b.name)}</div>
+                        <p style="font-size:0.8rem; color:#cbd5e1; margin-bottom: 0.75rem; line-height: 1.4;">${escapeHtml(b.description || b.persona_role || '')}</p>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap: 0.4rem; border-top: 1px solid #334155; padding-top: 0.5rem;">
+                        <a href="/agenten/fabrika?load=${encodeURIComponent(b.name)}" style="text-decoration:none; padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #334155; color: #fff; border-radius: 4px;">Fabrika 🏭</a>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

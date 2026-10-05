@@ -42,6 +42,19 @@ if str(_SYSTEM_ROOT) not in sys.path:
 from hub.bach_paths import BACH_DB, BACH_ROOT
 BACH_DIR = BACH_ROOT
 
+from hub._services.blueprint_service import (
+    CONTRACTUS_PRESETS,
+    VALID_BLUEPRINT_KINDS,
+    ensure_blueprint_schema,
+    get_available_skills,
+    list_blueprints as svc_list_blueprints,
+    materialize_blueprint as svc_materialize_blueprint,
+    save_blueprint as svc_save_blueprint,
+    seed_default_blueprints,
+    start_blueprint_worker as svc_start_blueprint_worker,
+    synthesize_start_prompt,
+)
+
 router = APIRouter(prefix="/api", tags=["unified"])
 _COMPARE_RACE_LOCK = asyncio.Lock()
 
@@ -240,29 +253,7 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
     if _agent_studio_tables_ready:
         return
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_blueprints (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                title TEXT,
-                description TEXT,
-                persona_role TEXT,
-                persona_prompt TEXT,
-                skills_json TEXT DEFAULT '[]',
-                animus_type TEXT DEFAULT 'subscription',
-                contractus_json TEXT DEFAULT '{}',
-                modus TEXT DEFAULT 'casualis',
-                is_template INTEGER DEFAULT 0,
-                is_materialized INTEGER DEFAULT 0,
-                governance_json TEXT DEFAULT '{}',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        try:
-            conn.execute("ALTER TABLE agent_blueprints ADD COLUMN governance_json TEXT DEFAULT '{}'")
-        except Exception:
-            pass
+        ensure_blueprint_schema(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS partner_presence (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,133 +268,19 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
             )
         """)
         conn.commit()
+        seed_default_blueprints(conn)
         _agent_studio_tables_ready = True
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"Fehler bei Initialisierung der Agent-Studio Tabellen: {exc}")
         return
-
-    # Seed default templates if empty
-    count = conn.execute("SELECT COUNT(*) FROM agent_blueprints").fetchone()[0]
-    if count == 0:
-        now = datetime.now().isoformat()
-        seeds = [
-            (
-                "buddha",
-                "Buddha (Allrounder & Routing-Ticket-Master)",
-                "Zentrales Empfangs- und Routing-Modell fuer Aufgaben, Ticketaufnahme und Klientengespraeche.",
-                "Allrounder, Routing-Ticket-Master, Assistent",
-                "Du bist Buddha, der einfuehlsame, strukturierte Erstkontakt und Ticket-Master im System.",
-                json.dumps(["gespraechsfuehrung-basis", "selbstmanagement", "decide"]),
-                "subscription",
-                json.dumps({"max_turns": 30, "cooldown_seconds": 0, "task_types": ["chat", "routing", "triage"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "wartungsagent",
-                "Wartungs-Agent (Routinen & Hygiene)",
-                "Autonome periodische System-Wartung, Log-Rotation, Integritaets- und Hygiene-Checks.",
-                "System-Administrator, Hygiene- und Wartungsexperte",
-                "Du bist der Wartungsagent. Pruefe Logs, sichere Dateizustaende und melde Fehler praezise.",
-                json.dumps(["system-auditor", "backup", "sync"]),
-                "cli",
-                json.dumps({"max_turns": 10, "cooldown_seconds": 3600, "task_types": ["maintenance", "hygiene"]}),
-                "routine",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "rollenwechsler",
-                "Rollenwechsler (Dynamischer Kontext-Adapter)",
-                "Wechselt je nach Ausloeser (Trigger/Causa) dynamisch die Persona und das Fachgebiet.",
-                "Thematischer Router & Kontext-Transformator",
-                "Du passt deine Rolle sofort an den Input-Trigger an und delegierst an die passende Pipeline.",
-                json.dumps(["model-strategy", "schwarm-operationen", "orchestrator"]),
-                "api",
-                json.dumps({"max_turns": 15, "cooldown_seconds": 60, "task_types": ["routing", "delegation"]}),
-                "trigger",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "claude_avatar",
-                "Claude Code (Subscription / CLI Dummy)",
-                "Repraesentiert die lokale Claude Code CLI Session als steuerbaren Avatar im Taskboard.",
-                "Terminal Coding Agent",
-                "Verarbeitet komplexe Coding- und Architekturaufgaben im Terminal.",
-                json.dumps(["dev-zyklus", "bugfix-protokoll"]),
-                "subscription",
-                json.dumps({"max_turns": 50, "cooldown_seconds": 0, "task_types": ["dev", "refactor", "bugfix"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "gemini_avatar",
-                "Gemini Antigravity (Subscription / CLI Dummy)",
-                "Repraesentiert Antigravity als autonomen Multi-Agenten- und Automations-Operator.",
-                "Autonomous Multi-Agent Operator",
-                "Koordiniert Schwarm- und Teamaufgaben im Hintergrund.",
-                json.dumps(["headless", "orchestrator", "schwarm-operationen"]),
-                "subscription",
-                json.dumps({"max_turns": 100, "cooldown_seconds": 0, "task_types": ["automation", "research"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "codex_avatar",
-                "Codex / GPT (Subscription / CLI Dummy)",
-                "Repraesentiert Codex / GPT im lokalen Multi-Agenten-Verbund.",
-                "Code Review & Documentation Specialist",
-                "Fuehrt Code-Reviews, Ticket-Verarbeitung und Doku-Updates durch.",
-                json.dumps(["docs-analysis", "pipeline-optimizer"]),
-                "subscription",
-                json.dumps({"max_turns": 40, "cooldown_seconds": 0, "task_types": ["dev", "review"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "kimi_avatar",
-                "Kimi Code (CLI Dummy)",
-                "Repraesentiert Kimi Code CLI als offenes Modell fuer Text- und Codeanalysen.",
-                "Open Weights Code Explorer",
-                "Spezialisiert auf schnelle Code- und Textanalysen ohne Cloud-Lock.",
-                json.dumps(["code-skill-index"]),
-                "cli",
-                json.dumps({"max_turns": 25, "cooldown_seconds": 0, "task_types": ["dev", "search"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-        ]
-        conn.executemany("""
-            INSERT INTO agent_blueprints (
-                name, title, description, persona_role, persona_prompt, skills_json,
-                animus_type, contractus_json, modus, is_template, is_materialized,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, seeds)
-        conn.commit()
 
 
 @router.get("/agent-studio/blueprints")
-async def list_agent_blueprints():
+async def list_agent_blueprints(
+    kind: Optional[str] = None,
+    search: Optional[str] = None,
+    is_template: Optional[int] = None,
+):
     """Listet alle Schablonen und individuellen Agenten-Blueprints aus der Fabrika."""
     conn = _get_agent_studio_ro_conn()
     try:
@@ -416,18 +293,39 @@ async def list_agent_blueprints():
         templates = []
         for r in rows:
             item = dict(r)
+            item["kind"] = item.get("kind") or "agent"
+            item["version"] = item.get("version") or "1.0.0"
+            item["start_prompt"] = item.get("start_prompt") or ""
             try:
-                item["skills"] = json.loads(item["skills_json"])
+                item["skills"] = json.loads(item.get("skills_json") or "[]")
             except Exception:
                 item["skills"] = []
             try:
-                item["contractus"] = json.loads(item["contractus_json"])
+                item["contractus"] = json.loads(item.get("contractus_json") or "{}")
             except Exception:
                 item["contractus"] = {}
             try:
                 item["governance"] = json.loads(item.get("governance_json") or "{}")
             except Exception:
                 item["governance"] = {}
+
+            # Filter by kind
+            if isinstance(kind, str) and kind.strip() and item["kind"].lower() != kind.strip().lower():
+                continue
+            # Filter by is_template
+            if is_template is not None and not isinstance(is_template, type(Query)):
+                try:
+                    if int(item.get("is_template", 0)) != int(is_template):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            # Filter by search
+            if isinstance(search, str) and search.strip():
+                term = search.strip().lower()
+                target_str = f"{item.get('name', '')} {item.get('title', '')} {item.get('description', '')} {item.get('persona_role', '')}".lower()
+                if term not in target_str:
+                    continue
+
             if item["is_template"]:
                 templates.append(item)
             else:
@@ -437,69 +335,49 @@ async def list_agent_blueprints():
             "blueprints": blueprints,
             "total_templates": len(templates),
             "total_blueprints": len(blueprints),
-            "total": len(rows)
+            "total": len(templates) + len(blueprints),
         }
     finally:
         conn.close()
 
 
+@router.get("/agent-studio/contractus-presets")
+async def get_contractus_presets():
+    """Liefert Contractus-, Modus- und Trigger-Presets für Fabrika und Blueprints."""
+    return {
+        "presets": CONTRACTUS_PRESETS,
+        "count": len(CONTRACTUS_PRESETS),
+    }
+
+
+@router.post("/agent-studio/synthesize-prompt")
+async def synthesize_prompt_endpoint(payload: Dict[str, Any]):
+    """Synthetisiert und validiert einen authentischen Startprompt ([Boot:Agent], [Boot:System], [Boot:Aufgabe])."""
+    task_override = payload.get("task")
+    bp_data = payload.get("blueprint") or payload
+    try:
+        prompt = synthesize_start_prompt(bp_data, task_override=task_override)
+        return {
+            "success": True,
+            "start_prompt": prompt,
+            "character_count": len(prompt),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/agent-studio/blueprints")
 async def save_agent_blueprint(payload: Dict[str, Any]):
     """Erstellt oder aktualisiert einen Agenten-Blueprint in der Fabrika."""
-    name = (payload.get("name") or "").strip().lower()
-    if not name:
-        raise HTTPException(status_code=400, detail="Blueprint-Name fehlt")
-    title = payload.get("title") or name.title()
-    desc = payload.get("description", "")
-    persona_role = payload.get("persona_role", "")
-    persona_prompt = payload.get("persona_prompt", "")
-    skills = payload.get("skills", [])
-    animus = payload.get("animus_type", "subscription")
-    contractus = payload.get("contractus", {})
-    modus = payload.get("modus", "casualis")
-    governance = payload.get("governance", {})
-    if not isinstance(contractus, dict):
-        raise HTTPException(status_code=400, detail="Contractus muss ein Objekt sein")
-    if "model" in contractus or "fallback" in contractus:
-        if animus not in ("api", "mcp", "cli", "subscription"):
-            raise HTTPException(status_code=400, detail="Ungültiger Animus-Typ")
-        for field in ("model", "fallback"):
-            value = contractus.get(field)
-            if not isinstance(value, str) or not value.strip() or len(value) > 200 or any(ord(char) < 32 for char in value):
-                raise HTTPException(status_code=400, detail=f"Ungültige Modellkonfiguration: {field}")
-    is_template = int(payload.get("is_template", 0))
-    now = datetime.now().isoformat()
-
     conn = _get_conn()
     try:
         _ensure_agent_studio_tables(conn)
-        existing = conn.execute(
-            "SELECT is_template FROM agent_blueprints WHERE name = ?", (name,)
-        ).fetchone()
-        if existing and existing[0]:
-            raise HTTPException(status_code=409, detail="Vorlage ist schreibgeschützt; bitte eigenen Namen wählen")
-        conn.execute("""
-            INSERT INTO agent_blueprints (
-                name, title, description, persona_role, persona_prompt,
-                skills_json, animus_type, contractus_json, modus, is_template, governance_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                title = excluded.title,
-                description = excluded.description,
-                persona_role = excluded.persona_role,
-                persona_prompt = excluded.persona_prompt,
-                skills_json = excluded.skills_json,
-                animus_type = excluded.animus_type,
-                contractus_json = excluded.contractus_json,
-                modus = excluded.modus,
-                governance_json = excluded.governance_json,
-                updated_at = excluded.updated_at
-        """, (
-            name, title, desc, persona_role, persona_prompt,
-            json.dumps(skills), animus, json.dumps(contractus), modus, is_template, json.dumps(governance), now
-        ))
-        conn.commit()
-        return {"success": True, "name": name, "title": title}
+        res = svc_save_blueprint(conn, payload)
+        return res
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
 
@@ -563,28 +441,48 @@ async def delete_agent_blueprint(blueprint_id: int):
 
 
 @router.post("/agent-studio/blueprints/{blueprint_id}/materialize")
-async def materialize_blueprint(blueprint_id: int):
-    """Materialisiert einen Blueprint in die Living & Running Welt."""
+async def materialize_blueprint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
+    """Materialisiert einen Blueprint in die Living & Running Welt als living (nicht running)."""
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
     try:
         _ensure_agent_studio_tables(conn)
-        row = conn.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Blueprint nicht gefunden")
-        bp = dict(row)
-        now = datetime.now().isoformat()
-
-        # Configuring a blueprint does not start a worker.
-        conn.execute("UPDATE agent_blueprints SET is_materialized = 1, updated_at = ? WHERE id = ?", (now, blueprint_id))
-        conn.commit()
+        model = payload.get("model") if payload else None
+        res = svc_materialize_blueprint(conn, blueprint_id, model=model)
         return {
             "success": True,
-            "message": f"Agent {bp['title']} ({bp['name']}) als Blueprint konfiguriert. Kein Worker gestartet.",
-            "name": bp["name"],
-            "animus": bp["animus_type"],
-            "status": "configured"
+            "message": f"Blueprint {res['title']} ({res['name']}) als Living aktiviert. Kein Worker gestartet.",
+            "name": res["name"],
+            "status": "living",
+            "is_living": True,
+            "is_running": False,
+            "blueprint": res,
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/start")
+async def start_blueprint_worker_endpoint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
+    """Startet einen Worker für den Blueprint und erzeugt authentische JobExecution/Heartbeat-Receipts."""
+    task = (payload.get("task") if payload else None) or "Standard-Worker Task"
+    conn = _get_conn()
+    try:
+        _ensure_agent_studio_tables(conn)
+        res = svc_start_blueprint_worker(conn, blueprint_id, task=task)
+        return {
+            "success": True,
+            "message": f"Worker für {res['title']} ({res['name']}) gestartet.",
+            "name": res["name"],
+            "status": "running",
+            "is_living": True,
+            "is_running": True,
+            "job_receipt": res["job_receipt"],
+            "heartbeat_receipt": res["heartbeat_receipt"],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     finally:
         conn.close()
 
@@ -748,6 +646,24 @@ async def get_capabilities():
             "total_skills": sum(len(v) for v in skills_by_category.values()),
             "categories_count": len(skills_by_category)
         }
+    }
+
+
+@router.get("/capabilities/skills")
+async def get_capabilities_skills(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """Dynamische Fähigkeiten/Skills aus dem zentralen Skills-Repository (GUX-022)."""
+    cat = category if isinstance(category, str) else None
+    query = search if isinstance(search, str) else None
+    skills = get_available_skills(skills_root=SKILLS_ROOT, category=cat, search=query)
+    categories = sorted(list({s["category"] for s in skills}))
+    return {
+        "skills": skills,
+        "total": len(skills),
+        "categories": categories,
+        "source": str(SKILLS_ROOT) if SKILLS_ROOT else "fallback_catalog",
     }
 
 
