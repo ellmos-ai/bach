@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH – Buddha Chat</title>
@@ -762,8 +763,8 @@
                 <button class="btn-footer-protocols" id="btn-open-all-protocols" title="Telegram- und Worker-Protokolle einsehen">
                     <span>📜</span> Alle Protokolle (Telegram/Worker)
                 </button>
-                <a id="btn-open-activity-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-footer-protocols" style="text-decoration:none; margin-top:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Aktivitätsanzeige & Worker-Dashboard (Port 8081) öffnen">
-                    <span>⚙️</span> Worker-Dashboard (8081) ↗
+                <a id="btn-open-activity-link" href="/agenten/running" class="btn-footer-protocols" style="text-decoration:none; margin-top:6px; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Living / Running öffnen">
+                    <span>⚙️</span> Living / Running ↗
                 </a>
             </div>
         </aside>
@@ -779,6 +780,8 @@
                 </div>
 
                 <div class="chat-status" id="chat-status">
+                    <a id="chat-device-login" href="/token-dashboard" hidden>Gerät anmelden</a>
+                    <button id="btn-compare-race" onclick="openCompareRaceModal()" title="Compare-Race: Verfügbarkeit prüfen" style="background:var(--bg-card);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:0.78rem;font-weight:600;display:flex;align-items:center;gap:4px;margin-right:6px;">🏁 Compare-Race · prüfen</button>
                     <div class="status-chip">
                         <span class="dot" id="conn-dot"></span>
                         <span id="s-backend">–</span>
@@ -866,6 +869,272 @@
         </div>
     </div>
 
+    <!-- Compare-Race Modal (GUX-075 & Task #1690 / #1676) -->
+    <div id="compare-race-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-card" style="max-width: 900px; height: auto; max-height: 88vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+                        <span>🏁</span> Buddha Chat Compare-Race (Multi-Modell Evaluation)
+                    </h3>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
+                        Parallele Ausführung mit SpendAuthority-Kostenreservierung, transparenten Receipts (<span style="font-family:monospace;font-size:0.75rem;">evidence_kind</span>) und NemoFold Inter-Rater-Reliabilität (Cohen's &kappa;).
+                    </div>
+                </div>
+                <button class="modal-close-btn" onclick="closeCompareRaceModal()" title="Schließen">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Test-Prompt für das Multi-Modell Race:</label>
+                    <textarea id="race-prompt" rows="3" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem;" placeholder="Gib hier den Prompt ein, den die Kandidaten-Lanes parallel beantworten und bewerten sollen..."></textarea>
+                </div>
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:0.8rem; font-weight:600; color:var(--text);">Kandidaten-Spuren (Lanes):</label>
+                        <span id="race-lanes-summary" style="font-size:0.75rem; color:var(--text-muted);">Lanes werden geladen...</span>
+                    </div>
+                    <div id="race-model-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:8px;">
+                        <div style="color:var(--text-muted); font-size:0.8rem;">Spuren werden geladen...</div>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; background:var(--bg-dark); padding:10px; border-radius:8px; border:1px solid var(--border);">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text);cursor:pointer;">
+                        <input type="checkbox" id="race-synthetic-fixtures" onchange="toggleSyntheticMode()" />
+                        <span><strong>Synthetischer Testmodus:</strong> Verwendet deterministische Offline-Fixtures (0.0 ct Kosten, kein API-Aufruf).</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-muted);cursor:pointer;">
+                        <input type="checkbox" id="race-confirm-cost" onchange="updateRaceButton()" />
+                        <span><strong>SpendAuthority Freigabe:</strong> Ich autorisiere max. 10.0 ct Budget für eventuelle kommerzielle Provider-Lanes.</span>
+                    </label>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <button class="btn btn-sm btn-primary" id="btn-run-race" onclick="executeCompareRace()" style="padding:9px 18px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">🏁 Race starten</button>
+                    <span id="race-status-hint" style="font-size:0.75rem; color:var(--text-muted);">Mindestens 2 Spuren auswählen</span>
+                </div>
+                <div id="race-results-container" style="margin-top: 8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let raceLanesData = [];
+
+    function toggleSyntheticMode() {
+        const isSyn = document.getElementById('race-synthetic-fixtures').checked;
+        const boxes = document.querySelectorAll('.race-model-cb');
+        if (isSyn) {
+            boxes.forEach(cb => {
+                cb.checked = cb.value.startsWith('synthetic');
+            });
+        }
+        updateRaceButton();
+    }
+
+    function updateRaceButton() {
+        const button = document.getElementById('btn-run-race');
+        const hint = document.getElementById('race-status-hint');
+        const count = document.querySelectorAll('.race-model-cb:checked').length;
+        const isSyn = document.getElementById('race-synthetic-fixtures').checked;
+        const costAuth = document.getElementById('race-confirm-cost').checked;
+
+        if (count < 2) {
+            button.disabled = true;
+            button.style.opacity = '0.6';
+            hint.textContent = 'Mindestens 2 Spuren auswählen (' + count + ' gewählt)';
+            return;
+        }
+
+        button.disabled = false;
+        button.style.opacity = '1.0';
+        hint.textContent = isSyn 
+            ? 'Synthetischer Modus aktiv (0 ct)' 
+            : (costAuth ? 'SpendAuthority erteilt (' + count + ' Spuren aktiv)' : 'Bereit (' + count + ' Spuren gewählt; unautorisierte Paid-Lanes werden geblockt)');
+    }
+
+    async function loadCompareRaceStatus() {
+        const list = document.getElementById('race-model-list');
+        const summary = document.getElementById('race-lanes-summary');
+        list.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;">Spuren werden geladen...</div>';
+
+        try {
+            const res = await fetch('/api/chat/buddha/compare-race/lanes');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            raceLanesData = data.lanes || [];
+            list.innerHTML = '';
+
+            let readyCount = 0;
+            raceLanesData.forEach(lane => {
+                if (lane.available) readyCount++;
+                const item = document.createElement('div');
+                item.style.cssText = 'background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:4px;';
+
+                let badgeHtml = '';
+                if (lane.provider === 'synthetic') {
+                    badgeHtml = '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border:1px solid #3b82f6;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Fixture</span>';
+                } else if (!lane.is_paid) {
+                    badgeHtml = '<span style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid #10b981;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Lokal / 0 ct</span>';
+                } else {
+                    badgeHtml = '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Paid (Auth nötig)</span>';
+                }
+
+                item.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; font-weight:600; color:var(--text); cursor:pointer;">
+                            <input type="checkbox" class="race-model-cb" value="${lane.id}" ${(!lane.is_paid || lane.id === 'claude') ? 'checked' : ''} onchange="updateRaceButton()" />
+                            ${lane.name}
+                        </label>
+                        ${badgeHtml}
+                    </div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-left:20px;">
+                        ${lane.description}
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+
+            summary.textContent = `${raceLanesData.length} Spuren konfiguriert (${readyCount} sofort betriebsbereit)`;
+            updateRaceButton();
+        } catch (err) {
+            list.innerHTML = `<div style="color:var(--error);font-size:0.8rem;">Fehler beim Laden der Spuren: ${err.message}</div>`;
+        }
+    }
+
+    function openCompareRaceModal() {
+        const m = document.getElementById('compare-race-modal');
+        if (m) m.style.display = 'flex';
+        loadCompareRaceStatus();
+    }
+
+    function closeCompareRaceModal() {
+        const m = document.getElementById('compare-race-modal');
+        if (m) m.style.display = 'none';
+    }
+
+    async function executeCompareRace() {
+        const prompt = document.getElementById('race-prompt').value.trim();
+        if (!prompt) {
+            alert('Bitte gib zuerst einen Prompt ein.');
+            return;
+        }
+        const models = Array.from(document.querySelectorAll('.race-model-cb:checked')).map(cb => cb.value);
+        if (models.length < 2) {
+            alert('Bitte wähle mindestens zwei Kandidaten-Spuren aus.');
+            return;
+        }
+
+        const isSynthetic = document.getElementById('race-synthetic-fixtures').checked;
+        const costAuth = document.getElementById('race-confirm-cost').checked;
+        const resEl = document.getElementById('race-results-container');
+        resEl.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:0.85rem;">🏁 Compare-Race läuft parallel über Kandidaten-Lanes (asyncio.gather)...</div>';
+
+        const payload = {
+            prompt: prompt,
+            models: models,
+            runner: "buddha",
+            synthetic_fixtures: isSynthetic,
+            spend_authority: {
+                approved: costAuth,
+                max_budget_cents: costAuth ? 10.0 : 0.0
+            }
+        };
+
+        try {
+            const res = await fetch('/api/chat/buddha/compare-race', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                resEl.innerHTML = `<div style="color:var(--error); font-size:0.85rem; padding:12px; background:var(--bg-dark); border-radius:6px;">Fehler: ${errData.detail || 'Ausführung fehlgeschlagen'}</div>`;
+                return;
+            }
+
+            const data = await res.json();
+            renderCompareRaceResults(data);
+        } catch (e) {
+            resEl.innerHTML = `<div style="color:var(--error); font-size:0.85rem; padding:12px; background:var(--bg-dark); border-radius:6px;">Netzwerkfehler: ${e.message}</div>`;
+        }
+    }
+
+    function renderCompareRaceResults(data) {
+        const resEl = document.getElementById('race-results-container');
+        let html = '<div style="display:flex; flex-direction:column; gap:16px;">';
+
+        // Candidates Grid
+        html += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">';
+        for (const c of data.candidates || []) {
+            const isWinner = data.winner && c.lane_id === data.winner;
+            const ev = c.evidence_kind || 'unknown';
+            let evColor = '#6b7280';
+            let evLabel = ev.toUpperCase();
+            if (ev === 'live') { evColor = '#10b981'; evLabel = '🟢 LIVE'; }
+            else if (ev === 'simulated') { evColor = '#3b82f6'; evLabel = '🟡 SIMULATED'; }
+            else if (ev === 'blocked') { evColor = '#f59e0b'; evLabel = '🟠 BLOCKED'; }
+            else if (ev === 'unavailable') { evColor = '#ef4444'; evLabel = '🔴 UNAVAILABLE'; }
+            else if (ev === 'failed') { evColor = '#dc2626'; evLabel = '❌ FAILED'; }
+
+            const rcpt = c.receipt || {};
+
+            html += `
+                <div style="background:var(--bg-dark); border:1px solid ${isWinner ? 'var(--accent)' : 'var(--border)'}; border-radius:8px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+                    ${isWinner ? '<div style="position:absolute; top:-9px; right:12px; background:var(--accent); color:#fff; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:10px;">🏆 SIEGER</div>' : ''}
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:var(--text); font-size:0.88rem;">${c.name}</strong>
+                            <span style="border:1px solid ${evColor}; color:${evColor}; font-size:0.68rem; font-weight:700; padding:1px 6px; border-radius:4px;">${evLabel}</span>
+                        </div>
+                        <div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:8px;">
+                            Modell: <span style="font-family:monospace;">${c.model}</span> • Latenz: <strong>${c.latency_ms} ms</strong> • Score: <strong>${c.score}</strong>
+                        </div>
+                        <div style="font-size:0.8rem; color:var(--text); line-height:1.4; max-height:160px; overflow-y:auto; background:var(--bg-card); padding:8px; border-radius:6px; border:1px solid var(--border);">
+                            ${c.response ? marked.parse(c.response) : `<em style="color:var(--text-muted); font-size:0.75rem;">${rcpt.error || 'Keine Antwort erhalten.'}</em>`}
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; padding-top:8px; border-top:1px dashed var(--border); font-size:0.7rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+                        <span>Tokens: ${rcpt.tokens_input ?? 0} in / ${rcpt.tokens_output ?? 0} out</span>
+                        <span>Kosten: <strong>${(rcpt.actual_cost_cents ?? 0).toFixed(2)} ct</strong></span>
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+
+        // Inter-Rater Reliability Box (NemoFold v1)
+        const ev = data.evaluation || {};
+        if (ev.status === 'evaluated') {
+            html += `
+                <div style="background:var(--bg-dark); border:1px solid var(--accent); border-radius:8px; padding:12px; margin-top:4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <strong style="font-size:0.88rem; color:var(--text); display:flex; align-items:center; gap:6px;">
+                            <span>🧬</span> NemoFold Inter-Rater-Reliabilität (Cohen's &kappa;)
+                        </strong>
+                        <span style="font-size:0.72rem; color:var(--text-muted); font-family:monospace;">${ev.schema}</span>
+                    </div>
+                    <div style="display:flex; gap:16px; margin-bottom:8px; font-size:0.8rem;">
+                        <div>Übereinstimmung: <strong style="color:var(--accent);">${ev.overall_agreement_percent}%</strong></div>
+                        <div>Cohen's &kappa;: <strong style="color:var(--accent);">${ev.overall_kappa !== null ? ev.overall_kappa : 'N/A'}</strong></div>
+                        <div>Verglichene Paare: <strong>${ev.evaluated_pairs_count}</strong></div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:4px; font-size:0.75rem; color:var(--text-muted);">
+                        ${(ev.pairwise || []).map(p => `
+                            <div style="background:var(--bg-card); padding:6px 10px; border-radius:4px; display:flex; justify-content:space-between;">
+                                <span><strong>${p.rater_a}</strong> vs <strong>${p.rater_b}</strong>: ${p.agreement_percent}% Konkordanz (${p.agreed_items}/${p.items_compared} Merkmale)</span>
+                                <span>&kappa; = ${p.cohens_kappa !== null ? p.cohens_kappa : 'n/a'} (${p.kappa_note})</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        resEl.innerHTML = html;
+    }
+    </script>
+
     <div id="toast-container" class="toast-container"></div>
 
     <script src="/static/js/nav.js?v=4"></script>
@@ -873,20 +1142,40 @@
     <script>
     (function() {
         const CHAT_API = '/api/chat-control';
-        function controlHeaders(method, jsonBody = false) {
+        const selectedAgentParams = new URLSearchParams(window.location.search);
+        const selectedAgentValues = selectedAgentParams.getAll('agent_id');
+        const selectedAgentRaw = selectedAgentValues[0] || '';
+        const profileAgentId = selectedAgentValues.length === 1 && /^[1-9][0-9]*$/.test(selectedAgentRaw)
+            && Number.isSafeInteger(Number(selectedAgentRaw)) ? Number(selectedAgentRaw) : null;
+        const profileSelectionError = selectedAgentValues.length > 0 && profileAgentId === null;
+        const profileStorageKey = profileAgentId
+            ? 'bach_agent_chat_' + profileAgentId : 'bach_active_web_chat_id';
+        function newProfileChatId() {
+            const bytes = new Uint8Array(16);
+            window.crypto.getRandomValues(bytes);
+            return 'agent:' + profileAgentId + ':'
+                + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+        function profileQuery() {
+            return profileAgentId ? '&agent_id=' + encodeURIComponent(profileAgentId) : '';
+        }
+        function profileConfirmed(data) {
+            return !profileAgentId || (data && data.binding_confirmed === true
+                && data.agent_id === profileAgentId && data.context_class === 'agent-profile');
+        }
+        function controlHeaders(method, jsonBody = false, privateRead = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
-            if (method !== 'GET' && method !== 'HEAD') {
-                let token = localStorage.getItem('bach-control-api-token') || '';
-                if (!token) {
-                    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-                    if (token) localStorage.setItem('bach-control-api-token', token.trim());
-                }
-                token = token.trim();
-                if (token) headers['Authorization'] = 'Bearer ' + token;
-            }
+            const token = (localStorage.getItem('bach_device_token') || '').trim();
+            if (token) headers['Authorization'] = 'Bearer ' + token;
             return headers;
         }
-        let currentChatId = localStorage.getItem('bach_active_web_chat_id') || ('web-' + Date.now());
+        localStorage.removeItem('bach-control-api-token');
+        const rememberedChatId = localStorage.getItem(profileStorageKey);
+        const rememberedProfileChat = profileAgentId && rememberedChatId &&
+            new RegExp('^agent:' + profileAgentId + ':[a-f0-9]{32}$').test(rememberedChatId);
+        let currentChatId = profileSelectionError ? '' : (profileAgentId
+            ? (rememberedProfileChat ? rememberedChatId : newProfileChatId())
+            : (rememberedChatId || ('web-' + Date.now())));
 
         const sidebar = document.getElementById('sidebar');
         const sidebarOpenBtn = document.getElementById('btn-sidebar-open');
@@ -903,7 +1192,10 @@
         const typingEl = document.getElementById('typing');
         let sending = false;
         let backendAvailable = false;
+        let profileUnavailable = false;
         let webSessions = [];
+        if (profileAgentId) currentChatTitleEl.textContent = "Agentenprofil #" + profileAgentId;
+        if (profileSelectionError) currentChatTitleEl.textContent = "Ungültige Agenten-ID";
 
         function escapeHtml(str) {
             return String(str || '').replace(/[&<>"']/g, function(m) {
@@ -927,7 +1219,9 @@
 
         function updateComposerAvailability() {
             sendBtn.disabled = sending || !backendAvailable;
-            sendBtn.title = backendAvailable ? 'Senden' : 'Backend nicht verfügbar';
+            sendBtn.title = backendAvailable ? 'Senden' :
+                (profileSelectionError ? 'Ungültige Agenten-ID' :
+                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
             sendBtn.setAttribute('aria-label', sendBtn.title);
         }
 
@@ -986,12 +1280,16 @@
 
         // ── Multi-Session Management ──
         async function loadWebSessions() {
+            if (profileSelectionError) return;
             try {
-                const resp = await fetch(CHAT_API + '/sessions?limit=80');
+                const resp = await fetch(CHAT_API + '/sessions?limit=80' + profileQuery(),
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
                     // Filter specifically for web chats
                     webSessions = data.sessions.filter(s => {
+                        if (profileAgentId) return s.agent_id === profileAgentId && s.context_class === "agent-profile"
+                            && !(s.session_id || "").includes(":archived:");
                         const name = (s.name || '').toLowerCase();
                         const sid = (s.session_id || '').toLowerCase();
                         const cid = (s.chat_id || '').toLowerCase();
@@ -1045,12 +1343,14 @@
         }
 
         async function selectWebSession(s) {
+            if (profileAgentId && (s.agent_id !== profileAgentId || s.context_class !== 'agent-profile')) return;
             const targetChatId = s.chat_id || ('web-snap-' + s.id);
             currentChatId = targetChatId;
-            localStorage.setItem('bach_active_web_chat_id', currentChatId);
+            localStorage.setItem(profileStorageKey, currentChatId);
 
             const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
-            currentChatTitleEl.textContent = displayTitle;
+            currentChatTitleEl.textContent = profileAgentId
+                ? 'Agentenprofil #' + profileAgentId + ' · ' + displayTitle : displayTitle;
 
             renderSidebarSessions();
 
@@ -1062,8 +1362,10 @@
                 // First try direct history
                 let loaded = false;
                 if (s.chat_id) {
-                    const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id));
+                    const hResp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(s.chat_id) + profileQuery(),
+                        { headers: controlHeaders('GET', false, true) });
                     const hData = await hResp.json();
+                    if (profileAgentId && (!hResp.ok || !profileConfirmed(hData))) throw new Error("Profilverlauf nicht bestätigt");
                     if (hData.ok && Array.isArray(hData.messages) && hData.messages.length > 0) {
                         setTyping(false);
                         if (emptyState) emptyState.style.display = 'none';
@@ -1073,8 +1375,9 @@
                 }
 
                 // If not in RAM, load from snapshot by ID
-                if (!loaded && s.id) {
-                    const snapResp = await fetch(CHAT_API + '/session?id=' + s.id);
+                if (!loaded && s.id && !profileAgentId) {
+                    const snapResp = await fetch(CHAT_API + '/session?id=' + s.id,
+                        { headers: controlHeaders('GET', false, true) });
                     const snapData = await snapResp.json();
                     setTyping(false);
                     if (snapData.ok && snapData.session && Array.isArray(snapData.session.messages)) {
@@ -1098,9 +1401,10 @@
         }
 
         function startNewChat() {
-            currentChatId = 'web-' + Date.now();
-            localStorage.setItem('bach_active_web_chat_id', currentChatId);
-            currentChatTitleEl.textContent = 'Neuer Chat';
+            if (profileSelectionError) return;
+            currentChatId = profileAgentId ? newProfileChatId() : ('web-' + Date.now());
+            localStorage.setItem(profileStorageKey, currentChatId);
+            currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
 
             messagesEl.innerHTML = '';
             if (emptyState) {
@@ -1122,6 +1426,7 @@
         });
 
         async function loadActiveChat() {
+            if (profileSelectionError) return;
             if (currentChatId) {
                 // Check if currentChatId exists in webSessions
                 const match = webSessions.find(s => s.chat_id === currentChatId);
@@ -1132,17 +1437,21 @@
             }
             // Otherwise load current history
             try {
-                const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId));
+                const resp = await fetch(CHAT_API + '/history?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
+                if (profileAgentId && (!resp.ok || (data.messages && data.messages.length > 0 && !profileConfirmed(data))))
+                    throw new Error("Profilverlauf nicht bestätigt");
                 if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
                     if (emptyState) emptyState.style.display = 'none';
                     messagesEl.innerHTML = '';
                     for (const m of data.messages) {
                         addMessage(m.content || '', m.role === 'user' ? 'user' : 'bot');
                     }
-                    currentChatTitleEl.textContent = data.messages[0].content.slice(0, 36) + '…';
+                    currentChatTitleEl.textContent = (profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · ' : '')
+                        + data.messages[0].content.slice(0, 36) + '…';
                 } else {
-                    currentChatTitleEl.textContent = 'Neuer Chat';
+                    currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
                 }
             } catch (e) {
                 console.warn('Active chat load error:', e);
@@ -1160,25 +1469,33 @@
 
         async function send() {
             const text = inputEl.value.trim();
-            if (!text || sending || !backendAvailable) return;
+            if (!text || sending || !backendAvailable || profileSelectionError) return;
 
             sending = true;
             updateComposerAvailability();
 
-            if (currentChatTitleEl.textContent === 'Neuer Chat') {
+            if (currentChatTitleEl.textContent === 'Neuer Chat' ||
+                (profileAgentId && currentChatTitleEl.textContent.endsWith('· Neuer Chat'))) {
                 const snippet = text.slice(0, 38) + (text.length > 38 ? '…' : '');
-                currentChatTitleEl.textContent = snippet;
+                currentChatTitleEl.textContent = profileAgentId
+                    ? 'Agentenprofil #' + profileAgentId + ' · ' + snippet : snippet;
             }
 
             try {
                 const readinessResponse = await fetch(
-                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET') }
                 );
                 const readiness = await readinessResponse.json();
-                if (!readinessResponse.ok || readiness.available !== true) {
+                profileUnavailable = !!(profileAgentId && readiness.profile_capability?.available === false);
+                if (!readinessResponse.ok || readiness.available !== true ||
+                    (profileAgentId && (readiness.can_chat !== true ||
+                        readiness.profile_capability?.agent_id !== profileAgentId))) {
                     backendAvailable = false;
                     addMessage(
-                        readiness.status || readiness.error || 'Backend nicht verfügbar',
+                        (profileAgentId && readiness.profile_capability?.available === false)
+                            ? 'Agentenprofil nicht verfügbar'
+                            : (readiness.status || readiness.error || 'Backend nicht verfügbar'),
                         'error'
                     );
                     return;
@@ -1192,7 +1509,8 @@
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
-                    body: JSON.stringify({ prompt: text, chat_id: currentChatId })
+                    body: JSON.stringify({ prompt: text, chat_id: currentChatId,
+                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
                 });
                 const data = await resp.json();
                 setTyping(false);
@@ -1204,12 +1522,13 @@
                     updateComposerAvailability();
                 }
 
-                if (data.ok && data.answer) {
+                if (data.ok && data.answer && profileConfirmed(data)) {
                     addMessage(data.answer, 'bot');
                     // Reload sessions in background to update titles and timestamps
                     loadWebSessions();
                 } else {
-                    addMessage(data.error || data.detail || 'Unbekannter Fehler', 'error');
+                    addMessage(data.ok && profileAgentId ? 'Profilbindung in Antwort nicht bestätigt' :
+                        (data.error || data.detail || 'Unbekannter Fehler'), 'error');
                 }
             } catch (e) {
                 setTyping(false);
@@ -1384,22 +1703,34 @@
         })();
 
         async function refreshStatus() {
+            if (profileSelectionError) {
+                backendAvailable = false;
+                updateComposerAvailability();
+                return;
+            }
+            let authenticationRequired = false;
             try {
-                const r = await fetch(CHAT_API + '/status');
+                const r = await fetch(CHAT_API + '/status', { headers: controlHeaders('GET') });
+                authenticationRequired = r.status === 401 || r.status === 403;
+                document.getElementById('chat-device-login').hidden = !authenticationRequired;
                 if (!r.ok) throw new Error('Chatdienst nicht erreichbar');
                 const s = await r.json();
                 const readinessResponse = await fetch(
-                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId)
+                    CHAT_API + '/readiness?chat_id=' + encodeURIComponent(currentChatId) + profileQuery(),
+                    { headers: controlHeaders('GET') }
                 );
                 if (!readinessResponse.ok) throw new Error('Backendstatus nicht erreichbar');
                 const readiness = await readinessResponse.json();
-                backendAvailable = readiness.available === true;
+                profileUnavailable = !!(profileAgentId && readiness.profile_capability?.available === false);
+                backendAvailable = readiness.available === true && (!profileAgentId ||
+                    (readiness.can_chat === true && readiness.profile_capability?.agent_id === profileAgentId));
 
                 const connectionDot = document.getElementById('conn-dot');
                 connectionDot.className = backendAvailable ? 'dot' : 'dot offline';
                 connectionDot.title = backendAvailable
-                    ? 'Backend verfügbar'
-                    : 'Backend nicht verfügbar';
+                    ? (profileAgentId ? 'Profil und Backend verfügbar' : 'Backend verfügbar')
+                    : (profileAgentId && readiness.profile_capability?.available === false
+                        ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
 
                 const backendName = s.backend_id || String(s.backend || '').replace('Backend', '');
                 const backendStatus = readiness.status || 'nicht verfügbar';
@@ -1411,7 +1742,8 @@
             } catch (e) {
                 backendAvailable = false;
                 document.getElementById('conn-dot').className = 'dot offline';
-                document.getElementById('s-backend').textContent = 'Offline';
+                document.getElementById('s-backend').textContent = authenticationRequired
+                    ? 'Geräteanmeldung erforderlich' : 'Offline';
                 document.getElementById('s-model').textContent = '–';
                 document.getElementById('s-mode').textContent = '–';
             } finally {
@@ -1446,13 +1778,17 @@
         }
 
         async function loadProtocolsList() {
+            if (profileSelectionError) return;
             if (!protocolsListEl) return;
             protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.8rem;">Lade Protokolle...</div>';
             try {
-                const resp = await fetch(CHAT_API + '/sessions?limit=60');
+                const resp = await fetch(CHAT_API + '/sessions?limit=60' + profileQuery(),
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
-                    currentModalSnapshots = data.sessions;
+                    currentModalSnapshots = profileAgentId
+                        ? data.sessions.filter(s => s.agent_id === profileAgentId && s.context_class === "agent-profile")
+                        : data.sessions;
                     renderProtocolsList();
                 } else {
                     protocolsListEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--error); font-size: 0.8rem;">Keine Protokolle gefunden</div>';
@@ -1509,8 +1845,12 @@
             detailMessagesEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Lade Transkript...</div>';
 
             try {
-                const resp = await fetch(CHAT_API + '/session?id=' + id);
+                const resp = await fetch(CHAT_API + '/session?id=' + id + profileQuery(),
+                    { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
+                if (profileAgentId && (!resp.ok || data.session?.binding?.agent_id !== profileAgentId ||
+                    data.session?.binding?.context_class !== 'agent-profile'))
+                    throw new Error('Profilbindung des Transkripts nicht bestätigt');
                 if (data.ok && data.session) {
                     const messages = data.session.messages || [];
                     detailMessagesEl.innerHTML = '';
@@ -1538,25 +1878,33 @@
         }
 
         async function forkSelectedProtocol() {
+            if (profileSelectionError) return;
             if (!selectedModalSnapshotId) return;
             if (!confirm('Möchtest du diese Session in deinen aktiven Web-Chat übernehmen? (Deine aktuelle Session wird dabei archiviert)')) {
                 return;
             }
             btnForkSession.disabled = true;
+            const forkChatId = profileAgentId ? newProfileChatId() : currentChatId;
             try {
                 const resp = await fetch(CHAT_API + '/fork', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
-                    body: JSON.stringify({ chat_id: currentChatId, snapshot_id: selectedModalSnapshotId })
+                    body: JSON.stringify({ chat_id: forkChatId, snapshot_id: selectedModalSnapshotId,
+                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
                 });
                 const data = await resp.json();
-                if (data.ok) {
+                if (data.ok && profileConfirmed(data)) {
+                    if (profileAgentId) {
+                        currentChatId = forkChatId;
+                        localStorage.setItem(profileStorageKey, currentChatId);
+                    }
                     closeProtocols();
                     await loadWebSessions();
                     await loadActiveChat();
                     showToast(`Session #${selectedModalSnapshotId} erfolgreich übernommen (${data.messages_count} Nachrichten).`);
                 } else {
-                    showToast('Fork fehlgeschlagen: ' + (data.error || 'Unbekannt'));
+                    showToast('Fork fehlgeschlagen: ' + (data.ok && profileAgentId
+                        ? 'Profilbindung nicht bestätigt' : (data.error || 'Unbekannt')));
                 }
             } catch (e) {
                 showToast('Fehler: ' + e.message);
@@ -1585,12 +1933,6 @@
         });
 
         // ── Init ──
-        const btnActivityLink = document.getElementById('btn-open-activity-link');
-        if (btnActivityLink) {
-            const h = window.location.hostname || 'localhost';
-            btnActivityLink.href = `http://${h}:8081/activity`;
-        }
-
         function loadHistory() {
             return loadActiveChat();
         }

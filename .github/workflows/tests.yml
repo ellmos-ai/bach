@@ -76,6 +76,7 @@ jobs:
             system/tests/test_agent_launcher_handler.py \
             system/tests/test_agent_pid_identity.py \
             system/tests/test_agent_process_provider.py \
+            system/tests/test_agent_profile_chat_binding.py \
             system/tests/test_agents_export.py \
             system/tests/test_agents_handler.py \
             system/tests/test_agents_heart.py \
@@ -145,11 +146,14 @@ jobs:
             system/tests/test_gui_console.py \
             system/tests/test_gui_mounts_contract.py \
             system/tests/test_gui_prompt_manager.py \
+            system/tests/test_gui_privacy_boundary.py \
             system/tests/test_gui_server_smoke.py \
             system/tests/test_gui_server.py \
+            system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
+            system/tests/test_unified_dashboard_xss.py \
             system/tests/test_haushalt_handler.py \
             system/tests/test_haushalt_inventory.py \
             system/tests/test_headless_task_history.py \

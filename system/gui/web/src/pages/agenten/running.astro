@@ -1,0 +1,701 @@
+---
+// running.astro - Living & Running: Status Cockpit, Beseelung von Teams & Staffeln, Core Slots & Live Aktivitäten
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Living & Running" currentPath="/agenten/running">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        ⚡ Living & Running
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Agentenprofile, Teams & Staffeln • Compute-Vorrang • Core-Slots & Live-Aktivitäten
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <a href="/agenten/fabrika" class="btn">
+        <span>🏭</span> Zur Agenten-Fabrik
+      </a>
+      <button class="btn btn-primary" onclick="refreshAll(true)">
+        <span>🔄</span> Jetzt aktualisieren
+      </button>
+    </div>
+  </div>
+
+  <!-- Hardwarebeobachtung steht vor den Agentenkarten. Vorrang ist kein Besitz. -->
+  <section class="card hardware-torch" aria-labelledby="hardware-torch-title">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title" id="hardware-torch-title">Hardware-Fackel & Compute-Vorrang</h2>
+        <p class="torch-intro">Besitz, Vorrang, Compute-Meldung und Ollama-Belegung sind getrennte Nachweise.</p>
+      </div>
+      <span class="badge" id="torch-observed-at">Nicht geprüft</span>
+    </div>
+    <div class="torch-grid">
+      <div class="torch-panel torch-owner" role="status" aria-live="polite">
+        <svg id="hardware-flame" class="torch-svg" viewBox="0 0 64 80" role="img" aria-labelledby="torch-svg-title">
+          <title id="torch-svg-title">Hardware-Fackel ohne bestätigten Besitz</title>
+          <path class="torch-flame-outer" d="M31 4c7 14 5 22 2 28 10-3 13-12 14-16 17 18 17 42 4 55-11 11-32 11-43-1C-2 59 2 41 15 28c1 9 3 14 8 17-2-16 1-29 8-41Z"/>
+          <path class="torch-flame-inner" d="M33 39c2 7 6 10 9 15 5 11-1 22-11 22-10 0-16-11-11-21 2-5 8-10 13-16Z"/>
+        </svg>
+        <div>
+          <strong>Hardware-Besitz</strong>
+          <p id="fackel-holder">Nicht geprüft</p>
+          <small id="fackel-owner-reason">Ein aktueller Halternachweis fehlt.</small>
+        </div>
+      </div>
+      <div class="torch-panel">
+        <strong>Compute-Vorrang</strong>
+        <p id="fackel-priority">Nicht geprüft</p>
+        <button id="btn-toggle-fackel" class="btn btn-sm" type="button" onclick="toggleFackel()" disabled>Vorrang ändern</button>
+        <small>Diese Einstellung erwirbt keine Fackel und startet keinen Agenten.</small>
+      </div>
+      <div class="torch-panel">
+        <strong>Compute-Lock</strong>
+        <p id="fackel-compute">Nicht geprüft</p>
+        <small>Eine Meldung über Rechenjobs ist kein Besitznachweis.</small>
+      </div>
+      <div class="torch-panel">
+        <strong>Ollama-Kapazität</strong>
+        <p id="fackel-capacity">Nicht geprüft</p>
+        <small>Geladene Modelle und belegte Einheiten sind kein globaler GPU-Zähler.</small>
+      </div>
+    </div>
+    <p id="fackel-feedback" class="torch-feedback" role="status" aria-live="polite"></p>
+  </section>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2 class="card-title">Verifizierte Agentenprofile</h2></div>
+    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Start und Stopp eines Agentenprozesses sind hier derzeit nicht freigegeben.</p>
+    <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
+  </div>
+
+  <!-- 2. TEAMS BESEELEn (SWARM-AI) & AGENTEN-STAFFELN (MARBLERUN) BESEELEn -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;align-items:start;">
+    <!-- TEAMS BESEELEN -->
+    <div class="card" id="teams">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title">👥 Teams Beseelen (Swarm-AI)</h2>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
+            Mitglieder mit Modellen ausstatten (Claude, Gemini, Codex, Ollama)
+          </p>
+        </div>
+        <a href="/agenten/fabrika" class="btn btn-sm">+ Neues Team</a>
+      </div>
+      <div id="teams-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:1rem;">
+        <p class="loading-state">Lade konfigurierte Teams...</p>
+      </div>
+    </div>
+
+    <!-- AGENTEN-STAFFELN (MARBLERUN) BESEELEN -->
+    <div class="card" id="staffeln">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title">⛓️ Agenten-Staffel (MarbleRun) Beseelen</h2>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
+            Stations-Gliedern der Ketten dedizierte Modelle und Backends zuweisen
+          </p>
+        </div>
+        <a href="/agenten/marblerun" class="btn btn-sm">Ketten-Editor ↗</a>
+      </div>
+      <div id="staffel-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:1rem;">
+        <p class="loading-state">Lade Agenten-Staffeln...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drei feste System-Agenten, direkt aus der vorhandenen Control-Konfiguration. -->
+  <section class="card" aria-labelledby="core-agents-title">
+    <div class="card-header">
+      <h2 class="card-title" id="core-agents-title">System-Agenten</h2>
+      <span class="badge badge-accent">Drei feste technische IDs</span>
+    </div>
+    <p class="core-explanation">Buddha Chat, Always-On und Connector verwenden die bestehende Slot-Konfiguration. Speichern ändert Einstellungen; Living und Running erfordern eigene Laufzeitnachweise.</p>
+    <div id="core-agent-feedback" role="status" aria-live="polite"></div>
+    <div id="core-agent-cards" class="core-grid"><p class="loading-state">System-Agenten werden geprüft…</p></div>
+  </section>
+
+  <!-- 4. LIVE-AKTIVITÄT & WORKER TIMELINE -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="card-title">📊 Live-Aktivitätsanzeige & Verlauf (Timeline)</h2>
+      <button class="btn btn-sm" onclick="refreshActivity()">Neu laden</button>
+    </div>
+
+    <div style="overflow-x:auto;margin-top:0.75rem;">
+      <table class="data-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="width:100px;">Zeit</th>
+            <th style="width:160px;">Akteur / Slot</th>
+            <th>Aktivität (Tool, Task, Runde)</th>
+            <th style="width:140px;">Modell</th>
+            <th style="width:90px;">Status</th>
+          </tr>
+        </thead>
+        <tbody id="activity-tbody">
+          <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Lade Aktivitäten...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <style>
+    .hardware-torch { margin-bottom: 1.5rem; }
+    .torch-intro, .core-explanation { color: var(--text-muted); font-size: .85rem; margin: .4rem 0 1rem; }
+    .torch-grid, .core-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: .85rem; }
+    .torch-panel, .core-agent-card { min-width: 0; padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-dark); }
+    .torch-panel p { margin: .5rem 0; overflow-wrap: anywhere; }
+    .torch-panel small, .core-agent-card small { display: block; color: var(--text-muted); line-height: 1.4; overflow-wrap: anywhere; }
+    .torch-owner { display: flex; align-items: center; gap: 1rem; }
+    .torch-svg { width: 52px; height: 68px; flex: none; fill: none; stroke: var(--text-muted); stroke-width: 2px; opacity: .65; }
+    .torch-svg .torch-flame-inner { display: none; }
+    .torch-svg.is-owned { opacity: 1; stroke: #f97316; fill: #fbbf24; }
+    .torch-svg.is-owned .torch-flame-inner { display: block; fill: #fef08a; stroke: #f97316; }
+    .torch-feedback { min-height: 1.4em; color: var(--text-muted); font-size: .8rem; margin: .8rem 0 0; }
+    .core-agent-card { display: flex; flex-direction: column; gap: .7rem; }
+    .core-agent-card h3 { margin: 0; overflow-wrap: anywhere; }
+    .core-agent-card label { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--text-muted); }
+    .core-agent-card input, .core-agent-card select { min-width: 0; width: 100%; padding: .4rem; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; }
+    .core-agent-card .core-check { flex-direction: row; align-items: center; }
+    .core-agent-card .core-check input { width: auto; }
+    .core-agent-card .core-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+    .core-agent-card .core-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: auto; }
+    @media (max-width: 520px) { .core-agent-card .core-fields { grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: no-preference) {
+      .torch-svg.is-owned { animation: torch-glow 1.8s ease-in-out infinite alternate; }
+      @keyframes torch-glow { from { filter: drop-shadow(0 0 2px #f97316); } to { filter: drop-shadow(0 0 12px #f97316); } }
+    }
+  </style>
+
+  <script is:inline>
+    function escapeHtml(t) {
+      if (t == null) return '';
+      return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    const AVAILABLE_MODELS = [
+      { id: "claude-3-7-sonnet", label: "🧠 Claude 3.7 Sonnet (Anthropic)" },
+      { id: "gemini-2.0-flash", label: "⚡ Gemini 2.0 Flash (Google)" },
+      { id: "codex-cli", label: "💻 Codex / GPT-4o (OpenAI)" },
+      { id: "ollama/qwen3.8:27b-mlx", label: "🦙 Ollama: Qwen 3.8 27B (Mac Studio)" },
+      { id: "ollama/kimi-k3:cloud", label: "☁️ Kimi K3 Cloud (131k)" },
+      { id: "ollama/gemma4:26b-mlx", label: "💻 Gemma 4 26B (MLX)" }
+    ];
+
+    let currentPriority = null;
+    let coreConfigVersion = null;
+    let coreAgents = [];
+
+    function setTorchUnknown(message) {
+      currentPriority = null;
+      const flame = document.getElementById('hardware-flame');
+      flame.classList.remove('is-owned');
+      document.getElementById('torch-svg-title').textContent = 'Hardware-Fackel ohne bestätigten Besitz';
+      document.getElementById('fackel-holder').textContent = message;
+      document.getElementById('fackel-owner-reason').textContent = 'Ein aktueller Halternachweis fehlt.';
+      document.getElementById('fackel-priority').textContent = 'Nicht geprüft';
+      document.getElementById('fackel-compute').textContent = 'Nicht geprüft';
+      document.getElementById('fackel-capacity').textContent = 'Nicht geprüft';
+      document.getElementById('btn-toggle-fackel').disabled = true;
+      document.getElementById('torch-observed-at').textContent = 'Nicht geprüft';
+    }
+
+    async function loadClusterCockpit() {
+      try {
+        const res = await fetch('/api/system/cluster-cockpit');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const f = data.fackel;
+        if (!f || !f.ownership || !f.capacity || !f.compute_lock) throw new Error('Statusantwort unvollständig');
+        const owner = f.ownership;
+        const ownerTime = Date.parse(owner.observed_at || '');
+        const freshOwner = Number.isFinite(ownerTime) && Math.abs(Date.now() - ownerTime) <= 300000;
+        const owned = owner.state === 'owned_by_this_system' && owner.holder_is_this_system === true && owner.flame === true && freshOwner;
+        const flame = document.getElementById('hardware-flame');
+        flame.classList.toggle('is-owned', owned);
+        document.getElementById('torch-svg-title').textContent = owned ? 'Hardware-Fackel: eigenes System hält sie' : 'Hardware-Fackel ohne bestätigten eigenen Besitz';
+        document.getElementById('fackel-holder').textContent = owned ? String(owner.holder || 'Eigenes System') :
+          owner.state === 'foreign' && freshOwner ? String(owner.holder || 'Fremdes System') :
+          owner.state === 'stale' ? 'Status veraltet' : 'Nicht geprüft';
+        document.getElementById('fackel-owner-reason').textContent = owned ? 'Frischer Halternachweis für dieses System.' :
+          owner.state === 'foreign' && freshOwner ? 'Ein anderes System hält die Fackel.' :
+          owner.state === 'stale' ? 'Der letzte Halternachweis ist zu alt.' : 'Der Hardware-Halteradapter fehlt oder liefert keinen Beleg.';
+        currentPriority = ['compute', 'ollama'].includes(f.priority?.value) ? f.priority.value : null;
+        document.getElementById('fackel-priority').textContent = currentPriority === 'compute' ? 'Compute' :
+          currentPriority === 'ollama' ? 'Ollama' : 'Nicht geprüft';
+        const button = document.getElementById('btn-toggle-fackel');
+        button.disabled = !currentPriority;
+        button.textContent = currentPriority === 'compute' ? 'Ollama-Vorrang setzen' :
+          currentPriority === 'ollama' ? 'Compute-Vorrang setzen' : 'Vorrang nicht verfügbar';
+        const lock = f.compute_lock;
+        document.getElementById('fackel-compute').textContent = lock.state === 'reported_unverified' ?
+          `Lockdatei meldet ${Number(lock.reported_jobs) || 0} Job(s); Identität nicht geprüft` :
+          lock.state === 'none_reported' ? 'Frische Lockdatei meldet keine Jobs' :
+          lock.state === 'stale' ? 'Status veraltet' : 'Nicht geprüft';
+        const cap = f.capacity;
+        document.getElementById('fackel-capacity').textContent = cap.state === 'measured' ?
+          `${Number(cap.loaded_model_count) || 0} geladene Modelle · ${Number(cap.occupied_units) || 0} Einheiten · ${Number(cap.used_gib) || 0} GiB` :
+          cap.state === 'partial' ? 'Ollama antwortet; Speicher nicht messbar' : 'Nicht geprüft';
+        const observed = Date.parse(data.observed_at || '');
+        document.getElementById('torch-observed-at').textContent = Number.isFinite(observed) ?
+          'Geprüft ' + new Date(observed).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'}) : 'Nicht geprüft';
+      } catch (_error) {
+        setTorchUnknown('Nicht geprüft');
+      }
+    }
+
+    async function toggleFackel() {
+      if (!currentPriority) return;
+      const desired = currentPriority === 'compute' ? 'ollama' : 'compute';
+      const button = document.getElementById('btn-toggle-fackel');
+      const feedback = document.getElementById('fackel-feedback');
+      button.disabled = true;
+      feedback.textContent = 'Vorrang wird gespeichert…';
+      try {
+        const res = await fetch('/api/system/fackel', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({preference: desired})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ok !== true || data.preference !== desired || data.ownership_changed !== false) {
+          throw new Error('Speicherung nicht bestätigt');
+        }
+        await loadClusterCockpit();
+        if (currentPriority !== desired) throw new Error('Readback weicht ab');
+        feedback.textContent = 'Vorrang gespeichert. Der Fackelbesitz wurde nicht verändert.';
+      } catch (_error) {
+        feedback.textContent = 'Vorrang konnte nicht bestätigt werden.';
+        await loadClusterCockpit();
+      }
+    }
+
+    function coreElement(tag, text, className = '') {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = String(text);
+      return node;
+    }
+
+    function coreField(card, field, labelText, value, type = 'text', options = []) {
+      const label = coreElement('label', labelText);
+      let input;
+      if (type === 'select') {
+        input = document.createElement('select');
+        const values = options.includes(String(value)) ? options : [String(value), ...options];
+        for (const choice of values) {
+          const option = document.createElement('option');
+          option.value = choice;
+          option.textContent = choice + (options.includes(choice) ? '' : ' · bestehend, nicht geprüft');
+          input.append(option);
+        }
+        input.value = String(value);
+      } else {
+        input = document.createElement('input');
+        input.type = type;
+        if (type === 'checkbox') input.checked = value === true;
+        else input.value = value == null ? '' : String(value);
+        if (type === 'number') { input.min = field === 'max_tool_rounds' ? '0' : '1'; input.max = field === 'max_tool_rounds' ? '100' : '1440'; }
+        if (type === 'text') input.maxLength = field === 'icon' ? 8 : 120;
+      }
+      input.dataset.coreField = field;
+      label.append(input);
+      if (type === 'checkbox') label.className = 'core-check';
+      card.append(label);
+    }
+
+    function renderCoreAgents(data, changedId = null) {
+      const target = document.getElementById('core-agent-cards');
+      const previousCards = new Map([...target.querySelectorAll('[data-core-agent-id]')]
+        .map(card => [card.dataset.coreAgentId, card]));
+      const previousAgents = new Map(coreAgents.map(agent => [agent.id, agent]));
+      coreConfigVersion = data.configuration_version;
+      coreAgents = data.agents;
+      if (!changedId) target.replaceChildren();
+      for (const agent of coreAgents) {
+        const existing = changedId ? previousCards.get(agent.id) : null;
+        if (changedId && agent.id !== changedId && existing) {
+          const before = previousAgents.get(agent.id);
+          const keys = ['name', 'icon', 'backend', 'model', 'mode', 'think',
+            'max_tool_rounds', 'pause_after', 'pause_minutes'];
+          if (before && keys.some(key => before[key] !== agent[key])) existing.dataset.coreStale = 'true';
+          continue;
+        }
+        const card = coreElement('article', undefined, 'core-agent-card');
+        card.dataset.coreAgentId = agent.id;
+        card.append(coreElement('h3', `${agent.icon || '◇'} ${agent.name || agent.id}`));
+        card.append(coreElement('small', `Technische ID: ${agent.id} · nicht löschbar`));
+        const state = agent.configured_enabled === true ? 'Konfiguration aktiviert' :
+          agent.configured_enabled === false ? 'Konfiguration deaktiviert' : 'Konfiguration vorhanden';
+        card.append(coreElement('small', `${state} · Living: nicht geprüft · Running: nicht geprüft`));
+        const fields = coreElement('div', undefined, 'core-fields');
+        coreField(fields, 'name', 'Anzeigename', agent.name);
+        coreField(fields, 'icon', 'Icon', agent.icon);
+        coreField(fields, 'backend', 'Backend-ID', agent.backend, 'select', data.supported_backend_ids || []);
+        coreField(fields, 'model', 'Modell-ID', agent.model);
+        coreField(fields, 'mode', 'Modus', agent.mode, 'select', ['safe', 'full']);
+        coreField(fields, 'think', 'Think', agent.think, 'checkbox');
+        coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
+        coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
+        coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
+        card.append(fields);
+        const actions = coreElement('div', undefined, 'core-actions');
+        const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
+        save.type = 'button';
+        save.addEventListener('click', () => saveCoreSlot(agent.id));
+        actions.append(save);
+        const reset = coreElement('button', 'Standards wiederherstellen', 'btn btn-sm');
+        reset.type = 'button';
+        reset.addEventListener('click', () => resetCoreSlot(agent.id));
+        actions.append(reset);
+        card.append(actions);
+        if (existing) existing.replaceWith(card);
+        else target.append(card);
+      }
+    }
+
+    async function loadCoreSlots() {
+      const target = document.getElementById('core-agent-cards');
+      try {
+        const res = await fetch('/api/system/core-agents');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents) ||
+            data.agents.length !== 3 || typeof data.configuration_version !== 'string') throw new Error('System-Agentenantwort ungültig');
+        renderCoreAgents(data);
+      } catch (error) {
+        coreConfigVersion = null;
+        target.replaceChildren(coreElement('p', error.message.includes('401') ?
+          'Geräteanmeldung erforderlich. Einstellungen sind derzeit nicht verfügbar.' :
+          'System-Agentenkonfiguration nicht verfügbar. Die vorhandenen Profile bleiben erhalten.'));
+      }
+    }
+
+    function showCoreSaveFailure(message) {
+      const feedback = document.getElementById('core-agent-feedback');
+      const reload = coreElement('button', 'Zustand neu laden (verwirft Eingaben)', 'btn btn-sm');
+      reload.type = 'button';
+      reload.addEventListener('click', () => loadCoreSlots());
+      feedback.replaceChildren(coreElement('span', message + ' Eingaben bleiben bis zum Neuladen erhalten. '), reload);
+    }
+
+    async function saveCoreSlot(slotId) {
+      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
+      if (!card || !coreConfigVersion) return;
+      if (card.dataset.coreStale === 'true') {
+        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
+        return;
+      }
+      const original = coreAgents.find(item => item.id === slotId);
+      if (!original) return;
+      const changes = {};
+      for (const input of card.querySelectorAll('[data-core-field]')) {
+        const field = input.dataset.coreField;
+        const previous = original[field];
+        if (input.type === 'checkbox') {
+          if (previous == null && !input.checked) continue;
+          if (input.checked !== previous) changes[field] = input.checked;
+        } else if (input.type === 'number') {
+          if (input.value.trim() === '' && previous == null) continue;
+          const current = input.value.trim() === '' ? null : Number(input.value);
+          if (current !== previous) changes[field] = current;
+        } else {
+          const current = input.value.trim();
+          if (current !== String(previous ?? '').trim()) changes[field] = current;
+        }
+      }
+      const feedback = document.getElementById('core-agent-feedback');
+      if (Object.keys(changes).length === 0) {
+        feedback.textContent = 'Keine Änderungen zum Speichern.';
+        return;
+      }
+      feedback.textContent = 'Einstellungen werden gespeichert…';
+      try {
+        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId), {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({configuration_version: coreConfigVersion, changes})
+        });
+        const data = await res.json();
+        const saved = data.agents?.find(item => item.id === slotId);
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !saved || Object.entries(changes).some(([key, value]) => saved[key] !== value)) throw new Error('Speicherung nicht bestätigt');
+        renderCoreAgents(data, slotId);
+        feedback.textContent = 'Konfiguration gespeichert. Andere Eingaben bleiben erhalten. Kein Agent wurde dadurch gestartet.';
+      } catch (_error) {
+        showCoreSaveFailure('Speicherung nicht bestätigt. Bei einem Versionskonflikt müssen Sie vor erneutem Speichern den Zustand laden.');
+      }
+    }
+
+    async function resetCoreSlot(slotId) {
+      if (!coreConfigVersion || !window.confirm('Nur die editierbaren Einstellungen dieses System-Agenten zurücksetzen?')) return;
+      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
+      if (card?.dataset.coreStale === 'true') {
+        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
+        return;
+      }
+      const feedback = document.getElementById('core-agent-feedback');
+      feedback.textContent = 'Standards werden wiederhergestellt…';
+      try {
+        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/reset', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({configuration_version: coreConfigVersion})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !data.agents?.some(item => item.id === slotId)) throw new Error('Reset nicht bestätigt');
+        renderCoreAgents(data, slotId);
+        feedback.textContent = 'Einstellungen zurückgesetzt. Andere Eingaben, Aufgaben, Sitzungen und Geräte bleiben erhalten.';
+      } catch (_error) {
+        showCoreSaveFailure('Reset nicht bestätigt. Bitte Serverzustand prüfen.');
+      }
+    }
+
+    // ── 2. TEAMS BESEELEn ──
+    async function loadTeamsBeseelen() {
+      const container = document.getElementById('teams-beseelen-container');
+      try {
+        const res = await fetch('/api/agenten/teams');
+        const data = await res.json();
+        const teams = data.teams || [];
+
+        if (teams.length === 0) {
+          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Teams vorhanden. Erstelle eines in Tab 2 der Fabrik!</p>';
+          return;
+        }
+
+        container.innerHTML = teams.map(t => {
+          const members = (t.member_agents || '').split(',').map(m => m.trim()).filter(Boolean);
+          const modelsMap = t.member_models || {};
+
+          return `
+            <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <strong style="color:var(--text);font-size:0.95rem;">${escapeHtml(t.name)}</strong>
+                <span class="badge badge-accent">${escapeHtml(t.strategy)}</span>
+              </div>
+              <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.75rem 0;">${escapeHtml(t.description || '')}</p>
+
+              <div style="display:flex;flex-direction:column;gap:0.5rem;background:var(--bg-card);padding:0.75rem;border-radius:4px;border:1px solid var(--border);">
+                <div style="font-size:0.75rem;color:var(--accent);font-weight:600;margin-bottom:0.25rem;">Mitglieder & Modell-Zuweisung (Beseelung):</div>
+                ${members.map(m => {
+                  const curMod = modelsMap[m] || 'ollama/qwen3.8:27b-mlx';
+                  return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                      <span style="font-size:0.8rem;color:var(--text);font-weight:500;">🤖 ${escapeHtml(m)}</span>
+                      <select class="team-member-model-select" data-team="${t.id}" data-member="${escapeHtml(m)}" style="padding:0.25rem 0.5rem;font-size:0.75rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+                        ${AVAILABLE_MODELS.map(mod => `<option value="${mod.id}" ${mod.id === curMod ? 'selected' : ''}>${mod.label}</option>`).join('')}
+                      </select>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+
+              <div style="display:flex;justify-content:flex-end;margin-top:0.75rem;">
+                <button class="btn btn-sm btn-primary" onclick="saveTeamBeseelung(${t.id})">
+                  ✨ Team-Beseelung speichern
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--error);font-size:0.8rem;">Fehler: ${e.message}</p>`;
+      }
+    }
+
+    async function saveTeamBeseelung(teamId) {
+      const selects = document.querySelectorAll(`.team-member-model-select[data-team="${teamId}"]`);
+      const member_models = {};
+      selects.forEach(sel => {
+        const mem = sel.getAttribute('data-member');
+        member_models[mem] = sel.value;
+      });
+
+      try {
+        const res = await fetch(`/api/agenten/teams/${teamId}/beseelen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ member_models })
+        });
+        if (res.ok) {
+          alert('Team-Beseelung erfolgreich gespeichert!');
+          loadTeamsBeseelen();
+        } else {
+          alert('Fehler beim Beseelen des Teams.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    // ── 3. AGENTEN-STAFFELN (MARBLERUN) BESEELEN ──
+    async function loadStaffelnBeseelen() {
+      const container = document.getElementById('staffel-beseelen-container');
+      try {
+        const res = await fetch('/api/marblerun/chains');
+        const data = await res.json();
+        const chains = data.chains || [];
+
+        if (chains.length === 0) {
+          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Ketten vorhanden. Erstelle eine in MarbleRun!</p>';
+          return;
+        }
+
+        container.innerHTML = chains.map(c => {
+          let steps = [];
+          try { steps = typeof c.steps_json === 'string' ? JSON.parse(c.steps_json) : (c.steps_json || []); } catch(e) {}
+
+          return `
+            <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <strong style="color:var(--text);font-size:0.95rem;">⛓️ ${escapeHtml(c.title || c.name)}</strong>
+                <span class="badge badge-accent">${steps.length} Stationen</span>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:0.5rem;background:var(--bg-card);padding:0.75rem;border-radius:4px;border:1px solid var(--border);">
+                ${steps.map(s => {
+                  const curMod = s.model || 'claude-3-7-sonnet';
+                  return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                      <span style="font-size:0.78rem;color:var(--text);">Station ${s.step}: <strong>${escapeHtml(s.action)}</strong> (${escapeHtml(s.agent || 'Agent')})</span>
+                      <select class="chain-step-model-select" data-chain="${c.id}" data-step="${s.step}" style="padding:0.25rem 0.5rem;font-size:0.75rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+                        ${AVAILABLE_MODELS.map(mod => `<option value="${mod.id}" ${mod.id === curMod ? 'selected' : ''}>${mod.label}</option>`).join('')}
+                      </select>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+
+              <div style="display:flex;justify-content:flex-end;margin-top:0.75rem;">
+                <button class="btn btn-sm btn-primary" onclick="saveStaffelBeseelung(${c.id})">
+                  ✨ Staffel-Beseelung speichern
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--error);font-size:0.8rem;">Fehler: ${e.message}</p>`;
+      }
+    }
+
+    async function saveStaffelBeseelung(chainId) {
+      const selects = document.querySelectorAll(`.chain-step-model-select[data-chain="${chainId}"]`);
+      const step_models = {};
+      selects.forEach(sel => {
+        const step = sel.getAttribute('data-step');
+        step_models[step] = sel.value;
+      });
+
+      try {
+        const res = await fetch(`/api/marblerun/chains/${chainId}/beseelen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step_models })
+        });
+        if (res.ok) {
+          alert('Staffel-Beseelung erfolgreich gespeichert!');
+          loadStaffelnBeseelen();
+        } else {
+          alert('Fehler beim Beseelen der Staffel.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    // ── 5. LIVE AKTIVITÄT ──
+    async function refreshActivity() {
+      const tbody = document.getElementById('activity-tbody');
+      try {
+        const res = await fetch('/api/tasks?limit=6');
+        const data = await res.json();
+        const tasks = data.tasks || [];
+
+        if (tasks.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine aktuellen Tasks</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = tasks.slice(0, 6).map(t => {
+          const timeStr = t.created_at ? t.created_at.slice(11, 16) : '--:--';
+          const akteur = t.assigned_to || t.assigned_agent || 'Operator';
+          const model = t.required_model || 'Nicht angegeben';
+          const st = t.status || 'todo';
+          const badgeClass = st === 'completed' || st === 'done' ? 'badge-success' : (st === 'running' ? 'badge-accent' : 'badge-warning');
+
+          return `
+            <tr>
+              <td style="color:var(--text-muted);font-family:monospace;font-size:0.8rem;">${escapeHtml(timeStr)}</td>
+              <td><strong>${escapeHtml(akteur)}</strong></td>
+              <td>${escapeHtml(t.title || 'Task')}</td>
+              <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent);">${escapeHtml(model)}</span></td>
+              <td><span class="badge ${badgeClass}">${escapeHtml(st)}</span></td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Aktivitäten konnten nicht geladen werden.</td></tr>`;
+      }
+    }
+
+    async function loadTrustedProfiles() {
+      const container = document.getElementById('trusted-profile-list');
+      try {
+        const response = await fetch('/api/agents');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.success !== true || !Array.isArray(data.agents)) throw new Error('Profilantwort ungültig');
+        const profiles = data.agents.filter(agent => agent.profile_chat_ready === true &&
+          Number.isSafeInteger(Number(agent.id)) && Number(agent.id) > 0);
+        let runtimeById = new Map();
+        let runtimeNote = 'Geräteanmeldung für Prozessstatus erforderlich';
+        try {
+          const runtimeResponse = await fetch('/api/agents/runtime');
+          if (runtimeResponse.ok) {
+            const runtimeData = await runtimeResponse.json();
+            if (runtimeData.success === true && Array.isArray(runtimeData.agents)) {
+              runtimeById = new Map(runtimeData.agents.map(item => [Number(item.agent_id), item.process_state]));
+              runtimeNote = 'Prozessstatus nicht prüfbar';
+            }
+          }
+        } catch (_error) {
+          runtimeNote = 'Prozessstatus nicht prüfbar';
+        }
+        const stateLabels = { running: 'Prozess läuft', not_started: 'Kein Prozess bestätigt',
+          ended: 'Prozess beendet', unverified: 'Identität nicht bestätigt',
+          mismatch: 'Prozessabweichung', unavailable: 'Prozessstatus nicht prüfbar' };
+        container.innerHTML = profiles.length
+          ? profiles.map(agent => `<span><a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a><small style="display:block;margin-top:0.3rem;color:var(--text-muted);">${stateLabels[runtimeById.get(Number(agent.id))] || runtimeNote}</small></span>`).join('')
+          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine verifizierten Chatprofile verfügbar.</span>';
+      } catch (error) {
+        container.textContent = 'Profile können derzeit nicht geprüft werden: ' + error.message;
+      }
+    }
+
+    async function refreshAll(interactive = false) {
+      await Promise.all([
+        loadTrustedProfiles(),
+        loadClusterCockpit(),
+        loadTeamsBeseelen(),
+        loadStaffelnBeseelen(),
+        refreshActivity(),
+        loadCoreSlots()
+      ]);
+      if (interactive) {
+        // Subtle confirmation
+        console.log("Living & Running Daten aktualisiert");
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshAll();
+      // Observe hardware and task activity without resetting editable forms.
+      setInterval(loadClusterCockpit, 15000);
+      setInterval(refreshActivity, 4000);
+    });
+  </script>
+</BachLayout>

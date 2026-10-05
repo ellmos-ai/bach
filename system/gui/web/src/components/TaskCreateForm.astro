@@ -1,0 +1,159 @@
+---
+interface Props {
+  id: string;
+  label?: string;
+  defaultAssignee?: string;
+  fixedAssignee?: boolean;
+}
+const { id, label = "Neue Aufgabe", defaultAssignee = "user", fixedAssignee = false } = Astro.props;
+---
+
+<button type="button" class="btn btn-primary" data-task-create-open={id}>+ {label}</button>
+<dialog id={id} class="task-create-dialog" aria-label="Neue Aufgabe erstellen">
+  <form method="dialog" data-task-create-form data-default-assignee={defaultAssignee} data-fixed-assignee={fixedAssignee ? "true" : "false"}>
+    <header class="task-create-heading">
+      <div>
+        <h2>Neue Aufgabe erstellen</h2>
+        <p>Die Aufgabe wird in der zentralen Task-Datenbank angelegt.</p>
+      </div>
+      <button type="button" class="btn" data-task-create-cancel aria-label="Schließen">×</button>
+    </header>
+    <div class="task-create-grid">
+      <label class="task-create-wide">Titel
+        <input name="title" required maxlength="500" autocomplete="off" />
+      </label>
+      <label>Priorität
+        <select name="priority">
+          <option value="P1">P1 · Kritisch</option>
+          <option value="P2">P2 · Wichtig</option>
+          <option value="P3" selected>P3 · Normal</option>
+          <option value="P4">P4 · Niedrig</option>
+        </select>
+      </label>
+      <label>Kategorie
+        <input name="category" placeholder="z. B. Organisation" autocomplete="off" />
+      </label>
+      <label>Zugewiesen an
+        <select name="assigned_to" data-task-assignee disabled={fixedAssignee}><option value="user">Benutzer</option></select>
+      </label>
+      <label>Erstellt von
+        <input name="created_by" value="user" readonly aria-description="Die Oberfläche erstellt Aufgaben als Benutzer." />
+      </label>
+      <label>Fällig am
+        <input name="due_date" type="date" />
+      </label>
+      <label>Abhängig von Task-IDs
+        <input name="depends_on" inputmode="numeric" placeholder="123, 456" pattern="\s*\d+(\s*,\s*\d+)*\s*" />
+      </label>
+      <label class="task-create-wide">Beschreibung
+        <textarea name="description" rows="5" placeholder="Kontext, Kriterien und Hinweise"></textarea>
+      </label>
+      <details class="task-create-wide">
+        <summary>Weitere Zuweisungsfelder</summary>
+        <div class="task-create-grid">
+          <label>Benötigtes Modell
+            <input name="required_model" autocomplete="off" />
+          </label>
+          <label>Agenten-Slot
+            <input name="assigned_slot" autocomplete="off" />
+          </label>
+        </div>
+        <p>Diese Felder speichern Vorgaben. Sie starten keinen Worker.</p>
+      </details>
+    </div>
+    <p data-task-create-error class="task-create-error" role="alert" hidden></p>
+    <footer class="task-create-actions">
+      <button type="button" class="btn" data-task-create-cancel>Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Aufgabe erstellen</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .task-create-dialog { width:min(48rem,calc(100vw - 1.5rem)); max-height:calc(100vh - 1.5rem); overflow:auto; padding:1.3rem; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-panel); color:var(--text); box-shadow:0 24px 70px rgba(0,0,0,.55); }
+  .task-create-dialog::backdrop { background:rgba(0,0,0,.68); }
+  .task-create-heading,.task-create-actions { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+  .task-create-heading h2 { margin:0; font-size:1.25rem; }
+  .task-create-heading p,.task-create-dialog details p { color:var(--text-muted); font-size:.85rem; }
+  .task-create-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; }
+  .task-create-grid label { display:flex; min-width:0; flex-direction:column; gap:.3rem; font-size:.85rem; }
+  .task-create-grid input,.task-create-grid textarea,.task-create-grid select { min-width:0; width:100%; box-sizing:border-box; padding:.65rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-dark); color:var(--text); font:inherit; }
+  .task-create-wide { grid-column:1/-1; }
+  .task-create-actions { justify-content:flex-end; margin-top:1rem; }
+  .task-create-error { color:var(--error); overflow-wrap:anywhere; }
+  @media (max-width:600px) { .task-create-grid { grid-template-columns:minmax(0,1fr); } .task-create-wide { grid-column:auto; } }
+</style>
+
+<script is:inline>
+  (() => {
+    const forms = document.querySelectorAll('[data-task-create-form]');
+    for (const form of forms) {
+      if (form.dataset.bound === 'true') continue;
+      form.dataset.bound = 'true';
+      const dialog = form.closest('dialog');
+      const error = form.querySelector('[data-task-create-error]');
+      const assignee = form.querySelector('[data-task-assignee]');
+      const fallback = form.dataset.defaultAssignee || 'user';
+      const fixedAssignee = form.dataset.fixedAssignee === 'true';
+      const showError = message => { error.textContent = message; error.hidden = !message; };
+      document.querySelectorAll('[data-task-create-open]').forEach(button => {
+        if (button.dataset.taskCreateOpen === dialog.id) {
+          button.addEventListener('click', () => { showError(''); dialog.showModal(); form.elements.title.focus(); });
+        }
+      });
+      form.querySelectorAll('[data-task-create-cancel]').forEach(button => button.addEventListener('click', () => dialog.close()));
+      if (!fixedAssignee) fetch('/api/assignees').then(async response => {
+        if (!response.ok) throw new Error('Zuweisungen nicht erreichbar');
+        const body = await response.json();
+        if (!Array.isArray(body.assignees)) throw new Error('Zuweisungen nicht verfügbar');
+        const options = new Map([['user', 'Benutzer']]);
+        for (const item of body.assignees) {
+          if (!item || typeof item.name !== 'string' || item.name.toLowerCase() === 'ati') continue;
+          options.set(item.name, String(item.display_name || item.name));
+        }
+        assignee.replaceChildren();
+        for (const [value, title] of options) {
+          const option = document.createElement('option');
+          option.value = value; option.textContent = title; assignee.append(option);
+        }
+        assignee.value = options.has(fallback) ? fallback : 'user';
+      }).catch(() => { showError('Weitere Zuweisungen sind nicht erreichbar. Aufgaben für den Benutzer bleiben möglich.'); });
+
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        const submit = form.querySelector('button[type="submit"]');
+        if (submit.disabled) return;
+        submit.disabled = true;
+        showError('');
+        const values = new FormData(form);
+        const text = key => String(values.get(key) || '').trim();
+        const payload = {
+          title:text('title'), priority:text('priority'), category:text('category') || 'general',
+          assigned_to:fixedAssignee ? fallback : (text('assigned_to') || 'user'), created_by:'user',
+          description:text('description'), status:'pending'
+        };
+        for (const key of ['due_date','depends_on','required_model','assigned_slot']) {
+          if (text(key)) payload[key] = text(key);
+        }
+        try {
+          const response = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result.success !== true || !Number.isSafeInteger(Number(result.id)) || Number(result.id) < 1) {
+            throw new Error(result.detail || result.error || `Aufgabe konnte nicht erstellt werden (HTTP ${response.status}).`);
+          }
+          const check = await fetch('/api/tasks/' + encodeURIComponent(result.id));
+          if (!check.ok) throw new Error('Aufgabe wurde gespeichert, der Kontrollabruf ist fehlgeschlagen. Bitte Liste aktualisieren.');
+          const stored = await check.json();
+          if (Object.entries(payload).some(([key, expected]) => String(stored[key] ?? '').trim() !== String(expected).trim())) {
+            throw new Error('Aufgabe wurde gespeichert, der Kontrollabruf weicht ab. Bitte Liste aktualisieren.');
+          }
+          dialog.close(); form.reset();
+          document.dispatchEvent(new CustomEvent('bach:task-created', { detail:{ id:Number(result.id), assigned_to:stored.assigned_to } }));
+        } catch (cause) {
+          showError(cause instanceof Error ? cause.message : 'Aufgabe konnte nicht erstellt werden.');
+        } finally { submit.disabled = false; }
+      });
+    }
+  })();
+</script>

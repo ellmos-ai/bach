@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capabilities & Skills - BACH Modular GUI</title>
+  <link rel="stylesheet" href="/static/css/bach-theme.css">
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg-card: #181b26;
+      --bg-dark: #12141d;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(99, 102, 241, 0.3);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-blue: #38bdf8;
+      --accent-red: #ef4444;
+      --success: #10b981;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 1.5rem;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .container { max-width: 1300px; margin: 0 auto; }
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;
+    }
+    .header h1 { font-size: 1.8rem; font-weight: 800; margin: 0 0 0.25rem 0; letter-spacing: -0.02em; }
+    .header p { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+    .badges { display: flex; gap: 0.75rem; align-items: center; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+      background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border);
+    }
+    .badge-accent { background: rgba(99, 102, 241, 0.15); color: #818cf8; border-color: rgba(99, 102, 241, 0.3); }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+    .btn {
+      padding: 0.5rem 1rem; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600;
+      border: 1px solid var(--border); background: var(--bg-card); color: var(--text); cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: rgba(255, 255, 255, 0.1); }
+    .btn-primary { background: var(--accent); color: white; border-color: transparent; }
+    .btn-primary:hover { background: #4f46e5; }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    .card-title { font-size: 1.25rem; font-weight: 700; margin: 0; }
+    
+    /* Steckdosen */
+    .socket-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
+    .socket-card {
+      background: var(--bg-dark); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 1.25rem; cursor: pointer; transition: all 0.2s ease; position: relative;
+    }
+    .socket-card:hover { transform: translateY(-2px); border-color: var(--border-accent); }
+    .socket-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .socket-led { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    
+    /* Cookbooks */
+    .bookshelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.5rem; }
+    .book-card {
+      padding: 1.5rem; border-radius: var(--radius); cursor: pointer; min-height: 200px;
+      display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s ease;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+    }
+    .book-card:hover { transform: translateY(-4px) scale(1.02); }
+
+    /* Wissens-Ebenen */
+    .tier-tab-btn {
+      padding: 0.4rem 0.8rem; border-radius: var(--radius-sm); border: none; background: transparent;
+      color: var(--text-muted); cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    }
+    .tier-tab-btn.active { background: var(--bg-card); color: var(--text); }
+    .tier-card {
+      background: var(--bg-dark); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 1rem; margin-bottom: 1rem;
+    }
+    .tier-skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .skill-box {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 0.85rem; display: flex; flex-direction: column; justify-content: space-between;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none;
+      justify-content: center; align-items: center; z-index: 1000; padding: 1rem;
+    }
+    .modal {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      width: 100%; max-width: 650px; max-height: 90vh; overflow-y: auto; padding: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>🔌 Capabilities- & Skills-Zentrale</h1>
+        <p>Steckdosenleiste (Plugins) • MCP-Cookbooks • 4 Kognitive Wissens-Ebenen mit SentinelFleet-Versionierung</p>
+      </div>
+      <div class="badges">
+        <span class="badge badge-accent" id="stat-plugins">Lade Steckdosen...</span>
+        <span class="badge badge-success" id="stat-skills">Lade Skills...</span>
+        <button class="btn btn-primary" onclick="openNewSkillModal()">+ Neuer Skill / Prompt</button>
+      </div>
+    </div>
+
+    <!-- 1. STECKDOSENLEISTE (PLUGINS) -->
+    <div class="card" style="border-top: 4px solid var(--accent-blue);">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:1.5rem;">⚡</span>
+          <div>
+            <h2 class="card-title">Haupt-Steckdosenleiste: Plugin-Versorgung (CAP-02)</h2>
+            <span style="font-size:0.8rem;color:var(--text-muted);">
+              Klick auf den Stecker zieht ihn heraus (Kabel rollt auf, Plugin getrennt) oder steckt ihn wieder ein.
+            </span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem;background:rgba(0,0,0,0.3);padding:0.4rem 0.8rem;border-radius:20px;border:1px solid var(--border);">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;" id="power-led"></span>
+          <span style="font-size:0.75rem;font-weight:700;">230V SYSTEM BUS</span>
+        </div>
+      </div>
+      <div class="socket-grid" id="socket-grid">
+        <p style="color:var(--text-muted);">Lade Steckdosenleiste...</p>
+      </div>
+    </div>
+
+    <!-- 2. MCP COOKBOOKS -->
+    <div class="card" style="border-top: 4px solid var(--accent);">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:1.5rem;">📚</span>
+          <div>
+            <h2 class="card-title">MCP-Bücherregal: Tool-Cookbooks & Rezepte (CAP-01)</h2>
+            <span style="font-size:0.8rem;color:var(--text-muted);">
+              Zutaten = Tools/APIs, Rezepte = Einsatz-Prompts mit verifizierter Kopierfunktion (GUX-063) & Skill-Konvertierung (GUX-064).
+            </span>
+          </div>
+        </div>
+      </div>
+      <p id="mcp-status" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">Quelle wird geladen...</p>
+      <div class="bookshelf-grid" id="bookshelf-grid">
+        <p style="color:var(--text-muted);">Lade MCP Cookbooks...</p>
+      </div>
+    </div>
+
+    <!-- 3. DIE 4 WISSENS-EBENEN -->
+    <div class="card" style="border-top: 4px solid var(--success);">
+      <div class="card-header" style="flex-wrap:wrap;gap:1rem;">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:1.5rem;">🏛️</span>
+          <div>
+            <h2 class="card-title">Die 4 Kognitiven Wissens-Ebenen</h2>
+            <span style="font-size:0.8rem;color:var(--text-muted);">
+              1. Selbststeuerung → 2. Prozesse → 3. Services → 4. Fähigkeiten (Append-Only Restore GUX-065).
+            </span>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.4rem;background:var(--bg-dark);padding:0.25rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <button class="tier-tab-btn active" data-tier="all" onclick="filterTiers('all')">Alle Ebenen</button>
+          <button class="tier-tab-btn" data-tier="executive" onclick="filterTiers('executive')">👑 Selbststeuerung</button>
+          <button class="tier-tab-btn" data-tier="process" onclick="filterTiers('process')">🔄 Prozesse</button>
+          <button class="tier-tab-btn" data-tier="service" onclick="filterTiers('service')">🖥️ Services</button>
+          <button class="tier-tab-btn" data-tier="capabilities" onclick="filterTiers('capabilities')">🛠️ Fähigkeiten</button>
+        </div>
+      </div>
+      <div id="tiers-container">
+        <p style="color:var(--text-muted);">Lade Wissens-Ebenen...</p>
+      </div>
+    </div>
+
+    <!-- 4. EXTERNE ARTEFAKTE (GUX-066) -->
+    <div class="card" style="border-top: 4px solid var(--accent-blue);">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:1.5rem;">📦</span>
+          <div>
+            <h2 class="card-title">Belegte Externe Prompt-Suiten & Artefakte (GUX-066)</h2>
+            <span style="font-size:0.8rem;color:var(--text-muted);">
+              ProfiPrompt, PromptBoard und Explorer Pro: Forensische Erkennung und verifizierter Import.
+            </span>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1.25rem;" id="artifacts-grid">
+        <p style="color:var(--text-muted);">Scan nach externen Artefakten...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Modal (Rezeptbuch) -->
+  <div class="modal-overlay" id="mcp-modal">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;">
+        <div>
+          <h3 id="modal-book-title" style="margin:0;font-size:1.3rem;">Cookbook</h3>
+          <p id="modal-book-subtitle" style="margin:0.25rem 0 0 0;font-size:0.85rem;color:var(--text-muted);"></p>
+        </div>
+        <button class="btn" onclick="closeModal('mcp-modal')">✕ Schließen</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-top:1rem;">
+        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <h4 style="margin:0 0 0.75rem 0;color:var(--accent-blue);font-size:0.95rem;">🥦 Zutaten (Tools/APIs)</h4>
+          <ul id="modal-ingredients" style="margin:0;padding-left:1.2rem;font-size:0.85rem;color:var(--text-muted);display:flex;flex-direction:column;gap:0.35rem;"></ul>
+        </div>
+        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <h4 style="margin:0 0 0.75rem 0;color:var(--accent);font-size:0.95rem;">📖 Rezepte (Prompts)</h4>
+          <div id="modal-recipes" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Version Modal -->
+  <div class="modal-overlay" id="version-modal">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 id="version-modal-title" style="margin:0;">Skill-Version festschreiben</h3>
+        <button class="btn" onclick="closeModal('version-modal')">✕ Schließen</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.85rem;">
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);">Skill Name</label>
+          <input type="text" id="v-skill-name" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);">Version</label>
+          <input type="text" id="v-version" value="v1.1.0" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);">Changelog</label>
+          <input type="text" id="v-changelog" placeholder="Beschreibung der Änderung" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);">Inhalt / Dokumentation</label>
+          <textarea id="v-content" rows="4" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:monospace;"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="submitSkillVersion()">Version festschreiben</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let activeCookbooks = [];
+
+    // GUX-063: Verifizierte Clipboard-Kopierfunktion ohne Read-Berechtigung
+    async function copyToClipboard(text, btnElement) {
+      const originalText = btnElement.textContent;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback fuer restriktive Umgebungen
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        btnElement.textContent = "✓ Kopiert!";
+        btnElement.style.background = "var(--success)";
+        btnElement.style.color = "white";
+        setTimeout(() => {
+          btnElement.textContent = originalText;
+          btnElement.style.background = "";
+          btnElement.style.color = "";
+        }, 2000);
+      } catch (err) {
+        console.error("Clipboard-Fehler:", err);
+        btnElement.textContent = "Fehler!";
+        setTimeout(() => { btnElement.textContent = originalText; }, 2000);
+      }
+    }
+
+    // GUX-064: Prompt -> Skill Konvertierung
+    async function convertPromptToSkill(title, promptText, category = "utilities") {
+      if (!confirm(`Soll der Prompt "${title}" über den Creator-Vertrag in einen echten Skill überführt werden?`)) return;
+      try {
+        const res = await fetch('/api/capabilities/prompts/convert-to-skill', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ title, prompt_text: promptText, category })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Erfolg: Skill "${data.skill_name}" (Version ${data.version}) angelegt!`);
+          loadTiers();
+        } else {
+          alert("Fehler bei der Konvertierung: " + (data.detail || data.error || "Unbekannt"));
+        }
+      } catch (e) {
+        alert("Netzwerkfehler bei Konvertierung: " + e);
+      }
+    }
+
+    // GUX-065: Reversibles Append-Only Restore
+    async function rollbackSkill(skillName, targetVersion) {
+      if (!confirm(`Soll Skill "${skillName}" auf Version "${targetVersion}" wiederhergestellt werden (Append-Only neue Version)?`)) return;
+      try {
+        const res = await fetch('/api/capabilities/skills/rollback', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ skill_name: skillName, target_version: targetVersion })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+          alert(data.message || `Version wiederhergestellt als ${data.active_version}`);
+          loadTiers();
+        } else {
+          alert("Fehler beim Rollback: " + (data.detail || data.message || "Unbekannt"));
+        }
+      } catch (e) {
+        alert("Netzwerkfehler: " + e);
+      }
+    }
+
+    // GUX-066: Externe Artefakte importieren
+    async function importArtifact(artName) {
+      if (!confirm(`Möchtest du das Artefakt "${artName}" in die Prompt-DB importieren?`)) return;
+      try {
+        const res = await fetch('/api/system/external-artifacts/import', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ artifact: artName })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Import abgeschlossen: ${data.imported} Einträge importiert (${data.skipped} übersprungen).`);
+          loadArtifacts();
+        } else {
+          alert("Fehler beim Import: " + (data.detail || data.error || "Fehler"));
+        }
+      } catch (e) {
+        alert("Netzwerkfehler beim Import: " + e);
+      }
+    }
+
+    async function loadSockets() {
+      try {
+        const res = await fetch('/api/capabilities/steckdosen');
+        const data = await res.json();
+        document.getElementById('stat-plugins').textContent = `${data.active_count} / ${data.total_count || data.sockets.length} Steckdosen aktiv`;
+        const grid = document.getElementById('socket-grid');
+        grid.innerHTML = data.sockets.map(s => `
+          <div class="socket-card" onclick="toggleSocket('${s.name}')">
+            <div class="socket-header">
+              <strong style="font-size:1rem;">${s.title}</strong>
+              <span class="socket-led" style="background:${s.is_plugged ? 'var(--success)' : 'var(--text-muted)'}; box-shadow: 0 0 6px ${s.is_plugged ? 'var(--success)' : 'transparent'};"></span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.75rem 0;">${s.description}</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem;">
+              <span>Status: <strong style="color:${s.is_plugged ? 'var(--success)' : 'var(--text-muted)'};">${s.is_plugged ? 'Eingesteckt (Strom fließt)' : 'Kabel aufgerollt'}</strong></span>
+              <span class="badge">${s.skills_count} Skills</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error("Fehler beim Laden der Steckdosen:", e);
+      }
+    }
+
+    async function toggleSocket(name) {
+      try {
+        const res = await fetch('/api/capabilities/plugins/toggle', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ name })
+        });
+        if (res.ok) loadSockets();
+      } catch (e) {
+        alert("Fehler beim Umschalten: " + e);
+      }
+    }
+
+    async function loadCookbooks() {
+      try {
+        const res = await fetch('/api/capabilities/mcp/cookbooks');
+        const data = await res.json();
+        activeCookbooks = data.cookbooks || [];
+        document.getElementById('mcp-status').textContent = `Quelle: ${data.source} (${data.count} Cookbooks, Live-Erkennung: ${data.live_discovery ? 'Ja' : 'Nein'})`;
+        const grid = document.getElementById('bookshelf-grid');
+        grid.innerHTML = activeCookbooks.map((b, idx) => `
+          <div class="book-card" style="background:${b.cover_color};" onclick="openCookbookModal(${idx})">
+            <div>
+              <span style="font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;opacity:0.8;">MCP Cookbook</span>
+              <h3 style="margin:0.4rem 0 0.2rem 0;font-size:1.15rem;font-weight:700;">${b.title}</h3>
+              <p style="font-size:0.8rem;opacity:0.85;margin:0;">${b.subtitle}</p>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,0.2);padding-top:0.75rem;margin-top:1rem;font-size:0.75rem;">
+              <span>${b.ingredients.length} Werkzeuge</span>
+              <span class="badge" style="background:rgba(255,255,255,0.15);">${b.recipes.length} Rezepte</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error("Fehler beim Laden der Cookbooks:", e);
+      }
+    }
+
+    function openCookbookModal(idx) {
+      const b = activeCookbooks[idx];
+      if (!b) return;
+      document.getElementById('modal-book-title').textContent = b.title;
+      document.getElementById('modal-book-subtitle').textContent = b.subtitle;
+      
+      const ingList = document.getElementById('modal-ingredients');
+      ingList.innerHTML = b.ingredients.map(ing => `<li><code>${ing}</code></li>`).join('');
+
+      const recList = document.getElementById('modal-recipes');
+      recList.innerHTML = b.recipes.map(r => `
+        <div style="background:var(--bg-card);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <strong style="font-size:0.85rem;display:block;margin-bottom:0.25rem;">${r.title}</strong>
+          <code style="font-size:0.78rem;display:block;margin-bottom:0.5rem;color:var(--accent-blue);white-space:pre-wrap;background:rgba(0,0,0,0.3);padding:0.4rem;border-radius:4px;">${r.prompt}</code>
+          <div style="display:flex;gap:0.4rem;">
+            <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="copyToClipboard('${r.prompt.replace(/'/g, "\\'")}', this)">📋 Kopieren</button>
+            <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="convertPromptToSkill('${r.title.replace(/'/g, "\\'")}', '${r.prompt.replace(/'/g, "\\'")}', 'mcp')">⚡ In Skill umwandeln</button>
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('mcp-modal').style.display = 'flex';
+    }
+
+    async function loadTiers() {
+      try {
+        const res = await fetch('/api/capabilities/tiers');
+        const data = await res.json();
+        const tiers = data.tiers || [];
+        let totalCount = 0;
+        tiers.forEach(t => totalCount += t.skills.length);
+        document.getElementById('stat-skills').textContent = `${totalCount} Skills aktiv`;
+
+        const container = document.getElementById('tiers-container');
+        container.innerHTML = tiers.map(t => `
+          <div class="tier-card" data-tier-id="${t.id}" style="border-left: 4px solid ${t.color};">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <h3 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">
+                  <span>${t.icon}</span> ${t.name}
+                </h3>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">${t.description}</p>
+              </div>
+              <span class="badge">${t.skills.length} Skills</span>
+            </div>
+            <div class="tier-skills-grid">
+              ${t.skills.map(sk => `
+                <div class="skill-box">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+                      <strong style="font-size:0.88rem;">${sk.name}</strong>
+                      <span class="badge badge-accent" style="font-family:monospace;font-size:0.7rem;">${sk.version}</span>
+                    </div>
+                    <span style="font-size:0.7rem;color:var(--text-muted);">${sk.type} • ${sk.category || 'allgemein'}</span>
+                    <p style="font-size:0.78rem;color:var(--text);margin:0.4rem 0 0.75rem 0;">${sk.role}</p>
+                  </div>
+                  <div style="display:flex;gap:0.4rem;border-top:1px solid var(--border);padding-top:0.5rem;">
+                    <button class="btn" style="flex:1;padding:0.2rem 0.4rem;font-size:0.72rem;" onclick="openVersionModal('${sk.id || sk.name}', '${sk.version}')">Versionieren</button>
+                    <button class="btn" style="padding:0.2rem 0.4rem;font-size:0.72rem;" title="Append-Only Rollback auf v1.0.0" onclick="rollbackSkill('${sk.id || sk.name}', 'v1.0.0')">↺ Restore</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error("Fehler beim Laden der Tiers:", e);
+      }
+    }
+
+    function filterTiers(tierId) {
+      document.querySelectorAll('.tier-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tier === tierId);
+      });
+      document.querySelectorAll('.tier-card').forEach(sec => {
+        sec.style.display = (tierId === 'all' || sec.dataset.tierId === tierId) ? 'block' : 'none';
+      });
+    }
+
+    async function loadArtifacts() {
+      try {
+        const res = await fetch('/api/system/external-artifacts');
+        const data = await res.json();
+        const grid = document.getElementById('artifacts-grid');
+        grid.innerHTML = Object.values(data).map(art => `
+          <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.25rem;display:flex;flex-direction:column;justify-content:space-between;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                <strong style="font-size:1.05rem;">${art.title}</strong>
+                <span class="badge ${art.present ? 'badge-success' : ''}" style="${!art.present ? 'opacity:0.6;' : ''}">
+                  ${art.present ? 'Gefunden' : 'Nicht gefunden'}
+                </span>
+              </div>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.5rem 0;">${art.description}</p>
+              ${art.path ? `<code style="font-size:0.72rem;display:block;background:rgba(0,0,0,0.3);padding:0.3rem;border-radius:4px;word-break:break-all;margin-bottom:0.75rem;">${art.path}</code>` : ''}
+              ${art.preview_items && art.preview_items.length ? `
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.75rem;">
+                  <strong>Vorschau:</strong>
+                  <ul style="margin:0.25rem 0 0 0;padding-left:1.2rem;">
+                    ${art.preview_items.map(p => `<li>${p.title || p.name} (${p.category})</li>`).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:0.5rem;" ${!art.can_import ? 'disabled' : ''} onclick="importArtifact('${art.id}')">
+              📥 ${art.present ? 'In Prompt-DB importieren' : 'Nicht verfügbar'}
+            </button>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error("Fehler beim Laden externer Artefakte:", e);
+      }
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function openNewSkillModal() {
+      document.getElementById('v-skill-name').value = '';
+      document.getElementById('v-version').value = 'v1.0.0';
+      document.getElementById('v-changelog').value = 'Initiale Version';
+      document.getElementById('v-content').value = '# Neuer Skill\n\n## Aufgabe\n';
+      openModal('version-modal');
+    }
+    function openVersionModal(name, ver) {
+      document.getElementById('v-skill-name').value = name;
+      document.getElementById('v-version').value = ver ? ver.replace(/(\d+)$/, m => parseInt(m) + 1) : 'v1.1.0';
+      document.getElementById('v-changelog').value = 'Update via Skills-Zentrale';
+      openModal('version-modal');
+    }
+
+    async function submitSkillVersion() {
+      const skill_name = document.getElementById('v-skill-name').value;
+      const version = document.getElementById('v-version').value;
+      const changelog = document.getElementById('v-changelog').value;
+      const content = document.getElementById('v-content').value;
+      if (!skill_name) return alert("Skill-Name erforderlich");
+      try {
+        const res = await fetch('/api/capabilities/skills/version', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ skill_name, version, changelog, content })
+        });
+        if (res.ok) {
+          alert(`Version ${version} für ${skill_name} gespeichert.`);
+          closeModal('version-modal');
+          loadTiers();
+        } else {
+          alert("Fehler beim Speichern");
+        }
+      } catch (e) { alert("Netzwerkfehler: " + e); }
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSockets();
+      loadCookbooks();
+      loadTiers();
+      loadArtifacts();
+    });
+  </script>
+</body>
+</html>

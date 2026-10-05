@@ -755,6 +755,10 @@ function controlTokenForWrite() {
 async function api(method, path, body = null) {
   try {
     const opts = { method, headers: {}, redirect: 'error', credentials: 'same-origin' };
+    if (method === 'GET' && (path === '/prompts' || path === '/slots')) {
+      const token = (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();
+      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    }
     if (method !== 'GET' && method !== 'HEAD') {
       if (!writeAuthorized || SHELL_CONFIG.readOnly) return {error: 'Nur lesen · Schreibzugriff zuerst prüfen'};
       const token = (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();

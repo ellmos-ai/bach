@@ -202,7 +202,8 @@ class BACHTray:
 
     def __init__(self, host="127.0.0.1", port=8081, gui_port=8000,
                  ollama_host="127.0.0.1", remote=False,
-                 activity_url=None, gui_url=None):
+                 activity_url=None, gui_url=None, brand="bach"):
+        self.brand = (brand or "bach").lower()
         self.host = host
         self.remote = remote
         self.base_url = f"http://{host}:{port}"
@@ -886,9 +887,13 @@ class BACHTray:
                 font = ImageFont.truetype("arial", 32)
             else:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
-            draw.text((14, 10), "B", fill="white", font=font)
+            letter = "O" if getattr(self, "brand", "bach") == "ocean" else "B"
+            offset_x = 13 if letter == "O" else 14
+            draw.text((offset_x, 10), letter, fill="white", font=font)
         except OSError:
-            draw.text((16, 14), "B", fill="white")
+            letter = "O" if getattr(self, "brand", "bach") == "ocean" else "B"
+            offset_x = 14 if letter == "O" else 16
+            draw.text((offset_x, 14), letter, fill="white")
         return img
 
     @property
@@ -1174,8 +1179,10 @@ class BACHTray:
         items.append(pystray.Menu.SEPARATOR)
 
         # ── Zugangswege ──
-        items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
-        items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
+        gui_label = "Ocean Dashboard" if getattr(self, "brand", "bach") == "ocean" else "GUI Dashboard"
+        items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
+        chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
+        items.append(pystray.MenuItem(chat_label, self._open_webchat))
         items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
@@ -1444,10 +1451,12 @@ class BACHTray:
 
     def run(self):
         self._refresh()
+        app_name = f"{self.brand}-system" if hasattr(self, "brand") else "bach-system"
+        app_title = "Open Ocean" if getattr(self, "brand", "bach") == "ocean" else "BACH System"
         self.icon = pystray.Icon(
-            "bach-system",
+            app_name,
             self._icon_image,
-            "BACH System",
+            app_title,
             self._build_menu(),
         )
 
@@ -1466,6 +1475,7 @@ def main():
     parser.add_argument("--gui-url", default=None, help="Konfigurierbare GUI-URL")
     parser.add_argument("--ollama-host", default="127.0.0.1", help="Ollama Host")
     parser.add_argument("--remote", action="store_true", help="Remote-Client ohne lokale Schreib-Fallbacks")
+    parser.add_argument("--brand", default="bach", choices=["bach", "ocean"], help="System tray branding (bach oder ocean)")
     parser.add_argument(
         "--smoke-promptboard",
         action="store_true",
@@ -1475,13 +1485,15 @@ def main():
 
     tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
                     ollama_host=args.ollama_host, remote=args.remote,
-                    activity_url=args.activity_url, gui_url=args.gui_url)
+                    activity_url=args.activity_url, gui_url=args.gui_url,
+                    brand=args.brand)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
-    lock = acquire_single_instance_lock()
+    lock_file = Path.home() / ".bach" / f"{args.brand}_tray.lock" if args.brand != "bach" else TRAY_LOCK_FILE
+    lock = acquire_single_instance_lock(lock_file)
     if lock is None:
-        print(f"BACH Tray läuft bereits (Single-Instance-Lock: {TRAY_LOCK_FILE}).", file=sys.stderr)
+        print(f"BACH Tray ({args.brand}) läuft bereits (Single-Instance-Lock: {lock_file}).", file=sys.stderr)
         sys.exit(3)
     tray._instance_lock = lock  # keep the OS lock alive for the tray's lifetime
     tray.run()

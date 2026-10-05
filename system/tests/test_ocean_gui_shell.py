@@ -172,7 +172,17 @@ vm.runInContext(INPUT_SCRIPT, box);
   await box.api('GET','/slots');
   assert.equal(calls[0][0], '/control-backend/api/slots');
   assert.equal(calls[0][1].redirect,'error');
+  // Control reads of /slots and /prompts carry the stored Control token (a67b21ab).
+  assert.equal(calls[0][1].headers.Authorization,'Bearer test-token');
+  box.localStorage.getItem = () => '';
+  calls=[];
+  await box.api('GET','/prompts');
+  assert.equal(calls[0][0], '/control-backend/api/prompts');
   assert.equal(calls[0][1].headers.Authorization,undefined);
+  box.localStorage.getItem = () => 'test-token';
+  calls=[];
+  await box.api('GET','/prompts');
+  assert.equal(calls[0][1].headers.Authorization,'Bearer test-token');
   calls=[];
   const authorized = await box.authorizeControl();
   if (READ_ONLY) {

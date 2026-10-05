@@ -889,6 +889,9 @@ def command_start(args: argparse.Namespace) -> int:
                 gui_url = getattr(args, "gui_url", None) or os.environ.get("BACH_GUI_URL")
                 if gui_url:
                     tray_cmd.extend(["--gui-url", gui_url])
+                brand = getattr(args, "brand", None) or os.environ.get("BACH_BRAND") or "bach"
+                if brand:
+                    tray_cmd.extend(["--brand", brand])
                 ok = _start_service(
                     state,
                     "tray",
@@ -1167,6 +1170,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--gui-url", help="Konfigurierbare GUI-URL")
     start.add_argument("--open-browser", action="store_true")
     start.add_argument("--readiness-timeout", type=float, default=15.0)
+    start.add_argument("--brand", default="bach", choices=["bach", "ocean"], help="System tray branding (bach oder ocean)")
     start.set_defaults(func=command_start)
 
     status = sub.add_parser("status", help="Readiness, Ownership, PIDs und Ports anzeigen")

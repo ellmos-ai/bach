@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Denkarium</title>
@@ -444,6 +445,7 @@
             <button class="filter-chip active" data-type="" onclick="setFilter(this)">Alle</button>
             <button class="filter-chip" data-type="denkarium" onclick="setFilter(this)">Gedanken</button>
             <button class="filter-chip" data-type="logbuch" onclick="setFilter(this)">Logbuch</button>
+            <button class="filter-chip" id="chip-archived" onclick="toggleArchivedFilter(this)">📦 Archiv (Dumps)</button>
         </div>
 
         <div class="entries" id="entries">
@@ -462,6 +464,7 @@
     <script>
         let currentType = '';
         let currentLimit = 50;
+        let showArchivedOnly = false;
         let debounceTimer = null;
 
         function setFont(name, btn) {
@@ -486,16 +489,29 @@
             debounceTimer = setTimeout(loadEntries, 300);
         }
 
+        function toggleArchivedFilter(btn) {
+            showArchivedOnly = !showArchivedOnly;
+            btn.classList.toggle('active', showArchivedOnly);
+            loadEntries();
+        }
+
         async function loadEntries() {
             const search = document.getElementById('search-input').value.trim();
             let url = `/api/denkarium?limit=${currentLimit}`;
             if (currentType) url += `&entry_type=${currentType}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (showArchivedOnly) {
+                url += `&exclude_archived=false`;
+            }
 
             try {
                 const data = await api.get(url);
                 renderStats(data.stats);
-                renderEntries(data.entries);
+                let entries = data.entries || [];
+                if (showArchivedOnly) {
+                    entries = entries.filter(e => Boolean(e.is_archived));
+                }
+                renderEntries(entries);
             } catch (e) {
                 document.getElementById('entries').innerHTML =
                     '<div class="empty-state"><p>Fehler beim Laden</p></div>';
@@ -503,16 +519,19 @@
         }
 
         function renderStats(stats) {
-            document.getElementById('stats-line').innerHTML =
-                `<strong>${stats.total}</strong> Eintr&auml;ge &middot; <strong>${stats.denkarium}</strong> Gedanken &middot; <strong>${stats.logbuch}</strong> Logbuch`;
+            let s = `<strong>${stats.total}</strong> Eintr&auml;ge &middot; <strong>${stats.denkarium}</strong> Gedanken &middot; <strong>${stats.logbuch}</strong> Logbuch`;
+            if (stats.archived > 0) {
+                s += ` &middot; <strong style="color:var(--ink-faint);">${stats.archived}</strong> archiviert`;
+            }
+            document.getElementById('stats-line').innerHTML = s;
         }
 
         function renderEntries(entries) {
             const el = document.getElementById('entries');
             if (!entries.length) {
                 el.innerHTML = `<div class="empty-state">
-                    <div class="empty-title">Leere Seiten</div>
-                    <p>Schreibe deinen ersten Gedanken.</p>
+                    <div class="empty-title">Keine Einträge</div>
+                    <p>${showArchivedOnly ? 'Keine archivierten Agent-Dumps vorhanden.' : 'Schreibe deinen ersten Gedanken.'}</p>
                 </div>`;
                 return;
             }
@@ -524,17 +543,24 @@
                 const isLong = content.length > 400;
                 const display = isLong ? content.substring(0, 400) + '…' : content;
                 const promoted = e.promoted_to ? `<span class="promoted-tag">→ ${esc(e.promoted_to)} #${e.promoted_id}</span>` : '';
+                const isArchived = Boolean(e.is_archived);
+                const archivedBadge = isArchived ? `<span class="promoted-tag" style="color:var(--accent-red);">[Archiviert: ${esc(e.archived_reason || 'Agent-Dump')}]</span>` : '';
+                const archiveBtn = isArchived
+                    ? `<button class="btn btn-sm btn-ghost" onclick="unarchiveEntry(${e.id})" title="Wiederherstellen">Wiederherstellen</button>`
+                    : `<button class="btn btn-sm btn-ghost" onclick="archiveEntry(${e.id})" title="Reversibel archivieren">Archivieren</button>`;
 
-                return `<div class="entry" data-id="${e.id}">
+                return `<div class="entry" data-id="${e.id}" style="${isArchived ? 'opacity:0.75;' : ''}">
                     <div class="entry-header">
                         <div class="entry-meta">
                             <span class="entry-type type-${t}">${t === 'logbuch' ? 'Logbuch' : t === 'brainstorm' ? 'Brainstorm' : 'Gedanke'}</span>
                             <span class="entry-category">${esc(e.category || '')}</span>
                             ${promoted}
+                            ${archivedBadge}
                             <span>${e.created_at || ''}</span>
                             ${mood ? `<span class="entry-mood">${mood}</span>` : ''}
                         </div>
                         <div class="entry-actions">
+                            ${archiveBtn}
                             <button class="btn btn-sm btn-ghost" onclick="promoteEntry(${e.id})" title="Zu Task">Task</button>
                             <button class="btn btn-sm btn-ghost" onclick="deleteEntry(${e.id})" title="Löschen">×</button>
                         </div>
@@ -586,6 +612,22 @@
                 document.getElementById('compose-mood').value = '';
                 loadEntries();
             } catch (e) { alert('Fehler beim Speichern'); }
+        }
+
+        async function archiveEntry(id) {
+            const reason = prompt('Grund für Archivierung (z.B. wrong_agent_dump, technisch):', 'wrong_agent_dump');
+            if (reason === null) return;
+            try {
+                await api.post(`/api/denkarium/${id}/archive`, { reason: reason || 'wrong_agent_dump' });
+                loadEntries();
+            } catch (e) { alert('Fehler beim Archivieren'); }
+        }
+
+        async function unarchiveEntry(id) {
+            try {
+                await api.post(`/api/denkarium/${id}/unarchive`, {});
+                loadEntries();
+            } catch (e) { alert('Fehler beim Wiederherstellen'); }
         }
 
         async function deleteEntry(id) {

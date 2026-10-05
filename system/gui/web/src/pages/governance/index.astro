@@ -1,0 +1,230 @@
+---
+// src/pages/governance/index.astro - Governance CONTROL Room & Hub
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Governance CONTROL" currentPath="/governance">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        🛡️ Governance CONTROL Room
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Zentrale Steuerung • Decision-Clicker (Human-in-the-Loop) • Lock-Master Haltefristen • Policy Registry (P-001 bis P-007)
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;">
+      <span class="badge" id="governance-status-badge" style="font-size:0.85rem;padding:0.4rem 0.8rem;">
+        ● Durchsetzung nicht geprüft
+      </span>
+    </div>
+  </div>
+
+  <!-- Governance Modul-Tabs -->
+  <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;flex-wrap:wrap;">
+    <a href="/governance" class="btn btn-sm btn-primary">🏛️ Control Room</a>
+    <a href="/governance/funk" class="btn btn-sm">📻 Agentenfunk</a>
+    <a href="/governance/usecases" class="btn btn-sm">📑 Use Cases & Workflows</a>
+    <a href="/governance/logs" class="btn btn-sm">📜 Logs & Audit</a>
+  </div>
+
+  <!-- Oberer Bereich: Decision-Clicker (Human-in-the-Loop) -->
+  <div class="card" style="margin-bottom:1.5rem;border-left:4px solid var(--warning);">
+    <div class="card-header">
+      <h2 class="card-title">⚖️ Decision-Clicker (Offene menschliche Entscheidungen)</h2>
+      <span class="badge" id="decisions-count-badge">Entscheidungen nicht geprüft</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+      Das Register listet Entscheidungsdateien. Der Freigabestatus und die 1-Klick-Aktion sind hier noch nicht angebunden:
+    </p>
+
+    <div id="decisions-list" style="display:flex;flex-direction:column;gap:0.75rem;">
+      <div style="padding:1rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <strong style="color:var(--text);font-size:0.9rem;">Entscheidungsregister</strong>
+            <span class="badge">Status nicht geprüft</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
+            Der aktuelle Registerstand wird geladen.
+          </p>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;" disabled title="Freigabe-Endpunkt nicht angebunden">
+            ✓ Genehmigen (nicht verfügbar)
+          </button>
+          <button class="btn" style="padding:0.4rem 0.8rem;font-size:0.8rem;" disabled title="Freigabe-Endpunkt nicht angebunden">
+            ✕ Ablehnen (nicht verfügbar)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mittlerer Bereich: Lock-Monitor & Policies Split -->
+  <div class="grid grid-cols-2">
+    <!-- Lock-Master Live Monitor -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">🔒 Lock-Master (Aktive Sperren & Haltefristen)</h2>
+        <span class="badge" id="locks-count-badge">Lock-Feed nicht geprüft</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+        Gesperrte Bereiche (<code>LOCK.user.*</code>, <code>LOCK.condition.*</code>) sind für alle KI-Agenten Fail-Closed (Read-Only).
+      </p>
+
+      <div id="locks-list" style="display:flex;flex-direction:column;gap:0.75rem;">
+        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:0.85rem;color:var(--text);">Lock-Feed</strong>
+            <span class="badge">Nicht geprüft</span>
+          </div>
+          <span style="font-size:0.75rem;color:var(--text-muted);">Eine fehlende Cachedatei bedeutet keine Schreibfreigabe.</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Policy Registry -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📜 System-Policies (P-001 bis P-007)</h2>
+        <span class="badge badge-accent">7 konfiguriert</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+        Konfigurierte Richtlinien; die Durchsetzung pro Agent ist hier nicht geprüft:
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.82rem;">
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-001:</strong> Fail-Closed Git Protection</span>
+          <span>Durchsetzung nicht geprüft</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-002:</strong> Two-Tree Rule</span>
+          <span>Durchsetzung nicht geprüft</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-003:</strong> Device Token Auth</span>
+          <span>Durchsetzung nicht geprüft</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-007:</strong> Proof-Note Freigabe in Forschungs-Repos</span>
+          <span>Durchsetzung nicht geprüft</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unterer Bereich: Schnelleinstieg Agentenfunk -->
+  <div class="card" id="section-agentenfunk" style="margin-top:1.5rem;border-left:4px solid var(--accent-blue);">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <h2 class="card-title">📻 Agentenfunk (Inter-Agenten Kommunikation & Signale)</h2>
+        <a href="/governance/funk" style="font-size:0.8rem;color:var(--accent);text-decoration:none;">➔ Zur Vollansicht</a>
+      </div>
+      <span class="badge">Zustellung nicht geprüft</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+      Agentenfunk-Konzept; Zustellung und Laufzeitstatus werden hier nicht gemessen.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
+      <!-- Signal Log -->
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <h4 style="margin:0 0 0.25rem 0;font-size:0.85rem;color:var(--text);">Letzte Signale & Handshakes</h4>
+        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
+          <div style="display:flex;justify-content:space-between;color:var(--accent);">
+            <strong>Letzter Handshake</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">Nicht geprüft</span>
+          </div>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Kein Live-Signalfeed angebunden.</p>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
+          <div style="display:flex;justify-content:space-between;color:var(--success);">
+            <strong>Policy-Durchsetzung</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">Nicht geprüft</span>
+          </div>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Ein Guard-Nachweis wird von dieser Ansicht nicht erhoben.</p>
+        </div>
+      </div>
+
+      <!-- Quick Funk Message Form -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.85rem;color:var(--text);">Signal ins Netzwerk senden (nicht verfügbar)</h4>
+        <form onsubmit="event.preventDefault(); sendFunkMessage();" style="display:flex;flex-direction:column;gap:0.75rem;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Absender</label>
+              <input type="text" id="funk-from" value="operator@user" style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+            </div>
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Empfänger</label>
+              <select id="funk-to" style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;">
+                <option value="all">Alle Agenten (Broadcast)</option>
+                <option value="gemini">Gemini (Antigravity)</option>
+                <option value="claude">Claude (Code/Desktop)</option>
+                <option value="codex">GPT (Codex)</option>
+                <option value="ollama">Ollama (Mac Studio Worker)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Nachricht</label>
+            <input type="text" id="funk-msg" placeholder="Mitteilung an Agenten..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary" disabled title="Kein Zustell-Endpunkt angebunden">Funkspruch absenden</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    async function loadGovernanceStatus() {
+      try {
+        const response = await fetch('/api/governance/status');
+        if (!response.ok) throw new Error('Status nicht erreichbar');
+        const data = await response.json();
+        document.getElementById('governance-status-badge').textContent =
+          data.availability === 'available' ? '● Lock-Feed verfügbar; Durchsetzung nicht geprüft' : '● Lock-Lage unbekannt';
+        const badge = document.getElementById('locks-count-badge');
+        const list = document.getElementById('locks-list');
+        list.replaceChildren();
+        if (data.availability === 'available' && Number.isInteger(data.lock_count)) {
+          badge.textContent = data.lock_count + ' Locks im Scan';
+          for (const lock of data.active_locks || []) {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm)';
+            const name = document.createElement('strong');
+            name.textContent = lock.name;
+            const scope = document.createElement('span');
+            scope.style.cssText = 'display:block;font-size:0.75rem;color:var(--text-muted)';
+            scope.textContent = 'Scope: ' + lock.scope;
+            row.append(name, scope);
+            list.appendChild(row);
+          }
+          if (data.lock_count === 0) list.textContent = 'Keine Locks im letzten Scan. Schreibzugriff separat prüfen.';
+        } else {
+          badge.textContent = 'Lock-Lage unbekannt';
+          list.textContent = 'Kein gültiger, frischer Lock-Scan verfügbar.';
+        }
+        document.getElementById('decisions-count-badge').textContent =
+          (data.recent_decisions || []).length + ' Registerdateien; offener Status nicht geprüft';
+        const decisions = document.getElementById('decisions-list');
+        const registerLabel = decisions.querySelector('strong');
+        if (registerLabel) registerLabel.textContent =
+          (data.recent_decisions || []).length ? 'Entscheidungsregister geladen' : 'Keine Registerdateien gefunden';
+      } catch (_) {
+        document.getElementById('governance-status-badge').textContent = '● Status nicht geprüft';
+        document.getElementById('locks-count-badge').textContent = 'Lock-Lage unbekannt';
+        document.getElementById('decisions-count-badge').textContent = 'Entscheidungen nicht geprüft';
+      }
+    }
+
+    function sendFunkMessage() {
+      document.getElementById('funk-msg').setCustomValidity('Kein Zustell-Endpunkt angebunden');
+    }
+    loadGovernanceStatus();
+  </script>
+</BachLayout>

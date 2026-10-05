@@ -1176,10 +1176,11 @@ class TestControlHandlerEndpoints:
             assert "completed" not in statuses
             assert activities[-1] == "error"
 
-    def test_get_slots_and_activity(self):
+    def test_get_slots_and_activity(self, monkeypatch):
         initialize_slots_config()
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         handler = ControlHandler.__new__(ControlHandler)
-        handler.headers = {}
+        handler.headers = {"Authorization": "Bearer test-control-token"}
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()
@@ -1205,9 +1206,10 @@ class TestControlHandlerEndpoints:
             assert "buddha_chat" in html
             assert "buddha_always_on" in html
 
-    def test_get_prompts_and_history(self):
+    def test_get_prompts_and_history(self, monkeypatch):
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         handler = ControlHandler.__new__(ControlHandler)
-        handler.headers = {}
+        handler.headers = {"Authorization": "Bearer test-control-token"}
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()

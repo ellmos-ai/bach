@@ -43,6 +43,11 @@ from hub._services.trithon.routing_contract import (
     claim_contract,
     record_receipt,
 )
+from hub._services.task_lease import (
+    acquire_lease,
+    ensure_task_lease_schema,
+    release_lease,
+)
 from hub.task_audit import claim_task_atomic
 
 
@@ -225,29 +230,41 @@ def execute_intent_v1(
             path=str(ticket.slots_path),
         )
 
-        # 2. Atomares Claim des Tasks.
-        claimed = claim_task_atomic(
+        # 2. Gefenctes Claim des Tasks gemäss Salt-Lease-Vertrag (BACH #1722).
+        worker_id = (
+            assignment.agent_instance_id
+            if "@" in assignment.agent_instance_id
+            else f"{assignment.agent_instance_id}@{ticket.host}"
+        )
+        host = worker_id.rsplit("@", 1)[1]
+        ensure_task_lease_schema(conn)
+        lease_res = acquire_lease(
             conn,
             ticket.task_id,
-            assignment.agent_instance_id,
-            lease_seconds=lease_seconds,
+            worker_id=worker_id,
+            host=host,
+            request_id=run_id,
+            intent=str(ticket.intent)[:500],
         )
-        if not claimed:
+        if not lease_res.granted:
             finish_assignment(
                 assignment,
                 status="interrupted",
-                reason="task_claim_failed_or_task_terminal",
+                reason=f"task_claim_failed_{lease_res.payload.get('reason')}",
                 path=str(ticket.slots_path),
             )
             return {
                 "success": False,
                 "status": "claim_failed",
+                "reason": lease_res.payload.get("reason"),
                 "ticket_id": ticket.ticket_id,
                 "task_id": ticket.task_id,
                 "assignment_id": assignment.assignment_id,
                 "run_id": run_id,
             }
-        conn.commit()
+
+        lease_id = str(lease_res.payload["lease_id"])
+        fence = int(lease_res.payload["fence"])
 
         # 2b. Atomares Claim des Tickets im Ledger.
         try:
@@ -283,27 +300,45 @@ def execute_intent_v1(
         evidence = executor.execute(run, ticket)
         run.ended_at = _utc_now()
 
-        # 5. Outcome + Receipt.
+        # 5. Outcome + Receipt (inklusive Fencing-Nachweis).
         outcome = propose_outcome(run, evidence)
-        receipt = generate_receipt(run, assignment, outcome, evidence)
+        evidence_with_fence = dict(evidence)
+        evidence_with_fence["lease_id"] = lease_id
+        evidence_with_fence["claim_fence"] = fence
+        evidence_with_fence["worker_id"] = worker_id
+        evidence_with_fence["host"] = host
+        receipt = generate_receipt(run, assignment, outcome, evidence_with_fence)
 
         # 6. Im Ledger recorden.
         dispatch_to_ticket_master(ticket, receipt)
 
-        # 6b. Task in DB auf done setzen wenn erfolgreich
-        if outcome.get("status") == "done":
-            now_iso = _utc_now()
-            conn.execute(
-                "UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?",
-                (now_iso, now_iso, ticket.task_id),
+        # 6b. Task in DB via Lease-Release abschließen (Vertrag §5.4 / fail-closed)
+        outcome_val = "done" if outcome.get("status") == "done" else "return"
+        lease_rel = release_lease(
+            conn,
+            ticket.task_id,
+            lease_id=lease_id,
+            fence=fence,
+            outcome=outcome_val,
+            result_ref=f"run:{run_id}",
+            note=f"Trithon dispatch receipt {receipt.signature}",
+        )
+        if lease_rel.http_status != 200 or not lease_rel.payload.get("released"):
+            finish_assignment(
+                assignment,
+                status="interrupted",
+                reason=f"lease_release_failed_{lease_rel.payload.get('reason')}",
+                path=str(ticket.slots_path),
             )
-            conn.execute(
-                """INSERT INTO task_history
-                   (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (ticket.task_id, "status_change", "status", "in_progress", "done", assignment.agent_instance_id, now_iso),
-            )
-            conn.commit()
+            return {
+                "success": False,
+                "status": "release_failed",
+                "reason": lease_rel.payload.get("reason"),
+                "ticket_id": ticket.ticket_id,
+                "task_id": ticket.task_id,
+                "assignment_id": assignment.assignment_id,
+                "run_id": run_id,
+            }
 
         # 7. Besetzung beenden.
         assignment_status = "completed" if outcome["status"] == "done" else "error"
@@ -323,6 +358,8 @@ def execute_intent_v1(
             "assignment_id": assignment.assignment_id,
             "run_id": run_id,
             "receipt_signature": receipt.signature,
+            "lease_id": lease_id,
+            "fence": fence,
         }
 
     except AssignmentDenied as exc:

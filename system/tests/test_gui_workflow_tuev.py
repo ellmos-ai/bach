@@ -16,13 +16,15 @@ if str(SYSTEM_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     try:
         from starlette.testclient import TestClient
     except ImportError:
         pytest.skip("starlette not available")
-    from gui.server import app
-    return TestClient(app, raise_server_exceptions=False)
+    from gui import server
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "workflow-fixture" else None)
+    return TestClient(server.app, raise_server_exceptions=False,
+                      headers={"Authorization": "Bearer workflow-fixture"})
 
 
 class TestWorkflowTuevPage:
