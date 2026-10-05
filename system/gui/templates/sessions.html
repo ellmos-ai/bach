@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <script src="/static/js/device-fetch.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Sessions & Protokolle</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .sessions-container {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+        .tab-bar {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .tab-btn {
+            padding: 0.6rem 1.2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm, 6px);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .tab-btn:hover {
+            background: var(--bg-hover, rgba(255,255,255,0.05));
+            color: var(--text);
+        }
+        .tab-btn.active {
+            background: var(--accent);
+            color: #0b0d14;
+            font-weight: 600;
+            border-color: var(--accent);
+        }
+        .tab-pane {
+            display: none;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+        .tab-pane.active {
+            display: flex;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md, 8px);
+            padding: 1.5rem;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        .data-table th, .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .data-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+        }
+        .badge-accent {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <header id="main-header"></header>
+
+    <main class="sessions-container">
+        <div class="page-header">
+            <div>
+                <h1 style="font-size:1.75rem;font-weight:700;margin:0 0 0.25rem 0;">📜 Sessions, Protokolle & Gedächtnis</h1>
+                <p style="color:var(--text-muted);margin:0;font-size:0.9rem;">
+                    Quellengetreue Einsicht in vergangene Dialog-Sessions, Lessons Learned, Arbeitsgedächtnis und Kognitive Topologie (GUX-042).
+                </p>
+            </div>
+            <div>
+                <button class="btn btn-secondary" onclick="refreshCurrentTab()">🔄 Aktualisieren</button>
+            </div>
+        </div>
+
+        <!-- Tab Bar -->
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="sessions">📜 1. Sitzungsübersicht (memory_sessions)</button>
+            <button class="tab-btn" data-tab="lessons">💡 2. Lessons & Best Practices</button>
+            <button class="tab-btn" data-tab="working">🧠 3. Aktives Arbeitsgedächtnis</button>
+            <button class="tab-btn" data-tab="cognitive">📊 4. Kognitiver Schaltplan & Topologie</button>
+        </div>
+
+        <!-- TAB 1: SESSIONS -->
+        <div class="tab-pane active" id="pane-sessions">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <div>
+                        <h3 style="margin:0 0 0.25rem 0;">Historische Dialog- und Agenten-Sitzungen</h3>
+                        <p style="margin:0;color:var(--text-muted);font-size:0.825rem;">Echte erfasste Sitzungen mit Metadaten aus <code>memory_sessions</code>.</p>
+                    </div>
+                    <span class="badge" id="sessions-count">0 Sitzungen</span>
+                </div>
+                <div id="sessions-list">
+                    <p style="color:var(--text-muted);">Lade Sitzungen...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: LESSONS LEARNED -->
+        <div class="tab-pane" id="pane-lessons">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <div>
+                        <h3 style="margin:0 0 0.25rem 0;">Lessons Learned & Best Practices</h3>
+                        <p style="margin:0;color:var(--text-muted);font-size:0.825rem;">Schema-agnostisch geladen über den robusten USMC/BACH Reader (GUX-041/042).</p>
+                    </div>
+                    <span class="badge badge-accent" id="lessons-count">0 Lessons</span>
+                </div>
+                <div id="lessons-list">
+                    <p style="color:var(--text-muted);">Lade Lessons...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: WORKING MEMORY -->
+        <div class="tab-pane" id="pane-working">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <div>
+                        <h3 style="margin:0 0 0.25rem 0;">Aktives Arbeitsgedächtnis (Baddeley Working Memory)</h3>
+                        <p style="margin:0;color:var(--text-muted);font-size:0.825rem;">Flüchtige Notizen, Scratchpads und aktive CoT-Zwischenspeicher aus <code>memory_working</code>.</p>
+                    </div>
+                    <span class="badge" id="working-count">0 Einträge</span>
+                </div>
+                <div id="working-list">
+                    <p style="color:var(--text-muted);">Lade Arbeitsgedächtnis...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: COGNITIVE TOPOLOGY -->
+        <div class="tab-pane" id="pane-cognitive">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <div>
+                        <h3 style="margin:0 0 0.25rem 0;">Kognitiver Schaltplan & 8 Prozessblöcke</h3>
+                        <p style="margin:0;color:var(--text-muted);font-size:0.825rem;">Live-Telemetrie und Status der 8 kognitiven Prozessblöcke aus der Prozess-Topologie (GUX-032..041).</p>
+                    </div>
+                    <span class="badge badge-accent">8 Blöcke verifiziert</span>
+                </div>
+                <div id="cognitive-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+                    <p style="color:var(--text-muted);">Lade kognitive Topologie...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/nav.js?v=4"></script>
+    <script>
+        let currentTab = 'sessions';
+
+        function esc(str) {
+            return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function setupTabs() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tab = btn.getAttribute('data-tab');
+                    currentTab = tab;
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                    btn.classList.add('active');
+                    const target = document.getElementById('pane-' + tab);
+                    if (target) target.classList.add('active');
+                    loadTabData(tab);
+                });
+            });
+        }
+
+        function refreshCurrentTab() {
+            loadTabData(currentTab);
+        }
+
+        function loadTabData(tab) {
+            if (tab === 'sessions') loadSessions();
+            else if (tab === 'lessons') loadLessons();
+            else if (tab === 'working') loadWorking();
+            else if (tab === 'cognitive') loadCognitive();
+        }
+
+        async function loadSessions() {
+            const container = document.getElementById('sessions-list');
+            try {
+                const res = await fetch('/api/memory/sessions?limit=30');
+                const data = await res.json();
+                const sessions = data.sessions || [];
+                document.getElementById('sessions-count').textContent = `${sessions.length} Sitzungen`;
+                if (!sessions.length) {
+                    container.innerHTML = '<p style="color:var(--text-muted);">Keine vergangenen Sitzungen erfasst.</p>';
+                    return;
+                }
+                container.innerHTML = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Session ID</th>
+                                <th>Startzeit</th>
+                                <th>Endzeit</th>
+                                <th>Zusammenfassung</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sessions.map(s => `
+                                <tr>
+                                    <td>#${esc(s.id)}</td>
+                                    <td><code>${esc(s.session_id ? s.session_id.substring(0, 16) + '...' : '-')}</code></td>
+                                    <td>${esc(s.started_at || '-')}</td>
+                                    <td>${esc(s.ended_at || '-')}</td>
+                                    <td><strong>${esc(s.summary || 'Keine Zusammenfassung')}</strong></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (e) {
+                container.innerHTML = '<p style="color:var(--error);">Fehler beim Laden der Sitzungen.</p>';
+            }
+        }
+
+        async function loadLessons() {
+            const container = document.getElementById('lessons-list');
+            try {
+                const res = await fetch('/api/memory/usmc-lessons-safe?limit=50');
+                const data = await res.json();
+                const lessons = data.lessons || [];
+                document.getElementById('lessons-count').textContent = `${lessons.length} Lessons (${data.table_used || 'memory_lessons'})`;
+                if (!lessons.length) {
+                    container.innerHTML = '<p style="color:var(--text-muted);">Keine Lessons Learned gefunden.</p>';
+                    return;
+                }
+                container.innerHTML = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Kategorie</th>
+                                <th>Titel</th>
+                                <th>Erkenntnis / Lösung</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${lessons.map(l => `
+                                <tr>
+                                    <td>#${esc(l.id)}</td>
+                                    <td><span class="badge">${esc(l.category || 'general')}</span></td>
+                                    <td><strong>${esc(l.title)}</strong></td>
+                                    <td>${esc(l.solution)}</td>
+                                    <td><span class="badge ${l.is_active ? 'badge-accent' : ''}">${l.is_active ? 'Aktiv' : 'Inaktiv'}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (e) {
+                container.innerHTML = '<p style="color:var(--error);">Fehler beim Laden der Lessons Learned.</p>';
+            }
+        }
+
+        async function loadWorking() {
+            const container = document.getElementById('working-list');
+            try {
+                const res = await fetch('/api/memory/working');
+                const data = await res.json();
+                const items = data.working || [];
+                document.getElementById('working-count').textContent = `${items.length} Einträge`;
+                if (!items.length) {
+                    container.innerHTML = '<p style="color:var(--text-muted);">Keine aktiven Arbeitsgedächtnis-Einträge vorhanden.</p>';
+                    return;
+                }
+                container.innerHTML = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Typ</th>
+                                <th>Inhalt</th>
+                                <th>Erstellt am</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map(w => `
+                                <tr>
+                                    <td>#${esc(w.id)}</td>
+                                    <td><span class="badge badge-accent">${esc(w.type || 'scratchpad')}</span></td>
+                                    <td>${esc(w.content)}</td>
+                                    <td><small>${esc(w.created_at || '-')}</small></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (e) {
+                container.innerHTML = '<p style="color:var(--error);">Fehler beim Laden des Arbeitsgedächtnisses.</p>';
+            }
+        }
+
+        async function loadCognitive() {
+            const container = document.getElementById('cognitive-grid');
+            try {
+                const res = await fetch('/api/cognitive/topology');
+                const data = await res.json();
+                const blocks = data.blocks || {};
+                const keys = Object.keys(blocks);
+                if (!keys.length) {
+                    container.innerHTML = '<p style="color:var(--text-muted);">Keine Topologie-Daten verfügbar.</p>';
+                    return;
+                }
+                container.innerHTML = keys.map(k => {
+                    const b = blocks[k];
+                    return `
+                        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+                            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.4rem;">
+                                <strong style="font-size:0.95rem;">${esc(b.title)}</strong>
+                                <span class="badge badge-accent">${esc(b.status)}</span>
+                            </div>
+                            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">${esc(b.sub)}</div>
+                            <div style="font-size:0.825rem;line-height:1.4;">${esc(b.role)}</div>
+                            <div style="margin-top:0.6rem;padding-top:0.4rem;border-top:1px solid var(--border);font-size:0.75rem;color:var(--text-muted);">
+                                Quelle: <code>${esc(b.data_source)}</code>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = '<p style="color:var(--error);">Fehler beim Laden der Topologie.</p>';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof loadNavigationConfig === 'function') loadNavigationConfig();
+            setupTabs();
+            loadSessions();
+        });
+    </script>
+</body>
+</html>

@@ -585,6 +585,12 @@
                     <label>Geschätzte Dauer (Minuten)</label>
                     <input type="number" id="routine-duration" min="0" placeholder="z.B. 30">
                 </div>
+                <div class="form-group">
+                    <label>Gebundener Agent (Agenten-Fabrik)</label>
+                    <select id="routine-agent">
+                        <option value="">Kein Agent (Manuell)</option>
+                    </select>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('routine-modal')">Abbrechen</button>
                     <button type="submit" class="btn btn-primary">Speichern</button>
@@ -665,7 +671,26 @@
 
         // ── Initialisierung ──
 
+        async function loadAgentOptions() {
+            try {
+                const res = await routineFetch('/api/agents');
+                if (!res.ok) return;
+                const data = await res.json();
+                const agents = data.agents || [];
+                const select = document.getElementById('routine-agent');
+                if (!select) return;
+                select.innerHTML = '<option value="">Kein Agent (Manuell)</option>';
+                for (const ag of agents) {
+                    const opt = document.createElement('option');
+                    opt.value = ag.name;
+                    opt.textContent = ag.display_name ? `${ag.display_name} (${ag.name})` : ag.name;
+                    select.appendChild(opt);
+                }
+            } catch (_) {}
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            loadAgentOptions();
             const urlParams = new URLSearchParams(window.location.search);
             const tab = urlParams.get('tab');
             if (tab === 'ocean') {
@@ -733,6 +758,7 @@
                         <h4>
                             ${escapeHtml(routine.name)}
                             ${intervalBadge}
+                            ${routine.assigned_agent ? `<span class="badge agent" style="background: rgba(147, 51, 234, 0.2); border: 1px solid var(--accent-purple, #a855f7); color: #c084fc;">🤖 ${escapeHtml(routine.assigned_agent)}</span>` : ''}
                             ${!routine.is_active ? '<span class="badge inactive">Inaktiv</span>' : ''}
                         </h4>
                         <div class="meta">
@@ -762,6 +788,7 @@
             document.getElementById('routine-modal-title').textContent = 'Neue Routine';
             document.getElementById('routine-form').reset();
             document.getElementById('routine-edit-id').value = '';
+            document.getElementById('routine-agent').value = '';
             document.getElementById('routine-modal').classList.add('active');
         }
 
@@ -786,6 +813,7 @@
                 document.getElementById('routine-interval-value').value = r.interval_value || 1;
                 document.getElementById('routine-specific-day').value = r.specific_day || '';
                 document.getElementById('routine-duration').value = r.duration_minutes || '';
+                document.getElementById('routine-agent').value = r.assigned_agent || '';
 
                 document.getElementById('routine-modal').classList.add('active');
             } catch (e) { console.error(e); }
@@ -802,7 +830,8 @@
                 interval_type: document.getElementById('routine-interval').value,
                 interval_value: parseInt(document.getElementById('routine-interval-value').value) || 1,
                 specific_day: document.getElementById('routine-specific-day').value,
-                duration_minutes: parseInt(document.getElementById('routine-duration').value) || null
+                duration_minutes: parseInt(document.getElementById('routine-duration').value) || null,
+                assigned_agent: document.getElementById('routine-agent').value || null
             };
 
             try {

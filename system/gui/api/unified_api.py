@@ -54,6 +54,16 @@ from hub._services.blueprint_service import (
     start_blueprint_worker as svc_start_blueprint_worker,
     synthesize_start_prompt,
 )
+from hub._services.cognitive_service import (
+    CANONICAL_MERMAID_DIAGRAM,
+    DIAGRAM_LEGEND,
+    get_cognitive_topology,
+    get_process_block,
+    read_usmc_lessons_safe,
+    archive_denkarium_entry,
+    unarchive_denkarium_entry,
+    list_denkarium_entries,
+)
 
 router = APIRouter(prefix="/api", tags=["unified"])
 _COMPARE_RACE_LOCK = asyncio.Lock()
@@ -1329,56 +1339,57 @@ async def toggle_plugin_socket(payload: Dict[str, Any] = Body(...)):
 
 @router.get("/capabilities/mcp/cookbooks")
 async def get_mcp_cookbooks():
-    """Liefert MCP-Server als gestaltete Cookbooks (Zutaten = Tools, Rezepte = Prompts)."""
-    cookbooks = [
-        {
-            "id": "open-compute",
-            "title": "Open-Compute Cookbook",
-            "subtitle": "Desktop- & UI-Automationsrezepte",
-            "cover_color": "linear-gradient(135deg, #1e1e38 0%, #2d1e4e 100%)",
-            "ingredients": ["capture", "list_windows", "do", "click_name", "tree", "signal_show"],
-            "recipes": [
-                {"title": "Screen-Inspektion & Orientierung", "prompt": "capture() -> tree() -> UI-Element lokalisieren"},
-                {"title": "Fenster-Aktivierung & BringToFront", "prompt": "list_windows() -> window_token -> do(activate_window)"},
-                {"title": "Sicherer 1-Click UI-Tastendruck", "prompt": "invoke(query='Submit', exact=True)"}
-            ]
-        },
-        {
-            "id": "filecommander",
-            "title": "FileCommander Cookbook",
-            "subtitle": "Dateisystem & Dateioperationen",
-            "cover_color": "linear-gradient(135deg, #1a2f3b 0%, #0d3b4a 100%)",
-            "ingredients": ["fc_read_file", "fc_write_file", "fc_search_files", "fc_check_cloud_lock", "fc_str_replace"],
-            "recipes": [
-                {"title": "Fail-Closed Cloud-Lock Vorprüfung", "prompt": "fc_check_cloud_lock(path) vor jeder Dateiänderung"},
-                {"title": "Punktgenauer String-Ersatz", "prompt": "fc_str_replace(target, old_str, new_str)"},
-                {"title": "Föderierte Datei-Inhalts-Suche", "prompt": "fc_search_content(query, extension='.md')"}
-            ]
-        },
-        {
-            "id": "controlcenter",
-            "title": "ControlCenter Cookbook",
-            "subtitle": "Governance, Profile & Bundles",
-            "cover_color": "linear-gradient(135deg, #3b2020 0%, #4a1525 100%)",
-            "ingredients": ["controlcenter_find_skill", "controlcenter_switch_profile", "controlcenter_list_tools", "controlcenter_check_lock"],
-            "recipes": [
-                {"title": "Semantischer Skill-Router", "prompt": "controlcenter_find_skill(query='Refactoring')"},
-                {"title": "Profil-Switch & Berechtigung", "prompt": "controlcenter_switch_profile(profile='dev')"},
-                {"title": "Lock-Master Sicherheitscheck", "prompt": "controlcenter_check_lock(path) vor Commit"}
-            ]
-        },
-        {
-            "id": "markitdown",
-            "title": "MarkItDown Cookbook",
-            "subtitle": "Dokumenten-Konvertierung",
-            "cover_color": "linear-gradient(135deg, #1b3826 0%, #15452d 100%)",
-            "ingredients": ["convert_to_markdown"],
-            "recipes": [
-                {"title": "PDF & Office zu Markdown", "prompt": "convert_to_markdown(path='paper.pdf') -> Chunker-Ready"}
-            ]
-        }
-    ]
-    return {"cookbooks": cookbooks, "count": len(cookbooks), "source": "static_examples", "live_discovery": False}
+    """Liefert MCP-Server als gestaltete Fachbuecher mit Blaetteransicht (4 Seiten: Deckel, Tools, Rezepte, Absicherung)."""
+    from hub._services.mcp_cookbook_service import get_mcp_cookbooks as fetch_cookbooks
+    return fetch_cookbooks()
+
+
+@router.get("/capabilities/mcp/cookbooks/{server_id}")
+async def get_mcp_cookbook_detail(server_id: str):
+    """Liefert die vollstaendige 4-Seiten-Blaetteransicht eines einzelnen MCP-Fachbuchs."""
+    from hub._services.mcp_cookbook_service import get_mcp_cookbook_by_id
+    book = get_mcp_cookbook_by_id(server_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"MCP-Fachbuch '{server_id}' nicht gefunden")
+    return book
+
+
+@router.post("/capabilities/mcp/disconnect")
+async def disconnect_mcp_server(payload: Dict[str, Any] = Body(...)):
+    """Fuehrt einen autoritativen Hard-Disconnect fuer einen MCP-Server durch."""
+    from hub._services.mcp_cookbook_service import perform_hard_disconnect
+    server_id = payload.get("server_id")
+    if not server_id:
+        raise HTTPException(status_code=400, detail="server_id erforderlich")
+    force = bool(payload.get("force", False))
+    operator = str(payload.get("operator", "user"))
+
+    receipt = perform_hard_disconnect(server_id, force=force, operator=operator)
+    if receipt.get("status") == "rejected_unknown_server":
+        raise HTTPException(status_code=400, detail=f"Unbekannter MCP-Server: {server_id}")
+
+    # Synchronisiere Steckdosenleiste: bei Hard-Disconnect Stecker auf ausgezogen (is_plugged=0) setzen
+    try:
+        conn = _get_conn()
+        _ensure_capabilities_db(conn)
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE plugin_sockets SET is_plugged = 0, updated_at = ? WHERE name = ?
+        """, (now, server_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning("Konnte plugin_sockets nach Hard-Disconnect nicht aktualisieren: %s", e)
+
+    return receipt
+
+
+@router.get("/capabilities/mcp/disconnect/status")
+async def get_disconnect_status_endpoint(server_id: str = Query(..., description="Server-ID")):
+    """Liefert den aktuellen Prozess- und Disconnect-Status eines MCP-Servers."""
+    from hub._services.mcp_cookbook_service import get_hard_disconnect_status
+    return get_hard_disconnect_status(server_id)
 
 
 @router.get("/capabilities/tiers")
@@ -1526,6 +1537,8 @@ async def get_cognitive_state():
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "availability": "available" if db_error is None else "unavailable",
         "error": db_error,
+        "mermaid_code": CANONICAL_MERMAID_DIAGRAM,
+        "legend": DIAGRAM_LEGEND,
         "zentrale_exekutive": {
             "title": "Zentrale Exekutive (Steuerung, Wille & Aufsicht)",
             "models": {
@@ -1879,6 +1892,77 @@ async def get_cognitive_state():
 
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# 5b. KOGNITIVER SCHALTPLAN & PROZESS-TOPOLOGIE (GUX-032..043)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/cognitive/topology")
+async def get_cognitive_topology_endpoint():
+    """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
+    try:
+        conn = _get_conn()
+        res = get_cognitive_topology(conn)
+        conn.close()
+        return res
+    except Exception as e:
+        logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
+        return {"success": False, "error": str(e), "blocks": {}}
+
+
+@router.get("/cognitive/blocks/{block_id}")
+async def get_cognitive_block_endpoint(block_id: str):
+    """Liefert detaillierte Inspektionsdaten zu einem der 8 kognitiven Prozessblöcke (GUX-034..041)."""
+    try:
+        conn = _get_conn()
+        res = get_process_block(block_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Abruf des Prozessblocks %s: %s", block_id, e)
+        return {"success": False, "error": str(e), "block": None}
+
+
+@router.get("/memory/usmc-lessons-safe")
+async def get_usmc_lessons_safe_endpoint(limit: int = 50, category: Optional[str] = None):
+    """Schema-agnostischer, robuster Reader für USMC Lessons Learned (GUX-041/042)."""
+    return read_usmc_lessons_safe(limit=limit, category=category)
+
+
+@router.post("/denkarium/{entry_id}/archive")
+async def archive_denkarium_endpoint(entry_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Reversible Archivierung von technischen Agent-Dumps im Denkarium (GUX-043)."""
+    reason = payload.get("reason", "wrong_agent_dump") if isinstance(payload, dict) else "wrong_agent_dump"
+    try:
+        conn = _get_conn()
+        res = archive_denkarium_entry(entry_id, reason=reason, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Archivieren des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/denkarium/{entry_id}/unarchive")
+async def unarchive_denkarium_endpoint(entry_id: int):
+    """Wiederherstellung eines archivierten Denkarium-Eintrags (GUX-043)."""
+    try:
+        conn = _get_conn()
+        res = unarchive_denkarium_entry(entry_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Wiederherstellen des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # ═══════════════════════════════════════════════════════════════
 # 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
 # ═══════════════════════════════════════════════════════════════
@@ -2022,7 +2106,7 @@ async def get_memory_sessions(limit: int = 20):
         _ensure_capabilities_db(conn)
         conn.row_factory = sqlite3.Row
         rows = conn.execute("""
-            SELECT id, session_id, started_at, ended_at, summary
+            SELECT *
             FROM memory_sessions
             ORDER BY id DESC LIMIT ?
         """, (limit,)).fetchall()
@@ -2304,7 +2388,8 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
 async def get_calendar_events(
     view: str = Query("month", description="day|week|month|year|list"),
     date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
-    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden")
+    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden"),
+    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown")
 ):
     """Liefert Termine aus assistant_calendar und optionale fällige Routinen."""
     conn = _get_conn()
@@ -2371,7 +2456,17 @@ async def get_calendar_events(
             except Exception:
                 pass
 
-        return {"events": events, "count": len(events), "view": view, "date": date}
+        if origin and origin != "all":
+            if origin == "system":
+                events = [e for e in events if e.get("origin") == "system"]
+            elif origin == "user":
+                events = [e for e in events if e.get("origin") == "user"]
+            elif origin in ("without_system", "ohne_system", "no_system"):
+                events = [e for e in events if e.get("origin") != "system"]
+            elif origin == "unknown":
+                events = [e for e in events if e.get("origin") == "unknown"]
+
+        return {"events": events, "count": len(events), "view": view, "date": date, "origin": origin}
     finally:
         conn.close()
 
