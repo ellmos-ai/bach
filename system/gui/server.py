@@ -1583,6 +1583,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/gui/brand",
         "/api/gui/kit-manifest",
         "/api/gui/architecture/concepts",
+        "/api/capabilities/mcp/cookbooks",
     }
 
     async def _require_device(self, request: Request, call_next):
