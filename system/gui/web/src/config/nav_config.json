@@ -129,6 +129,12 @@
         "description": "Baukasten: Einzelagenten, Teambuilding (Swarm) & Ketten-Staffel"
       },
       {
+        "href": "/agenten/blueprints",
+        "label": "Blueprints (Vorlagen)",
+        "icon": "📐",
+        "description": "Vorlagen-Bibliothek: Agenten, Rollen, Workflows, Services & Contractus"
+      },
+      {
         "href": "/agenten/running",
         "label": "Living & Running",
         "icon": "⚡",

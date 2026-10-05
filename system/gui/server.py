@@ -1523,6 +1523,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/ocean",
         "/",
         "/agenten/fabrika",
+        "/agenten/blueprints",
         "/agenten/running",
         "/agenten/marblerun",
         "/governance",
@@ -5017,7 +5018,21 @@ async def agenten_fabrika_page():
     p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
     if p.exists():
         return FileResponse(p)
+    template_file = TEMPLATES_DIR / "agents.html"
+    if template_file.exists():
+        return FileResponse(template_file)
     raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
+
+
+@app.get("/agenten/blueprints", response_class=HTMLResponse)
+async def agenten_blueprints_page():
+    p = ASTRO_DIST_DIR / "agenten" / "blueprints.html"
+    if p.exists():
+        return FileResponse(p)
+    template_file = TEMPLATES_DIR / "blueprints.html"
+    if template_file.exists():
+        return FileResponse(template_file)
+    raise HTTPException(status_code=404, detail="Blueprints-Seite nicht gefunden")
 
 
 @app.get("/agenten/running", response_class=HTMLResponse)
