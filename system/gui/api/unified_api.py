@@ -801,7 +801,8 @@ async def get_marblerun_chains():
         finally:
             conn.close()
     except Exception as e:
-        return {"chains": [], "count": 0, "status": "empty", "note": str(e)}
+        logger.exception("Fehler beim Abruf der MarbleRun-Ketten: %s", e)
+        return {"chains": [], "count": 0, "status": "empty", "note": "Fehler beim Abruf"}
 
 
 @router.post("/marblerun/chains")
@@ -1956,7 +1957,7 @@ async def get_cognitive_topology_endpoint():
         return res
     except Exception as e:
         logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
-        return {"success": False, "error": str(e), "blocks": {}}
+        return {"success": False, "error": "Interner Serverfehler", "blocks": {}}
 
 
 @router.get("/cognitive/blocks/{block_id}")
@@ -1971,7 +1972,7 @@ async def get_cognitive_block_endpoint(block_id: str):
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         logger.exception("Fehler beim Abruf des Prozessblocks %s: %s", block_id, e)
-        return {"success": False, "error": str(e), "block": None}
+        return {"success": False, "error": "Interner Serverfehler", "block": None}
 
 
 @router.get("/memory/usmc-lessons-safe")
@@ -2035,7 +2036,8 @@ async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
         conn.close()
         return {"facts": facts, "count": len(facts)}
     except Exception as e:
-        return {"facts": [], "count": 0, "error": str(e)}
+        logger.exception("Fehler beim Abruf von memory_facts: %s", e)
+        return {"facts": [], "count": 0, "error": "Interner Serverfehler"}
 
 
 @router.post("/memory/facts")
@@ -2081,7 +2083,8 @@ async def get_memory_lessons(limit: int = 50, category: Optional[str] = None):
         conn.close()
         return {"lessons": lessons, "count": len(lessons)}
     except Exception as e:
-        return {"lessons": [], "count": 0, "error": str(e)}
+        logger.exception("Fehler beim Abruf von memory_lessons: %s", e)
+        return {"lessons": [], "count": 0, "error": "Interner Serverfehler"}
 
 
 @router.post("/memory/lessons")
@@ -2123,7 +2126,8 @@ async def get_memory_working():
         conn.close()
         return {"working": working, "count": len(working)}
     except Exception as e:
-        return {"working": [], "count": 0, "error": str(e)}
+        logger.exception("Fehler beim Abruf von memory_working: %s", e)
+        return {"working": [], "count": 0, "error": "Interner Serverfehler"}
 
 
 @router.post("/memory/working")
@@ -2163,7 +2167,8 @@ async def get_memory_sessions(limit: int = 20):
         conn.close()
         return {"sessions": sessions, "count": len(sessions)}
     except Exception as e:
-        return {"sessions": [], "count": 0, "error": str(e)}
+        logger.exception("Fehler beim Abruf von memory_sessions: %s", e)
+        return {"sessions": [], "count": 0, "error": "Interner Serverfehler"}
 
 
 @router.put("/memory/facts/{fact_id}")
@@ -2338,7 +2343,8 @@ async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
             "created_at": result.created_at
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Hermes Distillation Fehler: {str(e)}")
+        logger.exception("Hermes Distillation Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Hermes Distillation Fehler")
 
 
 @router.get("/learning/hermes/candidates")
@@ -2349,7 +2355,8 @@ async def get_hermes_candidates(status: str = Query("pending", description="pend
         candidates = service.list_candidates(status=status, limit=limit)
         return {"candidates": candidates, "count": len(candidates), "status_filter": status}
     except Exception as e:
-        return {"candidates": [], "count": 0, "error": str(e)}
+        logger.exception("Fehler beim Abruf der Hermes-Kandidaten: %s", e)
+        return {"candidates": [], "count": 0, "error": "Interner Serverfehler"}
 
 
 @router.get("/learning/hermes/candidates/{candidate_id}")
@@ -2389,7 +2396,8 @@ async def get_hermes_stats():
     try:
         return service.get_stats()
     except Exception as e:
-        return {"status": "inactive", "error": str(e)}
+        logger.exception("Fehler beim Abruf der Hermes-Statistiken: %s", e)
+        return {"status": "inactive", "error": "Interner Serverfehler"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2425,8 +2433,8 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
         )
         return res
     except Exception as e:
-        logger.error(f"NemoFold Synthesis Fehler: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"NemoFold Synthesis Fehler: {str(e)}")
+        logger.exception("NemoFold Synthesis Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="NemoFold Synthesis Fehler")
 
 
 @router.get("/learning/nemofold/candidates")
@@ -2462,7 +2470,8 @@ async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Freigabe-Fehler: {str(e)}")
+        logger.exception("Freigabe-Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Freigabe-Fehler")
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/reject")
@@ -2477,7 +2486,8 @@ async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] =
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ablehnungs-Fehler: {str(e)}")
+        logger.exception("Ablehnungs-Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Ablehnungs-Fehler")
 
 
 @router.get("/learning/nemofold/stats")
@@ -2487,7 +2497,8 @@ async def get_nemofold_stats():
     try:
         return service.get_stats()
     except Exception as e:
-        return {"status": "inactive", "error": str(e)}
+        logger.exception("Fehler beim Abruf der NemoFold-Statistiken: %s", e)
+        return {"status": "inactive", "error": "Interner Serverfehler"}
 
 
 
