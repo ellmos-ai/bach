@@ -176,14 +176,16 @@ class TestToolLoopIntegration:
         assert any("[OPERATOR-CHECKPOINT" in c and "Baseline ok" in c
                    for c in backend.seen[0])
 
-    def test_ohne_control_bleibt_verhalten_unveraendert(self):
+    def test_ohne_control_nur_rundenzaehler_keine_operator_hinweise(self):
         rt, backend = _runtime()
         session = rt.get_session("telegram-123")
         # operator_control bleibt None (Default)
         answer = asyncio.run(rt._tool_loop([{"role": "user", "content": "Hallo"}],
                                            session, tools=[]))
         assert answer == "Fertig."
-        assert backend.seen[0] == ["Hallo"]
+        assert session.operator_control is None
+        assert backend.seen == [["Hallo", "[Werkzeugrunde 0/12 · noch 12]"]]
+        assert not any("[OPERATOR-" in content for content in backend.seen[0])
 
     def test_pause_verzoegert_den_modellcall_bis_resume(self, tmp_path):
         rt, backend = _runtime()

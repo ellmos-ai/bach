@@ -104,6 +104,7 @@ from hub._services.chat.chat_runtime import (
     SuccessfulAnswer,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
+from hub._services.chat.worker_handoff import WorkerHandoff
 from hub._services.chat.control_auth import (
     get_control_api_token,
     is_control_api_authorized,
@@ -132,6 +133,9 @@ from hub._services.chat.slots_config import (
     reset_prompt_template,
     update_prompt_template,
     update_slot,
+    worker_configuration_snapshot,
+    change_worker_configuration,
+    _worker_configuration,
 )
 
 # Compute Lock (optional — graceful if not available)
@@ -177,6 +181,10 @@ class _WorkerControl:
     stop_activity: str = "Manuell gestoppt"
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
+    handoff: WorkerHandoff = field(init=False)
+
+    def __post_init__(self):
+        self.handoff = WorkerHandoff(self.worker_id, self.generation)
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -184,6 +192,40 @@ class _WorkerControl:
 # reports a pending revocation instead of claiming success.
 _WORKER_STOP_WAIT_SECONDS = 2.0
 _WORKER_CONTROLS: Dict[str, _WorkerControl] = {}
+
+
+def _request_worker_handoff(worker_id: str, generation: str) -> Dict[str, Any]:
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        slot = get_worker_slot(worker_id)
+        if (control is None or not _thread_is_alive(control.thread) or control.stop_event.is_set()
+                or not slot or slot.get("status") != "running"):
+            raise ValueError("Worker ist nicht in einem aktiven Lauf")
+        if slot.get("expires_at"):
+            expiry = datetime.fromisoformat(slot["expires_at"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise ValueError("Worker-Lease ist abgelaufen")
+        return control.handoff.request(generation)
+
+
+def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
+    worker = dict(worker)
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker.get("id"))
+        if control and _thread_is_alive(control.thread) and not control.stop_event.is_set():
+            worker["generation"] = control.generation
+            worker["handoff_receipt"] = control.handoff.snapshot()
+    return worker
+
+
+def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if control is not None and not control.done_event.is_set():
+            raise RuntimeError("worker_not_editable")
+        return change_worker_configuration(worker_id, version, changes)
 
 
 def _thread_is_alive(thread: Optional[threading.Thread]) -> bool:
@@ -431,6 +473,7 @@ def _request_worker_revocation(
             control.stop_activity = activity
             control.requested_at = datetime.now(timezone.utc).isoformat()
             control.stop_event.set()
+            control.handoff.cancel()
         elif control.stop_status is None:
             control.stop_status = final_status
 
@@ -2495,7 +2538,10 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
     if isinstance(answer, SuccessfulAnswer):
-        return {"ok": True, "answer": text}, 200
+        response = {"ok": True, "answer": text}
+        if getattr(answer, "completed_task_ids", ()):
+            response["completed_task_ids"] = list(answer.completed_task_ids)
+        return response, 200
     if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
@@ -2964,11 +3010,21 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            worker_id = parse_qs(parsed_url.query).get("id", [""])[0]
+            try:
+                self._json({"ok": True, **worker_configuration_snapshot(worker_id)})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration nicht verfügbar"}, 503)
+
         elif path == "/api/workers":
             try:
                 self._json({
                     "ok": True,
-                    "workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
+                    "workers": [_worker_handoff_snapshot(worker) for worker in
+                                list_workers(include_expired=True, active_worker_ids=_active_worker_ids())],
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -3372,6 +3428,35 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            try:
+                result = _change_worker_configuration(body.get("id"), body.get("configuration_version"), body.get("changes"))
+                self._json({"ok": True, **result})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except RuntimeError:
+                self._json({"error": "Worker läuft oder Konfiguration inzwischen geändert"}, 409)
+            except (TypeError, ValueError):
+                self._json({"error": "Ungültige Worker-Konfiguration"}, 400)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration konnte nicht bestätigt werden"}, 503)
+
+        elif path == "/api/workers/handoff":
+            worker_id = body.get("id")
+            generation = body.get("generation")
+            if (not isinstance(worker_id, str) or not worker_id or len(worker_id) > 80
+                    or not isinstance(generation, str) or len(generation) != 32
+                    or any(c not in "0123456789abcdef" for c in generation)):
+                self._json({"error": "Worker-ID und aktuelle Generation erforderlich"}, 400)
+                return
+            try:
+                receipt = _request_worker_handoff(worker_id, generation)
+                self._json({"ok": True, "receipt": receipt}, 202)
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 409)
+            except Exception:
+                self._json({"error": "Workerlauf nicht verifizierbar"}, 503)
+
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
@@ -3417,11 +3502,12 @@ class ControlHandler(BaseHTTPRequestHandler):
             # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
             # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
             sub_mode = (w.get("sub_mode") or "").strip().lower()
+            worker_instance_id = f"worker-{uuid.uuid4().hex}"
             try:
                 board_assignment = begin_assignment(
                     role_id=(sub_mode or "task_worker"),
                     mode=(w.get("mode") or "full"),
-                    agent_instance_id=f"worker-{uuid.uuid4().hex}",
+                    agent_instance_id=worker_instance_id,
                     backend_id=w.get("backend") or "ollama",
                     model_id=w.get("model") or "qwen3.8:27b-mlx",
                     slot_id=worker_id,
@@ -3438,6 +3524,9 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             def _run_worker_job():
                 worker_error = None
+                worker_session = None
+                current_assignment = board_assignment
+                assignment_open = True
                 try:
                     if control.stop_event.is_set():
                         return
@@ -3524,11 +3613,27 @@ class ControlHandler(BaseHTTPRequestHandler):
                             worker_id, worker_slot=current_slot
                         )
 
+                        if not assignment_open:
+                            current_assignment = begin_assignment(
+                                role_id=(current_slot.get("sub_mode") or "task_worker"),
+                                mode=(current_slot.get("mode") or "full"),
+                                agent_instance_id=worker_instance_id,
+                                backend_id=current_slot.get("backend") or "ollama",
+                                model_id=model,
+                                slot_id=worker_id,
+                                task_id=current_slot.get("task_id") or 0,
+                                session_id=worker_id,
+                                initiated_by=f"board:{worker_id}",
+                            )
+                            assignment_open = True
+
                         if control.stop_event.is_set():
                             break
                         loop = asyncio.new_event_loop()
                         ans = ""
                         try:
+                            worker_session = runtime.get_session(worker_id)
+                            worker_session.worker_handoff = control.handoff
                             ans = loop.run_until_complete(
                                 runtime.process(
                                     prompt_to_run,
@@ -3593,6 +3698,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
+
+                        if task_completed:
+                            finish_assignment(
+                                current_assignment, status="completed", result="task_done",
+                                reason="verified_tool_receipt",
+                            )
+                            assignment_open = False
+                            # Die konfigurierte Task ist nur der erste Auftrag.
+                            # Folgeaufträge dürfen nicht an ihre alte ID gebunden
+                            # bleiben; der nächste Block erhält eine neue Besetzung.
+                            if current_slot.get("task_id") not in (None, "", 0, "0"):
+                                if _update_worker_slot(control, {"task_id": None}) is None:
+                                    break
 
                         # Count a task only when task_manage returned a successful
                         # completion receipt for this worker's assigned task.
@@ -3676,8 +3794,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 _as_status, _as_result, _as_reason = "released", "ttl_expired", ""
                             else:
                                 _as_status, _as_result, _as_reason = "released", "not_finished", ""
-                        finish_assignment(board_assignment, status=_as_status,
-                                          result=_as_result, reason=_as_reason)
+                        if assignment_open:
+                            finish_assignment(current_assignment, status=_as_status,
+                                              result=_as_result, reason=_as_reason)
                     except Exception:
                         log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
                                     exc_info=True)
@@ -3692,6 +3811,16 @@ class ControlHandler(BaseHTTPRequestHandler):
                             ),
                         )
                     with _WORKER_CONTROL_LOCK:
+                        control.handoff.cancel()
+                        if _WORKER_CONTROLS.get(worker_id) is control:
+                            handoff_receipt = control.handoff.snapshot()
+                            if handoff_receipt:
+                                try:
+                                    update_slot(worker_id, {"handoff_receipt": handoff_receipt})
+                                except Exception:
+                                    log.warning("Worker-Übergabebeleg konnte nicht gespeichert werden", exc_info=True)
+                        if worker_session is not None and getattr(worker_session, "worker_handoff", None) is control.handoff:
+                            worker_session.worker_handoff = None
                         registered_thread = _ACTIVE_WORKER_THREADS.get(worker_id)
                         if registered_thread is threading.current_thread() or registered_thread is control.thread:
                             _ACTIVE_WORKER_THREADS.pop(worker_id, None)
@@ -3701,6 +3830,14 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
             with _WORKER_CONTROL_LOCK:
+                current_control = _WORKER_CONTROLS.get(worker_id)
+                current_slot = get_worker_slot(worker_id)
+                if (current_control is not None and _thread_is_alive(current_control.thread)
+                        or not current_slot
+                        or _worker_configuration(current_slot) != _worker_configuration(w)):
+                    finish_assignment(board_assignment, status="interrupted", result="start_conflict", reason="configuration_changed")
+                    self._json({"error": "Worker oder Konfiguration inzwischen geändert"}, 409)
+                    return
                 control.thread = th
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = th

@@ -1281,7 +1281,7 @@ class TestTrayIdleWorker:
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "0"}).idle_enabled is False
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "off"}).idle_enabled is False
 
-    def test_idle_worker_picks_open_ollama_task_and_writes_canonical_status(self, monkeypatch):
+    def test_idle_worker_picks_open_ollama_task_and_accepts_tool_receipt(self, monkeypatch):
         tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
         calls = []
 
@@ -1292,7 +1292,7 @@ class TestTrayIdleWorker:
                     return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
                 return {"success": True, "tasks": []}
             if method == "POST":
-                return {"ok": True, "answer": "done"}
+                return {"ok": True, "answer": "done", "completed_task_ids": [42]}
             return {"success": True}
 
         with patch.object(tray, "_api", side_effect=fake_api):
@@ -1301,7 +1301,7 @@ class TestTrayIdleWorker:
         gets = [p for m, p, _ in calls if m == "GET"]
         assert gets[:2] == ["/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "completed")]
+        assert puts == [("/api/tasks/42", "in_progress")]
         assert tray.idle_processing is False
 
     def test_idle_worker_keeps_task_in_progress_when_chat_outcome_is_unknown(self, monkeypatch):
@@ -1366,6 +1366,13 @@ class TestTrayIdleWorker:
         assert tray.idle_pending[0] == task_id
         return tray
 
+    def test_repeated_task_runs_use_different_timeout_sessions(self, monkeypatch):
+        first = self._tray_with_pending(monkeypatch).idle_pending[3]
+        second = self._tray_with_pending(monkeypatch).idle_pending[3]
+        assert first.startswith("idle-bach-42-")
+        assert second.startswith("idle-bach-42-")
+        assert first != second, "A new run must never consume an old run's completion"
+
     @staticmethod
     def _history(*answers):
         messages = [{"role": "user", "content": "Idle-Modus. Task #42: T"}]
@@ -1380,13 +1387,15 @@ class TestTrayIdleWorker:
         def fake_api(method, path, data=None, **kw):
             calls.append((method, path, data))
             if path.startswith("/api/history"):
-                return self._history(("Wartungscheck erledigt.", True))
+                history = self._history(("Wartungscheck erledigt.", True))
+                history["messages"][-1]["completed_task_ids"] = [42]
+                return history
             return {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):
             tray._process_idle_task()
 
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "completed")]
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == []
         assert tray.idle_pending is None
 
     def test_idle_worker_reopens_a_late_failure_instead_of_completing_it(self, monkeypatch):
@@ -1398,6 +1407,8 @@ class TestTrayIdleWorker:
             calls.append((method, path, data))
             if path.startswith("/api/history"):
                 return self._history(("Backend-Fehler: Ollama weg", False))
+            if path == "/api/tasks/42":
+                return {"status": "in_progress"}
             return {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):
@@ -1485,6 +1496,8 @@ class TestTrayIdleWorker:
 
         def fake_api(method, path, data=None, **kw):
             calls.append((method, path, data))
+            if path == "/api/tasks/42":
+                return {"status": "in_progress"}
             return self._history() if path.startswith("/api/history") else {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):

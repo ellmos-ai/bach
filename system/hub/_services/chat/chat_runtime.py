@@ -42,6 +42,56 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
+#: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
+_DECOMPOSE_RECEIPT_RE = re.compile(
+    r"Task #(\d+) in (\d+) Teilaufgaben zerlegt: IDs (\[[\d, ]*\])"
+)
+
+#: Nutzerregel (Task #1697): Ein Hintergrundworker, der eine Aufgabe nicht
+#: fertigstellen kann, zerlegt sie selbst und stellt die Teilaufgaben ein.
+#: Das Zerlegen ist ein Erfolg, kein Abbruch.
+SELF_DECOMPOSE_INSTRUCTION = (
+    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
+    "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
+    "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
+    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true). "
+    "Erst wenn das Werkzeug die angelegten Teilaufgaben und den geschlossenen Eltern-Task "
+    "bestätigt, gilt die Zerlegung als erfolgreicher Abschluss dieses Laufs; die Teilaufgaben "
+    "übernimmt ein späterer Lauf. Danach mit FERTIG enden. Ohne bestätigten Werkzeugbeleg "
+    "keinen Taskabschluss behaupten."
+)
+
+
+def tool_round_counter(round_num: int, max_rounds: int) -> str:
+    """Rundenzähler für das Modell, z. B. ``[Werkzeugrunde 3/25 · noch 22]``."""
+    if max_rounds > 0:
+        return f"[Werkzeugrunde {round_num}/{max_rounds} · noch {max(0, max_rounds - round_num)}]"
+    return f"[Werkzeugrunde {round_num} · ohne Limit]"
+
+
+def tool_round_warning_threshold(max_rounds: int) -> int:
+    """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
+    return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
+
+def _resume_handoff_context(original, summary, *, background_task, has_tools,
+                            round_num, max_rounds):
+    """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
+    history = [
+        message for message in summary
+        if message.get("role") != "system"
+        and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not re.fullmatch(
+            r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
+            str(message.get("content", "")),
+        )
+    ]
+    messages = [message for message in original if message.get("role") == "system"] + history
+    if background_task and has_tools:
+        messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+    messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+    return messages, history
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -280,13 +330,13 @@ class FailedAnswer(str):
 
 
 class SuccessfulAnswer(str):
-    """A successful text answer that happens to use the legacy error prefix.
+    """Successful text with explicit status or task completion metadata.
 
     BACH's older order-worker seams are text-only and call ``startswith`` on
     the callback result. This narrow ``str`` subtype keeps the visible answer
     unchanged while making that legacy probe agree with the explicit success
-    status. It is only created for colliding successful text; ordinary answers
-    remain ordinary strings.
+    status. Tool-confirmed task IDs can also travel on this immutable answer
+    instance, rather than a mutable per-chat buffer. Other answers stay strings.
     """
 
     answer_status = FailedAnswer.STATUS_SUCCESS
@@ -389,6 +439,7 @@ class ChatSession(_ModuleChatSession):
         self.profile_context_text: str = ""
         self.chat_id: str = ""
         self.operator_control: Any = None
+        self.worker_handoff: Any = None
 
     @property
     def mode(self) -> str:
@@ -577,7 +628,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-             if key != FailedAnswer.STATUS_KEY}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids")}
             for message in messages
         ]
 
@@ -932,15 +983,18 @@ class ChatRuntime(_ModuleChatRuntime):
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         turn_context = self._compute_turn_context.get()
-        if turn_context is None or not self._uses_local_compute(backend):
+        if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
 
-        chat_id, priority = turn_context
-        await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
-        try:
-            return await backend.chat(*args, **kwargs)
-        finally:
-            self._leave_compute_turn(self._compute_turn_gate)
+        chat_id, priority = turn_context or ("runtime", "foreground")
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        async with HostInferenceGate().turn(chat_id, priority):
+            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
+            try:
+                return await backend.chat(*args, **kwargs)
+            finally:
+                self._leave_compute_turn(self._compute_turn_gate)
 
     def _reset_task_completion_receipts(self, chat_id: str) -> None:
         with self._task_completion_receipts_lock:
@@ -949,7 +1003,13 @@ class ChatRuntime(_ModuleChatRuntime):
     def _record_task_completion_receipt(
         self, chat_id: str, tool_name: str, tool_args: Any, tool_result: str
     ) -> bool:
-        """Record only a successful `task_manage(done)` tool receipt."""
+        """Record a successful `task_manage(done)` or self-decomposition receipt.
+
+        Nutzerregel (Task #1697): Kann der Hintergrundworker eine Aufgabe nicht
+        fertigstellen, zerlegt er sie selbst in kleinere Teilaufgaben und stellt
+        sie ein. Diese Zerlegung ist ein Erfolg. Sie zählt nur, wenn das Werkzeug
+        mindestens eine Teilaufgabe angelegt und den Eltern-Task geschlossen hat.
+        """
         turn_context = self._compute_turn_context.get()
         if (
             turn_context is None
@@ -959,18 +1019,41 @@ class ChatRuntime(_ModuleChatRuntime):
             return False
         if tool_name != "task_manage" or not isinstance(tool_args, dict):
             return False
-        if tool_args.get("action") != "done":
+        action = tool_args.get("action")
+        if action not in ("done", "decompose"):
             return False
         try:
             task_id = int(tool_args.get("task_id"))
         except (TypeError, ValueError):
             return False
-        if task_id <= 0 or str(tool_result).strip() != f"Task #{task_id} erledigt.":
+        if task_id <= 0:
             return False
+        result_text = str(tool_result).strip()
+        if action == "done":
+            if result_text != f"Task #{task_id} erledigt.":
+                return False
+        else:
+            if not tool_args.get("close_parent", True):
+                return False
+            match = _DECOMPOSE_RECEIPT_RE.fullmatch(result_text)
+            if not match or int(match.group(1)) != task_id or int(match.group(2)) < 1:
+                return False
+            try:
+                child_ids = json.loads(match.group(3))
+            except ValueError:
+                return False
+            if (
+                len(child_ids) != int(match.group(2))
+                or any(type(child_id) is not int or child_id <= 0 or child_id == task_id
+                       for child_id in child_ids)
+                or len(set(child_ids)) != len(child_ids)
+            ):
+                return False
         with self._task_completion_receipts_lock:
             receipts = self._task_completion_receipts.setdefault(str(chat_id), [])
-            if task_id not in receipts:
-                receipts.append(task_id)
+            if task_id in receipts:
+                return False
+            receipts.append(task_id)
         return True
 
     def get_last_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
@@ -985,16 +1068,9 @@ class ChatRuntime(_ModuleChatRuntime):
 
     def compute_turn_status(self) -> dict[str, Any]:
         """Return live evidence about which BACH run currently owns local inference."""
-        with self._compute_turn_gate.condition:
-            gate = self._compute_turn_gate
-            return {
-                "active": gate.active,
-                "holder": "BACH" if gate.active else None,
-                "chat_id": gate.chat_id or None,
-                "priority": gate.priority or None,
-                "started_at": gate.started_at,
-                "foreground_waiters": gate.foreground_waiters,
-            }
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        return HostInferenceGate().status()
 
     @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
@@ -1084,7 +1160,9 @@ class ChatRuntime(_ModuleChatRuntime):
         messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
             {"role": m["role"], "content": m.get("content", ""),
-             "ok": not FailedAnswer.message_is_failed(m)}
+             "ok": not FailedAnswer.message_is_failed(m),
+             **({"completed_task_ids": list(m["completed_task_ids"])}
+                if m.get("completed_task_ids") else {})}
             for m in messages
             if m.get("role") in ("user", "assistant")
         ]
@@ -1157,7 +1235,7 @@ REGELN:
 TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
-- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='add', title='Edit: ...') in konkrete Einzelschritte zerlegen.
+- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true) in konkrete Einzelschritte zerlegen. Erst die Werkzeugbestätigung belegt einen Abschluss.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
 - 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
@@ -1355,6 +1433,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         )
 
         if getattr(selected_backend, "manages_own_tools", False):
+            if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
+                msgs[0]["content"] += "\n\n" + SELF_DECOMPOSE_INSTRUCTION
             capability_error = self._worker_backend_gate(session, selected_backend)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
@@ -1379,6 +1459,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 context_limit=context_limit,
             )
         answer = _classify_successful_answer(answer)
+        completed_task_ids = ()
+        if self._compute_turn_context.get() == (str(chat_id), "background") and not isinstance(answer, FailedAnswer):
+            completed_task_ids = self.get_last_task_completion_receipts(chat_id)
+        if completed_task_ids:
+            answer = SuccessfulAnswer(answer)
+            answer.completed_task_ids = completed_task_ids
         session.messages.append({
             "role": "assistant",
             "content": answer,
@@ -1387,6 +1473,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if isinstance(answer, FailedAnswer)
                 else FailedAnswer.STATUS_SUCCESS
             ),
+            **({"completed_task_ids": list(completed_task_ids)} if completed_task_ids else {}),
         })
         self._persist_session(chat_id, session)
         return answer
@@ -1406,6 +1493,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         offered_tools = tools
+        turn_context = self._compute_turn_context.get()
+        background_task = turn_context is not None and turn_context[1] == "background"
+        if background_task and session.allow_tools is True and offered_tools:
+            msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+        msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
         while True:
             capability_error = self._refresh_worker_tools(session)
             if capability_error is not None:
@@ -1443,6 +1535,32 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     # Steuerung darf den Lauf nie gefährden.
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
 
+            handoff_control = getattr(session, "worker_handoff", None)
+            if handoff_control is not None and handoff_control.closed:
+                return FailedAnswer.from_exception(RuntimeError("Workerlauf beendet"))
+            request_id = handoff_control.consume() if handoff_control is not None else None
+            if request_id is not None:
+                try:
+                    summary = await self._handoff(
+                        msgs, session, backend=selected_backend, model=selected_model, strict=True,
+                    )
+                    resumed, history = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
+                    )
+                    if not handoff_control.finish(request_id, succeeded=True):
+                        return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
+                    msgs = resumed
+                    session.messages = history
+                    capability_error = self._refresh_worker_tools(session)
+                    if capability_error is not None:
+                        return capability_error
+                    tools = offered_tools if session.allow_tools is True else []
+                except Exception as exc:
+                    handoff_control.finish(request_id, succeeded=False)
+                    return FailedAnswer.from_exception(exc)
+
             try:
                 result = await self._chat_with_compute_turn(
                     selected_backend,
@@ -1475,12 +1593,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
                 try:
-                    msgs = await self._handoff(
+                    summary = await self._handoff(
                         msgs,
                         session,
                         backend=selected_backend,
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
+                    )
+                    msgs, session.messages = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
                     )
                 except Exception as e:
                     session.current_tool = ""
@@ -1571,6 +1694,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     selected_backend.tool_response_message(str(t_result), tool_call_id)
                 )
 
+            # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
+            # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
+            msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
             # hier oft gefragt werden - sie schweigen selbst, wenn nichts ansteht.
             seit_hook += 1
@@ -1621,15 +1748,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
                     return FailedAnswer.from_exception(e)
 
-            if max_rounds > 0 and round_num >= max_rounds - 2:
+            if max_rounds > 0 and max_rounds - round_num <= tool_round_warning_threshold(max_rounds):
                 rest = max_rounds - round_num
                 nudge = (
                     f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
                     "Deine Werkzeugrunden sind fast aufgebraucht! "
                     "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
-                    "Wenn du den Code in dieser Session nicht mehr fertigstellen kannst: "
-                    "Rufe sofort `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` auf, "
-                    "um einen konkreten Editier-Task anzulegen, und schließe diesen Analyse-Task mit deinen Erkenntnissen ab."
+                    "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
+                    + SELF_DECOMPOSE_INSTRUCTION
                 )
                 msgs.append({"role": "user", "content": nudge})
 

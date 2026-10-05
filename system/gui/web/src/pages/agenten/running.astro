@@ -167,7 +167,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <option value="false">Aus</option>
           </select>
         </label>
-        <label>Maximale Tool-Runden<input id="worker-blueprint-turns" type="number" min="1" max="100" value="25" required></label>
+        <label>Maximale Tool-Runden (0 = unbegrenzt)<input id="worker-blueprint-turns" type="number" min="0" max="100" value="25" required></label>
         <label>Pausenauslöser<select id="worker-blueprint-pause-basis"><option value="runs">Abgeschlossene Läufe</option><option value="tasks">Abgeschlossene Aufgaben</option></select></label>
         <label>Pause nach Anzahl Auslöser<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
         <label>Pausendauer (Minuten)<input id="worker-blueprint-pause-minutes" type="number" min="0" max="1440" value="1" required></label>
@@ -186,6 +186,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <div class="worker-blueprint-submit">
           <small id="worker-blueprint-model-status" role="status" aria-live="polite">Modellquelle wird geprüft…</small>
           <button class="btn btn-primary" id="worker-blueprint-create" type="submit" disabled>Blueprint als Living-Profil anlegen</button>
+          <button class="btn" id="worker-blueprint-cancel-edit" type="button" hidden>Bearbeitung beenden</button>
         </div>
       </form>
       <p class="worker-control-note">Anlegen erstellt nur ein idle-Profil. Erst „Start“ löst einen Modellaufruf aus. Fortlaufende Worker laufen bis zum Stopp; ein positiver Wert setzt zusätzlich ein Zeitlimit. Taskworker benötigen eine Task-ID oder einen Zusatzauftrag.</p>
@@ -288,6 +289,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
     let coreAgents = [];
     let openRouterModels = [];
     let backgroundWorkerBlueprint = null;
+    let editingWorker = null;
+    let workerModelRequest = 0;
+    let workerEditRequest = 0;
 
     function setTorchUnknown(message) {
       currentPriority = null;
@@ -586,7 +590,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
-    async function loadWorkerBlueprintModels() {
+    async function loadWorkerBlueprintModels(selectedModel) {
+      const requestId = ++workerModelRequest;
       const backend = document.getElementById('worker-blueprint-backend').value;
       const modelSelect = document.getElementById('worker-blueprint-model');
       const status = document.getElementById('worker-blueprint-model-status');
@@ -599,9 +604,17 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const response = await fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend));
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
+        if (requestId !== workerModelRequest) return;
         if (data.provider !== backend || !Array.isArray(data.models)) throw new Error('Modellantwort ungültig');
         const models = [...new Set(data.models.filter(model => typeof model === 'string' && model.trim()))];
         modelSelect.replaceChildren(...models.map(model => new Option(model, model)));
+        if (typeof selectedModel === 'string' && models.includes(selectedModel)) modelSelect.value = selectedModel;
+        else if (typeof selectedModel === 'string') {
+          const missing = new Option('Gespeichertes Modell fehlt im aktuellen Katalog – neu auswählen', '');
+          missing.disabled = true;
+          modelSelect.prepend(missing);
+          modelSelect.value = '';
+        }
         modelSelect.disabled = models.length === 0;
         if (!models.length) modelSelect.replaceChildren(new Option('Keine Modelle gemeldet', ''));
         const credential = backend === 'openrouter'
@@ -611,6 +624,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         status.textContent = `${models.length} Modell(e) aus ${data.source || 'unbekannter Quelle'}${credential}${stale}`;
         create.disabled = !backgroundWorkerBlueprint || models.length === 0;
       } catch (_error) {
+        if (requestId !== workerModelRequest) return;
         modelSelect.replaceChildren(new Option('Modellkatalog nicht verfügbar', ''));
         modelSelect.disabled = true;
         status.textContent = 'Keine aktuelle Modellliste; Workerprofil kann nicht angelegt werden.';
@@ -673,21 +687,68 @@ import BachLayout from "../../layouts/BachLayout.astro";
       button.disabled = true;
       status.textContent = 'Workerprofil wird angelegt…';
       try {
-        const response = await fetch('/api/system/workers', {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        const editing = editingWorker;
+        const response = await fetch(editing
+          ? `/api/system/workers/${encodeURIComponent(editing.id)}/configuration` : '/api/system/workers', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(editing
+            ? {configuration_version: editing.version, configuration: payload} : payload)
         });
         const data = await response.json();
-        if (!response.ok || data.ok !== true || data.worker?.status !== 'idle') {
+        if (!response.ok || data.ok !== true || (editing ? data.id !== editing.id || !data.configuration_version
+                                                        : data.worker?.status !== 'idle')) {
           throw new Error(data.detail || 'Idle-Readback des neuen Profils fehlt');
         }
-        status.textContent = `Profil ${data.worker.name} als Living/idle bestätigt. Es wurde kein Modellaufruf gestartet.`;
-        document.getElementById('worker-blueprint-task-prompt').value = '';
-        document.getElementById('worker-blueprint-task-id').value = '';
+        if (editing) {
+          editingWorker = {id: editing.id, version: data.configuration_version};
+          status.textContent = 'Worker-Einstellungen gespeichert und zurückgelesen. „Start“ übernimmt sie im nächsten Lauf.';
+        } else {
+          status.textContent = `Profil ${data.worker.name} als Living/idle bestätigt. Es wurde kein Modellaufruf gestartet.`;
+          document.getElementById('worker-blueprint-task-prompt').value = '';
+          document.getElementById('worker-blueprint-task-id').value = '';
+        }
         await loadBackgroundWorkers();
       } catch (error) {
         status.textContent = error.message || 'Profil konnte nicht bestätigt werden.';
       } finally {
         button.disabled = !backgroundWorkerBlueprint || document.getElementById('worker-blueprint-model').disabled;
+      }
+    }
+
+    async function editWorkerConfiguration(workerId) {
+      const requestId = ++workerEditRequest;
+      const status = document.getElementById('worker-blueprint-model-status');
+      try {
+        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/configuration`);
+        const data = await response.json();
+        if (requestId !== workerEditRequest) return;
+        if (!response.ok || data.ok !== true || data.id !== workerId || !data.configuration_version) {
+          throw new Error(data.detail || 'Worker-Konfiguration nicht bestätigt');
+        }
+        const config = data.configuration;
+        const fields = {name: 'name', backend: 'backend', sub_mode: 'sub-mode', role_id: 'role',
+          max_tool_rounds: 'turns', mode: 'mode', pause_after: 'pause-after', pause_minutes: 'pause-minutes',
+          pause_basis: 'pause-basis', max_experts: 'max-experts', task_id: 'task-id', task_prompt: 'task-prompt'};
+        for (const [key, field] of Object.entries(fields)) {
+          document.getElementById('worker-blueprint-' + field).value = config[key] ?? '';
+        }
+        document.getElementById('worker-blueprint-think').value = String(config.think === true);
+        for (const [key, field] of Object.entries({multi_role: 'multi-role', allow_tools: 'allow-tools', include_system_prompt: 'system-prompt'})) {
+          document.getElementById('worker-blueprint-' + field).checked = config[key] === true;
+        }
+        document.getElementById('worker-blueprint-expert-models').value = JSON.stringify(config.expert_models || {});
+        editingWorker = {id: workerId, version: data.configuration_version};
+        document.getElementById('worker-blueprint-create').textContent = 'Worker-Einstellungen speichern';
+        document.getElementById('worker-blueprint-cancel-edit').hidden = false;
+        document.getElementById('worker-blueprint-run-mode').disabled = true;
+        document.getElementById('worker-blueprint-ttl').disabled = true;
+        updateWorkerCreationModeFields();
+        await loadWorkerBlueprintModels(config.model);
+        if (requestId !== workerEditRequest) return;
+        status.textContent = 'Workerprofil zur Bearbeitung geladen. Zum Übernehmen Einstellungen speichern, danach ausdrücklich starten.';
+        document.getElementById('worker-blueprint-form').scrollIntoView({block: 'start'});
+      } catch (error) {
+        if (requestId !== workerEditRequest) return;
+        status.textContent = error.message || 'Workerprofil konnte nicht geladen werden.';
       }
     }
 
@@ -710,20 +771,26 @@ import BachLayout from "../../layouts/BachLayout.astro";
       if (once) ttl.value = '0';
     }
 
-    async function runWorkerAction(workerId, action) {
+    async function runWorkerAction(workerId, action, generation) {
       const summary = document.getElementById('worker-status-summary');
-      const safeActions = new Set(['start', 'pause', 'stop']);
+      const safeActions = new Set(['start', 'pause', 'stop', 'handoff']);
       if (!safeActions.has(action)) return;
       summary.textContent = action === 'start' ? 'Start wird angefordert…' :
-        action === 'pause' ? 'Kooperative Pause wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
+        action === 'pause' ? 'Kooperative Pause wird angefordert…' :
+        action === 'handoff' ? 'Kontextübergabe wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
       try {
         const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(action === 'handoff' ? {generation} : {})
         });
         const data = await response.json();
         if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Aktion nicht bestätigt');
         if (action === 'start') {
           summary.textContent = `Start angenommen · Laufzeit-Readback: ${data.runtime_state || 'unbekannt'}`;
+        } else if (action === 'handoff') {
+          summary.textContent = data.receipt?.state === 'confirmed'
+            ? 'Kontextübergabe durch die Laufzeit bestätigt.'
+            : 'Kontextübergabe angefordert · Bestätigung folgt im Workerstatus.';
         } else {
           summary.textContent = action === 'pause' ? 'Pause durch Control API bestätigt.' : 'Stopp durch Control API bestätigt.';
         }
@@ -802,7 +869,19 @@ import BachLayout from "../../layouts/BachLayout.astro";
             }
           }
           if (worker.current_activity) card.append(coreElement('p', worker.current_activity));
+          if (worker.handoff_receipt) {
+            const handoffLabels = {pending: 'angefordert', running: 'wird verarbeitet',
+              confirmed: 'bestätigt', error: 'fehlgeschlagen', cancelled: 'abgebrochen'};
+            card.append(coreElement('p', 'Kontextübergabe: ' +
+              (handoffLabels[worker.handoff_receipt.state] || 'unbekannt')));
+          }
           const actions = coreElement('div', undefined, 'core-actions');
+          if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
+            const edit = coreElement('button', 'Einstellungen bearbeiten', 'btn btn-sm');
+            edit.type = 'button';
+            edit.addEventListener('click', () => editWorkerConfiguration(worker.id));
+            actions.append(edit);
+          }
           if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
             const start = coreElement('button', state === 'paused' ? '▶ Fortsetzen' : '▶ Start', 'btn btn-sm btn-primary');
             start.type = 'button';
@@ -811,6 +890,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
           }
           if (state === 'running' || (state === 'paused' && worker.auto_paused === true)) {
             if (state === 'running') {
+              if (typeof worker.generation === 'string' &&
+                  !['pending', 'running'].includes(worker.handoff_receipt?.state)) {
+                const handoff = coreElement('button', 'Kontext übergeben', 'btn btn-sm');
+                handoff.type = 'button';
+                handoff.addEventListener('click', () => runWorkerAction(worker.id, 'handoff', worker.generation));
+                actions.append(handoff);
+              }
               const pause = coreElement('button', '⏸ Pause', 'btn btn-sm');
               pause.type = 'button';
               pause.addEventListener('click', () => runWorkerAction(worker.id, 'pause'));
@@ -1156,6 +1242,19 @@ import BachLayout from "../../layouts/BachLayout.astro";
       document.getElementById('worker-blueprint-run-mode')?.addEventListener('change', updateWorkerRunModeFields);
       document.getElementById('worker-blueprint-multi-role')?.addEventListener('change', updateWorkerCreationModeFields);
       document.getElementById('worker-blueprint-form')?.addEventListener('submit', createWorkerFromBlueprint);
+      document.getElementById('worker-blueprint-cancel-edit')?.addEventListener('click', async () => {
+        workerEditRequest++;
+        editingWorker = null;
+        document.getElementById('worker-blueprint-create').textContent = 'Blueprint als Living-Profil anlegen';
+        document.getElementById('worker-blueprint-cancel-edit').hidden = true;
+        document.getElementById('worker-blueprint-run-mode').disabled = false;
+        document.getElementById('worker-blueprint-task-id').value = '';
+        document.getElementById('worker-blueprint-task-prompt').value = '';
+        document.getElementById('worker-blueprint-multi-role').checked = false;
+        document.getElementById('worker-blueprint-max-experts').value = '3';
+        document.getElementById('worker-blueprint-expert-models').value = '';
+        await loadBackgroundWorkerBlueprint();
+      });
       loadBackgroundWorkerBlueprint();
       refreshAll();
       // Observe hardware and task activity without resetting editable forms.

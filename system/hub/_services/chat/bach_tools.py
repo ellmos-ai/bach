@@ -1049,11 +1049,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if action == "decompose":
                         tid = args.get("task_id")
                         subtasks = args.get("subtasks", [])
-                        if not tid or not subtasks:
+                        if not tid or not isinstance(subtasks, list) or not subtasks:
                             return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
+                        if any(
+                            not isinstance(st, dict)
+                            or not isinstance(st.get("title"), str)
+                            or not st["title"].strip()
+                            or not isinstance(st.get("description", ""), str)
+                            for st in subtasks
+                        ):
+                            return "Task nicht zerlegt: jede Teilaufgabe braucht einen nicht leeren Titel und eine Textbeschreibung."
+                        if "close_parent" in args and type(args["close_parent"]) is not bool:
+                            return "Task nicht zerlegt: close_parent muss true oder false sein."
+                        # Lesen, Teilaufgaben und Elternabschluss bilden eine
+                        # Transaktion; konkurrierende Worker sehen den neuen Status.
+                        conn.execute("BEGIN IMMEDIATE")
                         parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
                         if not parent:
                             return f"Task #{tid} nicht gefunden"
+                        if str(parent["status"] or "").strip().lower() not in {
+                            "open", "pending", "in_progress", "in-progress",
+                        }:
+                            return f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen."
                         parent_dict = dict(parent)
                         cat = args.get("category") or parent_dict.get("category") or ""
                         assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
@@ -1061,9 +1078,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         created_ids = []
                         prev_id = None
                         for st in subtasks:
-                            st_title = st.get("title", "")
-                            if not st_title:
-                                continue
+                            st_title = st["title"].strip()
                             st_desc = st.get("description", "")
                             st_prio = st.get("priority", parent_dict.get("priority") or "P3")
                             st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
@@ -1076,6 +1091,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             )
                             prev_id = cur.lastrowid
                             created_ids.append(prev_id)
+                        if not created_ids:
+                            # Ohne angelegte Teilaufgabe ist nichts zerlegt: den
+                            # Eltern-Task nicht schliessen, sonst verschwindet
+                            # Arbeit ohne Nachfolger aus dem offenen Pool.
+                            conn.rollback()
+                            return (f"Task #{tid} nicht zerlegt: keine Teilaufgabe mit Titel angegeben. "
+                                    "subtasks braucht Objekte mit title und description.")
                         if args.get("close_parent", True):
                             note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
                             if task_audit_fn is not None:
@@ -1085,8 +1107,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                               changed_by="chat-runtime", now=now)
                             else:
                                 conn.execute(
-                                    "UPDATE tasks SET status='completed', description=description || ?, updated_at=? WHERE id=?",
-                                    (note, now, tid)
+                                    "UPDATE tasks SET status='completed', description=COALESCE(description, '') || ?, "
+                                    "completed_at=?, updated_at=? WHERE id=?",
+                                    (note, now, now, tid)
                                 )
                         conn.commit()
                         return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"

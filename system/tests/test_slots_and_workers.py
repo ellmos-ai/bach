@@ -49,6 +49,18 @@ from hub._services.chat.telegram_chat import (
 )
 
 
+def test_control_chat_response_carries_receipts_bound_to_this_answer():
+    from hub._services.chat.chat_runtime import SuccessfulAnswer
+    from hub._services.chat.telegram_chat import _control_chat_response
+
+    answer = SuccessfulAnswer("FERTIG")
+    answer.completed_task_ids = (42,)
+    response, status = _control_chat_response(answer)
+    assert status == 200
+    assert response == {"ok": True, "answer": "FERTIG", "completed_task_ids": [42]}
+    assert _control_chat_response("FERTIG")[0] == {"ok": True, "answer": "FERTIG"}
+
+
 class TestSlotsConfigCRUD:
     def test_worker_ids_cannot_shadow_core_or_existing_worker(self, tmp_path):
         cfg_file = tmp_path / "id-uniqueness.json"
@@ -1536,6 +1548,9 @@ class TestControlHandlerEndpoints:
                 self.started = threading.Event()
                 self.release = threading.Event()
                 self.calls = 0
+
+            def get_session(self, _worker_id):
+                return ChatSession()
 
             async def process(self, *args, **kwargs):
                 self.calls += 1

@@ -2594,14 +2594,10 @@ async def get_worker_models(request: Request, backend: str = Query(..., min_leng
         raise HTTPException(status_code=503, detail="Modellliste nicht verfügbar") from exc
 
 
-@router.post("/system/workers")
-async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(...)):
-    """Create a configured worker profile. Creation always leaves it idle."""
-    device_token = _require_memory_device_token(request)
+async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -> Dict[str, Any]:
     from .worker_status_adapter import (
         WorkerActionRejected,
         WorkerStatusUnavailable,
-        worker_action,
         worker_creation_options,
         worker_model_catalog,
     )
@@ -2715,7 +2711,7 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
         "type": worker_type,
         "backend": backend,
         "model": model.strip(),
-        "max_tool_rounds": integer("max_tool_rounds", 25, 1, 100),
+        "max_tool_rounds": integer("max_tool_rounds", 25, 0, 100),
         "mode": mode,
         "think": boolean("think", True),
         "allow_tools": boolean("allow_tools", True),
@@ -2727,6 +2723,16 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
     }
     if ttl_minutes:
         config["ttl_seconds"] = ttl_minutes * 60
+
+    return config
+
+
+@router.post("/system/workers")
+async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Create a configured worker profile. Creation always leaves it idle."""
+    device_token = _require_memory_device_token(request)
+    config = await _validated_worker_config(payload, device_token)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
 
     try:
         result = await asyncio.to_thread(
@@ -2741,6 +2747,36 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
         raise HTTPException(status_code=503, detail="Workerprofil konnte nicht bestätigt werden") from exc
 
 
+@router.get("/system/workers/{worker_id}/configuration")
+async def get_system_worker_configuration(worker_id: str, request: Request):
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, read_worker_configuration
+    try:
+        return await asyncio.to_thread(read_worker_configuration, worker_id, device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(503, "Worker-Konfiguration nicht verfügbar") from exc
+
+
+@router.post("/system/workers/{worker_id}/configuration")
+async def update_system_worker_configuration(worker_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, update_worker_configuration
+    if set(payload) != {"configuration_version", "configuration"} or not isinstance(payload["configuration"], dict):
+        raise HTTPException(400, "Worker-Konfiguration und Versionsbeleg erforderlich")
+    config = await _validated_worker_config(payload["configuration"], device_token)
+    config.pop("type", None)
+    config.pop("ttl_seconds", None)
+    try:
+        return await asyncio.to_thread(update_worker_configuration, worker_id, payload["configuration_version"],
+                                       config, device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(503, "Worker-Konfiguration konnte nicht bestätigt werden") from exc
+
+
 @router.post("/system/workers/{worker_id}/start")
 async def start_system_worker(worker_id: str, request: Request):
     """Start one profile only after explicit device-authenticated user action."""
@@ -2753,6 +2789,25 @@ async def start_system_worker(worker_id: str, request: Request):
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except WorkerStatusUnavailable as exc:
         raise HTTPException(status_code=503, detail="Workerstatus oder Start nicht verfügbar") from exc
+
+
+@router.post("/system/workers/{worker_id}/handoff")
+async def handoff_system_worker(worker_id: str, request: Request):
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, request_worker_handoff
+
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"generation"}:
+            raise HTTPException(status_code=400, detail="Aktuelle Laufgeneration erforderlich")
+        return await asyncio.to_thread(request_worker_handoff, worker_id, body["generation"],
+                                       device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Kontextübergabe nicht verfügbar") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Ungültige Übergabeanfrage") from exc
 
 
 @router.post("/system/workers/{worker_id}/pause")
