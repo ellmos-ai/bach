@@ -236,19 +236,27 @@ def apply_task_field_changes(
     # gate-geparkten Task per Status-Change wieder claimbar setzen, worauf der
     # Terminal-Waechter in chat_tray nicht mehr greift (claimed_by gecleart).
     new_status = field_values.get("status")
-    # BACH #1721 (Lease-Vertrag v1 §5.4): Solange ein lebender Lease besteht, ist
-    # der Lease-Release der einzige Weg fuer Statuswechsel. Alt-Claims ohne
-    # claim_id bleiben unberuehrt.
-    if (
-        not lease_authorized
-        and new_status is not None
-        and new_status != existing_row.get("status")
-        and row_has_live_lease(existing_row)
-    ):
-        raise LeaseRequired(
-            f"Task #{task_id} hat einen lebenden Lease; Statuswechsel nur ueber "
-            f"POST /api/tasks/{task_id}/lease/release."
-        )
+    # BACH #1726: Auch eine abgelaufene Capability darf nicht durch einen
+    # generischen Statuswechsel umgangen werden. Nur Release/Reclaim/Reaper
+    # entwerten sie. Der aktuelle DB-Zustand ersetzt den Snapshot des Aufrufers.
+    check_lease_status = not lease_authorized and new_status is not None
+    has_lease_columns = _has_lease_columns(conn) if check_lease_status else False
+    if check_lease_status and not has_lease_columns and not conn.in_transaction:
+        # Legacy-Schema: Die erste Lease-Migration darf nicht zwischen Schema-
+        # Prüfung und UPDATE eintreten. Der Aufrufer behält Commit/Rollback.
+        conn.execute("BEGIN IMMEDIATE")
+        has_lease_columns = _has_lease_columns(conn)
+    guard_lease_status = check_lease_status and has_lease_columns
+    lease_error = (
+        f"Task #{task_id} hat eine Lease-Capability; Statuswechsel nur ueber "
+        f"POST /api/tasks/{task_id}/lease/release oder expliziten Reclaim."
+    )
+    if guard_lease_status:
+        current = conn.execute(
+            "SELECT status, claim_id FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if current and current[1] and current[0] != new_status:
+            raise LeaseRequired(lease_error)
     if (
         not allow_reopen
         and new_status in CLAIMABLE_OPENING_STATUSES
@@ -328,7 +336,16 @@ def apply_task_field_changes(
     updates.append("updated_at = ?")
     values.append(now)
     values.append(task_id)
-    conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
+    where = "id = ?"
+    if guard_lease_status:
+        # Atomarer Schutz gegen Acquire zwischen obigem Read und diesem UPDATE.
+        where += " AND (claim_id IS NULL OR claim_id = '' OR status = ?)"
+        values.append(new_status)
+    cursor = conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE {where}", values)
+    if guard_lease_status and cursor.rowcount == 0:
+        if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
+            raise LeaseRequired(lease_error)
+        return False
 
     for field_changed, old_value, new_value, action in history_entries:
         conn.execute(
