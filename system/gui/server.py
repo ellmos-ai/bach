@@ -1579,9 +1579,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/foerderplaner",
         "/steuer-assistent",
         "/workflow-tuev",
+        "/favicon.ico",
     })
-    # Static assets (JS/CSS/images) without data.
-    PUBLIC_STATIC_PREFIXES = ("/static/",)
+    # Static assets (JS/CSS/images/fonts) without data.
+    PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/")
 
     EXEMPT_API_PATHS = {
         "/api/health",
@@ -5026,6 +5027,14 @@ async def index():
     index_file = TEMPLATES_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    favicon_path = STATIC_DIR / "favicon.ico"
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    raise HTTPException(status_code=404, detail="favicon.ico nicht gefunden")
 
 
 @app.get("/agenten/fabrika", response_class=HTMLResponse)
