@@ -64,6 +64,7 @@ CLAIMABLE_OPENING_STATUSES = frozenset({"open", "pending", "in_progress"})
 LEASE_CAPABILITY_COLUMNS = (
     "claim_id", "claim_host", "claim_issued_at", "claim_expires_at", "claim_heartbeat_at",
     "claim_ttl_profile", "claim_salt_ref", "claim_intent", "claim_request_id",
+    "claim_task_version",
 )
 
 
@@ -105,7 +106,8 @@ def clear_lease_capability(conn: sqlite3.Connection, task_id: int) -> None:
     """Entwertet verwaiste Lease-Spalten (committet nicht)."""
     if not _has_lease_columns(conn):
         return
-    assignments = ", ".join(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS)
+    columns = {col[1] for col in conn.execute("PRAGMA table_info(tasks)")}
+    assignments = ", ".join(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS if name in columns)
     conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", (task_id,))
 
 
@@ -594,7 +596,7 @@ def reap_stale_in_progress_tasks(
         if has_claimed_at:
             update_clauses.append("claimed_at = NULL")
         if has_lease:
-            update_clauses.extend(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS)
+            update_clauses.extend(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS if name in cols)
         if has_updated:
             update_clauses.append("updated_at = ?")
             update_vals.append(now_iso)
