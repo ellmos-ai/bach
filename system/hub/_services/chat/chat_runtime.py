@@ -983,15 +983,18 @@ class ChatRuntime(_ModuleChatRuntime):
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         turn_context = self._compute_turn_context.get()
-        if turn_context is None or not self._uses_local_compute(backend):
+        if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
 
-        chat_id, priority = turn_context
-        await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
-        try:
-            return await backend.chat(*args, **kwargs)
-        finally:
-            self._leave_compute_turn(self._compute_turn_gate)
+        chat_id, priority = turn_context or ("runtime", "foreground")
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        async with HostInferenceGate().turn(chat_id, priority):
+            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
+            try:
+                return await backend.chat(*args, **kwargs)
+            finally:
+                self._leave_compute_turn(self._compute_turn_gate)
 
     def _reset_task_completion_receipts(self, chat_id: str) -> None:
         with self._task_completion_receipts_lock:
@@ -1065,16 +1068,9 @@ class ChatRuntime(_ModuleChatRuntime):
 
     def compute_turn_status(self) -> dict[str, Any]:
         """Return live evidence about which BACH run currently owns local inference."""
-        with self._compute_turn_gate.condition:
-            gate = self._compute_turn_gate
-            return {
-                "active": gate.active,
-                "holder": "BACH" if gate.active else None,
-                "chat_id": gate.chat_id or None,
-                "priority": gate.priority or None,
-                "started_at": gate.started_at,
-                "foreground_waiters": gate.foreground_waiters,
-            }
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        return HostInferenceGate().status()
 
     @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
