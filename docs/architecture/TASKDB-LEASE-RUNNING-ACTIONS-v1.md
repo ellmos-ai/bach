@@ -51,6 +51,8 @@ Inhaltsversion geprüft, alle Teilaufgaben angelegt, die Elternbeschreibung
 ergänzt und bei `close_parent=true` der Eltern-Task abgeschlossen. Dann werden
 seine Capability-Felder geleert; der Fence bleibt erhalten. Bei offenem Eltern-Task
 wird die Versionsbindung auf die eigene bestätigte Beschreibung aktualisiert.
+Alle schreibenden Lease-Operationen lesen die aktuelle Serverzeit erst nach dem
+Erwerb der Schreibsperre; Wartezeit darf einen abgelaufenen Lease nicht verlängern.
 
 Das ACK enthält `decomposed`, `task_id`, `created_ids`, `created_count`,
 `parent_closed`, `fence`, `task_version` und `server_now`. Es wird erst nach

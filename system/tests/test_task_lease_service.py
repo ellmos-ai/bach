@@ -137,6 +137,65 @@ def _acq(conn, task_id, worker="agy-opus@ASUS-GEI", now=T0, **kw):
     return acquire_lease(conn, task_id, worker_id=worker, host=host, now=now, **kw)
 
 
+@pytest.mark.parametrize("operation", ["acquire", "renew", "release", "decompose"])
+def test_live_clock_is_read_after_waiting_for_write_lock(conn, db_path, monkeypatch, operation):
+    import time
+    from hub._services import task_lease as service
+
+    tid = _insert(conn)
+    ack = _acq(conn, tid).payload
+    before = _get(conn, tid)
+    clock = [T0 + timedelta(minutes=29)]
+    monkeypatch.setattr(service, "_utcnow", lambda: clock[0])
+    original_begin = service._begin
+    writer = sqlite3.connect(str(db_path), timeout=10, check_same_thread=False)
+    releases = []
+
+    # Hold the competing writer only after schema migration, otherwise schema
+    # ensure itself would wait before the old implementation sampled its clock.
+    original_ensure = service.ensure_task_lease_schema
+    def ensure_then_hold(connection):
+        original_ensure(connection)
+        writer.execute("BEGIN IMMEDIATE")
+    monkeypatch.setattr(service, "ensure_task_lease_schema", ensure_then_hold)
+
+    def begin_after_competing_writer(connection):
+        def release_writer():
+            time.sleep(0.05)
+            clock[0] = T0 + timedelta(minutes=31)
+            writer.rollback()
+            releases.append(True)
+        thread = threading.Thread(target=release_writer)
+        thread.start()
+        try:
+            original_begin(connection)  # actual SQLite wait on second connection
+        finally:
+            thread.join(timeout=5)
+        assert releases == [True]
+    monkeypatch.setattr(service, "_begin", begin_after_competing_writer)
+    try:
+        kwargs = dict(config=CFG)
+        ref = dict(lease_id=ack["lease_id"], fence=ack["fence"], task_version=ack["task_version"])
+        if operation == "acquire":
+            result = service.acquire_lease(conn, tid, worker_id="codex@WORKSTATION-LG",
+                                           host="WORKSTATION-LG", request_id=_rid(), **kwargs)
+            assert result.granted and result.payload["fence"] == 2
+        else:
+            if operation == "renew":
+                result = service.renew_lease(conn, tid, **ref, **kwargs)
+            elif operation == "release":
+                result = service.release_lease(conn, tid, outcome="done", **ref, **kwargs)
+            else:
+                result = service.decompose_lease(conn, tid, subtasks=[{"title": "child"}], **ref, **kwargs)
+            assert result.http_status == 409 and result.payload["reason"] == "expired"
+            assert _get(conn, tid) == before
+            assert conn.execute("SELECT count(*) FROM tasks").fetchone()[0] == 1
+        assert service.parse_ts(result.payload["server_now"]) == clock[0]
+        assert not conn.in_transaction
+    finally:
+        writer.close()
+
+
 @pytest.mark.parametrize("operation", ["acquire", "renew", "release"])
 def test_ack_keeps_own_transaction_after_concurrent_reassignment(db_path, monkeypatch, operation):
     """A legal replay/release/reacquire after commit must not rewrite the ACK."""

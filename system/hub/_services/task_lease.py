@@ -403,10 +403,11 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
         raise LeaseValidationError("request_id muss 16-128 Zeichen [A-Za-z0-9._:-] haben")
     intent = str(intent or "")[:500]
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
 
     _begin(conn)
     try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
         row = _row(conn, task_id)
         if row is None:
             raise TaskNotFound(task_id)
@@ -539,9 +540,10 @@ def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence:
     lease_id, fence = _validate_lease_ref(lease_id, fence)
     task_version = _validate_task_version(task_version)
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
     _begin(conn)
     try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
         row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             conn.rollback()
@@ -592,7 +594,6 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     result_ref = str(result_ref or "")[:500]
     note = str(note or "")[:4000]
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
 
     try:
         from hub.task_audit import GateReopenBlocked, apply_task_field_changes
@@ -604,6 +605,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
 
     _begin(conn)
     try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
         row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             recorded = False
@@ -678,9 +681,10 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
         normalized.append({**item, "title": item["title"].strip()})
 
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
     _begin(conn)
     try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
         parent, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             conn.rollback()
