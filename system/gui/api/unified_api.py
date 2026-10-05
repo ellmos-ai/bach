@@ -42,6 +42,17 @@ if str(_SYSTEM_ROOT) not in sys.path:
 from hub.bach_paths import BACH_DB, BACH_ROOT
 BACH_DIR = BACH_ROOT
 
+from hub._services.cognitive_service import (
+    CANONICAL_MERMAID_DIAGRAM,
+    DIAGRAM_LEGEND,
+    get_cognitive_topology,
+    get_process_block,
+    read_usmc_lessons_safe,
+    archive_denkarium_entry,
+    unarchive_denkarium_entry,
+    list_denkarium_entries
+)
+
 router = APIRouter(prefix="/api", tags=["unified"])
 _COMPARE_RACE_LOCK = asyncio.Lock()
 
@@ -1611,6 +1622,8 @@ async def get_cognitive_state():
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "availability": "available" if db_error is None else "unavailable",
         "error": db_error,
+        "mermaid_code": CANONICAL_MERMAID_DIAGRAM,
+        "legend": DIAGRAM_LEGEND,
         "zentrale_exekutive": {
             "title": "Zentrale Exekutive (Steuerung, Wille & Aufsicht)",
             "models": {
@@ -1964,6 +1977,77 @@ async def get_cognitive_state():
 
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# 5b. KOGNITIVER SCHALTPLAN & PROZESS-TOPOLOGIE (GUX-032..043)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/cognitive/topology")
+async def get_cognitive_topology_endpoint():
+    """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
+    try:
+        conn = _get_conn()
+        res = get_cognitive_topology(conn)
+        conn.close()
+        return res
+    except Exception as e:
+        logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
+        return {"success": False, "error": str(e), "blocks": {}}
+
+
+@router.get("/cognitive/blocks/{block_id}")
+async def get_cognitive_block_endpoint(block_id: str):
+    """Liefert detaillierte Inspektionsdaten zu einem der 8 kognitiven Prozessblöcke (GUX-034..041)."""
+    try:
+        conn = _get_conn()
+        res = get_process_block(block_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Abruf des Prozessblocks %s: %s", block_id, e)
+        return {"success": False, "error": str(e), "block": None}
+
+
+@router.get("/memory/usmc-lessons-safe")
+async def get_usmc_lessons_safe_endpoint(limit: int = 50, category: Optional[str] = None):
+    """Schema-agnostischer, robuster Reader für USMC Lessons Learned (GUX-041/042)."""
+    return read_usmc_lessons_safe(limit=limit, category=category)
+
+
+@router.post("/denkarium/{entry_id}/archive")
+async def archive_denkarium_endpoint(entry_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Reversible Archivierung von technischen Agent-Dumps im Denkarium (GUX-043)."""
+    reason = payload.get("reason", "wrong_agent_dump") if isinstance(payload, dict) else "wrong_agent_dump"
+    try:
+        conn = _get_conn()
+        res = archive_denkarium_entry(entry_id, reason=reason, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Archivieren des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/denkarium/{entry_id}/unarchive")
+async def unarchive_denkarium_endpoint(entry_id: int):
+    """Wiederherstellung eines archivierten Denkarium-Eintrags (GUX-043)."""
+    try:
+        conn = _get_conn()
+        res = unarchive_denkarium_entry(entry_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Wiederherstellen des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # ═══════════════════════════════════════════════════════════════
 # 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
 # ═══════════════════════════════════════════════════════════════
@@ -2107,7 +2191,7 @@ async def get_memory_sessions(limit: int = 20):
         _ensure_capabilities_db(conn)
         conn.row_factory = sqlite3.Row
         rows = conn.execute("""
-            SELECT id, session_id, started_at, ended_at, summary
+            SELECT *
             FROM memory_sessions
             ORDER BY id DESC LIMIT ?
         """, (limit,)).fetchall()
