@@ -1445,6 +1445,122 @@ def test_task_completion_receipts_require_successful_done_tool_response():
     runtime._compute_turn_context.reset(context_token)
 
 
+@pytest.mark.parametrize("result", [
+    "Task #43 in 1 Teilaufgaben zerlegt: IDs [44]",
+    "Task #42 in 2 Teilaufgaben zerlegt: IDs [43]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs []",
+    "Task #42 in 2 Teilaufgaben zerlegt: IDs [43, 43]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs [0]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs [42]",
+    "FERTIG",
+])
+def test_inconsistent_decomposition_result_is_not_a_completion_receipt(result):
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    runtime = ChatRuntime(object())
+    token = runtime._compute_turn_context.set(("worker-receipts", "background"))
+    try:
+        assert runtime._record_task_completion_receipt(
+            "worker-receipts", "task_manage", {"action": "decompose", "task_id": 42}, result,
+        ) is False
+        assert runtime.get_last_task_completion_receipts("worker-receipts") == ()
+    finally:
+        runtime._compute_turn_context.reset(token)
+
+
+def test_parallel_decomposition_receipt_is_recorded_once():
+    from concurrent.futures import ThreadPoolExecutor
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    runtime = ChatRuntime(object())
+
+    def record():
+        token = runtime._compute_turn_context.set(("worker-parallel", "background"))
+        try:
+            return runtime._record_task_completion_receipt(
+                "worker-parallel", "task_manage", {"action": "decompose", "task_id": 42},
+                "Task #42 in 2 Teilaufgaben zerlegt: IDs [43, 44]",
+            )
+        finally:
+            runtime._compute_turn_context.reset(token)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: record(), range(2)))
+    assert results.count(True) == 1
+    assert runtime.consume_task_completion_receipts("worker-parallel") == (42,)
+
+
+class _RoundBudgetBackend:
+    """Isolated model boundary; all runtime prompt and dispatch behavior is real."""
+    def __init__(self, tool_rounds):
+        self.tool_rounds = tool_rounds
+        self.calls = []
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        from copy import deepcopy
+        self.calls.append(deepcopy(messages))
+        if len(self.calls) <= self.tool_rounds:
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "get_datetime", "arguments": {},
+            }}], "raw_message": {"role": "assistant", "content": ""}}
+        return {"content": "FERTIG", "tool_calls": None}
+
+    def tool_response_message(self, content, tool_call_id=""):
+        return {"role": "tool", "content": content}
+
+
+@pytest.mark.parametrize("max_rounds,tool_rounds,counters", [
+    (25, 21, ["[Werkzeugrunde 0/25 · noch 25]", "[Werkzeugrunde 20/25 · noch 5]",
+              "[Werkzeugrunde 21/25 · noch 4]"]),
+    (0, 3, ["[Werkzeugrunde 0 · ohne Limit]", "[Werkzeugrunde 1 · ohne Limit]",
+             "[Werkzeugrunde 3 · ohne Limit]"]),
+    (1, 1, ["[Werkzeugrunde 0/1 · noch 1]", "[Werkzeugrunde 1/1 · noch 0]"]),
+])
+def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, max_rounds, tool_rounds, counters):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool", lambda *_a, **_k: "Testwert")
+    backend = _RoundBudgetBackend(tool_rounds)
+    runtime = ChatRuntime(backend)
+    runtime.hook_every = 999
+    session = ChatSession()
+    session.chat_id = "worker-budget-test"
+    session.max_tool_rounds = max_rounds
+    session.custom_system_prompt = "Eigene Worker-Rolle"
+    token = runtime._compute_turn_context.set((session.chat_id, "background"))
+    try:
+        answer = asyncio.run(runtime._tool_loop(
+            [{"role": "system", "content": session.custom_system_prompt},
+             {"role": "user", "content": "Task #42 bearbeiten"}], session,
+            tools=[{"type": "function", "function": {"name": "get_datetime"}}],
+        ))
+    finally:
+        runtime._compute_turn_context.reset(token)
+
+    assert answer == "FERTIG"
+    all_text = "\n".join(m.get("content", "") for messages in backend.calls for m in messages)
+    for counter in counters:
+        assert counter in all_text
+    first_text = "\n".join(m.get("content", "") for m in backend.calls[0])
+    assert "task_manage(action='decompose'" in first_text
+    assert "Werkzeug" in first_text and "bestätigt" in first_text
+    if max_rounds == 25:
+        warning_text = "\n".join(m.get("content", "") for m in backend.calls[20])
+        assert "fast aufgebraucht" in warning_text
+        assert "task_manage(action='decompose'" in warning_text
+        before_warning = "\n".join(m.get("content", "") for m in backend.calls[19])
+        assert "fast aufgebraucht" not in before_warning
+    elif max_rounds == 0:
+        assert "fast aufgebraucht" not in all_text
+        assert "aufgebraucht (" not in all_text
+    # A bare model word never completes a TaskDB task.
+    assert runtime.consume_task_completion_receipts(session.chat_id) == ()
+
+
 @pytest.mark.parametrize("failure", ["exception", "partial_error"])
 def test_glm_cloud_summarize_failure_does_not_silently_drop_history(failure):
     import asyncio

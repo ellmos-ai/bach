@@ -42,6 +42,37 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
+#: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
+_DECOMPOSE_RECEIPT_RE = re.compile(
+    r"Task #(\d+) in (\d+) Teilaufgaben zerlegt: IDs (\[[\d, ]*\])"
+)
+
+#: Nutzerregel (Task #1697): Ein Hintergrundworker, der eine Aufgabe nicht
+#: fertigstellen kann, zerlegt sie selbst und stellt die Teilaufgaben ein.
+#: Das Zerlegen ist ein Erfolg, kein Abbruch.
+SELF_DECOMPOSE_INSTRUCTION = (
+    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
+    "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
+    "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
+    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true). "
+    "Erst wenn das Werkzeug die angelegten Teilaufgaben und den geschlossenen Eltern-Task "
+    "bestätigt, gilt die Zerlegung als erfolgreicher Abschluss dieses Laufs; die Teilaufgaben "
+    "übernimmt ein späterer Lauf. Danach mit FERTIG enden. Ohne bestätigten Werkzeugbeleg "
+    "keinen Taskabschluss behaupten."
+)
+
+
+def tool_round_counter(round_num: int, max_rounds: int) -> str:
+    """Rundenzähler für das Modell, z. B. ``[Werkzeugrunde 3/25 · noch 22]``."""
+    if max_rounds > 0:
+        return f"[Werkzeugrunde {round_num}/{max_rounds} · noch {max(0, max_rounds - round_num)}]"
+    return f"[Werkzeugrunde {round_num} · ohne Limit]"
+
+
+def tool_round_warning_threshold(max_rounds: int) -> int:
+    """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
+    return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -949,7 +980,13 @@ class ChatRuntime(_ModuleChatRuntime):
     def _record_task_completion_receipt(
         self, chat_id: str, tool_name: str, tool_args: Any, tool_result: str
     ) -> bool:
-        """Record only a successful `task_manage(done)` tool receipt."""
+        """Record a successful `task_manage(done)` or self-decomposition receipt.
+
+        Nutzerregel (Task #1697): Kann der Hintergrundworker eine Aufgabe nicht
+        fertigstellen, zerlegt er sie selbst in kleinere Teilaufgaben und stellt
+        sie ein. Diese Zerlegung ist ein Erfolg. Sie zählt nur, wenn das Werkzeug
+        mindestens eine Teilaufgabe angelegt und den Eltern-Task geschlossen hat.
+        """
         turn_context = self._compute_turn_context.get()
         if (
             turn_context is None
@@ -959,18 +996,41 @@ class ChatRuntime(_ModuleChatRuntime):
             return False
         if tool_name != "task_manage" or not isinstance(tool_args, dict):
             return False
-        if tool_args.get("action") != "done":
+        action = tool_args.get("action")
+        if action not in ("done", "decompose"):
             return False
         try:
             task_id = int(tool_args.get("task_id"))
         except (TypeError, ValueError):
             return False
-        if task_id <= 0 or str(tool_result).strip() != f"Task #{task_id} erledigt.":
+        if task_id <= 0:
             return False
+        result_text = str(tool_result).strip()
+        if action == "done":
+            if result_text != f"Task #{task_id} erledigt.":
+                return False
+        else:
+            if not tool_args.get("close_parent", True):
+                return False
+            match = _DECOMPOSE_RECEIPT_RE.fullmatch(result_text)
+            if not match or int(match.group(1)) != task_id or int(match.group(2)) < 1:
+                return False
+            try:
+                child_ids = json.loads(match.group(3))
+            except ValueError:
+                return False
+            if (
+                len(child_ids) != int(match.group(2))
+                or any(type(child_id) is not int or child_id <= 0 or child_id == task_id
+                       for child_id in child_ids)
+                or len(set(child_ids)) != len(child_ids)
+            ):
+                return False
         with self._task_completion_receipts_lock:
             receipts = self._task_completion_receipts.setdefault(str(chat_id), [])
-            if task_id not in receipts:
-                receipts.append(task_id)
+            if task_id in receipts:
+                return False
+            receipts.append(task_id)
         return True
 
     def get_last_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
@@ -1157,7 +1217,7 @@ REGELN:
 TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
-- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='add', title='Edit: ...') in konkrete Einzelschritte zerlegen.
+- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true) in konkrete Einzelschritte zerlegen. Erst die Werkzeugbestätigung belegt einen Abschluss.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
 - 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
@@ -1355,6 +1415,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         )
 
         if getattr(selected_backend, "manages_own_tools", False):
+            if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
+                msgs[0]["content"] += "\n\n" + SELF_DECOMPOSE_INSTRUCTION
             capability_error = self._worker_backend_gate(session, selected_backend)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
@@ -1406,6 +1468,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         offered_tools = tools
+        turn_context = self._compute_turn_context.get()
+        background_task = turn_context is not None and turn_context[1] == "background"
+        if background_task and session.allow_tools is True and offered_tools:
+            msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+        msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
         while True:
             capability_error = self._refresh_worker_tools(session)
             if capability_error is not None:
@@ -1571,6 +1638,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     selected_backend.tool_response_message(str(t_result), tool_call_id)
                 )
 
+            # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
+            # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
+            msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
             # hier oft gefragt werden - sie schweigen selbst, wenn nichts ansteht.
             seit_hook += 1
@@ -1621,15 +1692,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
                     return FailedAnswer.from_exception(e)
 
-            if max_rounds > 0 and round_num >= max_rounds - 2:
+            if max_rounds > 0 and max_rounds - round_num <= tool_round_warning_threshold(max_rounds):
                 rest = max_rounds - round_num
                 nudge = (
                     f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
                     "Deine Werkzeugrunden sind fast aufgebraucht! "
                     "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
-                    "Wenn du den Code in dieser Session nicht mehr fertigstellen kannst: "
-                    "Rufe sofort `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` auf, "
-                    "um einen konkreten Editier-Task anzulegen, und schließe diesen Analyse-Task mit deinen Erkenntnissen ab."
+                    "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
+                    + SELF_DECOMPOSE_INSTRUCTION
                 )
                 msgs.append({"role": "user", "content": nudge})
 
