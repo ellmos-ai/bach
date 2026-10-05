@@ -108,6 +108,26 @@ class TestTaskManageDone:
         result = exec_tool("task_manage", {"action": "done"}, mode="safe")
         assert result == "Keine Task-ID angegeben"
 
+    @pytest.mark.parametrize("status", ["done", "completed"])
+    def test_done_on_already_completed_task_does_not_emit_new_success_receipt(
+        self, db_path, status
+    ):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE tasks SET status = ?, completed_at = '2026-01-01 00:00:00' WHERE id = 1",
+            (status,),
+        )
+        conn.commit()
+        conn.close()
+
+        result = exec_tool("task_manage", {"action": "done", "task_id": 1}, mode="safe")
+
+        assert result == "Task #1 war bereits erledigt."
+        row = _task_row(db_path)
+        assert row["status"] == status
+        assert row["completed_at"] == "2026-01-01 00:00:00"
+        assert _history_rows(db_path) == []
+
     def test_done_fallback_without_task_audit(self, db_path, monkeypatch):
         """Wenn hub.task_audit nicht importierbar ist (identischer sys.path-Vorbehalt
         wie RUNTIME_BACH_DB), soll die Aktion trotzdem funktionieren -- nur ohne

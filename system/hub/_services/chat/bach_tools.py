@@ -44,11 +44,16 @@ log = logging.getLogger("bach.chat")
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
-    from hub.task_audit import apply_task_field_changes, GateReopenBlocked
+    from hub.task_audit import (
+        COMPLETED_STATUSES,
+        GateReopenBlocked,
+        apply_task_field_changes,
+    )
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
     RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
     apply_task_field_changes = None
+    COMPLETED_STATUSES = frozenset({"completed", "done"})
 
     class GateReopenBlocked(Exception):
         """Fallback, wenn hub.task_audit nicht importierbar ist (kein Guard, aber
@@ -973,6 +978,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         ).fetchone()
                         if not existing:
                             return f"Task #{tid} nicht gefunden"
+                        if str(existing["status"] or "").strip().lower() in COMPLETED_STATUSES:
+                            return f"Task #{tid} war bereits erledigt."
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                             # T-20260906-833218904: schliesst dieselbe task_history-Luecke

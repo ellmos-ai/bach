@@ -1428,6 +1428,10 @@ def test_task_completion_receipts_require_successful_done_tool_response():
         "Task #42 nicht gefunden",
     )
     assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 war bereits erledigt.",
+    )
+    assert not runtime._record_task_completion_receipt(
         "worker-receipt-test", "task_manage", {"action": "update", "task_id": 42},
         "Task #42 aktualisiert: status",
     )
