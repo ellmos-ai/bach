@@ -10,6 +10,9 @@ hub.task_audit.apply_task_field_changes.
 
 import sqlite3
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -127,6 +130,37 @@ class TestTaskManageDone:
         assert row["status"] == status
         assert row["completed_at"] == "2026-01-01 00:00:00"
         assert _history_rows(db_path) == []
+
+    def test_done_is_atomic_for_parallel_workers(self, db_path, monkeypatch):
+        start = threading.Barrier(3)
+        audit_lock = threading.Lock()
+        audit_calls = 0
+        apply_changes = chat_runtime.apply_task_field_changes
+
+        def delayed_apply_changes(*args, **kwargs):
+            nonlocal audit_calls
+            with audit_lock:
+                audit_calls += 1
+            time.sleep(0.1)
+            return apply_changes(*args, **kwargs)
+
+        monkeypatch.setattr(chat_runtime, "apply_task_field_changes", delayed_apply_changes)
+
+        def complete_task():
+            start.wait(timeout=5)
+            return exec_tool("task_manage", {"action": "done", "task_id": 1}, mode="safe")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(complete_task)
+            second = pool.submit(complete_task)
+            start.wait(timeout=5)
+            results = [first.result(timeout=10), second.result(timeout=10)]
+
+        assert results.count("Task #1 erledigt.") == 1
+        assert results.count("Task #1 war bereits erledigt.") == 1
+        assert audit_calls == 1
+        assert _task_row(db_path)["status"] == "done"
+        assert len(_history_rows(db_path)) == 1
 
     def test_done_fallback_without_task_audit(self, db_path, monkeypatch):
         """Wenn hub.task_audit nicht importierbar ist (identischer sys.path-Vorbehalt

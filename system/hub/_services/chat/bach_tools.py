@@ -973,6 +973,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         tid = args.get("task_id")
                         if not tid:
                             return "Keine Task-ID angegeben"
+                        # Serialisiere Lesen und Statuswechsel. Ohne die Schreibtransaktion
+                        # könnten zwei Worker gleichzeitig einen offenen Status lesen und
+                        # beide einen erfolgreichen Abschlussbeleg ausstellen.
+                        conn.execute("BEGIN IMMEDIATE")
                         existing = conn.execute(
                             "SELECT * FROM tasks WHERE id=?", (tid,)
                         ).fetchone()
