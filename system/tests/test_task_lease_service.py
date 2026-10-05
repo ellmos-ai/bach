@@ -137,6 +137,101 @@ def _acq(conn, task_id, worker="agy-opus@ASUS-GEI", now=T0, **kw):
     return acquire_lease(conn, task_id, worker_id=worker, host=host, now=now, **kw)
 
 
+@pytest.mark.parametrize("operation", ["acquire", "renew", "release"])
+def test_ack_keeps_own_transaction_after_concurrent_reassignment(db_path, monkeypatch, operation):
+    """A legal replay/release/reacquire after commit must not rewrite the ACK."""
+    class AfterCommit(sqlite3.Connection):
+        after_commit = None
+        def commit(self):
+            super().commit()
+            if self.after_commit:
+                self.after_commit()
+
+    first = sqlite3.connect(str(db_path), timeout=10, factory=AfterCommit)
+    first.row_factory = sqlite3.Row
+    second = _connect(db_path)
+    task_id = _insert(first)
+    request_id = _rid()
+    original = None
+    if operation != "acquire":
+        original = _acq(first, task_id, worker="alpha@host-a", request_id=request_id).payload
+    fired = False
+    replacement = None
+
+    def reassign():
+        nonlocal fired, replacement
+        action = first.execute("SELECT action FROM task_history ORDER BY id DESC LIMIT 1").fetchone()
+        if fired or not action or action[0] != f"lease_{operation}":
+            return
+        fired = True
+        if operation != "release":
+            replay = _acq(second, task_id, worker="alpha@host-a", request_id=request_id)
+            assert replay.payload["replayed"] is True
+            result = release_lease(second, task_id, lease_id=replay.payload["lease_id"],
+                fence=replay.payload["fence"], outcome="return", config=CFG, now=T0)
+            assert result.payload["released"] is True
+        replacement = _acq(second, task_id, worker="beta@host-b").payload
+
+    first.after_commit = reassign
+    try:
+        if operation == "acquire":
+            received = _acq(first, task_id, worker="alpha@host-a", request_id=request_id).payload
+        elif operation == "renew":
+            received = renew_lease(first, task_id, lease_id=original["lease_id"],
+                fence=original["fence"], config=CFG, now=T0 + timedelta(seconds=1)).payload
+        else:
+            received = release_lease(first, task_id, lease_id=original["lease_id"],
+                fence=original["fence"], outcome="return", config=CFG, now=T0).payload
+        assert fired
+        assert replacement["worker_id"] == "beta@host-b"
+        assert replacement["fence"] == 2
+        assert received["fence"] == 1
+        if operation == "release":
+            assert received["status"] == "pending"
+        else:
+            assert received["worker_id"] == "alpha@host-a"
+            assert received["lease_id"] != replacement["lease_id"]
+    finally:
+        first.close()
+        second.close()
+
+
+@pytest.mark.parametrize("operation", ["acquire", "renew", "release"])
+def test_failed_commit_never_returns_ack_and_rolls_back(db_path, operation):
+    class RefuseCommit(sqlite3.Connection):
+        refuse_action = None
+        def commit(self):
+            action = self.execute("SELECT action FROM task_history ORDER BY id DESC LIMIT 1").fetchone()
+            if action and action[0] == self.refuse_action:
+                raise sqlite3.OperationalError("commit refused")
+            super().commit()
+
+    first = sqlite3.connect(str(db_path), timeout=10, factory=RefuseCommit)
+    first.row_factory = sqlite3.Row
+    task_id = _insert(first)
+    original = None
+    if operation != "acquire":
+        original = _acq(first, task_id).payload
+    before = _get(first, task_id)
+    first.refuse_action = f"lease_{operation}"
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="commit refused"):
+            if operation == "acquire":
+                _acq(first, task_id)
+            elif operation == "renew":
+                renew_lease(first, task_id, lease_id=original["lease_id"], fence=original["fence"],
+                            config=CFG, now=T0 + timedelta(seconds=1))
+            else:
+                release_lease(first, task_id, lease_id=original["lease_id"], fence=original["fence"],
+                              outcome="return", config=CFG, now=T0)
+        # Acquire also installs additive columns before its failing transaction.
+        after = _get(first, task_id)
+        assert all(after[key] == value for key, value in before.items())
+        assert first.in_transaction is False
+    finally:
+        first.close()
+
+
 # ---------------------------------------------------------------------------
 # Schema und Zeit
 # ---------------------------------------------------------------------------
