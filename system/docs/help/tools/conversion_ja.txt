@@ -7,7 +7,7 @@ BACH の変換ツールはファイル形式を変換します
 
 UNIVERSAL CONVERTER
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 多くの形式に対応した汎用変換ツール。
 サポート:
@@ -17,11 +17,11 @@ c_universal_converter.py
   - Excel -> CSV
   - 画像 (サイズ変更、フォーマット)
 
-呼び出し: python tools/c_universal_converter.py <input> <output>
+呼び出し: python tools/universal_converter.py <input> <output>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 Markdown ファイルをスタイル付きで PDF に変換します。
 特徴:
@@ -29,33 +29,33 @@ Markdown ファイルをスタイル付きで PDF に変換します。
   - テーブル
   - 画像を埋め込む
 
-呼び出し: python tools/c_md_to_pdf.py <md ファイル> [--output <pdf>]
+呼び出し: python tools/md_to_pdf.py <md ファイル> [--output <pdf>]
 
 エンコーディングとテキスト
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   エンコーディングの問題を修正 (UTF-8、Latin-1 など)
   不正なコーディングを自動的に検出します。
-  呼び出し: python tools/c_encoding_fixer.py <ファイル>
+  呼び出し: python tools/encoding_fixer.py <ファイル>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   ファイル内のドイツ語のウムラウトを修正します。
   壊れた文字を置き換えます (ae->ä、ue->ü など)
-  呼び出し: python tools/c_umlaut_fixer.py <ファイル>
+  呼び出し: python tools/umlaut_fixer.py <ファイル>
 
-c_standard_fixer.py
+standard_fixer.py
   コードのフォーマットを標準化します。
   末尾の空白を削除し、行末を統一します。
-  呼び出し: python tools/c_standard_fixer.py <ファイル>
+  呼び出し: python tools/standard_fixer.py <ファイル>
 
 JSON TOOLS
 ----------
 
-c_json_repair.py
+json_repair.py
   壊れた JSON ファイルを修復します。
   欠落しているカンマ、引用符、括弧を修正します。
-  呼び出し: python tools/c_json_repair.py <ファイル>
+  呼び出し: python tools/json_repair.py <ファイル>
 
 json_fixer.py
   高度なオプションを使用した代替 JSON 修復。
@@ -64,15 +64,15 @@ json_fixer.py
 CODE TOOLS
 ----------
 
-c_import_organizer.py
+import_organizer.py
   Python インポートを並べ替えて整理します。
   グループ化: 標準、サードパーティ、ローカル。
-  呼び出し: python tools/c_import_organizer.py <ファイル>
+  呼び出し: python tools/import_organizer.py <ファイル>
 
-c_indent_checker.py
+indent_checker.py
   インデントを確認して修正します。
   オプション: --tabs、--spaces N
-  呼び出し: python tools/c_indent_checker.py <ファイル>
+  呼び出し: python tools/indent_checker.py <ファイル>
 
 EXPORT
 ------

@@ -303,7 +303,7 @@ TOOLS
   tools/tool_scanner.py              CLI-Tool Discovery
   tools/file_cleaner.py              Datei-Cleanup
   tools/json_fixer.py                JSON-Reparatur
-  tools/c_path_healer.py             Pfad-Korrektur (WICHTIG: c_path_healer!)
+  tools/path_healer.py             Pfad-Korrektur (WICHTIG: path_healer!)
   tools/nulcleaner.py                NUL-Dateien entfernen
   tools/skill_header_gen.py          YAML-Header Generator
   tools/skill_help_gen.py            Help-Generator + Workflow-Validator

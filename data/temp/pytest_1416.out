@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/lukas/services/bach
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 34 items
+
+system/tests/test_composition_rules.py .................                 [ 50%]
+system/tests/test_gui_shell.py .................                         [100%]
+
+============================== 34 passed in 4.96s ==============================

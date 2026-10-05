@@ -7,7 +7,7 @@ und reparieren/standardisieren Dateien.
 
 UNIVERSAL CONVERTER
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 Universelles Konvertierungs-Tool für viele Formate.
 Unterstützt:
@@ -17,11 +17,11 @@ Unterstützt:
   - Excel -> CSV
   - Bilder (Resize, Format)
 
-Aufruf: python tools/c_universal_converter.py <eingabe> <ausgabe>
+Aufruf: python tools/universal_converter.py <eingabe> <ausgabe>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 Konvertiert Markdown-Dateien in PDF mit Styling.
 Features:
@@ -29,33 +29,33 @@ Features:
   - Tabellen
   - Bilder einbetten
 
-Aufruf: python tools/c_md_to_pdf.py <md-datei> [--output <pdf>]
+Aufruf: python tools/md_to_pdf.py <md-datei> [--output <pdf>]
 
 ENCODING & TEXT
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   Repariert Encoding-Probleme (UTF-8, Latin-1, etc.)
   Erkennt automatisch falsche Kodierung.
-  Aufruf: python tools/c_encoding_fixer.py <datei>
+  Aufruf: python tools/encoding_fixer.py <datei>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   Repariert deutsche Umlaute in Dateien.
   Ersetzt kaputte Zeichen (ae->ä, ue->ü, etc.)
-  Aufruf: python tools/c_umlaut_fixer.py <datei>
+  Aufruf: python tools/umlaut_fixer.py <datei>
 
-c_standard_fixer.py
+standard_fixer.py
   Standardisiert Code-Formatierung.
   Entfernt trailing whitespace, vereinheitlicht Zeilenenden.
-  Aufruf: python tools/c_standard_fixer.py <datei>
+  Aufruf: python tools/standard_fixer.py <datei>
 
 JSON TOOLS
 ----------
 
-c_json_repair.py
+json_repair.py
   Repariert kaputte JSON-Dateien.
   Fixiert fehlende Kommas, Quotes, Klammern.
-  Aufruf: python tools/c_json_repair.py <datei>
+  Aufruf: python tools/json_repair.py <datei>
 
 json_fixer.py
   Alternative JSON-Reparatur mit erweiterten Optionen.
@@ -64,15 +64,15 @@ json_fixer.py
 CODE TOOLS
 ----------
 
-c_import_organizer.py
+import_organizer.py
   Sortiert und organisiert Python-Imports.
   Gruppiert: Standard, Third-Party, Local.
-  Aufruf: python tools/c_import_organizer.py <datei>
+  Aufruf: python tools/import_organizer.py <datei>
 
-c_indent_checker.py
+indent_checker.py
   Prüft und korrigiert Einrückung.
   Optionen: --tabs, --spaces N
-  Aufruf: python tools/c_indent_checker.py <datei>
+  Aufruf: python tools/indent_checker.py <datei>
 
 EXPORT
 ------

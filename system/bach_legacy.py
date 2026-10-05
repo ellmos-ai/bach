@@ -1444,104 +1444,91 @@ def main():
 
     elif command == "file":
         # Filesystem-Manager (FILE_002)
-        sys.path.insert(0, str(TOOLS_DIR))
         try:
-            import c_file_manager
-            
-            if not sub_cmd:
-                print("Usage: bach file <cmd> [args]...")
-                print("Commands: read, write, append, delete, copy, move, info, list")
-                return 1
-
-            result = {}
-            error = None
-            
-            try:
-                if sub_cmd == "read" and len(args) >= 1:
-                    result = c_file_manager.read_file(args[0])
-                
-                elif sub_cmd == "write" and len(args) >= 2:
-                    content = args[1]
-                    overwrite = "--overwrite" in args
-                    result = c_file_manager.write_file(args[0], content, overwrite=overwrite)
-                
-                elif sub_cmd == "append" and len(args) >= 2:
-                    content = args[1]
-                    result = c_file_manager.append_file(args[0], content)
-                
-                elif sub_cmd == "delete" and len(args) >= 1:
-                    result = c_file_manager.delete_file(args[0])
-                
-                elif sub_cmd == "copy" and len(args) >= 2:
-                    result = c_file_manager.copy_file(args[0], args[1])
-                
-                elif sub_cmd == "move" and len(args) >= 2:
-                    result = c_file_manager.move_file(args[0], args[1])
-                
-                elif sub_cmd == "info" and len(args) >= 1:
-                    result = c_file_manager.get_file_info(args[0])
-                
-                elif sub_cmd == "list" and len(args) >= 1:
-                    result = c_file_manager.list_dir(args[0])
-                
-                else:
-                    error = f"Invalid arguments or unknown command: {sub_cmd}"
-
-            except Exception as e:
-                error = str(e)
-            
-            if error:
-                print(json.dumps({"error": error}, indent=2))
-                return 1
-                
-            print(json.dumps(result, indent=2))
-            return 0 if "error" not in result else 1
-            
+            from tools.file_ops import file_manager
         except ImportError:
-            print("[ERROR] c_file_manager.py not found in tools/")
+            print("[ERROR] tools.file_ops.file_manager not found")
             return 1
+
+        if not sub_cmd:
+            print("Usage: bach file <cmd> [args]...")
+            print("Commands: read, write, append, delete, copy, move, info, list")
+            return 1
+
+        result = {}
+        error = None
+
+        try:
+            if sub_cmd == "read" and len(args) >= 1:
+                result = file_manager.read_file(args[0])
+
+            elif sub_cmd == "write" and len(args) >= 2:
+                content = args[1]
+                overwrite = "--overwrite" in args
+                result = file_manager.write_file(args[0], content, overwrite=overwrite)
+
+            elif sub_cmd == "append" and len(args) >= 2:
+                content = args[1]
+                result = file_manager.append_file(args[0], content)
+
+            elif sub_cmd == "delete" and len(args) >= 1:
+                result = file_manager.delete_file(args[0])
+
+            elif sub_cmd == "copy" and len(args) >= 2:
+                result = file_manager.copy_file(args[0], args[1])
+
+            elif sub_cmd == "move" and len(args) >= 2:
+                result = file_manager.move_file(args[0], args[1])
+
+            elif sub_cmd == "info" and len(args) >= 1:
+                result = file_manager.get_file_info(args[0])
+
+            elif sub_cmd == "list" and len(args) >= 1:
+                result = file_manager.list_dir(args[0])
+
+            else:
+                error = f"Invalid arguments or unknown command: {sub_cmd}"
+
+        except Exception as e:
+            error = str(e)
+
+        if error:
+            print(json.dumps({"error": error}, indent=2))
+            return 1
+
+        print(json.dumps(result, indent=2))
+        return 0 if "error" not in result else 1
 
     elif command == "ocr":
         # OCR-Tool aufrufen
-        sys.path.insert(0, str(TOOLS_DIR))
-        from c_ocr_engine import OCREngine, find_beleg_pdf
-        
+        from tools.ocr.engine import OCREngine
+
         if not sub_cmd:
-            print("Usage: bach ocr <beleg_id|pdf_path>")
-            print("       bach ocr B0006")
-            print("       bach ocr 6")
+            print("Usage: bach ocr <pdf_path|image_path>")
             return 1
-        
-        # Beleg finden
-        if sub_cmd.lower().startswith("b") or sub_cmd.isdigit():
-            pdf_path = find_beleg_pdf(sub_cmd)
-            if not pdf_path:
-                print(f"[ERROR] Beleg {sub_cmd} nicht gefunden")
-                return 1
-            print(f"[INFO] Gefunden: {pdf_path.name}")
-        else:
-            pdf_path = Path(sub_cmd)
-            if not pdf_path.exists():
-                print(f"[ERROR] Datei nicht gefunden: {sub_cmd}")
-                return 1
-        
+
+        pdf_path = Path(sub_cmd)
+        if not pdf_path.exists():
+            print(f"[ERROR] Datei nicht gefunden: {sub_cmd}")
+            return 1
+
         # OCR
         engine = OCREngine()
-        if not engine.is_available:
+        if not engine.available:
             print("[ERROR] Tesseract nicht verfuegbar!")
             return 1
-        
+
         print(f"\n[OCR] Scanne {pdf_path.name}...")
         results = engine.recognize_pdf(str(pdf_path))
-        
+
         if not results:
             print("[WARN] Keine Ergebnisse")
             return 1
-        
+
         for r in results:
             print(f"\n--- Seite {r.page_num} ({r.confidence:.0f}% Konfidenz) ---\n")
             print(r.text[:2000])  # Max 2000 Zeichen
-        
+
         return 0
     
     else:
@@ -1623,21 +1610,21 @@ def _suggest_command(unknown: str) -> str:
 
 def _try_run_tool(name: str, args: list) -> Optional[int]:
     """Versucht ein Tool aus tools/ auszufuehren.
-    
-    Ermoeglicht: bach c_encoding_fixer datei.py
-    Statt:       python tools/c_encoding_fixer.py datei.py
+
+    Ermoeglicht: bach encoding_fixer datei.py
+    Statt:       python tools/encoding_fixer.py datei.py
     """
     import subprocess
-    
+
     # Tool suchen
     tool_file = None
-    
+
     # Exakter Match
     exact = TOOLS_DIR / f"{name}.py"
     if exact.exists():
         tool_file = exact
     else:
-        # Prefix-Match (z.B. "encoding" findet "c_encoding_fixer")
+        # Substring-Match (z.B. "encoding" findet "encoding_fixer")
         for f in TOOLS_DIR.glob("*.py"):
             if name.lower() in f.stem.lower():
                 tool_file = f

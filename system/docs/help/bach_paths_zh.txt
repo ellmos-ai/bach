@@ -65,13 +65,13 @@ system/hub/bach_paths.py
 bach_paths 的解决方案：
 
     尝试：
-        从 c_ocr_engine 导入 ocr_pdf
+        从 ocr_engine 导入 ocr_pdf
     除了导入错误：
         从 bach_paths 导入 get_path
         工具目录 = get_path("工具")
         如果 str(tools_dir) 不在 sys.path 中：
             sys.path.insert(0, str(tools_dir))
-        from c_ocr_engine import ocr_pdf
+        from ocr_engine import ocr_pdf
 
 示例：模板路径
 -----------------------

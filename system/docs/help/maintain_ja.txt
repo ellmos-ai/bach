@@ -302,7 +302,7 @@ TOOLS
   tools/tool_scanner.py CLI ツールの検出
   tools/file_cleaner.py ファイルのクリーンアップ
   tools/json_fixer.py JSON 修復
-  tools/c_path_healer.py パスの修正 (重要: c_path_healer!)
+  tools/path_healer.py パスの修正 (重要: path_healer!)
   tools/nulcleaner.py NUL ファイルを削除する
   tools/skill_header_gen.py YAML ヘッダー ジェネレーター
   tools/skill_help_gen.py ヘルプ ジェネレーター + ワークフロー バリデーター

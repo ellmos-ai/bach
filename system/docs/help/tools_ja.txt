@@ -33,15 +33,15 @@ BACH 経由の直接呼び出し (推奨)
 
 例:
   bach python_cli_editor script.py --show-all     構造を表示
-  bach c_encoding_fixer datei.py                  エンコーディングを修復
-  bach c_import_organizer datei.py --save         インポートを並べ替え
-  bach c_json_repair kaputt.json                  JSON を修復
-  bach c_pycutter grosse_datei.py                 ファイルを分割
-  bach c_sqlite_viewer data/bach.db               DB を表示
+  bach encoding_fixer datei.py                  エンコーディングを修復
+  bach import_organizer datei.py --save         インポートを並べ替え
+  bach json_repair kaputt.json                  JSON を修復
+  bach pycutter grosse_datei.py                 ファイルを分割
+  bach sqlite_viewer data/bach.db               DB を表示
   bach code_analyzer projekt/                     コード分析
 
 利点:
-  - 以下より短い: bach --tools run c_encoding_fixer file.py
+  - 以下より短い: bach --tools run encoding_fixer file.py
   - タブ補完可能
   - Python の直接呼び出しと同じ構文
 
@@ -85,7 +85,7 @@ PYTHON-TOOLS (tools/)
 ---------------------
 接頭辞規則 (参照: bach --help 命名):
 
-  AI 用に最適化された c_* CLI (Claude/recludOS)
+  AI 用に最適化された CLI (Claude/recludOS)
              - 明確な出力、エンコードセーフ、JSON セーフ
   b_* BACH コア (システムクリティカル)
   a_* エージェント ランナー
@@ -121,7 +121,7 @@ PYTHON-TOOLS (tools/)
   autolog_analyzer.py 自動ログ分析
   backup_manager.py バックアップ管理
   injectors.py インジェクター システム
-  c_dirscan.py ディレクトリ スキャン
+  dirscan.py ディレクトリ スキャン
   session_analyzer.py セッション分析
   time_system.py 時刻システム
   token_monitor.py トークンの監視
@@ -133,13 +133,13 @@ PYTHON-TOOLS (tools/)
   ツールのCLIコマンド機能
   ------------------------ ------------------------ ------------------------
   doc_update_checker.py bach --ドキュメントドキュメントのチェックを維持します
-  c_duplicate_detector.py bach --重複を維持する 重複検出
-  c_pattern_tool.py bach --maintain pattern ファイル名パターン
-  c_tool_scanner.py bach --maintain scan CLI ツール検出
-  c_file_cleaner.py bach --maintain clean 古いファイルを削除します
-  c_json_fixer.py bach --maintain json JSON を修正する
-  c_sync_registry.py レジストリを同期する
-  c_json_registry_cleaner.py レジストリのクリーンアップ
+  duplicate_detector.py bach --重複を維持する 重複検出
+  pattern_tool.py bach --maintain pattern ファイル名パターン
+  tool_scanner.py bach --maintain scan CLI ツール検出
+  file_cleaner.py bach --maintain clean 古いファイルを削除します
+  json_fixer.py bach --maintain json JSON を修正する
+  sync_registry.py レジストリを同期する
+  json_registry_cleaner.py レジストリのクリーンアップ
   backup_manager.py バックアップ管理
   nulcleaner.py NUL 文字を削除
 
@@ -170,29 +170,29 @@ PYTHON-TOOLS (tools/)
 
   ツール機能
   -------------------------------------- ----------------------------
-  c_encoding_fixer.py エンコーディングを修正する
-  c_emoji_scanner.py 絵文字の検索/置換
-  c_standard_fixer.py コード標準を適用する
-  c_json_repair.py JSON を修復する
-  c_json_fixer.py JSON を修正 (古い)
-  c_import_organizer.py インポートの並べ替え
-  c_import_diagnose.py インポートの問題を検索する
-  c_indent_checker.py インデントをチェックする
-  c_umlaut_fixer.py ウムラウトを修正する
-  c_german_scanner.py ドイツ語の単語を検索する
-  c_method_analyzer.py 分析メソッド
-  c_pycutter.py Python ファイルの分割
-  c_sqlite_viewer.py SQLite データベースを表示する
-  c_license_generator.py ライセンス ファイルの作成
-  c_md_to_pdf.py PDF へのマークダウン
-  c_universal_converter.py 形式の変換
-  c_universal_compiler.py ユニバーサル コンパイラ
-  c_youtube_extractor.py YouTube 抽出
-  c_code_analyzer.py コード分析
-  c_code_generator.py コード生成
-  c_python_cli_editor.py 構造化された方法で Python を編集する
-  c_struct_generator.py 構造体ジェネレーター
-  c_header_maigrate.py ヘッダーの移行
+  encoding_fixer.py エンコーディングを修正する
+  emoji_scanner.py 絵文字の検索/置換
+  standard_fixer.py コード標準を適用する
+  json_repair.py JSON を修復する
+  json_fixer.py JSON を修正 (古い)
+  import_organizer.py インポートの並べ替え
+  import_diagnose.py インポートの問題を検索する
+  indent_checker.py インデントをチェックする
+  umlaut_fixer.py ウムラウトを修正する
+  german_scanner.py ドイツ語の単語を検索する
+  method_analyzer.py 分析メソッド
+  pycutter.py Python ファイルの分割
+  sqlite_viewer.py SQLite データベースを表示する
+  license_generator.py ライセンス ファイルの作成
+  md_to_pdf.py PDF へのマークダウン
+  universal_converter.py 形式の変換
+  universal_compiler.py ユニバーサル コンパイラ
+  youtube_extractor.py YouTube 抽出
+  code_analyzer.py コード分析
+  code_generator.py コード生成
+  python_cli_editor.py 構造化された方法で Python を編集する
+  structure_generator.py 構造体ジェネレーター
+  header_migrate.py ヘッダーの移行
   call_graph.py コール グラフ分析
 
 ### 制御ツール
@@ -262,9 +262,9 @@ PYTHON-TOOLS (tools/)
 
 ツール機能
   -------------------------------------- ----------------------------
-  c_skill_init.py スキル構造の初期化
-  c_skill_package.py パッケージスキル
-  c_skill_validate.py スキルの検証
+  skill_init.py スキル構造の初期化
+  skill_package.py パッケージスキル
+  skill_validate.py スキルの検証
   skill_export.py スキルのエクスポート
   skill_header_gen.py スキルヘッダーの生成
   skill_help_gen.py スキル ヘルプの生成
@@ -273,9 +273,9 @@ PYTHON-TOOLS (tools/)
 
   ツール機能
   -------------------------------------- ----------------------------
-  c_project_bundler.py プロジェクト バンドラー
-  c_audit_bundler.py 監査バンドルの作成
-  c_path_healer.py パス修復
+  project_bundler.py プロジェクト バンドラー
+  audit_bundler.py 監査バンドルの作成
+  path_healer.py パス修復
   batch_file_ops.py バッチ ファイル操作
 
 ### 分析と監視
@@ -295,7 +295,7 @@ PYTHON-TOOLS (tools/)
 
   ツール機能
   -------------------------------------- ----------------------------
-  c_dictionary_builder.py 辞書ビルダー
+  dictionary_builder.py 辞書ビルダー
   lesson_trigger_generator.py レッスントリガージェネレーター
   theme_packet_generator.py テーマ パケット ジェネレーター
   workflow_trigger_generator.py ワークフロー トリガー ジェネレーター
@@ -318,7 +318,7 @@ PYTHON-TOOLS (tools/)
 
   ツール機能
   -------------------------------------- ----------------------------
-  c_headless_agent.py ヘッドレスエージェント
+  headless_agent.py ヘッドレスエージェント
   bach_auto_discovery.py 自動検出システム
   tool_auto_discovery.py ツール自動検出
 
@@ -397,12 +397,12 @@ bach --tools show ffmpeg
 bach --tools show chatgpt
 
 # ツールの実行
-bach --tools run c_encoding_fixer datei.py
+bach --tools run encoding_fixer datei.py
 
 # 直接呼び出し (推奨)
-bach c_encoding_fixer datei.py
-bach c_skill_init neuer_skill
-bach c_project_bundler ./projekt
+bach encoding_fixer datei.py
+bach skill_init neuer_skill
+bach project_bundler ./projekt
 
 # 検索
 bach --tools search video
@@ -438,7 +438,7 @@ TOOL INVENTORY (~83 tools)
 
 命名規則 (プレフィックス):
 
-  c_* AI 用に最適化された CLI (40 以上のツール)
+  AI 用に最適化された CLI (40 以上のツール)
   b_* BACH コア (システムクリティカル)
   a_* エージェント ランナー ツール
   t_* テストツール
@@ -452,8 +452,8 @@ TOOL INVENTORY (~83 tools)
   ------------------------ ----------------------------
   税/財務スイート (予算、経費)
   ocr_engine.py DokuZentrum Pro
-  c_md_to_pdf.py 黒曜石のエクスポート
-  c_youtube_extractor.py Media Suite
+  md_to_pdf.py 黒曜石のエクスポート
+  youtube_extractor.py Media Suite
 
 ソース: user/_archive/BACH_NATIVE_TOOLS_MAPPING.md にアーカイブ
 
@@ -493,15 +493,15 @@ ContextInjector はキーワードを認識し、適切なツールを推奨し�
 
   キーワードツールの推奨事項
   --------------------- --------------------------------------
-  「エンコーディングの問題」 bach c_encoding_fixer <ファイル>
-  "インポートの並べ替え" bach c_import_organizer <ファイル>
-  「Python の編集」 bach c_python_cli_editor <ファイル> --show-all
-  「ファイルを分割」 bach c_pycutter <ファイル>
-  "view sqlite" bach c_sqlite_viewer <db>
+  「エンコーディングの問題」 bach encoding_fixer <ファイル>
+  "インポートの並べ替え" bach import_organizer <ファイル>
+  「Python の編集」 bach python_cli_editor <ファイル> --show-all
+  「ファイルを分割」 bach pycutter <ファイル>
+  "view sqlite" bach sqlite_viewer <db>
   「ツールを検索」バッハツールが「説明」を提案します
-  "スキルの作成" bach c_skill_init <名前>
-  「プロジェクト バンドル」 bach c_project_bundler <パス>
-  「修復パス」 bach c_path_healer <ファイル>
+  "スキルの作成" bach skill_init <名前>
+  「プロジェクト バンドル」 bach project_bundler <パス>
+  「修復パス」 bach path_healer <ファイル>
   "start mcp" python tools/mcp_server.py
 
 参照: bach --help injectors (完全なトリガー リスト)

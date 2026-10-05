@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BACH — Installer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d1a;color:#e0e0e0;font-family:'Courier New',monospace;font-size:.9rem;padding:2rem}
+.container{max-width:800px;margin:0 auto}
+.wip-banner{background:#1a1a2e;border:2px solid #e67e22;border-radius:8px;padding:1.5rem;margin:1rem 0}
+.wip-banner strong{color:#e67e22;font-size:1.1rem}
+.wip-banner ul{margin:1rem 0 0 1.5rem;line-height:1.8}
+.status-card{background:#111827;border:1px solid #333;border-radius:8px;padding:1rem;margin:1rem 0}
+.status-card h3{color:#6ee7b7;margin-bottom:.5rem}
+.status-card .missing{color:#f87171}
+.status-card .needed{color:#fbbf24}
+nav{margin-bottom:1rem}
+nav a{color:#60a5fa;text-decoration:none;margin-right:1rem}
+nav a:hover{text-decoration:underline}
+footer{margin-top:2rem;color:#666;font-size:.75rem}
+</style>
+</head>
+<body>
+<div class="container">
+<nav>
+<a href="/">&larr; Dashboard</a>
+<a href="/artefakte">Artefakte</a>
+<a href="/governance">Governance</a>
+</nav>
+
+<div class="wip-banner">
+<strong>🚧 In Arbeit: Installer</strong>
+<p style="margin-top:.5rem">Kein signierter Grant, kein Receipt, kein Rollback, 0 Backend-Code. Die Seite ist nicht funktional.</p>
+<ul>
+<li class="missing">✗ /api/installer/* — existiert nicht (0 Treffer in server.py)</li>
+<li class="missing">✗ HMAC-Signatur-Verifizierung — nicht implementiert</li>
+<li class="missing">✗ Grant-Verifizierung — kein Producer/Store</li>
+<li class="missing">✗ Receipt-Log — kein Persistenz-Mechanismus</li>
+<li class="missing">✗ Rollback-Snapshot — kein Snap-Endpoint</li>
+<li class="needed">→ Benötigt: /api/installer/grant (POST, signiert), /api/installer/receipt (GET/POST), /api/installer/rollback (POST)</li>
+<li class="needed">→ Benötigt: artefakte.html /api/artifacts/* Endpoints (auth/opaque IDs)</li>
+<li class="needed">→ Benötigt: daemon.html /api/daemon/* (bereits ECHT ✓)</li>
+</ul>
+</div>
+
+<div class="status-card">
+<h3>Status: GUX-085 Installer</h3>
+<p><span class="missing">Frontend:</span> Diese WIP-Seite (kein echter Installer-Flow).</p>
+<p><span class="missing">Backend:</span> 0 Endpoints in server.py. Kein Grant-Receipt-Modul.</p>
+<p><span class="needed">Plan:</span> Signierter Installer-Grant (HMAC), Receipt-Log mit Prüfsumme, Rollback per Snapshot-Restore. Abhängig von artefakte-Register (GUX-080) und daemon (GUX-086 ✓).</p>
+</div>
+
+<div class="status-card">
+<h3>Was ECHT existiert</h3>
+<p style="color:#6ee7b7">✓ GUX-086 Daemon: /api/daemon/status|start|stop|jobs|scheduler|chains</p>
+<p style="color:#6ee7b7">✓ GUX-084 Settings: /api/settings/theme GET/PUT, device-auth.js</p>
+<p style="color:#6ee7b7">✓ GUX-081 Logs: /api/system/logs/{filename}</p>
+<p style="color:#6ee7b7">✓ GUX-082 Usecases: /api/usecases CRUD</p>
+<p style="color:#6ee7b7">✓ GUX-083 Help: /api/help, /api/status</p>
+<p style="color:#6ee7b7">✓ GUX-079 Inbox: /api/inbox/*, /api/anonymization/*, /api/mounts</p>
+</div>
+
+<footer>BACH GUI — Installer WIP — GUX-085 — Stand: 2025-06 — Nicht für Produktion</footer>
+</div>
+</body>
+</html>

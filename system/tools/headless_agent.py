@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_headless_agent
+Tool: headless_agent
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_headless_agent
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version headless_agent
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_headless_agent.py [args]
+    python headless_agent.py [args]
 """
 
 __version__ = "1.0.0"
@@ -44,14 +44,14 @@ __author__ = "BACH Team"
 
 # -*- coding: utf-8 -*-
 """
-c_headless_agent.py - Headless AI Session Controller v1.0
+headless_agent.py - Headless AI Session Controller v1.0
 =========================================================
 
 Automatisierte Kommunikation mit KI-Partnern im Hintergrund.
 Task: AI_001 (#455)
 
 Nutzung:
-    python tools/c_headless_agent.py "Prompt Text" [--partner claude]
+    python tools/headless_agent.py "Prompt Text" [--partner claude]
 """
 
 import sys
@@ -102,7 +102,7 @@ def run_headless_query(db_path: Path, prompt: str, partner: str = "claude"):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python c_headless_agent.py \"Prompt\" [--prompt-file PATH] [--partner NAME]")
+        print("Usage: python headless_agent.py \"Prompt\" [--prompt-file PATH] [--partner NAME]")
         sys.exit(1)
 
     if "--prompt-file" in sys.argv:

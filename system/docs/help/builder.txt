@@ -15,8 +15,8 @@ bach skills version <name>              Versions-Check
 
 WERKZEUGE IN system/tools/
 ---------------------------
-c_structure_generator.py <n> <profil>   Skill/Agent erstellen
-c_structure_generator.py <n> --embedded Für BACH (leichtgewichtig)
+structure_generator.py <n> <profil>   Skill/Agent erstellen
+structure_generator.py <n> --embedded Für BACH (leichtgewichtig)
 
 generators/os_generator.py <n> [ziel]   Neues OS erstellen
 generators/exporter.py skill <n>        Skill exportieren

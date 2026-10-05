@@ -4,7 +4,7 @@ version: 3.9.1
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-12
+updated: 2026-09-29
 anthropic_compatible: true
 
 description: >
@@ -867,6 +867,14 @@ injector.status()                     # Status aller Injektoren
 injector.toggle("strategy_injector")  # Einzeln an/aus
 injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
 ```
+
+## CLAUDE BRIDGE
+
+- **Läuft lokal** auf http://127.0.0.1:8091 (Config: system/hub/_services/claude_bridge/config.json — port 8091, mode local, autostart, fackel_check)
+- **Start:** startspine start --bridge — eine neue Session weiß: Bridge ist auf 8091 erreichbar
+- **Healthcheck:** GET /health (200), GET /docs („BACH Claude Bridge API")
+- **Fackel-Modell:** max. 2×24h pro Benutzer (bridge_assistant + personal_assistant), Fackel ortsgebunden an (user_id, system_id), Single-24h-Privileg pro system_id
+- **BACH-API:** GET /api/fackel/status, POST /api/fackel/request|handover|release
 
 ---
 

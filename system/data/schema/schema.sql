@@ -132,6 +132,21 @@ CREATE TABLE IF NOT EXISTS memory_working (
     related_to TEXT
 );
 
+CREATE TABLE IF NOT EXISTS working_memory_failure_trails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_path TEXT NOT NULL,
+    failure_signature TEXT NOT NULL,
+    context_hash TEXT NOT NULL,
+    first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hit_count INTEGER DEFAULT 1,
+    resolution_hint TEXT,
+    last_tool_state TEXT,
+    UNIQUE(tool_path, failure_signature, context_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_working_memory_failure_trails_tool_path ON working_memory_failure_trails(tool_path);
+
 CREATE TABLE IF NOT EXISTS memory_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category TEXT NOT NULL CHECK(category IN ('user', 'project', 'system', 'domain')),
@@ -1030,10 +1045,36 @@ CREATE TABLE IF NOT EXISTS steuer_posten (
     version INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')), posten_id_str TEXT, belegnr INTEGER, dist_type INTEGER DEFAULT 0,
+    match_status TEXT,              -- AUTO_MATCHED/SUGGESTED/UNMATCHED (Task #1397)
+    bank_tx_id INTEGER,             -- Referenz auf steuer_bank_transactions.id
     
     FOREIGN KEY (username) REFERENCES steuer_profile(username),
     FOREIGN KEY (dokument_id) REFERENCES steuer_dokumente(id)
 );
+
+-- Jede CAMT-Buchung (Ntry) aus camt_parser, vorzeichenbehaftet (DBIT negativ).
+-- hash = sha256(iban|datum|betrag|typ|partner|zweck), UNIQUE -> INSERT OR IGNORE macht Re-Import idempotent.
+CREATE TABLE IF NOT EXISTS steuer_bank_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    steuerjahr INTEGER,
+    buchungsdatum TEXT,
+    wertstellungsdatum TEXT,
+    betrag REAL,                     -- vorzeichenbehaftet: DBIT = negativ
+    typ TEXT,                        -- CRDT/DBIT
+    partner TEXT,
+    zweck TEXT,
+    iban TEXT,
+    partner_iban TEXT,
+    waehrung TEXT DEFAULT 'EUR',
+    hash TEXT UNIQUE,
+    quelle TEXT DEFAULT 'CAMT',
+    datei TEXT,
+    imported_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_steuer_bank_tx_hash ON steuer_bank_transactions(hash);
+CREATE INDEX IF NOT EXISTS idx_steuer_bank_tx_user_jahr ON steuer_bank_transactions(username, steuerjahr);
 
 CREATE TABLE IF NOT EXISTS steuer_auswertung (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

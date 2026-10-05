@@ -65,7 +65,7 @@ SKILLS HIERARCHY (system/skills/)
   agents/agent profiles (roles)
   skills/workflows/workflow definitions (22 workflows)
   agents/_experts/ Expert configurations
-  skills/_services/ service descriptions
+  hub/_services/ service descriptions
   skills/_templates/ Templates
   partners/partner LLM configurations
   connectors/External connections

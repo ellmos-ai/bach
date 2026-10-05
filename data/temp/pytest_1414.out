@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/lukas/services/bach
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 108 items
+
+system/tests/test_connectors_and_tray.py ............................... [ 28%]
+........................................................................ [ 95%]
+.....                                                                    [100%]
+
+============================= 108 passed in 1.70s ==============================

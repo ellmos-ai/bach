@@ -49,7 +49,7 @@ BACH を積極的に改善し、新しい機能とシステムを作成する
     → get_operations() を使用した BaseHandler サブクラス
 
   bach skills create data-sync --type service
-    → 作成: system/skills/_services/data-sync/
+    → 作成: system/hub/_services/data-sync/
     → __init__.py と service.py によるサービス
     → ハンドラーに近い、一般的な使用
 

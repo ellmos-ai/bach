@@ -40,7 +40,7 @@ MIGRATION JSON -> DB (正常に完了)
 
 変換
 -------------
-  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+  python system/tools/universal_converter.py <file> --to [json|yaml|toml|xml|toon]
 
 関連項目
 ----------

@@ -1,0 +1,99 @@
+---
+// BachLayout.astro - Master Layout fuer die vereinigte BACH / OCEAN GUI
+import Header from "../components/Header.astro";
+import "../styles/main.css";
+
+interface Props {
+  title: string;
+  currentPath?: string;
+}
+
+const { title, currentPath = "/" } = Astro.props;
+const pageTitle = title ? `${title} | System GUI` : "System GUI";
+---
+
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{pageTitle}</title>
+
+    <!-- Pre-load Theme before body render to avoid FOUC -->
+    <script is:inline>
+      (function() {
+        const theme = localStorage.getItem("bach-theme") || "dark";
+        if (theme !== "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      })();
+    </script>
+
+    <!-- Explicit device login; public API reads remain available without a token. -->
+    <script is:inline>
+      (function() {
+        // Global fetch patch for API requests
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+          const isApi = typeof url === 'string' && url.startsWith('/api/');
+          if (isApi) {
+            const token = localStorage.getItem("bach_device_token");
+            if (token) {
+              options.headers = options.headers || {};
+              if (options.headers instanceof Headers) {
+                if (!options.headers.has("Authorization")) {
+                  options.headers.set("Authorization", "Bearer " + token);
+                }
+              } else if (Array.isArray(options.headers)) {
+                options.headers.push(["Authorization", "Bearer " + token]);
+              } else {
+                if (!options.headers["Authorization"]) {
+                  options.headers["Authorization"] = "Bearer " + token;
+                }
+              }
+            }
+          }
+          return originalFetch(url, options).then(response => {
+            if (isApi && response.status === 401 && document.body && !document.getElementById('bach-auth-required')) {
+              const notice = document.createElement('div');
+              notice.id = 'bach-auth-required';
+              notice.style.cssText = 'padding:0.75rem 1rem;background:var(--bg-card);border-bottom:1px solid var(--warning);color:var(--text)';
+              notice.append('Für diese Aktion ist eine Geräteanmeldung erforderlich. ');
+              const login = document.createElement('a');
+              login.href = '/token-dashboard';
+              login.textContent = 'Gerät anmelden';
+              notice.append(login);
+              document.body.prepend(notice);
+            }
+            return response;
+          });
+        };
+      })();
+    </script>
+
+    <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <slot name="head" />
+  </head>
+
+  <body>
+    <Header currentPath={currentPath} />
+
+    <main class="container">
+      <slot />
+    </main>
+
+    <footer style="margin-top:auto;border-top:1px solid var(--border);padding:1.25rem 1rem;text-align:center;font-size:0.75rem;color:var(--text-muted);background:var(--bg-panel);">
+      <div style="display:flex;justify-content:space-between;align-items:center;max-width:1400px;margin:0 auto;">
+        <span><strong data-gui-brand-product>System GUI</strong> · <span data-gui-brand-label>unverbunden</span></span>
+        <span>Modulare Oberfläche · Backendstatus nach Live-Prüfung</span>
+      </div>
+    </footer>
+  </body>
+</html>

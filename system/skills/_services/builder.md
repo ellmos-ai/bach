@@ -115,7 +115,7 @@ python skills/tools/structure_generator.py analyse MICRO
 
 # Skill erstellen (für BACH)
 python skills/tools/structure_generator.py analyse --embedded skill
-# → Erstellt nur SKILL.md in skills/_services/
+# → Erstellt nur SKILL.md in hub/_services/
 
 # Agent erstellen
 python skills/tools/structure_generator.py schreib-assistent AGENT
@@ -131,7 +131,7 @@ Bei Erstellung **innerhalb BACH** gelten:
 1. **Benennung:** kebab-case, lowercase (`analyze-system.md`)
 2. **Format:** Markdown mit Frontmatter
 3. **Speicherort:**
-   - Service-Skills → `skills/_services/`
+   - Service-Skills → `hub/_services/`
    - Agents → `agents/`
    - Workflows → `skills/workflows/`
    - Templates → `skills/_templates/`

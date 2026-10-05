@@ -79,6 +79,8 @@ class SandboxHandler(BaseHandler):
         super().__init__(base_path_or_app)
         self._allowed_commands: FrozenSet[str] = self._load_allowed_commands()
         self._memory_limit_mb = self._load_memory_limit()
+        self._backend = self._load_backend()
+        self._container_mode = self._load_container_mode()
 
     @property
     def profile_name(self) -> str:
@@ -98,6 +100,8 @@ class SandboxHandler(BaseHandler):
             "allow": "Befehl zur Allowlist hinzufuegen: allow <cmd>",
             "deny": "Befehl von der Allowlist entfernen: deny <cmd>",
             "limit": "Memory-Limit anzeigen/setzen: limit [mb]",
+            "backend": "Backend anzeigen/setzen: backend [docker|local|auto]",
+            "container": "Container-Isolation (Stufe 3): container status|build|run <datei>|mode [auto|on|off]",
         }
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
@@ -120,6 +124,10 @@ class SandboxHandler(BaseHandler):
             return self._deny_command(args[0])
         elif operation == "limit":
             return self._limit(args)
+        elif operation == "container":
+            return self._container(args)
+        elif operation == "backend":
+            return self._backend_op(args)
         else:
             ops = "\n".join(f"  {k}: {v}" for k, v in self.get_operations().items())
             return False, f"Nutzung:\n{ops}"
@@ -132,6 +140,34 @@ class SandboxHandler(BaseHandler):
             fpath = self.base_path / filepath
         if not fpath.exists():
             return False, f"Datei nicht gefunden: {fpath}"
+
+        # Stufe 3: Container-Isolation (optional, mit Rollback auf _isolated)
+        force_container = "--container" in extra_args
+        extra_args = [a for a in extra_args if a != "--container"]
+        use_container = force_container or self._container_mode == "on"
+        if not use_container and self._container_mode == "auto":
+            use_container = self._container_available()
+        if use_container:
+            try:
+                from core.container_sandbox import ContainerUnavailable, run_in_container
+                from core.sandbox import SandboxLimits
+            except ImportError:
+                pass  # Modul nicht verfuegbar -> Fallback auf _isolated
+            else:
+                try:
+                    result = run_in_container(
+                        str(fpath),
+                        limits=SandboxLimits(timeout_sec=self.TIMEOUT, memory_mb=self._memory_limit_mb),
+                        workspace=str(self.base_path),
+                    )
+                    if result.timed_out:
+                        return False, f"TIMEOUT ({self.TIMEOUT}s) bei {fpath.name} [container]"
+                    output = self._format_result(result, f"run {fpath.name} [container]")
+                    if result.memory_exceeded:
+                        return False, f"MEMORY-LIMIT ({self._memory_limit_mb}MB) bei {fpath.name} [container]\n{output}"
+                    return result.returncode == 0, output
+                except ContainerUnavailable:
+                    pass  # Docker/Image nicht verfuegbar -> Fallback auf _isolated
 
         try:
             result = self._isolated(
@@ -238,11 +274,24 @@ class SandboxHandler(BaseHandler):
     # ------------------------------------------------------------------
 
     def _isolated(self, cmd, timeout: int, cwd=None, env=None, shell: bool = False):
-        """Fuehrt Befehl ueber core.sandbox.run_isolated aus
-        (Timeout + Memory-Limit + Prozessgruppen-Kill)."""
-        from core.sandbox import SandboxLimits, run_isolated
+        """Fuehrt Befehl ueber core.sandbox mit explizitem Backend-Routing aus.
+
+        backend == "local"  -> core.run_isolated(..., backend="local")
+        backend == "docker" -> core.docker_run_isolated(...)
+        backend == "auto"   -> docker_available() ? docker_run_isolated(...) : run_isolated(..., backend="local")
+        """
+        from core.sandbox import SandboxLimits, docker_available, docker_run_isolated, run_isolated
         limits = SandboxLimits(timeout_sec=timeout, memory_mb=self._memory_limit_mb)
-        return run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell)
+        if self._backend == "local":
+            return run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell,
+                                backend="local")
+        if self._backend == "docker":
+            return docker_run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell)
+        # auto
+        if docker_available():
+            return docker_run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell)
+        return run_isolated(cmd, limits=limits, cwd=cwd, env=env, shell=shell,
+                            backend="local")
 
     def _load_memory_limit(self):
         """Laedt Memory-Limit (MB) aus system_config, Default 512MB."""
@@ -283,6 +332,55 @@ class SandboxHandler(BaseHandler):
         except Exception:
             return False
 
+    def _container_env_disabled(self) -> bool:
+        """True wenn Container via Env global deaktiviert sind."""
+        try:
+            from core.container_sandbox import container_disabled_by_env
+            return container_disabled_by_env()
+        except Exception:
+            return False
+
+    def _load_container_mode(self) -> str:
+        """Laedt Container-Modus aus system_config (Default 'auto').
+        Env-Disable (BACH_SANDBOX_CONTAINER_DISABLED=1) hat Vorrang."""
+        if self._container_env_disabled():
+            return "off"
+        db = getattr(self, "_canonical_db", None)
+        if db and Path(db).exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db))
+                cur = conn.execute(
+                    "SELECT value FROM system_config WHERE key = 'sandbox.container_mode'"
+                )
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0] is not None:
+                    val = str(row[0]).strip().lower()
+                    if val in ("auto", "on", "off"):
+                        return val
+            except Exception:
+                pass
+        return "auto"
+
+    def _save_container_mode(self, mode: str) -> bool:
+        db = getattr(self, "_canonical_db", None)
+        if not db or not Path(db).exists():
+            return False
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            conn.execute(
+                "INSERT OR REPLACE INTO system_config (key, value, category) "
+                "VALUES ('sandbox.container_mode', ?, 'sandbox')",
+                (mode,)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
     def _limit(self, args: List[str]) -> Tuple[bool, str]:
         """Memory-Limit anzeigen oder setzen."""
         if not args:
@@ -302,6 +400,138 @@ class SandboxHandler(BaseHandler):
             return True, f"Memory-Limit auf {mb}MB gesetzt (persistiert)"
         self._memory_limit_mb = mb
         return True, f"Memory-Limit auf {mb}MB gesetzt (nur Session, DB nicht verfuegbar)"
+
+    def _load_backend(self) -> str:
+        db = getattr(self, "_canonical_db", None)
+        if db and Path(db).exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db))
+                cur = conn.execute(
+                    "SELECT value FROM system_config WHERE key = 'sandbox.backend'"
+                )
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0] is not None:
+                    val = str(row[0]).strip().lower()
+                    if val in ("docker", "local", "auto"):
+                        return val
+            except Exception:
+                pass
+        return "auto"
+
+    def _save_backend(self, backend: str) -> bool:
+        db = getattr(self, "_canonical_db", None)
+        if not db or not Path(db).exists():
+            return False
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db))
+            conn.execute(
+                "INSERT OR REPLACE INTO system_config (key, value, category) "
+                "VALUES ('sandbox.backend', ?, 'sandbox')",
+                (backend,)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def _backend_op(self, args: List[str]) -> Tuple[bool, str]:
+        from core.sandbox import docker_available
+        if not args:
+            docker_ok = "verfuegbar" if docker_available() else "nicht verfuegbar"
+            return True, chr(10).join([
+                f"Backend: {self._backend} (Docker: {docker_ok})",
+                "Setzen: bach sandbox backend <docker|local|auto>",
+            ])
+        value = str(args[0]).strip().lower()
+        if value not in ("docker", "local", "auto"):
+            return False, f"Ungueltiges Backend: {args[0]} (erwartet: docker|local|auto)"
+        if self._save_backend(value):
+            self._backend = value
+            return True, f"Backend auf {value} gesetzt (persistiert)"
+        self._backend = value
+        return True, f"Backend auf {value} gesetzt (nur Session, DB nicht verfuegbar)"
+
+    # ------------------------------------------------------------------
+    # Container-Isolation (Sandbox Stufe 3, Task 1385)
+    # ------------------------------------------------------------------
+
+    def _container_available(self) -> bool:
+        """True wenn Docker-Runtime fuer Stufe 3 nutzbar ist."""
+        if self._container_env_disabled():
+            return False
+        try:
+            from core.container_sandbox import docker_available
+            return docker_available()
+        except Exception:
+            return False
+
+    def _container(self, args: List[str]) -> Tuple[bool, str]:
+        """Container-Isolation: status | build | run <datei> | mode [auto|on|off]."""
+        sub = args[0] if args else "status"
+
+        if sub == "status":
+            try:
+                from core.container_sandbox import container_status
+                st = container_status()
+            except ImportError:
+                return False, "core.container_sandbox nicht verfuegbar"
+            lines = [
+                "Container-Isolation (Stufe 3)",
+                "=" * 40,
+                f"  mode: {self._container_mode}",
+                f"  docker_available: {'ja' if st['docker_available'] else 'nein'}",
+                f"  disabled_by_env: {'ja' if st['disabled_by_env'] else 'nein'}",
+                f"  image: {st['image']}",
+                f"  image_exists: {'ja' if st['image_exists'] else 'nein'}",
+                f"  hardening: {', '.join(st['hardening'])}",
+                f"  fallback: {st['fallback']}",
+            ]
+            return True, "\n".join(lines)
+
+        if sub == "build":
+            try:
+                from core.container_sandbox import build_image
+            except ImportError:
+                return False, "core.container_sandbox nicht verfuegbar"
+            ok, msg = build_image()
+            return ok, msg
+
+        if sub == "run":
+            if len(args) < 2:
+                return False, "Nutzung: sandbox container run <datei> [args...]"
+            return self._run_file(args[1], ["--container"] + args[2:])
+
+        if sub == "mode":
+            if len(args) < 2:
+                return True, (
+                    f"Container-Modus: {self._container_mode}\n"
+                    f"Modi: auto (wenn Docker verfuegbar), on (erzwingen), "
+                    f"off (Rollback auf Stufe 2)\n"
+                    f"Setzen: bach sandbox container mode [auto|on|off]"
+                )
+            mode = args[1].strip().lower()
+            if mode not in ("auto", "on", "off"):
+                return False, f"Ungueltiger Modus: {args[1]} (auto|on|off)"
+            warning = ""
+            if mode != "off" and self._container_env_disabled():
+                warning = ("\nHINWEIS: BACH_SANDBOX_CONTAINER_DISABLED=1 gesetzt — "
+                           "Env-Disable hat Vorrang, Container bleiben deaktiviert")
+            if self._save_container_mode(mode):
+                self._container_mode = mode
+                return True, f"Container-Modus auf '{mode}' gesetzt (persistiert){warning}"
+            self._container_mode = mode
+            return True, (
+                f"Container-Modus auf '{mode}' gesetzt "
+                f"(nur Session, DB nicht verfuegbar){warning}"
+            )
+
+        return False, (
+            "Nutzung: sandbox container status|build|run <datei>|mode [auto|on|off]"
+        )
 
     # ------------------------------------------------------------------
     # Capability System (SANDBOX-002)
@@ -393,7 +623,7 @@ class SandboxHandler(BaseHandler):
         return True, "", argv
 
     def _policy(self) -> Tuple[bool, str]:
-        from core.sandbox import HAS_RLIMIT, IS_POSIX
+        from core.sandbox import HAS_RLIMIT, IS_POSIX, docker_available
         if HAS_RLIMIT:
             bounds = f"aktiv (RLIMIT_AS, Prozessgruppen-Kill, {self._memory_limit_mb}MB)"
         elif IS_POSIX:
@@ -406,6 +636,8 @@ class SandboxHandler(BaseHandler):
             f"  Timeout: {self.TIMEOUT}s (shell), {self.TIMEOUT * 2}s (test)",
             f"  Memory-Limit: {self._memory_limit_mb}MB",
             f"  Resource-Bounds (Stufe 2): {bounds}",
+            f"  Backend (Stufe 3): {self._backend} (Docker: {'verfuegbar' if docker_available() else 'nicht verfuegbar'})",
+            f"  Container-Isolation (Stufe 3): {self._container_mode} (docker: {'ja' if self._container_available() else 'nein'})",
             f"  Shell-Modus: fail-closed (nur erlaubte Befehle)",
             "",
             f"  Erlaubte Befehle ({len(self._allowed_commands)}):",

@@ -24,6 +24,7 @@ from ._services.alltag_import import (
     parse_interval,
     scheduler_job_upsert,
 )
+from ._services.contract_dates import _parse_date, _format_date, calc_next_cancellation
 
 
 class AboHandler(BaseHandler):
@@ -145,13 +146,19 @@ class AboHandler(BaseHandler):
                             SET kategorie = COALESCE(?, kategorie),
                                 betrag_monatlich = ?, zahlungsintervall = ?,
                                 kuendigungslink = ?, erkannt_am = ?,
+                                beginn_datum = ?, ablauf_datum = ?,
+                                kuendigungsfrist_monate = ?, verlaengerung_monate = ?,
+                                naechste_kuendigung = ?,
                                 bestaetigt = ?, aktiv = ?, updated_at = ?
                             WHERE id = ?
                             """,
                             (
                                 row["kategorie"], row["betrag_monatlich"],
                                 row["zahlungsintervall"], row["kuendigungslink"],
-                                row["erkannt_am"], row["bestaetigt"], row["aktiv"],
+                                row["erkannt_am"], row["beginn_datum"], row["ablauf_datum"],
+                                row["kuendigungsfrist_monate"], row["verlaengerung_monate"],
+                                row["naechste_kuendigung"],
+                                row["bestaetigt"], row["aktiv"],
                                 datetime.now().isoformat(), existing[0],
                             ),
                         )
@@ -163,13 +170,18 @@ class AboHandler(BaseHandler):
                             INSERT INTO abo_subscriptions
                                 (name, anbieter, kategorie, betrag_monatlich,
                                  zahlungsintervall, kuendigungslink, erkannt_am,
+                                 beginn_datum, ablauf_datum, kuendigungsfrist_monate,
+                                 verlaengerung_monate, naechste_kuendigung,
                                  bestaetigt, aktiv, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 row["name"], row["anbieter"], row["kategorie"],
                                 row["betrag_monatlich"], row["zahlungsintervall"],
                                 row["kuendigungslink"], row["erkannt_am"],
+                                row["beginn_datum"], row["ablauf_datum"],
+                                row["kuendigungsfrist_monate"], row["verlaengerung_monate"],
+                                row["naechste_kuendigung"],
                                 row["bestaetigt"], row["aktiv"],
                                 datetime.now().isoformat(), datetime.now().isoformat(),
                             ),
@@ -229,6 +241,15 @@ class AboHandler(BaseHandler):
                     raise AlltagImportError(
                         f"Provider {provider_name!r}, Modell {model_name!r}: unbekannter Abrechnungszyklus."
                     )
+                beginn = _parse_date(model.get("start_date")) or _parse_date(
+                    provider.get("last_payment_date")
+                ) or _parse_date(exported_at)
+                ablauf = _parse_date(model.get("end_date"))
+                frist_monate = 1
+                verlaengerung_monate = 1 if interval == "monthly" else 12
+                naechste = calc_next_cancellation(
+                    beginn, ablauf, frist_monate, verlaengerung_monate
+                )
                 rows.append({
                     "name": model_name,
                     "anbieter": provider_name,
@@ -237,6 +258,11 @@ class AboHandler(BaseHandler):
                     "zahlungsintervall": "monatlich" if interval == "monthly" else "jährlich",
                     "kuendigungslink": provider.get("cancellation_url"),
                     "erkannt_am": provider.get("last_payment_date") or exported_at,
+                    "beginn_datum": _format_date(beginn),
+                    "ablauf_datum": _format_date(ablauf),
+                    "kuendigungsfrist_monate": frist_monate,
+                    "verlaengerung_monate": verlaengerung_monate,
+                    "naechste_kuendigung": _format_date(naechste),
                     "bestaetigt": 1 if confirmed else 0,
                     "aktiv": 1 if active else 0,
                 })
@@ -302,6 +328,11 @@ class AboHandler(BaseHandler):
                         zahlungsintervall TEXT DEFAULT 'monatlich',
                         kuendigungslink TEXT,
                         erkannt_am TEXT,
+                        beginn_datum TEXT,
+                        ablauf_datum TEXT,
+                        kuendigungsfrist_monate INTEGER DEFAULT 1,
+                        verlaengerung_monate INTEGER DEFAULT 12,
+                        naechste_kuendigung TEXT,
                         bestaetigt INTEGER DEFAULT 0,
                         aktiv INTEGER DEFAULT 1,
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -442,7 +473,9 @@ class AboHandler(BaseHandler):
                 nur_aktiv = "--alle" not in args
                 nur_bestaetigt = "--bestaetigt" in args
 
-                query = "SELECT * FROM abo_subscriptions WHERE 1=1"
+                query = """SELECT id, anbieter, kategorie, betrag_monatlich, bestaetigt,
+                                  kuendigungsfrist_monate, naechste_kuendigung
+                           FROM abo_subscriptions WHERE 1=1"""
                 if nur_aktiv:
                     query += " AND aktiv = 1"
                 if nur_bestaetigt:
@@ -467,20 +500,22 @@ class AboHandler(BaseHandler):
                 f"Monatliche Kosten:  {summe_monatlich:,.2f} EUR",
                 f"Jaehrliche Kosten:  {summe_jaehrlich:,.2f} EUR",
                 "",
-                "-" * 70,
-                f"{'ID':<4} | {'Anbieter':<20} | {'Kategorie':<12} | {'Betrag':>10} | {'Status':<10}",
-                "-" * 70,
+                "-" * 95,
+                f"{'ID':<4} | {'Anbieter':<20} | {'Kategorie':<12} | {'Betrag':>10} | {'Frist':>5} | {'Naechste K.':<14} | {'Status':<10}",
+                "-" * 95,
             ]
 
             for a in abos:
                 status = "Bestaetigt" if a['bestaetigt'] else "Erkannt"
                 betrag = f"{a['betrag_monatlich']:,.2f}/Mo" if a['betrag_monatlich'] else "-"
+                frist = f"{a['kuendigungsfrist_monate']}M" if a['kuendigungsfrist_monate'] is not None else "-"
+                naechste = a['naechste_kuendigung'] or "-"
                 output.append(
-                    f"{a['id']:<4} | {a['anbieter'][:20]:<20} | {(a['kategorie'] or '-')[:12]:<12} | {betrag:>10} | {status:<10}"
+                    f"{a['id']:<4} | {a['anbieter'][:20]:<20} | {(a['kategorie'] or '-')[:12]:<12} | {betrag:>10} | {frist:>5} | {naechste:<14} | {status:<10}"
                 )
 
             output.extend([
-                "-" * 70,
+                "-" * 95,
                 "",
                 "Befehle: bach abo confirm ID | bach abo dismiss ID | bach abo costs"
             ])
@@ -614,7 +649,10 @@ class AboHandler(BaseHandler):
                 cursor = conn.cursor()
 
                 cursor.execute("""
-                    SELECT anbieter, kategorie, betrag_monatlich, zahlungsintervall, kuendigungslink, bestaetigt
+                    SELECT anbieter, kategorie, betrag_monatlich, zahlungsintervall,
+                           beginn_datum, ablauf_datum, kuendigungsfrist_monate,
+                           verlaengerung_monate, naechste_kuendigung,
+                           kuendigungslink, bestaetigt
                     FROM abo_subscriptions
                     WHERE aktiv = 1
                     ORDER BY kategorie, anbieter
@@ -629,9 +667,23 @@ class AboHandler(BaseHandler):
             # CSV erstellen
             csv_path = self.data_dir / "abo_export.csv"
             with open(csv_path, 'w', encoding='utf-8') as f:
-                f.write("Anbieter;Kategorie;Betrag_Monatlich;Intervall;Kuendigungslink;Bestaetigt\n")
+                f.write(
+                    "Anbieter;Kategorie;Betrag_Monatlich;Intervall;"
+                    "Beginn;Ablauf;Kuendigungsfrist_Monate;Verlaengerung_Monate;"
+                    "Naechste_Kuendigung;Kuendigungslink;Bestaetigt\n"
+                )
                 for a in abos:
-                    f.write(f"{a['anbieter']};{a['kategorie'] or ''};{a['betrag_monatlich'] or 0:.2f};{a['zahlungsintervall'] or ''};{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n")
+                    beginn = a['beginn_datum'] or ''
+                    ablauf = a['ablauf_datum'] or ''
+                    frist = a['kuendigungsfrist_monate'] if a['kuendigungsfrist_monate'] is not None else ''
+                    verlaengerung = a['verlaengerung_monate'] if a['verlaengerung_monate'] is not None else ''
+                    naechste = a['naechste_kuendigung'] or ''
+                    f.write(
+                        f"{a['anbieter']};{a['kategorie'] or ''};"
+                        f"{a['betrag_monatlich'] or 0:.2f};{a['zahlungsintervall'] or ''};"
+                        f"{beginn};{ablauf};{frist};{verlaengerung};{naechste};"
+                        f"{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n"
+                    )
 
             return (True, f"[OK] Export erstellt: {csv_path}")
 

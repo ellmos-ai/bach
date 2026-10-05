@@ -17,7 +17,7 @@
   - Двойной импорт
   - Импорт в середине кода, а не в начале
 
-ДИАГНОСТИКА ИМПОРТА: c_import_diagnose
+ДИАГНОСТИКА ИМПОРТА: import_diagnose
 ----------------------------------
 Систематический анализ проблем импорта.
 
@@ -32,13 +32,13 @@
  ОСНОВНЫЕ КОМАНДЫ:
 
   # Анализ проекта
-  bach c_import_diagnose projekt/src/
+  bach import_diagnose projekt/src/
 
   # С выводом JSON
-  bach c_import_diagnose projekt/src/ --json
+  bach import_diagnose projekt/src/ --json
 
   # Тестирование отдельных модулей
-  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+  bach import_diagnose . --modules core.app:App,gui.main:MainWindow
 
 ОПЦИИ:
   --json Вывод JSON (машиночитаемый)
@@ -63,7 +63,7 @@
   2. Решите проблему циклического импорта core.utils <-> core.app.
   3. Создайте gui/__init__.py
 
-ОРГАНИЗАТОР ИМПОРТА: c_import_organizer
+ОРГАНИЗАТОР ИМПОРТА: import_organizer
 ------------------------------------
 Сортирует и очищает импортированные файлы Python в соответствии с PEP8.
 
@@ -76,16 +76,16 @@
 ОСНОВНЫЕ КОМАНДЫ:
 
   # Организовать файл
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
   # Просто проверьте без изменений
-  bach c_import_organizer script.py --dry-run
+  bach import_organizer script.py --dry-run
 
   # Вывод JSON
-  bach c_import_organizer script.py --json
+  bach import_organizer script.py --json
 
   # Читаем со стандартного ввода
-  кот script.py | bach c_import_organizer --stdin
+  кот script.py | bach import_organizer --stdin
 
 ОПЦИИ:
   --dry-run Только показывать, не изменять
@@ -124,14 +124,14 @@
 1. ОТЛАДКА «Ошибка импорта».
    Проанализируйте проект, чтобы найти точку сбоя:
 
-   bach c_import_diagnose projekt/src/ --json
+   bach import_diagnose projekt/src/ --json
 
    Тогда следуйте рекомендациям.
 
 2. НАЙТИ КРУГОВОЙ ИМПОРТ
    Когда модули импортируют друг друга:
 
-   bach c_import_diagnose projekt/src/
+   bach import_diagnose projekt/src/
 
    Вывод показывает: A -> B -> A (компас!)
 
@@ -140,24 +140,24 @@
 3. ПЕРЕД ПРОВЕРКОЙ КОДА
    Очистите импорт перед проверкой кода:
 
-   bach c_import_organizer script.py
+   bach import_organizer script.py
 
    Или для всего проекта:
-   для f в *.py; сделать бах c_import_organizer "$f"; готово
+   для f в *.py; сделать бах import_organizer "$f"; готово
 
 4. ПОСЛЕ РЕФАКТОРИНГА
    После основного преобразования проверьте импорт:
 
    # Сначала проведите диагностику
-   bach c_import_diagnose src/
+   bach import_diagnose src/
 
    # Затем очистим
-   для f в src/*.py; сделать бах c_import_organizer "$f"; готово
+   для f в src/*.py; сделать бах import_organizer "$f"; готово
 
 5. СОЗДАТЬ НОВЫЙ ПРОЕКТ
    __init__.py Проверьте файлы:
 
-   bach c_import_diagnose mein_paket/
+   bach import_diagnose mein_paket/
 
    Показывает отсутствующие файлы __init__.py.
 
@@ -175,9 +175,9 @@ CONTEXT INJECTOR
 ----------------
 ContextInjector распознает ключевые слова и рекомендует следующие инструменты:
 
-  «Сортировать импорт» -> bach c_import_organizer <файл>
-  «проблема с импортом» -> bach c_import_diagnose <проект>
-  «импорт отсутствует» -> bach c_import_diagnose <проект>
+  «Сортировать импорт» -> bach import_organizer <файл>
+  «проблема с импортом» -> bach import_diagnose <проект>
+  «импорт отсутствует» -> bach import_diagnose <проект>
 
 ИНТЕГРАЦИЯ С ДРУГИМИ ИНСТРУМЕНТАМИ
 -----------------------------
@@ -187,7 +187,7 @@ ContextInjector распознает ключевые слова и рекоме
   bach python_cli_editor script.py --imports
 
   # Затем организуйте
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
 СМОТРИТЕ ТАКЖЕ
 ----------

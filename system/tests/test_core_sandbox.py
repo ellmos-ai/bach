@@ -5,6 +5,7 @@ Tests fuer core.sandbox (Sandbox Stufe 2, Task 1071) und die
 Stufe-2-Integration in hub.sandbox (Memory-Limit, limit-Operation).
 """
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -20,6 +21,7 @@ sys.path.insert(0, str(SYSTEM_ROOT))
 
 import subprocess
 
+import core.container_sandbox as container_sandbox_mod
 import core.sandbox as core_sandbox
 from core.sandbox import (  # noqa: E402
     DEFAULT_DOCKER_IMAGE,
@@ -231,7 +233,9 @@ class TestHandlerStufe2:
 
     @POSIX_ONLY
     def test_run_memory_hog_blocked(self, handler):
-        script = Path(tempfile.mkdtemp()) / "hog.py"
+        # Skript muss innerhalb des Workspace (base_path) liegen, damit
+        # der Container es unter /work findet (nur base_path wird gemountet).
+        script = handler.base_path / "hog.py"
         script.write_text(
             "import time\nx=[]\n"
             "for i in range(40):\n"
@@ -249,6 +253,94 @@ class TestHandlerStufe2:
         ok, msg = handler._shell(f'python3 -c "{code}"')
         assert ok is False
         assert "MEMORY-LIMIT" in msg
+
+
+# ── Handler-Integration: Backend (Stufe 3, Task 1506) ─────────────────
+
+class TestHandlerBackend:
+    def test_default_backend_is_auto(self, handler):
+        assert handler._backend == "auto"
+
+    def test_backend_show(self, handler):
+        ok, msg = handler.handle("backend", [])
+        assert ok is True
+        assert "auto" in msg
+        assert "Docker:" in msg
+
+    def test_backend_set_persists(self, handler):
+        ok, msg = handler.handle("backend", ["local"])
+        assert ok is True
+        assert handler._backend == "local"
+        assert "persistiert" in msg
+        assert handler._load_backend() == "local"
+
+    def test_backend_set_docker(self, handler):
+        ok, msg = handler.handle("backend", ["docker"])
+        assert ok is True
+        assert handler._backend == "docker"
+
+    def test_backend_invalid(self, handler):
+        ok, msg = handler.handle("backend", ["vm"])
+        assert ok is False
+        assert handler._backend != "vm"
+
+    def test_operations_include_backend(self, handler):
+        assert "backend" in handler.get_operations()
+
+    def test_policy_shows_backend(self, handler):
+        ok, msg = handler._policy()
+        assert ok is True
+        assert "Backend (Stufe 3):" in msg
+
+    def test_isolated_routes_local(self, handler, monkeypatch):
+        calls = []
+
+        def fake_local(cmd, limits=None, cwd=None, env=None, shell=False, backend="local"):
+            calls.append((cmd, backend, limits.memory_mb if limits else None))
+            return SandboxResult(returncode=0, stdout="LOCAL", stderr="", backend=backend)
+
+        monkeypatch.setattr(core_sandbox, "run_isolated", fake_local)
+        monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+        handler.handle("backend", ["local"])
+        result = handler._isolated(["echo", "hi"], timeout=10)
+        assert result.backend == "local"
+        assert len(calls) == 1
+        assert calls[0][0] == ["echo", "hi"]
+        assert calls[0][1] == "local"
+
+    def test_isolated_routes_docker(self, handler, monkeypatch):
+        fake = _FakeDocker()
+        monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+        handler.handle("backend", ["docker"])
+        result = handler._isolated(["echo", "hi"], timeout=10)
+        assert result.backend == "docker"
+        assert len(fake.calls) == 1
+        assert fake.calls[0]["cmd"] == ["echo", "hi"]
+        assert fake.calls[0]["limits"].memory_mb == handler._memory_limit_mb
+
+    def test_isolated_auto_prefers_docker(self, handler, monkeypatch):
+        fake = _FakeDocker()
+        monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
+        handler._backend = "auto"
+        result = handler._isolated(["echo", "hi"], timeout=10)
+        assert result.backend == "docker"
+        assert len(fake.calls) == 1
+
+    def test_isolated_auto_falls_back_local(self, handler, monkeypatch):
+        calls = []
+
+        def fake_local(cmd, limits=None, cwd=None, env=None, shell=False, backend="local"):
+            calls.append(backend)
+            return SandboxResult(returncode=0, stdout="LOCAL", stderr="", backend=backend)
+
+        monkeypatch.setattr(core_sandbox, "run_isolated", fake_local)
+        monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: False)
+        handler._backend = "auto"
+        result = handler._isolated(["echo", "hi"], timeout=10)
+        assert result.backend == "local"
+        assert calls == ["local"]
 
 
 DOCKER = pytest.mark.skipif(not docker_available(), reason="Docker/Image nicht verfuegbar")
@@ -467,3 +559,170 @@ def test_docker_run_isolated_network_blocked():
     ])
     r = docker_run_isolated(["python3", "-c", code])
     assert "BLOCKED" in r.stdout
+
+
+def test_docker_run_isolated_cleanup_on_exception(monkeypatch):
+    """Wirft communicate() eine Exception, muss trotzdem rm -f laufen (oom_check=False)."""
+    popen_state = {"stopped": False}
+
+    class _ExplodingPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+
+        def poll(self):
+            return 0 if popen_state["stopped"] else None
+
+        def communicate(self, input=None):
+            raise RuntimeError("pipe kaputt")
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+    calls = []
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(list(cmd))
+        if cmd[:2] == ["docker", "stop"]:
+            popen_state["stopped"] = True
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _ExplodingPopen)
+    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
+
+    r = docker_run_isolated(["echo", "hi"], limits=SandboxLimits(timeout_sec=15))
+    assert r.returncode == -1
+    assert "Docker-Fehler" in r.stderr
+    assert r.timed_out is False
+    prefixes = [c[:2] for c in calls]
+    assert ["docker", "stop"] in prefixes
+    assert ["docker", "rm"] in prefixes
+    # Exception-Pfad: kein OOM-Inspect (oom_check=False)
+    assert ["docker", "inspect"] not in prefixes
+
+
+def test_docker_run_isolated_cleanup_idempotent_on_timeout(monkeypatch):
+    """Timeout -> Watcher-Cleanup + Haupt-Cleanup: stop/kill/rm duerfen nur 1x laufen."""
+
+    class _StubbornPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+            self._done = threading.Event()
+            self._killed = False
+
+        def poll(self):
+            return 137 if self._killed else None
+
+        def communicate(self, input=None):
+            assert self._done.wait(timeout=5)
+            self.returncode = 137
+            return ("", "")
+
+        def wait(self, timeout=None):
+            self._done.wait(timeout=timeout)
+
+        def kill_container(self):
+            self._killed = True
+            self._done.set()
+
+    popen = _StubbornPopen()
+    calls = []
+
+    def _fake_popen(*args, **kwargs):
+        return popen
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(list(cmd))
+        if cmd[:2] == ["docker", "kill"]:
+            popen.kill_container()
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
+
+    r = docker_run_isolated(["sleep", "60"], limits=SandboxLimits(timeout_sec=0.05))
+    assert r.timed_out is True
+    assert r.returncode == -1
+
+    prefixes = [c[:2] for c in calls]
+    assert prefixes.count(["docker", "stop"]) == 1
+    assert prefixes.count(["docker", "kill"]) == 1
+    assert prefixes.count(["docker", "rm"]) == 1
+    # zweiter Cleanup-Aufruf darf kein inspect mehr ausfuehren
+    assert prefixes.count(["docker", "inspect"]) == 0
+
+
+def test_docker_run_isolated_memory_exceeded_on_137(monkeypatch):
+    """returncode==137 reicht fuer memory_exceeded, auch wenn inspect 'false' sagt."""
+
+    class _KilledPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = 137
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self, input=None):
+            return ("", "")
+
+        def wait(self, timeout=None):
+            pass
+
+    calls = []
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(list(cmd))
+        if cmd[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="false\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _KilledPopen)
+    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
+
+    r = docker_run_isolated(["python3", "-c", "x=bytearray(700*1024*1024)"])
+    assert r.returncode == 137
+    assert r.memory_exceeded is True
+    assert r.timed_out is False
+    assert ["docker", "inspect"] in [c[:2] for c in calls]
+
+
+@DOCKER
+def test_run_in_container_timeout_cleanup():
+    """Bei Timeout darf kein bach-sbx-Container zurueckbleiben."""
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "sleep.py"
+    script.write_text("import time; time.sleep(300)\n")
+    try:
+        r = container_sandbox_mod.run_in_container(
+            script, limits=SandboxLimits(timeout_sec=1)
+        )
+        assert r.timed_out is True
+        assert r.backend == "docker"
+
+        name_idx = r.args.index("--name") + 1
+        container_name = r.args[name_idx]
+
+        out = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{.Names}}"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert container_name not in out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@DOCKER
+def test_run_in_container_backend_is_docker():
+    """run_in_container meldet backend='docker'."""
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "hello.py"
+    script.write_text("print('hello from container')\n")
+    try:
+        r = container_sandbox_mod.run_in_container(
+            script, limits=SandboxLimits(timeout_sec=10)
+        )
+        assert r.backend == "docker"
+        assert r.returncode == 0
+        assert "hello from container" in r.stdout
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

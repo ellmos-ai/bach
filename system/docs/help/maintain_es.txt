@@ -302,7 +302,7 @@ TOOLS
   tools/tool_scanner.py Descubrimiento de herramientas CLI
   herramientas/file_cleaner.py Limpieza de archivos
   herramientas/json_fixer.py Reparación JSON
-  tools/c_path_healer.py Corrección de ruta (IMPORTANTE: c_path_healer!)
+  tools/path_healer.py Corrección de ruta (IMPORTANTE: path_healer!)
   tools/nulcleaner.py Eliminar archivos NUL
   tools/skill_header_gen.py Generador de encabezados YAML
   tools/skill_help_gen.py Generador de ayuda + validador de flujo de trabajo

@@ -31,11 +31,6 @@ TOOL-PRAEFIXES (tools/*.py)
 
   プレフィックスの意味の例
   ---------- ----------------------------- ------------------------
-  AI 用に最適化された c_CLI c_encoding_fixer.py
-            (クロード/recludOS) c_json_repair.py
-            - 明確で解析可能な出力
-            - エンコーディングセーフ (UTF-8)
-
   m_ m_merge_triggers.py を維持します
             - クリーンアップツール m_cleanup_logs.py
             - 移行スクリプト
@@ -62,7 +57,7 @@ TOOL-PRAEFIXES (tools/*.py)
     task_scanner.py # ATI エージェント固有 (agents/ati/scanner/ 内)
 
   場所:
-    - 一般: tools/c_ocr_engine.py
+    - 一般: tools/ocr/engine.py
     - 特定: Agents/_experts/steuer/steuer_scanner.py
     - エージェント ツール: Agents/ati/scanner/task_scanner.py
 

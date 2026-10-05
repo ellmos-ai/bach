@@ -1,5 +1,7 @@
 # System-Aufräumen: Wartung und Archivierung
 
+> Wartung, Bereinigung und Archivierung von BACH und zugehörigen Systemen.
+
 **Version:** 1.0  
 **Stand:** 2026-01-18  
 **Quelle:** Konsolidiert aus BACH_STREAM

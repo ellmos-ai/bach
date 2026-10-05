@@ -83,7 +83,8 @@ class SteuerHandler(BaseHandler):
             "batch": "Batch-Import (posten, belege, delete, move)",
             "tools": "Steuer-Tools anzeigen und ausfuehren",
             "check": "Vollstaendigkeitspruefung (--jahr YYYY)",
-            "eigenbeleg": "Eigenbeleg erstellen (--bezeichnung --brutto --liste)"
+            "eigenbeleg": "Eigenbeleg erstellen (--bezeichnung --brutto --liste)",
+            "match": "Bank-Buchungen mit Posten abgleichen (match [jahr] [--user NAME] [--apply])"
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -119,6 +120,8 @@ class SteuerHandler(BaseHandler):
             return self._check(args)
         elif operation == "eigenbeleg":
             return self._eigenbeleg(args, dry_run)
+        elif operation == "match":
+            return self._match(args, dry_run)
         elif operation == "year":
             # Legacy-Kompatibilitaet
             if args and args[0] == "create":
@@ -142,6 +145,7 @@ Kurzuebersicht:
   steuer posten add    Posten erfassen
   steuer posten list   Posten auflisten
   steuer beleg scan    Belege scannen
+  steuer match         Bank-Buchungen mit Posten abgleichen
 
 Batch-Tools:
   python tools/make_bundle.py <quelle> <start> <ende>
@@ -2808,6 +2812,7 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
             if len(txs) > 5:
                 res.append(f"  ... und {len(txs)-5} weitere.")
 
+            res.extend(self._persist_camt_transactions(self.db_path, txs, path.name))
             res.extend(self._persist_camt_balances(self.db_path, balances))
 
             return True, "\n".join(res)
@@ -2825,3 +2830,142 @@ Dieser Eigenbeleg wurde fuer die Steuererklarung {steuerjahr} erstellt.
         """
         from accounts_core import AccountStore
         return AccountStore(db_path).persist_camt_balances(balances)
+
+
+    def _persist_camt_transactions(self, db_path, txs, dateiname):
+        """Speichert CAMT-Transaktionen in steuer_bank_transactions (idempotent per Hash)."""
+        import hashlib
+        import sqlite3
+        from datetime import datetime as _dt
+
+        imported = 0
+        skipped = 0
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            for tx in txs:
+                betrag = float(tx.get("betrag") or 0)
+                if tx.get("typ") == "DBIT":
+                    betrag = -abs(betrag)
+                datum = tx.get("datum") or ""
+                hash_wert = hashlib.sha256(
+                    f"{tx.get('iban')}|{datum}|{betrag}|{tx['typ']}|{tx.get('partner')}|{tx.get('zweck')}".encode("utf-8")
+                ).hexdigest()
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO steuer_bank_transactions "
+                    "(username, steuerjahr, buchungsdatum, wertstellungsdatum, betrag, typ, "
+                    "partner, zweck, iban, partner_iban, waehrung, hash, quelle, datei, imported_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (self.username, int(datum[:4]), datum, tx.get("wertstellungsdatum") or datum,
+                     betrag, tx.get("typ"), tx.get("partner"), tx.get("zweck"), tx.get("iban"),
+                     tx.get("partner_iban"), tx.get("waehrung") or "EUR", hash_wert, "CAMT",
+                     dateiname, _dt.now().strftime("%Y-%m-%d %H:%M:%S")))
+                if cur.rowcount:
+                    imported += 1
+                else:
+                    skipped += 1
+            conn.commit()
+        finally:
+            conn.close()
+        meldung = f"[OK] {imported} neue Buchungen importiert"
+        if skipped:
+            meldung += f", {skipped} bereits vorhanden"
+        return [meldung]
+
+    def _match(self, args: list, dry_run: bool):
+        """Gleicht Bank-Buchungen (steuer_bank_transactions) mit offenen Steuer-Posten ab."""
+        from datetime import datetime as _dt
+
+        jahr = None
+        if args and not args[0].startswith("--"):
+            jahr = args[0]
+        if not jahr:
+            ok, aktiv = self._ensure_active_year()
+            if not ok:
+                return False, "Kein aktives Steuerjahr gefunden."
+            jahr = str(aktiv)
+        user = self._get_arg(args, "--user") or self.username
+        anwenden = ("--apply" in args) and not dry_run
+
+        conn = self._get_db()
+        posten = conn.execute(
+            "SELECT * FROM steuer_posten WHERE username=? AND steuerjahr=? AND bank_tx_id IS NULL ORDER BY id",
+            (user, int(jahr))).fetchall()
+        txs = conn.execute(
+            "SELECT * FROM steuer_bank_transactions WHERE username=? AND steuerjahr=?",
+            (user, int(jahr))).fetchall()
+        belegt = set(r["bank_tx_id"] for r in conn.execute(
+            "SELECT DISTINCT bank_tx_id FROM steuer_posten WHERE bank_tx_id IS NOT NULL").fetchall())
+
+        offen = [tx for tx in txs if tx["id"] not in belegt]
+        zaehler = {"AUTO_MATCHED": 0, "SUGGESTED": 0, "UNMATCHED": 0}
+        zuordnungen = []
+        zeilen = [f"BANK-MATCHING {jahr} (User: {user})"]
+
+        for p in posten:
+            amt = p["brutto"] if p["brutto"] else p["netto"]
+            status = None
+            detail = ""
+            tx_id = None
+            # Regel 1: Rechnungsnummer im Verwendungszweck + Betrag
+            if p["rechnungsnr"]:
+                for tx in offen:
+                    if p["rechnungsnr"].lower() in (tx["zweck"] or "").lower() \
+                            and abs(abs(tx["betrag"]) - amt) < 0.005:
+                        status = "AUTO_MATCHED"
+                        detail = f"Re.-Nr. {p['rechnungsnr']} in Verwendungszweck (Buchung {tx['id']})"
+                        tx_id = tx["id"]
+                        break
+            # Regel 2: Rechnungssteller im Partner + Betrag
+            if not status and p["rechnungssteller"]:
+                kandidaten = [tx for tx in offen
+                              if p["rechnungssteller"].lower() in (tx["partner"] or "").lower()
+                              and abs(abs(tx["betrag"]) - amt) <= 0.01]
+                if len(kandidaten) == 1:
+                    tx = kandidaten[0]
+                    status = "AUTO_MATCHED"
+                    detail = f"Partner '{tx['partner']}' + Betrag (Buchung {tx['id']})"
+                    tx_id = tx["id"]
+                elif len(kandidaten) > 1:
+                    status = "SUGGESTED"
+                    detail = f"{len(kandidaten)} Buchungen von '{p['rechnungssteller']}' mit passendem Betrag - nicht eindeutig"
+            # Regel 3: Betrag + Datum <= 14 Tage
+            if not status:
+                try:
+                    p_datum = _dt.strptime(p["datum"], "%Y-%m-%d")
+                except (TypeError, ValueError):
+                    p_datum = None
+                if p_datum:
+                    for tx in offen:
+                        if abs(abs(tx["betrag"]) - amt) > 0.01:
+                            continue
+                        try:
+                            tx_datum = _dt.strptime(tx["buchungsdatum"], "%Y-%m-%d")
+                        except (TypeError, ValueError):
+                            continue
+                        if abs((tx_datum - p_datum).days) <= 14:
+                            status = "SUGGESTED"
+                            detail = f"Buchung {tx['id']} vom {tx['buchungsdatum']} passt (Betrag, <=14 Tage)"
+                            break
+            if not status:
+                status = "UNMATCHED"
+                detail = "keine passende Bank-Buchung"
+            zaehler[status] += 1
+            zeilen.append(f"[{status}] Posten {p['postennr']} ({p['bezeichnung']}): {detail}")
+            if status == "AUTO_MATCHED" and tx_id is not None:
+                zuordnungen.append((p["id"], tx_id))
+                belegt.add(tx_id)
+                offen = [tx for tx in offen if tx["id"] != tx_id]
+
+        zeilen.append("")
+        zeilen.append(f"Summary: {zaehler['AUTO_MATCHED']} AUTO_MATCHED, {zaehler['SUGGESTED']} SUGGESTED, {zaehler['UNMATCHED']} UNMATCHED")
+        if anwenden:
+            for posten_id, tx_id in zuordnungen:
+                conn.execute(
+                    "UPDATE steuer_posten SET bank_tx_id=?, match_status='AUTO_MATCHED' WHERE id=?",
+                    (tx_id, posten_id))
+            conn.commit()
+            zeilen.append(f"{len(zuordnungen)} Posten zugeordnet (match_status AUTO_MATCHED gespeichert)")
+        elif "--apply" in args and dry_run:
+            zeilen.append(f"[DRY-RUN] Würde {len(zuordnungen)} Posten zuordnen")
+        return True, "\n".join(zeilen)

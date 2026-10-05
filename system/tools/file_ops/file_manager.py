@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_file_manager
+Tool: file_manager
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_file_manager
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version file_manager
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_file_manager.py [args]
+    python file_manager.py [args]
 """
 
 __version__ = "1.0.0"

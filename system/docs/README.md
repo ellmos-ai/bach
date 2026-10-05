@@ -27,6 +27,7 @@ docs/
 │   ├── *.txt                  ← Handler- & Konzept-Artikel (~110 Stück)
 │   └── tools/                 ← Tool-spezifische Artikel (~80 Stück)
 │       └── _index.txt         ← Tool-Index
+├── reset_hooks.md           ← Skill-/Plugin-Reset Hooks
 └── *.md                       ← Entwickler-Dokumentation, Konzepte
 ```
 
@@ -55,6 +56,7 @@ docs/
 | session | `bach help session` | Session-Management |
 | modes | `bach help modes` | Betriebsmodi (Silent, Watch, etc.) |
 | hooks | `bach help hooks` | Event-Hooks |
+| reset_hooks | [`docs/reset_hooks.md`](reset_hooks.md) | Reset-Hooks für Skills & Plugins |
 
 ### Task-System
 
@@ -268,7 +270,7 @@ Duplikatgruppen brechen die Aktualisierung sicher ab.
 Einzeldokumentation für ~80 Python-Tools. Zugriff:
 
 ```bash
-bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
+bach help tools/<name>         # z.B. bach help tools/encoding_fixer
 ```
 
 ### Übersichts-Artikel
@@ -287,27 +289,27 @@ bach help tools/<name>         # z.B. bach help tools/c_encoding_fixer
 | `tools/research` | Recherche-Tools |
 | `tools/skills` | Skill-Management Tools |
 
-### Coding-Tools (c_*)
+### Coding-Tools
 
 | Tool | Beschreibung |
 |------|-------------|
-| `c_audit_bundler` | Audit-Bundle Erstellung |
-| `c_emoji_scanner` | Emoji finden/ersetzen |
-| `c_encoding_fixer` | Encoding reparieren |
-| `c_german_scanner` | Deutsche Wörter finden |
-| `c_import_diagnose` | Import-Probleme diagnostizieren |
-| `c_import_organizer` | Imports sortieren |
-| `c_indent_checker` | Einrückung prüfen |
-| `c_json_repair` | JSON reparieren |
-| `c_license_generator` | Lizenzdateien erstellen |
-| `c_md_to_pdf` | Markdown zu PDF |
-| `c_method_analyzer` | Methoden analysieren |
-| `c_pycutter` | Python-Dateien aufteilen |
-| `c_sqlite_viewer` | SQLite-Datenbanken anzeigen |
-| `c_standard_fixer` | Code-Standards anwenden |
-| `c_umlaut_fixer` | Umlaute korrigieren |
-| `c_universal_converter` | Format-Konvertierung |
-| `c_youtube_extractor` | YouTube-Extraktion |
+| `audit_bundler` | Audit-Bundle Erstellung |
+| `emoji_scanner` | Emoji finden/ersetzen |
+| `encoding_fixer` | Encoding reparieren |
+| `german_scanner` | Deutsche Wörter finden |
+| `import_diagnose` | Import-Probleme diagnostizieren |
+| `import_organizer` | Imports sortieren |
+| `indent_checker` | Einrückung prüfen |
+| `json_repair` | JSON reparieren |
+| `license_generator` | Lizenzdateien erstellen |
+| `md_to_pdf` | Markdown zu PDF |
+| `method_analyzer` | Methoden analysieren |
+| `pycutter` | Python-Dateien aufteilen |
+| `sqlite_viewer` | SQLite-Datenbanken anzeigen |
+| `standard_fixer` | Code-Standards anwenden |
+| `umlaut_fixer` | Umlaute korrigieren |
+| `universal_converter` | Format-Konvertierung |
+| `youtube_extractor` | YouTube-Extraktion |
 
 ### Generator-Tools
 
@@ -405,7 +407,7 @@ help.run("tools")              # Tool-Übersicht
 help.run("architecture")       # Architektur
 
 # Tool-spezifisch
-help.run("tools/c_encoding_fixer")
+help.run("tools/encoding_fixer")
 help.run("tools/exporter")
 ```
 

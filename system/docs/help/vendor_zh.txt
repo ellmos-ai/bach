@@ -69,9 +69,9 @@ system/hub/_services/document/_vendor/
 相关工具
 ---------------
 
-  tools/c_skill_init.py 创建新技能（人类标准）
-  tools/c_skill_validate.py 验证 SKILL.md
-  tools/c_skill_package.py 软件包技能
+  tools/skill_init.py 创建新技能（人类标准）
+  tools/skill_validate.py 验证 SKILL.md
+  tools/skill_package.py 软件包技能
 
 另请参见
 ----------

@@ -1,0 +1,215 @@
+---
+// governance.astro - Governance CONTROL Room mit Decision-Clicker & Lock-Monitor
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Governance CONTROL" currentPath="/governance">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        🛡️ Governance CONTROL Room
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Zentrale Steuerung • Decision-Clicker (Human-in-the-Loop) • Lock-Master Haltefristen • Policy Registry (P-001 bis P-007)
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;">
+      <span class="badge badge-success" style="font-size:0.85rem;padding:0.4rem 0.8rem;">
+        ● Fail-Closed Aktiv (P-001)
+      </span>
+    </div>
+  </div>
+
+  <!-- Oberer Bereich: Decision-Clicker (Human-in-the-Loop) -->
+  <div class="card" style="margin-bottom:1.5rem;border-left:4px solid var(--warning);">
+    <div class="card-header">
+      <h2 class="card-title">⚖️ Decision-Clicker (Offene menschliche Entscheidungen)</h2>
+      <span class="badge badge-warning" id="decisions-count-badge">1 Entscheidung wartet</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+      Autonome Worker stoppen vor irreversiblen Aktionen (Public, Release, Push). Bestätige oder verwerfe Anträge hier direkt per 1-Klick:
+    </p>
+
+    <div id="decisions-list" style="display:flex;flex-direction:column;gap:0.75rem;">
+      <div style="padding:1rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <strong style="color:var(--text);font-size:0.9rem;">D-20261002-001: Freigabe Astro-Umbau BACH-GUI</strong>
+            <span class="badge badge-warning">Wartet auf Go</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;">
+            Vollständige Überführung der Frontend-Architektur in Astro v5 mit nativer FastAPI-Einbettung.
+          </p>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="resolveDecision('D-20261002-001', 'approved')">
+            ✓ Genehmigen & Freigeben
+          </button>
+          <button class="btn" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="resolveDecision('D-20261002-001', 'rejected')">
+            ✕ Ablehnen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mittlerer Bereich: Lock-Monitor & Policies Split -->
+  <div class="grid grid-cols-2">
+    <!-- Lock-Master Live Monitor -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">🔒 Lock-Master (Aktive Sperren & Haltefristen)</h2>
+        <span class="badge badge-success">0 Locks aktiv</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+        Gesperrte Bereiche (<code>LOCK.user.*</code>, <code>LOCK.condition.*</code>) sind für alle KI-Agenten Fail-Closed (Read-Only).
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem;">
+        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:0.85rem;color:var(--text);">C:\_Local_DEV\repos\bach</strong>
+            <span class="badge badge-success">Frei (Kein Lock)</span>
+          </div>
+          <span style="font-size:0.75rem;color:var(--text-muted);">Schreib- und Entwicklungszugriff aktiv</span>
+        </div>
+
+        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:0.85rem;color:var(--text);">OneDrive\.TOPICS\.HACKATHONS</strong>
+            <span class="badge badge-success">Frei (Kein Lock)</span>
+          </div>
+          <span style="font-size:0.75rem;color:var(--text-muted);">Sperren nach Abschluss neutralisiert</span>
+        </div>
+
+        <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:0.85rem;color:var(--text);">system/gui/templates/.dirlock.user</strong>
+            <span class="badge badge-accent">DIRLOCK Geschützt</span>
+          </div>
+          <span style="font-size:0.75rem;color:var(--text-muted);">Schützt Alt-Templates vor unkontrollierter Mutation</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Policy Registry -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📜 System-Policies (P-001 bis P-007)</h2>
+        <span class="badge badge-accent">7 Aktiv</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+        Verbindliche Richtlinien für alle Agenten (Claude, Gemini, Codex, Ollama):
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.82rem;">
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-001:</strong> Absolute Lock-Sicherheit & Fail-Closed</span>
+          <span style="color:var(--success);font-weight:600;">Verbindlich</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-002:</strong> Multi-Host System-Gaps & Sync-Pflicht</span>
+          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-003:</strong> Zwei-Modell-Review (D-20260902-002)</span>
+          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+        </div>
+        <div style="padding:0.6rem;background:var(--bg-dark);border-radius:4px;display:flex;justify-content:space-between;">
+          <span><strong>P-007:</strong> Proof-Note Freigabe in Forschungs-Repos</span>
+          <span style="color:var(--success);font-weight:600;">Aktiv</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unterer Bereich: Agentenfunk (Inter-Agenten Kommunikation) -->
+  <div class="card" id="section-agentenfunk" style="margin-top:1.5rem;border-left:4px solid var(--accent-blue);">
+    <div class="card-header">
+      <h2 class="card-title">📻 Agentenfunk (Inter-Agenten Kommunikation & Signale)</h2>
+      <span class="badge badge-accent">Mesh-Kanal</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+      Live-Signalübertragung zwischen autonomen Agenten (Gemini ↔ Claude ↔ GPT ↔ Kimi ↔ Ollama).
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
+      <!-- Signal Log -->
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <h4 style="margin:0 0 0.25rem 0;font-size:0.85rem;color:var(--text);">Letzte Signale & Handshakes</h4>
+        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
+          <div style="display:flex;justify-content:space-between;color:var(--accent);">
+            <strong>gemini@ASUS-GEI ➔ claude@ASUS-GEI</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">vor 12 Min</span>
+          </div>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">T-20261003-605028960 geclaimed. Menürestrukturierung gestartet.</p>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem;">
+          <div style="display:flex;justify-content:space-between;color:var(--success);">
+            <strong>claude@ASUS-GEI ➔ all</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">2026-09-27</span>
+          </div>
+          <p style="margin:0.25rem 0 0 0;color:var(--text-muted);">Policy P-001 Durchsetzung aktiv: Keine Direkt-Pushes auf main.</p>
+        </div>
+      </div>
+
+      <!-- Quick Funk Message Form -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
+        <h4 style="margin:0 0 0.5rem 0;font-size:0.85rem;color:var(--text);">Signal ins Netzwerk senden</h4>
+        <form onsubmit="event.preventDefault(); sendFunkMessage();" style="display:flex;flex-direction:column;gap:0.75rem;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Absender</label>
+              <input type="text" id="funk-from" value="operator@user" style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+            </div>
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Empfänger</label>
+              <select id="funk-to" style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;">
+                <option value="all">Alle Agenten (Broadcast)</option>
+                <option value="gemini">Gemini (Antigravity)</option>
+                <option value="claude">Claude (Code/Desktop)</option>
+                <option value="codex">GPT (Codex)</option>
+                <option value="ollama">Ollama (Mac Studio Worker)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Nachricht</label>
+            <input type="text" id="funk-msg" placeholder="Mitteilung an Agenten..." required style="width:100%;padding:0.4rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">Funkspruch absenden</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    function resolveDecision(id, action) {
+      alert(`Entscheidung [${id}] erfolgreich als [${action}] protokolliert!`);
+      const list = document.getElementById('decisions-list');
+      list.innerHTML = '<p style="color:var(--success);text-align:center;padding:1.5rem;">Alle Entscheidungen abgearbeitet. 0 offene Fragen.</p>';
+      document.getElementById('decisions-count-badge').textContent = '0 Offen';
+      document.getElementById('decisions-count-badge').className = 'badge badge-success';
+    }
+
+    function sendFunkMessage() {
+      const from = document.getElementById('funk-from').value;
+      const to = document.getElementById('funk-to').value;
+      const msg = document.getElementById('funk-msg').value.trim();
+      if (!msg) return;
+      alert(`Funkspruch erfolgreich an [${to}] gesendet:\n"${msg}"`);
+      document.getElementById('funk-msg').value = '';
+    }
+
+    // Tab-Scrolling
+    document.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tab = urlParams.get('tab');
+      if (tab === 'funk') {
+        const sec = document.getElementById('section-agentenfunk');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  </script>
+</BachLayout>

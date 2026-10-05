@@ -1,0 +1,2790 @@
+
+================================================================================
+INDEX 0  id=6260  cli.agent_launcher_handler_agent_verwaltung  lang=en  verified=1
+metrics: {'orig_len': 462, 'vlen': 449, 'german_word_count': 22, 'has_umlaut': False, 'de_similarity': 0.827, 'lcs_with_de': 86}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Agent Launcher Handler - Agent-Verwaltung
+==========================================
+
+bach agent list                          Verfuegbare Agents auflisten
+bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
+bach agent stop <name>                   Agent stoppen
+bach agent status                        Laufende Agents anzeigen
+
+Optionen:
+  --mode plan|default     Modus (default: default)
+  --model sonnet|opus|haiku   Modell (default: sonnet)
+--- CURRENT ---
+Agent Launcher Handler - Agent Management
+==========================================
+
+bach agent list                          List available agents
+bach agent start <name> [--mode MODE] [--model MODEL]   Start an agent
+bach agent stop <name>                   Stop an agent
+bach agent status                        Show running agents
+
+Options:
+  --mode plan|default     Mode (default: default)
+  --model sonnet|opus|haiku   Model (default: sonnet)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 1  id=6304  cli.bach_data_analysis_handler  lang=en  verified=1
+metrics: {'orig_len': 405, 'vlen': 394, 'german_word_count': 12, 'has_umlaut': False, 'de_similarity': 0.385, 'lcs_with_de': 57}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Data Analysis Handler
+==========================
+CLI-Handler fuer Datenanalyse-Funktionen.
+
+Befehle:
+    bach data load <path>           Datei laden und Infos anzeigen
+    bach data describe <path>       Deskriptive Statistik
+    bach data head <path> [--rows]  Erste Zeilen anzeigen
+    bach data corr <path>           Korrelationsmatrix
+    bach data chart <path>          Chart erstellen (geplant)
+--- CURRENT ---
+BACH Data Analysis Handler
+==========================
+CLI handler for data analysis functions.
+
+Commands:
+    bach data load <path>           Load a file and show info
+    bach data describe <path>       Descriptive statistics
+    bach data head <path> [--rows]  Show first rows
+    bach data corr <path>           Correlation matrix
+    bach data chart <path>          Create a chart (planned)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 2  id=6315  cli.bach_trash_handler_cli_handler  lang=en  verified=1
+metrics: {'orig_len': 399, 'vlen': 367, 'german_word_count': 21, 'has_umlaut': False, 'de_similarity': 0.628, 'lcs_with_de': 42}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Trash Handler
+==================
+CLI-Handler fuer das Papierkorb-System (Soft-Delete).
+
+Befehle:
+    bach trash list              Alle Eintraege im Papierkorb
+    bach trash delete PATH       Datei in Papierkorb verschieben
+    bach trash restore ID        Datei wiederherstellen
+    bach trash purge             Abgelaufene Dateien loeschen
+    bach trash info ID           Details zu einem Eintrag
+--- CURRENT ---
+BACH Trash Handler
+==================
+CLI handler for the trash system (soft delete).
+
+Commands:
+    bach trash list              All entries in the trash
+    bach trash delete PATH       Move a file to the trash
+    bach trash restore ID        Restore a file
+    bach trash purge             Delete expired files
+    bach trash info ID           Details of an entry
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 3  id=6363  cli.cv_handler_lebenslauf_verwaltung  lang=en  verified=1
+metrics: {'orig_len': 269, 'vlen': 246, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.208, 'lcs_with_de': 61}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+CV Handler - Lebenslauf-Verwaltung
+==================================
+
+--cv generate           Lebenslauf generieren (ASCII)
+--cv generate --output  In Datei speichern
+--cv generate --scan    Ordner automatisch scannen
+--cv status             Status der Datenbasis anzeigen
+--- CURRENT ---
+CV Handler - Resume Management
+==================================
+
+--cv generate           Generate resume (ASCII)
+--cv generate --output  Save to file
+--cv generate --scan    Automatically scan folder
+--cv status             Show database status
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 4  id=6485  cli.exportiert_gesundheitsdaten_als_csv_text_oder_vca  lang=en  verified=1
+metrics: {'orig_len': 342, 'vlen': 344, 'german_word_count': 5, 'has_umlaut': False, 'de_similarity': 0.535, 'lcs_with_de': 127}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Exportiert Gesundheitsdaten als CSV, Text oder vCard 3.0.
+
+        Optionen:
+            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
+            --specialty <fach>      Nur bestimmtes Fachgebiet (fuer contacts)
+            --format csv|txt|vcard  Exportformat (default: txt)
+            --file <pfad>           Speichern in Datei
+--- CURRENT ---
+Exports health data as CSV, text or vCard 3.0.
+
+        Options:
+            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
+            --specialty <fach>      Only a specific specialty (for contacts)
+            --format csv|txt|vcard  Export format (default: txt)
+            --file <pfad>           Save to file
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 5  id=6486  cli.exportiert_kontakte_als_csv_text_oder_vcard_3_0  lang=en  verified=1
+metrics: {'orig_len': 341, 'vlen': 343, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.644, 'lcs_with_de': 57}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Exportiert Kontakte als CSV, Text oder vCard 3.0.
+
+        Optionen:
+            --type aerzte/arzt    Nur Arzt-Kontakte
+            --type beruflich      Nur berufliche Kontakte
+            --type versicherung   Nur Versicherungs-Kontakte
+            --format csv|txt|vcard  Exportformat (default: txt)
+            --file <pfad>         Speichern in Datei
+--- CURRENT ---
+Exports contacts as CSV, text or vCard 3.0.
+
+        Options:
+            --type aerzte/arzt    Only doctor contacts
+            --type beruflich      Only business contacts
+            --type versicherung   Only insurance contacts
+            --format csv|txt|vcard  Export format (default: txt)
+            --file <pfad>         Save to file
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 6  id=6610  cli.format_format_type_nicht_unterstuetzt_verfue  lang=en  verified=1
+metrics: {'orig_len': 379, 'vlen': 371, 'german_word_count': 10, 'has_umlaut': False, 'de_similarity': 0.628, 'lcs_with_de': 88}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Format '{format_type}' nicht unterstuetzt.
+
+Verfuegbare Formate:
+  --format txt      Standard TXT-Dateien
+  --format datev    DATEV Buchungsstapel CSV (fuer Steuerberater)
+  --format csv      Einfaches CSV (fuer Excel)
+  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+
+Beispiel:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- CURRENT ---
+Format '{format_type}' not supported.
+
+Available formats:
+  --format txt      Standard TXT files
+  --format datev    DATEV booking batch CSV (for tax advisors)
+  --format csv      Simple CSV (for Excel)
+  --format vorsorge Vorsorgeaufwand schedule (insurance contributions)
+
+Examples:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 7  id=6627  cli.generiert_validiert_yaml_header_fuer_skill_md_date  lang=en  verified=1
+metrics: {'orig_len': 349, 'vlen': 343, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.337, 'lcs_with_de': 68}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Generiert/validiert YAML-Header fuer SKILL.md Dateien.
+
+        Verwendung:
+            bach --maintain headers                  # Dry-run alle
+            bach --maintain headers --fix            # Alle korrigieren
+            bach --maintain headers --path skills/   # Bestimmter Ordner
+            bach --maintain headers --update-db      # DB-Versionen updaten
+--- CURRENT ---
+Generates/validates YAML headers for SKILL.md files.
+
+        Usage:
+            bach --maintain headers                  # Dry-run all
+            bach --maintain headers --fix            # Fix all
+            bach --maintain headers --path skills/   # Specific folder
+            bach --maintain headers --update-db      # Update DB versions
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 8  id=6693  cli.holt_aktuelle_daten_f_r_die_hauptindizes  lang=en  verified=1
+metrics: {'orig_len': 98, 'vlen': 102, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.663, 'lcs_with_de': 38}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Holt aktuelle Daten für die Hauptindizes.
+
+        Returns:
+            Liste von Dicts mit Index-Daten
+--- CURRENT ---
+Fetches current data for the main indices.
+
+        Returns:
+            List of dicts with index data
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 9  id=6695  cli.holt_den_aktuellen_preis_und_nderung_ar  lang=en  verified=1
+metrics: {'orig_len': 163, 'vlen': 167, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.659, 'lcs_with_de': 43}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Holt den aktuellen Preis und Änderung.
+
+        Args:
+            ticker: Das Symbol
+
+        Returns:
+            Tuple (aktueller_preis, änderung, änderung_prozent) oder None
+--- CURRENT ---
+Fetches the current price and change.
+
+        Args:
+            ticker: The symbol
+
+        Returns:
+            Tuple (current_price, change, change_percent) or None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 10  id=6702  cli.importiert_dateien_in_den_data_roh_ordner_fruehe  lang=en  verified=1
+metrics: {'orig_len': 266, 'vlen': 265, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.393, 'lcs_with_de': 47}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Importiert Dateien in den data_roh/ Ordner (frueher: data/).
+
+        Args:
+            session: Aktive Session
+            files: Liste von Dateipfaden
+            clear_existing: Bestehende Dateien in data_roh/ loeschen
+
+        Returns:
+            Anzahl importierter Dateien
+--- CURRENT ---
+Imports files into the data_roh/ folder (formerly: data/).
+
+        Args:
+            session: Active session
+            files: List of file paths
+            clear_existing: Delete existing files in data_roh/
+
+        Returns:
+            Number of imported files
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 11  id=6710  cli.initialisiert_den_hook_args  lang=en  verified=1
+metrics: {'orig_len': 143, 'vlen': 143, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.803, 'lcs_with_de': 42}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Initialisiert den Hook.
+
+        Args:
+            data_dir: Ordner mit echten Klientendaten
+            bundles_dir: Ordner mit anonymisierten Bundles
+--- CURRENT ---
+Initializes the hook.
+
+        Args:
+            data_dir: Folder with real client data
+            bundles_dir: Folder with anonymized bundles
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 12  id=6747  cli.kernel_seal_handler_sq021  lang=en  verified=1
+metrics: {'orig_len': 481, 'vlen': 434, 'german_word_count': 19, 'has_umlaut': False, 'de_similarity': 0.553, 'lcs_with_de': 66}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Kernel Seal Handler (SQ021)
+============================
+
+Siegelsystem fuer BACH-Integritaet.
+
+Das Siegel:
+- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
+- Warnt bei Veraenderungen
+- Ermoeglicht Restore/Repair
+
+CLI:
+    bach seal check       Vollstaendige Hash-Pruefung
+    bach seal repair      Neuen Hash berechnen und speichern
+    bach seal status      Zeige aktuellen Seal-Status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Runde 4)
+--- CURRENT ---
+Kernel Seal Handler (SQ021)
+============================
+
+Seal system for BACH integrity.
+
+The seal:
+- Computes a SHA256 hash over all CORE files (dist_type=2)
+- Warns about changes
+- Enables restore/repair
+
+CLI:
+    bach seal check       Full hash verification
+    bach seal repair      Compute and save a new hash
+    bach seal status      Show current seal status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Round 4)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 13  id=6755  cli.konvertiert_pdf_seiten_zu_png_bildern_be  lang=en  verified=1
+metrics: {'orig_len': 310, 'vlen': 303, 'german_word_count': 5, 'has_umlaut': False, 'de_similarity': 0.434, 'lcs_with_de': 61}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Konvertiert PDF-Seiten zu PNG-Bildern.
+
+        Benoetigt pdf2image + poppler.
+
+        Args:
+            file_path: Pfad zur PDF
+            output_dir: Ausgabe-Ordner fuer die Bilder
+            max_dim: Maximale Dimension (Breite/Hoehe) in Pixeln
+
+        Returns:
+            Liste der erzeugten Bild-Pfade
+--- CURRENT ---
+Converts PDF pages to PNG images.
+
+        Requires pdf2image + poppler.
+
+        Args:
+            file_path: Path to the PDF
+            output_dir: Output folder for the images
+            max_dim: Maximum dimension (width/height) in pixels
+
+        Returns:
+            List of generated image paths
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 14  id=6761  cli.l_dt_pfad_overrides_aus_der_kanonischen_db_des_akt  lang=en  verified=1
+metrics: {'orig_len': 64, 'vlen': 63, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.556, 'lcs_with_de': 9}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Lädt Pfad-Overrides aus der kanonischen DB des aktuellen Roots.
+--- CURRENT ---
+Loads path overrides from the canonical DB of the current root.
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 15  id=6784  cli.liest_inhalte_sicher_aus_dem_anonymisierten_bundle  lang=en  verified=1
+metrics: {'orig_len': 419, 'vlen': 402, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.244, 'lcs_with_de': 47}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Liest Inhalte sicher aus dem anonymisierten Bundle.
+
+        WICHTIG: Diese Methode gibt NUR anonymisierte Inhalte zurück.
+        Der Chatbot sieht nur Tarnnamen, niemals echte Namen.
+
+        Args:
+            klient_name: Name des Klienten
+            filename: Optionaler Dateiname (sonst alle Dateien)
+            include_extended: Auch extended/ einbeziehen
+
+        Returns:
+            Anonymisierter Textinhalt
+--- CURRENT ---
+Safely reads contents from the anonymized bundle.
+
+        IMPORTANT: This method returns ONLY anonymized contents.
+        The chatbot only sees codenames, never real names.
+
+        Args:
+            klient_name: Name of the client
+            filename: Optional filename (otherwise all files)
+            include_extended: Also include extended/
+
+        Returns:
+            Anonymized text content
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 16  id=6793  cli.list_available_alle_verf_gbaren_pipeline_defi  lang=en  verified=1
+metrics: {'orig_len': 57, 'vlen': 54, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.732, 'lcs_with_de': 23}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+list-available      Alle verfügbaren Pipeline-Definitionen
+--- CURRENT ---
+list-available      All available pipeline definitions
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 17  id=6867  cli.parst_url_und_gibt_markdown_zurueck_mit_chunking  lang=en  verified=1
+metrics: {'orig_len': 62, 'vlen': 58, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.718, 'lcs_with_de': 10}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Parst URL und gibt Markdown zurueck (mit Chunking-Support).
+--- CURRENT ---
+Parses a URL and returns Markdown (with chunking support).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 18  id=6888  cli.pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min  lang=en  verified=1
+metrics: {'orig_len': 119, 'vlen': 113, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.698, 'lcs_with_de': 39}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob andere PCs aktiv sind (innerhalb 5 Min).
+
+        Returns:
+            Liste von aktiven Hosts mit Zeitstempel
+--- CURRENT ---
+Checks if other PCs are active (within 5 min).
+
+        Returns:
+            List of active hosts with timestamps
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 19  id=6890  cli.pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach  lang=en  verified=1
+metrics: {'orig_len': 159, 'vlen': 156, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.584, 'lcs_with_de': 46}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob ein zu mächtiges Modell für einen einfachen Task
+        verwendet wird.
+
+        Returns:
+            OverkillAlert wenn Overkill erkannt, sonst None
+--- CURRENT ---
+Checks if an overly powerful model is being used
+        for a simple task.
+
+        Returns:
+            OverkillAlert if overkill detected, otherwise None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 20  id=6891  cli.pr_ft_ob_provider_verf_gbar_ist_circuit_nicht_ope  lang=en  verified=1
+metrics: {'orig_len': 53, 'vlen': 55, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.574, 'lcs_with_de': 8}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob Provider verfügbar ist (Circuit nicht OPEN).
+--- CURRENT ---
+Checks if the provider is available (circuit not OPEN).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 21  id=6951  cli.sammelt_und_zeigt_den_aktuellen_db_basierten_syste  lang=en  verified=1
+metrics: {'orig_len': 58, 'vlen': 57, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.522, 'lcs_with_de': 7}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Sammelt und zeigt den aktuellen DB-basierten Systemstatus.
+--- CURRENT ---
+Collects and displays the current DB-based system status.
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 22  id=6956  cli.scannt_einen_ordner_und_kategorisiert_alle_dokumen  lang=en  verified=1
+metrics: {'orig_len': 250, 'vlen': 232, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.583, 'lcs_with_de': 58}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Scannt einen Ordner und kategorisiert alle Dokumente.
+
+        Args:
+            folder: Pfad zum Klienten-Ordner
+            recursive: Unterordner einbeziehen (Default: True)
+
+        Returns:
+            ScanResult mit kategorisierten Dokumenten
+--- CURRENT ---
+Scans a folder and categorizes all documents.
+
+        Args:
+            folder: Path to the client folder
+            recursive: Include subfolders (Default: True)
+
+        Returns:
+            ScanResult with categorized documents
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 23  id=7028  cli.setzt_dead_letter_nachrichten_zurueck_auf_pending  lang=en  verified=1
+metrics: {'orig_len': 49, 'vlen': 46, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.592, 'lcs_with_de': 11}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Setzt Dead-Letter-Nachrichten zurueck auf 'pending'.
+--- CURRENT ---
+Resets dead-letter messages back to 'pending'.
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 24  id=7038  cli.skill_spezifische_tools_im_skill_ordner_finden  lang=en  verified=1
+metrics: {'orig_len': 206, 'vlen': 205, 'german_word_count': 9, 'has_umlaut': False, 'de_similarity': 0.354, 'lcs_with_de': 35}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Skill-spezifische Tools im Skill-Ordner finden.
+
+        Sucht nach:
+        - *.py Dateien im Skill-Root
+        - tools/ Unterverzeichnis
+
+        Returns:
+            Liste von (Path, relative_name) Tupeln
+--- CURRENT ---
+Find skill-specific tools in the skill folder.
+
+        Searches for:
+        - *.py files in the skill root
+        - tools/ subdirectory
+
+        Returns:
+            List of (Path, relative_name) tuples
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 25  id=7039  cli.skill_spezifische_workflows_im_skill_ordner_finden  lang=en  verified=1
+metrics: {'orig_len': 217, 'vlen': 216, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.359, 'lcs_with_de': 35}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Skill-spezifische Workflows im Skill-Ordner finden.
+
+        Sucht nach:
+        - workflow_*.md Dateien im Root
+        - workflows/ Unterverzeichnis
+
+        Returns:
+            Liste von (Path, relative_name) Tupeln
+--- CURRENT ---
+Find skill-specific workflows in the skill folder.
+
+        Searches for:
+        - workflow_*.md files in the root
+        - workflows/ subdirectory
+
+        Returns:
+            List of (Path, relative_name) tuples
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 26  id=7046  cli.startet_claude_p_und_gibt_antwort_zurueck  lang=en  verified=1
+metrics: {'orig_len': 244, 'vlen': 229, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.647, 'lcs_with_de': 49}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet claude -p und gibt Antwort zurueck.
+
+        Args:
+            prompt: Der Prompt-Text
+            use_continue: True = --continue (bestehende Session fortsetzen),
+                          False = neue Session (voller System-Prompt)
+--- CURRENT ---
+Starts claude -p and returns the answer.
+
+        Args:
+            prompt: The prompt text
+            use_continue: True = --continue (resume existing session),
+                          False = new session (full system prompt)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 27  id=7048  cli.startet_listen_loop_in_eigenem_thread_gibt_threa  lang=en  verified=1
+metrics: {'orig_len': 75, 'vlen': 70, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.718, 'lcs_with_de': 20}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet Listen-Loop in eigenem Thread. Gibt (Thread, StopEvent) zurueck.
+--- CURRENT ---
+Starts the listen loop in its own thread. Returns (Thread, StopEvent).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 28  id=7073  cli.synchronisiert_db_status_zurueck_zu_aufgaben_txt_d  lang=en  verified=1
+metrics: {'orig_len': 51, 'vlen': 42, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.653, 'lcs_with_de': 14}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Synchronisiert DB-Status zurueck zu AUFGABEN.txt Dateien
+--- CURRENT ---
+Syncs DB status back to AUFGABEN.txt files
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 29  id=7123  cli.user_sync_py_user_md_bidirektionale_synchronisa  lang=en  verified=1
+metrics: {'orig_len': 391, 'vlen': 378, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.411, 'lcs_with_de': 45}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+user_sync.py -- USER.md bidirektionale Synchronisation
+
+Liest USER.md und schreibt Aenderungen in user_profile Tabelle zurueck.
+Umgekehrt: DB -> USER.md (Regenerierung beim Shutdown).
+
+Aufgerufen von:
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
+
+Hinweis: USER.md liegt im BACH-Root-Verzeichnis (eine Ebene ueber system/).
+         Pfad: BACH/USER.md
+--- CURRENT ---
+user_sync.py -- USER.md bidirectional synchronization
+
+Reads USER.md and writes changes back to the user_profile table.
+Reverse: DB -> USER.md (regeneration on shutdown).
+
+Called by:
+- bach --startup  (block 0.07: USER.md -> DB)
+- bach --shutdown (block 5.7: DB -> USER.md)
+
+Note: USER.md is located in the BACH root directory (one level above system/).
+      Path: BACH/USER.md
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 30  id=7124  cli.validiert_wichtige_pfade_returns_li  lang=en  verified=1
+metrics: {'orig_len': 88, 'vlen': 93, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.63, 'lcs_with_de': 28}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Validiert wichtige Pfade.
+
+    Returns:
+        Liste von Warnungen (leer wenn alles ok)
+--- CURRENT ---
+Validates important paths.
+
+    Returns:
+        List of warnings (empty if everything is ok)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 31  id=7133  cli.versions_check_f_r_einen_skill_v2_0_ve  lang=en  verified=1
+metrics: {'orig_len': 302, 'vlen': 288, 'german_word_count': 10, 'has_umlaut': False, 'de_similarity': 0.508, 'lcs_with_de': 52}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Versions-Check für einen Skill (v2.0).
+
+        Vergleicht:
+        - Lokale Version (aus YAML-Header)
+        - Zentrale Version (falls verfügbar)
+
+        Prinzip: Immer die höchste Versionsnummer verwenden!
+
+        Args:
+            name: Skill-Name
+
+        Returns:
+            (success, message)
+--- CURRENT ---
+Version check for a skill (v2.0).
+
+        Compares:
+        - Local version (from YAML header)
+        - Central version (if available)
+
+        Principle: Always use the highest version number!
+
+        Args:
+            name: Skill name
+
+        Returns:
+            (success, message)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 32  id=7163  cli.word_template_service_allge  lang=en  verified=1
+metrics: {'orig_len': 355, 'vlen': 341, 'german_word_count': 4, 'has_umlaut': True, 'de_similarity': 0.304, 'lcs_with_de': 57}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Word Template Service
+=====================
+
+Allgemeiner Service fuer Word-Template-Befuellung via python-docx.
+Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
+Checkbox-Steuerung und Satzbausteine.
+
+Abhaengigkeit: python-docx (pip install python-docx)
+
+Version: 1.1.0 (Tabellen-Support für Förderziele)
+Erstellt: 2026-01-27
+Aktualisiert: 2026-01-31
+--- CURRENT ---
+Word Template Service
+=====================
+
+Generic service for filling Word templates via python-docx.
+Supports placeholder replacement, table row filtering,
+checkbox control and text building blocks.
+
+Dependency: python-docx (pip install python-docx)
+
+Version: 1.1.0 (table support for Förderziele)
+Created: 2026-01-27
+Updated: 2026-01-31
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 33  id=7170  cli.zeigt_aktuellen_seal_status_returns  lang=en  verified=1
+metrics: {'orig_len': 70, 'vlen': 72, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.761, 'lcs_with_de': 48}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Zeigt aktuellen Seal-Status.
+
+        Returns:
+            0 = SUCCESS
+--- CURRENT ---
+Shows the current seal status.
+
+        Returns:
+            0 = SUCCESS
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 34  id=7219  gui.liefert_aktuellen_daemon_status_mit_job_statistike  lang=en  verified=1
+metrics: {'orig_len': 73, 'vlen': 74, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.585, 'lcs_with_de': 7}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken.
+--- CURRENT ---
+Returns the current daemon status with job statistics and runtime metrics.
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 35  id=11892  cli.agent_launcher_handler_agent_verwaltung  lang=es  verified=1
+metrics: {'orig_len': 470, 'vlen': 482, 'german_word_count': 15, 'has_umlaut': False, 'de_similarity': 0.557, 'lcs_with_de': 86}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Agent Launcher Handler - Agent-Verwaltung
+==========================================
+
+bach agent list                          Verfuegbare Agents auflisten
+bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
+bach agent stop <name>                   Agent stoppen
+bach agent status                        Laufende Agents anzeigen
+
+Optionen:
+  --mode plan|default     Modus (default: default)
+  --model sonnet|opus|haiku   Modell (default: sonnet)
+--- CURRENT ---
+Agent Launcher Handler - Gestión de agentes
+==========================================
+
+bach agent list                          Listar agentes disponibles
+bach agent start <name> [--mode MODE] [--model MODEL]   Iniciar un agente
+bach agent stop <name>                   Detener un agente
+bach agent status                        Mostrar agentes en ejecución
+
+Opciones:
+  --mode plan|default     Modo (por defecto: default)
+  --model sonnet|opus|haiku   Modelo (por defecto: sonnet)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 36  id=11947  cli.bach_trash_handler_cli_handler  lang=es  verified=1
+metrics: {'orig_len': 431, 'vlen': 410, 'german_word_count': 16, 'has_umlaut': False, 'de_similarity': 0.59, 'lcs_with_de': 39}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Trash Handler
+==================
+CLI-Handler fuer das Papierkorb-System (Soft-Delete).
+
+Befehle:
+    bach trash list              Alle Eintraege im Papierkorb
+    bach trash delete PATH       Datei in Papierkorb verschieben
+    bach trash restore ID        Datei wiederherstellen
+    bach trash purge             Abgelaufene Dateien loeschen
+    bach trash info ID           Details zu einem Eintrag
+--- CURRENT ---
+BACH Trash Handler
+==================
+Controlador CLI para el sistema de papelera (Soft-Delete).
+
+Comandos:
+    bach trash list              Todas las entradas de la papelera
+    bach trash delete PATH       Mover un archivo a la papelera
+    bach trash restore ID        Restaurar un archivo
+    bach trash purge             Eliminar archivos caducados
+    bach trash info ID           Detalles de una entrada
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 37  id=12027  cli.doc_extraktion_fehlgeschlagen_antiword_libreof  lang=es  verified=1
+metrics: {'orig_len': 82, 'vlen': 72, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.549, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/textract nicht verfuegbar]
+--- CURRENT ---
+[Error de extracción .doc - antiword/LibreOffice/textract no disponible]
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 38  id=12259  cli.generiert_validiert_yaml_header_fuer_skill_md_date  lang=es  verified=1
+metrics: {'orig_len': 356, 'vlen': 369, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.156, 'lcs_with_de': 57}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Generiert/validiert YAML-Header fuer SKILL.md Dateien.
+
+        Verwendung:
+            bach --maintain headers                  # Dry-run alle
+            bach --maintain headers --fix            # Alle korrigieren
+            bach --maintain headers --path skills/   # Bestimmter Ordner
+            bach --maintain headers --update-db      # DB-Versionen updaten
+--- CURRENT ---
+Genera/valida encabezados YAML para archivos SKILL.md.
+
+        Uso:
+            bach --maintain headers                  # Simulación de todos
+            bach --maintain headers --fix            # Corregir todos
+            bach --maintain headers --path skills/   # Carpeta específica
+            bach --maintain headers --update-db      # Actualizar versiones en DB
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 39  id=12323  cli.hinweis_pfad_heilung_ist_nicht_mehr_noetig  lang=es  verified=1
+metrics: {'orig_len': 442, 'vlen': 453, 'german_word_count': 7, 'has_umlaut': False, 'de_similarity': 0.252, 'lcs_with_de': 77}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+HINWEIS: Pfad-Heilung ist nicht mehr noetig!
+============================================================
+bach_paths.py verwaltet alle Laufzeit-Pfade automatisch.
+Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+
+Fuer Dokumentations-Updates (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Dry-Run (nur anzeigen)
+  bach --maintain docs-paths --apply  Tatsaechlich korrigieren
+
+Siehe: bach --help tools/path_healer
+--- CURRENT ---
+AVISO: ¡La corrección de rutas ya no es necesaria!
+============================================================
+bach_paths.py gestiona todas las rutas de ejecución automáticamente.
+Si BACH se mueve, las rutas se adaptan por sí solas.
+
+Para actualizaciones de documentación (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Simulación (solo mostrar)
+  bach --maintain docs-paths --apply  Corregir de verdad
+
+Ver: bach --help tools/path_healer
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 40  id=12325  cli.holt_aktuelle_daten_f_r_die_hauptindizes  lang=es  verified=1
+metrics: {'orig_len': 104, 'vlen': 119, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.532, 'lcs_with_de': 18}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Holt aktuelle Daten für die Hauptindizes.
+
+        Returns:
+            Liste von Dicts mit Index-Daten
+--- CURRENT ---
+Obtiene datos actuales para los índices principales.
+
+        Devuelve:
+            Lista de dicts con datos de índices
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 41  id=12327  cli.holt_den_aktuellen_preis_und_nderung_ar  lang=es  verified=1
+metrics: {'orig_len': 169, 'vlen': 179, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.592, 'lcs_with_de': 23}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Holt den aktuellen Preis und Änderung.
+
+        Args:
+            ticker: Das Symbol
+
+        Returns:
+            Tuple (aktueller_preis, änderung, änderung_prozent) oder None
+--- CURRENT ---
+Obtiene el precio actual y su variación.
+
+        Argumentos:
+            ticker: El símbolo
+
+        Devuelve:
+            Tupla (precio_actual, cambio, cambio_porcentual) o None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 42  id=12335  cli.importiert_und_erstellt_usmcclient_lazy_damit_ke  lang=es  verified=1
+metrics: {'orig_len': 79, 'vlen': 79, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.571, 'lcs_with_de': 19}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Importiert und erstellt USMCClient (lazy, damit kein harter Import-Fehler).
+--- CURRENT ---
+Importa y crea USMCClient (lazy, para evitar un error de importación estricto).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 43  id=12340  cli.info_scanne_ordner_nach_sensiblen_daten_scan_f  lang=es  verified=1
+metrics: {'orig_len': 53, 'vlen': 68, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.629, 'lcs_with_de': 15}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}
+--- CURRENT ---
+[INFO] Escaneando carpeta en busca de datos sensibles: {scan_folder}
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 44  id=12379  cli.kernel_seal_handler_sq021  lang=es  verified=1
+metrics: {'orig_len': 528, 'vlen': 480, 'german_word_count': 14, 'has_umlaut': False, 'de_similarity': 0.382, 'lcs_with_de': 60}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Kernel Seal Handler (SQ021)
+============================
+
+Siegelsystem fuer BACH-Integritaet.
+
+Das Siegel:
+- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
+- Warnt bei Veraenderungen
+- Ermoeglicht Restore/Repair
+
+CLI:
+    bach seal check       Vollstaendige Hash-Pruefung
+    bach seal repair      Neuen Hash berechnen und speichern
+    bach seal status      Zeige aktuellen Seal-Status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Runde 4)
+--- CURRENT ---
+Kernel Seal Handler (SQ021)
+============================
+
+Sistema de sello para la integridad de BACH.
+
+El sello:
+- Calcula un hash SHA256 sobre todos los archivos CORE (dist_type=2)
+- Advierte sobre cambios
+- Permite restaurar/reparar
+
+CLI:
+    bach seal check       Verificación completa de hash
+    bach seal repair      Calcular y guardar un nuevo hash
+    bach seal status      Mostrar estado actual del sello
+
+Autor: BACH Development Team
+Creado: 2026-02-20 (SQ021, Ronda 4)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 45  id=12386  cli.konvertiert_pdf_seiten_zu_png_bildern_be  lang=es  verified=1
+metrics: {'orig_len': 320, 'vlen': 327, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.493, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Konvertiert PDF-Seiten zu PNG-Bildern.
+
+        Benoetigt pdf2image + poppler.
+
+        Args:
+            file_path: Pfad zur PDF
+            output_dir: Ausgabe-Ordner fuer die Bilder
+            max_dim: Maximale Dimension (Breite/Hoehe) in Pixeln
+
+        Returns:
+            Liste der erzeugten Bild-Pfade
+--- CURRENT ---
+Convierte páginas PDF en imágenes PNG.
+
+        Requiere pdf2image + poppler.
+
+        Argumentos:
+            file_path: Ruta al PDF
+            output_dir: Carpeta de salida para las imágenes
+            max_dim: Dimensión máxima (ancho/alto) en píxeles
+
+        Devuelve:
+            Lista de rutas de las imágenes generadas
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 46  id=12424  cli.list_available_alle_verf_gbaren_pipeline_defi  lang=es  verified=1
+metrics: {'orig_len': 63, 'vlen': 67, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.544, 'lcs_with_de': 20}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+list-available      Alle verfügbaren Pipeline-Definitionen
+--- CURRENT ---
+list-available      Todas las definiciones de pipelines disponibles
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 47  id=12436  cli.listet_verfuegbare_llmauto_chain_configs_auf  lang=es  verified=1
+metrics: {'orig_len': 44, 'vlen': 47, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.565, 'lcs_with_de': 15}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Listet verfuegbare llmauto Chain-Configs auf.
+--- CURRENT ---
+Lista las Chain-Configs de llmauto disponibles.
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 48  id=12518  cli.pr_ft_ob_andere_pcs_aktiv_sind_innerhalb_5_min  lang=es  verified=1
+metrics: {'orig_len': 123, 'vlen': 129, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.54, 'lcs_with_de': 18}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob andere PCs aktiv sind (innerhalb 5 Min).
+
+        Returns:
+            Liste von aktiven Hosts mit Zeitstempel
+--- CURRENT ---
+Comprueba si otros PCs están activos (dentro de 5 min).
+
+        Devuelve:
+            Lista de hosts activos con marca de tiempo
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 49  id=12519  cli.pr_ft_ob_der_token_verbrauch_3x_budget_ist  lang=es  verified=1
+metrics: {'orig_len': 150, 'vlen': 148, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.633, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob der Token-Verbrauch > 3x Budget ist.
+
+        Returns:
+            TokenExplosionAlert wenn Explosion erkannt, sonst None
+--- CURRENT ---
+Comprueba si el consumo de tokens es > 3x el presupuesto.
+
+        Devuelve:
+            TokenExplosionAlert si se detecta una explosión, si no None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 50  id=12520  cli.pr_ft_ob_ein_zu_m_chtiges_modell_f_r_einen_einfach  lang=es  verified=1
+metrics: {'orig_len': 169, 'vlen': 168, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.538, 'lcs_with_de': 28}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob ein zu mächtiges Modell für einen einfachen Task
+        verwendet wird.
+
+        Returns:
+            OverkillAlert wenn Overkill erkannt, sonst None
+--- CURRENT ---
+Comprueba si se está usando un modelo demasiado potente
+        para una tarea sencilla.
+
+        Devuelve:
+            OverkillAlert si se detecta overkill, si no None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 51  id=12562  cli.rate_sprechgeschwindigkeit_standard_170_schnel  lang=es  verified=1
+metrics: {'orig_len': 216, 'vlen': 229, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.482, 'lcs_with_de': 38}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+rate: Sprechgeschwindigkeit (Standard: 170, schneller als pyttsx3-Default 200)
+        voice_name: 'auto' (Zira bevorzugt), oder Name-Fragment der Stimme
+        engine: 'pyttsx3', 'piper', oder 'auto' (erster verfuegbarer)
+--- CURRENT ---
+rate: Velocidad de habla (por defecto: 170, más rápido que el valor 200 de pyttsx3)
+        voice_name: 'auto' (prefiere Zira), o fragmento del nombre de la voz
+        engine: 'pyttsx3', 'piper', o 'auto' (el primero disponible)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 52  id=12671  cli.smart_home_fritzbox_integration  lang=es  verified=1
+metrics: {'orig_len': 418, 'vlen': 430, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.481, 'lcs_with_de': 100}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Smart Home (FritzBox Integration)
+==================================
+
+  bach smarthome status       Verbindungs-Status
+  bach smarthome devices      Verbundene Geraete
+  bach smarthome wifi         WLAN-Status
+  bach smarthome bandwidth    Bandbreite
+  bach smarthome reconnect    Internet neu verbinden
+  bach smarthome info         Box-Informationen
+
+Voraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).
+--- CURRENT ---
+Smart Home (FritzBox Integration)
+==================================
+
+  bach smarthome status       Estado de la conexión
+  bach smarthome devices      Dispositivos conectados
+  bach smarthome wifi         Estado del WLAN
+  bach smarthome bandwidth    Ancho de banda
+  bach smarthome reconnect    Reconectar a Internet
+  bach smarthome info         Información de la Box
+
+Requisito: FritzBox accesible en fritz.box:49000 (TR-064).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 53  id=12676  cli.startet_claude_p_und_gibt_antwort_zurueck  lang=es  verified=1
+metrics: {'orig_len': 250, 'vlen': 252, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.511, 'lcs_with_de': 47}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet claude -p und gibt Antwort zurueck.
+
+        Args:
+            prompt: Der Prompt-Text
+            use_continue: True = --continue (bestehende Session fortsetzen),
+                          False = neue Session (voller System-Prompt)
+--- CURRENT ---
+Inicia claude -p y devuelve la respuesta.
+
+        Argumentos:
+            prompt: El texto del prompt
+            use_continue: True = --continue (continuar sesión existente),
+                          False = nueva sesión (prompt de sistema completo)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 54  id=12703  cli.synchronisiert_db_status_zurueck_zu_aufgaben_txt_d  lang=es  verified=1
+metrics: {'orig_len': 56, 'vlen': 67, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.504, 'lcs_with_de': 13}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Synchronisiert DB-Status zurueck zu AUFGABEN.txt Dateien
+--- CURRENT ---
+Sincroniza el estado de la DB de vuelta a los archivos AUFGABEN.txt
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 55  id=12741  cli.update_handler_versions_und_update_verwaltung  lang=es  verified=1
+metrics: {'orig_len': 580, 'vlen': 506, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.458, 'lcs_with_de': 79}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Update Handler - Versions- und Update-Verwaltung
+=================================================
+
+bach update check          Auf Updates pruefen
+bach update status         Aktuelle Version + Verifikation anzeigen
+bach update apply          Update einspielen (Backup + Pull + Migrate + Verify)
+bach update rollback       Rollback zum letzten Pre-Update-Backup
+bach update verify         System-Integritaet pruefen
+bach update migrations     Ausstehende Migrationen anzeigen/ausfuehren
+--- CURRENT ---
+Update Handler - Gestión de versiones y actualizaciones
+=================================================
+
+bach update check          Comprobar actualizaciones
+bach update status         Mostrar versión actual + verificación
+bach update apply          Aplicar actualización (Backup + Pull + Migrate + Verify)
+bach update rollback       Rollback al último backup pre-actualización
+bach update verify         Comprobar integridad del sistema
+bach update migrations     Mostrar/ejecutar migraciones pendientes
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 56  id=12753  cli.user_sync_py_user_md_bidirektionale_synchronisa  lang=es  verified=1
+metrics: {'orig_len': 406, 'vlen': 377, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.316, 'lcs_with_de': 41}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+user_sync.py -- USER.md bidirektionale Synchronisation
+
+Liest USER.md und schreibt Aenderungen in user_profile Tabelle zurueck.
+Umgekehrt: DB -> USER.md (Regenerierung beim Shutdown).
+
+Aufgerufen von:
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
+
+Hinweis: USER.md liegt im BACH-Root-Verzeichnis (eine Ebene ueber system/).
+         Pfad: BACH/USER.md
+--- CURRENT ---
+user_sync.py -- Sincronización bidireccional de USER.md
+
+Lee USER.md y devuelve los cambios a la tabla user_profile.
+Inverso: DB -> USER.md (regeneración al apagar).
+
+Llamado por:
+- bach --startup  (bloque 0.07: USER.md -> DB)
+- bach --shutdown (bloque 5.7: DB -> USER.md)
+
+Nota: USER.md está en el directorio raíz de BACH (un nivel encima de system/).
+      Ruta: BACH/USER.md
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 57  id=12763  cli.versions_check_f_r_einen_skill_v2_0_ve  lang=es  verified=1
+metrics: {'orig_len': 340, 'vlen': 329, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.13, 'lcs_with_de': 32}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Versions-Check für einen Skill (v2.0).
+
+        Vergleicht:
+        - Lokale Version (aus YAML-Header)
+        - Zentrale Version (falls verfügbar)
+
+        Prinzip: Immer die höchste Versionsnummer verwenden!
+
+        Args:
+            name: Skill-Name
+
+        Returns:
+            (success, message)
+--- CURRENT ---
+Comprobación de versiones para un skill (v2.0).
+
+        Compara:
+        - Versión local (del encabezado YAML)
+        - Versión central (si está disponible)
+
+        Principio: ¡Usar siempre el número de versión más alto!
+
+        Argumentos:
+            name: Nombre del skill
+
+        Devuelve:
+            (success, message)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 58  id=12793  cli.word_template_service_allge  lang=es  verified=1
+metrics: {'orig_len': 389, 'vlen': 394, 'german_word_count': 3, 'has_umlaut': True, 'de_similarity': 0.339, 'lcs_with_de': 46}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Word Template Service
+=====================
+
+Allgemeiner Service fuer Word-Template-Befuellung via python-docx.
+Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
+Checkbox-Steuerung und Satzbausteine.
+
+Abhaengigkeit: python-docx (pip install python-docx)
+
+Version: 1.1.0 (Tabellen-Support für Förderziele)
+Erstellt: 2026-01-27
+Aktualisiert: 2026-01-31
+--- CURRENT ---
+Servicio de plantillas de Word
+=====================
+
+Servicio genérico para rellenar plantillas de Word mediante python-docx.
+Soporta reemplazo de placeholders, filtrado de filas de tablas,
+control de casillas de verificación y bloques de texto.
+
+Dependencia: python-docx (pip install python-docx)
+
+Versión: 1.1.0 (soporte de tablas para Förderziele)
+Creado: 2026-01-27
+Actualizado: 2026-01-31
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 59  id=12893  cli.agent_launcher_handler_agent_verwaltung  lang=ru  verified=1
+metrics: {'orig_len': 432, 'vlen': 485, 'german_word_count': 12, 'has_umlaut': False, 'de_similarity': 0.494, 'lcs_with_de': 86}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Agent Launcher Handler - Agent-Verwaltung
+==========================================
+
+bach agent list                          Verfuegbare Agents auflisten
+bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
+bach agent stop <name>                   Agent stoppen
+bach agent status                        Laufende Agents anzeigen
+
+Optionen:
+  --mode plan|default     Modus (default: default)
+  --model sonnet|opus|haiku   Modell (default: sonnet)
+--- CURRENT ---
+Обработчик запуска агентов - Управление агентами
+==========================================
+
+bach agent list                          Показать доступных агентов
+bach agent start <name> [--mode MODE] [--model MODEL]   Запустить агента
+bach agent stop <name>                   Остановить агента
+bach agent status                        Показать запущенных агентов
+
+Опции:
+  --mode plan|default     Режим (по умолчанию: default)
+  --model sonnet|opus|haiku   Модель (по умолчанию: sonnet)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 60  id=12948  cli.bach_trash_handler_cli_handler  lang=ru  verified=1
+metrics: {'orig_len': 383, 'vlen': 365, 'german_word_count': 16, 'has_umlaut': False, 'de_similarity': 0.598, 'lcs_with_de': 42}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Trash Handler
+==================
+CLI-Handler fuer das Papierkorb-System (Soft-Delete).
+
+Befehle:
+    bach trash list              Alle Eintraege im Papierkorb
+    bach trash delete PATH       Datei in Papierkorb verschieben
+    bach trash restore ID        Datei wiederherstellen
+    bach trash purge             Abgelaufene Dateien loeschen
+    bach trash info ID           Details zu einem Eintrag
+--- CURRENT ---
+BACH Trash Handler
+==================
+CLI-обработчик системы корзины (Soft-Delete).
+
+Команды:
+    bach trash list              Все записи в корзине
+    bach trash delete PATH       Переместить файл в корзину
+    bach trash restore ID        Восстановить файл
+    bach trash purge             Удалить просроченные файлы
+    bach trash info ID           Детали записи
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 61  id=13028  cli.doc_extraktion_fehlgeschlagen_antiword_libreof  lang=ru  verified=1
+metrics: {'orig_len': 77, 'vlen': 68, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.523, 'lcs_with_de': 33}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/textract nicht verfuegbar]
+--- CURRENT ---
+[Не удалось извлечь .doc - antiword/LibreOffice/textract недоступны]
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 62  id=13118  cli.exportiert_gesundheitsdaten_als_csv_text_oder_vca  lang=ru  verified=1
+metrics: {'orig_len': 378, 'vlen': 382, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.667, 'lcs_with_de': 127}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Exportiert Gesundheitsdaten als CSV, Text oder vCard 3.0.
+
+        Optionen:
+            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
+            --specialty <fach>      Nur bestimmtes Fachgebiet (fuer contacts)
+            --format csv|txt|vcard  Exportformat (default: txt)
+            --file <pfad>           Speichern in Datei
+--- CURRENT ---
+Экспортирует данные о здоровье в формате CSV, текста или vCard 3.0.
+
+        Опции:
+            --entity <typ>          contacts|diagnoses|meds|labs|all (default: contacts)
+            --specialty <fach>      Только определённая специальность (для contacts)
+            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)
+            --file <pfad>           Сохранить в файл
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 63  id=13119  cli.exportiert_kontakte_als_csv_text_oder_vcard_3_0  lang=ru  verified=1
+metrics: {'orig_len': 344, 'vlen': 381, 'german_word_count': 2, 'has_umlaut': False, 'de_similarity': 0.578, 'lcs_with_de': 41}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Exportiert Kontakte als CSV, Text oder vCard 3.0.
+
+        Optionen:
+            --type aerzte/arzt    Nur Arzt-Kontakte
+            --type beruflich      Nur berufliche Kontakte
+            --type versicherung   Nur Versicherungs-Kontakte
+            --format csv|txt|vcard  Exportformat (default: txt)
+            --file <pfad>         Speichern in Datei
+--- CURRENT ---
+Экспортирует контакты в формате CSV, текста или vCard 3.0.
+
+        Опции:
+            --type aerzte/arzt    Только контакты врачей
+            --type beruflich      Только рабочие контакты
+            --type versicherung   Только контакты страховых компаний
+            --format csv|txt|vcard  Формат экспорта (по умолчанию: txt)
+            --file <pfad>         Сохранить в файл
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 64  id=13260  cli.generiert_validiert_yaml_header_fuer_skill_md_date  lang=ru  verified=1
+metrics: {'orig_len': 332, 'vlen': 374, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.396, 'lcs_with_de': 57}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Generiert/validiert YAML-Header fuer SKILL.md Dateien.
+
+        Verwendung:
+            bach --maintain headers                  # Dry-run alle
+            bach --maintain headers --fix            # Alle korrigieren
+            bach --maintain headers --path skills/   # Bestimmter Ordner
+            bach --maintain headers --update-db      # DB-Versionen updaten
+--- CURRENT ---
+Генерирует/проверяет YAML-заголовки для файлов SKILL.md.
+
+        Использование:
+            bach --maintain headers                  # Пробный запуск всех
+            bach --maintain headers --fix            # Исправить все
+            bach --maintain headers --path skills/   # Определённая папка
+            bach --maintain headers --update-db      # Обновить версии в DB
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 65  id=13324  cli.hinweis_pfad_heilung_ist_nicht_mehr_noetig  lang=ru  verified=1
+metrics: {'orig_len': 436, 'vlen': 445, 'german_word_count': 7, 'has_umlaut': False, 'de_similarity': 0.517, 'lcs_with_de': 77}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+HINWEIS: Pfad-Heilung ist nicht mehr noetig!
+============================================================
+bach_paths.py verwaltet alle Laufzeit-Pfade automatisch.
+Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+
+Fuer Dokumentations-Updates (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Dry-Run (nur anzeigen)
+  bach --maintain docs-paths --apply  Tatsaechlich korrigieren
+
+Siehe: bach --help tools/path_healer
+--- CURRENT ---
+ПОДСКАЗКА: Восстановление путей больше не требуется!
+============================================================
+bach_paths.py автоматически управляет всеми путями среды выполнения.
+Если BACH перемещён, пути подстраиваются сами.
+
+Для обновлений документации (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Пробный запуск (только показать)
+  bach --maintain docs-paths --apply  Реально исправить
+
+См.: bach --help tools/path_healer
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 66  id=13380  cli.kernel_seal_handler_sq021  lang=ru  verified=1
+metrics: {'orig_len': 502, 'vlen': 458, 'german_word_count': 13, 'has_umlaut': False, 'de_similarity': 0.499, 'lcs_with_de': 58}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Kernel Seal Handler (SQ021)
+============================
+
+Siegelsystem fuer BACH-Integritaet.
+
+Das Siegel:
+- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
+- Warnt bei Veraenderungen
+- Ermoeglicht Restore/Repair
+
+CLI:
+    bach seal check       Vollstaendige Hash-Pruefung
+    bach seal repair      Neuen Hash berechnen und speichern
+    bach seal status      Zeige aktuellen Seal-Status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Runde 4)
+--- CURRENT ---
+Kernel Seal Handler (SQ021)
+============================
+
+Система пломб для целостности BACH.
+
+Пломба:
+- Вычисляет SHA256-хеш по всем файлам CORE (dist_type=2)
+- Предупреждает об изменениях
+- Позволяет восстановить/починить
+
+CLI:
+    bach seal check       Полная проверка хеша
+    bach seal repair      Вычислить и сохранить новый хеш
+    bach seal status      Показать текущий статус пломбы
+
+Автор: BACH Development Team
+Создано: 2026-02-20 (SQ021, раунд 4)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 67  id=13387  cli.konvertiert_pdf_seiten_zu_png_bildern_be  lang=ru  verified=1
+metrics: {'orig_len': 326, 'vlen': 327, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.411, 'lcs_with_de': 31}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Konvertiert PDF-Seiten zu PNG-Bildern.
+
+        Benoetigt pdf2image + poppler.
+
+        Args:
+            file_path: Pfad zur PDF
+            output_dir: Ausgabe-Ordner fuer die Bilder
+            max_dim: Maximale Dimension (Breite/Hoehe) in Pixeln
+
+        Returns:
+            Liste der erzeugten Bild-Pfade
+--- CURRENT ---
+Конвертирует страницы PDF в изображения PNG.
+
+        Требуется pdf2image + poppler.
+
+        Аргументы:
+            file_path: Путь к PDF
+            output_dir: Папка вывода для изображений
+            max_dim: Максимальный размер (ширина/высота) в пикселях
+
+        Возврат:
+            Список созданных путей к изображениям
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 68  id=13536  cli.pr_ft_ob_der_token_verbrauch_3x_budget_ist  lang=ru  verified=1
+metrics: {'orig_len': 125, 'vlen': 145, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.444, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Prüft ob der Token-Verbrauch > 3x Budget ist.
+
+        Returns:
+            TokenExplosionAlert wenn Explosion erkannt, sonst None
+--- CURRENT ---
+Проверяет, превышает ли потребление токенов бюджет в 3 раза.
+
+        Возврат:
+            TokenExplosionAlert при обнаружении взрыва, иначе None
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 69  id=13579  cli.rate_sprechgeschwindigkeit_standard_170_schnel  lang=ru  verified=1
+metrics: {'orig_len': 234, 'vlen': 227, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.453, 'lcs_with_de': 37}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+rate: Sprechgeschwindigkeit (Standard: 170, schneller als pyttsx3-Default 200)
+        voice_name: 'auto' (Zira bevorzugt), oder Name-Fragment der Stimme
+        engine: 'pyttsx3', 'piper', oder 'auto' (erster verfuegbarer)
+--- CURRENT ---
+rate: Скорость речи (по умолчанию: 170, быстрее значения 200 по умолчанию у pyttsx3)
+        voice_name: 'auto' (предпочтительно Zira), или фрагмент имени голоса
+        engine: 'pyttsx3', 'piper', или 'auto' (первый доступный)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 70  id=13688  cli.smart_home_fritzbox_integration  lang=ru  verified=1
+metrics: {'orig_len': 410, 'vlen': 432, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.609, 'lcs_with_de': 68}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Smart Home (FritzBox Integration)
+==================================
+
+  bach smarthome status       Verbindungs-Status
+  bach smarthome devices      Verbundene Geraete
+  bach smarthome wifi         WLAN-Status
+  bach smarthome bandwidth    Bandbreite
+  bach smarthome reconnect    Internet neu verbinden
+  bach smarthome info         Box-Informationen
+
+Voraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).
+--- CURRENT ---
+Умный дом (интеграция FritzBox)
+==================================
+
+  bach smarthome status       Статус соединения
+  bach smarthome devices      Подключённые устройства
+  bach smarthome wifi         Статус WLAN
+  bach smarthome bandwidth    Пропускная способность
+  bach smarthome reconnect    Переподключить интернет
+  bach smarthome info         Информация о Box
+
+Требование: FritzBox доступна по адресу fritz.box:49000 (TR-064).
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 71  id=13693  cli.startet_claude_p_und_gibt_antwort_zurueck  lang=ru  verified=1
+metrics: {'orig_len': 246, 'vlen': 244, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.536, 'lcs_with_de': 46}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet claude -p und gibt Antwort zurueck.
+
+        Args:
+            prompt: Der Prompt-Text
+            use_continue: True = --continue (bestehende Session fortsetzen),
+                          False = neue Session (voller System-Prompt)
+--- CURRENT ---
+Запускает claude -p и возвращает ответ.
+
+        Аргументы:
+            prompt: Текст промпта
+            use_continue: True = --continue (продолжить существующую сессию),
+                          False = новая сессия (полный системный промпт)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 72  id=13780  cli.versions_check_f_r_einen_skill_v2_0_ve  lang=ru  verified=1
+metrics: {'orig_len': 314, 'vlen': 316, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.408, 'lcs_with_de': 32}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Versions-Check für einen Skill (v2.0).
+
+        Vergleicht:
+        - Lokale Version (aus YAML-Header)
+        - Zentrale Version (falls verfügbar)
+
+        Prinzip: Immer die höchste Versionsnummer verwenden!
+
+        Args:
+            name: Skill-Name
+
+        Returns:
+            (success, message)
+--- CURRENT ---
+Проверка версий для навыка (v2.0).
+
+        Сравнивает:
+        - Локальную версию (из YAML-заголовка)
+        - Центральную версию (если доступна)
+
+        Принцип: Всегда использовать самый высокий номер версии!
+
+        Аргументы:
+            name: Название навыка
+
+        Возврат:
+            (success, message)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 73  id=13783  cli.verwaltet_db_backups_und_prosync_zwischen_systemen  lang=ru  verified=1
+metrics: {'orig_len': 267, 'vlen': 245, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.305, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Verwaltet DB-Backups und ProSync zwischen Systemen.
+
+    ProSync-Architektur:
+    - Jedes System hat eine lokale DB (~/.bach/bach.db)
+    - OneDrive dient als Transit-Hub für .bachdb-Dateien
+    - Sync bei BACH-Start (pull) und -Exit (push)
+--- CURRENT ---
+Управляет бэкапами БД и ProSync между системами.
+
+    Архитектура ProSync:
+    - У каждой системы локальная БД (~/.bach/bach.db)
+    - OneDrive служит транзитным хабом для файлов .bachdb
+    - Синхронизация при старте BACH (pull) и выходе (push)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 74  id=13810  cli.word_template_service_allge  lang=ru  verified=1
+metrics: {'orig_len': 359, 'vlen': 357, 'german_word_count': 3, 'has_umlaut': True, 'de_similarity': 0.32, 'lcs_with_de': 41}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Word Template Service
+=====================
+
+Allgemeiner Service fuer Word-Template-Befuellung via python-docx.
+Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
+Checkbox-Steuerung und Satzbausteine.
+
+Abhaengigkeit: python-docx (pip install python-docx)
+
+Version: 1.1.0 (Tabellen-Support für Förderziele)
+Erstellt: 2026-01-27
+Aktualisiert: 2026-01-31
+--- CURRENT ---
+Служба шаблонов Word
+=====================
+
+Универсальный сервис для заполнения шаблонов Word через python-docx.
+Поддерживает замену плейсхолдеров, фильтрацию строк таблиц,
+управление чекбоксами и текстовые блоки.
+
+Зависимость: python-docx (pip install python-docx)
+
+Версия: 1.1.0 (поддержка таблиц для Förderziele)
+Создано: 2026-01-27
+Обновлено: 2026-01-31
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 75  id=13914  cli.agent_launcher_handler_agent_verwaltung  lang=ja  verified=1
+metrics: {'orig_len': 315, 'vlen': 404, 'german_word_count': 12, 'has_umlaut': False, 'de_similarity': 0.517, 'lcs_with_de': 86}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Agent Launcher Handler - Agent-Verwaltung
+==========================================
+
+bach agent list                          Verfuegbare Agents auflisten
+bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
+bach agent stop <name>                   Agent stoppen
+bach agent status                        Laufende Agents anzeigen
+
+Optionen:
+  --mode plan|default     Modus (default: default)
+  --model sonnet|opus|haiku   Modell (default: sonnet)
+--- CURRENT ---
+エージェントランチャーハンドラー - エージェント管理
+==========================================
+
+bach agent list                          利用可能なエージェントを一覧表示
+bach agent start <name> [--mode MODE] [--model MODEL]   エージェントを起動
+bach agent stop <name>                   エージェントを停止
+bach agent status                        実行中のエージェントを表示
+
+オプション:
+  --mode plan|default     モード（デフォルト: default）
+  --model sonnet|opus|haiku   モデル（デフォルト: sonnet）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 76  id=13969  cli.bach_trash_handler_cli_handler  lang=ja  verified=1
+metrics: {'orig_len': 279, 'vlen': 294, 'german_word_count': 15, 'has_umlaut': False, 'de_similarity': 0.53, 'lcs_with_de': 35}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Trash Handler
+==================
+CLI-Handler fuer das Papierkorb-System (Soft-Delete).
+
+Befehle:
+    bach trash list              Alle Eintraege im Papierkorb
+    bach trash delete PATH       Datei in Papierkorb verschieben
+    bach trash restore ID        Datei wiederherstellen
+    bach trash purge             Abgelaufene Dateien loeschen
+    bach trash info ID           Details zu einem Eintrag
+--- CURRENT ---
+BACH Trash ハンドラー
+==================
+ゴミ箱システム（ソフト削除）の CLI ハンドラー。
+
+コマンド:
+    bach trash list              ゴミ箱内のすべてのエントリを表示
+    bach trash delete PATH       ファイルをゴミ箱へ移動
+    bach trash restore ID        ファイルを復元
+    bach trash purge             期限切れファイルを削除
+    bach trash info ID           エントリの詳細を表示
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 77  id=14049  cli.doc_extraktion_fehlgeschlagen_antiword_libreof  lang=ja  verified=1
+metrics: {'orig_len': 82, 'vlen': 49, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.6, 'lcs_with_de': 33}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/textract nicht verfuegbar]
+--- CURRENT ---
+[.doc抽出に失敗 - antiword/LibreOffice/textract が利用不可]
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 78  id=14264  cli.format_format_type_nicht_unterstuetzt_verfue  lang=ja  verified=1
+metrics: {'orig_len': 331, 'vlen': 299, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.618, 'lcs_with_de': 88}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Format '{format_type}' nicht unterstuetzt.
+
+Verfuegbare Formate:
+  --format txt      Standard TXT-Dateien
+  --format datev    DATEV Buchungsstapel CSV (fuer Steuerberater)
+  --format csv      Einfaches CSV (fuer Excel)
+  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+
+Beispiel:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- CURRENT ---
+形式「{format_type}」はサポートされていません。
+
+利用可能な形式:
+  --format txt      標準 TXT ファイル
+  --format datev    DATEV 記帳バッチ CSV（税理士向け）
+  --format csv      シンプルな CSV（Excel 向け）
+  --format vorsorge Anlage Vorsorgeaufwand 様式（保険料）
+
+使用例:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 79  id=14281  cli.generiert_validiert_yaml_header_fuer_skill_md_date  lang=ja  verified=1
+metrics: {'orig_len': 276, 'vlen': 306, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.382, 'lcs_with_de': 58}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Generiert/validiert YAML-Header fuer SKILL.md Dateien.
+
+        Verwendung:
+            bach --maintain headers                  # Dry-run alle
+            bach --maintain headers --fix            # Alle korrigieren
+            bach --maintain headers --path skills/   # Bestimmter Ordner
+            bach --maintain headers --update-db      # DB-Versionen updaten
+--- CURRENT ---
+SKILL.md ファイルの YAML ヘッダーを生成/検証します。
+
+        使用方法:
+            bach --maintain headers                  # すべてドライラン
+            bach --maintain headers --fix            # すべて修正
+            bach --maintain headers --path skills/   # 特定のフォルダー
+            bach --maintain headers --update-db      # DB のバージョンを更新
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 80  id=14345  cli.hinweis_pfad_heilung_ist_nicht_mehr_noetig  lang=ja  verified=1
+metrics: {'orig_len': 363, 'vlen': 307, 'german_word_count': 7, 'has_umlaut': False, 'de_similarity': 0.387, 'lcs_with_de': 76}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+HINWEIS: Pfad-Heilung ist nicht mehr noetig!
+============================================================
+bach_paths.py verwaltet alle Laufzeit-Pfade automatisch.
+Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+
+Fuer Dokumentations-Updates (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Dry-Run (nur anzeigen)
+  bach --maintain docs-paths --apply  Tatsaechlich korrigieren
+
+Siehe: bach --help tools/path_healer
+--- CURRENT ---
+注意: パス修復はもう必要ありません！
+============================================================
+bach_paths.py はすべてのランタイムパスを自動管理します。
+BACH を移動しても、パスは自動的に適応します。
+
+ドキュメント更新（Help、Wiki、Markdown）の場合:
+  bach --maintain docs-paths          ドライラン（表示のみ）
+  bach --maintain docs-paths --apply  実際に修正する
+
+参照: bach --help tools/path_healer
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 81  id=14401  cli.kernel_seal_handler_sq021  lang=ja  verified=1
+metrics: {'orig_len': 406, 'vlen': 345, 'german_word_count': 13, 'has_umlaut': False, 'de_similarity': 0.448, 'lcs_with_de': 60}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Kernel Seal Handler (SQ021)
+============================
+
+Siegelsystem fuer BACH-Integritaet.
+
+Das Siegel:
+- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
+- Warnt bei Veraenderungen
+- Ermoeglicht Restore/Repair
+
+CLI:
+    bach seal check       Vollstaendige Hash-Pruefung
+    bach seal repair      Neuen Hash berechnen und speichern
+    bach seal status      Zeige aktuellen Seal-Status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Runde 4)
+--- CURRENT ---
+Kernel Seal ハンドラー (SQ021)
+============================
+
+BACH の整合性を保証するシールシステム。
+
+シールの機能:
+- すべての CORE ファイルの SHA256 ハッシュを計算 (dist_type=2)
+- 変更時に警告
+- 復元/修復を可能にする
+
+CLI:
+    bach seal check       完全なハッシュ検証
+    bach seal repair      新しいハッシュを計算して保存
+    bach seal status      現在のシール状態を表示
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, ラウンド 4)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 82  id=14586  cli.rate_sprechgeschwindigkeit_standard_170_schnel  lang=ja  verified=1
+metrics: {'orig_len': 196, 'vlen': 149, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.505, 'lcs_with_de': 27}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+rate: Sprechgeschwindigkeit (Standard: 170, schneller als pyttsx3-Default 200)
+        voice_name: 'auto' (Zira bevorzugt), oder Name-Fragment der Stimme
+        engine: 'pyttsx3', 'piper', oder 'auto' (erster verfuegbarer)
+--- CURRENT ---
+rate: 読み上げ速度（デフォルト: 170、pyttsx3 の既定値 200 より高速）
+        voice_name: 'auto'（Zira 優先）、または音声名の一部
+        engine: 'pyttsx3'、'piper'、または 'auto'（最初に利用可能なもの）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 83  id=14692  cli.skill_spezifische_tools_im_skill_ordner_finden  lang=ja  verified=1
+metrics: {'orig_len': 156, 'vlen': 151, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.507, 'lcs_with_de': 23}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Skill-spezifische Tools im Skill-Ordner finden.
+
+        Sucht nach:
+        - *.py Dateien im Skill-Root
+        - tools/ Unterverzeichnis
+
+        Returns:
+            Liste von (Path, relative_name) Tupeln
+--- CURRENT ---
+スキルフォルダー内のスキル固有ツールを検索します。
+
+        検索対象:
+        - スキルルート内の *.py ファイル
+        - tools/ サブディレクトリ
+
+        戻り値:
+            (Path, relative_name) タプルのリスト
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 84  id=14693  cli.skill_spezifische_workflows_im_skill_ordner_finden  lang=ja  verified=1
+metrics: {'orig_len': 160, 'vlen': 164, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.543, 'lcs_with_de': 23}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Skill-spezifische Workflows im Skill-Ordner finden.
+
+        Sucht nach:
+        - workflow_*.md Dateien im Root
+        - workflows/ Unterverzeichnis
+
+        Returns:
+            Liste von (Path, relative_name) Tupeln
+--- CURRENT ---
+スキルフォルダー内のスキル固有ワークフローを検索します。
+
+        検索対象:
+        - ルート内の workflow_*.md ファイル
+        - workflows/ サブディレクトリ
+
+        戻り値:
+            (Path, relative_name) タプルのリスト
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 85  id=14695  cli.smart_home_fritzbox_integration  lang=ja  verified=1
+metrics: {'orig_len': 330, 'vlen': 335, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.647, 'lcs_with_de': 67}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Smart Home (FritzBox Integration)
+==================================
+
+  bach smarthome status       Verbindungs-Status
+  bach smarthome devices      Verbundene Geraete
+  bach smarthome wifi         WLAN-Status
+  bach smarthome bandwidth    Bandbreite
+  bach smarthome reconnect    Internet neu verbinden
+  bach smarthome info         Box-Informationen
+
+Voraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).
+--- CURRENT ---
+スマートホーム（FritzBox 連携）
+==================================
+
+  bach smarthome status       接続状態
+  bach smarthome devices      接続済みデバイス
+  bach smarthome wifi         WLAN の状態
+  bach smarthome bandwidth    帯域幅
+  bach smarthome reconnect    インターネットに再接続
+  bach smarthome info         Box の情報
+
+前提: fritz.box:49000 で FritzBox にアクセスできること（TR-064）。
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 86  id=14700  cli.startet_claude_p_und_gibt_antwort_zurueck  lang=ja  verified=1
+metrics: {'orig_len': 219, 'vlen': 180, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.575, 'lcs_with_de': 44}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet claude -p und gibt Antwort zurueck.
+
+        Args:
+            prompt: Der Prompt-Text
+            use_continue: True = --continue (bestehende Session fortsetzen),
+                          False = neue Session (voller System-Prompt)
+--- CURRENT ---
+claude -p を起動し、回答を返します。
+
+        引数:
+            prompt: プロンプトテキスト
+            use_continue: True = --continue（既存セッションを継続）、
+                          False = 新しいセッション（完全なシステムプロンプト）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 87  id=14777  cli.user_sync_py_user_md_bidirektionale_synchronisa  lang=ja  verified=1
+metrics: {'orig_len': 328, 'vlen': 282, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.481, 'lcs_with_de': 41}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+user_sync.py -- USER.md bidirektionale Synchronisation
+
+Liest USER.md und schreibt Aenderungen in user_profile Tabelle zurueck.
+Umgekehrt: DB -> USER.md (Regenerierung beim Shutdown).
+
+Aufgerufen von:
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
+
+Hinweis: USER.md liegt im BACH-Root-Verzeichnis (eine Ebene ueber system/).
+         Pfad: BACH/USER.md
+--- CURRENT ---
+user_sync.py -- USER.md の双方向同期
+
+USER.md を読み取り、変更を user_profile テーブルに書き戻します。
+逆方向: DB -> USER.md（シャットダウン時に再生成）。
+
+呼び出し元:
+- bach --startup  (ブロック 0.07: USER.md -> DB)
+- bach --shutdown (ブロック 5.7: DB -> USER.md)
+
+注意: USER.md は BACH のルートディレクトリ（system/ の 1 つ上）にあります。
+      パス: BACH/USER.md
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 88  id=14790  cli.verwaltet_db_backups_und_prosync_zwischen_systemen  lang=ja  verified=1
+metrics: {'orig_len': 207, 'vlen': 182, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.493, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Verwaltet DB-Backups und ProSync zwischen Systemen.
+
+    ProSync-Architektur:
+    - Jedes System hat eine lokale DB (~/.bach/bach.db)
+    - OneDrive dient als Transit-Hub für .bachdb-Dateien
+    - Sync bei BACH-Start (pull) und -Exit (push)
+--- CURRENT ---
+DB バックアップとシステム間の ProSync を管理します。
+
+    ProSync アーキテクチャ:
+    - 各システムはローカル DB を持ちます (~/.bach/bach.db)
+    - OneDrive は .bachdb ファイルの中継ハブとして機能します
+    - BACH 起動時 (pull) と終了時 (push) に同期します
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 89  id=14817  cli.word_template_service_allge  lang=ja  verified=1
+metrics: {'orig_len': 329, 'vlen': 246, 'german_word_count': 3, 'has_umlaut': True, 'de_similarity': 0.329, 'lcs_with_de': 41}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Word Template Service
+=====================
+
+Allgemeiner Service fuer Word-Template-Befuellung via python-docx.
+Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
+Checkbox-Steuerung und Satzbausteine.
+
+Abhaengigkeit: python-docx (pip install python-docx)
+
+Version: 1.1.0 (Tabellen-Support für Förderziele)
+Erstellt: 2026-01-27
+Aktualisiert: 2026-01-31
+--- CURRENT ---
+Word テンプレートサービス
+=====================
+
+python-docx による Word テンプレート入力のための汎用サービスです。
+プレースホルダー置換、テーブル行のフィルタリング、
+チェックボックス制御、文章ブロックをサポートします。
+
+依存関係: python-docx (pip install python-docx)
+
+バージョン: 1.1.0（Förderziele のテーブル対応）
+作成日: 2026-01-27
+更新日: 2026-01-31
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 90  id=14824  cli.zeigt_aktuellen_seal_status_returns  lang=ja  verified=1
+metrics: {'orig_len': 59, 'vlen': 59, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.62, 'lcs_with_de': 25}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Zeigt aktuellen Seal-Status.
+
+        Returns:
+            0 = SUCCESS
+--- CURRENT ---
+現在の Seal ステータスを表示します。
+
+        戻り値:
+            0 = SUCCESS
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 91  id=14921  cli.agent_launcher_handler_agent_verwaltung  lang=zh  verified=1
+metrics: {'orig_len': 304, 'vlen': 354, 'german_word_count': 12, 'has_umlaut': False, 'de_similarity': 0.375, 'lcs_with_de': 86}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Agent Launcher Handler - Agent-Verwaltung
+==========================================
+
+bach agent list                          Verfuegbare Agents auflisten
+bach agent start <name> [--mode MODE] [--model MODEL]   Agent starten
+bach agent stop <name>                   Agent stoppen
+bach agent status                        Laufende Agents anzeigen
+
+Optionen:
+  --mode plan|default     Modus (default: default)
+  --model sonnet|opus|haiku   Modell (default: sonnet)
+--- CURRENT ---
+代理启动器处理器 - 代理管理
+==========================================
+
+bach agent list                          列出可用代理
+bach agent start <name> [--mode MODE] [--model MODEL]   启动代理
+bach agent stop <name>                   停止代理
+bach agent status                        显示运行中的代理
+
+选项：
+  --mode plan|default     模式（默认：default）
+  --model sonnet|opus|haiku   模型（默认：sonnet）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 92  id=14965  cli.bach_data_analysis_handler  lang=zh  verified=1
+metrics: {'orig_len': 250, 'vlen': 279, 'german_word_count': 7, 'has_umlaut': False, 'de_similarity': 0.456, 'lcs_with_de': 37}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Data Analysis Handler
+==========================
+CLI-Handler fuer Datenanalyse-Funktionen.
+
+Befehle:
+    bach data load <path>           Datei laden und Infos anzeigen
+    bach data describe <path>       Deskriptive Statistik
+    bach data head <path> [--rows]  Erste Zeilen anzeigen
+    bach data corr <path>           Korrelationsmatrix
+    bach data chart <path>          Chart erstellen (geplant)
+--- CURRENT ---
+BACH 数据分析处理器
+==========================
+数据分析功能的 CLI 处理器。
+
+命令：
+    bach data load <path>           加载文件并显示信息
+    bach data describe <path>       描述性统计
+    bach data head <path> [--rows]  显示前几行
+    bach data corr <path>           相关性矩阵
+    bach data chart <path>          创建图表（计划中）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 93  id=14976  cli.bach_trash_handler_cli_handler  lang=zh  verified=1
+metrics: {'orig_len': 255, 'vlen': 257, 'german_word_count': 14, 'has_umlaut': False, 'de_similarity': 0.539, 'lcs_with_de': 34}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Trash Handler
+==================
+CLI-Handler fuer das Papierkorb-System (Soft-Delete).
+
+Befehle:
+    bach trash list              Alle Eintraege im Papierkorb
+    bach trash delete PATH       Datei in Papierkorb verschieben
+    bach trash restore ID        Datei wiederherstellen
+    bach trash purge             Abgelaufene Dateien loeschen
+    bach trash info ID           Details zu einem Eintrag
+--- CURRENT ---
+BACH 回收站处理器
+==================
+回收站系统（软删除）的 CLI 处理器。
+
+命令：
+    bach trash list              回收站中的所有条目
+    bach trash delete PATH       将文件移入回收站
+    bach trash restore ID        恢复文件
+    bach trash purge             删除过期文件
+    bach trash info ID           条目详情
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 94  id=15024  cli.cv_handler_lebenslauf_verwaltung  lang=zh  verified=1
+metrics: {'orig_len': 154, 'vlen': 179, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.65, 'lcs_with_de': 61}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+CV Handler - Lebenslauf-Verwaltung
+==================================
+
+--cv generate           Lebenslauf generieren (ASCII)
+--cv generate --output  In Datei speichern
+--cv generate --scan    Ordner automatisch scannen
+--cv status             Status der Datenbasis anzeigen
+--- CURRENT ---
+CV 处理器 - 简历管理
+==================================
+
+--cv generate           生成简历（ASCII）
+--cv generate --output  保存到文件
+--cv generate --scan    自动扫描文件夹
+--cv status             显示数据库状态
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 95  id=15056  cli.doc_extraktion_fehlgeschlagen_antiword_libreof  lang=zh  verified=1
+metrics: {'orig_len': 82, 'vlen': 47, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.625, 'lcs_with_de': 33}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+[.doc-Extraktion fehlgeschlagen - antiword/LibreOffice/textract nicht verfuegbar]
+--- CURRENT ---
+[.doc 提取失败 - antiword/LibreOffice/textract 不可用]
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 96  id=15271  cli.format_format_type_nicht_unterstuetzt_verfue  lang=zh  verified=1
+metrics: {'orig_len': 313, 'vlen': 266, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.511, 'lcs_with_de': 87}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Format '{format_type}' nicht unterstuetzt.
+
+Verfuegbare Formate:
+  --format txt      Standard TXT-Dateien
+  --format datev    DATEV Buchungsstapel CSV (fuer Steuerberater)
+  --format csv      Einfaches CSV (fuer Excel)
+  --format vorsorge Anlage Vorsorgeaufwand (Versicherungsbeitraege)
+
+Beispiel:
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- CURRENT ---
+不支持格式“{format_type}”。
+
+可用格式：
+  --format txt      标准 TXT 文件
+  --format datev    DATEV 记账批次 CSV（供税务顾问使用）
+  --format csv      简单 CSV（供 Excel 使用）
+  --format vorsorge 养老支出附表（保险缴费）
+
+示例：
+  bach steuer export --jahr 2025 --format datev
+  bach steuer export --format vorsorge
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 97  id=15288  cli.generiert_validiert_yaml_header_fuer_skill_md_date  lang=zh  verified=1
+metrics: {'orig_len': 251, 'vlen': 284, 'german_word_count': 6, 'has_umlaut': False, 'de_similarity': 0.235, 'lcs_with_de': 56}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Generiert/validiert YAML-Header fuer SKILL.md Dateien.
+
+        Verwendung:
+            bach --maintain headers                  # Dry-run alle
+            bach --maintain headers --fix            # Alle korrigieren
+            bach --maintain headers --path skills/   # Bestimmter Ordner
+            bach --maintain headers --update-db      # DB-Versionen updaten
+--- CURRENT ---
+生成/验证 SKILL.md 文件的 YAML 标头。
+
+        用法：
+            bach --maintain headers                  # 全部预演
+            bach --maintain headers --fix            # 全部修正
+            bach --maintain headers --path skills/   # 指定文件夹
+            bach --maintain headers --update-db      # 更新数据库版本
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 98  id=15352  cli.hinweis_pfad_heilung_ist_nicht_mehr_noetig  lang=zh  verified=1
+metrics: {'orig_len': 322, 'vlen': 275, 'german_word_count': 7, 'has_umlaut': False, 'de_similarity': 0.368, 'lcs_with_de': 76}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+HINWEIS: Pfad-Heilung ist nicht mehr noetig!
+============================================================
+bach_paths.py verwaltet alle Laufzeit-Pfade automatisch.
+Wenn BACH verschoben wird, passen sich Pfade von selbst an.
+
+Fuer Dokumentations-Updates (Help, Wiki, Markdown):
+  bach --maintain docs-paths          Dry-Run (nur anzeigen)
+  bach --maintain docs-paths --apply  Tatsaechlich korrigieren
+
+Siehe: bach --help tools/path_healer
+--- CURRENT ---
+注意：路径修复已不再需要！
+============================================================
+bach_paths.py 会自动管理所有运行时路径。
+移动 BACH 后，路径会自动适应。
+
+如需更新文档（Help、Wiki、Markdown）：
+  bach --maintain docs-paths          预演（仅显示）
+  bach --maintain docs-paths --apply  实际执行修正
+
+参见：bach --help tools/path_healer
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 99  id=15363  cli.importiert_dateien_in_den_data_roh_ordner_fruehe  lang=zh  verified=1
+metrics: {'orig_len': 199, 'vlen': 175, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.577, 'lcs_with_de': 29}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Importiert Dateien in den data_roh/ Ordner (frueher: data/).
+
+        Args:
+            session: Aktive Session
+            files: Liste von Dateipfaden
+            clear_existing: Bestehende Dateien in data_roh/ loeschen
+
+        Returns:
+            Anzahl importierter Dateien
+--- CURRENT ---
+将文件导入 data_roh/ 文件夹（原：data/）。
+
+        参数：
+            session: 活动会话
+            files: 文件路径列表
+            clear_existing: 删除 data_roh/ 中的现有文件
+
+        返回：
+            导入的文件数量
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 100  id=15408  cli.kernel_seal_handler_sq021  lang=zh  verified=1
+metrics: {'orig_len': 374, 'vlen': 289, 'german_word_count': 10, 'has_umlaut': False, 'de_similarity': 0.431, 'lcs_with_de': 39}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Kernel Seal Handler (SQ021)
+============================
+
+Siegelsystem fuer BACH-Integritaet.
+
+Das Siegel:
+- Berechnet SHA256-Hash ueber alle CORE-Dateien (dist_type=2)
+- Warnt bei Veraenderungen
+- Ermoeglicht Restore/Repair
+
+CLI:
+    bach seal check       Vollstaendige Hash-Pruefung
+    bach seal repair      Neuen Hash berechnen und speichern
+    bach seal status      Zeige aktuellen Seal-Status
+
+Author: BACH Development Team
+Created: 2026-02-20 (SQ021, Runde 4)
+--- CURRENT ---
+内核印章处理器 (SQ021)
+============================
+
+保障 BACH 完整性的印章系统。
+
+印章：
+- 计算所有 CORE 文件的 SHA256 哈希（dist_type=2）
+- 更改时发出警告
+- 支持恢复/修复
+
+CLI:
+    bach seal check       完整哈希校验
+    bach seal repair      计算并保存新哈希
+    bach seal status      显示当前印章状态
+
+作者：BACH Development Team
+创建：2026-02-20（SQ021，第 4 轮）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 101  id=15491  cli.n_len_pipelines_verf_gbare_pipelines_n  lang=zh  verified=1
+metrics: {'orig_len': 35, 'vlen': 28, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.629, 'lcs_with_de': 19}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+\n{len(pipelines)} verfügbare Pipelines:\n
+--- CURRENT ---
+\n{len(pipelines)} 个可用流水线:\n
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 102  id=15593  cli.rate_sprechgeschwindigkeit_standard_170_schnel  lang=zh  verified=1
+metrics: {'orig_len': 180, 'vlen': 132, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.53, 'lcs_with_de': 27}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+rate: Sprechgeschwindigkeit (Standard: 170, schneller als pyttsx3-Default 200)
+        voice_name: 'auto' (Zira bevorzugt), oder Name-Fragment der Stimme
+        engine: 'pyttsx3', 'piper', oder 'auto' (erster verfuegbarer)
+--- CURRENT ---
+rate: 语速（默认：170，快于 pyttsx3 默认值 200）
+        voice_name: 'auto'（优先使用 Zira），或语音名称片段
+        engine: 'pyttsx3'、'piper' 或 'auto'（第一个可用的）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 103  id=15699  cli.skill_spezifische_tools_im_skill_ordner_finden  lang=zh  verified=1
+metrics: {'orig_len': 135, 'vlen': 128, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.53, 'lcs_with_de': 23}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Skill-spezifische Tools im Skill-Ordner finden.
+
+        Sucht nach:
+        - *.py Dateien im Skill-Root
+        - tools/ Unterverzeichnis
+
+        Returns:
+            Liste von (Path, relative_name) Tupeln
+--- CURRENT ---
+在技能文件夹中查找技能专用工具。
+
+        查找：
+        - 技能根目录中的 *.py 文件
+        - tools/ 子目录
+
+        返回：
+            (Path, relative_name) 元组列表
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 104  id=15702  cli.smart_home_fritzbox_integration  lang=zh  verified=1
+metrics: {'orig_len': 287, 'vlen': 315, 'german_word_count': 8, 'has_umlaut': False, 'de_similarity': 0.662, 'lcs_with_de': 67}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Smart Home (FritzBox Integration)
+==================================
+
+  bach smarthome status       Verbindungs-Status
+  bach smarthome devices      Verbundene Geraete
+  bach smarthome wifi         WLAN-Status
+  bach smarthome bandwidth    Bandbreite
+  bach smarthome reconnect    Internet neu verbinden
+  bach smarthome info         Box-Informationen
+
+Voraussetzung: FritzBox unter fritz.box:49000 erreichbar (TR-064).
+--- CURRENT ---
+智能家居（FritzBox 集成）
+==================================
+
+  bach smarthome status       连接状态
+  bach smarthome devices      已连接设备
+  bach smarthome wifi         WLAN 状态
+  bach smarthome bandwidth    带宽
+  bach smarthome reconnect    重新连接互联网
+  bach smarthome info         Box 信息
+
+前提：可通过 fritz.box:49000 访问 FritzBox（TR-064）。
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 105  id=15707  cli.startet_claude_p_und_gibt_antwort_zurueck  lang=zh  verified=1
+metrics: {'orig_len': 209, 'vlen': 156, 'german_word_count': 0, 'has_umlaut': False, 'de_similarity': 0.61, 'lcs_with_de': 44}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Startet claude -p und gibt Antwort zurueck.
+
+        Args:
+            prompt: Der Prompt-Text
+            use_continue: True = --continue (bestehende Session fortsetzen),
+                          False = neue Session (voller System-Prompt)
+--- CURRENT ---
+启动 claude -p 并返回答案。
+
+        参数：
+            prompt: 提示文本
+            use_continue: True = --continue（继续现有会话）、
+                          False = 新会话（完整系统提示）
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 106  id=15784  cli.user_sync_py_user_md_bidirektionale_synchronisa  lang=zh  verified=1
+metrics: {'orig_len': 311, 'vlen': 249, 'german_word_count': 4, 'has_umlaut': False, 'de_similarity': 0.515, 'lcs_with_de': 93}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+user_sync.py -- USER.md bidirektionale Synchronisation
+
+Liest USER.md und schreibt Aenderungen in user_profile Tabelle zurueck.
+Umgekehrt: DB -> USER.md (Regenerierung beim Shutdown).
+
+Aufgerufen von:
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
+
+Hinweis: USER.md liegt im BACH-Root-Verzeichnis (eine Ebene ueber system/).
+         Pfad: BACH/USER.md
+--- CURRENT ---
+user_sync.py -- USER.md 双向同步
+
+读取 USER.md 并将更改写回 user_profile 表。
+反向：数据库 -> USER.md（关机时重新生成）。
+
+调用方：
+- bach --startup  (Block 0.07: USER.md -> DB)
+- bach --shutdown (Block 5.7: DB -> USER.md)
+
+注意：USER.md 位于 BACH 根目录（system/ 的上一级）。
+      路径：BACH/USER.md
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 107  id=15794  cli.versions_check_f_r_einen_skill_v2_0_ve  lang=zh  verified=1
+metrics: {'orig_len': 202, 'vlen': 178, 'german_word_count': 1, 'has_umlaut': False, 'de_similarity': 0.517, 'lcs_with_de': 31}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Versions-Check für einen Skill (v2.0).
+
+        Vergleicht:
+        - Lokale Version (aus YAML-Header)
+        - Zentrale Version (falls verfügbar)
+
+        Prinzip: Immer die höchste Versionsnummer verwenden!
+
+        Args:
+            name: Skill-Name
+
+        Returns:
+            (success, message)
+--- CURRENT ---
+技能版本检查 (v2.0)。
+
+        比较：
+        - 本地版本（来自 YAML 标头）
+        - 中央版本（如可用）
+
+        原则：始终使用最高的版本号！
+
+        参数：
+            name: 技能名称
+
+        返回：
+            (success, message)
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 108  id=15797  cli.verwaltet_db_backups_und_prosync_zwischen_systemen  lang=zh  verified=1
+metrics: {'orig_len': 196, 'vlen': 139, 'german_word_count': 3, 'has_umlaut': False, 'de_similarity': 0.422, 'lcs_with_de': 16}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Verwaltet DB-Backups und ProSync zwischen Systemen.
+
+    ProSync-Architektur:
+    - Jedes System hat eine lokale DB (~/.bach/bach.db)
+    - OneDrive dient als Transit-Hub für .bachdb-Dateien
+    - Sync bei BACH-Start (pull) und -Exit (push)
+--- CURRENT ---
+管理数据库备份和系统间的 ProSync。
+
+    ProSync 架构：
+    - 每个系统各有一个本地数据库（~/.bach/bach.db）
+    - OneDrive 作为 .bachdb 文件的中转枢纽
+    - 在 BACH 启动（拉取）和退出（推送）时同步
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 109  id=15824  cli.word_template_service_allge  lang=zh  verified=1
+metrics: {'orig_len': 303, 'vlen': 190, 'german_word_count': 3, 'has_umlaut': True, 'de_similarity': 0.449, 'lcs_with_de': 39}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+Word Template Service
+=====================
+
+Allgemeiner Service fuer Word-Template-Befuellung via python-docx.
+Unterstuetzt Platzhalter-Ersetzung, Tabellenzeilen-Filterung,
+Checkbox-Steuerung und Satzbausteine.
+
+Abhaengigkeit: python-docx (pip install python-docx)
+
+Version: 1.1.0 (Tabellen-Support für Förderziele)
+Erstellt: 2026-01-27
+Aktualisiert: 2026-01-31
+--- CURRENT ---
+Word 模板服务
+=====================
+
+通过 python-docx 填充 Word 模板的通用服务。
+支持占位符替换、表格行过滤、
+复选框控制和文本模块。
+
+依赖：python-docx (pip install python-docx)
+
+版本：1.1.0（支持 Förderziele 表格）
+创建：2026-01-27
+更新：2026-01-31
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 110  id=26225  help_doc.tools/agent_cli  lang=es  verified=1
+metrics: {'orig_len': 1123, 'vlen': 1151, 'german_word_count': 38, 'has_umlaut': False, 'de_similarity': 0.363, 'lcs_with_de': 96}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Tool: agent_cli
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/agent_cli.py
+
+BESCHREIBUNG
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+
+Features:
+- Agenten auflisten und aktivieren
+- Experten anzeigen
+- User-Ordner initialisieren
+- Datenbank-Schema anwenden
+
+Usage:
+    python agent_cli.py list                    # Alle Agenten
+    python agent_cli.py experts                 # Alle Experten
+    python agent_cli.py info <agent>            # Agent-Details
+    python agent_cli.py init <agent>            # User-Ordner erstellen
+    python agent_cli.py setup-db                # Datenbank initialisieren
+    python agent_cli.py status                  # System-Status
+
+Autor: BACH System
+Datum: 2026-01-20
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run agent_cli [args]
+oder direkt: python tools/agent_cli.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show agent_cli
+
+--- CURRENT ---
+BACH Tool: agent_cli
+==================================================
+Generado: 2026-01-23 10:36
+Fuente: tools/agent_cli.py
+
+DESCRIPCIÓN
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+CLI-Tool para administrar agentes y expertos de BACH.
+
+Features:
+- Listar y activar agentes
+- Mostrar expertos
+- Inicializar carpeta de usuario
+- Aplicar esquema de base de datos
+
+Usage:
+    python agent_cli.py list                    # Todos los agentes
+    python agent_cli.py experts                 # Todos los expertos
+    python agent_cli.py info <agent>            # Detalles del agente
+    python agent_cli.py init <agent>            # Crear carpeta de usuario
+    python agent_cli.py setup-db                # Inicializar base de datos
+    python agent_cli.py status                  # Estado del sistema
+
+Autor: BACH System
+Fecha: 2026-01-20
+
+USO
+----------------------------------------
+python bach.py tools run agent_cli [args]
+o directamente: python tools/agent_cli.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir del docstring
+- Preguntas: bach tools show agent_cli
+
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 111  id=26226  help_doc.tools/agent_cli  lang=ru  verified=1
+metrics: {'orig_len': 1123, 'vlen': 1147, 'german_word_count': 35, 'has_umlaut': False, 'de_similarity': 0.419, 'lcs_with_de': 91}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Tool: agent_cli
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/agent_cli.py
+
+BESCHREIBUNG
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+
+Features:
+- Agenten auflisten und aktivieren
+- Experten anzeigen
+- User-Ordner initialisieren
+- Datenbank-Schema anwenden
+
+Usage:
+    python agent_cli.py list                    # Alle Agenten
+    python agent_cli.py experts                 # Alle Experten
+    python agent_cli.py info <agent>            # Agent-Details
+    python agent_cli.py init <agent>            # User-Ordner erstellen
+    python agent_cli.py setup-db                # Datenbank initialisieren
+    python agent_cli.py status                  # System-Status
+
+Autor: BACH System
+Datum: 2026-01-20
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run agent_cli [args]
+oder direkt: python tools/agent_cli.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show agent_cli
+
+--- CURRENT ---
+BACH Tool: agent_cli
+==================================================
+Сгенерировано: 2026-01-23 10:36
+Источник: tools/agent_cli.py
+
+ОПИСАНИЕ
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+CLI-инструмент для управления агентами и экспертами BACH.
+
+Возможности:
+- Список и активация агентов
+- Показ экспертов
+- Инициализация пользовательской папки
+- Применение схемы базы данных
+
+Usage:
+    python agent_cli.py list                    # Все агенты
+    python agent_cli.py experts                 # Все эксперты
+    python agent_cli.py info <agent>            # Детали агента
+    python agent_cli.py init <agent>            # Создать папку пользователя
+    python agent_cli.py setup-db                # Инициализировать базу данных
+    python agent_cli.py status                  # Статус системы
+
+Автор: BACH System
+Дата: 2026-01-20
+
+ИСПОЛЬЗОВАНИЕ
+----------------------------------------
+python bach.py tools run agent_cli [args]
+или напрямую: python tools/agent_cli.py [args]
+
+ЗАМЕТКИ
+----------------------------------------
+- Автоматически сгенерировано из docstring
+- Вопросы: bach tools show agent_cli
+
+--- source: manual_qa_1317 verified=1
+
+================================================================================
+INDEX 112  id=26227  help_doc.tools/agent_cli  lang=ja  verified=1
+metrics: {'orig_len': 1123, 'vlen': 935, 'german_word_count': 35, 'has_umlaut': False, 'de_similarity': 0.469, 'lcs_with_de': 87}
+all_langs: ['de', 'en', 'es', 'ja', 'ru', 'zh']
+--- DE ---
+BACH Tool: agent_cli
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/agent_cli.py
+
+BESCHREIBUNG
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+CLI-Tool zur Verwaltung von BACH Agenten und Experten.
+
+Features:
+- Agenten auflisten und aktivieren
+- Experten anzeigen
+- User-Ordner initialisieren
+- Datenbank-Schema anwenden
+
+Usage:
+    python agent_cli.py list                    # Alle Agenten
+    python agent_cli.py experts                 # Alle Experten
+    python agent_cli.py info <agent>            # Agent-Details
+    python agent_cli.py init <agent>            # User-Ordner erstellen
+    python agent_cli.py setup-db                # Datenbank initialisieren
+    python agent_cli.py status                  # System-Status
+
+Autor: BACH System
+Datum: 2026-01-20
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run agent_cli [args]
+oder direkt: python tools/agent_cli.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show agent_cli
+
+--- CURRENT ---
+BACH Tool: agent_cli
+==================================================
+生成日時: 2026-01-23 10:36
+ソース: tools/agent_cli.py
+
+説明
+----------------------------------------
+BACH Agent CLI v1.0.0
+=====================
+
+BACH エージェントと専門家を管理するための CLI ツール。
+
+機能:
+- エージェントの一覧表示と有効化
+- 専門家の表示
+- ユーザーフォルダーの初期化
+- データベーススキーマの適用
+
+Usage:
+    python agent_cli.py list                    # すべてのエージェント
+    python agent_cli.py experts                 # すべての専門家
+    python agent_cli.py info <agent>            # エージェントの詳細
+    python agent_cli.py init <agent>            # ユーザーフォルダーを作成
+    python agent_cli.py setup-db                # データベースを初期化
+    python agent_cli.py status                  # システム状態
+
+作成者: BACH System
+日付: 2026-01-20
+
+使用方法
+----------------------------------------
+python bach.py tools run agent_cli [args]
+または直接: python tools/agent_cli.py [args]
+
+注意事項
+----------------------------------------
+- Docstring から自動生成
+- 質問は: bach tools show agent_cli
+
+--- source: manual_qa_1317 verified=1

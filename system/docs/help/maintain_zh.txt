@@ -302,7 +302,7 @@ NUL-CLEANER（新）
   tools/tool_scanner.py CLI 工具发现
   tools/file_cleaner.py 文件清理
   tools/json_fixer.py JSON 修复
-  tools/c_path_healer.py 路径修正（重要：c_path_healer！）
+  tools/path_healer.py 路径修正（重要：path_healer！）
   tools/nulcleaner.py 删除 NUL 文件
   tools/skill_header_gen.py YAML 标头生成器
   tools/skill_help_gen.py 帮助生成器 + 工作流验证器

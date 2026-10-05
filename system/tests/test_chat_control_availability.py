@@ -5,6 +5,7 @@
 import asyncio
 import importlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,13 @@ def control_module(monkeypatch, tmp_path):
         return original_post(*args, headers=headers, **kwargs)
 
     monkeypatch.setattr(httpx, "post", _authorized_post)
+
+    # Ensure slots_config.json exists so get_worker_slot() does not fail
+    # with a missing-config error before backend availability is checked.
+    from hub._services.chat.slots_config import _fresh_slots_config, save_slots_config
+    slots_config_path = os.environ.get("BACH_SLOTS_CONFIG_PATH")
+    if slots_config_path:
+        save_slots_config(_fresh_slots_config(), slots_config_path)
 
     module = importlib.import_module(module_name)
     try:

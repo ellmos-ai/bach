@@ -140,7 +140,7 @@ RUNDE 2 - Skills & Tools (Guete 3):
   ls system/skills/                  → Ueberblick
   ls system/agents/          → Agenten (+ jedes README.md/SKILL.md)
   ls system/agents/_experts/         → Experten
-  ls system/skills/_services/        → Services
+  ls system/hub/_services/        → Services
   ls system/partners/        → LLM-Partner
   ls system/connectors/      → Runtime-Adapter
   ls system/skills/workflows/        → Workflow-Definitionen

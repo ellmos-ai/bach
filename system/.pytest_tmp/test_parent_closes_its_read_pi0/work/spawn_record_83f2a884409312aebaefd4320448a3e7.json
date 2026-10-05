@@ -1,0 +1,8 @@
+{
+  "name": "svc",
+  "pid": 4242,
+  "process_create_time": 10.0,
+  "gate_path": "/Users/lukas/services/bach/system/.pytest_tmp/test_parent_closes_its_read_pi0/work/.spawn-gate-83f2a884409312aebaefd4320448a3e7",
+  "fence": null,
+  "stage": "pending"
+}

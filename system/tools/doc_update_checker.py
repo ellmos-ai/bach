@@ -68,6 +68,8 @@ STATIC_PATH_MIGRATIONS: List[Tuple[str, str]] = [
     ("skills\\_agents\\", "agents\\"),
     ("skills/_experts/", "agents/_experts/"),
     ("skills\\_experts\\", "agents\\_experts\\"),
+    ("skills/_services/", "hub/_services/"),
+    ("skills\\_services\\", "hub\\_services\\"),
     ("skills/_workflows/", "skills/workflows/"),
     ("skills\\_workflows\\", "skills\\workflows\\"),
     ("skills/_partners/", "partners/"),

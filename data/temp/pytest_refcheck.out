@@ -1,0 +1,1284 @@
+.......FF.........F...F......................FFFFFFFFF.F.FFFFFFFFFFFFFFF [ 25%]
+FFF.FFFFFFFF.FF............FFFFFFFFFFF.F......s......................... [ 51%]
+.......................................................................F [ 77%]
+.............................................FFFFFFFFF.F.....F..         [100%]
+=================================== FAILURES ===================================
+______________________________ test_counts_parity ______________________________
+
+full_projection = {'counts': {'handlers': 111, 'skills': 128, 'tools': 341}, 'db_path': '/Users/lukas/.bach/bach.db', 'generated_at': '2...[], ...}, {'category': 'core', 'name': 'ati', 'provenance': 'handler_registry', 'trigger_phrases': [], ...}, ...], ...}
+
+    def test_counts_parity(full_projection):
+        proj = full_projection
+        with _ro_connect(PROD_DB) as conn:
+            ro_skills = _ro_count(conn, "SELECT COUNT(1) FROM skills")
+            ro_tools = _ro_count(conn, "SELECT COUNT(1) FROM tools")
+        assert len(proj["skills"]) == ro_skills
+        assert len(proj["tools"]) == ro_tools
+        assert proj["counts"]["skills"] == len(proj["skills"])
+        assert proj["counts"]["tools"] == len(proj["tools"])
+        assert proj["counts"]["handlers"] == len(proj["handlers"])
+        # Hard-Asserts der Erstprojektion
+        assert len(proj["skills"]) == EXPECTED_SKILLS
+        assert len(proj["tools"]) == EXPECTED_TOOLS
+>       assert len(proj["handlers"]) == EXPECTED_HANDLERS
+E       AssertionError: assert 111 == 110
+E        +  where 111 = len([{'category': 'core', 'name': 'abo', 'provenance': 'handler_registry', 'trigger_phrases': [], ...}, {'category': 'core...ses': [], ...}, {'category': 'core', 'name': 'ati', 'provenance': 'handler_registry', 'trigger_phrases': [], ...}, ...])
+
+system/tests/test_skills_projection.py:64: AssertionError
+_________________ test_resolve_port_preserves_foreign_listener _________________
+
+    def test_resolve_port_preserves_foreign_listener():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            desired = int(listener.getsockname()[1])
+            actual, owner = startspine._resolve_port("127.0.0.1", desired)
+            assert actual != desired
+>           assert owner and owner["pid"] == os.getpid()
+E           AssertionError: assert ({'cmdline': [], 'name': 'nicht auflösbarer Listener', 'pid': 'unbekannt'} and 'unbekannt' == 73505)
+E            +  where 73505 = <built-in function getpid>()
+E            +    where <built-in function getpid> = os.getpid
+
+system/tests/test_startspine.py:40: AssertionError
+_______________ test_start_readback_and_stop_only_owned_process ________________
+
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_start_readback_and_stop_o0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a214c80>
+
+    def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+        monkeypatch.setenv("BACH_STARTSPINE_TEST_SECRET", "do-not-persist")
+        port = _free_port()
+        state = startspine._base_state()
+        ready = startspine._start_service(
+            state,
+            "gui",
+            command=[sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+            cwd=tmp_path,
+            env=startspine._child_environment(),
+            required=True,
+            host="127.0.0.1",
+            desired_port=port,
+            actual_port=port,
+            readiness_timeout=15,
+        )
+        record = state["services"]["gui"]
+        try:
+>           assert ready is True
+E           assert False is True
+
+system/tests/test_startspine.py:245: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_start_readback_and_stop_o0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a214c80>
+
+    def test_start_readback_and_stop_only_owned_process(tmp_path, monkeypatch):
+        monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+        monkeypatch.setenv("BACH_STARTSPINE_TEST_SECRET", "do-not-persist")
+        port = _free_port()
+        state = startspine._base_state()
+        ready = startspine._start_service(
+            state,
+            "gui",
+            command=[sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+            cwd=tmp_path,
+            env=startspine._child_environment(),
+            required=True,
+            host="127.0.0.1",
+            desired_port=port,
+            actual_port=port,
+            readiness_timeout=15,
+        )
+        record = state["services"]["gui"]
+        try:
+            assert ready is True
+            assert startspine._service_health("gui", record)
+            assert startspine._service_ready_owned("gui", record)
+            assert startspine._listener_owner(port)["pid"] == record["pid"]
+            spec_files = list(startspine._paths()["specs"].glob("gui-*.json"))
+            assert len(spec_files) == 1
+            assert "do-not-persist" not in spec_files[0].read_text(encoding="utf-8")
+        finally:
+            assert startspine._stop_record("gui", record)
+>           receipt = json.loads(startspine._receipt_path("gui").read_text(encoding="utf-8"))
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+system/tests/test_startspine.py:254: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_start_readback_and_stop_o0/runtime/receipts/gui.json')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_start_readback_and_stop_o0/runtime/receipts/gui.json'
+
+/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py:1013: FileNotFoundError
+----------------------------- Captured stdout call -----------------------------
+[FEHLER] gui: nicht bereit; Log: /private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_start_readback_and_stop_o0/runtime/logs/gui.log
+[INFO] gui: keine PID
+[INFO] gui-supervisor: bereits beendet
+________________ test_readiness_fails_closed_without_port_owner ________________
+
+self = <psutil._psosx.Process object at 0x10a4c8ec0>, args = (), kwargs = {}
+pid = 123, ppid = None, name = 'contextstored'
+
+    @functools.wraps(fun)
+    def wrapper(self, *args, **kwargs):
+        pid, ppid, name = self.pid, self._ppid, self._name
+        try:
+>           return fun(self, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../.venvs/bach/lib/python3.12/site-packages/psutil/_psosx.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psutil._psosx.Process object at 0x10a4c8ec0>
+
+    @wrap_exceptions
+    def cmdline(self):
+>       return cext.proc_cmdline(self.pid)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       PermissionError: [Errno 1] Operation not permitted (originated from sysctl(KERN_PROCARGS2))
+
+../../.venvs/bach/lib/python3.12/site-packages/psutil/_psosx.py:405: PermissionError
+
+The above exception was the direct cause of the following exception:
+
+pid = 123
+
+    def _process_identity(pid: int | None) -> dict[str, Any] | None:
+        if not pid or psutil is None:
+            return None
+        try:
+            proc = psutil.Process(int(pid))
+            return {
+                "pid": proc.pid,
+                "create_time": proc.create_time(),
+                "name": proc.name(),
+>               "cmdline": proc.cmdline(),
+                           ^^^^^^^^^^^^^^
+            }
+
+start/startspine.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../.venvs/bach/lib/python3.12/site-packages/psutil/__init__.py:748: in cmdline
+    return self._proc.cmdline()
+           ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psutil._psosx.Process object at 0x10a4c8ec0>, args = (), kwargs = {}
+pid = 123, ppid = None, name = 'contextstored'
+
+    @functools.wraps(fun)
+    def wrapper(self, *args, **kwargs):
+        pid, ppid, name = self.pid, self._ppid, self._name
+        try:
+            return fun(self, *args, **kwargs)
+        except ProcessLookupError as err:
+            if cext.proc_is_zombie(pid):
+                raise ZombieProcess(pid, name, ppid) from err
+            raise NoSuchProcess(pid, name) from err
+        except PermissionError as err:
+>           raise AccessDenied(pid, name) from err
+E           psutil.AccessDenied: (pid=123, name='contextstored')
+
+../../.venvs/bach/lib/python3.12/site-packages/psutil/_psosx.py:353: AccessDenied
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a214c80>
+
+    def test_readiness_fails_closed_without_port_owner(monkeypatch):
+        monkeypatch.setattr(startspine, "_record_is_owned", lambda record: True)
+        monkeypatch.setattr(startspine, "_service_health", lambda name, record: True)
+        monkeypatch.setattr(startspine, "_listener_owner", lambda port: None)
+>       assert not startspine._service_ready_owned(
+            "gui",
+            {"pid": 123, "actual_port": 8123},
+        )
+
+system/tests/test_startspine.py:313: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+start/startspine.py:302: in _service_ready_owned
+    return _process_listens(record, record.get("actual_port"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+start/startspine.py:241: in _process_listens
+    if psutil is None or not port or not _child_identity_alive(record):
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+start/startspine.py:327: in _child_identity_alive
+    return _identity_matches(record.get("pid"), record.get("create_time"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+start/startspine.py:130: in _identity_matches
+    identity = _process_identity(pid)
+               ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pid = 123
+
+    def _process_identity(pid: int | None) -> dict[str, Any] | None:
+        if not pid or psutil is None:
+            return None
+        try:
+            proc = psutil.Process(int(pid))
+            return {
+                "pid": proc.pid,
+                "create_time": proc.create_time(),
+                "name": proc.name(),
+                "cmdline": proc.cmdline(),
+            }
+        except psutil.NoSuchProcess:
+            return None
+        except psutil.AccessDenied as exc:
+>           raise ProcessIdentityUnreadable(
+                f"Prozessidentität von PID {pid} nicht lesbar"
+            ) from exc
+E           bach_startspine.ProcessIdentityUnreadable: Prozessidentität von PID 123 nicht lesbar
+
+start/startspine.py:122: ProcessIdentityUnreadable
+___________________ TestGUIServerSmoke.test_status_endpoint ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109af5430>
+client = <starlette.testclient.TestClient object at 0x10a3acdd0>
+
+    def test_status_endpoint(self, client):
+        resp = client.get("/api/status")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:236: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[GUI] Unified GUI unter /control eingebunden (ellmos-unified-gui)
+_______________ TestGUIServerSmoke.test_theme_settings_roundtrip _______________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109b72db0>
+client = <starlette.testclient.TestClient object at 0x10b0ff890>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_theme_settings_roundtrip0')
+
+    def test_theme_settings_roundtrip(self, client, test_db):
+        initial = client.get("/api/settings/theme")
+>       assert initial.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:243: AssertionError
+_________ TestGUIServerSmoke.test_theme_settings_reject_css_injection __________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109b73680>
+client = <starlette.testclient.TestClient object at 0x10b0fcaa0>
+
+    def test_theme_settings_reject_css_injection(self, client):
+        response = client.put(
+            "/api/settings/theme",
+            json={"theme": "custom", "custom": {"accent": "red;url(x)"}},
+        )
+>       assert response.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:265: AssertionError
+______________________ TestGUIServerSmoke.test_tasks_list ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109b73b60>
+client = <starlette.testclient.TestClient object at 0x10b0fd4f0>
+
+    def test_tasks_list(self, client):
+        resp = client.get("/api/tasks")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:270: AssertionError
+_______________ TestGUIServerSmoke.test_tasks_list_with_filters ________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba0080>
+client = <starlette.testclient.TestClient object at 0x10b0ffc80>
+
+    def test_tasks_list_with_filters(self, client):
+        resp = client.get("/api/tasks?status=open&priority=P2")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:277: AssertionError
+_________________ TestGUIServerSmoke.test_task_get_nonexistent _________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba0560>
+client = <starlette.testclient.TestClient object at 0x10b0ef590>
+
+    def test_task_get_nonexistent(self, client):
+        resp = client.get("/api/tasks/99999")
+>       assert resp.status_code in (200, 404)
+E       assert 401 in (200, 404)
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:283: AssertionError
+_____________________ TestGUIServerSmoke.test_task_create ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba0a40>
+client = <starlette.testclient.TestClient object at 0x10b0ed3d0>
+
+    def test_task_create(self, client):
+        resp = client.post("/api/tasks", json={"title": "Smoke test task"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:287: AssertionError
+_____ TestGUIServerSmoke.test_new_task_goes_to_the_idle_worker_by_default ______
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba0f20>
+client = <starlette.testclient.TestClient object at 0x10b0ef0e0>
+
+    def test_new_task_goes_to_the_idle_worker_by_default(self, client):
+        """D-20260906-002 = B: ohne Angabe uebernimmt der Idle-Worker, nicht 'user'.
+    
+        Der Tray-Worker pickt assigned_to in (OLLAMA, BUDDHA, BACH) und ueberspringt
+        'user' ausdruecklich -- ein Default 'user' hiesse, dass nie etwas automatisch
+        laeuft (Befund aus T-20260906-791722356).
+        """
+        import gui.server as srv
+    
+        created = client.post("/api/tasks", json={"title": "Ohne Zuweisung"}).json()
+>       task = client.get(f"/api/tasks/{created['id']}").json()
+                                        ^^^^^^^^^^^^^
+E       KeyError: 'id'
+
+system/tests/test_gui_server_smoke.py:301: KeyError
+__________ TestGUIServerSmoke.test_explicit_user_assignment_survives ___________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba1400>
+client = <starlette.testclient.TestClient object at 0x10b0f1310>
+
+    def test_explicit_user_assignment_survives(self, client):
+        """Der zweite Teil des Entscheids: persoenliche Aufgaben bleiben beim Nutzer."""
+        created = client.post(
+            "/api/tasks", json={"title": "Zahnarzt anrufen", "assigned_to": "user"}
+        ).json()
+>       task = client.get(f"/api/tasks/{created['id']}").json()
+                                        ^^^^^^^^^^^^^
+E       KeyError: 'id'
+
+system/tests/test_gui_server_smoke.py:310: KeyError
+____________________ TestGUIServerSmoke.test_messages_list _____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba1d30>
+client = <starlette.testclient.TestClient object at 0x10b3d4f80>
+
+    def test_messages_list(self, client):
+        pytest.importorskip("assistant_core", reason="private assistant-core is not installed in CI")
+        resp = client.get("/api/messages")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:323: AssertionError
+____________________ TestGUIServerSmoke.test_partners_list _____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109b733e0>
+client = <starlette.testclient.TestClient object at 0x10b4af590>
+
+    def test_partners_list(self, client):
+        resp = client.get("/api/partners")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:345: AssertionError
+______________________ TestGUIServerSmoke.test_assignees _______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109af5160>
+client = <starlette.testclient.TestClient object at 0x10b4aeed0>
+
+    def test_assignees(self, client):
+        resp = client.get("/api/assignees")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:349: AssertionError
+_____________________ TestGUIServerSmoke.test_agents_list ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba16a0>
+client = <starlette.testclient.TestClient object at 0x10b4af470>
+
+    def test_agents_list(self, client):
+        resp = client.get("/api/agents")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:353: AssertionError
+_____________________ TestGUIServerSmoke.test_skills_list ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba0aa0>
+client = <starlette.testclient.TestClient object at 0x10b4ae240>
+
+    def test_skills_list(self, client):
+        resp = client.get("/api/skills")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:357: AssertionError
+__________________ TestGUIServerSmoke.test_skills_categories ___________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba23f0>
+client = <starlette.testclient.TestClient object at 0x10b4acd70>
+
+    def test_skills_categories(self, client):
+        resp = client.get("/api/skills/categories")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:361: AssertionError
+____________________ TestGUIServerSmoke.test_denkarium_list ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba28d0>
+client = <starlette.testclient.TestClient object at 0x10b5b64e0>
+
+    def test_denkarium_list(self, client):
+        resp = client.get("/api/denkarium")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:365: AssertionError
+___________________ TestGUIServerSmoke.test_memory_overview ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba2db0>
+client = <starlette.testclient.TestClient object at 0x10b5b5c70>
+
+    def test_memory_overview(self, client):
+        resp = client.get("/api/memory/overview")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:369: AssertionError
+____________________ TestGUIServerSmoke.test_memory_working ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba3290>
+client = <starlette.testclient.TestClient object at 0x10b601640>
+
+    def test_memory_working(self, client):
+        resp = client.get("/api/memory/working")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:373: AssertionError
+____________________ TestGUIServerSmoke.test_memory_lessons ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba3770>
+client = <starlette.testclient.TestClient object at 0x10b6002c0>
+
+    def test_memory_lessons(self, client):
+        resp = client.get("/api/memory/lessons")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:377: AssertionError
+_____________________ TestGUIServerSmoke.test_memory_facts _____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109ba3c50>
+client = <starlette.testclient.TestClient object at 0x10b6027b0>
+
+    def test_memory_facts(self, client):
+        resp = client.get("/api/memory/facts")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:381: AssertionError
+___________________ TestGUIServerSmoke.test_memory_sessions ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109bb0170>
+client = <starlette.testclient.TestClient object at 0x10b603a10>
+
+    def test_memory_sessions(self, client):
+        resp = client.get("/api/memory/sessions")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:385: AssertionError
+______________________ TestGUIServerSmoke.test_help_list _______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109bb0650>
+client = <starlette.testclient.TestClient object at 0x10b63f7d0>
+
+    def test_help_list(self, client):
+        resp = client.get("/api/help")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:389: AssertionError
+_____________________ TestGUIServerSmoke.test_system_logs ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109bb0b60>
+client = <starlette.testclient.TestClient object at 0x10b63d610>
+
+    def test_system_logs(self, client):
+        resp = client.get("/api/system/logs")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:393: AssertionError
+______________________ TestGUIServerSmoke.test_tools_list ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerSmoke object at 0x109bb1070>
+client = <starlette.testclient.TestClient object at 0x10b63ecf0>
+
+    def test_tools_list(self, client):
+        resp = client.get("/api/tools")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:397: AssertionError
+____________ TestTaskDependsSafety.test_depends_on_integer_no_crash ____________
+
+self = <tests.test_gui_server_smoke.TestTaskDependsSafety object at 0x109ba3440>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_depends_on_integer_no_cra0')
+client = <starlette.testclient.TestClient object at 0x10b63ef00>
+
+    def test_depends_on_integer_no_crash(self, test_db, client):
+        db_path = test_db / "data" / "bach.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status, depends_on) VALUES (?, ?, ?)",
+            ("dep-test", "open", 42),
+        )
+        conn.commit()
+        conn.close()
+    
+        resp = client.get("/api/tasks")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:420: AssertionError
+_____________ TestTaskDependsSafety.test_depends_on_null_no_crash ______________
+
+self = <tests.test_gui_server_smoke.TestTaskDependsSafety object at 0x109ba2630>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_depends_on_null_no_crash0')
+client = <starlette.testclient.TestClient object at 0x10b63d2b0>
+
+    def test_depends_on_null_no_crash(self, test_db, client):
+        db_path = test_db / "data" / "bach.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status, depends_on) VALUES (?, ?, ?)",
+            ("null-dep", "open", None),
+        )
+        conn.commit()
+        conn.close()
+    
+        resp = client.get("/api/tasks")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:435: AssertionError
+______________ TestTaskDependsSafety.test_depends_on_valid_string ______________
+
+self = <tests.test_gui_server_smoke.TestTaskDependsSafety object at 0x109ba16d0>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_depends_on_valid_string0')
+client = <starlette.testclient.TestClient object at 0x10b603c50>
+
+    def test_depends_on_valid_string(self, test_db, client):
+        db_path = test_db / "data" / "bach.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tasks (title, status, depends_on) VALUES (?, ?, ?)",
+            ("str-dep", "open", "1,2,3"),
+        )
+        conn.commit()
+        conn.close()
+    
+        resp = client.get("/api/tasks")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:448: AssertionError
+_____________________ TestGUIServerWrite.test_task_update ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerWrite object at 0x109b73d10>
+client = <starlette.testclient.TestClient object at 0x10b6002c0>
+
+    def test_task_update(self, client):
+        resp = client.put("/api/tasks/1", json={"status": "done"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:462: AssertionError
+____________________ TestGUIServerWrite.test_message_create ____________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerWrite object at 0x109bb14c0>
+client = <starlette.testclient.TestClient object at 0x10b5b53a0>
+
+    def test_message_create(self, client):
+        pytest.importorskip("assistant_core", reason="private assistant-core is not installed in CI")
+        resp = client.post("/api/messages", json={
+            "recipient": "system",
+            "body": "Test message"
+        })
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:478: AssertionError
+___________________ TestGUIServerWrite.test_denkarium_create ___________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerWrite object at 0x109bb19a0>
+client = <starlette.testclient.TestClient object at 0x10b5b5ca0>
+
+    def test_denkarium_create(self, client):
+        resp = client.post("/api/denkarium", json={
+            "content": "Test thought",
+            "category": "test"
+        })
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:485: AssertionError
+________________ TestGUIServerWrite.test_memory_working_create _________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerWrite object at 0x109bb1e80>
+client = <starlette.testclient.TestClient object at 0x10b0ff290>
+
+    def test_memory_working_create(self, client):
+        resp = client.post("/api/memory/working", json={
+            "content": "test working memory"
+        })
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:491: AssertionError
+__________________ TestGUIServerWrite.test_memory_fact_create __________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerWrite object at 0x109bb2360>
+client = <starlette.testclient.TestClient object at 0x10b4acb30>
+
+    def test_memory_fact_create(self, client):
+        resp = client.post("/api/memory/facts", json={
+            "key": "test_key",
+            "value": "test_value"
+        })
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:498: AssertionError
+______ TestTaskHistoryAndStartedAt.test_in_progress_sets_started_at_once _______
+
+self = <tests.test_gui_server_smoke.TestTaskHistoryAndStartedAt object at 0x109bb2810>
+client = <starlette.testclient.TestClient object at 0x10b5d13a0>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_in_progress_sets_started_0')
+
+    def test_in_progress_sets_started_at_once(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "in_progress"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:532: AssertionError
+______ TestTaskHistoryAndStartedAt.test_completed_still_sets_completed_at ______
+
+self = <tests.test_gui_server_smoke.TestTaskHistoryAndStartedAt object at 0x109bb2cf0>
+client = <starlette.testclient.TestClient object at 0x10b5d0290>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_completed_still_sets_comp0')
+
+    def test_completed_still_sets_completed_at(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "completed"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:544: AssertionError
+_ TestTaskHistoryAndStartedAt.test_status_change_writes_exactly_one_history_row _
+
+self = <tests.test_gui_server_smoke.TestTaskHistoryAndStartedAt object at 0x109bb31d0>
+client = <starlette.testclient.TestClient object at 0x10b5d2450>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_status_change_writes_exac0')
+
+    def test_status_change_writes_exactly_one_history_row(self, client, test_db):
+        resp = client.put("/api/tasks/1", json={"status": "in_progress"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:550: AssertionError
+_______ TestTaskHistoryAndStartedAt.test_changed_by_override_from_caller _______
+
+self = <tests.test_gui_server_smoke.TestTaskHistoryAndStartedAt object at 0x109bb36b0>
+client = <starlette.testclient.TestClient object at 0x10b6245c0>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_changed_by_override_from_0')
+
+    def test_changed_by_override_from_caller(self, client, test_db):
+        resp = client.put(
+            "/api/tasks/1", json={"status": "in_progress", "changed_by": "idle-worker"}
+        )
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:566: AssertionError
+_ TestTaskHistoryAndStartedAt.test_multiple_field_changes_write_multiple_history_rows _
+
+self = <tests.test_gui_server_smoke.TestTaskHistoryAndStartedAt object at 0x109ba2f90>
+client = <starlette.testclient.TestClient object at 0x10b5d0080>
+test_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_multiple_field_changes_wr0')
+
+    def test_multiple_field_changes_write_multiple_history_rows(self, client, test_db):
+        resp = client.put(
+            "/api/tasks/1", json={"status": "in_progress", "priority": "P1"}
+        )
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:580: AssertionError
+_____________________ TestGUIServerNoDB.test_status_no_db ______________________
+
+self = <tests.test_gui_server_smoke.TestGUIServerNoDB object at 0x109bb2f30>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_status_no_db0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b5d1190>
+
+    def test_status_no_db(self, tmp_path, monkeypatch):
+        missing = tmp_path / "nonexistent.db"
+        import gui.server as srv
+        monkeypatch.setattr(srv, "BACH_DB", missing)
+        monkeypatch.setattr(srv, "USER_DB", missing)
+    
+        test_client = TestClient(srv.app, raise_server_exceptions=False)
+        resp = test_client.get("/api/status")
+>       assert resp.status_code == 503
+E       assert 401 == 503
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+system/tests/test_gui_server_smoke.py:607: AssertionError
+______________________ TestRunFile.test_run_valid_script _______________________
+
+self = <tests.test_sandbox_handler.TestRunFile object at 0x109af66c0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b4addf0>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_valid_script0')
+
+    def test_run_valid_script(self, handler, tmp_path):
+        script = tmp_path / "hello.py"
+        script.write_text("print('hello sandbox')", encoding="utf-8")
+        ok, msg = handler._run_file(str(script), [])
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:136: AssertionError
+______________________ TestRunFile.test_run_relative_path ______________________
+
+self = <tests.test_sandbox_handler.TestRunFile object at 0x109bb3fe0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b4ace90>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_relative_path0')
+
+    def test_run_relative_path(self, handler, tmp_path):
+        script = tmp_path / "rel_test.py"
+        script.write_text("print('relative')", encoding="utf-8")
+        ok, msg = handler._run_file("rel_test.py", [])
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:143: AssertionError
+________________________ TestRunFile.test_run_with_args ________________________
+
+self = <tests.test_sandbox_handler.TestRunFile object at 0x109bb3bf0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b5b5e50>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_with_args0')
+
+    def test_run_with_args(self, handler, tmp_path):
+        script = tmp_path / "argtest.py"
+        script.write_text("import sys; print(sys.argv[1])", encoding="utf-8")
+        ok, msg = handler._run_file(str(script), ["hello_arg"])
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:150: AssertionError
+_____________________ TestRunFile.test_run_failing_script ______________________
+
+self = <tests.test_sandbox_handler.TestRunFile object at 0x109bb1730>
+handler = <hub.sandbox.SandboxHandler object at 0x10b5b5e80>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_failing_script0')
+
+    def test_run_failing_script(self, handler, tmp_path):
+        script = tmp_path / "fail.py"
+        script.write_text("raise ValueError('boom')", encoding="utf-8")
+        ok, msg = handler._run_file(str(script), [])
+        assert ok is False
+>       assert "boom" in msg
+E       assert 'boom' in "[SANDBOX] run fail.py\nExit: 2\n===================================\nSTDERR:\npython3: can't open file '/private/var/...T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_failing_script0/fail.py': [Errno 2] No such file or directory"
+
+system/tests/test_sandbox_handler.py:158: AssertionError
+_________________________ TestRunFile.test_run_timeout _________________________
+
+self = <tests.test_sandbox_handler.TestRunFile object at 0x109bb25d0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b5b70e0>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_timeout0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b5b5d90>
+
+    def test_run_timeout(self, handler, tmp_path, monkeypatch):
+        monkeypatch.setattr(handler, "TIMEOUT", 1)
+        script = tmp_path / "slow.py"
+        script.write_text("import time; time.sleep(10)", encoding="utf-8")
+        ok, msg = handler._run_file(str(script), [])
+        assert ok is False
+>       assert "TIMEOUT" in msg
+E       assert 'TIMEOUT' in "[SANDBOX] run slow.py\nExit: 2\n===================================\nSTDERR:\npython3: can't open file '/private/var/...0000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_run_timeout0/slow.py': [Errno 2] No such file or directory"
+
+system/tests/test_sandbox_handler.py:166: AssertionError
+________________________ TestEval.test_eval_expression _________________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x109ba3da0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b600bf0>
+
+    def test_eval_expression(self, handler):
+        ok, msg = handler._eval("2 + 3")
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:174: AssertionError
+__________________________ TestEval.test_eval_string ___________________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x10a1b6cc0>
+handler = <hub.sandbox.SandboxHandler object at 0x10b600440>
+
+    def test_eval_string(self, handler):
+        ok, msg = handler._eval("'hello'")
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:179: AssertionError
+_________________________ TestEval.test_eval_statement _________________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x10a1ca330>
+handler = <hub.sandbox.SandboxHandler object at 0x10b603e60>
+
+    def test_eval_statement(self, handler):
+        ok, msg = handler._eval("print('statement_test')")
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:184: AssertionError
+_________________ TestEval.test_eval_multiline_statement_fails _________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x10a1ca810>
+handler = <hub.sandbox.SandboxHandler object at 0x10b63da00>
+
+    def test_eval_multiline_statement_fails(self, handler):
+        # for-loops can't be wrapped in _result=... — compile-time SyntaxError
+        ok, msg = handler._eval("for i in range(3): print(i)")
+        assert ok is False
+>       assert "SyntaxError" in msg
+E       assert 'SyntaxError' in "[SANDBOX] eval\nExit: 2\n===================================\nSTDERR:\npython3: can't open file '/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/tmpwb6ca367.py': [Errno 2] No such file or directory"
+
+system/tests/test_sandbox_handler.py:191: AssertionError
+_______________________ TestEval.test_eval_runtime_error _______________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x109bb3950>
+handler = <hub.sandbox.SandboxHandler object at 0x10b603260>
+
+    def test_eval_runtime_error(self, handler):
+        ok, msg = handler._eval("1/0")
+        assert ok is False
+>       assert "ZeroDivisionError" in msg
+E       assert 'ZeroDivisionError' in "[SANDBOX] eval\nExit: 2\n===================================\nSTDERR:\npython3: can't open file '/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/tmp5q8i1ip3.py': [Errno 2] No such file or directory"
+
+system/tests/test_sandbox_handler.py:196: AssertionError
+__________________________ TestEval.test_eval_timeout __________________________
+
+self = <tests.test_sandbox_handler.TestEval object at 0x109bb3d70>
+handler = <hub.sandbox.SandboxHandler object at 0x10b603ec0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b600920>
+
+    def test_eval_timeout(self, handler, monkeypatch):
+        monkeypatch.setattr(handler, "TIMEOUT", 1)
+        ok, msg = handler._eval("__import__('time').sleep(10)")
+        assert ok is False
+>       assert "TIMEOUT" in msg
+E       assert 'TIMEOUT' in "[SANDBOX] eval\nExit: 2\n===================================\nSTDERR:\npython3: can't open file '/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/tmpg8squ6dh.py': [Errno 2] No such file or directory"
+
+system/tests/test_sandbox_handler.py:202: AssertionError
+_____________________ TestTestOperation.test_passing_test ______________________
+
+self = <tests.test_sandbox_handler.TestTestOperation object at 0x109bc5e20>
+handler = <hub.sandbox.SandboxHandler object at 0x10b5b7260>
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_passing_test0')
+
+    def test_passing_test(self, handler, tmp_path):
+        test_file = tmp_path / "test_ok.py"
+        test_file.write_text("def test_pass(): assert True", encoding="utf-8")
+        ok, msg = handler._test(str(test_file))
+>       assert ok is True
+E       assert False is True
+
+system/tests/test_sandbox_handler.py:217: AssertionError
+__ test_context_gewollte_abweichung_alt_verwirft_neu_waehlt_naechsten_treffer __
+
+context_pair = (PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/tes...basetemp/test_context_gewollte_abweichu0/neu.db'), <hub.memory_hook_provider.ExternalMemoryHook object at 0x10b6d5be0>)
+
+    @needs_groups
+    def test_context_gewollte_abweichung_alt_verwirft_neu_waehlt_naechsten_treffer(context_pair):
+        """GEWOLLTE Abweichung (Ticket-Master 2026-09-26), nicht Paritaet: im Chat
+        (api-Modus) verwarf der Altpfad den ersten Treffer, weil er CLI traegt, und
+        zeigte nichts; der Seam ueberspringt ihn vor der Auswahl und liefert den
+        naechsten chat-tauglichen Treffer."""
+        _, _, hook = context_pair
+        prompt = "fehler bei der ocr"
+        import bach_api
+        proxy = bach_api._InjectorProxy()
+        proxy.set_mode("api")
+        alt = proxy._filter_cli([injectors.ContextInjector.check(prompt)])
+        assert alt == []  # alt verwirft
+        new = _kontext(hook.hook_context(prompt, "api", cli_hints=False))
+>       assert new == ["[KONTEXT] " + injectors.ContextInjector.CONTEXT_TRIGGERS["ocr"]]
+E       AssertionError: assert [] == ['[KONTEXT] O...t + PyMuPDF)']
+E         
+E         Right contains one more item: '[KONTEXT] OCR: bach ocr <pdf|bild> | tools/ocr/engine.py (Tesseract + PyMuPDF)'
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:271: AssertionError
+____ test_tool_warn_parity_per_prompt[Erstelle mir bitte eine \xdcbersicht] ____
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom43/bach.db')
+seam_env = None, prompt = 'Erstelle mir bitte eine Übersicht'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+____________ test_tool_warn_parity_per_prompt[create a new report] _____________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom44/bach.db')
+seam_env = None, prompt = 'create a new report'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+_____ test_tool_warn_parity_per_prompt[Ich m\xf6chte ein neues Tool bauen] _____
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom45/bach.db')
+seam_env = None, prompt = 'Ich möchte ein neues Tool bauen'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+___ test_tool_warn_parity_per_prompt[schreibe ein Script f\xfcr den Import] ____
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom46/bach.db')
+seam_env = None, prompt = 'schreibe ein Script für den Import'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+_____________ test_tool_warn_parity_per_prompt[baue ein Dashboard] _____________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom47/bach.db')
+seam_env = None, prompt = 'baue ein Dashboard'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+____ test_tool_warn_parity_per_prompt[implementiere ein tool zum Z\xe4hlen] ____
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom48/bach.db')
+seam_env = None, prompt = 'implementiere ein tool zum Zählen'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+____________ test_tool_warn_parity_per_prompt[please write a tool] _____________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom49/bach.db')
+seam_env = None, prompt = 'please write a tool'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+_____________ test_tool_warn_parity_per_prompt[new script needed] ______________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom50/bach.db')
+seam_env = None, prompt = 'new script needed'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+________ test_tool_warn_parity_per_prompt[Ein neues Script f\xfcr OCR] _________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_per_prom51/bach.db')
+seam_env = None, prompt = 'Ein neues Script für OCR'
+
+    @pytest.mark.parametrize("prompt", TOOL_PROMPTS)
+    def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
+        alt = injectors.ToolInjector.check_before_create(prompt)
+        neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
+>       assert neu == ([alt] if alt else [])
+E       assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E         
+E         At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E         Use -v to get more diff
+
+system/tests/test_injector_parity.py:348: AssertionError
+_________________ test_tool_warn_parity_cooldown_and_api_mode __________________
+
+tool_db = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_cooldown0/bach.db')
+seam_env = None
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_tool_warn_parity_cooldown0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b74e2a0>
+
+    def test_tool_warn_parity_cooldown_and_api_mode(tool_db, seam_env, tmp_path, monkeypatch):
+        """Cooldown 300 s wie CooldownManager; im api-Modus zeigt auch der Altpfad
+        den [TOOL-CHECK] (Praefix-Ausnahme in _filter_cli) -- kein Vorfilter."""
+        assert injectors.CooldownManager.DEFAULT_COOLDOWNS["tool_warn"] == mhp.HOOKER_INJECTORS["tool_warn"]
+        base = tmp_path / "bachbase"
+        (base / "data").mkdir(parents=True)
+        (base / "config.json").write_text(
+            '{"injectors": {"strategy_injector": false, "time_injector": false}}', encoding="utf-8")
+        monkeypatch.setattr(injectors.ContextInjector, "base_path", None)
+        monkeypatch.setattr(injectors.ContextInjector, "_cache", {})
+        clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+    
+        class _Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock["now"]
+    
+        monkeypatch.setattr(injectors, "datetime", _Clock)
+        system = injectors.InjectorSystem(base)
+        import bach_api
+        proxy = bach_api._InjectorProxy()
+        proxy.set_mode("api")
+        config = _tool_hook(tool_db, cooldown=300)._config
+        backend = mhp.BachMemoryBackend(db_path=tool_db)
+        state = SessionState()
+        start = clock["now"]
+        for offset, prompt in [(0, "neues tool"), (100, "create x"), (299, "baue ein"),
+                               (300, "neues script"), (310, "nichts"), (700, "erstelle")]:
+            clock["now"] = start + timedelta(seconds=offset)
+            alt = proxy._filter_cli(system.process(prompt))
+            neu = evaluate_triggers(prompt, replace(config, triggers=replace(
+                config.triggers, sources=["tool_warn"])), backend, state,
+                now=clock["now"].timestamp())
+>           assert neu == alt, (offset, prompt)
+E           AssertionError: (0, 'neues tool')
+E           assert ['[TOOL-CHECK...e vermeiden!'] == ['[TOOL-CHECK...e vermeiden!']
+E             
+E             At index 0 diff: "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!" != "[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und hub/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!"
+E             Use -v to get more diff
+
+system/tests/test_injector_parity.py:384: AssertionError
+________________________ test_cli_path_parity_sequence _________________________
+
+tmp_path = PosixPath('/private/var/folders/6m/6dxr3cl97vjbw4qj98kn7rh40000gn/T/bach_test_db__osqnm_j/runtime/pytest_basetemp/test_cli_path_parity_sequence0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b74e090>
+capsys = <_pytest.capture.CaptureFixture object at 0x10b74d4f0>
+
+    @needs_groups
+    def test_cli_path_parity_sequence(tmp_path, monkeypatch, capsys):
+        """Gleiche CLI-Folge (Ausgabe + Befehl, feste Uhr, neuer Prozess je Aufruf
+        ueber Zustandsdatei): alt (reiner Altpfad) == neu (Seam), gleiche usage_count."""
+        alt_db, neu_db = tmp_path / "alt.db", tmp_path / "neu.db"
+        _cli_db(alt_db)
+        _cli_db(neu_db)
+        clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+    
+        class _Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock["now"]
+    
+        monkeypatch.setattr(injectors, "datetime", _Clock)
+        ci = injectors.ContextInjector
+        monkeypatch.setattr(ci, "_session_triggered", set())
+        monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "1")
+        monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
+        monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+    
+        def system_for(name, db):
+            base = tmp_path / name
+            (base / "data").mkdir(parents=True)
+            (base / "config.json").write_text('{"injectors": {"time_injector": false}}', encoding="utf-8")
+            monkeypatch.setattr(ci, "_cache", None)
+            monkeypatch.setattr(ci, "_db_path", classmethod(lambda cls: db))
+            return injectors.InjectorSystem(base)
+    
+        alt = _cli_run(monkeypatch, capsys, system_for("alt", alt_db), None, clock, CLI_STEPS)
+        hook = mhp.ExternalMemoryHook(db_path=neu_db, config_path=tmp_path / "none.toml")
+        assert hook.handled_injectors() == frozenset({"strategy", "context", "tool_warn", "between"})
+        neu = _cli_run(monkeypatch, capsys, system_for("neu", neu_db), hook, clock, CLI_STEPS)
+        assert any("[BETWEEN-TASKS]" in o for o in alt)
+>       assert neu == alt
+E       assert ['\n[STRATEGI...ritt?\n', ...] == ['\n[STRATEGI...ritt?\n', ...]
+E         
+E         At index 4 diff: "\n[KONTEXT] ERST PRUEFEN: bach tools search <begriff> | Tool-Benennung: --help naming\n\n[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n  1. bach tools search <begriff>  (DB-Suche)\n  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n  3. Pruefe tools/ und skills/_services/ Ordner\n  Tools sind die Haende der LLMs - Duplikate vermeiden!\n\n[BETWEEN-TASKS]\n1. Zeit-Check: Noch im Limit?\n2. Memory OK? (--memory size)\n3. Nächste Aufgabe oder Shutdown?\n\nTipp: --status für Übersicht\n" != "\n[KONTEXT] ERST PRUEFEN: bach tools search <begriff> | Too...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+system/tests/test_injector_parity.py:519: AssertionError
+=============================== warnings summary ===============================
+system/tests/test_injector_parity.py::test_between_never_in_chat_and_respects_switch
+  /Users/lukas/services/bach/system/tests/conftest.py:530: UserWarning: ~/.bach hat sich waehrend des Laufs geaendert: ['bach.db-wal', 'backups/task_1316/translation_results.json']. Dieser Testprozess hat dort nicht geschrieben; beim Sitzungsstart liefen bereits fremde BACH-Dienste: PID 33298 (server.py), PID 43857 (server.py), PID 73963 (telegram_chat.py), PID 73974 (server.py). Nicht der Suite zugerechnet (T-20260912-679116669).
+    _OWN_HOME_WRITES.clear()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED system/tests/test_skills_projection.py::test_counts_parity - Assertion...
+FAILED system/tests/test_startspine.py::test_resolve_port_preserves_foreign_listener
+FAILED system/tests/test_startspine.py::test_start_readback_and_stop_only_owned_process
+FAILED system/tests/test_startspine.py::test_readiness_fails_closed_without_port_owner
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_status_endpoint
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_theme_settings_roundtrip
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_theme_settings_reject_css_injection
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_tasks_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_tasks_list_with_filters
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_task_get_nonexistent
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_task_create
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_new_task_goes_to_the_idle_worker_by_default
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_explicit_user_assignment_survives
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_messages_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_partners_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_assignees
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_agents_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_skills_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_skills_categories
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_denkarium_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_memory_overview
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_memory_working
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_memory_lessons
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_memory_facts
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_memory_sessions
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_help_list
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_system_logs
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerSmoke::test_tools_list
+FAILED system/tests/test_gui_server_smoke.py::TestTaskDependsSafety::test_depends_on_integer_no_crash
+FAILED system/tests/test_gui_server_smoke.py::TestTaskDependsSafety::test_depends_on_null_no_crash
+FAILED system/tests/test_gui_server_smoke.py::TestTaskDependsSafety::test_depends_on_valid_string
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerWrite::test_task_update
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerWrite::test_message_create
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerWrite::test_denkarium_create
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerWrite::test_memory_working_create
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerWrite::test_memory_fact_create
+FAILED system/tests/test_gui_server_smoke.py::TestTaskHistoryAndStartedAt::test_in_progress_sets_started_at_once
+FAILED system/tests/test_gui_server_smoke.py::TestTaskHistoryAndStartedAt::test_completed_still_sets_completed_at
+FAILED system/tests/test_gui_server_smoke.py::TestTaskHistoryAndStartedAt::test_status_change_writes_exactly_one_history_row
+FAILED system/tests/test_gui_server_smoke.py::TestTaskHistoryAndStartedAt::test_changed_by_override_from_caller
+FAILED system/tests/test_gui_server_smoke.py::TestTaskHistoryAndStartedAt::test_multiple_field_changes_write_multiple_history_rows
+FAILED system/tests/test_gui_server_smoke.py::TestGUIServerNoDB::test_status_no_db
+FAILED system/tests/test_sandbox_handler.py::TestRunFile::test_run_valid_script
+FAILED system/tests/test_sandbox_handler.py::TestRunFile::test_run_relative_path
+FAILED system/tests/test_sandbox_handler.py::TestRunFile::test_run_with_args
+FAILED system/tests/test_sandbox_handler.py::TestRunFile::test_run_failing_script
+FAILED system/tests/test_sandbox_handler.py::TestRunFile::test_run_timeout - ...
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_expression
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_string - ass...
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_statement - ...
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_multiline_statement_fails
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_runtime_error
+FAILED system/tests/test_sandbox_handler.py::TestEval::test_eval_timeout - as...
+FAILED system/tests/test_sandbox_handler.py::TestTestOperation::test_passing_test
+FAILED system/tests/test_injector_parity.py::test_context_gewollte_abweichung_alt_verwirft_neu_waehlt_naechsten_treffer
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[Erstelle mir bitte eine \xdcbersicht]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[create a new report]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[Ich m\xf6chte ein neues Tool bauen]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[schreibe ein Script f\xfcr den Import]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[baue ein Dashboard]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[implementiere ein tool zum Z\xe4hlen]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[please write a tool]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[new script needed]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_per_prompt[Ein neues Script f\xfcr OCR]
+FAILED system/tests/test_injector_parity.py::test_tool_warn_parity_cooldown_and_api_mode
+FAILED system/tests/test_injector_parity.py::test_cli_path_parity_sequence - ...
+66 failed, 213 passed, 1 skipped, 1 warning in 51.09s
+[Home-Guard] ~/.bach hat sich waehrend des Laufs geaendert: ['bach.db-wal', 'backups/task_1316/translation_results.json']. Dieser Testprozess hat dort nicht geschrieben; beim Sitzungsstart liefen bereits fremde BACH-Dienste: PID 33298 (server.py), PID 43857 (server.py), PID 73963 (telegram_chat.py), PID 73974 (server.py). Nicht der Suite zugerechnet (T-20260912-679116669).

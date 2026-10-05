@@ -451,7 +451,7 @@ Technische Ebene: Handler, Tools, Datenbanken, Delegation
   +-----------v-----------+      +--------------v--------------+
   |    TOOLS (skills/tools/*.py) |      |   DATENBANKEN               |
   +-----------------------+      +-----------------------------+
-  | c_ocr_engine.py       |      | bach.db (System)            |
+  | tools/ocr/engine.py   |      | bach.db (System)            |
   | data_importer.py      |      |   tasks, memory_lessons,    |
   | folder_diff_scanner.py|      |   skills, tools, config,    |
   | doc_search.py         |      |   automation_triggers       |
@@ -522,9 +522,9 @@ Agenten, Experten, Services, Skills, Workflows, Usecases
   +----------------------------------+
                   |
                   v
-  SERVICES (skills/_services/)     +    TOOLS (skills/tools/*.py)
+  SERVICES (hub/_services/)       +    TOOLS (skills/tools/*.py)
   +----------------------------------+  +-------------------------+
-  | daemon/ (Hintergrund-Sessions)   |  | c_ocr_engine.py (OCR)   |
+  | daemon/ (Hintergrund-Sessions)   |  | tools/ocr/engine.py (OCR) |
   | document/ (PDF, OCR, Scanner)    |  | data_importer.py        |
   | mail/ (E-Mail-Verwaltung)        |  | folder_diff_scanner.py  |
   | market/ (Analyse)                |  | doc_search.py           |
@@ -597,7 +597,7 @@ Alle Ebenen zusammen mit Verknuepfungen
   +-------v--------+     +------------v------------+     +---------v--------+
   | SKILLS LAYER   |     |     TOOLS LAYER         |     |   DATA LAYER     |
   |                |     |                          |     |                  |
-  | agents/        |     | c_ocr_engine.py          |     | bach.db          |
+  | agents/        |     | tools/ocr/engine.py        |     | bach.db          |
   |   ATI          |     | data_importer.py          |     |   tasks          |
   |   4 Agenten    |     | folder_diff_scanner.py    |     |   memory         |
   |   _experts/    |     | doc_search.py              |     |   skills/tools   |
@@ -989,7 +989,7 @@ agents/mein_agent/
 |-----------------------------------------------------------------|
 |  Handler          |  *Handler    |  TaskHandler                 |
 |  Service          |  *_service   |  wiki_author                 |
-|  Tool             |  <kategorie>_|  c_method_analyzer           |
+|  Tool             |  <kategorie>_|  coding/method_analyzer      |
 |  Help-Datei       |  <thema>.txt |  tasks.txt                   |
 |  Wiki-Artikel     |  <thema>.txt |  icf.txt                     |
 |  Konzept          |  CONCEPT_*   |  CONCEPT_delegation.md       |
@@ -1100,6 +1100,49 @@ Kosten-Tracking pro Run in `schwarm_runs`-Tabelle.
 
 3241 Tests in 63 Test-Dateien. Abdeckung: Handler, Services, GUI-Templates,
 MCP-Server. Linux-Support verifiziert (Ubuntu 24.04, 321/332 Smoke-Tests).
+
+### Nachtrag 2026-09-28 (Task #1447, OCEAN S9): Doku-Abgleich Memory/Routing
+
+Ergebnis der Prüfung von S9a (Doku-Abgleich) und S9b (GUI-Backend-Vertrag):
+
+- **Fehlende Artefakte:** `.MEMORY/README`, `SPEICHER-ROUTING` und
+  `homebase.toml` existieren nicht in der System-Wurzel und auch sonst
+  nirgends im Repo (Suche inkl. dotfiles, `hub/` und Parent-Verzeichnis
+  ohne Treffer).
+- **Außerhalb der Wurzel (fail-closed):** `MODULRUECKTRANSFER-PLAN.md`
+  und die konsolidierte `ROADMAP.md` liegen im Parent (`bach/docs/architecture/`
+  bzw. `bach/`); der `ROADMAP.md`-Stub in dieser Wurzel verweist nur dorthin.
+- **GUI /memory (S9b):** Die Oberfläche ist vollständig vorhanden und
+  funktional (4-Panel-Grid, 12 API-Aufrufe in `gui/templates/memory.html`),
+  das Backend (`gui/server.py`, Memory-Block) arbeitet jedoch mit direkten
+  SQL-Zugriffen auf `bach.db` (Tabellen `memory_working`, `memory_lessons`,
+  `memory_sessions`, `memory_facts`) — nicht über einen OCEAN-Memory-Vertrag.
+  OCEAN kommt in diesem Dokument (Stand v3.12.4) nicht vor.
+- **Gardener / Routing:** Keine Gardener-Implementierung und kein
+  Speicher-Routing-Konzept im Code auffindbar (nur Tasktexte in `bach.db`).
+- **Parität Doku↔UI:** Ohne S6/S7-Verträge und GUI-Modulschnitt nicht
+  belegbar; Doku und UI beschreiben unterschiedliche Memory-Modelle.
+
+Blocker (unverändert aus Task #1447): S6/S7-Verträge und GUI-Modulschnitt
+fehlen; 4 der 6 geforderten Doku-Artefakte liegen außerhalb der erlaubten
+Wurzel bzw. existieren nicht.
+
+### Fortschreibung Task #1447 (Memory-Speicher-Routing / `/memory`)
+
+- `docs/memory_routing_mapping.md` angelegt: vollständige 16-Zeilen-Mapping-
+  Tabelle der GUI-Endpunkte (`gui/server.py`) zu `hub/memory.py`.
+- Befund: 13 von 16 Endpunkten verwenden direktes SQL auf `bach.db` bzw.
+  `user.db`; nur `working` (GET/POST), `facts` (GET/POST) und `sessions` (GET)
+  haben ein teilweises Pendant im `MemoryHandler`.
+- Nicht abgedeckt durch `hub/memory.py`: DELETE-Operationen, `memory_lessons`
+  (eigener Handler), `/api/memory/overview` (Trigger/Injectoren/Workflows),
+  `/api/memory/stats/db`, `/api/memory/maintenance/cleanup` sowie
+  `session_memories` in `user.db`.
+- Entscheidung: Minimaler Routing-Stub/Adapter als Sofortmaßnahme (#1447);
+  struktureller Rewrite über einen OCEAN/S6/S7-Memory-Vertrag bleibt offen und
+  wird in einen Folgetask verlagert.
+- Blocker weiterhin unverändert: S6/S7-Verträge und GUI-Modulschnitt fehlen;
+  OCEAN ist im Code und in der Doku nicht vorhanden.
 
 ---
 

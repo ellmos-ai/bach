@@ -83,8 +83,9 @@ def test_valid_token_allows_json_post_guard(monkeypatch):
 def test_remote_bind_requires_configured_token(monkeypatch):
     monkeypatch.setenv("BACH_CONTROL_HOST", "0.0.0.0")
     monkeypatch.setenv("BACH_CONTROL_ALLOW_REMOTE", "1")
-    monkeypatch.setattr(
-        "hub._services.chat.telegram_chat.get_control_api_token",
+    monkeypatch.setitem(
+        _control_bind_host.__globals__,
+        "get_control_api_token",
         lambda: "",
     )
 

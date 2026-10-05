@@ -66,13 +66,13 @@ Problem: Tools liegen in system/tools/
 Lösung mit bach_paths:
 
     try:
-        from c_ocr_engine import ocr_pdf
+        from ocr_engine import ocr_pdf
     except ImportError:
         from bach_paths import get_path
         tools_dir = get_path("tools")
         if str(tools_dir) not in sys.path:
             sys.path.insert(0, str(tools_dir))
-        from c_ocr_engine import ocr_pdf
+        from ocr_engine import ocr_pdf
 
 BEISPIEL: Template-Pfad
 -----------------------

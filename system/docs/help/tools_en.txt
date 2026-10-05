@@ -33,15 +33,15 @@ Tools can be called directly via bach.py - without --tools run:
 
 Examples:
   bach python_cli_editor script.py --show-all     Show structure
-  bach c_encoding_fixer datei.py                  Repair encoding
-  bach c_import_organizer datei.py --save         Sort imports
-  bach c_json_repair kaputt.json                  Repair JSON
-  bach c_pycutter grosse_datei.py                 Split file
-  bach c_sqlite_viewer data/bach.db               Show DB
+  bach encoding_fixer datei.py                  Repair encoding
+  bach import_organizer datei.py --save         Sort imports
+  bach json_repair kaputt.json                  Repair JSON
+  bach pycutter grosse_datei.py                 Split file
+  bach sqlite_viewer data/bach.db               Show DB
   bach code_analyzer projekt/                     Code analyze
 
 Advantages:
-  - Shorter than: bach --tools run c_encoding_fixer file.py
+  - Shorter than: bach --tools run encoding_fixer file.py
   - Tab completion possible
   - Same syntax as direct Python call
 
@@ -85,7 +85,7 @@ PYTHON-TOOLS (tools/)
 ---------------------
 Prefix convention (see: bach --help naming):
 
-  c_* CLI optimized for AI (Claude/recludOS)
+  CLI optimized for AI (Claude/recludOS)
              - Clear outputs, encoding-safe, JSON-safe
   b_* BACH core (system critical)
   a_* Agent Runner
@@ -121,7 +121,7 @@ PYTHON TOOLS BY FUNCTION
   autolog_analyzer.py AutoLog analysis
   backup_manager.py Backup management
   injectors.py Injector system
-  c_dirscan.py Directory scan
+  dirscan.py Directory scan
   session_analyzer.py Session analysis
   time_system.py Time system
   token_monitor.py Token monitoring
@@ -133,13 +133,13 @@ PYTHON TOOLS BY FUNCTION
   Tool CLI command function
   ----------------------- ------------------------- ----------------------------
   doc_update_checker.py bach --maintain docs documentation check
-  c_duplicate_detector.py bach --maintain duplicates Duplicate detection
-  c_pattern_tool.py bach --maintain pattern Filename patterns
-  c_tool_scanner.py bach --maintain scan CLI Tools Discovery
-  c_file_cleaner.py bach --maintain clean Delete old files
-  c_json_fixer.py bach --maintain json Fix JSON
-  c_sync_registry.py Synchronize registry
-  c_json_registry_cleaner.py Registry cleanup
+  duplicate_detector.py bach --maintain duplicates Duplicate detection
+  pattern_tool.py bach --maintain pattern Filename patterns
+  tool_scanner.py bach --maintain scan CLI Tools Discovery
+  file_cleaner.py bach --maintain clean Delete old files
+  json_fixer.py bach --maintain json Fix JSON
+  sync_registry.py Synchronize registry
+  json_registry_cleaner.py Registry cleanup
   backup_manager.py Backup management
   nulcleaner.py Remove NUL character
 
@@ -170,29 +170,29 @@ Tool CLI command function
 
   Tool function
   -------------------------------------- ----------------------------
-  c_encoding_fixer.py Fix encoding
-  c_emoji_scanner.py Find/replace emoji
-  c_standard_fixer.py Apply code standards
-  c_json_repair.py Repair JSON
-  c_json_fixer.py Fix JSON (old)
-  c_import_organizer.py Sort imports
-  c_import_diagnose.py Find import problems
-  c_indent_checker.py Check indentation
-  c_umlaut_fixer.py Correct umlauts
-  c_german_scanner.py Find German words
-  c_method_analyzer.py Analyze methods
-  c_pycutter.py Split Python files
-  c_sqlite_viewer.py View SQLite databases
-  c_license_generator.py Create license files
-  c_md_to_pdf.py Markdown to PDF
-  c_universal_converter.py format conversion
-  c_universal_compiler.py Universal compiler
-  c_youtube_extractor.py YouTube extraction
-  c_code_analyzer.py Code analysis
-  c_code_generator.py Code generation
-  c_python_cli_editor.py Edit Python in a structured manner
-  c_structure_generator.py Structure generator
-  c_header_migrate.py Header migration
+  encoding_fixer.py Fix encoding
+  emoji_scanner.py Find/replace emoji
+  standard_fixer.py Apply code standards
+  json_repair.py Repair JSON
+  json_fixer.py Fix JSON (old)
+  import_organizer.py Sort imports
+  import_diagnose.py Find import problems
+  indent_checker.py Check indentation
+  umlaut_fixer.py Correct umlauts
+  german_scanner.py Find German words
+  method_analyzer.py Analyze methods
+  pycutter.py Split Python files
+  sqlite_viewer.py View SQLite databases
+  license_generator.py Create license files
+  md_to_pdf.py Markdown to PDF
+  universal_converter.py format conversion
+  universal_compiler.py Universal compiler
+  youtube_extractor.py YouTube extraction
+  code_analyzer.py Code analysis
+  code_generator.py Code generation
+  python_cli_editor.py Edit Python in a structured manner
+  structure_generator.py Structure generator
+  header_migrate.py Header migration
   call_graph.py Call Graph Analysis
 
 ### Control Tools
@@ -262,9 +262,9 @@ Tool CLI command function
 
 Tool function
   -------------------------------------- ----------------------------
-  c_skill_init.py Initialize skill structure
-  c_skill_package.py Package skills
-  c_skill_validate.py Skill validation
+  skill_init.py Initialize skill structure
+  skill_package.py Package skills
+  skill_validate.py Skill validation
   skill_export.py Export skills
   skill_header_gen.py Generate skill header
   skill_help_gen.py Generate Skill Help
@@ -273,9 +273,9 @@ Tool function
 
   Tool function
   -------------------------------------- ----------------------------
-  c_project_bundler.py Project bundler
-  c_audit_bundler.py Create audit bundle
-  c_path_healer.py Path repair
+  project_bundler.py Project bundler
+  audit_bundler.py Create audit bundle
+  path_healer.py Path repair
   batch_file_ops.py Batch file operations
 
 ### Analysis & Monitoring
@@ -295,7 +295,7 @@ Tool function
 
   Tool function
   -------------------------------------- ----------------------------
-  c_dictionary_builder.py Dictionary builder
+  dictionary_builder.py Dictionary builder
   lesson_trigger_generator.py Lesson trigger generator
   theme_packet_generator.py Theme packet generator
   workflow_trigger_generator.py Workflow trigger generator
@@ -318,7 +318,7 @@ Tool function
 
   Tool function
   -------------------------------------- ----------------------------
-  c_headless_agent.py Headless agent
+  headless_agent.py Headless agent
   bach_auto_discovery.py Auto discovery system
   tool_auto_discovery.py Tool Auto-Discovery
 
@@ -397,12 +397,12 @@ bach --tools show ffmpeg
 bach --tools show chatgpt
 
 # Run tool
-bach --tools run c_encoding_fixer datei.py
+bach --tools run encoding_fixer datei.py
 
 # Direct call (recommended)
-bach c_encoding_fixer datei.py
-bach c_skill_init neuer_skill
-bach c_project_bundler ./projekt
+bach encoding_fixer datei.py
+bach skill_init neuer_skill
+bach project_bundler ./projekt
 
 # Search
 bach --tools search video
@@ -438,7 +438,7 @@ Category Number Description
 
 Naming convention (prefixes):
 
-  c_* CLI optimized for AI (40+ tools)
+  CLI optimized for AI (40+ tools)
   b_* BACH core (system critical)
   a_* Agent runner tools
   t_* Test tools
@@ -452,8 +452,8 @@ Synergy potential with external suites:
   ---------------------- ----------------------------
   Tax/ Suite Finance Suite (Budget, Expense)
   ocr_engine.py DokuZentrum Pro
-  c_md_to_pdf.py Obsidian Export
-  c_youtube_extractor.py Media Suite
+  md_to_pdf.py Obsidian Export
+  youtube_extractor.py Media Suite
 
 Source: Archived in user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
 
@@ -493,15 +493,15 @@ Examples:
 
   Keyword tool recommendation
   --------------------- ------------------------------------------
-  "encoding problem" bach c_encoding_fixer <file>
-  "sort imports" bach c_import_organizer <file>
-  "edit python" bach c_python_cli_editor <file> --show-all
-  "split file" bach c_pycutter <file>
-  "view sqlite" bach c_sqlite_viewer <db>
+  "encoding problem" bach encoding_fixer <file>
+  "sort imports" bach import_organizer <file>
+  "edit python" bach python_cli_editor <file> --show-all
+  "split file" bach pycutter <file>
+  "view sqlite" bach sqlite_viewer <db>
   "find tool" bach tool suggest 'description'
-  "create skill" bach c_skill_init <name>
-  "project bundle" bach c_project_bundler <path>
-  "repair path" bach c_path_healer <file>
+  "create skill" bach skill_init <name>
+  "project bundle" bach project_bundler <path>
+  "repair path" bach path_healer <file>
   "start mcp" python tools/mcp_server.py
 
 See: bach --help injectors (full trigger list)

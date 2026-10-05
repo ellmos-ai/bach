@@ -31,11 +31,6 @@ Prefixes identify the type and purpose of a tool.
 
   PRAEFIX MEANING EXAMPLES
   ------- ---------------------- ------------------------
-  c_ CLI optimized for AI c_encoding_fixer.py
-            (Claude/recludOS) c_json_repair.py
-            - Clear, parsable outputs
-            - Encoding-safe (UTF-8)
-
   m_ Maintain m_migrate_triggers.py
             - Cleanup tools m_cleanup_logs.py
             - Migration scripts
@@ -62,7 +57,7 @@ Tools that are only relevant for a skill:
     task_scanner.py # ATI agent specific (in agents/ati/scanner/)
 
   Location:
-    - General: tools/c_ocr_engine.py
+    - General: tools/ocr/engine.py
     - Specific: agents/_experts/steuer/steuer_scanner.py
     - Agent tool: agents/ati/scanner/task_scanner.py
 

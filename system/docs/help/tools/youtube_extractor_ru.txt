@@ -1,0 +1,37 @@
+Инструмент BACH: youtube_extractor
+--------------------------------------------------
+Создано: 23 января 2026 г., 10:36.
+Источник: инструменты/youtube_extractor.py
+
+ОПИСАНИЕ
+----------------------------------------
+youtube_extractor.py – извлекает идентификаторы видео YouTube из URL-адресов
+
+Поддерживаемые форматы:
+  - https://www.youtube.com/watch?v=VIDEO_ID
+  - https://youtu.be/VIDEO_ID
+  - https://www.youtube.com/shorts/VIDEO_ID
+  - https://www.youtube.com/embed/VIDEO_ID
+  - Прямой идентификатор видео (11 символов)
+
+Извлечено из: ИНСТРУМЕНТЫ/МЕДИА/ForYou-Playlist/YouTubePlaylist.py
+
+Использование:
+    python youtube_extractor.py <url>
+    python youtube_extractor.py <url1> <url2> <url3>
+    python youtube_extractor.py --файл urls.txt
+    python youtube_extractor.py --json <url>
+    эхо "https://youtu.be/dQw4w9WgXcQ" | python youtube_extractor.py --stdin
+
+Автор: Клод (адаптировано)
+Зависимости: нет (только stdlib)
+
+USE
+----------------------------------------
+инструменты Python bach.py запускают youtube_extractor [args]
+или напрямую: python Tools/youtube_extractor.py [args]
+
+ПРИМЕЧАНИЯ
+----------------------------------------
+- Автоматически генерируется из строки документации.
+- Если у вас есть вопросы: инструменты bach показывают youtube_extractor.

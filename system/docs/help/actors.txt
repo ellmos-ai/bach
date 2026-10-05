@@ -93,7 +93,7 @@ Zugriff via:
 Rolle: Eigenentwicklungen, Automatisierung, Spezialaufgaben
 
 Kategorien:
-  - Coding-Tools      c_encoding_fixer, c_json_repair, etc.
+  - Coding-Tools      encoding_fixer, json_repair, etc.
   - Steuer-Tools      steuer_scanner, steuer_sync, etc.
   - Agent-Scripts     agent_framework, entwickler_agent
   - Backup-Tools      backup_manager

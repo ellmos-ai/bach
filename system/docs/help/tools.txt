@@ -34,15 +34,15 @@ Tools können direkt über bach.py aufgerufen werden - ohne --tools run:
 
 Beispiele:
   bach python_cli_editor script.py --show-all     Struktur anzeigen
-  bach c_encoding_fixer datei.py                  Encoding reparieren
-  bach c_import_organizer datei.py --save         Imports sortieren
-  bach c_json_repair kaputt.json                  JSON reparieren
-  bach c_pycutter grosse_datei.py                 Datei aufteilen
-  bach c_sqlite_viewer data/bach.db               DB anzeigen
+  bach encoding_fixer datei.py                    Encoding reparieren
+  bach import_organizer datei.py --save           Imports sortieren
+  bach json_repair kaputt.json                    JSON reparieren
+  bach pycutter grosse_datei.py                   Datei aufteilen
+  bach sqlite_viewer data/bach.db                 DB anzeigen
   bach code_analyzer projekt/                     Code analysieren
 
 Vorteile:
-  - Kuerzer als: bach --tools run c_encoding_fixer datei.py
+  - Kuerzer als: bach --tools run encoding_fixer datei.py
   - Tab-Completion möglich
   - Gleiche Syntax wie direkter Python-Aufruf
 
@@ -86,8 +86,6 @@ PYTHON-TOOLS (tools/)
 ---------------------
 Praefix-Konvention (siehe: bach --help naming):
 
-  c_*        CLI-optimiert für AI (Claude/recludOS)
-             - Klare Outputs, encoding-sicher, JSON-safe
   b_*        BACH-Kern (System-kritisch)
   a_*        Agent-Runner
   t_*        Test-Tools
@@ -122,7 +120,7 @@ PYTHON-TOOLS NACH FUNKTION
   autolog_analyzer.py       AutoLog-Analyse
   backup_manager.py         Backup-Verwaltung
   injectors.py              Injector-System
-  c_dirscan.py              Verzeichnis-Scan
+  dirscan.py                Verzeichnis-Scan
   session_analyzer.py       Session-Analyse
   time_system.py            Zeit-System
   token_monitor.py          Token-Monitoring
@@ -134,13 +132,13 @@ PYTHON-TOOLS NACH FUNKTION
   Tool                      CLI-Befehl                  Funktion
   ------------------------  --------------------------  ----------------------------
   doc_update_checker.py     bach --maintain docs        Dokumentations-Check
-  c_duplicate_detector.py   bach --maintain duplicates  Duplikat-Erkennung
-  c_pattern_tool.py         bach --maintain pattern     Dateinamen-Patterns
-  c_tool_scanner.py         bach --maintain scan        CLI-Tools Discovery
-  c_file_cleaner.py         bach --maintain clean       Alte Dateien löschen
-  c_json_fixer.py           bach --maintain json        JSON reparieren
-  c_sync_registry.py        Registry synchronisieren
-  c_json_registry_cleaner.py Registry-Bereinigung
+  duplicate_detector.py     bach --maintain duplicates  Duplikat-Erkennung
+  pattern_tool.py           bach --maintain pattern     Dateinamen-Patterns
+  tool_scanner.py           bach --maintain scan        CLI-Tools Discovery
+  file_cleaner.py           bach --maintain clean       Alte Dateien löschen
+  json_fixer.py             bach --maintain json        JSON reparieren
+  sync_registry.py          Registry synchronisieren
+  json_registry_cleaner.py Registry-Bereinigung
   backup_manager.py         Backup-Verwaltung
   nulcleaner.py             NUL-Character entfernen
 
@@ -171,29 +169,29 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      Funktion
   ------------------------  ----------------------------
-  c_encoding_fixer.py       Encoding reparieren
-  c_emoji_scanner.py        Emoji finden/ersetzen
-  c_standard_fixer.py       Code-Standards anwenden
-  c_json_repair.py          JSON reparieren
-  c_json_fixer.py           JSON reparieren (alt)
-  c_import_organizer.py     Imports sortieren
-  c_import_diagnose.py      Import-Probleme finden
-  c_indent_checker.py       Einrückung prüfen
-  c_umlaut_fixer.py         Umlaute korrigieren
-  c_german_scanner.py       Deutsche Wörter finden
-  c_method_analyzer.py      Methoden analysieren
-  c_pycutter.py             Python-Dateien aufteilen
-  c_sqlite_viewer.py        SQLite-Datenbanken anzeigen
-  c_license_generator.py    Lizenzdateien erstellen
-  c_md_to_pdf.py            Markdown zu PDF
-  c_universal_converter.py  Format-Konvertierung
-  c_universal_compiler.py   Universal Compiler
-  c_youtube_extractor.py    YouTube-Extraktion
-  c_code_analyzer.py        Code-Analyse
-  c_code_generator.py       Code-Generierung
-  c_python_cli_editor.py    Python strukturiert bearbeiten
-  c_structure_generator.py  Struktur-Generator
-  c_header_migrate.py       Header-Migration
+  encoding_fixer.py       Encoding reparieren
+  emoji_scanner.py        Emoji finden/ersetzen
+  standard_fixer.py       Code-Standards anwenden
+  json_repair.py          JSON reparieren
+  json_fixer.py           JSON reparieren (alt)
+  import_organizer.py     Imports sortieren
+  import_diagnose.py      Import-Probleme finden
+  indent_checker.py       Einrückung prüfen
+  umlaut_fixer.py         Umlaute korrigieren
+  german_scanner.py       Deutsche Wörter finden
+  method_analyzer.py      Methoden analysieren
+  pycutter.py             Python-Dateien aufteilen
+  sqlite_viewer.py        SQLite-Datenbanken anzeigen
+  license_generator.py    Lizenzdateien erstellen
+  md_to_pdf.py            Markdown zu PDF
+  universal_converter.py  Format-Konvertierung
+  universal_compiler.py   Universal Compiler
+  youtube_extractor.py    YouTube-Extraktion
+  code_analyzer.py        Code-Analyse
+  code_generator.py       Code-Generierung
+  python_cli_editor.py    Python strukturiert bearbeiten
+  structure_generator.py  Struktur-Generator
+  header_migrate.py       Header-Migration
   call_graph.py             Call-Graph-Analyse
 
 ### Steuer-Tools
@@ -263,9 +261,9 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      Funktion
   ------------------------  ----------------------------
-  c_skill_init.py           Skill-Struktur initialisieren
-  c_skill_package.py        Skills paketieren
-  c_skill_validate.py       Skill-Validierung
+  skill_init.py           Skill-Struktur initialisieren
+  skill_package.py        Skills paketieren
+  skill_validate.py       Skill-Validierung
   skill_export.py           Skills exportieren
   skill_header_gen.py       Skill-Header generieren
   skill_help_gen.py         Skill-Hilfe generieren
@@ -274,9 +272,9 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      Funktion
   ------------------------  ----------------------------
-  c_project_bundler.py      Projekt-Bundler
-  c_audit_bundler.py        Audit-Bundle erstellen
-  c_path_healer.py          Pfad-Reparatur
+  project_bundler.py      Projekt-Bundler
+  audit_bundler.py        Audit-Bundle erstellen
+  path_healer.py          Pfad-Reparatur
   batch_file_ops.py         Batch-Dateioperationen
 
 ### Analyse & Monitoring
@@ -296,7 +294,7 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      Funktion
   ------------------------  ----------------------------
-  c_dictionary_builder.py   Wörterbuch-Builder
+  dictionary_builder.py   Wörterbuch-Builder
   lesson_trigger_generator.py Lesson-Trigger-Generator
   theme_packet_generator.py Theme-Packet-Generator
   workflow_trigger_generator.py Workflow-Trigger-Generator
@@ -319,7 +317,7 @@ PYTHON-TOOLS NACH FUNKTION
 
   Tool                      Funktion
   ------------------------  ----------------------------
-  c_headless_agent.py       Headless Agent
+  headless_agent.py       Headless Agent
   bach_auto_discovery.py    Auto-Discovery System
   tool_auto_discovery.py    Tool Auto-Discovery
 
@@ -398,12 +396,12 @@ bach --tools show ffmpeg
 bach --tools show chatgpt
 
 # Tool ausführen
-bach --tools run c_encoding_fixer datei.py
+bach --tools run encoding_fixer datei.py
 
 # Direktaufruf (empfohlen)
-bach c_encoding_fixer datei.py
-bach c_skill_init neuer_skill
-bach c_project_bundler ./projekt
+bach encoding_fixer datei.py
+bach skill_init neuer_skill
+bach project_bundler ./projekt
 
 # Suchen
 bach --tools search video
@@ -439,7 +437,6 @@ Gesamt-Statistik nach Kategorie:
 
 Naming-Convention (Praefixe):
 
-  c_*   CLI-optimiert für AI (40+ Tools)
   b_*   BACH-Kern (System-kritisch)
   a_*   Agent-Runner Tools
   t_*   Test-Tools
@@ -453,8 +450,8 @@ Synergie-Potential mit externen Suites:
   ----------------------  ----------------------------
   steuer/ Suite           Finance Suite (Budget, Expense)
   ocr_engine.py           DokuZentrum Pro
-  c_md_to_pdf.py          Obsidian Export
-  c_youtube_extractor.py  Media Suite
+  md_to_pdf.py          Obsidian Export
+  youtube_extractor.py  Media Suite
 
 Quelle: Archiviert in user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
 
@@ -494,15 +491,15 @@ Beispiele:
 
   Stichwort              Tool-Empfehlung
   ---------------------  ------------------------------------------
-  "encoding problem"     bach c_encoding_fixer <datei>
-  "imports sortieren"    bach c_import_organizer <datei>
-  "python bearbeiten"    bach c_python_cli_editor <datei> --show-all
-  "datei aufteilen"      bach c_pycutter <datei>
-  "sqlite anzeigen"      bach c_sqlite_viewer <db>
+  "encoding problem"     bach encoding_fixer <datei>
+  "imports sortieren"    bach import_organizer <datei>
+  "python bearbeiten"    bach python_cli_editor <datei> --show-all
+  "datei aufteilen"      bach pycutter <datei>
+  "sqlite anzeigen"      bach sqlite_viewer <db>
   "tool finden"          bach tool suggest 'beschreibung'
-  "skill erstellen"      bach c_skill_init <name>
-  "projekt bundlen"      bach c_project_bundler <pfad>
-  "pfad reparieren"      bach c_path_healer <datei>
+  "skill erstellen"      bach skill_init <name>
+  "projekt bundlen"      bach project_bundler <pfad>
+  "pfad reparieren"      bach path_healer <datei>
   "mcp starten"          python tools/mcp_server.py
 
 Siehe: bach --help injectors (vollständige Trigger-Liste)

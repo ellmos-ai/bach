@@ -1,0 +1,1 @@
+from pathlib import Path; import time; Path('/Users/lukas/services/bach/system/.pytest_tmp/test_workdir_writer_cannot_rep0/foreign-command').touch(); time.sleep(3)

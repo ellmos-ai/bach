@@ -232,8 +232,9 @@ def apply_task_field_changes(
 
     status_value = field_values.get("status")
     if status_value in COMPLETED_STATUSES:
-        updates.append("completed_at = ?")
-        values.append(now)
+        if not existing_row.get("completed_at"):
+            updates.append("completed_at = ?")
+            values.append(now)
     elif status_value in IN_PROGRESS_STATUSES and not existing_row.get("started_at"):
         # Nur beim ERSTEN Uebergang setzen -- ein wiederholtes in_progress
         # (z.B. nach einem Rueckfall auf 'open'/'pending') darf den Erststart

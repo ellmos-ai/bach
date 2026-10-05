@@ -97,7 +97,7 @@ CURRENT RECURRING TASKS
      Check new tools: bach ati onboard --check
 
   3. code_quality (30d)
-     Check code quality: c_method_analyzer on all tools
+     Check code quality: method_analyzer on all tools
 
   System tasks:
   -------------

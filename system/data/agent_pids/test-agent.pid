@@ -1,0 +1,15 @@
+{
+  "pid": 42650,
+  "process_create_time": 1790668971.300391,
+  "name": "test-agent",
+  "display_name": "",
+  "type": "boss",
+  "model": "sonnet",
+  "mode": "default",
+  "started": "2026-09-29T10:02:51.303566",
+  "temp_dir": "/Users/lukas/services/bach/system/data/temp/agent_test-agent",
+  "window_title": null,
+  "permission_mode": "restricted",
+  "allowed_tools": "Read,Grep,Glob,Bash,WebFetch,WebSearch",
+  "max_turns": null
+}

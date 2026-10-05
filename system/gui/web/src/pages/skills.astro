@@ -1,0 +1,517 @@
+---
+// skills.astro - Capabilities- & Skills-Zentrale
+// Steckdosenleiste (Plugins), MCP Cookbooks (Bücherregal) und die 4 Wissens-Ebenen mit SentinelFleet-Versionierung
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Capabilities & Skills" currentPath="/skills">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        🔌 Capabilities- & Skills-Zentrale
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Steckdosenleiste (Plugins) • MCP-Cookbooks (Werkzeug-Rezepte) • 4 Wissens-Ebenen mit SentinelFleet-Versionierung
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+      <span class="badge badge-accent" id="stat-plugins-active">Lade Steckdosen...</span>
+      <span class="badge badge-success" id="stat-skills-count">388 Skills aktiv</span>
+      <button class="btn btn-primary" onclick="openNewVersionModal('Neuer Skill')">+ Neuer Skill / Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 1. DIE STECKDOSENLEISTE (PLUGINS)                             -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card" style="margin-bottom:2rem;border-top:4px solid var(--accent-blue);background:linear-gradient(180deg, var(--bg-card) 0%, rgba(20,25,35,0.7) 100%);">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span style="font-size:1.4rem;">⚡</span>
+        <div>
+          <h2 class="card-title" style="margin:0;">Haupt-Steckdosenleiste: Plugin-Versorgung</h2>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            Klick auf den Stecker zieht ihn heraus (Kabel rollt sich auf, Plugin getrennt) oder steckt ihn wieder ein (Strom fließt).
+          </span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.5rem;background:rgba(0,0,0,0.3);padding:0.35rem 0.75rem;border-radius:20px;border:1px solid var(--border);">
+        <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;" id="power-switch-led"></span>
+        <span style="font-size:0.75rem;font-weight:700;letter-spacing:0.5px;color:var(--text);">230V SYSTEM BUS</span>
+      </div>
+    </div>
+
+    <!-- Power Strip Container -->
+    <div id="steckdosen-container" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:1.25rem;margin-top:1rem;padding:0.5rem 0;">
+      <!-- Sockets injected via JS -->
+      <p style="color:var(--text-muted);padding:1rem;text-align:center;">Lade Steckdosenleiste...</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 2. DAS MCP-BÜCHERREGAL (COOKBOOKS)                            -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card" style="margin-bottom:2rem;border-top:4px solid var(--accent);background:linear-gradient(180deg, var(--bg-card) 0%, rgba(30,20,35,0.7) 100%);">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span style="font-size:1.4rem;">📚</span>
+        <div>
+          <h2 class="card-title" style="margin:0;">MCP-Bücherregal: Tool-Cookbooks & Rezepte</h2>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            Standardisierte Schnittstellen als Rezeptbücher. Links: Zutaten (Tools/APIs), Rechts: Rezepte (Einsatz-Prompts).
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bookshelf Grid -->
+    <p id="mcp-bookshelf-status" style="font-size:0.75rem;color:var(--text-muted);margin:0.5rem 0;">Quelle wird geladen...</p>
+    <div id="mcp-bookshelf" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:1.5rem;margin-top:1rem;perspective:1000px;">
+      <!-- Books injected via JS -->
+      <p style="color:var(--text-muted);padding:1rem;">Lade Bücherregal...</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 3. DIE 4 WISSENS-EBENEN (AGENTBOARD & SENTINELFLEET)          -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card" style="border-top:4px solid var(--success);">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span style="font-size:1.4rem;">🏛️</span>
+        <div>
+          <h2 class="card-title" style="margin:0;">Die 4 Kognitiven Wissens-Ebenen</h2>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            Vollständige Taxonomie: Selbststeuerung (Zentrale Exekutive) → Prozesse → Services (System-Kompetenz) → Fähigkeiten (Werkzeuge).
+          </span>
+        </div>
+      </div>
+
+      <!-- Tier Filter Tabs -->
+      <div style="display:flex;gap:0.35rem;background:var(--bg-dark);padding:0.25rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+        <button class="tier-tab-btn active" data-tier="all" onclick="filterTiers('all')">Alle Ebenen</button>
+        <button class="tier-tab-btn" data-tier="executive" onclick="filterTiers('executive')">👑 Selbststeuerung</button>
+        <button class="tier-tab-btn" data-tier="process" onclick="filterTiers('process')">🔄 Prozesse</button>
+        <button class="tier-tab-btn" data-tier="service" onclick="filterTiers('service')">🖥️ Services</button>
+        <button class="tier-tab-btn" data-tier="capabilities" onclick="filterTiers('capabilities')">🛠️ Fähigkeiten</button>
+      </div>
+    </div>
+
+    <!-- Tiers Container -->
+    <div id="tiers-container" style="display:flex;flex-direction:column;gap:1.5rem;margin-top:1rem;">
+      <!-- Tier Sections injected via JS -->
+      <p style="color:var(--text-muted);padding:1rem;">Lade Wissens-Ebenen...</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- MODALS: MCP-Buch aufschlagen & SentinelFleet Versionierung    -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Modal: MCP Cookbook aufgeschlagen -->
+  <div id="mcp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(6px);">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);max-width:800px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;">
+      <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:1.5rem;">📖</span>
+          <div>
+            <h3 id="mcp-modal-title" style="margin:0;font-size:1.2rem;font-weight:700;">Cookbook</h3>
+            <span id="mcp-modal-subtitle" style="font-size:0.8rem;color:var(--text-muted);">Untertitel</span>
+          </div>
+        </div>
+        <button class="btn" onclick="closeMcpModal()" style="padding:0.25rem 0.5rem;font-size:1.1rem;">✕</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;padding:1.5rem;flex:1;">
+        <!-- Left: Zutaten (Tools) -->
+        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <h4 style="margin:0 0 0.75rem 0;font-size:0.95rem;color:var(--accent);display:flex;align-items:center;gap:0.5rem;">
+            <span>🥕</span> Zutaten (Verfügbare Tools)
+          </h4>
+          <div id="mcp-modal-ingredients" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+        </div>
+
+        <!-- Right: Rezepte (Prompts) -->
+        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <h4 style="margin:0 0 0.75rem 0;font-size:0.95rem;color:var(--success);display:flex;align-items:center;gap:0.5rem;">
+            <span>📜</span> Rezepte (Aufrufmuster)
+          </h4>
+          <div id="mcp-modal-recipes" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: SentinelFleet Versionierung & Diff -->
+  <div id="version-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(6px);">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);max-width:700px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg);">
+      <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <h3 id="version-modal-title" style="margin:0;font-size:1.15rem;font-weight:700;">SentinelFleet Versionierung</h3>
+        <button class="btn" onclick="closeVersionModal()" style="padding:0.25rem 0.5rem;">✕</button>
+      </div>
+      <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Skill / Prompt Name</label>
+          <input type="text" id="version-skill-name" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Neue Version (Semantic)</label>
+            <input type="text" id="version-number" value="v1.2.0" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+          </div>
+          <div>
+            <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Autor</label>
+            <input type="text" id="version-author" value="Lukas (Operator)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Changelog / Änderungsgrund</label>
+          <input type="text" id="version-changelog" placeholder="z. B. Haltung geschärft, neue Kriterien ergänzt" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);" />
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Prompt / Inhalt</label>
+          <textarea id="version-content" rows="6" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:monospace;font-size:0.85rem;" placeholder="System-Prompt oder Verfahrensrichtlinie..."></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:0.5rem;">
+          <button class="btn" onclick="closeVersionModal()">Abbrechen</button>
+          <button class="btn btn-primary" onclick="submitSkillVersion()">💾 Version festschreiben</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .tier-tab-btn {
+      background: none;
+      border: none;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .tier-tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.05);
+    }
+    .tier-tab-btn.active {
+      color: var(--text);
+      background: var(--bg-card);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* Steckdose & Stecker Styling */
+    .socket-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .socket-card.plugged {
+      border-left: 4px solid var(--success);
+      box-shadow: inset 0 0 15px rgba(34, 197, 94, 0.05);
+    }
+    .socket-card.unplugged {
+      border-left: 4px solid var(--text-muted);
+      opacity: 0.75;
+      background: rgba(20,20,25,0.4);
+    }
+    .socket-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* Cookbook 3D Hover */
+    .cookbook-card {
+      cursor: pointer;
+      border-radius: 6px 12px 12px 6px;
+      padding: 1.25rem;
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: -4px 0 0 #111, 0 8px 20px rgba(0,0,0,0.4);
+      transition: transform 0.3s, box-shadow 0.3s;
+      border: 1px solid rgba(255,255,255,0.1);
+      position: relative;
+    }
+    .cookbook-card:hover {
+      transform: translateY(-6px) rotateY(-5deg);
+      box-shadow: -6px 0 0 #000, 0 12px 25px rgba(0,0,0,0.6);
+    }
+
+    /* Cable Visuals */
+    .cable-flow {
+      height: 4px;
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      border-radius: 2px;
+      transition: all 0.4s ease;
+    }
+    .cable-coiled {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      border-style: dashed;
+    }
+  </style>
+
+  <script is:inline>
+    let currentTiersData = [];
+    let currentCookbooks = [];
+
+    async function loadCapabilitiesData() {
+      try {
+        // 1. Steckdosenleiste laden
+        const sockRes = await fetch('/api/capabilities/steckdosen');
+        if (sockRes.ok) {
+          const sockData = await sockRes.json();
+          renderSteckdosen(sockData.sockets);
+          document.getElementById('stat-plugins-active').textContent = `${sockData.active_count}/${sockData.sockets.length} Plugins versorgt`;
+        }
+
+        // 2. MCP Cookbooks laden
+        const mcpRes = await fetch('/api/capabilities/mcp/cookbooks');
+        if (mcpRes.ok) {
+          const mcpData = await mcpRes.json();
+          currentCookbooks = mcpData.cookbooks;
+          renderBookshelf(mcpData.cookbooks);
+          if (mcpData.source === 'static_examples') {
+            document.getElementById('mcp-bookshelf-status').textContent = 'Beispielrezepte · keine Live-Erkennung installierter MCP-Server';
+          }
+        }
+
+        // 3. 4 Wissens-Ebenen laden
+        const tiersRes = await fetch('/api/capabilities/tiers');
+        if (tiersRes.ok) {
+          const tiersData = await tiersRes.json();
+          currentTiersData = tiersData.tiers;
+          renderTiers(tiersData.tiers);
+        }
+      } catch (err) {
+        console.error("Fehler beim Laden der Capabilities:", err);
+      }
+    }
+
+    function renderSteckdosen(sockets) {
+      const c = document.getElementById('steckdosen-container');
+      if (!c) return;
+      c.innerHTML = sockets.map(s => `
+        <div class="socket-card ${s.is_plugged ? 'plugged' : 'unplugged'}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;">
+            <div>
+              <span style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Buchse #${s.slot}</span>
+              <h3 style="margin:0.15rem 0 0 0;font-size:1rem;font-weight:700;color:var(--text);">${s.title}</h3>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.35rem;">
+              <span style="width:8px;height:8px;border-radius:50%;background:${s.led_color};box-shadow:${s.is_plugged ? '0 0 6px ' + s.led_color : 'none'};"></span>
+              <span style="font-size:0.7rem;color:var(--text-muted);">${s.is_plugged ? 'EIN' : 'AUS'}</span>
+            </div>
+          </div>
+
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem 0;line-height:1.4;">${s.description}</p>
+
+          <!-- Stecker & Kabel Status -->
+          <div style="background:var(--bg-dark);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <span style="font-size:1.2rem;">${s.is_plugged ? '🔌' : '➰'}</span>
+              <div style="display:flex;flex-direction:column;">
+                <span style="font-size:0.75rem;font-weight:600;color:var(--text);">${s.is_plugged ? 'Stecker fest in Dose' : 'Kabel eingerollt'}</span>
+                <span style="font-size:0.68rem;color:var(--text-muted);">${s.skills_count} Skills gebündelt</span>
+              </div>
+            </div>
+            <button class="btn ${s.is_plugged ? '' : 'btn-primary'}" style="padding:0.3rem 0.65rem;font-size:0.75rem;" onclick="togglePlugin('${s.name}')">
+              ${s.is_plugged ? 'Stecker ziehen' : 'Einstecken ⚡'}
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function togglePlugin(name) {
+      try {
+        const res = await fetch('/api/capabilities/plugins/toggle', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name})
+        });
+        if (res.ok) {
+          loadCapabilitiesData();
+        }
+      } catch (e) {
+        alert("Fehler beim Schalten des Steckers: " + e);
+      }
+    }
+
+    function renderBookshelf(cookbooks) {
+      const shelf = document.getElementById('mcp-bookshelf');
+      if (!shelf) return;
+      shelf.replaceChildren();
+      for (const book of cookbooks) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'cookbook-card';
+        card.style.color = '#fff';
+        card.style.textAlign = 'left';
+        card.style.background = /^linear-gradient\([#%(),.\w\s-]+\)$/.test(String(book.cover_color || '')) ? book.cover_color : 'var(--bg-card)';
+        const title = document.createElement('h3');
+        title.textContent = String(book.title || 'Cookbook');
+        const subtitle = document.createElement('p');
+        subtitle.textContent = String(book.subtitle || '');
+        const count = document.createElement('span');
+        count.textContent = `${(book.ingredients || []).length} Zutaten • ${(book.recipes || []).length} Rezepte`;
+        card.append(title, subtitle, count);
+        card.addEventListener('click', () => openMcpCookbook(book.id));
+        shelf.append(card);
+      }
+    }
+
+    function openMcpCookbook(bookId) {
+      const book = currentCookbooks.find(b => b.id === bookId);
+      if (!book) return;
+      document.getElementById('mcp-modal-title').textContent = book.title;
+      document.getElementById('mcp-modal-subtitle').textContent = book.subtitle;
+
+      const ingDiv = document.getElementById('mcp-modal-ingredients');
+      ingDiv.replaceChildren(...book.ingredients.map(ing => {
+        const item = document.createElement('div');
+        item.textContent = `${ing}()`;
+        return item;
+      }));
+
+      const recDiv = document.getElementById('mcp-modal-recipes');
+      recDiv.replaceChildren(...book.recipes.map(rec => {
+        const item = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = String(rec.title || 'Rezept');
+        const prompt = document.createElement('code');
+        prompt.textContent = String(rec.prompt || '');
+        item.append(title, prompt);
+        return item;
+      }));
+
+      document.getElementById('mcp-modal').style.display = 'flex';
+    }
+
+    function closeMcpModal() {
+      document.getElementById('mcp-modal').style.display = 'none';
+    }
+
+    function renderTiers(tiers) {
+      const c = document.getElementById('tiers-container');
+      if (!c) return;
+      c.innerHTML = tiers.map(tier => `
+        <div class="tier-section card" data-tier-id="${tier.id}" style="background:var(--bg-dark);border-left:4px solid ${tier.color};">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;">
+            <div>
+              <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text);display:flex;align-items:center;gap:0.5rem;">
+                <span>${tier.icon}</span> ${tier.name}
+              </h3>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">${tier.description}</p>
+            </div>
+            <span class="badge" style="background:rgba(255,255,255,0.05);">${tier.skills.length} Einheiten</span>
+          </div>
+
+          <!-- Skills Grid inside Tier -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1rem;">
+            ${tier.skills.map(sk => `
+              <div style="background:var(--bg-card);padding:0.85rem;border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;flex-direction:column;justify-content:space-between;">
+                <div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+                    <strong style="font-size:0.9rem;color:var(--text);">${sk.name}</strong>
+                    <span class="badge badge-accent" style="font-family:monospace;font-size:0.7rem;">${sk.version}</span>
+                  </div>
+                  <span style="font-size:0.72rem;color:var(--text-muted);display:inline-block;margin-bottom:0.5rem;background:var(--bg-dark);padding:0.15rem 0.4rem;border-radius:3px;">${sk.type}</span>
+                  <p style="font-size:0.8rem;color:var(--text);margin:0 0 0.75rem 0;">${sk.role}</p>
+                </div>
+
+                <div style="display:flex;gap:0.4rem;border-top:1px solid var(--border);padding-top:0.6rem;">
+                  <button class="btn" style="flex:1;padding:0.25rem 0.5rem;font-size:0.72rem;" onclick="openNewVersionModal('${sk.name}', '${sk.version}')">Versionieren</button>
+                  <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.72rem;" onclick="rollbackSkill('${sk.name}', 'v1.0.0')" title="Rollback auf v1.0.0">↺</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filterTiers(tierId) {
+      document.querySelectorAll('.tier-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tier === tierId);
+      });
+      document.querySelectorAll('.tier-section').forEach(sec => {
+        if (tierId === 'all' || sec.dataset.tierId === tierId) {
+          sec.style.display = 'block';
+        } else {
+          sec.style.display = 'none';
+        }
+      });
+    }
+
+    function openNewVersionModal(name, currentVer = 'v1.1.0') {
+      document.getElementById('version-skill-name').value = name;
+      document.getElementById('version-number').value = currentVer.replace(/(\d+)$/, m => parseInt(m) + 1);
+      document.getElementById('version-modal').style.display = 'flex';
+    }
+
+    function closeVersionModal() {
+      document.getElementById('version-modal').style.display = 'none';
+    }
+
+    async function submitSkillVersion() {
+      const skill_name = document.getElementById('version-skill-name').value;
+      const version = document.getElementById('version-number').value;
+      const author = document.getElementById('version-author').value;
+      const changelog = document.getElementById('version-changelog').value;
+      const content = document.getElementById('version-content').value;
+
+      try {
+        const res = await fetch('/api/capabilities/skills/version', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({skill_name, version, author, changelog, content})
+        });
+        if (res.ok) {
+          alert(`Version ${version} für ${skill_name} erfolgreich festgeschrieben!`);
+          closeVersionModal();
+          loadCapabilitiesData();
+        }
+      } catch (e) {
+        alert("Fehler beim Speichern der Version: " + e);
+      }
+    }
+
+    async function rollbackSkill(skill_name, target_version) {
+      if (!confirm(`Soll Skill "${skill_name}" auf Version ${target_version} zurückgesetzt werden?`)) return;
+      try {
+        const res = await fetch('/api/capabilities/skills/rollback', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({skill_name, target_version})
+        });
+        if (res.ok) {
+          alert(`Rollback für ${skill_name} auf ${target_version} durchgeführt.`);
+          loadCapabilitiesData();
+        }
+      } catch (e) {
+        alert("Fehler beim Rollback: " + e);
+      }
+    }
+
+    // Init
+    document.addEventListener("DOMContentLoaded", loadCapabilitiesData);
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      loadCapabilitiesData();
+    }
+  </script>
+</BachLayout>

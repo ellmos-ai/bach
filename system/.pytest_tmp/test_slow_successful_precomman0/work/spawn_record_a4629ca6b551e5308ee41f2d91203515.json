@@ -1,0 +1,8 @@
+{
+  "name": "slow-chain",
+  "pid": 48225,
+  "process_create_time": 1790671060.843455,
+  "gate_path": "/Users/lukas/services/bach/system/.pytest_tmp/test_slow_successful_precomman0/work/.spawn-gate-a4629ca6b551e5308ee41f2d91203515",
+  "fence": null,
+  "stage": "pending"
+}

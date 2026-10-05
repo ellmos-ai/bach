@@ -158,29 +158,29 @@ TOOL TRIGGER (コンテキスト インジェクター)
 
   エンコーディングとフォーマット
   ------------------------
-  「エンコーディングの問題」 -> bach c_encoding_fixer <ファイル>
-  "ウムラウテが壊れています" -> bach c_encoding_fixer <ファイル>
-  "utf-8" -> bach c_encoding_fixer <ファイル>
-  "絵文字" -> bach c_emoji_scanner <ファイル>
-  "インデント" -> bach c_indent_checker <ファイル>
+  「エンコーディングの問題」 -> bach encoding_fixer <ファイル>
+  "ウムラウテが壊れています" -> bach encoding_fixer <ファイル>
+  "utf-8" -> bach encoding_fixer <ファイル>
+  "絵文字" -> bach emoji_scanner <ファイル>
+  "インデント" -> bach indent_checker <ファイル>
 
   輸入取り扱い
   ---------------
-  「インポートの並べ替え」 -> bach c_import_organizer <ファイル>
-  「インポートの問題」 -> bach c_import_diagnose <ファイル>
-  「インポートが見つかりません」 -> bach c_import_diagnose <ファイル>
+  「インポートの並べ替え」 -> bach import_organizer <ファイル>
+  「インポートの問題」 -> bach import_diagnose <ファイル>
+  「インポートが見つかりません」 -> bach import_diagnose <ファイル>
 
   ファイル操作
   -----------------
-  「ファイルを分割」 -> bach c_pycutter <ファイル>
-  「大きすぎる」 -> bach c_pycutter <ファイル>
-  "sqlite の表示" -> bach c_sqlite_viewer <db>
-  「json の問題」 -> bach c_json_repair <ファイル>
+  「ファイルを分割」 -> bach pycutter <ファイル>
+  「大きすぎる」 -> bach pycutter <ファイル>
+  "sqlite の表示" -> bach sqlite_viewer <db>
+  「json の問題」 -> bach json_repair <ファイル>
 
   変換
   -------------
-  「pdf へのマークダウン」 -> bach c_md_to_pdf <ファイル>
-  「形式を変換」 -> bach c_universal_converter <ファイル>
+  「pdf へのマークダウン」 -> bach md_to_pdf <ファイル>
+  「形式を変換」 -> bach universal_converter <ファイル>
 
 ツール検索
   ----------
@@ -207,7 +207,7 @@ TOOL TRIGGER (コンテキスト インジェクター)
 
 クロードが「エンコーディングの問題」を読んだとき:
 
-  [コンテキスト] エンコーディングの修正: bach c_encoding_fixer <file>
+  [コンテキスト] エンコーディングの修正: bach encoding_fixer <file>
 
 コネクタ ルーティングの統合 (新規 v1.1.75)
 -------------------------------------------
@@ -235,7 +235,7 @@ ContextInjector がコネクタ メッセージ フローに統合されまし�
 例:
   ユーザーは次のように書きます:「ファイル X のエンコーディングの問題」
   -> ContextInjector が「エンコーディングの問題」を検出
-  -> メタデータ: {"context_hints": "bach c_encoding_fixer <ファイル>"}
+  -> メタデータ: {"context_hints": "bach encoding_fixer <ファイル>"}
   -> LLM は、ユーザー テキストとしてではなく、システム情報としてヒントを取得します
 
 データベース トリガー:

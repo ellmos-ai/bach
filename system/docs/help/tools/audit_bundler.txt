@@ -1,0 +1,31 @@
+BACH Tool: audit_bundler
+==================================================
+Generiert: 2026-01-23 10:36
+Aktualisiert: 2026-02-05 (Forensik-Korrektur)
+Quelle: tools/audit_bundler.py
+
+BESCHREIBUNG
+----------------------------------------
+BACH Audit Bundler v1.0
+=======================
+Erstellt Audit-Pakete für externe Reviews.
+
+Zwei Bundles:
+1. KONZEPT-Bundle (zuerst): Dokumentation, Konzepte, Ideen
+2. IMPLEMENTATION-Bundle (später): Code, DB-Schemas, Scripts
+
+Usage:
+    python audit_bundler.py --konzept      # Bundle 1: Konzepte
+    python audit_bundler.py --implementation  # Bundle 2: Code
+    python audit_bundler.py --all          # Beide Bundles
+    python audit_bundler.py --help         # Hilfe
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run audit_bundler [args]
+oder direkt: python tools/audit_bundler.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show audit_bundler

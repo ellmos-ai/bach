@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /Users/lukas/.venvs/bach/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/lukas/services/bach
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/test_rueckfluss_planer.py::test_plane_liefert_genau_einen_belegten_kandidaten PASSED [  7%]
+tests/test_rueckfluss_planer.py::test_ergebnis_validiert_status_satzform_und_kandidat PASSED [ 14%]
+tests/test_rueckfluss_planer.py::test_plane_mutiert_nichts_und_ist_deterministisch PASSED [ 21%]
+tests/test_rueckfluss_planer.py::test_kein_env_zugriff_unabhaengig_vom_datum[plane] PASSED [ 28%]
+tests/test_rueckfluss_planer.py::test_kein_env_zugriff_unabhaengig_vom_datum[<lambda>] PASSED [ 35%]
+tests/test_rueckfluss_planer.py::test_ast_waechter_keine_os_db_fs_hub_importe PASSED [ 42%]
+tests/test_rueckfluss_planer.py::test_register_snapshot_enthaelt_alle_neun_kandidaten PASSED [ 50%]
+tests/test_rueckfluss_planer.py::test_r2_tageslimit_erzwingt_no_op PASSED [ 57%]
+tests/test_rueckfluss_planer.py::test_nur_gesperrter_kandidat_blockiert PASSED [ 64%]
+tests/test_rueckfluss_planer.py::test_leere_kandidatenliste_blockiert PASSED [ 71%]
+tests/test_rueckfluss_planer.py::test_register_disqualifikationen_des_snapshots PASSED [ 78%]
+tests/test_rueckfluss_planer.py::test_r1_ohne_beleg_gruener_transfertests_nicht_planbar PASSED [ 85%]
+tests/test_rueckfluss_planer.py::test_niedrigere_prio_zahl_gewinnt_unabhaengig_von_reihenfolge PASSED [ 92%]
+tests/test_rueckfluss_planer.py::test_memoryhooker_siegt_nach_disqualifikation_des_hoeherprioren PASSED [100%]
+
+============================== 14 passed in 0.13s ==============================

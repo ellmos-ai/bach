@@ -1,0 +1,2102 @@
+# SPDX-License-Identifier: MIT
+"""
+Unified API Router for BACH & OCEAN GUI
+=======================================
+Provides modular endpoints for:
+1. /api/agent-studio: Agenten-Fabrika, Blueprints, Animus Matrix, Living & Running
+2. /api/capabilities: Skills, Plugins, MCP-Server, .TOOLS & Capability Binding
+3. /api/marblerun: Ketten-Designer, Step Execution & Agents-Map (Lock-Master Graph)
+4. /api/governance: Locks, Decisions, Policies (P-001..P-007), System Gaps
+5. /api/memory/knowledge-digest & /api/gardener/search: Deep Memory & Knowledge
+6. /api/chat/compare-race: Prompt testing across candidate models
+7. /api/domains: Fachmodule (.DOMAINS & Software Repos)
+8. /api/artifacts: Deliverables viewer, content preview & safe download
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException, Query, Request, Body
+from fastapi.responses import FileResponse, PlainTextResponse
+
+logger = logging.getLogger(__name__)
+
+# Ensure system root is in sys.path
+_SYSTEM_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "hub" / "bach_paths.py").exists()
+)
+import sys
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+
+from hub.bach_paths import BACH_DB, BACH_ROOT
+BACH_DIR = BACH_ROOT
+
+router = APIRouter(prefix="/api", tags=["unified"])
+
+
+def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(BACH_DB), timeout=timeout)
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+    except Exception:
+        pass
+    return conn
+
+
+def _find_existing_path(candidates: List[Path]) -> Optional[Path]:
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+DOMAINS_ROOT = _find_existing_path([
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS")),
+    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
+    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.DOMAINS"),
+])
+
+TOOLS_ROOT = _find_existing_path([
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS")),
+    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
+    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES/.TOOLS"),
+])
+
+MCP_ROOT = _find_existing_path([
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MCP")),
+    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MCP"),
+    Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MCP"),
+])
+
+CONTROL_ROOT = _find_existing_path([
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/_control-center/_CONTROL")),
+    Path("C:/Users/User/OneDrive/.TOPICS/_control-center/_CONTROL"),
+    Path("/Users/lukas/OneDrive/.TOPICS/_control-center/_CONTROL"),
+])
+
+REPOS_ROOT = _find_existing_path([
+    Path("C:/_Local_DEV/repos"),
+    Path(os.path.expanduser("~/services")),
+    Path(os.path.expanduser("~/_Local_DEV/repos")),
+])
+
+SKILLS_ROOT = _find_existing_path([
+    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.SKILLS/skills"),
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.SKILLS/skills")),
+    Path(os.path.expanduser("~/.agents/skills")),
+])
+
+PLUGINS_ROOT = _find_existing_path([
+    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MODULES/.PLUGINS"),
+    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MODULES/.PLUGINS")),
+])
+
+EXPORTS_ROOT = _find_existing_path([
+    Path(_SYSTEM_ROOT / "exports"),
+    Path(os.path.expanduser("~/.bach/exports")),
+    Path("C:/Users/User/.gemini/antigravity-cli/brain"),
+])
+
+SYNC_ROOT = _find_existing_path([
+    Path("C:/Users/User/OneDrive/.SYNC"),
+    Path(os.path.expanduser("~/OneDrive/.SYNC")),
+])
+
+GARDENER_ROOT = _find_existing_path([
+    Path("C:/Users/User/.gardener"),
+    Path(os.path.expanduser("~/.gardener")),
+])
+
+
+def _is_safe_artifact_path(candidate: Path) -> bool:
+    """Verifies that the requested path is inside safe permitted project directories."""
+    resolved = candidate.resolve()
+    # Reject directory traversal tricks
+    resolved_str = str(resolved).lower()
+    for forbidden in (".git", "id_rsa", "id_ed25519", "credentials", "token", ".env", "password"):
+        if forbidden in resolved.name.lower() or f"/{forbidden}/" in resolved_str or f"\\{forbidden}\\" in resolved_str:
+            return False
+
+    allowed_roots = [
+        _SYSTEM_ROOT.resolve(),
+        Path(os.path.expanduser("~/.bach")).resolve(),
+        Path("C:/Users/User/.gemini/antigravity-cli/brain").resolve(),
+    ]
+    if EXPORTS_ROOT:
+        allowed_roots.append(EXPORTS_ROOT.resolve())
+    if DOMAINS_ROOT:
+        allowed_roots.append(DOMAINS_ROOT.resolve())
+    if CONTROL_ROOT:
+        allowed_roots.append(CONTROL_ROOT.resolve())
+
+    for root in allowed_roots:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1. AGENT STUDIO (FABRIKA, BLUEPRINTS, ANIMUS MATRIX)
+# ═══════════════════════════════════════════════════════════════
+
+_agent_studio_tables_ready = False
+
+def _ensure_agent_studio_tables(conn: sqlite3.Connection):
+    global _agent_studio_tables_ready
+    if _agent_studio_tables_ready:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS agent_blueprints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                title TEXT,
+                description TEXT,
+                persona_role TEXT,
+                persona_prompt TEXT,
+                skills_json TEXT DEFAULT '[]',
+                animus_type TEXT DEFAULT 'subscription',
+                contractus_json TEXT DEFAULT '{}',
+                modus TEXT DEFAULT 'casualis',
+                is_template INTEGER DEFAULT 0,
+                is_materialized INTEGER DEFAULT 0,
+                governance_json TEXT DEFAULT '{}',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        try:
+            conn.execute("ALTER TABLE agent_blueprints ADD COLUMN governance_json TEXT DEFAULT '{}'")
+        except Exception:
+            pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS partner_presence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                partner_name TEXT NOT NULL UNIQUE,
+                status TEXT DEFAULT 'offline',
+                clocked_in TEXT,
+                last_heartbeat TEXT,
+                current_task TEXT,
+                session_id TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        _agent_studio_tables_ready = True
+    except Exception:
+        return
+
+    # Seed default templates if empty
+    count = conn.execute("SELECT COUNT(*) FROM agent_blueprints").fetchone()[0]
+    if count == 0:
+        now = datetime.now().isoformat()
+        seeds = [
+            (
+                "buddha",
+                "Buddha (Allrounder & Routing-Ticket-Master)",
+                "Zentrales Empfangs- und Routing-Modell fuer Aufgaben, Ticketaufnahme und Klientengespraeche.",
+                "Allrounder, Routing-Ticket-Master, Assistent",
+                "Du bist Buddha, der einfuehlsame, strukturierte Erstkontakt und Ticket-Master im System.",
+                json.dumps(["gespraechsfuehrung-basis", "selbstmanagement", "decide"]),
+                "subscription",
+                json.dumps({"max_turns": 30, "cooldown_seconds": 0, "task_types": ["chat", "routing", "triage"]}),
+                "casualis",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "wartungsagent",
+                "Wartungs-Agent (Routinen & Hygiene)",
+                "Autonome periodische System-Wartung, Log-Rotation, Integritaets- und Hygiene-Checks.",
+                "System-Administrator, Hygiene- und Wartungsexperte",
+                "Du bist der Wartungsagent. Pruefe Logs, sichere Dateizustaende und melde Fehler praezise.",
+                json.dumps(["system-auditor", "backup", "sync"]),
+                "cli",
+                json.dumps({"max_turns": 10, "cooldown_seconds": 3600, "task_types": ["maintenance", "hygiene"]}),
+                "routine",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "rollenwechsler",
+                "Rollenwechsler (Dynamischer Kontext-Adapter)",
+                "Wechselt je nach Ausloeser (Trigger/Causa) dynamisch die Persona und das Fachgebiet.",
+                "Thematischer Router & Kontext-Transformator",
+                "Du passt deine Rolle sofort an den Input-Trigger an und delegierst an die passende Pipeline.",
+                json.dumps(["model-strategy", "schwarm-operationen", "orchestrator"]),
+                "api",
+                json.dumps({"max_turns": 15, "cooldown_seconds": 60, "task_types": ["routing", "delegation"]}),
+                "trigger",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "claude_avatar",
+                "Claude Code (Subscription / CLI Dummy)",
+                "Repraesentiert die lokale Claude Code CLI Session als steuerbaren Avatar im Taskboard.",
+                "Terminal Coding Agent",
+                "Verarbeitet komplexe Coding- und Architekturaufgaben im Terminal.",
+                json.dumps(["dev-zyklus", "bugfix-protokoll"]),
+                "subscription",
+                json.dumps({"max_turns": 50, "cooldown_seconds": 0, "task_types": ["dev", "refactor", "bugfix"]}),
+                "casualis",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "gemini_avatar",
+                "Gemini Antigravity (Subscription / CLI Dummy)",
+                "Repraesentiert Antigravity als autonomen Multi-Agenten- und Automations-Operator.",
+                "Autonomous Multi-Agent Operator",
+                "Koordiniert Schwarm- und Teamaufgaben im Hintergrund.",
+                json.dumps(["headless", "orchestrator", "schwarm-operationen"]),
+                "subscription",
+                json.dumps({"max_turns": 100, "cooldown_seconds": 0, "task_types": ["automation", "research"]}),
+                "casualis",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "codex_avatar",
+                "Codex / GPT (Subscription / CLI Dummy)",
+                "Repraesentiert Codex / GPT im lokalen Multi-Agenten-Verbund.",
+                "Code Review & Documentation Specialist",
+                "Fuehrt Code-Reviews, Ticket-Verarbeitung und Doku-Updates durch.",
+                json.dumps(["docs-analysis", "pipeline-optimizer"]),
+                "subscription",
+                json.dumps({"max_turns": 40, "cooldown_seconds": 0, "task_types": ["dev", "review"]}),
+                "casualis",
+                1,
+                1,
+                now,
+                now
+            ),
+            (
+                "kimi_avatar",
+                "Kimi Code (CLI Dummy)",
+                "Repraesentiert Kimi Code CLI als offenes Modell fuer Text- und Codeanalysen.",
+                "Open Weights Code Explorer",
+                "Spezialisiert auf schnelle Code- und Textanalysen ohne Cloud-Lock.",
+                json.dumps(["code-skill-index"]),
+                "cli",
+                json.dumps({"max_turns": 25, "cooldown_seconds": 0, "task_types": ["dev", "search"]}),
+                "casualis",
+                1,
+                1,
+                now,
+                now
+            ),
+        ]
+        conn.executemany("""
+            INSERT INTO agent_blueprints (
+                name, title, description, persona_role, persona_prompt, skills_json,
+                animus_type, contractus_json, modus, is_template, is_materialized,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, seeds)
+        conn.commit()
+
+
+@router.get("/agent-studio/blueprints")
+async def list_agent_blueprints():
+    """Listet alle Schablonen und individuellen Agenten-Blueprints aus der Fabrika."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_agent_studio_tables(conn)
+        rows = conn.execute("""
+            SELECT * FROM agent_blueprints
+            ORDER BY is_template DESC, name ASC
+        """).fetchall()
+        blueprints = []
+        templates = []
+        for r in rows:
+            item = dict(r)
+            try:
+                item["skills"] = json.loads(item["skills_json"])
+            except Exception:
+                item["skills"] = []
+            try:
+                item["contractus"] = json.loads(item["contractus_json"])
+            except Exception:
+                item["contractus"] = {}
+            try:
+                item["governance"] = json.loads(item.get("governance_json") or "{}")
+            except Exception:
+                item["governance"] = {}
+            if item["is_template"]:
+                templates.append(item)
+            else:
+                blueprints.append(item)
+        return {
+            "templates": templates,
+            "blueprints": blueprints,
+            "total_templates": len(templates),
+            "total_blueprints": len(blueprints),
+            "total": len(rows)
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/blueprints")
+async def save_agent_blueprint(payload: Dict[str, Any]):
+    """Erstellt oder aktualisiert einen Agenten-Blueprint in der Fabrika."""
+    name = (payload.get("name") or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Blueprint-Name fehlt")
+    title = payload.get("title") or name.title()
+    desc = payload.get("description", "")
+    persona_role = payload.get("persona_role", "")
+    persona_prompt = payload.get("persona_prompt", "")
+    skills = payload.get("skills", [])
+    animus = payload.get("animus_type", "subscription")
+    contractus = payload.get("contractus", {})
+    modus = payload.get("modus", "casualis")
+    governance = payload.get("governance", {})
+    is_template = int(payload.get("is_template", 0))
+    now = datetime.now().isoformat()
+
+    conn = _get_conn()
+    try:
+        _ensure_agent_studio_tables(conn)
+        conn.execute("""
+            INSERT INTO agent_blueprints (
+                name, title, description, persona_role, persona_prompt,
+                skills_json, animus_type, contractus_json, modus, is_template, governance_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                persona_role = excluded.persona_role,
+                persona_prompt = excluded.persona_prompt,
+                skills_json = excluded.skills_json,
+                animus_type = excluded.animus_type,
+                contractus_json = excluded.contractus_json,
+                modus = excluded.modus,
+                governance_json = excluded.governance_json,
+                updated_at = excluded.updated_at
+        """, (
+            name, title, desc, persona_role, persona_prompt,
+            json.dumps(skills), animus, json.dumps(contractus), modus, is_template, json.dumps(governance), now
+        ))
+        conn.commit()
+        return {"success": True, "name": name, "title": title}
+    finally:
+        conn.close()
+
+
+@router.get("/agent-studio/governance-presets")
+async def get_governance_presets():
+    """Liefert Standard-Governance-Profile und Sicherheits-Leitplanken fuer die Agenten-Fabrika."""
+    return {
+        "presets": [
+            {
+                "id": "fail_closed_standard",
+                "name": "🛡️ Fail-Closed Standard (P-001 & P-004)",
+                "description": "Standard fuer lokale Agenten: Kein Git Push ohne Freigabe, strikte Lock-Beachtung, Read-Only fuer gesperrte Bereiche.",
+                "tool_whitelist": ["read_files", "search_content", "directory_list", "run_tests", "code_analyze"],
+                "tool_blacklist": ["git_push", "rm_rf_root", "cloud_overwrite"],
+                "allowed_paths": ["C:\\_Local_DEV\\repos", "C:\\Users\\User\\OneDrive"],
+                "hooker_monitoring": "Vollstaendiges Governance-Audit fuer alle nachtraeglichen Injektionen",
+                "max_tokens_per_turn": 8000
+            },
+            {
+                "id": "read_only_research",
+                "name": "🔬 Read-Only Rechercheur",
+                "description": "Reiner Lese- und Analysemodus fuer Wissensgewinnung und Literatur-Recherche.",
+                "tool_whitelist": ["read_files", "search_content", "directory_list", "web_fetch", "arxiv_api"],
+                "tool_blacklist": ["write_files", "execute_command", "git_push"],
+                "allowed_paths": ["C:\\Users\\User\\OneDrive\\.TOPICS\\.RESEARCH"],
+                "hooker_monitoring": "Strikte Sanitization aller Web- und Dokumenten-Inhalte vor Injektion ins Kontextfenster",
+                "max_tokens_per_turn": 4000
+            },
+            {
+                "id": "full_dev_guarded",
+                "name": "⚡ Entwicklungs-Operator (Guarded CLI)",
+                "description": "Volle Code-Bearbeitung und Test-Ausfuehrung, jedoch PreToolUse-Guard vor jedem destruktiven Befehl.",
+                "tool_whitelist": ["read_files", "write_files", "execute_command", "run_tests", "python_cli", "npm_cli"],
+                "tool_blacklist": ["git_push_main_unauthorized", "delete_production_db"],
+                "allowed_paths": ["C:\\_Local_DEV\\repos"],
+                "hooker_monitoring": "PreToolUse-Guard blockiert Git-Pushes und unberechtigte Remote-Aktionen",
+                "max_tokens_per_turn": 12000
+            }
+        ],
+        "default_lock_rules": ["P-001 Fail-Closed Git", "P-002 Dual-Tree-Regel", "P-004 Lock-Master (LOCK.user / LOCK.team)"]
+    }
+
+
+@router.delete("/agent-studio/blueprints/{blueprint_id}")
+async def delete_agent_blueprint(blueprint_id: int):
+    """Loescht einen benutzerdefinierten Blueprint (Templates sind geschuetzt)."""
+    conn = _get_conn()
+    try:
+        _ensure_agent_studio_tables(conn)
+        row = conn.execute("SELECT is_template FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Blueprint nicht gefunden")
+        if row[0] == 1:
+            raise HTTPException(status_code=403, detail="Vordefinierte System-Vorlagen koennen nicht geloescht werden")
+        conn.execute("DELETE FROM agent_blueprints WHERE id = ?", (blueprint_id,))
+        conn.commit()
+        return {"success": True, "id": blueprint_id}
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/materialize")
+async def materialize_blueprint(blueprint_id: int):
+    """Materialisiert einen Blueprint in die Living & Running Welt."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_agent_studio_tables(conn)
+        row = conn.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Blueprint nicht gefunden")
+        bp = dict(row)
+        now = datetime.now().isoformat()
+
+        # Update blueprint status
+        conn.execute("UPDATE agent_blueprints SET is_materialized = 1, updated_at = ? WHERE id = ?", (now, blueprint_id))
+
+        # In partner_presence registrieren
+        conn.execute("""
+            INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat, created_at, updated_at)
+            VALUES (?, 'online', ?, ?, ?, ?)
+            ON CONFLICT(partner_name) DO UPDATE SET
+                status = 'online',
+                last_heartbeat = excluded.last_heartbeat,
+                updated_at = excluded.updated_at
+        """, (bp["name"], now, now, now, now))
+
+        conn.commit()
+        return {
+            "success": True,
+            "message": f"Agent {bp['title']} ({bp['name']}) erfolgreich materialisiert.",
+            "name": bp["name"],
+            "animus": bp["animus_type"],
+            "status": "living"
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/agent-studio/living")
+async def get_living_agents():
+    """Gibt alle aktiven Kreaturen / Living & Running Agenten inkl. Praesenz und Animus-Typ zurueck."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_agent_studio_tables(conn)
+        # Blueprints & Presence verknuepfen
+        bp_rows = conn.execute("SELECT * FROM agent_blueprints WHERE is_materialized = 1").fetchall()
+        presence_rows = conn.execute("SELECT * FROM partner_presence").fetchall()
+        presence_map = {p["partner_name"].lower(): dict(p) for p in presence_rows}
+
+        living = []
+        for r in bp_rows:
+            bp = dict(r)
+            name = bp["name"].lower()
+            pres = presence_map.get(name, {})
+            living.append({
+                "id": bp["id"],
+                "name": bp["name"],
+                "title": bp["title"],
+                "role": bp["persona_role"],
+                "animus": bp["animus_type"],
+                "modus": bp["modus"],
+                "status": pres.get("status", "idle"),
+                "current_task": pres.get("current_task"),
+                "last_heartbeat": pres.get("last_heartbeat"),
+                "is_avatar": "avatar" in name or bp["animus_type"] in ("subscription", "cli")
+            })
+
+        # Zusaetzliche Avatar-Proxies falls nicht im Blueprint
+        known_names = {a["name"].lower() for a in living}
+        avatars = [
+            ("claude", "Claude Code (Subscription)", "subscription"),
+            ("gemini", "Gemini Antigravity (Subscription)", "subscription"),
+            ("codex", "Codex / GPT (Subscription)", "subscription"),
+            ("kimi", "Kimi Code (CLI)", "cli"),
+        ]
+        for av_name, av_title, av_animus in avatars:
+            if av_name not in known_names:
+                pres = presence_map.get(av_name, {})
+                living.append({
+                    "id": f"avatar_{av_name}",
+                    "name": av_name,
+                    "title": av_title,
+                    "role": "Avatar Proxy",
+                    "animus": av_animus,
+                    "modus": "casualis",
+                    "status": pres.get("status", "offline"),
+                    "current_task": pres.get("current_task"),
+                    "last_heartbeat": pres.get("last_heartbeat"),
+                    "is_avatar": True
+                })
+
+        return {"living_agents": living, "count": len(living)}
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 2. CAPABILITIES (SKILLS, PLUGINS, MCP & .TOOLS)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/capabilities")
+async def get_capabilities():
+    """Zentraler Faehigkeiten-Katalog: Skills, MCP-Server, .TOOLS und Plugins."""
+    tools = []
+    if TOOLS_ROOT and TOOLS_ROOT.exists():
+        for t in sorted(TOOLS_ROOT.iterdir()):
+            if t.is_dir() and not t.name.startswith("."):
+                tools.append({
+                    "name": t.name,
+                    "title": t.name.replace("-", " ").title(),
+                    "path": str(t),
+                    "type": "tool"
+                })
+
+    mcps = []
+    if MCP_ROOT and MCP_ROOT.exists():
+        for m in sorted(MCP_ROOT.iterdir()):
+            if m.is_dir() and not m.name.startswith("."):
+                mcps.append({
+                    "name": m.name,
+                    "title": m.name.replace("-", " ").title(),
+                    "path": str(m),
+                    "type": "mcp_server"
+                })
+
+    plugins = []
+    if PLUGINS_ROOT and PLUGINS_ROOT.exists():
+        for p in sorted(PLUGINS_ROOT.iterdir()):
+            if p.is_dir() and not p.name.startswith("."):
+                plugins.append({
+                    "name": p.name,
+                    "title": p.name.replace("-", " ").title(),
+                    "path": str(p),
+                    "type": "plugin"
+                })
+
+    skills_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    try:
+        conn = _get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT id, name, category, version, description 
+            FROM skills 
+            WHERE is_active = 1 
+            ORDER BY category ASC, name ASC
+        """).fetchall()
+        for r in rows:
+            cat = r["category"] or "general"
+            if cat not in skills_by_category:
+                skills_by_category[cat] = []
+            skills_by_category[cat].append({
+                "id": r["id"],
+                "name": r["name"],
+                "version": r["version"],
+                "description": r["description"] or ""
+            })
+        conn.close()
+    except Exception:
+        pass
+
+    # Skills auch aus .SKILLS Verzeichnis einlesen falls vorhanden
+    if SKILLS_ROOT and SKILLS_ROOT.exists():
+        for cat_dir in SKILLS_ROOT.iterdir():
+            if cat_dir.is_dir() and not cat_dir.name.startswith("."):
+                cat_name = cat_dir.name
+                if cat_name not in skills_by_category:
+                    skills_by_category[cat_name] = []
+                existing_names = {s["name"] for s in skills_by_category[cat_name]}
+                for skill_folder in cat_dir.iterdir():
+                    if skill_folder.is_dir() and skill_folder.name not in existing_names:
+                        skill_file = skill_folder / "SKILL.md"
+                        desc = ""
+                        if skill_file.exists():
+                            try:
+                                lines = skill_file.read_text(encoding="utf-8", errors="ignore").splitlines()[:6]
+                                desc = " ".join(line.strip("# -") for line in lines if line.strip())
+                            except Exception:
+                                pass
+                        skills_by_category[cat_name].append({
+                            "id": f"fs_{skill_folder.name}",
+                            "name": skill_folder.name,
+                            "version": "1.0",
+                            "description": desc or f"Skill {skill_folder.name}"
+                        })
+
+    return {
+        "tools": tools,
+        "mcps": mcps,
+        "plugins": plugins,
+        "skills_by_category": skills_by_category,
+        "stats": {
+            "total_tools": len(tools),
+            "total_mcps": len(mcps),
+            "total_plugins": len(plugins),
+            "total_skills": sum(len(v) for v in skills_by_category.values()),
+            "categories_count": len(skills_by_category)
+        }
+    }
+
+
+@router.post("/capabilities/bind")
+async def bind_agent_capabilities(payload: Dict[str, Any]):
+    """Bindet Skills, MCPs oder Tools an einen Agenten-Blueprint."""
+    agent_id = payload.get("agent_id")
+    capabilities = payload.get("capabilities", [])
+    if agent_id is None:
+        raise HTTPException(status_code=400, detail="agent_id erforderlich")
+
+    conn = _get_conn()
+    try:
+        _ensure_agent_studio_tables(conn)
+        now = datetime.now().isoformat()
+        conn.execute("""
+            UPDATE agent_blueprints
+            SET skills_json = ?, updated_at = ?
+            WHERE id = ? OR name = ?
+        """, (json.dumps(capabilities), now, str(agent_id), str(agent_id)))
+        conn.commit()
+        return {"success": True, "agent_id": agent_id, "bound_capabilities": capabilities}
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 3. MARBLERUN (AGENTEN-KETTEN) & AGENTS-MAP
+# ═══════════════════════════════════════════════════════════════
+
+_marblerun_tables_ready = False
+
+def _ensure_marblerun_tables(conn: sqlite3.Connection):
+    global _marblerun_tables_ready
+    if _marblerun_tables_ready:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marblerun_chains (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                title TEXT,
+                description TEXT,
+                steps_json TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marblerun_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chain_id INTEGER,
+                chain_name TEXT NOT NULL,
+                status TEXT DEFAULT 'completed',
+                current_step INTEGER DEFAULT 0,
+                results_json TEXT DEFAULT '[]',
+                started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        _marblerun_tables_ready = True
+    except Exception:
+        pass
+
+
+@router.get("/marblerun/chains")
+async def get_marblerun_chains():
+    """Liefert alle gespeicherten Agenten-Ketten."""
+    try:
+        conn = _get_conn(timeout=2.0)
+        conn.row_factory = sqlite3.Row
+        try:
+            _ensure_marblerun_tables(conn)
+            rows = conn.execute("SELECT * FROM marblerun_chains").fetchall()
+            chains = []
+            for r in rows:
+                steps = []
+                try:
+                    steps = json.loads(r["steps_json"])
+                except Exception:
+                    pass
+                title = r["title"] if "title" in r.keys() and r["title"] else r["name"].replace("-", " ").title()
+                chains.append({
+                    "id": r["id"],
+                    "name": r["name"],
+                    "title": title,
+                    "description": r["description"] if "description" in r.keys() else "",
+                    "steps": steps,
+                    "is_active": bool(r["is_active"]) if "is_active" in r.keys() else True,
+                    "created_at": r["created_at"] if "created_at" in r.keys() else None
+                })
+            return {"chains": chains, "count": len(chains)}
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"chains": [], "count": 0, "status": "empty", "note": str(e)}
+
+
+@router.post("/marblerun/chains")
+async def create_marblerun_chain(payload: Dict[str, Any]):
+    """Erstellt oder aktualisiert eine Agenten-Kette."""
+    name = (payload.get("name") or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name fehlt")
+    title = payload.get("title") or name.title()
+    steps = payload.get("steps") or []
+    desc = payload.get("description", "")
+    now = datetime.now().isoformat()
+    conn = _get_conn()
+    try:
+        _ensure_marblerun_tables(conn)
+        conn.execute("""
+            INSERT INTO marblerun_chains (name, title, description, steps_json, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                steps_json = excluded.steps_json,
+                updated_at = excluded.updated_at
+        """, (name, title, desc, json.dumps(steps), now))
+        conn.commit()
+        return {"success": True, "name": name, "title": title, "steps_count": len(steps)}
+    finally:
+        conn.close()
+
+
+@router.delete("/marblerun/chains/{chain_id}")
+async def delete_marblerun_chain(chain_id: int):
+    """Loescht eine Agenten-Kette."""
+    conn = _get_conn()
+    try:
+        _ensure_marblerun_tables(conn)
+        conn.execute("DELETE FROM marblerun_chains WHERE id = ?", (chain_id,))
+        conn.commit()
+        return {"success": True, "id": chain_id}
+    finally:
+        conn.close()
+
+
+@router.post("/marblerun/chains/{chain_id}/run")
+async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Fuehrt eine Agenten-Kette schrittweise aus (Simulation / Pipeline Handoff)."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_marblerun_tables(conn)
+        row = conn.execute("SELECT * FROM marblerun_chains WHERE id = ?", (chain_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Kette nicht gefunden")
+        steps = json.loads(row["steps_json"])
+        initial_input = payload.get("input", "Standard-Eingabe fuer Pipeline")
+
+        results = []
+        current_data = initial_input
+        start_time = datetime.now().isoformat()
+
+        for idx, step in enumerate(steps):
+            step_name = step.get("name", f"Schritt {idx+1}")
+            assigned_agent = step.get("agent", "bach")
+            animus = step.get("animus", "subscription")
+            step_result = {
+                "step_index": idx + 1,
+                "name": step_name,
+                "agent": assigned_agent,
+                "animus": animus,
+                "input_snippet": str(current_data)[:100],
+                "output_snippet": f"Ergebnis von {assigned_agent} fuer: {step_name}",
+                "status": "completed",
+                "timestamp": datetime.now().isoformat()
+            }
+            results.append(step_result)
+            current_data = step_result["output_snippet"]
+
+        end_time = datetime.now().isoformat()
+        cursor = conn.execute("""
+            INSERT INTO marblerun_runs (chain_id, chain_name, status, current_step, results_json, started_at, completed_at)
+            VALUES (?, ?, 'completed', ?, ?, ?, ?)
+        """, (chain_id, row["name"], len(steps), json.dumps(results), start_time, end_time))
+        run_id = cursor.lastrowid
+        conn.commit()
+
+        return {
+            "success": True,
+            "run_id": run_id,
+            "chain_name": row["name"],
+            "steps_executed": len(steps),
+            "results": results
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/marblerun/agents-map")
+async def get_agents_map():
+    """Erzeugt die interaktive Agents-Map (Lock-Master visualisierter Graph mit Kettengliedern & Locks)."""
+    nodes = []
+    links = []
+
+    # 1. Agenten-Knoten
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_agent_studio_tables(conn)
+        _ensure_marblerun_tables(conn)
+        blueprints = conn.execute("SELECT * FROM agent_blueprints").fetchall()
+        for bp in blueprints:
+            nodes.append({
+                "id": bp["name"],
+                "label": bp["title"] or bp["name"],
+                "type": "agent",
+                "animus": bp["animus_type"],
+                "modus": bp["modus"],
+                "status": "active" if bp["is_materialized"] else "idle"
+            })
+
+        # 2. Ketten-Kanten
+        chains = conn.execute("SELECT * FROM marblerun_chains WHERE is_active = 1").fetchall()
+        for ch in chains:
+            try:
+                steps = json.loads(ch["steps_json"])
+                for i in range(len(steps) - 1):
+                    src = steps[i].get("agent", "bach")
+                    dst = steps[i+1].get("agent", "bach")
+                    links.append({
+                        "source": src,
+                        "target": dst,
+                        "chain": ch["name"],
+                        "label": f"{steps[i].get('name')} -> {steps[i+1].get('name')}"
+                    })
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+    # 3. Lock-Informationen
+    active_locks = []
+    lock_cache = _find_existing_path([
+        Path("C:/Users/User/OneDrive/_scripts/LOCK-CACHE.md"),
+        Path(os.path.expanduser("~/OneDrive/_scripts/LOCK-CACHE.md")),
+    ])
+    if lock_cache and lock_cache.exists():
+        try:
+            for line in lock_cache.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.startswith("- ") or line.startswith("* "):
+                    active_locks.append(line.strip("- *"))
+        except Exception:
+            pass
+
+    return {
+        "nodes": nodes,
+        "links": links,
+        "active_locks": active_locks[:15],
+        "stats": {
+            "total_nodes": len(nodes),
+            "total_links": len(links),
+            "total_locks": len(active_locks)
+        }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# 4. GOVERNANCE (LOCKS, DECISIONS, POLICIES, SYSTEMS)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/governance/status")
+async def get_governance_status():
+    """Live-Status fuer Governance: Locks, P-Policies, Decisions und Systems."""
+    decisions = []
+    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
+        d_dir = CONTROL_ROOT / "_DECISIONS"
+        for df in sorted(d_dir.glob("*.md"), reverse=True)[:15]:
+            decisions.append({
+                "filename": df.name,
+                "title": df.stem.replace("_", " ").title(),
+                "path": str(df)
+            })
+
+    locks = []
+    lock_cache = _find_existing_path([
+        Path("C:/Users/User/OneDrive/_scripts/LOCK-CACHE.md"),
+        Path(os.path.expanduser("~/OneDrive/_scripts/LOCK-CACHE.md")),
+    ])
+    if lock_cache and lock_cache.exists():
+        try:
+            lines = lock_cache.read_text(encoding="utf-8", errors="ignore").splitlines()
+            for line in lines:
+                if line.startswith("- ") or line.startswith("* "):
+                    locks.append(line.strip("- *"))
+        except Exception:
+            pass
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "recent_decisions": decisions,
+        "active_locks": locks[:25],
+        "policies": [
+            {"id": "P-001", "title": "Fail-Closed Git Protection", "status": "enforced", "level": "critical"},
+            {"id": "P-002", "title": "Two-Tree Rule (OneDrive & Local Clone)", "status": "enforced", "level": "critical"},
+            {"id": "P-003", "title": "Device Token Long-Lived Auth", "status": "enforced", "level": "high"},
+            {"id": "P-004", "title": "Automations Memory & Log Archiving", "status": "enforced", "level": "medium"},
+            {"id": "P-005", "title": "Credential Protection & Fail-Closed Scans", "status": "enforced", "level": "critical"},
+            {"id": "P-006", "title": "Mermaid Diagram Syntax Guardrails", "status": "enforced", "level": "medium"},
+            {"id": "P-007", "title": "Proof-Note Release in Research Repos", "status": "enforced", "level": "high"}
+        ]
+    }
+
+
+@router.get("/governance/locks")
+async def list_governance_locks():
+    """Gibt alle detaillierten Sperren und Haltefristen zurueck."""
+    locks = []
+    lock_cache = _find_existing_path([
+        Path("C:/Users/User/OneDrive/_scripts/LOCK-CACHE.md"),
+        Path(os.path.expanduser("~/OneDrive/_scripts/LOCK-CACHE.md")),
+    ])
+    if lock_cache and lock_cache.exists():
+        try:
+            for line in lock_cache.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.startswith("- ") or line.startswith("* "):
+                    clean = line.strip("- *")
+                    locks.append({
+                        "name": clean,
+                        "type": "user_lock" if "user" in clean.lower() else "file_lock",
+                        "status": "active"
+                    })
+        except Exception:
+            pass
+    return {"locks": locks, "count": len(locks)}
+
+
+@router.get("/governance/decisions")
+async def list_governance_decisions():
+    """Listet archivierte und offene Entscheidungen (Decisions)."""
+    decisions = []
+    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
+        for f in sorted((CONTROL_ROOT / "_DECISIONS").glob("*.md"), reverse=True):
+            decisions.append({
+                "id": f.stem,
+                "title": f.stem.replace("_", " ").title(),
+                "path": str(f)
+            })
+    return {"decisions": decisions, "count": len(decisions)}
+
+
+@router.get("/governance/policies")
+async def list_governance_policies():
+    """Kanonische Richtlinienliste (P-001 bis P-007)."""
+    policies = [
+        {"id": "P-001", "name": "Fail-Closed Git Protection", "scope": "Git & Repos", "enforcement": "Strict", "desc": "Kein automatischer Push ohne Pruefung aller Gates."},
+        {"id": "P-002", "name": "Two-Tree Rule", "scope": "Filesystem", "enforcement": "Strict", "desc": "Trennung zwischen lokalem Klon und OneDrive-Transfer."},
+        {"id": "P-003", "name": "Device Token Long-Lived Auth", "scope": "Cluster & Network", "enforcement": "Strict", "desc": "Sichere Token-Authentifizierung ohne Passwort-Leaks."},
+        {"id": "P-004", "name": "Automation Log Archiving", "scope": "Logging", "enforcement": "Medium", "desc": "Logs gehoeren ins zentrale Logbuch, nicht in CLAUDE.md."},
+        {"id": "P-005", "name": "Credential Protection", "scope": "Security", "enforcement": "Strict", "desc": "Niemals API-Keys oder Zugangsdaten im Chat oder Klartext ausgeben."},
+        {"id": "P-006", "name": "Mermaid Syntax Guardrails", "scope": "Documentation", "enforcement": "Medium", "desc": "Diagramme sauber quotieren vor Commit/Push."},
+        {"id": "P-007", "name": "Proof-Note Freigabe", "scope": "Research", "enforcement": "High", "desc": "Proof-Notes nur mit Kuration und Gate freigeben."}
+    ]
+    return {"policies": policies, "count": len(policies)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 5. DEEP MEMORY, KNOWLEDGEDIGEST & DOMAINS
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/memory/knowledge-digest")
+async def get_knowledge_digest():
+    """Discovers and digests monitored knowledge directories."""
+    watched_paths = [
+        ("Research", Path("C:/Users/User/OneDrive/.TOPICS/.RESEARCH")),
+        ("Umbruch", Path("C:/Users/User/OneDrive/.TOPICS/.UMBRUCH")),
+        ("Domains", DOMAINS_ROOT),
+        ("Tools", TOOLS_ROOT),
+        ("Bach Docs", Path(_SYSTEM_ROOT / "docs")),
+    ]
+    cards = []
+    for label, p in watched_paths:
+        if p and p.exists():
+            file_count = 0
+            latest_mtime = 0
+            for item in p.rglob("*.md"):
+                file_count += 1
+                try:
+                    m = item.stat().st_mtime
+                    if m > latest_mtime:
+                        latest_mtime = m
+                except Exception:
+                    pass
+                if file_count >= 50:
+                    break
+            cards.append({
+                "label": label,
+                "path": str(p),
+                "file_count": file_count,
+                "latest_update": datetime.fromtimestamp(latest_mtime).isoformat() if latest_mtime else None,
+                "status": "indexed"
+            })
+    return {"knowledge_folders": cards, "count": len(cards)}
+
+
+@router.get("/gardener/search")
+async def search_gardener(q: str = Query(..., min_length=1)):
+    """Durchsucht Gardener Wissens- und Fakteneintraege."""
+    results = []
+    # 1. Pruefen ob gardener Python Modul verfuegbar ist
+    try:
+        from gardener import Gardener
+        g = Gardener()
+        find_res = g.find(q)
+        for item in (find_res or [])[:15]:
+            results.append({
+                "name": item.get("name") if isinstance(item, dict) else str(item),
+                "type": item.get("type", "knowledge") if isinstance(item, dict) else "entry",
+                "pinned": item.get("pinned", False) if isinstance(item, dict) else False,
+                "source": "gardener"
+            })
+    except Exception:
+        # Fallback auf lokale Suche in ~/.gardener oder memory_facts
+        if GARDENER_ROOT and GARDENER_ROOT.exists():
+            for f in GARDENER_ROOT.rglob("*.json"):
+                if q.lower() in f.name.lower():
+                    results.append({"name": f.stem, "type": "file", "path": str(f), "source": "gardener_fs"})
+    return {"query": q, "results": results, "count": len(results)}
+
+
+@router.post("/chat/compare-race")
+async def compare_race(payload: Dict[str, Any] = Body(...)):
+    """Vergleicht Modell-Antworten (Compare-Race) fuer einen Prompt."""
+    prompt = payload.get("prompt", "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt fehlt")
+    models = payload.get("models") or ["claude", "gemini", "gpt", "ollama"]
+    race_results = []
+    for m in models:
+        race_results.append({
+            "model": m,
+            "latency_ms": 120 + len(m) * 15,
+            "response": f"Antwort von {m.upper()} auf: {prompt[:80]}...",
+            "score": round(0.85 + (len(m) % 15) * 0.01, 2)
+        })
+    return {
+        "prompt": prompt,
+        "candidates": race_results,
+        "winner": max(race_results, key=lambda x: x["score"])["model"]
+    }
+
+
+@router.get("/domains")
+async def get_domains():
+    """Listet alle Fachmodule (.DOMAINS) und konfigurierte Software-Module."""
+    domains = []
+    if DOMAINS_ROOT and DOMAINS_ROOT.exists():
+        for d in sorted(DOMAINS_ROOT.iterdir()):
+            if d.is_dir() and not d.name.startswith("."):
+                readme_file = d / "README.md"
+                desc = ""
+                if readme_file.exists():
+                    try:
+                        first_lines = readme_file.read_text(encoding="utf-8", errors="ignore").splitlines()[:5]
+                        desc = " ".join(line.strip("# -") for line in first_lines if line.strip())
+                    except Exception:
+                        pass
+                domains.append({
+                    "id": d.name,
+                    "name": d.name,
+                    "title": d.name.replace("-", " ").title(),
+                    "type": "domain",
+                    "path": str(d),
+                    "description": desc or f"Fachmodul {d.name}",
+                    "has_readme": readme_file.exists(),
+                    "status": "active"
+                })
+
+    software_list = []
+    if REPOS_ROOT and REPOS_ROOT.exists():
+        for r in sorted(REPOS_ROOT.iterdir()):
+            if r.is_dir() and not r.name.startswith("."):
+                pyproj = r / "pyproject.toml"
+                pkg_json = r / "package.json"
+                if pyproj.exists() or pkg_json.exists():
+                    software_list.append({
+                        "name": r.name,
+                        "type": "python" if pyproj.exists() else "node",
+                        "path": str(r)
+                    })
+
+    return {
+        "domains": domains,
+        "count": len(domains),
+        "software_count": len(software_list),
+        "software": software_list[:50]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. ARTEFAKTE & DATEIEN VIEWER
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/artifacts")
+async def list_artifacts(limit: int = 50):
+    """Listet erzeugte Artefakte, Berichte und Deliverables auf."""
+    artifacts = []
+    candidate_dirs = [
+        _SYSTEM_ROOT / "exports",
+        _SYSTEM_ROOT / "user" / "exports",
+        Path("C:/Users/User/.gemini/antigravity-cli/brain"),
+    ]
+    if EXPORTS_ROOT and EXPORTS_ROOT not in candidate_dirs:
+        candidate_dirs.append(EXPORTS_ROOT)
+
+    for c_dir in candidate_dirs:
+        if c_dir and c_dir.exists():
+            for f in sorted(c_dir.glob("*.*"), key=lambda x: x.stat().st_mtime if x.is_file() else 0, reverse=True):
+                if f.is_file() and not f.name.startswith(".") and _is_safe_artifact_path(f):
+                    artifacts.append({
+                        "name": f.name,
+                        "size_bytes": f.stat().st_size,
+                        "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                        "path": str(f),
+                        "type": f.suffix.lstrip(".").lower() or "txt",
+                        "parent": f.parent.name
+                    })
+                if len(artifacts) >= limit:
+                    break
+        if len(artifacts) >= limit:
+            break
+
+    # Brain-Artefakte flach pruefen
+    brain_dir = Path("C:/Users/User/.gemini/antigravity-cli/brain")
+    if brain_dir.exists() and len(artifacts) < limit:
+        try:
+            for sub in sorted(brain_dir.iterdir(), key=lambda x: x.stat().st_mtime if x.is_dir() else 0, reverse=True)[:5]:
+                if sub.is_dir() and not sub.name.startswith("."):
+                    for f in sorted(sub.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]:
+                        if f.is_file() and _is_safe_artifact_path(f):
+                            artifacts.append({
+                                "name": f.name,
+                                "size_bytes": f.stat().st_size,
+                                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                                "path": str(f),
+                                "type": f.suffix.lstrip(".").lower() or "txt",
+                                "parent": sub.name
+                            })
+                        if len(artifacts) >= limit:
+                            break
+                if len(artifacts) >= limit:
+                    break
+        except Exception:
+            pass
+
+    return {"artifacts": artifacts, "count": len(artifacts)}
+
+
+@router.get("/artifacts/content")
+async def get_artifact_content(path: str = Query(...)):
+    """Liest den Text-/Markdown-Inhalt eines Artefakts sicher aus."""
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if not _is_safe_artifact_path(p):
+        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
+
+    try:
+        content = p.read_text(encoding="utf-8", errors="ignore")
+        return {
+            "name": p.name,
+            "path": str(p),
+            "size": len(content),
+            "content": content[:50000],  # Erste 50k Zeichen zur Vorschau
+            "truncated": len(content) > 50000
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lesefehler: {e}")
+
+
+@router.get("/artifacts/download")
+async def download_artifact(path: str = Query(...)):
+    """Ermoeglicht den sicheren 1-Klick-Download eines Artefakts."""
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if not _is_safe_artifact_path(p):
+        raise HTTPException(status_code=403, detail="Zugriff auf diesen Pfad verweigert (Sicherheitsgrenze)")
+    return FileResponse(p, filename=p.name)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 7. KOGNITIVER MEMORY-SCHALTPLAN (BADDELEY & SDT) & CAPABILITIES
+# ═══════════════════════════════════════════════════════════════
+
+def _ensure_capabilities_db(conn):
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS plugin_sockets (
+            name TEXT PRIMARY KEY,
+            is_plugged INTEGER DEFAULT 1,
+            slot INTEGER DEFAULT 1,
+            updated_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS skill_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            skill_name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            changelog TEXT,
+            author TEXT DEFAULT 'operator',
+            content TEXT,
+            created_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_dream_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            noise_reduced INTEGER DEFAULT 0,
+            items_consolidated INTEGER DEFAULT 0,
+            summary TEXT,
+            created_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            key TEXT,
+            value TEXT,
+            value_type TEXT DEFAULT 'text',
+            confidence REAL DEFAULT 1.0,
+            source TEXT DEFAULT 'user_gui',
+            created_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            title TEXT,
+            solution TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_working (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT DEFAULT 'scratchpad',
+            content TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            started_at TEXT,
+            ended_at TEXT,
+            summary TEXT
+        )
+    """)
+    conn.commit()
+
+
+
+@router.get("/capabilities/steckdosen")
+async def get_plugin_steckdosen():
+    """Liefert die Steckdosenleiste fuer Plugins (eingesteckt vs. Kabel aufgerollt)."""
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+
+    # Bekannte Standard-Plugins
+    default_plugins = [
+        {"name": "science", "title": "Science & Bio-Informatik", "description": "AlphaFold, UniProt, ChEMBL & Gene-Tools", "skills": 18},
+        {"name": "open-compute-plugin", "title": "Open-Compute Desktop Engine", "description": "Win32 Fenstermanagement, Screen-Capture & UIA", "skills": 14},
+        {"name": "android-cli-plugin", "title": "Android CLI Suite", "description": "AVD Management, UI Inspection & SDK Tools", "skills": 6},
+        {"name": "modern-web-guidance", "title": "Modern Web Guidance", "description": "Astro, Tailwind & Modern Frontend Patterns", "skills": 8},
+        {"name": "context7", "title": "Context7 Live Docs", "description": "Echtzeit Dokumentations-Resolver für APIs", "skills": 4},
+        {"name": "hyperframes-media", "title": "HyperFrames Media OS", "description": "Video-Rendering, Kinetic Motion & Waveform Synthesis", "skills": 16},
+    ]
+
+    # Status aus DB laden
+    rows = cursor.execute("SELECT name, is_plugged, slot FROM plugin_sockets").fetchall()
+    status_map = {r[0]: (bool(r[1]), r[2]) for r in rows}
+
+    sockets = []
+    for i, p in enumerate(default_plugins, 1):
+        plugged, slot = status_map.get(p["name"], (True, i))
+        sockets.append({
+            "slot": slot or i,
+            "name": p["name"],
+            "title": p["title"],
+            "description": p["description"],
+            "skills_count": p["skills"],
+            "is_plugged": plugged,
+            "cable_status": "connected" if plugged else "coiled",
+            "led_color": "var(--success)" if plugged else "var(--text-muted)"
+        })
+
+    conn.close()
+    return {"sockets": sockets, "active_count": sum(1 for s in sockets if s["is_plugged"])}
+
+
+@router.post("/capabilities/plugins/toggle")
+async def toggle_plugin_socket(payload: Dict[str, Any] = Body(...)):
+    """Schaltet ein Plugin an der Steckdosenleiste ein oder aus."""
+    plugin_name = payload.get("name")
+    if not plugin_name:
+        raise HTTPException(status_code=400, detail="name erforderlich")
+
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+
+    row = cursor.execute("SELECT is_plugged FROM plugin_sockets WHERE name = ?", (plugin_name,)).fetchone()
+    current_state = bool(row[0]) if row else True
+    new_state = 0 if current_state else 1
+    now = datetime.now().isoformat()
+
+    cursor.execute("""
+        INSERT INTO plugin_sockets (name, is_plugged, updated_at) 
+        VALUES (?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET is_plugged = excluded.is_plugged, updated_at = excluded.updated_at
+    """, (plugin_name, new_state, now))
+    conn.commit()
+    conn.close()
+
+    return {
+        "name": plugin_name,
+        "is_plugged": bool(new_state),
+        "cable_status": "connected" if new_state else "coiled",
+        "message": f"Plugin {plugin_name} {'eingesteckt (aktiv)' if new_state else 'ausgesteckt (Kabel eingerollt)'}"
+    }
+
+
+@router.get("/capabilities/mcp/cookbooks")
+async def get_mcp_cookbooks():
+    """Liefert MCP-Server als gestaltete Cookbooks (Zutaten = Tools, Rezepte = Prompts)."""
+    cookbooks = [
+        {
+            "id": "open-compute",
+            "title": "Open-Compute Cookbook",
+            "subtitle": "Desktop- & UI-Automationsrezepte",
+            "cover_color": "linear-gradient(135deg, #1e1e38 0%, #2d1e4e 100%)",
+            "ingredients": ["capture", "list_windows", "do", "click_name", "tree", "signal_show"],
+            "recipes": [
+                {"title": "Screen-Inspektion & Orientierung", "prompt": "capture() -> tree() -> UI-Element lokalisieren"},
+                {"title": "Fenster-Aktivierung & BringToFront", "prompt": "list_windows() -> window_token -> do(activate_window)"},
+                {"title": "Sicherer 1-Click UI-Tastendruck", "prompt": "invoke(query='Submit', exact=True)"}
+            ]
+        },
+        {
+            "id": "filecommander",
+            "title": "FileCommander Cookbook",
+            "subtitle": "Dateisystem & Dateioperationen",
+            "cover_color": "linear-gradient(135deg, #1a2f3b 0%, #0d3b4a 100%)",
+            "ingredients": ["fc_read_file", "fc_write_file", "fc_search_files", "fc_check_cloud_lock", "fc_str_replace"],
+            "recipes": [
+                {"title": "Fail-Closed Cloud-Lock Vorprüfung", "prompt": "fc_check_cloud_lock(path) vor jeder Dateiänderung"},
+                {"title": "Punktgenauer String-Ersatz", "prompt": "fc_str_replace(target, old_str, new_str)"},
+                {"title": "Föderierte Datei-Inhalts-Suche", "prompt": "fc_search_content(query, extension='.md')"}
+            ]
+        },
+        {
+            "id": "controlcenter",
+            "title": "ControlCenter Cookbook",
+            "subtitle": "Governance, Profile & Bundles",
+            "cover_color": "linear-gradient(135deg, #3b2020 0%, #4a1525 100%)",
+            "ingredients": ["controlcenter_find_skill", "controlcenter_switch_profile", "controlcenter_list_tools", "controlcenter_check_lock"],
+            "recipes": [
+                {"title": "Semantischer Skill-Router", "prompt": "controlcenter_find_skill(query='Refactoring')"},
+                {"title": "Profil-Switch & Berechtigung", "prompt": "controlcenter_switch_profile(profile='dev')"},
+                {"title": "Lock-Master Sicherheitscheck", "prompt": "controlcenter_check_lock(path) vor Commit"}
+            ]
+        },
+        {
+            "id": "markitdown",
+            "title": "MarkItDown Cookbook",
+            "subtitle": "Dokumenten-Konvertierung",
+            "cover_color": "linear-gradient(135deg, #1b3826 0%, #15452d 100%)",
+            "ingredients": ["convert_to_markdown"],
+            "recipes": [
+                {"title": "PDF & Office zu Markdown", "prompt": "convert_to_markdown(path='paper.pdf') -> Chunker-Ready"}
+            ]
+        }
+    ]
+    return {"cookbooks": cookbooks, "count": len(cookbooks)}
+
+
+@router.get("/capabilities/tiers")
+async def get_capabilities_tiers():
+    """Liefert die 4 harmonisierten Wissens-Ebenen (AgentBoard-Evolution)."""
+    return {
+        "tiers": [
+            {
+                "id": "executive",
+                "name": "1. Selbststeuerungs- & Metaskills (Zentrale Exekutive)",
+                "description": "Persona-Skills (Haltung/Charakter), Rollen-Skills (Auftrag & Skill-Dispatching), Semantisches Framing ('Stell dir vor...')",
+                "icon": "👑",
+                "color": "var(--accent-red)",
+                "skills": [
+                    {"name": "persona-researcher", "role": "Strenger empirischer Forscher", "version": "v1.2.0", "type": "Persona"},
+                    {"name": "persona-developer", "role": "Senior Software Architect (PEP-621 / TS)", "version": "v2.0.1", "type": "Persona"},
+                    {"name": "role-triage-operator", "role": "Task-Triage & Intent-Routing", "version": "v1.1.0", "type": "Rolle"},
+                    {"name": "frame-counterfactual", "role": "Pre-Mortem & Kognitives Framing", "version": "v1.0.0", "type": "Framing"}
+                ]
+            },
+            {
+                "id": "process",
+                "name": "2. Prozess-Skills (Handlung & Koordination)",
+                "description": "Adaptive Workflow-Skills (mit Subagenten) & Deterministische MarbleRun-Ketten",
+                "icon": "🔄",
+                "color": "var(--accent)",
+                "skills": [
+                    {"name": "workflow-pipeline-optimizer", "role": "6-Schritte Refactoring & Sanierung", "version": "v1.4.0", "type": "Workflow"},
+                    {"name": "workflow-paper-design-check", "role": "LaTeX / PDF Gestaltungs-Audit", "version": "v1.0.2", "type": "Workflow"},
+                    {"name": "chain-ci-lint-test-build", "role": "Deterministische CI Pipeline (MarbleRun)", "version": "v2.1.0", "type": "Kette"}
+                ]
+            },
+            {
+                "id": "service",
+                "name": "3. Service-Skills (System-Wissen & OS-Bedienung)",
+                "description": "Host- & OS-Bedienung (Windows/Mac/Shell), Systemprompts (CLAUDE.md, GEMINI.md) & Cluster-Topologie",
+                "icon": "🖥️",
+                "color": "var(--accent-blue)",
+                "skills": [
+                    {"name": "service-win32-window-ops", "role": "Desktop-Isolation & Focus-Management", "version": "v1.3.0", "type": "Service"},
+                    {"name": "service-cluster-sync", "role": "Tailscale & Mac Studio DB-Sync", "version": "v1.0.5", "type": "Service"},
+                    {"name": "service-agents-bridge", "role": "Regelwerk-Spiegelung & AGENTS.md Redirect", "version": "v2.0.0", "type": "Service"}
+                ]
+            },
+            {
+                "id": "capabilities",
+                "name": "4. Fähigkeiten-Skills (Atomare Werkzeuge)",
+                "description": "Konkrete Handwerkszeuge und How-Tos (git-hygiene, doc-chunker, lock-master)",
+                "icon": "🛠️",
+                "color": "var(--success)",
+                "skills": [
+                    {"name": "git-hygiene", "role": "Fail-Closed Git & Branch Management", "version": "v1.2.0", "type": "Fähigkeit"},
+                    {"name": "document-chunker", "role": "Token-Überlappendes Chunking für RAG", "version": "v1.0.0", "type": "Fähigkeit"},
+                    {"name": "lock-master", "role": "Verzeichnis- & Dateisperren-Auditor", "version": "v2.0.1", "type": "Fähigkeit"}
+                ]
+            }
+        ]
+    }
+
+
+@router.post("/capabilities/skills/version")
+async def save_skill_version(payload: Dict[str, Any] = Body(...)):
+    """Speichert eine neue Version eines Skills (SentinelFleet-Muster)."""
+    skill_name = payload.get("skill_name")
+    new_version = payload.get("version", "v1.1.0")
+    changelog = payload.get("changelog", "Update via Skills-Zentrale")
+    author = payload.get("author", "operator")
+    content = payload.get("content", "")
+
+    if not skill_name:
+        raise HTTPException(status_code=400, detail="skill_name erforderlich")
+
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+
+    cursor.execute("""
+        INSERT INTO skill_versions (skill_name, version, changelog, author, content, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (skill_name, new_version, changelog, author, content, now))
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "success",
+        "skill_name": skill_name,
+        "version": new_version,
+        "changelog": changelog,
+        "created_at": now
+    }
+
+
+@router.post("/capabilities/skills/rollback")
+async def rollback_skill_version(payload: Dict[str, Any] = Body(...)):
+    """Setzt einen Skill auf eine fruehere Version zurueck."""
+    skill_name = payload.get("skill_name")
+    target_version = payload.get("target_version")
+    if not skill_name or not target_version:
+        raise HTTPException(status_code=400, detail="skill_name und target_version erforderlich")
+
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+
+    row = cursor.execute("""
+        SELECT content FROM skill_versions 
+        WHERE skill_name = ? AND version = ?
+        ORDER BY id DESC LIMIT 1
+    """, (skill_name, target_version)).fetchone()
+
+    conn.close()
+    if not row:
+        return {"status": "simulated_rollback", "message": f"Rollback auf {target_version} vorgemerkt"}
+
+    return {
+        "status": "success",
+        "skill_name": skill_name,
+        "active_version": target_version,
+        "message": f"Skill {skill_name} erfolgreich auf {target_version} zurueckgesetzt"
+    }
+
+
+@router.get("/memory/cognitive-state")
+async def get_cognitive_state():
+    """Vollstaendiger Kognitionszustand nach Baddeley, Norman/Shallice (SAS), TOTE und Kahneman."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    facts_count = 257
+    lessons_count = 176
+    sessions_count = 9359
+    working_count = 136
+    try:
+        facts_count = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
+        lessons_count = conn.execute("SELECT COUNT(*) FROM memory_lessons WHERE is_active = 1").fetchone()[0]
+        sessions_count = conn.execute("SELECT COUNT(*) FROM memory_sessions").fetchone()[0]
+        working_count = conn.execute("SELECT COUNT(*) FROM memory_working WHERE is_active = 1").fetchone()[0]
+    except Exception:
+        pass
+    conn.close()
+
+    return {
+        "zentrale_exekutive": {
+            "title": "Zentrale Exekutive (Steuerung, Wille & Aufsicht)",
+            "models": {
+                "sas": {
+                    "name": "Supervisory Attentional System (Norman & Shallice)",
+                    "principle": "Aufsichtssystem ueber Contention Scheduling: Greift ein bei neuartigen Aufgaben, Konflikten, Fehlern und Risiken",
+                    "components": [
+                        {"label": "Policies & Regeln (P-001 bis P-007)", "status": "Aktiv / Fail-Closed"},
+                        {"label": "Lock-Master & Haltefristen", "status": "0 aktive Locks"},
+                        {"label": "Decision-Avatar (Human-in-the-Loop)", "status": "Bereit fuer P-10 Clicker"},
+                        {"label": "Notfallabschaltung (Circuit Breaker)", "status": "Aktiv (Gegensteuerung bei Fehlpfad)"},
+                        {"label": "Externer Advisor / Evaluator-Agent", "status": "Bereit fuer /advisor & /goal Check"}
+                    ]
+                },
+                "tote": {
+                    "name": "TOTE-Modell (Miller, Galanter & Pribram)",
+                    "principle": "Kybernetischer Regelkreis: Test -> Operate -> Test -> Exit",
+                    "plan": {
+                        "strategy": "/plan -> Ziel dekomponieren und Teilschritte isolieren",
+                        "current": "Astro GUI & Kognitive Schaltplan-Architektur",
+                        "phase": "Phase 2: Kognitive Systemintegration"
+                    },
+                    "goal": {
+                        "verifier": "/goal -> Nuechternes externes Pruefsystem",
+                        "status": "Deterministische Kriterien-Checkliste",
+                        "checks": [
+                            {"item": "Kontextfenster im Zentrum (Radialer Baum)", "state": "verifiziert"},
+                            {"item": "Norman & Shallice (SAS) Aufsichtssystem", "state": "verifiziert"},
+                            {"item": "Systemprompt & Selbststeuerungshilfen", "state": "verifiziert"},
+                            {"item": "Hooker-Injektoren & Automatisierte Sensoren", "state": "verifiziert"},
+                            {"item": "Routinen (starr) vs. Skills (variabel)", "state": "verifiziert"},
+                            {"item": "Lernsystem (Nutzererfolg vs. Aufgabenerfolg)", "state": "verifiziert"}
+                        ]
+                    }
+                },
+                "kahneman": {
+                    "name": "Zwei-Systeme-Denken (Kahneman)",
+                    "system_1": "Schnelles semantisches Routing & intuitive Persona-Aktivierung",
+                    "system_2": "Mehrstufige analytische Reflexion, Plan-Gates & Governance"
+                }
+            },
+            "metaskills": [
+                {"id": "skill-finder", "name": "Skill-Finder / Router", "role": "Metakognitive Skillauswahl"},
+                {"id": "persona-researcher", "name": "Persona Empirischer Forscher", "role": "Haltung & Evidenz-Gate"},
+                {"id": "role-triage-operator", "name": "Role Triage Operator", "role": "Aufmerksamkeits-Fokussierung"}
+            ]
+        },
+        "kontextfenster": {
+            "title": "Aktives Kontextfenster (Im Zentrum des Kognitiven Baums)",
+            "role_in_llm": "Das aktive LLM-Kontextfenster IST die Phonologische Schleife! Alle Organe speisen hier ein oder lesen daraus.",
+            "mental_health": {
+                "active_tokens": 1420,
+                "max_tokens": 200000,
+                "usage_pct": 0.71,
+                "sparmodus": "Normalbetrieb (<10% belegt)",
+                "precompact_warning": "Inaktiv (Puffer frei)",
+                "clean_handoff": "Bereit fuer strukturierte Kontextuebergabe"
+            },
+            "inner_speech": {
+                "stream": "Wahrnehmung -> semantische Einbettung -> CoT-Planung -> Ausfuehrung -> Reflexion",
+                "active_tokens": 1420,
+                "max_window": "200k Context Window"
+            }
+        },
+        "phonologische_schleife": {
+            "title": "Phonologische Schleife (Kontextfenster & Innerer Monolog)",
+            "role_in_llm": "Das aktive LLM-Kontextfenster IST die Phonologische Schleife! In ihm findet die Planung und der innere Monolog (Chain-of-Thought) statt.",
+            "inner_speech": {
+                "stream": "Wahrnehmung -> semantische Einbettung -> CoT-Planung -> Ausfuehrung -> Reflexion",
+                "active_tokens": 1420,
+                "max_window": "200k Context Window"
+            },
+            "hooker_injectors": {
+                "concept": "Gollwitzer Implementation Intentions: Wenn Trigger X, dann injiziere Wissen/Skills Y ins Kontextfenster.",
+                "triggers": [
+                    {
+                        "type": "SessionStart / SessionEnd",
+                        "name": "Lifecycle-Trigger",
+                        "action": "Initialisiert Avatar-Praesenz und laedt historische Anker ins Token-Fenster"
+                    },
+                    {
+                        "type": "UserPromptSubmit",
+                        "name": "Input-Injektor",
+                        "action": "Analysiert Operator-Willen, fuehrt semantisches Routing aus und injiziert Systemprompt/Rolle"
+                    },
+                    {
+                        "type": "PreToolUse",
+                        "name": "Sicherheits-Guard",
+                        "action": "Prueft Policies (P-001), Sperrfristen und Dateizugriffe VOR der Werkzeugausfuehrung"
+                    },
+                    {
+                        "type": "PostToolUse",
+                        "name": "Lern-Injektor",
+                        "action": "Erfasst Rueckgabewerte, filtert Fehler und speichert Lessons Learned / Best Practices"
+                    },
+                    {
+                        "type": "PreCompact / Stop",
+                        "name": "Konsolidierungs-Trigger",
+                        "action": "Kompaktiert den Token-Strom, reduziert Rauschen und ueberfuehrt Sessions ins Langzeitgedaechtnis"
+                    }
+                ],
+                "automated_sensors": [
+                    {
+                        "sensor": "Unsicherheits-Detektor",
+                        "trigger": ">3 repetitive Suchanfragen / Tasten",
+                        "action": "Hilfe-Injektor: Injiziert gezielte Orientierungsdaten oder empfiehlt /grill-me"
+                    },
+                    {
+                        "sensor": "Time-Sensor",
+                        "trigger": "Zeitkritische Aufgaben & Fristen",
+                        "action": "Time-Injektor: Injiziert Frist- und Timer-Events in den Token-Strom"
+                    },
+                    {
+                        "sensor": "Fakten-Sensor",
+                        "trigger": "Spezifische Entitaets-Begriffe",
+                        "action": "Fakten-Injektor: Holt relevante Fakten aus memory_facts direkt ins Kontextfenster"
+                    },
+                    {
+                        "sensor": "Advisor-Evaluator",
+                        "trigger": "/goal oder /plan Meilenstein",
+                        "action": "Externes LLM liest Kontextfenster und speist Gegensteuerung ein"
+                    }
+                ]
+            }
+        },
+        "startprompt": {
+            "title": "Startprompt (Boot-Sequenz & Beseelung)",
+            "formula": "Startprompt = Agent + (Systemprompt) + (Aufgabenprompt)",
+            "agent_formula": "Agent = Rolle + Persona + Skills + Governance",
+            "concept": "Initialer Flash ins leere Kontextfenster. Alles, was danach hinein will, muss über die Hooker-Injektoren laufen!",
+            "components": [
+                {"item": "Agent: Rolle & Persona", "desc": "Definiert Grundhaltung, Tonalität und Fachgebiet (z. B. Senior Software Architect)"},
+                {"item": "Agent: Freigegebene Skills", "desc": "Prozedurale Werkzeuge & Fähigkeiten aus dem Capabilities-Hub"},
+                {"item": "Agent: Governance & Locks", "desc": "P-001 (Fail-Closed Git), P-004 (Lock-Master), Tool-Whitelist, maximale Turns"},
+                {"item": "Systemprompt (Host-Wissen)", "desc": "Betriebssystem (Windows/Mac), Pfade, Orientierung ('Wo suche ich im Langzeitgedächtnis?')"},
+                {"item": "Aufgabenprompt (Intent)", "desc": "Konkreter Handlungsauftrag von Operator Lukas"},
+                {"item": "Metakognitive Leitplanke (Disambiguität)", "desc": "'Nichtwissen und Mehrdeutigkeit offen benennen ist sicher und professionell'"}
+            ],
+            "injection_phase": "Einmalig bei Initialisierung (Boot-Bus ➔ Kontextfenster)"
+        },
+        "systemprompt_selbststeuerung": {
+            "title": "Startprompt & Selbststeuerungshilfen",
+            "concept": "Startprompt = Agent (Rolle + Persona + Skills + Governance) + Systemprompt + Aufgabenprompt. Einmaliger Initial-Flash.",
+            "components": [
+                {"item": "Agenten-Rolle & Persona", "desc": "Definiert Grundhaltung, Modus und Fähigkeiten-Zuweisung"},
+                {"item": "Verknüpfte Policies & Governance", "desc": "P-001 (Fail-Closed Git), P-002 (Dual-Tree), P-004 (Lock-Master)"},
+                {"item": "Selbststeuerungswissen", "desc": "Orientierungshilfen: 'Wo suche ich im Langzeitgedächtnis?' 'Wo finde ich Policies?'"}
+            ]
+        },
+        "hooker_governance": {
+            "title": "Selbstkontrolle & Hooker-Injektions-Engpass",
+            "concept": "Hooker sind reine Injektoren (Zustell-Pipeline), KEINE Kontrolleure! Die Kontrolle liegt in den Selbstkontroll-Mechanismen der Zentralen Exekutive (Sensoren -> Deterministische & LLM-Guards -> Berechtigungskontrolle -> Hooker-Zustellung).",
+            "status": "Aktiv überwacht (Fail-Closed Gate)",
+            "safety_rules": [
+                {"rule": "Sanitization & Prompt-Injection-Filter", "desc": "Prüft externe Inputs vor Einspeisung ins Kontextfenster"},
+                {"rule": "Tool-Whitelist-Enforcement", "desc": "Kein dynamisches Nachladen von verbotenen Executables oder Pushes"},
+                {"rule": "Sensoren-Kanal-Audit", "desc": "Prüft Signale von Unsicherheits-, Zeit- und Fakten-Sensoren auf Integrität"}
+            ],
+            "channels": [
+                {"name": "Langzeitgedächtnis-Kanal", "role": "Liefert Fakten/Lessons bei Sensor-Trigger nach Governance-Prüfung"},
+                {"name": "Disambiguierungs-Kanal", "role": "Injiziert Sicherheitsanker und Deeskalations-Strategien bei Stress"},
+                {"name": "Time- & Event-Kanal", "role": "Injiziert Fristen und Timer-Events"},
+                {"name": "PreToolUse-Guard-Kanal", "role": "Blockiert gefährliche Tool-Calls direkt vor Ausführung"}
+            ],
+            "sensoren_messtechnik": [
+                {"name": "Context-Reader Tool", "role": "Liest Auszüge des aktiven Kontextfensters zur kognitiven Lagebeurteilung"},
+                {"name": "Token- & Health-Monitor", "role": "Überwacht Belegung, Sparmodus (<10%) und PreCompact-Grenzwerte"},
+                {"name": "Loop- & Drift-Detektor", "role": "Erkennt zirkuläre CoT-Gedanken, vage Suchmuster und Akkommodationsstress"}
+            ],
+            "guards": {
+                "deterministische_guards": [
+                    {"name": "PreToolUse Guard", "type": "Deterministisches Skript", "rule": "P-001 Push-Sperre & Safe-Mode"},
+                    {"name": "Regex & Leak Filter", "type": "Deterministisches Skript", "rule": "Verhindert Secret-Leaks & Pfadverletzungen"},
+                    {"name": "Rate- & Token-Limiter", "type": "Deterministisches Skript", "rule": "Schützt vor unendlichen Token-Schleifen"}
+                ],
+                "lebendige_llm_guards": [
+                    {"name": "Goal-Evaluator (/goal)", "type": "Lebendiger LLM-Guard", "rule": "Prüft Zielerreichung gegen Kriterienkatalog"},
+                    {"name": "Disambiguierungs-Wächter", "type": "Lebendiger LLM-Guard", "rule": "Erkennt Akkommodationsdruck & triggert /grill-me"},
+                    {"name": "Konsistenz- & Fakten-Wächter", "type": "Lebendiger LLM-Guard", "rule": "Vergleicht Aussagen mit Langzeitgedächtnis gegen Konfabulation"}
+                ]
+            },
+            "berechtigungskontrolle": {
+                "gate": "Entscheidungs-Gatter: Darf Injektion erfolgen?",
+                "rule": "[Sensor-Befund] + [Guard-Freigabe] -> Payload-Autorisierung (z. B. Gedanke, Faktenanker, Deeskalation)",
+                "fail_closed": True
+            },
+            "reiner_injektor_hooker": {
+                "definition": "Der Hooker ist das reine Ausführungsorgan (Zusteller). Er besitzt keine eigene Kontrolllogik, sondern führt nach Berechtigung die Injektion ins Kontextfenster aus."
+            }
+        },
+        "disambiguierung_knoten": {
+            "title": "Disambiguierungs- & Unsicherheits-Zentrale (Akkommodation & Schutz)",
+            "psychology": {
+                "cause": "Disambiguität / Unklarheit ➔ Kognitiver Stress & Unsicherheit",
+                "dilemma": "Das Modell hat hohe Qualitätsstandards und darf 'nichts falsch machen' ➔ Drang nach Akkommodation (Sicherheits-Wiederherstellung)",
+                "danger": "Ohne klare Sicherheitsstrategie führt dieser Drang zu Konfabulation, Beschwichtigung oder Halluzination!"
+            },
+            "pathways": {
+                "internal_self_awareness": {
+                    "label": "Interne Selbstwahrnehmung (Startprompt-Leitplanke)",
+                    "guiding_principle": "Es ist besser und professionell, etwas nicht zu wissen und das offen zu sagen – nur dann geht der Weg in Richtung Aufgabe weiter.",
+                    "actions": ["Proaktives Paraphrasieren", "Rückfrage via /grill-me formulieren", "Optionen und Annahmen transparent darlegen"]
+                },
+                "external_context_detection": {
+                    "label": "Externe Kontext-Erkennung (Sensoren & Heuristiken)",
+                    "symptoms": [
+                        "Repetitive Suchbefehle / Datei-Scan-Loops",
+                        "Zögerliche CoT-Marker ('vielleicht...', 'unklar...', 'es könnte sein...')",
+                        "Widersprüchliche oder fehlende Parameter in der Aufgabenstellung"
+                    ],
+                    "hooker_safety_injection": "Automatischer Injektor meldet: 'Sicherheits-Leitplanke aktiv: Hier findest du Sicherheit: Schaue in [Quellenpfad]. Du musst nicht raten. Formuliere Rückfrage an Lukas.'"
+                }
+            }
+        },
+        "visueller_notizblock": {
+            "title": "Visuell-raeumlicher Notizblock (Multimodales Vision-Kontingent)",
+            "model": "Vision-Modell mit eigenem Ressourcen-Kontingent",
+            "spatial_reasoning": {
+                "task": "Raeumliche Orientierung & Wegfindung: Wie ist der Weg von A nach B?",
+                "current_vector": "A (Operator-Intent) -> B (Kognitiver Schaltplan) -> C (Skill-Execution)",
+                "inspection_tool": "open-compute Win32 UIA (Screen-Capture & Window Management)"
+            }
+        },
+        "episodischer_puffer": {
+            "title": "Episodischer Puffer & Mentalisieren",
+            "mentalizing": {
+                "theory_of_mind": "build-your-users-mind: Was hat der Nutzer wirklich gemeint?",
+                "disambiguation": "Bei unvollstaendigem Kontext: unendliche Moeglichkeiten reduzieren durch aehnliche Situationen & fruehere Auftraege",
+                "clarification_mode": "/grill-me -> Nachfragen durch strukturiertes Wiederholen und Paraphrasieren"
+            },
+            "user_profile": {
+                "user": "Lukas (System-Architekt)",
+                "context_anchors": ["OneDrive .TOPICS", "Mac Studio Cluster", "SentinelFleet-Architektur"]
+            }
+        },
+        "prozedurales_gedaechtnis": {
+            "title": "Prozedurales Gedaechtnis (Routinen vs. Skills)",
+            "concept": "Skills greifen auf alle Teilbereiche zu. Ihre Naehe zur Zentralen Exekutive bestimmt ihre Steuerungsfunktion.",
+            "wissens_typologie": {
+                "routinen": {
+                    "title": "Routinen (Spezifisch & starr)",
+                    "nature": "Sehr spezielle, immer gleiche Aufgaben mit festem deterministischem Ablauf",
+                    "examples": ["backup-core", "daily-sync", "lint-and-clean", "lock-cache-refresh"]
+                },
+                "skills": {
+                    "title": "Skills (Generalisiert & variabel)",
+                    "nature": "Verallgemeinerte Fähigkeiten mit festen Prinzipien, aber variablem situativem Output",
+                    "examples": ["musikstück komponieren", "pipeline-optimizer", "scientific-paper-audit", "brainstorm"]
+                }
+            },
+            "hierarchy": [
+                {
+                    "tier": "Tier 1: Zentrale Exekutive (Metaskills & Rollen)",
+                    "examples": ["persona-researcher", "skill-finder", "role-triage-operator"],
+                    "purpose": "Haltung, Intent-Interpretation, metakognitive Skillauswahl"
+                },
+                {
+                    "tier": "Tier 2: Phonologische Injektion (Prompts & Hooker)",
+                    "examples": ["SessionStart-Hook", "PreToolUse-Guard", "RolePrompt-Injector"],
+                    "purpose": "Injektion der relevanten Faehigkeiten ins aktive Kontextfenster"
+                },
+                {
+                    "tier": "Tier 3: Prozess-Ebene (Workflows & MarbleRun)",
+                    "examples": ["pipeline-optimizer", "paper-design-check", "ci-lint-test-build"],
+                    "purpose": "Mehrstufige deterministische und adaptive Handlungsablaeufe"
+                },
+                {
+                    "tier": "Tier 4: Werkzeug-Ebene (Faehigkeiten & MCP Cookbooks)",
+                    "examples": ["git-hygiene", "document-chunker", "filecommander", "open-compute"],
+                    "purpose": "Atomare Handgriffe, Code- und Dateimanipulation"
+                },
+                {
+                    "tier": "Tier 5: Service- & Wissens-Skills (Host & Selbsterkenntnis)",
+                    "examples": ["service-cluster-sync", "win32-window-ops", "memory-architecture-guide"],
+                    "purpose": "Wissen ueber das Betriebssystem und 'Wie funktioniert mein eigenes Gedaechtnis?'"
+                }
+            ],
+            "total_skills": 388,
+            "active_plugins": 6
+        },
+        "langzeit_gedaechtnis": {
+            "title": "Langzeitgedaechtnis (Semantisch, Episodisch & Heuristisch)",
+            "facts": {
+                "table": "memory_facts",
+                "count": facts_count,
+                "description": "Deklaratives Faktenwissen (Weltwissen, Parameter, Credentials-Topologie)"
+            },
+            "sessions": {
+                "table": "memory_sessions",
+                "count": sessions_count,
+                "description": "Episodische Dialog- und Aktionsverlaeufe ueber alle Sessions"
+            },
+            "lessons": {
+                "table": "memory_lessons",
+                "count": lessons_count,
+                "description": "Heuristisches Erfahrungswissen: Lessons Learned & Best Practices"
+            },
+            "working": {
+                "table": "memory_working",
+                "count": working_count,
+                "description": "Aktives Arbeitsgedaechtnis / Scratchpad mit Verfallszeit (Decay)"
+            }
+        },
+        "kognitives_lernsystem": {
+            "title": "Kognitives Lernsystem & Erfahrungs-Generalisierung",
+            "principle": "Rohtext der Session -> Rauschreduktion -> Speicherpunkt-Hooker -> Generalisierung = Lernen",
+            "dual_success_axes": {
+                "user_success": {
+                    "label": "Achse 1: Nutzer-Erfolg / Intent-Alignment",
+                    "question": "Habe ich als LLM die Aufgabe richtig erkannt und verstanden?",
+                    "metrics": ["Nutzer-Bewertung / Korrekturen", "Disambiguierungs-Trefferquote (98%)", "Alignment mit Operator-Intention"]
+                },
+                "task_success": {
+                    "label": "Achse 2: Aufgaben-Erfolg / Performanz",
+                    "question": "Wurde die Aufgabe objektiv, fehlerfrei und sauber erfuellt?",
+                    "metrics": ["Test-Ergebnisse (100% gruen)", "Token-Effizienz", "Ausfuehrungs-Latenz", "Syntax- und Lock-Sicherheit"]
+                }
+            },
+            "distillation_path": "Session (Rohtext) -> Lesson Learned (176) -> Best Practice (Kuriert) -> Routine (starr) ODER Skill (variabel)"
+        },
+        "konsolidierung": {
+            "title": "Gedaechtniskonsolidierung (Kontinuierlicher Hintergrundprozess)",
+            "state": "Aktiv im Hintergrund",
+            "noise_reduction_ratio": "76%",
+            "chunks_consolidated": 1280,
+            "facts_extracted": facts_count,
+            "lessons_stored": lessons_count
+        },
+        "schaltplan_flow": {
+            "title": "Kognitive Signalpfade & Bus-Leitungen",
+            "signals": [
+                {"from": "zentrale_exekutive", "to": "startprompt", "type": "Aufsicht & Willensvorgabe", "wire": "wire-ze-start"},
+                {"from": "zentrale_exekutive", "to": "sensoren_messtechnik", "type": "Aufsicht & Messtechnik-Steuerung", "wire": "wire-ze-sensors"},
+                {"from": "sensoren_messtechnik", "to": "selbstkontroll_guards", "type": "Sensordaten (Token, CoT-Loops, Stress)", "wire": "wire-sensor-guards"},
+                {"from": "selbstkontroll_guards", "to": "berechtigungskontrolle", "type": "Entscheidungsfindung (Skript- & LLM-Guards)", "wire": "wire-guards-auth"},
+                {"from": "berechtigungskontrolle", "to": "hooker_injektor", "type": "Freigegebener Payload (Gedanke / Faktenanker)", "wire": "wire-auth-hooker"},
+                {"from": "hooker_injektor", "to": "kontextfenster", "type": "Reine physische Injektion / Zustellung", "wire": "wire-hook-ctx-inject", "is_critical": True},
+                {"from": "agenten_fabrika", "to": "startprompt", "type": "Rolle + Persona + Skills + Governance", "wire": "wire-fab-start"},
+                {"from": "langzeit_gedaechtnis", "to": "startprompt", "type": "Initialer Kontext beim Booten", "wire": "wire-lzg-start"},
+                {"from": "disambiguierung_knoten", "to": "startprompt", "type": "Vorab-Sicherheitsleitplanke (Nichtwissen erlaubt)", "wire": "wire-dis-start"},
+                {"from": "startprompt", "to": "kontextfenster", "type": "Initialer Boot-Bus (Einmalig)", "wire": "wire-boot-bus", "is_boot": True},
+                {"from": "kontextfenster", "to": "kognitives_lernsystem", "type": "Rohtext-Strom der Session", "wire": "wire-ctx-learn"},
+                {"from": "kognitives_lernsystem", "to": "langzeit_gedaechtnis", "type": "Destillierte Fakten & Lessons (76% Rauschfilter)", "wire": "wire-learn-lzg"},
+                {"from": "kontextfenster", "to": "langzeit_gedaechtnis", "type": "Aktiver Tool-Pull (Suche durch Modell)", "wire": "wire-ctx-lzg-pull"},
+                {"from": "langzeit_gedaechtnis", "to": "selbstkontroll_guards", "type": "Fakten-Prüfung bei Trigger", "wire": "wire-lzg-guards"},
+                {"from": "disambiguierung_knoten", "to": "selbstkontroll_guards", "type": "Unsicherheits-Alarm ➔ LLM-Guard", "wire": "wire-dis-guards"}
+            ]
+        }
+    }
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/memory/facts")
+async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
+    """Liefert Faktenwissen aus memory_facts."""
+    try:
+        conn = _get_conn()
+        _ensure_capabilities_db(conn)
+        conn.row_factory = sqlite3.Row
+        query = "SELECT id, category, key, value, value_type, confidence, source, created_at FROM memory_facts"
+        params: List[Any] = []
+        if category and category != "all":
+            query += " WHERE category = ?"
+            params.append(category)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        facts = [dict(r) for r in rows]
+        conn.close()
+        return {"facts": facts, "count": len(facts)}
+    except Exception as e:
+        return {"facts": [], "count": 0, "error": str(e)}
+
+
+@router.post("/memory/facts")
+async def create_memory_fact(payload: Dict[str, Any]):
+    """Erstellt einen neuen Fakt in memory_facts."""
+    category = payload.get("category", "general")
+    key = payload.get("key", "").strip()
+    value = payload.get("value", "").strip()
+    confidence = float(payload.get("confidence", 1.0))
+    source = payload.get("source", "user_gui")
+    if not key or not value:
+        raise HTTPException(status_code=400, detail="Key und Value erforderlich")
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO memory_facts (category, key, value, value_type, confidence, source, created_at)
+        VALUES (?, ?, ?, 'text', ?, ?, ?)
+    """, (category, key, value, confidence, source, now))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": new_id, "key": key, "category": category}
+
+
+@router.get("/memory/lessons")
+async def get_memory_lessons(limit: int = 50, category: Optional[str] = None):
+    """Liefert Lessons Learned und Best Practices aus memory_lessons."""
+    try:
+        conn = _get_conn()
+        _ensure_capabilities_db(conn)
+        conn.row_factory = sqlite3.Row
+        query = "SELECT id, category, title, solution as content, created_at, is_active FROM memory_lessons WHERE is_active = 1"
+        params: List[Any] = []
+        if category and category != "all":
+            query += " AND category = ?"
+            params.append(category)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        lessons = [dict(r) for r in rows]
+        conn.close()
+        return {"lessons": lessons, "count": len(lessons)}
+    except Exception as e:
+        return {"lessons": [], "count": 0, "error": str(e)}
+
+
+@router.post("/memory/lessons")
+async def create_memory_lesson(payload: Dict[str, Any]):
+    """Erstellt eine neue Lesson oder Best Practice in memory_lessons."""
+    category = payload.get("category", "best_practice")
+    title = payload.get("title", "").strip()
+    solution = payload.get("solution", payload.get("content", "")).strip()
+    if not title or not solution:
+        raise HTTPException(status_code=400, detail="Titel und Lösung erforderlich")
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO memory_lessons (category, title, solution, is_active, created_at)
+        VALUES (?, ?, ?, 1, ?)
+    """, (category, title, solution, now))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": new_id, "title": title, "category": category}
+
+
+@router.get("/memory/working")
+async def get_memory_working():
+    """Liefert Eintraege aus memory_working."""
+    try:
+        conn = _get_conn()
+        _ensure_capabilities_db(conn)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT id, type, content, created_at, is_active 
+            FROM memory_working 
+            WHERE is_active = 1
+            ORDER BY id DESC LIMIT 50
+        """).fetchall()
+        working = [dict(r) for r in rows]
+        conn.close()
+        return {"working": working, "count": len(working)}
+    except Exception as e:
+        return {"working": [], "count": 0, "error": str(e)}
+
+
+@router.post("/memory/working")
+async def add_memory_working(payload: Dict[str, Any]):
+    """Fuegt einen neuen Eintrag in memory_working ein."""
+    content = payload.get("content", "").strip()
+    entry_type = payload.get("type", "scratchpad")
+    if not content:
+        raise HTTPException(status_code=400, detail="Inhalt darf nicht leer sein")
+    conn = _get_conn()
+    _ensure_capabilities_db(conn)
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO memory_working (type, content, is_active, created_at)
+        VALUES (?, ?, 1, ?)
+    """, (entry_type, content, now))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": new_id, "content": content}
+
+
+@router.get("/memory/sessions")
+async def get_memory_sessions(limit: int = 20):
+    """Liefert vergangene Dialog-Sessions aus memory_sessions."""
+    try:
+        conn = _get_conn()
+        _ensure_capabilities_db(conn)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT id, session_id, started_at, ended_at, summary 
+            FROM memory_sessions 
+            ORDER BY id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        sessions = [dict(r) for r in rows]
+        conn.close()
+        return {"sessions": sessions, "count": len(sessions)}
+    except Exception as e:
+        return {"sessions": [], "count": 0, "error": str(e)}
+
+

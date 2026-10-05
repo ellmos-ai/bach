@@ -69,7 +69,7 @@ BACH 技能系统（架构 v2.0）
 -----------------
 规则：如有疑问，请将其复制！
 
-  system/tools/c_ocr_engine.py # 通用版本
+  system/tools/ocr/engine.py # 通用版本
   Agents/_experts/steuer/steuer_ocr.py # 技能专用版本
 
 优点：
@@ -183,7 +183,7 @@ CLI 命令
                        具有 get_operations() 的 BaseHandler 子类
                        “重新加载”后可通过 bach <name> 访问
 
-    --type 服务已创建：system/skills/_services/<名称>/
+    --type 服务已创建：system/hub/_services/<名称>/
                        包含 __init__.py 和 service.py 的文件夹
                        Handler-close，一般可用
 

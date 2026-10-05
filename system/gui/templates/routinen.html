@@ -360,14 +360,23 @@
 
         <!-- Tab Navigation -->
         <div class="tab-nav">
-            <button class="active" onclick="switchTab(event, 'personal')">Deine Routinen</button>
-            <button onclick="switchTab(event, 'bach')">BACH-Routinen</button>
+            <button id="btn-bach" class="active" onclick="switchTab(event, 'bach')">⚡ BACH-Routinen</button>
+            <button id="btn-ocean" onclick="switchTab(event, 'ocean')">🌊 Ocean-Routinen</button>
+            <button id="btn-personal" onclick="switchTab(event, 'personal')">🔄 Deine Routinen</button>
         </div>
 
         <!-- ════════════════════════════════════════════════════ -->
         <!-- TAB 1: DEINE ROUTINEN (Household) -->
         <!-- ════════════════════════════════════════════════════ -->
-        <div class="tab-content active" id="tab-personal">
+        <div class="tab-content" id="tab-personal">
+            <div style="margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                <div>
+                    <span style="font-size: 1.1rem; margin-right: 0.5rem;">💡</span>
+                    <strong>Persönliche Routinen &amp; Termine:</strong>
+                    <span style="color: var(--text-muted); margin-left: 0.25rem;">Deine Gewohnheiten und Haushaltsroutinen sind auch in der neuen Life-Zentrale mit 4 Kalenderansichten und persönlichen Aufgaben integriert.</span>
+                </div>
+                <a href="/life?tab=routinen" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Zur Life-Zentrale &rarr;</a>
+            </div>
             <!-- Stats -->
             <div class="stats-grid">
                 <div class="stat-card">
@@ -391,7 +400,7 @@
             <!-- Actions -->
             <div class="actions">
                 <button class="btn btn-primary" onclick="showAddRoutineModal()">+ Neue Routine</button>
-                <button class="btn btn-secondary" onclick="exportRoutines()">Export TXT</button>
+                <button class="btn btn-secondary" type="button" disabled title="Der bisherige GET-Export schreibt eine Datei. Ein sicherer Exportvertrag fehlt noch.">Export TXT – in Arbeit</button>
                 <button class="btn btn-secondary" onclick="loadRoutines()">Aktualisieren</button>
             </div>
 
@@ -430,7 +439,7 @@
         <!-- ════════════════════════════════════════════════════ -->
         <!-- TAB 2: BACH-ROUTINEN (Scheduler/Daemon) -->
         <!-- ════════════════════════════════════════════════════ -->
-        <div class="tab-content" id="tab-bach">
+        <div class="tab-content active" id="tab-bach">
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-value" id="bach-stat-total">-</div>
@@ -452,7 +461,7 @@
             </div>
 
             <div class="section">
-                <h2>Zeitgesteuerte Jobs</h2>
+                <h2>Zeitgesteuerte BACH-Jobs &amp; Automationen</h2>
                 <table class="jobs-table">
                     <thead>
                         <tr>
@@ -465,6 +474,51 @@
                         </tr>
                     </thead>
                     <tbody id="bach-jobs-body">
+                        <tr><td colspan="6">Lade...</td></tr>
+                    </tbody>
+                </table>
+                <a href="/daemon" class="link-advanced">Erweiterte Verwaltung (Chains, History, Cron-Editor) &rarr;</a>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 3: OCEAN-ROUTINEN (Batch & Sync) -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-ocean">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="ocean-stat-total">-</div>
+                    <div class="stat-label">Ocean-Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="ocean-stat-active" style="color: var(--accent-blue);">-</div>
+                    <div class="stat-label">Aktive Sync-Routinen</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="ocean-stat-runs">-</div>
+                    <div class="stat-label">Cluster-Ausführungen</div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" onclick="showAddJobModal()">+ Neuer Ocean-Job</button>
+                <button class="btn btn-secondary" onclick="loadOceanRoutines()">Aktualisieren</button>
+            </div>
+
+            <div class="section">
+                <h2>Ocean Batch- &amp; Synchronisations-Routinen</h2>
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Name</th>
+                            <th>Typ</th>
+                            <th>Schedule</th>
+                            <th>Nächster Lauf</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ocean-jobs-body">
                         <tr><td colspan="6">Lade...</td></tr>
                     </tbody>
                 </table>
@@ -581,32 +635,45 @@
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         const ROUTINES_API = '/api/routines';
+        function routineFetch(url, options = {}) {
+            let token = '';
+            try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
+            const headers = new Headers(options.headers || {});
+            if (token) headers.set('Authorization', `Bearer ${token}`);
+            return fetch(url, { ...options, headers });
+        }
 
         // ── Tab Navigation ──
 
         function switchTab(e, tabName) {
             document.querySelectorAll('.tab-nav button').forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
+            if (e && e.target) {
+                e.target.classList.add('active');
+            } else {
+                const targetBtn = document.getElementById('btn-' + tabName);
+                if (targetBtn) targetBtn.classList.add('active');
+            }
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.getElementById('tab-' + tabName).classList.add('active');
+            const targetContent = document.getElementById('tab-' + tabName);
+            if (targetContent) targetContent.classList.add('active');
 
             if (tabName === 'personal') loadRoutines();
             if (tabName === 'bach') loadBachRoutines();
+            if (tabName === 'ocean') loadOceanRoutines();
         }
 
-        // ── Deine Routinen ──
+        // ── Initialisierung ──
 
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             const tab = urlParams.get('tab');
-            if (tab === 'bach') {
-                const buttons = document.querySelectorAll('.tab-nav button');
-                if (buttons.length > 1) {
-                    buttons[1].click();
-                    return;
-                }
+            if (tab === 'ocean') {
+                switchTab(null, 'ocean');
+            } else if (tab === 'personal') {
+                switchTab(null, 'personal');
+            } else {
+                switchTab(null, 'bach');
             }
-            loadRoutines();
         });
 
         async function loadRoutines() {
@@ -618,8 +685,11 @@
                 if (category) url += `category=${category}&`;
                 if (interval) url += `interval=${interval}&`;
 
-                const res = await fetch(url);
+                const res = await routineFetch(url);
+                if (res.status === 401 || res.status === 403) throw new Error('Bitte über die Geräteanmeldung anmelden.');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
+                if (data.success !== true) throw new Error('Routinen konnten nicht geladen werden.');
 
                 document.getElementById('stat-total').textContent = data.stats?.total || 0;
                 document.getElementById('stat-active').textContent = data.stats?.active || 0;
@@ -643,7 +713,7 @@
 
             } catch (e) {
                 console.error('Routinen-Fehler:', e);
-                document.getElementById('all-routines').innerHTML = '<p>Fehler beim Laden</p>';
+                document.getElementById('all-routines').textContent = e.message || 'Fehler beim Laden';
             }
         }
 
@@ -700,7 +770,7 @@
 
         async function editRoutine(id) {
             try {
-                const res = await fetch(`${ROUTINES_API}/${id}`);
+                const res = await routineFetch(`${ROUTINES_API}/${id}`);
                 const data = await res.json();
                 const r = data.routine;
                 if (!r) return;
@@ -737,7 +807,7 @@
             try {
                 const url = id ? `${ROUTINES_API}/${id}` : ROUTINES_API;
                 const method = id ? 'PUT' : 'POST';
-                const res = await fetch(url, {
+                const res = await routineFetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
@@ -751,7 +821,7 @@
 
         async function completeRoutine(id) {
             try {
-                const res = await fetch(`${ROUTINES_API}/${id}/complete`, { method: 'POST' });
+                const res = await routineFetch(`${ROUTINES_API}/${id}/complete`, { method: 'POST' });
                 if ((await res.json()).success) loadRoutines();
             } catch (e) { console.error(e); }
         }
@@ -759,14 +829,14 @@
         async function deleteRoutine(id) {
             if (!confirm('Routine wirklich löschen?')) return;
             try {
-                const res = await fetch(`${ROUTINES_API}/${id}`, { method: 'DELETE' });
+                const res = await routineFetch(`${ROUTINES_API}/${id}`, { method: 'DELETE' });
                 if ((await res.json()).success) loadRoutines();
             } catch (e) { console.error(e); }
         }
 
         async function exportRoutines() {
             try {
-                const res = await fetch(`${ROUTINES_API}/export`);
+                const res = await routineFetch(`${ROUTINES_API}/export`);
                 const data = await res.json();
                 if (data.success) {
                     alert('Export erstellt: ' + data.file);
@@ -831,6 +901,70 @@
             } catch (e) {
                 console.error('BACH-Routinen laden fehlgeschlagen:', e);
                 document.getElementById('bach-jobs-body').innerHTML = '<tr><td colspan="6" style="color: var(--error);">Fehler beim Laden</td></tr>';
+            }
+        }
+
+        async function loadOceanRoutines() {
+            try {
+                const [jobsData, statusData] = await Promise.all([
+                    api.get('/api/daemon/jobs'),
+                    api.get('/api/daemon/status').catch(() => null)
+                ]);
+
+                const allJobs = jobsData.jobs || [];
+                // Filter jobs with ocean or sync or batch in name or description
+                const oceanJobs = allJobs.filter(j =>
+                    (j.name && (j.name.toLowerCase().includes('ocean') || j.name.toLowerCase().includes('sync'))) ||
+                    (j.description && (j.description.toLowerCase().includes('ocean') || j.description.toLowerCase().includes('sync'))) ||
+                    (j.command && (j.command.toLowerCase().includes('ocean') || j.command.toLowerCase().includes('sync')))
+                );
+
+                const displayJobs = oceanJobs.length > 0 ? oceanJobs : allJobs;
+
+                document.getElementById('ocean-stat-total').textContent = displayJobs.length;
+                document.getElementById('ocean-stat-active').textContent = displayJobs.filter(j => j.is_active).length;
+                document.getElementById('ocean-stat-runs').textContent = statusData?.stats?.runs_today || 0;
+
+                const tbody = document.getElementById('ocean-jobs-body');
+
+                if (displayJobs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="color: var(--text-muted);">Keine spezifischen Ocean-Jobs definiert. Erstelle einen mit "+ Neuer Ocean-Job".</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = displayJobs.map(job => {
+                    const nextRun = job.next_run ? new Date(job.next_run).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+                    const scheduleDesc = describeCron(job.schedule, job.job_type);
+
+                    return `
+                    <tr>
+                        <td>
+                            <span class="job-status ${job.is_active ? 'active' : 'inactive'}">
+                                ${job.is_active ? 'Aktiv' : 'Inaktiv'}
+                            </span>
+                        </td>
+                        <td>
+                            <strong>${escapeHtml(job.name)}</strong>
+                            ${job.description ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(job.description)}</div>` : ''}
+                        </td>
+                        <td><code>${escapeHtml(job.job_type)}</code></td>
+                        <td>
+                            <code>${escapeHtml(job.schedule || '-')}</code>
+                            ${scheduleDesc ? `<div style="font-size: 0.75rem; color: var(--text-muted);">${scheduleDesc}</div>` : ''}
+                        </td>
+                        <td>${nextRun}</td>
+                        <td class="job-actions">
+                            <button onclick="toggleBachJob(${job.id})" title="${job.is_active ? 'Deaktivieren' : 'Aktivieren'}">
+                                ${job.is_active ? 'Pause' : 'Start'}
+                            </button>
+                            <button onclick="runBachJob(${job.id})" title="Jetzt ausführen">Run</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+
+            } catch (e) {
+                console.error('Ocean-Routinen laden fehlgeschlagen:', e);
+                document.getElementById('ocean-jobs-body').innerHTML = '<tr><td colspan="6" style="color: var(--error);">Fehler beim Laden</td></tr>';
             }
         }
 

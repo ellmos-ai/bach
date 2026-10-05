@@ -28,17 +28,17 @@ NORMAS DE CODIFICACIÓN
 
 4. emojis
    - ¡Permitido en archivos, pero solo registrados!
-   - Registro: sistema/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
-   - Escáner: bach c_emoji_scanner <archivo>
+   - Registro: sistema/tools/emoji_scanner.py (ASCII_OVERRIDES)
+   - Escáner: bach emoji_scanner <archivo>
 
 5. EDICIÓN JSON
    - PRIMERA ELECCIÓN: bach.py o script Python
    - NUNCA fc_str_replace para JSON
    - NUNCA PowerShell para JSON
-   - En caso de problemas: bach c_json_repair <archivo>
+   - En caso de problemas: bach json_repair <archivo>
 
 6. IMPORTACIONES
    - Biblioteca estándar primero
    - Luego tercero
    - Luego módulos locales
-   - Herramienta: bach c_import_organizer <archivo>
+   - Herramienta: bach import_organizer <archivo>

@@ -1,0 +1,136 @@
+diff --git a/system/tools/injectors.py b/system/tools/injectors.py
+index 4daa701..d73e3d9 100644
+--- a/system/tools/injectors.py
++++ b/system/tools/injectors.py
+@@ -211,9 +211,9 @@ class ContextInjector:
+     # Trigger-Woerter die Kontext-Suche vorschlagen (Hardcoded Fallback)
+     CONTEXT_TRIGGERS = {
+         # === SYSTEM-KONTEXT ===
+-        "encoding": "Encoding-Probleme? bach c_encoding_fixer <datei>",
++        "encoding": "Encoding-Probleme? bach encoding_fix <datei>",
+         "pfad": "Pfad-Fragen? --help dirs",
+-        "json": "JSON-Probleme? bach c_json_repair <datei>",
++        "json": "JSON-Probleme? bach json_repair <datei>",
+         "memory": "Memory-Fragen? --help memory",
+         "task": "Task-System? --help tasks",
+         "fehler": "Bekannte Fehler? --help lessons",
+@@ -222,11 +222,11 @@ class ContextInjector:
+         # === DOMAIN-TOOLS (Die Haende der LLMs) ===
+ 
+         # OCR & Dokumenten-Verarbeitung
+-        "ocr": "OCR-Tools: tools/c_ocr_engine.py (Tesseract+PyMuPDF), skills/_services/document/ocr_service.py",
+-        "texterkennung": "OCR-Tools: tools/c_ocr_engine.py (Tesseract+PyMuPDF), skills/_services/document/ocr_service.py",
+-        "pdf text": "PDF-Text: tools/c_ocr_engine.py --pdf <datei> | skills/_services/document/pdf_service.py",
+-        "bild text": "Bild-OCR: tools/c_ocr_engine.py <bild> (Tesseract)",
+-        "scan": "Scanner: tools/folder_diff_scanner.py | skills/_services/document/scanner_service.py",
++        "ocr": "OCR: bach ocr <pdf|bild> | tools/ocr/engine.py (Tesseract + PyMuPDF)",
++        "texterkennung": "OCR: bach ocr <pdf|bild> | tools/ocr/engine.py (Tesseract + PyMuPDF)",
++        "pdf text": "PDF-OCR: bach ocr <pdf> | tools/ocr/engine.py",
++        "bild text": "Bild-OCR: bach ocr <bild> | tools/ocr/engine.py (Tesseract)",
++        "scan": "Scanner: tools/folder_diff_scanner.py | hub/_services/document/scanner_service.py",
+         "dokument suche": "Dokument-Suche: tools/doc_search.py --search <begriff>",
+         "dokument finden": "Dokument-Suche: tools/doc_search.py --search <begriff>",
+         "datei suchen": "Dokument-Suche: tools/doc_search.py --search <begriff> | --folders (registrierte Ordner)",
+@@ -286,31 +286,29 @@ class ContextInjector:
+         "dead code": "Code-Analyse: bach code_analyzer <datei>",
+ 
+         # Encoding/Formatierung
+-        "encoding problem": "Encoding-Fix: bach c_encoding_fixer <datei>",
+-        "umlaute kaputt": "Encoding-Fix: bach c_encoding_fixer <datei>",
+-        "utf-8": "Encoding-Fix: bach c_encoding_fixer <datei>",
+-        "emoji": "Emoji-Scanner: bach c_emoji_scanner <datei>",
+-        "einrueckung": "Indent-Check: bach c_indent_checker <datei>",
+-        "indent": "Indent-Check: bach c_indent_checker <datei>",
++        "encoding problem": "Encoding-Fix: bach encoding_fix <datei>",
++        "umlaute kaputt": "Encoding-Fix: bach encoding_fix <datei>",
++        "utf-8": "Encoding-Fix: bach encoding_fix <datei>",
++        "emoji": "Emoji-Scanner: bach emoji_scanner <datei>",
++        "einrueckung": "Indent-Check: bach indent_checker <datei>",
++        "indent": "Indent-Check: bach indent_checker <datei>",
+ 
+         # Import-Handling
+-        "imports sortieren": "Import-Organizer: bach c_import_organizer <datei>",
+-        "import problem": "Import-Diagnose: bach c_import_diagnose <datei>",
+-        "import fehlt": "Import-Diagnose: bach c_import_diagnose <datei>",
++        "imports sortieren": "Import-Organizer: bach import_organizer <datei>",
++        "import problem": "Import-Diagnose: bach import_diagnose <datei>",
++        "import fehlt": "Import-Diagnose: bach import_diagnose <datei>",
+ 
+         # Datei-Operationen
+-        "datei aufteilen": "Python-Cutter: bach c_pycutter <datei>",
+-        "datei splitten": "Python-Cutter: bach c_pycutter <datei>",
+-        "zu gross": "Python-Cutter: bach c_pycutter <datei> (fuer Python-Dateien)",
+-        "sqlite anzeigen": "SQLite-Viewer: bach c_sqlite_viewer <db>",
+-        "datenbank anzeigen": "SQLite-Viewer: bach c_sqlite_viewer <db>",
+-        "datenbank": "DB-Tools: tools/data_importer.py (Import) | bach c_sqlite_viewer (View) | bach db query (SQL)",
++        "datei aufteilen": "Python-Cutter: bach pycutter <datei>",
++        "datei splitten": "Python-Cutter: bach pycutter <datei>",
++        "zu gross": "Python-Cutter: bach pycutter <datei> (fuer Python-Dateien)",
++        "sqlite anzeigen": "SQLite-Viewer: bach sqlite_viewer <db>",
++        "datenbank anzeigen": "SQLite-Viewer: bach sqlite_viewer <db>",
++        "datenbank": "DB-Tools: tools/data_importer.py (Import) | bach sqlite_viewer (View) | bach db query (SQL)",
+ 
+         # Konvertierung
+-        "markdown zu pdf": "MD-to-PDF: bach c_md_to_pdf <datei>",
+-        "md to pdf": "MD-to-PDF: bach c_md_to_pdf <datei>",
+-        "format konvertieren": "Konverter: bach c_universal_converter <datei>",
+-        "konvertieren": "Konverter: bach c_universal_converter <datei>",
++        "markdown zu pdf": "MD-to-PDF: bach md-to-pdf <datei>",
++        "md to pdf": "MD-to-PDF: bach md-to-pdf <datei>",
+ 
+         # Suche & Discovery
+         "tool finden": "Tool-Empfehlung: bach tool suggest 'beschreibung'",
+@@ -351,22 +349,22 @@ class ContextInjector:
+         "bericht status": "Bericht-Status: agents/_experts/foerderplaner/ | GUI: /bericht",
+         
+         # System-Analyse
+-        "system analyse": "Analyze-System: skills/_services/analyze-system.md (System Thinking, Bottlenecks)",
+-        "bottleneck": "Analyze-System: skills/_services/analyze-system.md (System Thinking, Bottlenecks)",
++        "system analyse": "Analyze-System: hub/_services/analyze-system.md (System Thinking, Bottlenecks)",
++        "bottleneck": "Analyze-System: hub/_services/analyze-system.md (System Thinking, Bottlenecks)",
+         
+         # Brainstorming/Entscheidung
+-        "brainstorm": "Brainstorming: skills/_services/brainstorm.md (Methoden: SCAMPER, 6-Hats)",
+-        "ideen finden": "Brainstorming: skills/_services/brainstorm.md | bach tool suggest 'kreativ'",
+-        "entscheidung": "Decision-Support: skills/_services/decide.md (Matrix, SWOT, RICE)",
+-        "dilemma": "Decision-Support: skills/_services/decide.md",
++        "brainstorm": "Brainstorming: hub/_services/brainstorm.md (Methoden: SCAMPER, 6-Hats)",
++        "ideen finden": "Brainstorming: hub/_services/brainstorm.md | bach tool suggest 'kreativ'",
++        "entscheidung": "Decision-Support: hub/_services/decide.md (Matrix, SWOT, RICE)",
++        "dilemma": "Decision-Support: hub/_services/decide.md",
+ 
+         # Wiki & Lernen
+         "quiz": "Wiki-Quizzer: agents/_experts/wikiquizzer | Interaktives Lernen aus Wiki",
+         "lernen": "Wiki-Quizzer: agents/_experts/wikiquizzer | Interaktives Lernen",
+ 
+         # Prompting
+-        "prompt erstellen": "Prompt-Generator: skills/_services/prompt_generator/ | Meta-Prompts",
+-        "system prompt": "Prompt-Generator: skills/_services/prompt_generator/ | Optimierung",
++        "prompt erstellen": "Prompt-Generator: hub/_services/prompt_generator/ | Meta-Prompts",
++        "system prompt": "Prompt-Generator: hub/_services/prompt_generator/ | Optimierung",
+ 
+         # === PARTNER & KOMMUNIKATION ===
+         "partner": "Partner: bach partner list/status/delegate | bach msg send <partner> <text>",
+@@ -579,10 +577,10 @@ class ToolInjector:
+     # Tool-Kategorien mit wichtigsten Tools
+     TOOL_CATEGORIES = {
+         "OCR & Dokumente": [
+-            "tools/c_ocr_engine.py - Tesseract + PyMuPDF OCR",
++            "tools/ocr/engine.py - Tesseract + PyMuPDF OCR",
+             "tools/doc_search.py - Dokumentensuche (DB + Dateisystem)",
+-            "skills/_services/document/scanner_service.py - Inbox-Scanner",
+-            "skills/_services/document/ocr_service.py - OCR-Service",
++            "hub/_services/document/scanner_service.py - Inbox-Scanner",
++            "hub/_services/document/ocr_service.py - OCR-Service",
+         ],
+         "Daten-Import/Export": [
+             "tools/data_importer.py - Generischer CSV/JSON Import (Schema-Erkennung, Rollback)",
+@@ -651,7 +649,7 @@ class ToolInjector:
+             return ("[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n"
+                     "  1. bach tools search <begriff>  (DB-Suche)\n"
+                     "  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n"
+-                    "  3. Pruefe tools/ und skills/_services/ Ordner\n"
++                    "  3. Pruefe tools/ und hub/_services/ Ordner\n"
+                     "  Tools sind die Haende der LLMs - Duplikate vermeiden!")
+         return None
+ 

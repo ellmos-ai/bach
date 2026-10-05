@@ -202,7 +202,7 @@ KNOWN PROBLEMS
    - Workaround: Import service directly
 
 3. PATH INCONSISTENCY
-   - Help file referenced skills/_services/ (old)
+   - Help file referenced hub/_services/ (old)
    - Actually in hub/_services/ (correct)
 
 MIGRATION REQUIRED:

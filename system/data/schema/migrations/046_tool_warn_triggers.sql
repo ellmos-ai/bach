@@ -14,6 +14,6 @@ VALUES
      '[TOOL-CHECK] Bevor du ein neues Tool erstellst:' || char(10) ||
      '  1. bach tools search <begriff>  (DB-Suche)' || char(10) ||
      '  2. bach tool suggest ''<beschreibung>''  (Empfehlung)' || char(10) ||
-     '  3. Pruefe tools/ und skills/_services/ Ordner' || char(10) ||
+     '  3. Pruefe tools/ und hub/_services/ Ordner' || char(10) ||
      '  Tools sind die Haende der LLMs - Duplikate vermeiden!',
      'tool_warn', 1.0, 1, 1, 'approved', 'default');

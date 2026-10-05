@@ -1,0 +1,33 @@
+BACH Tool: encoding_fixer
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/encoding_fixer.py
+
+BESCHREIBUNG
+----------------------------------------
+encoding_fixer.py - Encoding-Probleme in Textdateien beheben
+
+Zweck: Korrigiert Encoding-Fehler (Mojibake, falsche UTF-8 Dekodierung etc.)
+       mit der ftfy-Bibliothek. Erstellt automatisch Backups.
+
+Autor: Claude (adaptiert von EncodingFixxer.py)
+Abhängigkeiten: ftfy (pip install ftfy), os, json (stdlib)
+
+Usage:
+    python encoding_fixer.py <file_or_folder> [--no-backup] [--recursive] [--json]
+    
+Beispiele:
+    python encoding_fixer.py script.py              # Einzelne Datei
+    python encoding_fixer.py ./src --recursive      # Ganzer Ordner
+    python encoding_fixer.py file.py --no-backup    # Ohne Backup
+    python encoding_fixer.py file.py --json         # JSON-Output
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run encoding_fixer [args]
+oder direkt: python tools/encoding_fixer.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show encoding_fixer

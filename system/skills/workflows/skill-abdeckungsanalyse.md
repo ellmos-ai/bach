@@ -1,5 +1,7 @@
 # Skill-Abdeckungsanalyse Workflow
 
+**Version:** 1.0.0
+
 **Zweck:** Systematische Analyse der BACH Skill-Abdeckung im Vergleich zu Industrie-Standards.
 **Frequenz:** Alle 2-4 Wochen oder nach groesseren Aenderungen
 **Output:** Aktualisierte skills/SKILL_ANALYSE.md

@@ -1,14 +1,16 @@
 # Workflow: Ordner-Flattening
 
-Ziel: Verschachtelte Ordnerstrukturen in eine flache, maschinenlesbare Struktur überführen.
-Vorteil: Nicht mehr durchklicken, sondern per Datenbank (Verzeichnis.db) suchen.
-Duplikate sind erlaubt wenn thematisch sinnvoll.
+> Ziel: Verschachtelte Ordnerstrukturen in eine flache, maschinenlesbare Struktur überführen.
+> Vorteil: Nicht mehr durchklicken, sondern per Datenbank (Verzeichnis.db) suchen.
+> Duplikate sind erlaubt wenn thematisch sinnvoll.
+
+**Version:** 1.0
 
 Script-Pfad: `skills/tools/maintenance/ordner_flattening_komplett.sh`
 
 ---
 
-## Übersicht der Phasen
+## Ablauf der Phasen
 
 | Phase | Was passiert | Script-Abschnitt |
 |-------|-------------|-----------------|

@@ -1,5 +1,7 @@
 # Synthese-Workflow: Neues System aus Best-of
 
+> Entwicklung eines neuen LLM-OS/Skills aus Best-of-Elementen mehrerer Quellsysteme.
+
 **Version:** 1.0  
 **Stand:** 2026-01-18  
 **Quelle:** Konsolidiert aus BACH_STREAM

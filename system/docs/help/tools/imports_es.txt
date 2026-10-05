@@ -17,7 +17,7 @@ Problemas comunes que resuelven estas herramientas:
   - Dobles importaciones
   - Importaciones en medio del código en lugar de al principio
 
-DIAGNÓSTICO DE IMPORTACIÓN: c_import_diagnose
+DIAGNÓSTICO DE IMPORTACIÓN: import_diagnose
 ----------------------------------
 Análisis sistemático de problemas de importación.
 
@@ -32,13 +32,13 @@ FUNCIONES:
 COMANDOS BÁSICOS:
 
   # Analizar proyecto
-  bach c_import_diagnose projekt/src/
+  bach import_diagnose projekt/src/
 
   # Con salida JSON
-  bach c_import_diagnose projekt/src/ --json
+  bach import_diagnose projekt/src/ --json
 
   # Pruebe módulos específicos
-  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+  bach import_diagnose . --modules core.app:App,gui.main:MainWindow
 
 OPCIONES:
   --json Salida JSON (legible por máquina)
@@ -63,7 +63,7 @@ EJEMPLO DE SALIDA:
   2. Resuelva la importación circular core.utils <-> core.app
   3. Cree gui/__init__.py
 
-ORGANIZADOR DE IMPORTACIÓN: c_import_organizer
+ORGANIZADOR DE IMPORTACIÓN: import_organizer
 ------------------------------------
 Ordena y limpia las importaciones de Python según PEP8.
 
@@ -76,16 +76,16 @@ FUNCIONES:
 COMANDOS BÁSICOS:
 
   # Organizar archivo
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
   # Solo verifica sin cambios
-  bach c_import_organizer script.py --dry-run
+  bach import_organizer script.py --dry-run
 
   # Salida JSON
-  bach c_import_organizer script.py --json
+  bach import_organizer script.py --json
 
   # Leer desde la entrada estándar
-  script de gato.py | bach c_import_organizer --stdin
+  script de gato.py | bach import_organizer --stdin
 
 OPCIONES:
   --ejecución en seco Mostrar solo, no cambiar
@@ -124,14 +124,14 @@ FLUJOS DE TRABAJO TÍPICOS
 1. DEPURAR "ImportarError".
    Analizar proyecto para encontrar el punto de falla:
 
-   bach c_import_diagnose projekt/src/ --json
+   bach import_diagnose projekt/src/ --json
 
    Luego siga las recomendaciones.
 
 2. ENCUENTRA IMPORTACIONES CIRCULARES
    Cuando los módulos se importan entre sí:
 
-   bach c_import_diagnose projekt/src/
+   bach import_diagnose projekt/src/
 
    La salida muestra: A -> B -> A (¡brújula!)
 
@@ -140,30 +140,30 @@ FLUJOS DE TRABAJO TÍPICOS
 3. ANTES DE LA REVISIÓN DEL CÓDIGO
    Limpiar las importaciones antes de revisar el código:
 
-   bach c_import_organizer script.py
+   bach import_organizer script.py
 
    O para todo el proyecto:
-   para f en *.py; hacer bach c_import_organizer "$f"; hecho
+   para f en *.py; hacer bach import_organizer "$f"; hecho
 
 4. DESPUÉS DE LA REFACTORACIÓN
    Después de una conversión importante, verifique las importaciones:
 
    # Diagnosticar primero
-   bach c_import_diagnose src/
+   bach import_diagnose src/
 
    # Luego limpia
-   para f en src/*.py; hacer bach c_import_organizer "$f"; hecho
+   para f en src/*.py; hacer bach import_organizer "$f"; hecho
 
 5. CONFIGURAR UN NUEVO PROYECTO
    __init__.py Verificar archivos:
 
-   bach c_import_diagnose mein_paket/
+   bach import_diagnose mein_paket/
 
    Muestra los archivos __init__.py que faltan.
 
 PEP8 IMPORT ORDER
 -----------------------
-El c_import_organizer ordena según el estándar PEP8:
+El import_organizer ordena según el estándar PEP8:
 
   1. Biblioteca estándar (importar sistema operativo, importar sistema operativo)
   2. Terceros (solicitudes de importación, importación de números)
@@ -175,9 +175,9 @@ INJECTOR DE CONTEXTO
 ----------------
 El ContextInjector reconoce palabras clave y recomienda estas herramientas:
 
-  "Ordenar importaciones" -> bach c_import_organizer <archivo>
-  "problema de importación" -> bach c_import_diagnose <proyecto>
-  "falta la importación" -> bach c_import_diagnose <proyecto>
+  "Ordenar importaciones" -> bach import_organizer <archivo>
+  "problema de importación" -> bach import_diagnose <proyecto>
+  "falta la importación" -> bach import_diagnose <proyecto>
 
 INTEGRACIÓN CON OTRAS HERRAMIENTAS
 -----------------------------
@@ -187,7 +187,7 @@ Combine con python_cli_editor para obtener una imagen completa:
   bach python_cli_editor script.py --imports
 
   # Luego organiza
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
 VER TAMBIÉN
 ----------

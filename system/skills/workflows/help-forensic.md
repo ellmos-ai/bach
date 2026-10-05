@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0
 **Erstellt:** 2026-01-24
-**Service:** skills/_services/skills/docs/help/
+**Service:** hub/_services/skills/docs/help/
 **Recurring:** help_forensic (14 Tage)
 
 ---
@@ -365,7 +365,7 @@ logs/help_forensic/REPORT_YYYY-MM-DD_[name].md
 
 ## Siehe auch
 
-- `skills/_services/skills/docs/help/SKILL.md` - Service-Beschreibung
+- `hub/_services/skills/docs/help/SKILL.md` - Service-Beschreibung
 - `skills/docs/help/practices.txt` - Best Practices (#7: HELP ALS WAHRHEIT)
 - `bach --maintain docs` - Dokumentations-Checker Tool
 - `skills/workflows/wiki-author.md` - Wiki-Autoren Workflow

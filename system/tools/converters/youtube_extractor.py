@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_youtube_extractor
+Tool: youtube_extractor
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_youtube_extractor
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version youtube_extractor
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_youtube_extractor.py [args]
+    python youtube_extractor.py [args]
 """
 
 __version__ = "1.0.0"
@@ -44,7 +44,7 @@ __author__ = "BACH Team"
 
 # coding: utf-8
 """
-c_youtube_extractor.py - Extrahiert YouTube Video-IDs aus URLs
+youtube_extractor.py - Extrahiert YouTube Video-IDs aus URLs
 
 Unterstuetzte Formate:
   - https:/www.youtube.com/watch?v=VIDEO_ID
@@ -56,11 +56,11 @@ Unterstuetzte Formate:
 Extrahiert aus: TOOLS/MEDIA/ForYou-Playlist/YouTubePlaylist.py
 
 Usage:
-    python c_youtube_extractor.py <url>
-    python c_youtube_extractor.py <url1> <url2> <url3>
-    python c_youtube_extractor.py --file urls.txt
-    python c_youtube_extractor.py --json <url>
-    echo "https:/youtu.be/dQw4w9WgXcQ" | python c_youtube_extractor.py --stdin
+    python youtube_extractor.py <url>
+    python youtube_extractor.py <url1> <url2> <url3>
+    python youtube_extractor.py --file urls.txt
+    python youtube_extractor.py --json <url>
+    echo "https:/youtu.be/dQw4w9WgXcQ" | python youtube_extractor.py --stdin
 
 Autor: Claude (adaptiert)
 Abhaengigkeiten: keine (nur stdlib)

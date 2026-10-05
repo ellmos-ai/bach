@@ -30,7 +30,7 @@ def test_gui_proxy_forwards_history_and_readiness(client, monkeypatch, path):
         async def __aexit__(self, *args):
             pass
 
-        async def get(self, url):
+        async def get(self, url, **kwargs):
             return httpx.Response(200, json={"service": "bach-chat-control", "telegram_verified": False})
 
         async def request(self, method, url, **kwargs):
@@ -51,10 +51,11 @@ def test_gui_proxy_forwards_history_and_readiness(client, monkeypatch, path):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """FastAPI TestClient for the BACH GUI app."""
     from fastapi.testclient import TestClient
-    return TestClient(server.app, raise_server_exceptions=False)
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
+    return TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-control-token"})
 
 
 @pytest.fixture
@@ -90,6 +91,7 @@ def fake_dbs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(server, "USER_DB", user_db)
     monkeypatch.setattr(server, "BACH_DB", bach_db)
+    monkeypatch.setattr("gui.task_db.BACH_DB", bach_db)
     return user_db, bach_db
 
 
@@ -226,6 +228,130 @@ class TestCrossPlatformGuards:
                 assert 'win32' in context, (
                     f"Unguarded creationflags at approx line {i+1}"
                 )
+
+
+# ═══════════════════════════════════════════════════════════════
+# API ROUTES - AGENTS / AVATAR / ANIMUS MATRIX
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestAvatarAnimusMatrix:
+    """Tests fuer die Avatar-Agenten DB-Migration und Animuns-Matrix Endpunkte."""
+
+    def test_avatar_agents_migrated_to_bach_agents(self, client, fake_dbs, monkeypatch):
+        """Lifespan soll die DEFAULT_AVATAR_AGENTS in bach_agents anlegen."""
+        from gui.task_db import DEFAULT_AVATAR_AGENTS, _init_bach_agents, get_bach_db
+
+        # Direkte Initialisierung, damit Schema vorhanden ist
+        conn = get_bach_db()
+        _init_bach_agents(conn)
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            row = conn.execute(
+                "SELECT * FROM bach_agents WHERE name = ?", (avatar["name"],)
+            ).fetchone()
+            assert row is not None, f"Avatar {avatar['name']} fehlt in bach_agents"
+            assert row["animus"] == avatar["animus"]
+            assert row["session_hook"] == avatar["session_hook"]
+            assert row["taskboard_id"] == avatar["taskboard_id"]
+            assert row["taskboard_default"] == avatar["taskboard_default"]
+        conn.close()
+
+    def test_api_agents_contains_animus_fields(self, client, fake_dbs):
+        from gui.task_db import DEFAULT_AVATAR_AGENTS, _init_bach_agents, get_bach_db, upsert_bach_agent
+        conn = get_bach_db()
+        _init_bach_agents(conn)
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            upsert_bach_agent(conn, avatar)
+        conn.close()
+
+        resp = client.get("/api/agents")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        names = {a["name"] for a in data["agents"]}
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            assert avatar["name"] in names
+        claude = next(a for a in data["agents"] if a["name"] == "claude")
+        assert claude.get("animus") == "subscription"
+        assert claude.get("session_hook") == "claude://session"
+        assert claude.get("taskboard_id") == "claude-board"
+        assert claude.get("taskboard_default") in (1, True)
+
+    def test_api_assignees_loads_avatars_from_db(self, client, fake_dbs):
+        from gui.task_db import DEFAULT_AVATAR_AGENTS, _init_bach_agents, get_bach_db, upsert_bach_agent
+        conn = get_bach_db()
+        _init_bach_agents(conn)
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            upsert_bach_agent(conn, avatar)
+        conn.close()
+
+        resp = client.get("/api/assignees")
+        assert resp.status_code == 200
+        data = resp.json()
+        avatar_entries = [a for a in data["assignees"] if a["type"] == "avatar"]
+        names = {a["name"] for a in avatar_entries}
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            assert avatar["name"] in names
+        claude = next(a for a in avatar_entries if a["name"] == "claude")
+        assert claude.get("session_hook") == "claude://session"
+        assert claude.get("taskboard_id") == "claude-board"
+
+    def test_api_presence_returns_session_hook_and_taskboard(self, client, fake_dbs):
+        from gui.task_db import DEFAULT_AVATAR_AGENTS, _init_bach_agents, get_bach_db, upsert_bach_agent
+        conn = get_bach_db()
+        _init_bach_agents(conn)
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            upsert_bach_agent(conn, avatar)
+        conn.close()
+
+        resp = client.post("/api/presence", json={
+            "partner_name": "claude",
+            "status": "online",
+            "session_id": "sess-123",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["status"] == "online"
+        assert data["session_hook"] == "claude://session"
+        assert data["taskboard_id"] == "claude-board"
+        assert data["taskboard_default"] in (1, True)
+
+    def test_api_taskboards_and_assignment_endpoints(self, client, fake_dbs):
+        from gui.task_db import DEFAULT_AVATAR_AGENTS, _init_bach_agents, get_bach_db, upsert_bach_agent
+        conn = get_bach_db()
+        _init_bach_agents(conn)
+        for avatar in DEFAULT_AVATAR_AGENTS:
+            upsert_bach_agent(conn, avatar)
+        conn.close()
+
+        # Alle Taskboards auflisten
+        resp = client.get("/api/taskboards")
+        assert resp.status_code == 200
+        boards = resp.json()["taskboards"]
+        board_ids = {b["id"] for b in boards}
+        assert "claude-board" in board_ids
+
+        # Agent-ID ermitteln
+        agents = client.get("/api/agents").json()["agents"]
+        gemini = next(a for a in agents if a["name"] == "gemini")
+
+        # Session-Hook aendern
+        resp = client.post(f"/api/agents/{gemini['id']}/session-hook", json={
+            "session_hook": "gemini://session-v2",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["agent"]["session_hook"] == "gemini://session-v2"
+
+        # Taskboard zuweisen
+        resp = client.post(f"/api/agents/{gemini['id']}/taskboard", json={
+            "taskboard_id": "gemini-board-v2",
+            "taskboard_default": True,
+        })
+        assert resp.status_code == 200
+        agent = resp.json()["agent"]
+        assert agent["taskboard_id"] == "gemini-board-v2"
+        assert agent["taskboard_default"] in (1, True)
 
 
 # ═══════════════════════════════════════════════════════════════

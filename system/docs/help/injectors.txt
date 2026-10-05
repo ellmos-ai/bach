@@ -159,29 +159,29 @@ Der Context-Injektor erkennt Stichwörter und empfiehlt Tools:
 
   ENCODING & FORMATIERUNG
   -----------------------
-  "encoding problem"      -> bach c_encoding_fixer <datei>
-  "umlaute kaputt"        -> bach c_encoding_fixer <datei>
-  "utf-8"                 -> bach c_encoding_fixer <datei>
-  "emoji"                 -> bach c_emoji_scanner <datei>
-  "einrückung"           -> bach c_indent_checker <datei>
+  "encoding problem"      -> bach encoding_fixer <datei>
+  "umlaute kaputt"        -> bach encoding_fixer <datei>
+  "utf-8"                 -> bach encoding_fixer <datei>
+  "emoji"                 -> bach emoji_scanner <datei>
+  "einrückung"           -> bach indent_checker <datei>
 
   IMPORT-HANDLING
   ---------------
-  "imports sortieren"     -> bach c_import_organizer <datei>
-  "import problem"        -> bach c_import_diagnose <datei>
-  "import fehlt"          -> bach c_import_diagnose <datei>
+  "imports sortieren"     -> bach import_organizer <datei>
+  "import problem"        -> bach import_diagnose <datei>
+  "import fehlt"          -> bach import_diagnose <datei>
 
   DATEI-OPERATIONEN
   -----------------
-  "datei aufteilen"       -> bach c_pycutter <datei>
-  "zu gross"              -> bach c_pycutter <datei>
-  "sqlite anzeigen"       -> bach c_sqlite_viewer <db>
-  "json problem"          -> bach c_json_repair <datei>
+  "datei aufteilen"       -> bach pycutter <datei>
+  "zu gross"              -> bach pycutter <datei>
+  "sqlite anzeigen"       -> bach sqlite_viewer <db>
+  "json problem"          -> bach json_repair <datei>
 
   KONVERTIERUNG
   -------------
-  "markdown zu pdf"       -> bach c_md_to_pdf <datei>
-  "format konvertieren"   -> bach c_universal_converter <datei>
+  "markdown zu pdf"       -> bach md_to_pdf <datei>
+  "format konvertieren"   -> bach universal_converter <datei>
 
   TOOL-SUCHE
   ----------
@@ -208,7 +208,7 @@ Wenn Claude "python bearbeiten" liest:
 
 Wenn Claude "encoding problem" liest:
 
-  [KONTEXT] Encoding-Fix: bach c_encoding_fixer <datei>
+  [KONTEXT] Encoding-Fix: bach encoding_fixer <datei>
 
 CONNECTOR-ROUTING INTEGRATION (NEU v1.1.75)
 -------------------------------------------
@@ -236,7 +236,7 @@ VORTEIL:
 BEISPIEL:
   User schreibt: "encoding problem mit Datei X"
   -> ContextInjector erkennt "encoding problem"
-  -> Metadata: {"context_hints": "bach c_encoding_fixer <datei>"}
+  -> Metadata: {"context_hints": "bach encoding_fixer <datei>"}
   -> LLM bekommt Hint als System-Info, nicht als User-Text
 
 DATENBANK-TRIGGER:

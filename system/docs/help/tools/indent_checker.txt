@@ -1,0 +1,35 @@
+BACH Tool: indent_checker
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/indent_checker.py
+
+BESCHREIBUNG
+----------------------------------------
+indent_checker.py - Python-Einrückungsprüfer
+
+Zweck: Prüft Python-Dateien auf häufige Einrückungsfehler:
+       - Fehlende Doppelpunkte nach Strukturen (def, if, class, etc.)
+       - return/yield außerhalb von Blöcken
+       - Mischung aus Tabs und Leerzeichen
+
+Autor: Claude (adaptiert von indent_gui_checker.py)
+Abhängigkeiten: os, re, json (stdlib)
+
+Usage:
+    python indent_checker.py <file_or_folder> [--recursive] [--log] [--json]
+    
+Beispiele:
+    python indent_checker.py script.py          # Einzelne Datei
+    python indent_checker.py ./src --recursive  # Ganzer Ordner
+    python indent_checker.py ./src --log        # Log-Datei erstellen
+    python indent_checker.py script.py --json   # JSON-Output
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run indent_checker [args]
+oder direkt: python tools/indent_checker.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show indent_checker

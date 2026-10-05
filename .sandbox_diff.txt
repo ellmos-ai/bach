@@ -1,0 +1,543 @@
+diff --git a/system/core/sandbox.py b/system/core/sandbox.py
+index 554df7f..0bb7ed9 100644
+--- a/system/core/sandbox.py
++++ b/system/core/sandbox.py
+@@ -51,11 +51,13 @@ Version: 1.0.0
+ """
+ 
+ import os
++import shutil
+ import signal
+ import sqlite3
+ import subprocess
+ import threading
+ import time
++import uuid
+ from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Optional, Sequence, Union
+@@ -120,6 +122,7 @@ class SandboxResult:
+     rlimits_applied: bool = False   # POSIX-rlimit im Kind gesetzt
+     watchdog_active: bool = False   # Eltern-Watchdog lief
+     args: Union[Sequence[str], str, None] = None
++    backend: str = "local"   # 'local' (Stufe 2) oder 'docker' (Stufe 3)
+ 
+ 
+ def _child_preexec(limits: SandboxLimits):
+@@ -289,7 +292,8 @@ def run_isolated(cmd: Union[Sequence[str], str],
+                  cwd: Optional[Union[str, Path]] = None,
+                  env: Optional[dict] = None,
+                  shell: bool = False,
+-                 input_text: Optional[str] = None) -> SandboxResult:
++                 input_text: Optional[str] = None,
++                 backend: str = "local") -> SandboxResult:
+     """Fuehrt einen Befehl mit Resource-Bounds aus.
+ 
+     Args:
+@@ -303,6 +307,10 @@ def run_isolated(cmd: Union[Sequence[str], str],
+     Returns:
+         SandboxResult mit returncode/stdout/stderr/timed_out/memory_exceeded
+     """
++    backend = (backend or "local").lower()
++    if backend in ("docker", "auto") and docker_available(DEFAULT_DOCKER_IMAGE):
++        return docker_run_isolated(cmd, limits=limits, cwd=cwd, env=env,
++                                  shell=shell, input_text=input_text)
+     limits = limits or SandboxLimits()
+     start = time.monotonic()
+     preexec = _child_preexec(limits)
+@@ -371,6 +379,7 @@ def run_isolated(cmd: Union[Sequence[str], str],
+         rlimits_applied=(preexec is not None),
+         watchdog_active=watchdog_active,
+         args=cmd,
++        backend="local",
+     )
+ 
+ 
+@@ -404,3 +413,231 @@ def load_limits_from_db(db_path: Optional[Union[str, Path]],
+     except Exception:
+         pass
+     return SandboxLimits(timeout_sec=timeout, memory_mb=memory)
++
++
++# --- Stufe 3: Docker-Container-Isolation (Task #1385) ---
++DEFAULT_DOCKER_IMAGE = "python:3.12-slim"
++
++_DOCKER_CACHE: dict = {}
++
++
++def docker_available(image: str = DEFAULT_DOCKER_IMAGE, force: bool = False) -> bool:
++    """True wenn Docker-Daemon laeuft UND Image lokal existiert (kein Auto-Pull)."""
++    if not force and image in _DOCKER_CACHE:
++        return _DOCKER_CACHE[image]
++    available = False
++    try:
++        if shutil.which("docker") is None:
++            return False
++        daemon = subprocess.run(
++            ["docker", "info", "--format", "{{.ServerVersion}}"],
++            capture_output=True, timeout=10,
++        )
++        if daemon.returncode != 0:
++            return False
++        img = subprocess.run(
++            ["docker", "image", "inspect", image],
++            capture_output=True, timeout=10,
++        )
++        available = img.returncode == 0
++    except Exception:
++        available = False
++    _DOCKER_CACHE[image] = available
++    return available
++
++
++def _map_image_command(cmd: Union[Sequence[str], str]) -> list:
++    """Mappt Host-Befehl auf im Basis-Image verfuegbaren Befehl."""
++    if not cmd:
++        return list(cmd)
++    if os.path.basename(str(cmd[0])).startswith("python"):
++        return ["python3"] + list(cmd[1:])
++    return list(cmd)
++
++
++def docker_run_isolated(cmd: Union[Sequence[str], str],
++                        limits: Optional[SandboxLimits] = None,
++                        cwd: Optional[Union[str, Path]] = None,
++                        env: Optional[dict] = None,
++                        shell: bool = False,
++                        input_text: Optional[str] = None,
++                        image: str = DEFAULT_DOCKER_IMAGE,
++                        name: Optional[str] = None) -> SandboxResult:
++    """Stufe 3: Befehl in isoliertem Container (net=none, read-only, cap-drop ALL).
++
++    Der Container wird ohne ``--rm`` gestartet, damit nach Beenden die
++    OOM-Information aus ``docker inspect`` gelesen werden kann. In jedem
++    Fall (Erfolg, Timeout, Exception) wird der Container anschliessend mit
++    ``docker rm -f`` entfernt.
++
++    Timeout-Handling arbeitet mit ``subprocess.Popen`` plus einem
++    Watchdog-Thread. Bei Ueberschreitung des Limits wird zuerst
++    ``docker stop`` (mit Grace-Periode) und danach ``docker kill`` auf den
++    laufenden Container ausgefuehrt -- nicht nur der lokale
++    ``docker run``-Client-Prozess wird gekillt.
++    """
++    limits = limits or SandboxLimits()
++    name = name or "bach-sbx-" + uuid.uuid4().hex[:12]
++    argv = ["docker", "run", "--name", name, "--network", "none",
++            "--read-only", "--cap-drop", "ALL", "--security-opt",
++            "no-new-privileges", "--user", "1000:1000",
++            "--tmpfs", "/tmp:rw,size=64m"]
++    if limits.memory_mb:
++        argv += ["--memory", f"{limits.memory_mb}m",
++                 "--memory-swap", f"{limits.memory_mb}m"]
++    argv += ["--pids-limit", str(limits.max_processes or 256)]
++    argv += ["--ulimit", "core=0"]
++    if limits.max_file_mb:
++        argv += ["--ulimit", f"fsize={int(limits.max_file_mb) * 1024 * 1024}"]
++    if limits.cpu_sec:
++        argv += ["--ulimit", f"cpu={limits.cpu_sec}"]
++    if input_text is not None:
++        argv += ["-i"]
++    if cwd:
++        workdir = os.path.abspath(cwd)
++        argv += ["-w", workdir, "-v", f"{workdir}:{workdir}"]
++    if env:
++        for key in sorted(env):
++            if key.startswith(("PYTHON", "BACH", "LANG", "LC_")):
++                argv += ["-e", f"{key}={env[key]}"]
++    argv += ["-e", "PYTHONIOENCODING=utf-8", "-e", "PYTHONUNBUFFERED=1", image]
++    if shell:
++        argv += ["sh", "-c", cmd if isinstance(cmd, str) else " ".join(cmd)]
++    else:
++        argv += _map_image_command(list(cmd))
++
++    timed_out_event = threading.Event()
++    _cleanup_lock = threading.Lock()
++    _cleanup_done = threading.Event()
++    _cleanup_oom_result = [False]  # wird vom einmaligen Cleanup gesetzt
++
++    def _docker_cleanup(oom_check: bool = True) -> bool:
++        """Stoppe/entferne Container und gib OOMKilled-Status zurueck.
++
++        Thread-sicher und idempotent: docker stop/kill/rm -f wird nur
++        einmal ausgefuehrt; danach liefert jeder weitere Aufruf das
++        gespeicherte OOM-Ergebnis zurueck.
++        """
++        if _cleanup_done.is_set():
++            return _cleanup_oom_result[0]
++
++        with _cleanup_lock:
++            if _cleanup_done.is_set():
++                return _cleanup_oom_result[0]
++
++            try:
++                if proc.poll() is None:
++                    try:
++                        subprocess.run(
++                            ["docker", "stop", "-t", str(int(_TERM_GRACE_SEC)), name],
++                            capture_output=True,
++                            timeout=_TERM_GRACE_SEC + 5,
++                        )
++                    except Exception:
++                        pass
++                    if proc.poll() is None:
++                        try:
++                            subprocess.run(
++                                ["docker", "kill", name],
++                                capture_output=True, timeout=10,
++                            )
++                        except Exception:
++                            pass
++                    try:
++                        proc.wait(timeout=_TERM_GRACE_SEC + 5)
++                    except Exception:
++                        pass
++                if oom_check:
++                    try:
++                        inspect = subprocess.run(
++                            ["docker", "inspect", name, "--format",
++                             "{{.State.OOMKilled}}"],
++                            capture_output=True, text=True,
++                            encoding="utf-8", errors="replace", timeout=5,
++                        )
++                        _cleanup_oom_result[0] = "true" in (inspect.stdout or "").lower()
++                    except Exception:
++                        _cleanup_oom_result[0] = False
++            finally:
++                try:
++                    subprocess.run(["docker", "rm", "-f", name],
++                                   capture_output=True, timeout=15)
++                except Exception:
++                    pass
++                _cleanup_oom_result[0] = _cleanup_oom_result[0] if oom_check else False
++                _cleanup_done.set()
++            return _cleanup_oom_result[0]
++
++    def _timeout_watcher() -> None:
++        try:
++            deadline = time.monotonic() + limits.timeout_sec
++            while proc.poll() is None and time.monotonic() < deadline:
++                time.sleep(min(0.2, deadline - time.monotonic()))
++            if proc.poll() is None:
++                timed_out_event.set()
++                _docker_cleanup(oom_check=False)
++        except Exception:
++            pass
++
++    try:
++        proc = subprocess.Popen(
++            argv,
++            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True,
++            encoding="utf-8",
++            errors="replace",
++        )
++    except Exception as exc:
++        return SandboxResult(
++            returncode=-1, stdout="",
++            stderr=f"Docker-Fehler: {exc}",
++            timed_out=False, memory_exceeded=False,
++            args=cmd, backend="docker",
++        )
++
++    watcher = threading.Thread(
++        target=_timeout_watcher, name=f"docker-timeout-{name}", daemon=True,
++    )
++    watcher.start()
++
++    start = time.monotonic()
++    try:
++        stdout, stderr = proc.communicate(input=input_text)
++    except Exception as exc:
++        _docker_cleanup(oom_check=False)
++        return SandboxResult(
++            returncode=-1, stdout="",
++            stderr=f"Docker-Fehler: {exc}",
++            timed_out=False, memory_exceeded=False,
++            args=cmd, backend="docker",
++        )
++    finally:
++        watcher.join(timeout=_TERM_GRACE_SEC + 3)
++
++    oom_killed = _docker_cleanup(oom_check=True)
++    duration = time.monotonic() - start
++    stderr = stderr or ""
++    stdout = stdout or ""
++    timed_out = timed_out_event.is_set()
++    returncode = proc.returncode if proc.returncode is not None else -1
++    if timed_out:
++        returncode = -1
++    memory_exceeded = (
++        oom_killed
++        or returncode == 137
++        or "MemoryError" in stderr
++        or "Killed" in stderr
++    )
++
++    return SandboxResult(
++        returncode=returncode,
++        stdout=stdout,
++        stderr=stderr,
++        timed_out=timed_out,
++        memory_exceeded=memory_exceeded,
++        duration_sec=round(duration, 3),
++        args=cmd,
++        backend="docker",
++    )
+diff --git a/system/tests/test_core_sandbox.py b/system/tests/test_core_sandbox.py
+index b61d2dd..79de038 100644
+--- a/system/tests/test_core_sandbox.py
++++ b/system/tests/test_core_sandbox.py
+@@ -8,7 +8,9 @@ import os
+ import sqlite3
+ import sys
+ import tempfile
++import threading
+ import time
++import uuid
+ from pathlib import Path
+ 
+ import pytest
+@@ -16,8 +18,18 @@ import pytest
+ SYSTEM_ROOT = Path(__file__).parent.parent
+ sys.path.insert(0, str(SYSTEM_ROOT))
+ 
++import subprocess
++
++import core.sandbox as core_sandbox
+ from core.sandbox import (  # noqa: E402
+-    IS_POSIX, SandboxLimits, load_limits_from_db, run_isolated,
++    DEFAULT_DOCKER_IMAGE,
++    IS_POSIX,
++    SandboxResult,
++    SandboxLimits,
++    docker_available,
++    docker_run_isolated,
++    load_limits_from_db,
++    run_isolated,
+ )
+ from hub.sandbox import SandboxHandler  # noqa: E402
+ 
+@@ -237,3 +249,221 @@ class TestHandlerStufe2:
+         ok, msg = handler._shell(f'python3 -c "{code}"')
+         assert ok is False
+         assert "MEMORY-LIMIT" in msg
++
++
++DOCKER = pytest.mark.skipif(not docker_available(), reason="Docker/Image nicht verfuegbar")
++
++
++class _FakeDocker:
++    def __init__(self):
++        self.calls = []
++
++    def __call__(self, cmd, limits=None, cwd=None, env=None, shell=False,
++                 input_text=None, image=DEFAULT_DOCKER_IMAGE):
++        self.calls.append({
++            "cmd": cmd, "limits": limits, "cwd": cwd, "env": env,
++            "shell": shell, "input_text": input_text, "image": image,
++        })
++        return SandboxResult(returncode=0, stdout="FAKE-DOCKER", stderr="",
++                             args=cmd, backend="docker")
++
++
++def test_sandbox_result_default_backend_local():
++    r = SandboxResult(returncode=0, stdout="", stderr="")
++    assert r.backend == "local"
++
++
++def test_run_isolated_docker_fallback_local(monkeypatch):
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: False)
++    r = run_isolated(["echo", "hi"], backend="docker")
++    assert r.backend == "local"
++    assert "hi" in r.stdout
++
++
++def test_run_isolated_auto_fallback_local(monkeypatch):
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: False)
++    r = run_isolated(["echo", "hi"], backend="auto")
++    assert r.backend == "local"
++    assert "hi" in r.stdout
++
++
++def test_run_isolated_docker_dispatch(monkeypatch):
++    fake = _FakeDocker()
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
++    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
++    lim = SandboxLimits(timeout_sec=5)
++    r = run_isolated(["echo", "hi"], limits=lim, backend="docker")
++    assert r.stdout == "FAKE-DOCKER"
++    assert r.backend == "docker"
++    assert len(fake.calls) == 1
++    assert fake.calls[0]["limits"] is lim
++
++
++def test_run_isolated_auto_dispatch(monkeypatch):
++    fake = _FakeDocker()
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
++    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
++    r = run_isolated(["echo", "hi"], backend="auto")
++    assert r.backend == "docker"
++    assert r.stdout == "FAKE-DOCKER"
++
++
++def test_run_isolated_local_ignores_docker(monkeypatch):
++    fake = _FakeDocker()
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
++    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
++    r = run_isolated(["echo", "hi"], backend="local")
++    assert fake.calls == []
++    assert "hi" in r.stdout
++    assert r.backend == "local"
++
++
++def test_run_isolated_default_backend_local(monkeypatch):
++    fake = _FakeDocker()
++    monkeypatch.setattr(core_sandbox, "docker_available", lambda *a, **k: True)
++    monkeypatch.setattr(core_sandbox, "docker_run_isolated", fake)
++    r = run_isolated(["echo", "hi"])
++    assert r.backend == "local"
++    assert fake.calls == []
++
++
++def test_docker_available_false_without_cli(monkeypatch):
++    monkeypatch.setattr(core_sandbox.shutil, "which", lambda name: None)
++    assert docker_available(force=True) is False
++
++
++def test_docker_run_isolated_error_no_silent_fallback(monkeypatch):
++    def _boom(*args, **kwargs):
++        raise OSError("boom")
++    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _boom)
++    r = docker_run_isolated(["echo", "hi"])
++    assert r.returncode == -1
++    assert "Docker-Fehler" in r.stderr
++    assert r.backend == "docker"
++
++
++def test_docker_run_isolated_timeout_cleanup_sequence(monkeypatch):
++    """Bei Timeout muss stop/kill/rm -f aufgerufen werden (nicht nur Popen.kill)."""
++
++    class _StubbornPopen:
++        def __init__(self, *args, **kwargs):
++            self.returncode = None
++            self._done = threading.Event()
++            self._killed = False
++
++        def poll(self):
++            return 137 if self._killed else None
++
++        def communicate(self, input=None):
++            assert self._done.wait(timeout=5)
++            self.returncode = 137
++            return ("", "")
++
++        def wait(self, timeout=None):
++            self._done.wait(timeout=timeout)
++
++        def kill_container(self):
++            self._killed = True
++            self._done.set()
++
++    popen = _StubbornPopen()
++    calls = []
++
++    def _fake_popen(*args, **kwargs):
++        return popen
++
++    def _fake_run(cmd, *args, **kwargs):
++        calls.append(list(cmd))
++        if cmd[:2] == ["docker", "kill"]:
++            popen.kill_container()
++        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
++
++    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _fake_popen)
++    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
++
++    r = docker_run_isolated(["sleep", "60"], limits=SandboxLimits(timeout_sec=0.05))
++    assert r.timed_out is True
++    assert r.returncode == -1
++    assert r.backend == "docker"
++
++    # Cleanup-Sequenz muss enthalten sein (stop -> kill -> rm -f)
++    cmds = [c[:2] for c in calls]
++    assert ["docker", "stop"] in cmds
++    assert ["docker", "kill"] in cmds
++    assert ["docker", "rm"] in cmds or ["docker", "rm", "-f"] in [c[:3] for c in calls]
++
++
++def test_docker_run_isolated_oom_detection(monkeypatch):
++    """OOMKilled=true aus docker inspect muss memory_exceeded setzen."""
++
++    class _OOMExitPopen:
++        def __init__(self, *args, **kwargs):
++            self.returncode = 1
++
++        def poll(self):
++            return self.returncode
++
++        def communicate(self, input=None):
++            return ("", "")
++
++        def wait(self, timeout=None):
++            pass
++
++    def _fake_run(cmd, *args, **kwargs):
++        if cmd[:2] == ["docker", "inspect"]:
++            return subprocess.CompletedProcess(cmd, 0, stdout="true\n", stderr="")
++        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
++
++    monkeypatch.setattr(core_sandbox.subprocess, "Popen", _OOMExitPopen)
++    monkeypatch.setattr(core_sandbox.subprocess, "run", _fake_run)
++
++    r = docker_run_isolated(["python3", "-c", "x=bytearray(300*1024*1024)"])
++    assert r.returncode == 1
++    assert r.memory_exceeded is True
++    assert r.backend == "docker"
++
++
++@DOCKER
++def test_docker_run_isolated_echo():
++    r = docker_run_isolated(["echo", "docker-ok"])
++    assert r.returncode == 0
++    assert "docker-ok" in r.stdout
++    assert r.backend == "docker"
++
++
++@DOCKER
++def test_docker_run_isolated_timeout_rollback():
++    unique_name = "bach-sbx-test-" + uuid.uuid4().hex[:12]
++    r = docker_run_isolated(["sleep", "60"], limits=SandboxLimits(timeout_sec=2),
++                            name=unique_name)
++    assert r.timed_out is True
++    ps = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"],
++                        capture_output=True, text=True, timeout=15)
++    assert unique_name not in ps.stdout
++
++
++@DOCKER
++def test_docker_run_isolated_memory_limit():
++    r = docker_run_isolated(["python3", "-c", "x = bytearray(300*1024*1024)"],
++                            limits=SandboxLimits(timeout_sec=30, memory_mb=32))
++    assert r.memory_exceeded is True
++
++
++@DOCKER
++def test_docker_run_isolated_read_only_rootfs():
++    r = docker_run_isolated(["sh", "-c", "echo x > /probe.txt"])
++    assert r.returncode != 0
++
++
++@DOCKER
++def test_docker_run_isolated_network_blocked():
++    code = chr(10).join([
++        "import socket",
++        "try:",
++        "    socket.create_connection(('127.0.0.1', 80), timeout=3)",
++        "    print('OPEN')",
++        "except Exception:",
++        "    print('BLOCKED')",
++    ])
++    r = docker_run_isolated(["python3", "-c", code])
++    assert "BLOCKED" in r.stdout

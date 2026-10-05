@@ -1045,6 +1045,52 @@ class TestBACHTray:
             # _build_menu creates items including Fackel
             assert menu is not None
 
+    def test_build_menu_contains_gui_schale_item(self, tray):
+        pystray_mock = MagicMock()
+        with patch("hub._services.chat.chat_tray.pystray", pystray_mock):
+            menu = tray._build_menu()
+        assert menu is not None
+        calls = pystray_mock.MenuItem.call_args_list
+        labels = [c.args[0] for c in calls if c.args]
+        assert "GUI Schale" in labels
+        for c in calls:
+            if c.args and c.args[0] == "GUI Schale":
+                assert c.args[1] == tray._start_gui_shell
+
+    def test_start_gui_shell_ok_notifies(self, tray):
+        tray.icon = MagicMock()
+        result = {"ok": True, "url": "http://testhost:8000", "status": "completed"}
+        with patch("hub._services.chat.chat_tray.subprocess.run",
+                   return_value=MagicMock(stdout=json.dumps(result))) as run:
+            tray._start_gui_shell()
+        run.assert_called_once()
+        cmd = run.call_args.args[0]
+        assert cmd[0] == sys.executable
+        assert str(cmd[1]).endswith("shell.py")
+        tray.icon.notify.assert_called_once()
+        assert "bereit" in tray.icon.notify.call_args.args[0]
+
+    def test_start_gui_shell_fail_notifies_error(self, tray):
+        tray.icon = MagicMock()
+        result = {"ok": False, "status": "error", "error": "gui_connect_failed"}
+        with patch("hub._services.chat.chat_tray.subprocess.run",
+                   return_value=MagicMock(stdout=json.dumps(result))):
+            tray._start_gui_shell()
+        tray.icon.notify.assert_called_once_with("GUI Schale fehlgeschlagen", "BACH")
+
+    def test_start_gui_shell_oserror_notifies_error(self, tray):
+        tray.icon = MagicMock()
+        with patch("hub._services.chat.chat_tray.subprocess.run",
+                   side_effect=OSError("spawn failed")):
+            tray._start_gui_shell()
+        tray.icon.notify.assert_called_once_with("GUI Schale fehlgeschlagen", "BACH")
+
+    def test_start_gui_shell_invalid_json_notifies_error(self, tray):
+        tray.icon = MagicMock()
+        with patch("hub._services.chat.chat_tray.subprocess.run",
+                   return_value=MagicMock(stdout="not json")):
+            tray._start_gui_shell()
+        tray.icon.notify.assert_called_once_with("GUI Schale fehlgeschlagen", "BACH")
 
 
 class TestTraySingleInstance:

@@ -1,0 +1,29 @@
+BACH Tool: emoji_scanner
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/emoji_scanner.py
+
+BESCHREIBUNG
+----------------------------------------
+emoji_scanner.py - Emoji-Scanner mit Gemoji/emoji-Paket Integration
+
+Scannt Dateien nach Emojis und zeigt welche automatisch aufgeloest werden können.
+Nutzt dasselbe Backend wie json_repair.py (emoji-Paket oder gemoji.json Fallback).
+
+Usage:
+    python emoji_scanner.py <datei_oder_ordner>
+    python emoji_scanner.py --scan-batch    # Alle _BATCH JSON-Dateien
+    python emoji_scanner.py --status        # System-Status
+
+Autor: Claude
+Version: 3.0 - Unified mit json_repair.py
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run emoji_scanner [args]
+oder direkt: python tools/emoji_scanner.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show emoji_scanner

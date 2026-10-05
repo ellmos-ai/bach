@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.1
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-08-17
+# Version: 1.0.2
+# Zuletzt validiert: 2026-07-13
+# Nächste Prüfung: 2026-10-13
 
 BACH WARTUNG (System-Jobs)
 ==========================
@@ -23,9 +23,16 @@ BEFEHLE
   bach daemon start --bg     Wartungs-Daemon im Hintergrund starten
   bach daemon stop           Laufenden Daemon stoppen
   bach daemon status         Status und letzte Laeufe anzeigen
+  bach daemon doctor         Scheduler-Preflight und Recovery-Hinweise anzeigen
   bach daemon jobs           Alle definierten Jobs auflisten
   bach daemon run <ID>       Job manuell ausführen
   bach daemon logs [N]       Letzte N Log-Zeilen anzeigen (Standard: 20)
+  bach daemon pause          Faellige Scheduler-Jobs pausieren
+  bach daemon resume         Scheduler-Pause aufheben
+  bach daemon steer "<Hinweis>"  Operator-Hinweis fuer naechste Scheduler-Jobs vormerken
+  bach daemon clear-steer    Scheduler-Steering-Hinweise loeschen
+  bach daemon external <status|jobs|verify> [--apply]  Externer ellmos-Scheduler
+                          (Rollback: BACH_USE_EXTERNAL_SCHEDULER=0)
 
 
 SESSION-BEFEHLE (Session-Daemon für automatische Claude-Sessions)
@@ -34,6 +41,11 @@ SESSION-BEFEHLE (Session-Daemon für automatische Claude-Sessions)
   bach daemon session start [--profile NAME]   Session-Daemon starten
   bach daemon session stop                     Session-Daemon stoppen
   bach daemon session status                   Session-Status anzeigen
+  bach daemon session doctor                   Session-Preflight und Recovery-Hinweise
+  bach daemon session pause [--profile NAME]   Session-Trigger fuer Profil pausieren
+  bach daemon session resume [--profile NAME]  Session-Pause fuer Profil aufheben
+  bach daemon session steer [--profile NAME] "Hinweis"  Hinweis fuer naechste Session vormerken
+  bach daemon session clear-steer [--profile NAME]       Hinweis-Queue fuer Profil leeren
   bach daemon session trigger [--profile NAME] Session manuell auslösen
   bach daemon session profiles                 Verfügbare Profile auflisten
 

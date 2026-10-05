@@ -1,0 +1,582 @@
+tasks columns: id, title, description, category, priority, tags, status, estimated_minutes, actual_minutes, delegated_to, delegation_status, source_file, source_line, is_recurring, recurrence_pattern, next_occurrence, executable_command, created_at, started_at, completed_at, updated_at, dist_type, modified_by, depends_on, created_by, assigned_to, project, source, image_data, assigned_agent, due_date, claimed_by, claimed_at, required_model, assigned_slot
+
+== 14 tasks rows matching ticket in description ==
+
+########## task id=1365 ##########
+id = 1365
+title = '[USER] OCEAN S0: Usergate-Freigabe'
+--- description (full, 554 chars) ---
+Quelle: QUEUED-Ticket 823767362 (OCEAN); S0=Usergate. 1. Usergate S0 pruefen 2. Freigabe fuer OCEAN-Weitersperrt-Arbeit S4+S6-S9 erteilen. Ohne diese Freigabe keine Detailklaerung/Umsetzung S4+S6-S9 (nachgelagerte Tasks).
+
+[DONE] Bereits entschieden: #1365 T-20260920-823767362 VERLAUF 2026-09-21 S0 aufgehoben; #1366 DECIDED-AND-DONE.md D-20260913-006 BH-A 1C*/2A/3A/4A; #1369 D-20260916-002 Control-API Bearer-Guard plus T-20260927-243821051 Nutzerauftrag 2026-09-27; #1372 USMC-Fakt wettbewerb-beendet 2026-09-27 und T-20260927-169756306 Nutzerauftrag
+category = 'OCEAN'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:13:56'
+started_at = None
+completed_at = '2026-09-27T21:14:51.000000'
+updated_at = '2026-09-27T21:14:51.000000'
+dist_type = 0
+modified_by = None
+depends_on = ''
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1366 ##########
+id = 1366
+title = '[USER] BH-2026-09-13-A: 4 offene Fragen beantworten'
+--- description (full, 497 chars) ---
+Quelle: BACH-Hold BH-2026-09-13-A (Tickets/Umfeld Modell-Backend). 1.-4. Die 4 offenen Fragen beantworten. Entsperrt Modell-Backend-Schritte 5-9 (solange gesperrt).
+
+[DONE] Bereits entschieden: #1365 T-20260920-823767362 VERLAUF 2026-09-21 S0 aufgehoben; #1366 DECIDED-AND-DONE.md D-20260913-006 BH-A 1C*/2A/3A/4A; #1369 D-20260916-002 Control-API Bearer-Guard plus T-20260927-243821051 Nutzerauftrag 2026-09-27; #1372 USMC-Fakt wettbewerb-beendet 2026-09-27 und T-20260927-169756306 Nutzerauftrag
+category = 'BACH'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:13:56'
+started_at = None
+completed_at = '2026-09-27T21:14:51.000000'
+updated_at = '2026-09-27T21:14:51.000000'
+dist_type = 0
+modified_by = None
+depends_on = ''
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1369 ##########
+id = 1369
+title = '[USER] Ticket 243821051: Control-API-Token/Keychain-Freigabe'
+--- description (full, 524 chars) ---
+Quelle: INBOX-Ticket 243821051; Fundort CREDENTIALS. 1. Nutzer-Freigabe fuer Control-API (Keychain-Zugriff) erteilen 2. Token NIEMALS ausgeben. Sperrt die nachgelagerte Control-API-Umsetzung.
+
+[DONE] Bereits entschieden: #1365 T-20260920-823767362 VERLAUF 2026-09-21 S0 aufgehoben; #1366 DECIDED-AND-DONE.md D-20260913-006 BH-A 1C*/2A/3A/4A; #1369 D-20260916-002 Control-API Bearer-Guard plus T-20260927-243821051 Nutzerauftrag 2026-09-27; #1372 USMC-Fakt wettbewerb-beendet 2026-09-27 und T-20260927-169756306 Nutzerauftrag
+category = 'INBOX'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:13:56'
+started_at = None
+completed_at = '2026-09-27T21:14:51.000000'
+updated_at = '2026-09-27T21:14:51.000000'
+dist_type = 0
+modified_by = None
+depends_on = ''
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1372 ##########
+id = 1372
+title = '[USER] Ticket 169756306a: OneDrive-Mirror-Freigabe'
+--- description (full, 498 chars) ---
+Quelle: INBOX-Ticket 169756306a. ACHTUNG: Konflikt mit Judging-Hold — erst nach Klaerung. 1. Judging-Hold-Konflikt klaeren 2. Freigabe fuer OneDrive-Mirror erteilen.
+
+[DONE] Bereits entschieden: #1365 T-20260920-823767362 VERLAUF 2026-09-21 S0 aufgehoben; #1366 DECIDED-AND-DONE.md D-20260913-006 BH-A 1C*/2A/3A/4A; #1369 D-20260916-002 Control-API Bearer-Guard plus T-20260927-243821051 Nutzerauftrag 2026-09-27; #1372 USMC-Fakt wettbewerb-beendet 2026-09-27 und T-20260927-169756306 Nutzerauftrag
+category = 'INBOX'
+priority = 'P2'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:13:56'
+started_at = None
+completed_at = '2026-09-27T21:14:51.000000'
+updated_at = '2026-09-27T21:14:51.000000'
+dist_type = 0
+modified_by = None
+depends_on = ''
+created_by = 'user'
+assigned_to = 'bach'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1409 ##########
+id = 1409
+title = 'OCEAN S4+S6-S9: Detailklärung + Substufen'
+--- description (full, 4525 chars) ---
+Quelle: QUEUED 823767362 (Details undokumentiert); Cluster-Doku Abs.5 Z.133-161; Receipts Z.440-473; Autoritaet Trithon/Muschelgrund; Cluster-IDs W/B/P/N (T-20260825-144932563, T-20260906-496406575, T-20260727-04/-05, T-20260814-02, T-20260822-624075478, T-20260822-638215353, T-20260915-486495819, T-20260730-01, T-20260730-04). 1. Detailklaerung S4+S6-S9 2. Substufen ableiten
+=== ERGEBNIS 2026-09-27: Detailklaerung + Substufen ===
+Quelle: QUEUED T-20260920-823767362.ASUS-GEI.txt (198 Z., komplett gelesen).
+S4 (Z.79): Gardener consolidate = EINE Modulfunktion: Pipeline Rohdaten->ASM->Essenz->Trigger-DB (weight/boost/archive/compress/index/sync-triggers/forget) + memory_decay + working_cleanup + shared consolidation; decay_config je Agent; TTL working-Typen handoff/context; Ausloeser workflowhooker Stop + ellmos-scheduler nachts; Seam 'bach consolidate run'. Belege: memory_working sinkt nach TTL; Konsolidierungs-Report je Lauf; BACH-Gewichte weitergefuehrt. SUBSTUFEN: S4a Pipeline-Kern (Rohdaten->ASM->Essenz); S4b Trigger-DB (weight/boost/archive/compress/index/sync-triggers/forget); S4c decay_config je Agent + TTL working-Typen + Ausloeser (workflowhooker Stop, ellmos-scheduler nachts) + Seam 'bach consolidate run'. Stand: PR ellmos-ai/gardener#12 (feat/T-20260920-823767362-s4-sleep) implementiert S4 soft -> beim S4-Abschluss reviewen/mergen. Kein s4-Branch remote.
+S6 (Z.83): tasks-Union = BACH tasks (depends_on/recurrence/due_date/executable_command/assigned_to-Pool/task_history) + taskplan (effort/scope/task_uid/origin_host/task_authority_system_id/transit_events); Vokabular-Mapping P0-P4<->low/medium/high, pending<->open, Uebergangs-Views; taskplan.db=Alias; task-master (TASKWRITER=AUFGABEN/TODO-Scan, TASKSOLVER, MAINTAINER); ATI abloesen (ati_tasks 2914->tasks mit source_file/source_line/Kategorie ati-scan; ati_tool_registry->tool_registry; ATI-Scans->TASKWRITER); ticket-master=Triage, Buddha=Ticket-Aufnahme Telegram; memory_working type='task' related_to=tasks.id (B54), context/loop/handoff=Working-States; Worker: depends_on blockierend, atomarer Claim BACH-HERZ-01 ueber S7-Autoritaet. Belege: bach task list == taskplan next; Ollama-Worker claimt genau einmal; ATI-Tabellen leer/Views. SUBSTUFEN: S6a tasks-Union-Schema + Uebergangs-Views (taskplan.db=Alias); S6b Vokabular-Mapping P0-P4/pending + Claim-Binding memory_working; S6c task-master + ATI-Umzug + atomarer Worker-Claim. Voraussetzung S2; S2a-PRs usmc#9+bach#88 noch offen.
+S7 (Z.85): sqlite-transit-sync Namespaces memory+tasks; 3-Host WORKSTATION-LG/ASUS-GEI/Mac; Trithon/Muschelgrund Lead je Scope (Plan 2026-09-16 Phase 5: monotone Lead-Terme, Fencing-Token); Claim-Salt Tasks+Tickets (nur Signal), Tickets tragen task_uid+Salt; USMC/Gardener auf Mac (~/.venvs/bach). Belege: Task ASUS angelegt, Mac geclaimt, keine Doppelausfuehrung; Memory cross-host nach Transit. SUBSTUFEN: S7a transit-Sync Namespace memory (3-Host); S7b Namespace tasks + Claim-Salt/Signal + Tickets mit task_uid; S7c Lead-Federation (monotone Terme, Fencing-Token, Lead je Scope). NEBENBEFUND: sqlite_transit_sync fehlt auf Mac -> Blocker fuer S7-Belege.
+S8 (Z.87): skills-Projektion aus ControlCenter-Inventar, trigger_phrases; toolchains/workflow_tuev->MarbleRun-Ketten+workflowhooker; BACH skills/tools=Projektion. Beleg: Projektion=Registry-Zaehlung. SUBSTUFEN: S8a skills-Projektion; S8b toolchains/MarbleRun+workflowhooker. Keine s8-Branches remote.
+S9 (Z.89): .MEMORY/README, ARCHITECTURE.md, SPEICHER-ROUTING (Gardener=Index), homebase.toml, MODULRUECKTRANSFER-PLAN, bach/ROADMAP per Nachtrag; GUI /memory=OCEAN-Memory-Oberflaeche (T-20260920-829000873). SUBSTUFEN: S9a Doku-Dateien+homebase.toml+MODULRUECKTRANSFER-PLAN; S9b GUI /memory.
+STATI gesamt: S1 done (usmc#5+bach#84); S2 teilweise (S2a-PRs usmc#9+bach#88 offen, Lesson-v2 Pflicht); S3 done (memoryhooker#4/#5, bach#97-#103); S4 PR gardener#12 offen; S5 done (session-checkpoint K9); S6-S9 offen.
+1365-ANALYSE: S0-Usergate durch Nachtrag 21.09. aufgehoben: lokale Umsetzung+Tests autorisiert; KEINE Live-DB/Hostmigration/Rollout/Cutover ohne Review-Belege. Bei Widerspruch gelten spaetere Nachtraege; Ursprungskoerper nicht Bauauftrag. Kette: S0->S1->S2->(S3,S4,S5 parallel)->S6->S7; S8/S9 begleitend. S6/S7 brauchen S2 vollstaendig + Mac-Transit (sqlite_transit_sync auf Mac nachinstallieren).
+EMPFEHLUNG #1413: Reihenfolge S4 (gardener#12 Review/Merge) -> S6a-c -> S7a-c -> S8 -> S9 Richtung B -> GUI /memory. Rollout-Stand: 043 NICHT live; 044-047 Laptop; 048/049 Laptop+Mac.
+category = 'OCEAN'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:24:17'
+started_at = None
+completed_at = '2026-09-27T22:58:12.000000'
+updated_at = '2026-09-27T22:58:12.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1365'
+created_by = 'user'
+assigned_to = 'bach'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1413 ##########
+id = 1413
+title = 'OCEAN S4+S6-S9 Umsetzung'
+--- description (full, 484 chars) ---
+Quelle: QUEUED 823767362; 1. S4 2. S6-S8 3. S9 Richtung B 4. GUI /memory
+Hinweis: PR ellmos-ai/gardener#12 (Branch feat/T-20260920-823767362-s4-sleep) implementiert S4 (soft sleep Union memory DBs); bei S4-Abschluss Review/Merge einbeziehen. || UPDATE 2026-09-28 (Hintergrundworker): gardener#12 gemergt (merged_at 2026-09-28T00:33:14Z, merge_commit b06afeaf) -> S4-Anteil faktisch abgeschlossen. Status in_progress: Restumfang = S6 (1444, entblockt), S7 (1445), S8 (1446), S9 (1447).
+category = 'OCEAN'
+priority = 'P1'
+tags = None
+status = 'in_progress'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 22:25:28'
+started_at = '2026-09-28T02:53:08.904903'
+completed_at = None
+updated_at = '2026-09-28T12:44:25.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1409,1443,1444,1445,1446,1447,1451'
+created_by = 'user'
+assigned_to = 'bach'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1443 ##########
+id = 1443
+title = 'OCEAN S4: Konsolidierung, Trigger und Auslöser vervollständigen'
+--- description (full, 413 chars) ---
+Quelle: T-20260920-823767362 S4 und T-20260926-363436040. 1. Nach gardener#12 Rohdaten-ASM-Essenz-Trigger-Pipeline prüfen. 2. weight/boost/archive/compress/index/sync-triggers, decay_config und TTL ergänzen. 3. workflowhooker Stop, Scheduler und bach consolidate Seam samt Reports prüfen. Blocker: gardener#12 Review/Merge (aktuell Request Changes wegen uebersprungen-String-Bug in sleep_union.py Z. 109/113/118).
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:20:45'
+started_at = '2026-09-28T08:23:19.000000'
+completed_at = '2026-09-28T09:19:26.000000'
+updated_at = '2026-09-28T09:19:26.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1442'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1444 ##########
+id = 1444
+title = 'OCEAN S6: Task-Union und task-master/ATI-Seam'
+--- description (full, 503 chars) ---
+Quelle: T-20260920-823767362 S6 und Nachtrag 2026-09-20. 1. Autoritäten Trithon-curated und taskplan-Backlog erhalten. 2. Schema/Views, Priority-/Status-Mapping und BACH-Felder depends_on/due/history verbinden. 3. ATI-Scan in TASKWRITER überführen, Worker-Claim atomar, Working-Memory nur Zeiger. 4. Temp-DB-, Rollback- und Paritätstests. Blocker: S2-Schemavertrag und sichere Migration; kein Live-Cutover ohne Review. Abhängig von S4 (gardener#12 Merge).
+
+[BLOCKED] Abhaengig von S4 (gardener#12 Merge)
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:21:02'
+started_at = '2026-09-28T12:45:21.000000'
+completed_at = '2026-09-28T13:24:38.000000'
+updated_at = '2026-09-28T13:24:38.000000'
+dist_type = 0
+modified_by = None
+depends_on = None
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1445 ##########
+id = 1445
+title = 'OCEAN S7: Memory- und Task-Transit mit 3-Host-Receipts'
+--- description (full, 398 chars) ---
+Quelle: T-20260920-823767362 S7; T-20260727-04 und T-20260923-701917064. 1. sqlite-transit-sync auf Mac als Modulpfad klären. 2. Namespace memory/taskplan mit Stable-ID- und Privacy-Vertrag. 3. 3-Host-Transport, Claim-Signal, task_uid und Reconciliation ohne Doppelclaim prüfen. Blocker: S6, Transit-Adapter und Host-Receipts; kein Live-DB-Transit vor Gates. Abhängig von S6/S4 (gardener#12 Merge).
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:21:19'
+started_at = None
+completed_at = '2026-09-28T14:07:40.000000'
+updated_at = '2026-09-28T14:07:40.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1423,1444'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1446 ##########
+id = 1446
+title = 'OCEAN S8: Skills- und Workflow-Projektionen aus Registern'
+--- description (full, 292 chars) ---
+Quelle: T-20260920-823767362 S8. 1. Skills/tools aus ControlCenter-Registry als Projektion mit trigger_phrases erzeugen. 2. toolchains/workflow_tuev auf MarbleRun und workflowhooker abgleichen. 3. Zählung, Provenienz und read-only Parität prüfen. Blocker: Registry-Vertrag und S6-Feldmapping.
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'in_progress'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:21:36'
+started_at = '2026-09-28T14:58:28.000000'
+completed_at = None
+updated_at = '2026-09-28T14:58:28.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1444'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1447 ##########
+id = 1447
+title = 'OCEAN S9: Speicher-Routing und /memory-Oberfläche nachziehen'
+--- description (full, 349 chars) ---
+Quelle: T-20260920-823767362 S9, T-20260920-829000873, D-20260920-004. 1. .MEMORY/README, ARCHITECTURE, SPEICHER-ROUTING, homebase-Konfig, MRP und BACH-ROADMAP per Nachtrag abgleichen. 2. GUI /memory als OCEAN-Memory-Oberfläche über denselben Backend-Vertrag prüfen. 3. Dokument- und UI-Parität belegen. Blocker: S6/S7-Verträge und GUI-Modulschnitt.
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'pending'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:22:13'
+started_at = None
+completed_at = None
+updated_at = '2026-09-27 21:27:22'
+dist_type = 0
+modified_by = None
+depends_on = '1410,1446'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1450 ##########
+id = 1450
+title = 'Trithon Phase 5: Lead, Salt und Fencing über Hosts'
+--- description (full, 383 chars) ---
+Quelle: TRITHON-MUSCHELGRUND-UMSETZUNGSPLAN-2026-09-16.md Abschnitt 5 Phase 5; T-20260920-823767362 S7-Nachtrag. 1. Authentisierte Nodes, Epochen, Lead-Terme/Fencing. 2. Git/native/db-Receipt-Provider und deterministische Faltung. 3. Partition fail-closed, lokale Claims getrennt; Salt nur Signal. 4. Split-Brain-, Replay- und Reconciliationtests. Blocker: Phase 3 #1417 und Phase 4.
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:22:48'
+started_at = '2026-09-28T10:38:27.000000'
+completed_at = '2026-09-28T11:10:01.000000'
+updated_at = '2026-09-28T11:10:01.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1448'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1461 ##########
+id = 1461
+title = 'BACH S3-Nachlauf: injectors.py nach Beobachtungsfrist zum Adapter abbauen'
+--- description (full, 309 chars) ---
+Quelle: T-20260926-537523074 und T-20260920-823767362 S3. 1. Beobachtungsfrist bis 2026-10-10 respektieren. 2. Hooker-Audit, Rollback und Trigger-Parität prüfen. 3. tools/injectors.py nur bei belegter Parität als dünnen Adapter abbauen. 4. Regression und unabhängiges Review. Blocker: Frist und S4-Stabilität.
+category = 'bach'
+priority = 'P2'
+tags = None
+status = 'pending'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-27 21:34:15'
+started_at = None
+completed_at = None
+updated_at = '2026-09-27 21:36:11'
+dist_type = 0
+modified_by = None
+depends_on = '1443'
+created_by = 'user'
+assigned_to = 'user'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = '2026-10-10'
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+########## task id=1491 ##########
+id = 1491
+title = 'HANDOVER: S7-Umsetzung (Task 1445) fortsetzen — Memory/Task-Transit 3-Host-Receipts in open-ocean'
+--- description (full, 2432 chars) ---
+HANDOVER fuer naechste Session. Ziel-Task: 1445 (S7, P1, pending, depends_on 1423+1444; 1444=S6 erledigt, PR #32 https://github.com/ellmos-ai/open-ocean/pull/32).
+
+ANFORDERUNGEN S7 (aus detail 1445, Quelle T-20260920-823767362 S7 + T-20260727-04 + T-20260923-701917064):
+1. sqlite-transit-sync auf Mac als Modulpfad klaeren (suchen unter /Users/lukas/services, z.B. safe_shell find/grep nach 'transit').
+2. Namespace memory/taskplan mit Stable-ID- und Privacy-Vertrag (neuer eigener Vertrag, analog architecture/bach-task-union-contract.v1.json — diesen NIEMALS anfassen).
+3. 3-Host-Transport, Claim-Signal, task_uid und Reconciliation ohne Doppelclaim pruefen — als Fixtures/Checker, KEIN Live-DB-Transit vor Gates. Abhaengig von S6/S4 (gardener#12 Merge) — Status von gardener#12 pruefen; falls nicht gemerged: Fallback-Tasks 1463/1462/1461/1454.
+
+UMSETZUNGSMUSTER (bewaehrt aus S6, PR #32):
+- Repo /Users/lukas/ocean-workspaces/MAC-FULL-INSTALL-01/src/open-ocean; Branch feat/T-20260920-823767362-s7-memory-transit.
+- Neu: architecture/bach-memory-task-transit-contract.v1.json, tools/check_memory_task_transit.py (Self-Check ohne --bach-root, Exit-Code=Status), tests/fixtures/memory_task_transit/{...}.json (3 Hosts simuliert: mac + 2 weitere, receipts, claim/reconcile ohne Doppelclaim), tests/test_check_memory_task_transit.py.
+- tests/conftest.py hat bereits sys.path.insert(0, repo); tools/__init__.py existiert (noetig: regulaeres Package schlaegt Namespace-Packages der bach-venv-.pth).
+- pytest im venv: python3 -c-Harness mit os.chdir+sys.path.insert ODER subprocess.run([...], cwd=repo) — muss gruen sein (S6 hatte 5 passed).
+
+TECHNIK-FALLEN (verifiziert): execute_command/safe_shell blockieren &&, ;, 2>, git -C, PYTHONPATH-Prefix; cwd persistiert NICHT zwischen execute_command (immer /Users/lukas/services/bach/system) -> immer subprocess.run(..., cwd=). git credential fill liefert https-Token (user lukisch, 40 Zeichen) -> curl POST api.github.com/repos/ellmos-ai/open-ocean/pulls fuer PR. git config --local user.name=lukisch + user.email=55554266+lukisch@users.noreply.github.com ist im Repo gesetzt. --bach-root weglassen (HEAD != Pin 88941bf49a2ec52a741a75d90053f42491d15e90). bach task 'comment' existiert nicht.
+
+ABSCHLUSS: pytest gruen -> commit/push -> PR via curl -> task_manage done 1445. Danach 1446 (S8) gleiches Muster. Handover-Datei: /Users/lukas/ocean-workspaces/MAC-FULL-INSTALL-01/HANDOVER-S7.md
+category = 'ocean'
+priority = 'P1'
+tags = None
+status = 'done'
+estimated_minutes = None
+actual_minutes = None
+delegated_to = None
+delegation_status = None
+source_file = None
+source_line = None
+is_recurring = 0
+recurrence_pattern = None
+next_occurrence = None
+executable_command = None
+created_at = '2026-09-28 13:25:46'
+started_at = None
+completed_at = '2026-09-28T14:07:41.000000'
+updated_at = '2026-09-28T14:07:41.000000'
+dist_type = 0
+modified_by = None
+depends_on = '1444'
+created_by = 'user'
+assigned_to = 'bach'
+project = None
+source = None
+image_data = None
+assigned_agent = None
+due_date = None
+claimed_by = None
+claimed_at = None
+required_model = None
+assigned_slot = None
+
+
+== task_history for 1446/1447 ==
+{'id': '3710', 'task_id': '1444', 'action': 'field_change', 'field_changed': 'description', 'old_value': 'Quelle: T-20260920-823767362 S6 und Nachtrag 2026-09-20. 1. Autoritäten Trithon-curated und taskplan-Backlog erhalten. 2. Schema/Views, Priority-/Status-Mapping und BACH-Felder depends_on/due/history ', 'new_value': 'Quelle: T-20260920-823767362 S6 und Nachtrag 2026-09-20. 1. Autoritäten Trithon-curated und taskplan-Backlog erhalten. 2. Schema/Views, Priority-/Status-Mapping und BACH-Felder depends_on/due/history ', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-27T23:28:10.000000'}
+{'id': '3931', 'task_id': '1444', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'pending', 'new_value': 'blocked', 'changed_by': 'cli-task', 'changed_at': '2026-09-28T07:37:02.000000'}
+{'id': '3992', 'task_id': '1444', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'blocked', 'new_value': 'pending', 'changed_by': 'cli-task', 'changed_at': '2026-09-28T10:45:16.000000'}
+{'id': '3993', 'task_id': '1444', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'pending', 'new_value': 'in_progress', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-28T12:45:21.000000'}
+{'id': '4001', 'task_id': '1444', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'in_progress', 'new_value': 'done', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-28T13:24:38.000000'}
+{'id': '3711', 'task_id': '1445', 'action': 'field_change', 'field_changed': 'description', 'old_value': 'Quelle: T-20260920-823767362 S7; T-20260727-04 und T-20260923-701917064. 1. sqlite-transit-sync auf Mac als Modulpfad klären. 2. Namespace memory/taskplan mit Stable-ID- und Privacy-Vertrag. 3. 3-Host', 'new_value': 'Quelle: T-20260920-823767362 S7; T-20260727-04 und T-20260923-701917064. 1. sqlite-transit-sync auf Mac als Modulpfad klären. 2. Namespace memory/taskplan mit Stable-ID- und Privacy-Vertrag. 3. 3-Host', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-27T23:28:10.000000'}
+{'id': '4002', 'task_id': '1445', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'pending', 'new_value': 'done', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-28T14:07:40.000000'}
+{'id': '4008', 'task_id': '1446', 'action': 'status_change', 'field_changed': 'status', 'old_value': 'pending', 'new_value': 'in_progress', 'changed_by': 'chat-runtime', 'changed_at': '2026-09-28T14:58:28.000000'}

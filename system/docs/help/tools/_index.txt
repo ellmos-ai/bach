@@ -13,22 +13,22 @@ audit_bundler                  BACH Audit Bundler v1.0
 autolog                        Auto-Logger - Protokolliert automatisch alle Aktionen
 backup_manager                 backup_manager.py - BACH Backup & Restore System
 batch_file_ops                 batch_file_ops.py - Batch-Dateioperationen
-c_emoji_scanner                c_emoji_scanner.py - Emoji-Scanner mit Gemoji/emoji-Paket In
-c_encoding_fixer               c_encoding_fixer.py - Encoding-Probleme in Textdateien beheb
-c_german_scanner               c_german_scanner.py - Findet deutsche Strings in Python-Proj
-c_import_diagnose              Import-Diagnose-Tool für Python-Projekte
-c_import_organizer             c_import_organizer.py - Organisiert Python-Imports nach PEP8
-c_indent_checker               c_indent_checker.py - Python-Einrückungsprüfer
-c_json_repair                  c_json_repair.py - Vollautomatisches JSON-Reparatur-System
-c_license_generator            c_license_generator.py - Drittanbieter-Lizenzen Generator
-c_md_to_pdf                    Markdown zu PDF Converter - RecludOS User Reports
-c_method_analyzer              c_method_analyzer.py - Python Code Analyzer für Claude
-c_pycutter                     c_pycutter.py - Python-Klassen-Extractor
-c_sqlite_viewer                sqlite_viewer_cli.py - CLI-Adapter für SQLite Viewer
-c_standard_fixer               c_standard_fixer.py - Toolchain für haeufige Code-Probleme
-c_umlaut_fixer                 c_umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Py
-c_universal_converter          Universal Data Converter
-c_youtube_extractor            c_youtube_extractor.py - Extrahiert YouTube Video-IDs aus UR
+emoji_scanner                emoji_scanner.py - Emoji-Scanner mit Gemoji/emoji-Paket In
+encoding_fixer               encoding_fixer.py - Encoding-Probleme in Textdateien beheb
+german_scanner               german_scanner.py - Findet deutsche Strings in Python-Proj
+import_diagnose              Import-Diagnose-Tool für Python-Projekte
+import_organizer             import_organizer.py - Organisiert Python-Imports nach PEP8
+indent_checker               indent_checker.py - Python-Einrückungsprüfer
+json_repair                  json_repair.py - Vollautomatisches JSON-Reparatur-System
+license_generator            license_generator.py - Drittanbieter-Lizenzen Generator
+md_to_pdf                    Markdown zu PDF Converter - RecludOS User Reports
+method_analyzer              method_analyzer.py - Python Code Analyzer für Claude
+pycutter                     pycutter.py - Python-Klassen-Extractor
+sqlite_viewer                sqlite_viewer_cli.py - CLI-Adapter für SQLite Viewer
+standard_fixer               standard_fixer.py - Toolchain für haeufige Code-Probleme
+umlaut_fixer                 umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Py
+universal_converter          Universal Data Converter
+youtube_extractor            youtube_extractor.py - Extrahiert YouTube Video-IDs aus UR
 code_analyzer                  Code-Analyzer Modul für Entwickler-Agent
 code_generator                 Code-Generator Modul für Entwickler-Agent
 create_boot_checks             boot_checks Tabelle erstellen - KRITISCH für Pre-Prompt Chec

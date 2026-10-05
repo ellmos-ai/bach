@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+   <key>Label</key>
+   <string>com.bach.downloads-watcher</string>
+   <key>ProgramArguments</key>
+   <array>
+     <string>/bin/zsh</string>
+     <string>-lc</string>
+     <string>mkdir -p "$HOME/Library/Logs/bach"; cd "$HOME/services/bach/system" || exit 1; export PATH="$HOME/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" PYTHONPATH="$HOME/services/bach/system"; exec "$HOME/.venvs/bach/bin/python" tools/inbox_watcher.py --process &gt;&gt;"$HOME/Library/Logs/bach/downloads-watcher.log" 2&gt;&gt;"$HOME/Library/Logs/bach/downloads-watcher.err.log"</string>
+   </array>
+   <key>EnvironmentVariables</key>
+   <dict>
+     <key>PYTHONIOENCODING</key>
+     <string>utf-8</string>
+   </dict>
+   <key>QueueDirectories</key>
+   <array>
+     <string>/Users/lukas/Downloads</string>
+   </array>
+   <key>RunAtLoad</key>
+   <false/>
+   <key>StartInterval</key>
+   <integer>420</integer>
+   <key>ThrottleInterval</key>
+   <integer>30</integer>
+</dict>
+</plist>

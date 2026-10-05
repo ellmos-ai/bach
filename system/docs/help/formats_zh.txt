@@ -40,7 +40,7 @@ BACH 使用 SQLite (`bach.db`) 作为主要数据存储（当前有 210 多个�
 
 转换
 -------------
-  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+  python system/tools/universal_converter.py <file> --to [json|yaml|toml|xml|toon]
 
 另请参见
 ----------

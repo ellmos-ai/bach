@@ -1,0 +1,36 @@
+# ============================================================
+# BACH-System: zentrale Runtime-/Test-Abhaengigkeiten
+# Repo-Root: /Users/lukas/services/bach/system/requirements.txt
+# Diese Datei wird von setup.py (ca. Z. 370) als pip-Referenz erwartet.
+#
+# Hinweis: tools/notespace/requirements.txt ist SEPARAT zu installieren
+# (eigene, dort kommentierte Abhaengigkeiten).
+# pytest wird hier bewusst NICHT aufgefuehrt (vgl. notespace, dort
+# auskommentiert).
+#
+# Code-Guards verweisen bei fehlenden Paketen auf diese Datei
+# (fail-closed mit pip-Hinweis): telegram_chat.py, gui/server.py,
+# gui/api/headless.py, gui/console.py, word_template_service.py.
+# ============================================================
+
+# --- Telegram-Laufzeit (hub/_services/chat/telegram_chat.py) ---
+# Application / CommandHandler / filters / ContextTypes benoetigen PTB >= 20
+python-telegram-bot>=20
+# telegram_chat.py importiert httpx direkt (Guard telegram_chat.py:60-75)
+httpx
+
+# --- Web-/GUI-API-Server (gui/server.py, gui/api/headless.py,
+#     gui/console.py, gui/api/messages_api.py) ---
+fastapi
+uvicorn
+
+# --- Dokumentverarbeitung (python-docx) ---
+# hub: word_template_service.py, unified_search.py, document_indexer.py,
+#      anonymizer_service.py (DOCX_AVAILABLE)
+# Version konsistent zu tools/notespace/requirements.txt
+python-docx>=1.0.0
+
+# --- Excelverarbeitung (openpyxl) ---
+# anonymizer_service.py (EXCEL_AVAILABLE), tests/test_anonymizer_excel_dates.py
+# Version konsistent zu tools/notespace/requirements.txt
+openpyxl>=3.1.0

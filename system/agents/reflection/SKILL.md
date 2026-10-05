@@ -1,10 +1,10 @@
 ---
 name: reflection-agent
 version: 1.0.0
-type: agent
+type: skill
 author: BACH Team
-created: 2026-02-08
-updated: 2026-09-18
+created: 2026-09-29
+updated: 2026-09-29
 anthropic_compatible: true
 status: active
 
@@ -13,16 +13,11 @@ dependencies:
   services: []
   workflows: []
 
-metadata:
-  inputs: "session-logs, task-results, error-logs"
-  outputs: "performance-report, improvement-suggestions, gap-analysis"
-
 description: >
   Selbstreflexions-Agent fuer BACH. Analysiert Session-Performance,
-  identifiziert Schwachstellen und schlaegt Verbesserungen vor.
-  Portiert aus BachForelle/skills/reflection.
+  identifiziert Schwachstellen und schlaegt Verbesserungen vor. Portiert aus
+  BachForelle/skills/reflection.
 ---
-
 # Reflection Agent
 
 ## Uebersicht

@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_duplicate_detector
+Tool: duplicate_detector
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_duplicate_detector
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version duplicate_detector
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_duplicate_detector.py [args]
+    python duplicate_detector.py [args]
 """
 
 __version__ = "1.0.0"
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     else:
         # Test Duplicate Detection
         test_cases = [
-            ("c_encoding_fixer", "Fix encoding errors", ["encoding", "utf-8"]),
+            ("encoding_fixer", "Fix encoding errors", ["encoding", "utf-8"]),
             ("new_encoding_tool", "Fix mojibake in files", ["encoding", "fix"]),
             ("method_finder", "Find Python methods", ["python", "analyze"])
         ]

@@ -48,17 +48,17 @@ VORTEILE:
 INTEGRATION:
   - Automatisch in hub/startup.py (DirectoryScanner bei Startup)
   - Automatisch in hub/shutdown.py (Zustand bei Shutdown speichern)
-  - Kein eigener Handler, Tool-basiert (tools/c_dirscan.py)
+  - Kein eigener Handler, Tool-basiert (tools/dirscan.py)
 
 CLI (MANUELL):
-  python c_dirscan.py                    # Status anzeigen
-  python c_dirscan.py --scan             # Aktuellen Zustand scannen
-  python c_dirscan.py --compare          # Vergleich IST vs SOLL
-  python c_dirscan.py --update           # SOLL-Zustand aktualisieren
-  python c_dirscan.py --path /pfad       # Anderes Verzeichnis
-  python c_dirscan.py --json             # JSON-Ausgabe
+  python dirscan.py                    # Status anzeigen
+  python dirscan.py --scan             # Aktuellen Zustand scannen
+  python dirscan.py --compare          # Vergleich IST vs SOLL
+  python dirscan.py --update           # SOLL-Zustand aktualisieren
+  python dirscan.py --path /pfad       # Anderes Verzeichnis
+  python dirscan.py --json             # JSON-Ausgabe
 
 DATEIEN:
-  - Tool: system/tools/c_dirscan.py (DirectoryScanner-Klasse)
+  - Tool: system/tools/dirscan.py (DirectoryScanner-Klasse)
   - Daten: system/data/directory_truth.json (wird bei erstem Scan erzeugt)
   - Struktur: {timestamp, directories[], files{path: {hash, size}}}

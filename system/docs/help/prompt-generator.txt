@@ -203,7 +203,7 @@ BEKANNTE PROBLEME
    - Workaround: Service direkt importieren
 
 3. PFAD-INKONSISTENZEN
-   - Help-Datei verwies auf skills/_services/ (alt)
+   - Help-Datei verwies auf hub/_services/ (alt)
    - Tatsaechlich in hub/_services/ (korrekt)
 
 MIGRATION ERFORDERLICH:

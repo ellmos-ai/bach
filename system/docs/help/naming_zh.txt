@@ -31,11 +31,6 @@ TOOL-PRAEFIXES (tools/*.py)
 
   前缀 含义 示例
   ------- ---------------------- ------------------------
-  c_ 针对 AI 优化的 CLI c_encoding_fixer.py
-            （克劳德/recludOS）c_json_repair.py
-            - 清晰、可解析的输出
-            - 编码安全 (UTF-8)
-
   m_维护m_migrate_triggers.py
             - 清理工具m_cleanup_logs.py
             - 迁移脚本
@@ -62,7 +57,7 @@ TOOL-PRAEFIXES (tools/*.py)
     task_scanner.py # ATI 代理特定（在agents/ati/scanner/中）
 
   地点：
-    - 常规：tools/c_ocr_engine.py
+    - 常规：tools/ocr/engine.py
     - 具体：agents/_experts/steuer/steuer_scanner.py
     - 代理工具：agents/ati/scanner/task_scanner.py
 

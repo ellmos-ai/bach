@@ -1,0 +1,54 @@
+# ── MANIFEST.yaml ── agents_heart Modul ──────────────────────────────────
+# Produktneutrales, versioniertes Modul.
+# Kein direkter BACH-Import (nur lazy _BachActivitySink-Adapter).
+
+module_id: agents_heart
+version: "1.0"
+status: pending   # kein Runtime-Nachweis, nur statischer Test
+owner: agents-heart-team
+ticket: T-20261003-793817309
+
+# ── Provides ──────────────────────────────────────────────────────────────
+provides:
+  - Assignment          # frozen dataclass, unveränderliche Besetzungsidentität
+  - RoleContract        # frozen dataclass, versionierter Rechtevertrag
+  - authorize_role      # fail-closed Rechteprüfung
+  - begin_assignment    # Startnachweis + assignment_id-Erzeugung
+  - finish_assignment   # Endnachweis mit Status
+  - AssignmentEventSink # @runtime_checkable Protocol (produktneutrale Schnittstelle)
+  - _BachActivitySink   # dünner BACH-Adapter (lazy-import record_activity)
+  - AssignmentDenied    # Ausnahme für fehlende/unbekannte Rollen
+  - ROLE_CONTRACTS      # 4 Rollen v1 (hintergrund_worker, task_worker, boss_routing, expert_role)
+  - _REQUIRED_RIGHTS    # frozenset {task.claim, task.execute}
+
+# ── Depends on ────────────────────────────────────────────────────────────
+depends_on:
+  - name: trithon.transport_contract
+    optional: true
+    note: "Zukünftiger LedgerEntry/ExecutionReceipt-Sink (Phase 3, derzeit aus)"
+
+no_bach_import: true
+# BACH-Import nur in _BachActivitySink.record() via lazy 'from hub._services.chat.slots_config import record_activity'
+
+# ── Nicht-Provided (ausdrücklich ausgeschlossen) ─────────────────────────
+excludes:
+  - task-logging: "logging-Konfiguration bleibt beim Host"
+  - model-selection: "Entscheidung welcher Model / Backend liegt bei Backend-Modul"
+  - process-spawning: "Prozessstart liegt beim agent-launcher"
+  - ticket-lifecycle: "Ticket-Lease liegt beim ticket-master"
+  - gui-rendering: "GUI-Rendering liegt bei den Clients"
+
+# ── Test ──────────────────────────────────────────────────────────────────
+test:
+  path: system/tests/test_agents_heart.py
+  framework: pytest
+  status: pending   # Test geschrieben, Ausführung ausstehend
+
+# ── Versionierungsregeln ──────────────────────────────────────────────────
+versioning:
+  bump_rules:
+    patch: "Feld in details-Dict ergänzt, Backward-kompatibel"
+    minor: "Neuer Optional-Parameter mit Default, kein Breaking-Change"
+    major: "Signaturen von begin_assignment / finish_assignment ändern sich;
+            neue Pflichtparameter ohne Default; Rolle aus ROLE_CONTRACTS entfernt"
+  breaking_changes: []

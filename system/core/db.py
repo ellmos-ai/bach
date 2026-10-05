@@ -235,7 +235,7 @@ class Database:
             return True
         count = self.execute_scalar(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
-            "AND name NOT IN ('_migrations', 'telemetry_counters') "
+            "AND name NOT IN ('_migrations', 'telemetry_counters', 'distribution_manifest') "
             "AND name NOT LIKE 'sqlite_%'"
         )
         return not count

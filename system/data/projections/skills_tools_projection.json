@@ -1,0 +1,4706 @@
+{
+  "generated_at": "2026-09-28T21:09:28.032514+00:00",
+  "db_path": "/Users/lukas/.bach/bach.db",
+  "counts": {
+    "skills": 128,
+    "tools": 341,
+    "handlers": 110
+  },
+  "skills": [
+    {
+      "name": "ATI",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "ATI_PROJECT_BOOTSTRAPPING",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "COPILOT",
+      "type": "skill",
+      "category": "template",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "DEPRECATED",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "ETHICS",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "POLICIES_README",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "README",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "README_TEMPLATES",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "SKILL",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_AGENT",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_EXPERT",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_HELP",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_PERSONA",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_RECEIPT_FETCHER",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_SERVICE",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_SKILL",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_TOOL",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "TEMPLATE_WORKFLOW",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "__init__",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "achtsamkeit_basis",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "act_techniken",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "agent-skill-finder",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "analysis_prompt",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "analyze-system",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "archiv",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "assistent",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "ati_exporter",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "brainstorm",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "bugfix-protokoll",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "builder",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "care-modul",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "claude-self-backup",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "cli-aenderung-checkliste",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "communicate",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "compression-aware-message-handler",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "copilot",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "create_own_tools",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "cv-generierung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "cv_generator",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "datenmodul",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "daten"
+      ],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "dbt_fertigkeiten",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "decide",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "define_variation_language",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "delegate",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "delegation_task_template",
+      "type": "skill",
+      "category": "template",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "dev-zyklus",
+      "type": "protocol",
+      "category": "workflow",
+      "version": "1.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "dialektische_fertigkeiten",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "distribution",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "docs-analyse",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "dokumentenmodul",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "dossier_generator",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "empathische_kommunikation",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "empathische_kommunikation_vertiefung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "encoding",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "exposition_begleitung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "external-tools",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "finanzen",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "finanz"
+      ],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gemini",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gemini-delegation",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "genogramm_arbeit",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gespraechsfuehrung_basis",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gesundheit",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "gesundheitsverwalter"
+      ],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gesundheitsmanager-schema",
+      "type": "skill",
+      "category": "template",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gewaltfreie_kommunikation",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "gfk_vertiefung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "google-drive",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "handle_files",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "haushalt",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "haushalts"
+      ],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "help-expert-review",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "help-forensic",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "immune-extended-concepts",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "immune-system",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "ing-strategie",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "karriere",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "kognitive_umstrukturierung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "location_search",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "loesungsfokussierte_therapie",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "main-switch-schema",
+      "type": "skill",
+      "category": "template",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "migrate-rename",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "motivational_interviewing",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "npm-mcp-publish",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "ordner-flattening",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "path_healer",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "pmr_autogenes_training",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "positive_psychologie",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "problemloese_training",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "project_bootstrapper",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "projekt-aufnahme",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "psychoedukation",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "recurring_tasks",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "reflection-status",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "reflection_analyzer",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "registry-watcher",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "release-template",
+      "type": "skill",
+      "category": "template",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "research_old",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "review_prompt",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "richtlinienverfahren_ueberblick",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "root-docs-review",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "route_planner",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "schematherapie",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "selbstmanagement",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "selbstmanagement_cli",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "self-extension",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "service-agent-validator",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "service"
+      ],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "skill-abdeckungsanalyse",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "skill-export",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "skill-md-aenderung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "software",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "stabilisierungstechniken",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "success-watcher",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "synthese",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "system-anschlussanalyse",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "system-aufraeumen",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "system-mapping",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "system-synopse",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "system-testverfahren",
+      "type": "skill",
+      "category": "workflow",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "systemische_fragetechniken",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "task_prompt",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "task_scanner",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "therapie",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "think",
+      "type": "skill",
+      "category": "service",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "tool_discovery",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "trampelpfadanalyse",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "trauma_psychoedukation",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "verhaltensaktivierung",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "webseiten-lesen",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "wiki-author",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "skills_db"
+    },
+    {
+      "name": "wissen",
+      "type": "file",
+      "category": "general",
+      "version": "1.0.0",
+      "trigger_phrases": [
+        "wissen"
+      ],
+      "provenance": "skills_db"
+    }
+  ],
+  "tools": [
+    {
+      "name": "7z",
+      "type": "cli",
+      "category": "archive",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "7z",
+      "type": "cli",
+      "category": "archive",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B001_file_inventory",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B002_format_consistency",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B003_directory_depth",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B004_naming_analysis",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B005_documentation_check",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B006_code_metrics",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B007_dependencies",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "B008_age_analysis",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O001_task_roundtrip",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O002_memory_persistence",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O003_tool_registry",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O004_backup_restore",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O005_config_validation",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "O006_export_import",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "_NEEDS_ADAPT_ai_compatible",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "_NEEDS_ADAPT_real_tools",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "abo_scanner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "activity_tracker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "agent_cli",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "agent_framework",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "agent_service_integration",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "agents_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ai_compatible",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "analyze_quality",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "anthropic_client",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "app_config",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "archive_done_tasks",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "audit_bundler",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "audit_translations",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "auphonic",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "auphonic",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "autolog",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "autolog_analyzer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "bach_auto_discovery",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "bach_db_viewer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "bach_text_viewer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "backup_manager",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "batch_file_ops",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "benchmark",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "benchmark",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "bolt",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "bolt",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "call_graph",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "camt_parser",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "chain",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "chains_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "chat_panel",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "chatgpt",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "chatgpt",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "claude",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "claude",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "claude_code_client",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "claude_md_sync",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "cli",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "cli",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "client",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "code",
+      "type": "cli",
+      "category": "ide",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "code",
+      "type": "cli",
+      "category": "ide",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "code_analyzer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "code_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "communication",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "compare_systems",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "config",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "consensus",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "consensus",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "console_logging",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "context_compressor",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "copilot",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "copilot",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "copilot_workspace",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "copilot_workspace",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "core",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "create_boot_checks",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "curl",
+      "type": "cli",
+      "category": "network",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "curl",
+      "type": "cli",
+      "category": "network",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "cursor",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "cursor",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "custom_analysis",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "data_importer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "db_access",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "db_check",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "debug_scan",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "deep_analysis",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "deep_audit",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "deepl_write",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "deepl_write",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "dependency_analysis",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "descript",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "descript",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "dictionary_builder",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "dirscan",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "dirscan",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "distribution",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "doc_path_updater",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "doc_search",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "doc_update_checker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "document_chunker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "document_indexer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "document_manager",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "document_panel",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "dungeon_template",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "duplicate_detector",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "e_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "element_discovery",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "elevenlabs",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "elevenlabs",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "elicit",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "elicit",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "embeddings",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "emoji_safe",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "emoji_scanner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "encoding_fix",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "encoding_fixer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "encoding_header",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "engine",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "engine",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "entwickler_agent",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "exporter",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "exporter",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ffmpeg",
+      "type": "cli",
+      "category": "multimedia",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ffmpeg",
+      "type": "cli",
+      "category": "multimedia",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "file_cleaner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "file_manager",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "find_and_repair_glitches",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "fix_common_terms",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "flux",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "flux",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "folder_diff_scanner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "forensic_db_scan",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "fs_protection",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gamma",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gamma",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gemini",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gemini",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gemini_llm",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "gemini_start",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "generate_skills_report",
+      "type": "python",
+      "category": "reporting",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "generator",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "german_scanner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "git",
+      "type": "cli",
+      "category": "version_control",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "git",
+      "type": "cli",
+      "category": "version_control",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "goblin_tools",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "goblin_tools",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "grep",
+      "type": "cli",
+      "category": "text_processing",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "grep",
+      "type": "cli",
+      "category": "text_processing",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "groq",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "groq",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "header_migrate",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "headless_agent",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "help_docs_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "hierarchy",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ideogram",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ideogram",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "image_converter",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "import_diagnose",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "import_organizer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "inbox_watcher",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "indent_checker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ingest",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "injectors",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "inspect_help_doc",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "inspect_lang_schema",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "interaction_protocol",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "json_config_cli",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "json_fixer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "json_registry_cleaner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "json_repair",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "json_safe",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "kling",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "kling",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "lalal",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "lalal",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "leonardo",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "leonardo",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "lesson_trigger_generator",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "license_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "llmauto",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "luma",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "luma",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "magnific",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "magnific",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "main",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "main_window",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "mcp_server",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "md_to_pdf",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "memory_decay",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "memory_sync",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "memory_working_cleanup",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "method_analyzer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "midjourney",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "midjourney",
+      "type": "external",
+      "category": "image",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "migrate_consolidate_dbs",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "migrate_consolidate_phase2",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "migrate_restructure",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "migrate_skills_hierarchy",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "migration_baseline_check",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "mistral",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "mistral",
+      "type": "external",
+      "category": "llm",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "node",
+      "type": "cli",
+      "category": "runtime",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "node",
+      "type": "cli",
+      "category": "runtime",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notebooklm",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notebooklm",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notepad++",
+      "type": "cli",
+      "category": "editor",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notepad++",
+      "type": "cli",
+      "category": "editor",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notion_ai",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "notion_ai",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "nulcleaner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ollama_client",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ollama_client",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ollama_manual_check",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ollama_summarize",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ollama_worker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "openai_client",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "os_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "output_panel",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "partners_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "path_healer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pattern_tool",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pdf_ocr_batch",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "perplexity",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "perplexity",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pika",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pika",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pip",
+      "type": "cli",
+      "category": "package_manager",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pip",
+      "type": "cli",
+      "category": "package_manager",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pip3",
+      "type": "cli",
+      "category": "package_manager",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pip3",
+      "type": "cli",
+      "category": "package_manager",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "plan_agent",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "policy_applier",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "policy_control",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "populate_features",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "populate_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "portable_base",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ppt_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "problems_first",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "production_agent",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "project",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "project_bundler",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "pycutter",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "python",
+      "type": "cli",
+      "category": "runtime",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "python",
+      "type": "cli",
+      "category": "runtime",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "python_cli_editor",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "query_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "rag_ingest",
+      "type": "python",
+      "category": "",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "rag_search",
+      "type": "python",
+      "category": "",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "real_tools",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "register_skills",
+      "type": "cli",
+      "category": "system",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "registry_watcher",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "release_language",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "replit",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "replit",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "reports",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "research_agent",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "rezeptbuch",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_b_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_b_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_comparison_custom",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_external",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_o_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "run_o_tests",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "runner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "runner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "runway",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "runway",
+      "type": "external",
+      "category": "video",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sample_skills_and_help",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "schema_reader",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "scite",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "scite",
+      "type": "external",
+      "category": "research",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "search",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "send_report",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "session_analyzer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_header_gen",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_health_monitor",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_help_gen",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_init",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_package",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "skill_validate",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "specialist",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "splitter",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sqlite_viewer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ssh",
+      "type": "cli",
+      "category": "network",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "ssh",
+      "type": "cli",
+      "category": "network",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "standard_fixer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "start_bach_gemini",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "state",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "static_html_automation",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "stigmergy_pattern",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "structure_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sub_query",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "success_tracker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "summarize_chunks",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "suno",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "suno",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sync_registry",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sync_skills",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "sync_utils",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "system_explorer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "task_statistics",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "taskade",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "taskade",
+      "type": "external",
+      "category": "edu",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "templates",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "temu_quittung_fetcher",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "test_runner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "text_chunker",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "text_extractor",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "theme_packet_generator",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "time_system",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "token_monitor",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "tool_auto_discovery",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "tool_discovery",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "tool_registry_boot",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "tool_scanner",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translate_batch",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translate_help_batch",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translate_skills_batch",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translate_swarm",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translate_tools_en",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "translator",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "trigger_maintainer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "udio",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "udio",
+      "type": "external",
+      "category": "audio",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "umlaut_fixer",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "unified_search",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "universal_compiler",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "universal_converter",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "update_directory_truth",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "usecases_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "user_console",
+      "type": "python",
+      "category": "",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "verify_token_logic",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "version_bump",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "windsurf",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "windsurf",
+      "type": "external",
+      "category": "dev",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "with_server",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "workflow_panel",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "workflow_trigger_generator",
+      "type": "script",
+      "category": "auto-discovery",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "workflows_export",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    },
+    {
+      "name": "youtube_extractor",
+      "type": "python",
+      "category": "general",
+      "version": "",
+      "trigger_phrases": [],
+      "provenance": "tools_db"
+    }
+  ],
+  "handlers": [
+    {
+      "name": "abo",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "agent",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "agents",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "api",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "apiprober",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "ati",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "backup",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "beat",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "bericht",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "between",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "calendar",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "chain",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "claude-bridge",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "clock",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "cloud",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "clutch",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "connections",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "connector",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "consolidation",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "contact",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "context",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "cookbook",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "countdown",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "cv",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "daily-agent",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "data",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "db",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "dbsync",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "denkarium",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "dist",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "doc",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "docs",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "docs-search",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "email",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "extensions",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "fs",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "gesundheit",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "gui",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "haushalt",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "healthcheck",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "help",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "hooks",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "inject",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "integration",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "lang",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "lesson",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "literatur",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "logs",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "maintain",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "mcp",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "media",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "mediplaner",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "mem",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "memory",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "mount",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "msg",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "news",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "newspaper",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "notespace",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "notify",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "obsidian",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "ollama",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "partner",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "path",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "permissions",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "plugins",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "press",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "profile",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "profiler",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "prompt",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "recurring",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "reflection",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "restore",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "routine",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "sandbox",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "scan",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "scheduler",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "schwarm",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "search",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "security",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "session",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "settings",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "setup",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "shared-mem",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "shutdown",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "skills",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "smarthome",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "snapshot",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "sources",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "startup",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "status",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "steuer",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "sync",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "task",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "telemetry",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "test",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "theme",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "timer",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "tokens",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "tools",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "trash",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "tuev",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "update",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "upgrade",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "usecase",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "versicherung",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "watcher",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "web-parse",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "web-scrape",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    },
+    {
+      "name": "wiki",
+      "type": "handler",
+      "category": "core",
+      "version": "1.0.0",
+      "trigger_phrases": [],
+      "provenance": "handler_registry"
+    }
+  ],
+  "warnings": [
+    "trigger_unmatched:aboservice",
+    "trigger_unmatched:data-analysis",
+    "trigger_unmatched:financial_mail",
+    "trigger_unmatched:health_import",
+    "trigger_unmatched:mr_tiktak",
+    "trigger_unmatched:wikiquizzer",
+    "trigger_unmatched:daemon",
+    "trigger_unmatched:funktionalitäten",
+    "trigger_unmatched:dieser",
+    "trigger_unmatched:document",
+    "trigger_unmatched:integriert",
+    "trigger_unmatched:kern",
+    "trigger_unmatched:dokuzentrum",
+    "trigger_unmatched:suite",
+    "trigger_unmatched:financial",
+    "trigger_unmatched:mail",
+    "trigger_unmatched:qualitaetssicherung",
+    "trigger_unmatched:tage",
+    "trigger_unmatched:help_forensic",
+    "trigger_unmatched:kategorie",
+    "trigger_unmatched:2026",
+    "trigger_unmatched:version",
+    "trigger_unmatched:hinweis",
+    "trigger_unmatched:organisation",
+    "trigger_unmatched:hauslagerist",
+    "trigger_unmatched:eine",
+    "trigger_unmatched:mediplaner",
+    "trigger_unmatched:household",
+    "trigger_unmatched:vorräte",
+    "trigger_unmatched:yfinance",
+    "trigger_unmatched:finanzmarkt",
+    "trigger_unmatched:über",
+    "trigger_unmatched:caching",
+    "trigger_unmatched:market",
+    "trigger_unmatched:fehlerbehandlung",
+    "trigger_unmatched:uptoday",
+    "trigger_unmatched:terminverwaltung",
+    "trigger_unmatched:routines",
+    "trigger_unmatched:tagesplanung",
+    "trigger_unmatched:engines",
+    "trigger_unmatched:scheduling",
+    "trigger_unmatched:extraktion",
+    "trigger_unmatched:routinen",
+    "trigger_unmatched:aktualisiert",
+    "trigger_unmatched:wiki_author"
+  ]
+}

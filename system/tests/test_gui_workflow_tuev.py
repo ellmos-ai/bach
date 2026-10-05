@@ -16,13 +16,14 @@ if str(SYSTEM_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     try:
         from starlette.testclient import TestClient
     except ImportError:
         pytest.skip("starlette not available")
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
     from gui.server import app
-    return TestClient(app, raise_server_exceptions=False)
+    return TestClient(app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-control-token"})
 
 
 class TestWorkflowTuevPage:

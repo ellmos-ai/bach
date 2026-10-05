@@ -355,8 +355,9 @@ class TestServerTaskClaimAPI:
         monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data")
         monkeypatch.setattr(srv, "BACH_DIR", tmp_path)
         monkeypatch.setattr(srv, "GUI_DIR", tmp_path / "gui")
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "smoke-test-control-token")
 
-        return TestClient(srv.app, raise_server_exceptions=False)
+        return TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer smoke-test-control-token"})
 
     def test_put_api_claim_conflict_returns_claim_failed_http_200(self, client, task_db):
         """PUT /api/tasks/{id} mit status=in_progress gegen beanspruchten Task liefert claim_failed bei HTTP 200."""

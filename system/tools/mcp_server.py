@@ -524,6 +524,7 @@ SAFE_TABLES = {
     # Finanzen / Steuer
     "steuer_posten", "steuer_dokumente", "steuer_profile", "steuer_auswertung",
     "steuer_anbieter", "steuer_ocr_cache", "steuer_watch_ordner",
+    "steuer_bank_transactions",
     "household_finances", "household_inventory", "household_routines",
     "household_shopping_items", "household_shopping_lists",
     "abo_subscriptions", "abo_payments", "abo_patterns",

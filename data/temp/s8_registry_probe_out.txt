@@ -1,0 +1,391 @@
+
+===== TABLE tool_registry =====
+COLUMNS (12): id, name, path, status, has_aufgaben, has_test, has_feedback, task_count, last_scan, created_at, updated_at, dist_type
+ROW COUNT: 45
+--- row 1 ---
+  id = 1
+  name = 'A1 ICF-Checker'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\SINGLE\\A1 ICF-Checker'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 0
+  has_feedback = 0
+  task_count = 2
+  last_scan = '2026-01-31T10:22:54.255980'
+  created_at = '2026-01-15T13:57:54.427761'
+  updated_at = '2026-01-31T10:22:54.255980'
+  dist_type = 2
+--- row 2 ---
+  id = 2
+  name = 'A1 MediaBrain'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\SINGLE\\A1 MediaBrain'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 0
+  has_feedback = 0
+  task_count = 86
+  last_scan = '2026-01-31T10:22:54.289347'
+  created_at = '2026-01-15T13:57:54.505255'
+  updated_at = '2026-01-31T10:22:54.289347'
+  dist_type = 2
+--- row 3 ---
+  id = 3
+  name = 'A2 Editor'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\SINGLE\\A2 Editor'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 0
+  has_feedback = 0
+  task_count = 6
+  last_scan = '2026-01-31T10:22:54.300526'
+  created_at = '2026-01-15T13:57:54.547703'
+  updated_at = '2026-01-31T10:22:54.300526'
+  dist_type = 2
+
+===== TABLE ati_tool_registry =====
+COLUMNS (11): id, name, path, status, has_aufgaben, has_test, has_feedback, task_count, last_scan, created_at, updated_at
+ROW COUNT: 137
+--- row 1 ---
+  id = 59
+  name = '23andMe_to_VCF'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\23andMe_to_VCF'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 0
+  has_feedback = 0
+  task_count = 3
+  last_scan = '2026-02-13T01:06:18.049451'
+  created_at = '2026-02-13T01:06:18.045230'
+  updated_at = '2026-02-13T01:06:18.049451'
+--- row 2 ---
+  id = 60
+  name = 'AboTracker'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\AboTracker'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 0
+  has_feedback = 0
+  task_count = 18
+  last_scan = '2026-02-13T01:06:18.068486'
+  created_at = '2026-02-13T01:06:18.051464'
+  updated_at = '2026-02-13T01:06:18.068486'
+--- row 3 ---
+  id = 61
+  name = 'AmpelClip'
+  path = 'C:\\Users\\User\\OneDrive\\Software Entwicklung\\AmpelClip'
+  status = 'aktiv'
+  has_aufgaben = 1
+  has_test = 1
+  has_feedback = 0
+  task_count = 3
+  last_scan = '2026-02-13T01:06:18.074501'
+  created_at = '2026-02-13T01:06:18.070248'
+  updated_at = '2026-02-13T01:06:18.074501'
+
+===== TABLE skills =====
+COLUMNS (18): id, name, type, category, path, version, description, is_active, priority, trigger_phrases, created_at, updated_at, dist_type, template_content, content, content_hash, operator_class, language
+ROW COUNT: 128
+--- row 1 ---
+  id = 163
+  name = 'cli-aenderung-checkliste'
+  type = 'file'
+  category = 'general'
+  path = 'skills/workflows/cli-aenderung-checkliste.md'
+  version = '1.0.0'
+  description = 'CLI-Änderungs-Checkliste'
+  is_active = 1
+  priority = 50
+  trigger_phrases = None
+  created_at = '2026-01-26T00:35:07.668911'
+  updated_at = '2026-09-16T05:25:21.612577'
+  dist_type = 2
+  template_content = None
+  content = '# CLI-Änderungs-Checkliste\n\n> **Zweck:** Alle Schritte zum Einfügen oder Ändern eines CLI-Befehls unter der\n> Registry-Architektur v2.0 (Handler implementieren, Alias, Help-Datei, Test).\n> Auto-Discovery macht manuelle Registrierung in bach.py überflüssig.\n\n**Version:** 2.0\n**Stand:** 2026-09-16\n**Kategorie:** Wartung, Entwicklung\n\n---\n\n## Übersicht\n\nDieser Workflow beschreibt alle Schritte, die n...[+10171 chars]'
+  content_hash = '409cae90c85038ac8036c358fb4eca8c3a736796bf08f343558ef0b2bd6c6f0a'
+  operator_class = None
+  language = 'de'
+--- row 2 ---
+  id = 165
+  name = 'help-forensic'
+  type = 'file'
+  category = 'general'
+  path = 'skills/workflows/help-forensic.md'
+  version = '1.0.0'
+  description = 'Workflow: Help-Forensik'
+  is_active = 1
+  priority = 50
+  trigger_phrases = None
+  created_at = '2026-01-26T00:35:07.673814'
+  updated_at = '2026-04-07T07:10:29.516080'
+  dist_type = 2
+  template_content = None
+  content = '# Workflow: Help-Forensik\n\n**Version:** 1.0.0\n**Erstellt:** 2026-01-24\n**Service:** skills/_services/skills/docs/help/\n**Recurring:** help_forensic (14 Tage)\n\n---\n\n## Zweck\n\nSystematische Ueberpruefung der Help-Dokumentation auf Aktualitaet.\nVergleicht dokumentierten Soll-Zustand mit tatsaechlicher Implementierung.\nBei Abweichungen: Help anpassen ODER Roadmap/Tasks erweitern.\n\nPrinzip: `skills/doc...[+7110 chars]'
+  content_hash = 'ac111c9518882ae51b73bdb133931fd3c0155e15f9f30a748de816a2d16c1fd7'
+  operator_class = None
+  language = 'de'
+--- row 3 ---
+  id = 166
+  name = 'migrate-rename'
+  type = 'file'
+  category = 'general'
+  path = 'skills/workflows/migrate-rename.md'
+  version = '1.0.0'
+  description = 'Workflow: Datei-Umbenennung mit Wrapper (Evolutionaere Migration)'
+  is_active = 1
+  priority = 50
+  trigger_phrases = None
+  created_at = '2026-01-26T00:35:07.675998'
+  updated_at = '2026-04-07T07:10:29.563850'
+  dist_type = 2
+  template_content = None
+  content = '# Workflow: Datei-Umbenennung mit Wrapper (Evolutionaere Migration)\n\n**Version:** 1.0.0\n**Erstellt:** 2026-01-24\n**Kategorie:** System-Wartung\n\n---\n\n## Zweck\n\nDieses Verfahren ermoeglicht Datei-Umbenennungen OHNE harte Brueche.\nStatt alle Verweise auf einmal zu korrigieren, werden sie organisch\ndurch die taegliche Nutzung aktualisiert.\n\n---\n\n## Prinzip: Evolutionaere Migration\n\n```\nVORHER:        ...[+2856 chars]'
+  content_hash = '0a07fbfd6220d05b17b9592583182c878bfaddf3e274a6778a6e63a42a5dd9e5'
+  operator_class = None
+  language = 'de'
+
+===== TABLE toolchain_runs =====
+COLUMNS (12): id, chain_id, status, log, started_at, duration_seconds, finished_at, steps_completed, steps_total, output, error, triggered_by
+ROW COUNT: 6
+--- row 1 ---
+  id = 1
+  chain_id = 1
+  status = 'failed'
+  log = 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe bach.py scan status\n[FAILED] Return Code: 1\nStderr: '
+  started_at = '2026-01-28 09:25:05'
+  duration_seconds = 0.18611788749694824
+  finished_at = None
+  steps_completed = 0
+  steps_total = 0
+  output = None
+  error = None
+  triggered_by = 'manual'
+--- row 2 ---
+  id = 2
+  chain_id = 2
+  status = 'failed'
+  log = 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe bach.py help cli\n[FAILED] Return Code: 1\nStderr: '
+  started_at = '2026-01-28 09:25:59'
+  duration_seconds = 0.2029409408569336
+  finished_at = None
+  steps_completed = 0
+  steps_total = 0
+  output = None
+  error = None
+  triggered_by = 'manual'
+--- row 3 ---
+  id = 3
+  chain_id = 4
+  status = 'success'
+  log = 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe bach.py msg ping --from claude\n[OK] *** 1 NACHRICHT(EN) AN CLAUDE ***\n\n[307] VON GEMINI (07:00):\n   > Habe Tasks #708 (Worksheet-Gen) und #709 (Bericht-Template) fuer Foerderpla\n\n--> bach msg read <id> --ack zum Bestaetigen\n...\n\nStep 2: C:\\Users\\User\\AppData\\Local\\Microsoft\\Windo...[+815 chars]'
+  started_at = '2026-01-30 06:31:11'
+  duration_seconds = 1.0340969562530518
+  finished_at = None
+  steps_completed = 0
+  steps_total = 0
+  output = None
+  error = None
+  triggered_by = 'manual'
+
+===== TABLE tool_patterns =====
+COLUMNS (14): id, pattern_name, pattern_type, keywords, problem_patterns, suggested_tools, confidence_threshold, priority, usage_count, success_rate, status, notes, created_at, updated_at
+ROW COUNT: 5
+--- row 1 ---
+  id = 1
+  pattern_name = 'code_error'
+  pattern_type = 'debug'
+  keywords = '["error", "bug", "exception", "traceback", "crash"]'
+  problem_patterns = '["syntax error", "runtime error", "undefined variable"]'
+  suggested_tools = '["debug_tool", "code_review", "linter"]'
+  confidence_threshold = 0.8
+  priority = 100
+  usage_count = 0
+  success_rate = 1.0
+  status = 'active'
+  notes = 'Code-Fehler erkennen'
+  created_at = '2026-01-21 03:37:52'
+  updated_at = '2026-01-21 03:37:52'
+--- row 2 ---
+  id = 2
+  pattern_name = 'file_operation'
+  pattern_type = 'filesystem'
+  keywords = '["file", "folder", "directory", "copy", "move", "delete"]'
+  problem_patterns = '["need to organize files", "move files", "backup"]'
+  suggested_tools = '["file_ops", "backup_tool", "organizer"]'
+  confidence_threshold = 0.7
+  priority = 90
+  usage_count = 0
+  success_rate = 1.0
+  status = 'active'
+  notes = 'Dateioperationen'
+  created_at = '2026-01-21 03:37:52'
+  updated_at = '2026-01-21 03:37:52'
+--- row 3 ---
+  id = 3
+  pattern_name = 'document_creation'
+  pattern_type = 'document'
+  keywords = '["document", "pdf", "report", "write", "create"]'
+  problem_patterns = '["write a report", "create document", "generate pdf"]'
+  suggested_tools = '["create_doc", "pdf_generator", "template_engine"]'
+  confidence_threshold = 0.75
+  priority = 80
+  usage_count = 0
+  success_rate = 1.0
+  status = 'active'
+  notes = 'Dokumente erstellen'
+  created_at = '2026-01-21 03:37:52'
+  updated_at = '2026-01-21 03:37:52'
+
+===== TABLE agents =====
+COLUMNS (20): id, name, type, category, skill_path, script_path, config_path, version, description, capabilities, entry_command, requires_tools, is_active, is_autonomous, priority, tasks_completed, success_rate, last_used, created_at, updated_at
+ROW COUNT: 6
+--- row 1 ---
+  id = 1
+  name = 'entwickler'
+  type = 'developer'
+  category = 'system'
+  skill_path = None
+  script_path = None
+  config_path = None
+  version = '1.0.0'
+  description = 'Code-Analyse, Generierung, Review'
+  capabilities = '["code_analysis", "code_generation"]'
+  entry_command = None
+  requires_tools = None
+  is_active = 1
+  is_autonomous = 0
+  priority = 50
+  tasks_completed = 0
+  success_rate = None
+  last_used = None
+  created_at = None
+  updated_at = None
+--- row 2 ---
+  id = 2
+  name = 'research'
+  type = 'research'
+  category = 'system'
+  skill_path = None
+  script_path = None
+  config_path = None
+  version = '1.0.0'
+  description = 'Recherche, Analyse'
+  capabilities = '["web_search", "summarization"]'
+  entry_command = None
+  requires_tools = None
+  is_active = 1
+  is_autonomous = 0
+  priority = 50
+  tasks_completed = 0
+  success_rate = None
+  last_used = None
+  created_at = None
+  updated_at = None
+--- row 3 ---
+  id = 3
+  name = 'production'
+  type = 'production'
+  category = 'system'
+  skill_path = None
+  script_path = None
+  config_path = None
+  version = '1.0.0'
+  description = 'Content-Erstellung'
+  capabilities = '["text_generation", "media"]'
+  entry_command = None
+  requires_tools = None
+  is_active = 1
+  is_autonomous = 0
+  priority = 50
+  tasks_completed = 0
+  success_rate = None
+  last_used = None
+  created_at = None
+  updated_at = None
+
+===== AGGREGATES =====
+
+-- tool_registry: id, name, path, status, has_aufgaben, has_test, has_feedback, task_count, last_scan, created_at, updated_at, dist_type
+  id: distinct=45/45
+  name: distinct=39/45
+  path: distinct=45/45
+  status: distinct=1/45 -> ['aktiv']
+  has_aufgaben: distinct=1/45 -> [1]
+  has_test: distinct=2/45 -> [0, 1]
+  has_feedback: distinct=1/45 -> [0]
+  task_count: distinct=24/45
+  last_scan: distinct=45/45
+  created_at: distinct=45/45
+  updated_at: distinct=45/45
+  dist_type: distinct=1/45 -> [2]
+
+-- skills: id, name, type, category, path, version, description, is_active, priority, trigger_phrases, created_at, updated_at, dist_type, template_content, content, content_hash, operator_class, language
+  id: distinct=128/128
+  name: distinct=128/128
+  type: distinct=3/128 -> ['file', 'protocol', 'skill']
+  category: distinct=4/128 -> ['general', 'workflow', 'service', 'template']
+  path: distinct=128/128
+  version: distinct=2/128 -> ['1.0.0', '1.0']
+  description: distinct=79/128
+  is_active: distinct=1/128 -> [1]
+  priority: distinct=1/128 -> [50]
+  trigger_phrases: distinct=0/128 -> [None]
+  created_at: distinct=92/128
+  updated_at: distinct=70/128
+  dist_type: distinct=3/128 -> [2, 0, 1]
+  template_content: distinct=0/128 -> [None]
+  content: distinct=127/128
+  content_hash: distinct=127/128
+  operator_class: distinct=0/128 -> [None]
+  language: distinct=2/128 -> ['de', 'en']
+
+-- toolchain_runs: id, chain_id, status, log, started_at, duration_seconds, finished_at, steps_completed, steps_total, output, error, triggered_by
+  id: distinct=6/6 -> [1, 2, 3, 4, 5, 6]
+  chain_id: distinct=6/6 -> [1, 2, 4, 5, 7, 3]
+  status: distinct=2/6 -> ['failed', 'success']
+  log: distinct=6/6 -> ['Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\Py...[+112 chars]', 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\Py...[+109 chars]', 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\Py...[+1155 chars]', 'Step 1: C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\Py...[+684 chars]', 'Step 1: Start Parallel Block (2 Tasks)\n    [THREAD] msg: SUC...[+673 chars]', "Step 1: scan ['run', '--mode', 'quick']\n[OK] (15.44s) [ProSy...[+676 chars]"]
+  started_at: distinct=6/6 -> ['2026-01-28 09:25:05', '2026-01-28 09:25:59', '2026-01-30 06:31:11', '2026-01-30 06:36:27', '2026-01-30T07:39:32.887399', '2026-09-18T05:39:13.574815']
+  duration_seconds: distinct=6/6 -> [0.18611788749694824, 0.2029409408569336, 1.0340969562530518, 0.33275580406188965, 0.5819127559661865, 46.35841202735901]
+  finished_at: distinct=2/6 -> [None, '2026-01-30T07:39:33.469312', '2026-09-18T05:39:59.933242']
+  steps_completed: distinct=2/6 -> [0, 3]
+  steps_total: distinct=3/6 -> [0, 4, 3]
+  output: distinct=2/6 -> [None, '[OK] Keine neuen Nachrichten fuer PARALLEL1\n\n[OK] Keine neue...[+3071 chars]', '[ProSync] Starte Pull ...\n[ProSync] Startzeitbudget von 15 s...[+1015 chars]']
+  error: distinct=1/6 -> [None, '']
+  triggered_by: distinct=1/6 -> ['manual']
+
+-- tool_patterns: id, pattern_name, pattern_type, keywords, problem_patterns, suggested_tools, confidence_threshold, priority, usage_count, success_rate, status, notes, created_at, updated_at
+  id: distinct=5/5 -> [1, 4, 3, 2, 5]
+  pattern_name: distinct=5/5 -> ['code_error', 'data_analysis', 'document_creation', 'file_operation', 'steuer_beleg']
+  pattern_type: distinct=5/5 -> ['debug', 'filesystem', 'document', 'analysis', 'financial']
+  keywords: distinct=5/5 -> ['["error", "bug", "exception", "traceback", "crash"]', '["file", "folder", "directory", "copy", "move", "delete"]', '["document", "pdf", "report", "write", "create"]', '["analyze", "data", "csv", "excel", "statistics"]', '["beleg", "rechnung", "steuer", "quittung"]']
+  problem_patterns: distinct=5/5 -> ['["syntax error", "runtime error", "undefined variable"]', '["need to organize files", "move files", "backup"]', '["write a report", "create document", "generate pdf"]', '["analyze data", "read csv", "calculate statistics"]', '["beleg erfassen", "rechnung scannen", "steuern"]']
+  suggested_tools: distinct=5/5 -> ['["debug_tool", "code_review", "linter"]', '["file_ops", "backup_tool", "organizer"]', '["create_doc", "pdf_generator", "template_engine"]', '["data_analyzer", "csv_reader", "statistics_tool"]', '["beleg_scan", "steuer_tool", "ocr"]']
+  confidence_threshold: distinct=4/5 -> [0.8, 0.7, 0.75, 0.85]
+  priority: distinct=5/5 -> [100, 90, 80, 70, 60]
+  usage_count: distinct=1/5 -> [0]
+  success_rate: distinct=1/5 -> [1.0]
+  status: distinct=1/5 -> ['active']
+  notes: distinct=5/5 -> ['Code-Fehler erkennen', 'Dateioperationen', 'Dokumente erstellen', 'Datenanalyse', 'Steuer-Belege']
+  created_at: distinct=1/5 -> ['2026-01-21 03:37:52']
+  updated_at: distinct=1/5 -> ['2026-01-21 03:37:52']
+
+-- agents: id, name, type, category, skill_path, script_path, config_path, version, description, capabilities, entry_command, requires_tools, is_active, is_autonomous, priority, tasks_completed, success_rate, last_used, created_at, updated_at
+  id: distinct=6/6 -> [4, 1, 5, 3, 2, 6]
+  name: distinct=6/6 -> ['ati', 'entwickler', 'hq5-test-agent', 'production', 'research', 'test-tool-demo']
+  type: distinct=5/6 -> ['developer', 'research', 'production', 'agent', 'expert']
+  category: distinct=2/6 -> ['system', 'general']
+  skill_path: distinct=0/6 -> [None]
+  script_path: distinct=0/6 -> [None]
+  config_path: distinct=3/6 -> [None, 'agents/ati/manifest.json', 'agents/hq5-test-agent/manifest.json', 'agents/_experts/test-tool-demo/manifest.json']
+  version: distinct=1/6 -> ['1.0.0']
+  description: distinct=6/6 -> ['Code-Analyse, Generierung, Review', 'Recherche, Analyse', 'Content-Erstellung', 'ATI - Advanced Tool Integration Agent. Software-Entwickler-A...[+63 chars]', 'BACH agent: hq5-test-agent', 'BACH expert: test-tool-demo']
+  capabilities: distinct=3/6 -> ['["code_analysis", "code_generation"]', '["web_search", "summarization"]', '["text_generation", "media"]', None]
+  entry_command: distinct=0/6 -> [None]
+  requires_tools: distinct=0/6 -> [None]
+  is_active: distinct=1/6 -> [1]
+  is_autonomous: distinct=1/6 -> [0]
+  priority: distinct=1/6 -> [50]
+  tasks_completed: distinct=1/6 -> [0]
+  success_rate: distinct=0/6 -> [None]
+  last_used: distinct=0/6 -> [None]
+  created_at: distinct=1/6 -> [None, '2026-03-06 19:01:31']
+  updated_at: distinct=1/6 -> [None, '2026-03-06 19:01:31']

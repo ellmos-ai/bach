@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_dirscan
+Tool: dirscan
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_dirscan
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version dirscan
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_dirscan.py [args]
+    python dirscan.py [args]
 """
 
 __version__ = "1.0.0"

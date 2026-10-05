@@ -97,7 +97,7 @@ GUI: なし (CLI のみ + /daemon ページに統合)
      新しいツールを確認します: bach ati onboard --check
 
   3. code_quality (30d)
-     コードの品質をチェックします: すべてのツールの c_method_analyzer
+     コードの品質をチェックします: すべてのツールの method_analyzer
 
   システムタスク:
   -------------

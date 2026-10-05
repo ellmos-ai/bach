@@ -399,14 +399,20 @@ class UsecaseHandler(BaseHandler):
 
         workflow_name = (row["workflow_name"] or "").strip()
         if workflow_name:
-            normalized_names = {
-                workflow_name,
-                workflow_name.lower(),
-                workflow_name.lower().replace(" ", "-"),
-                workflow_name.lower().replace("_", "-"),
-                workflow_name.lower().replace(" ", "_"),
-            }
-            for name in sorted(normalized_names):
+            lower = workflow_name.lower()
+            normalized_names = [
+                lower,
+                lower.replace(" ", "-"),
+                lower.replace("_", "-"),
+                lower.replace(" ", "_"),
+            ]
+            if lower != workflow_name:
+                # Original-Schreibweise erst als letzten Fallback pruefen,
+                # damit auf case-insensitiven Dateisystemen nicht fälschlich
+                # ein Uppercase-Name vor der bevorzugten Klein-Klebschreibung
+                # matcht (z.B. SOFTWARE.md statt software.md).
+                normalized_names.append(workflow_name)
+            for name in normalized_names:
                 add_candidate(name)
 
             tuev_rows = conn.execute(

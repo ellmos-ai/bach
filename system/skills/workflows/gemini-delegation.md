@@ -1,5 +1,7 @@
 # Gemini Delegation Workflow
 
+**Version:** 1.0.0
+
 > **Delegiere ressourcenintensive Tasks an Google Gemini**
 
 ---

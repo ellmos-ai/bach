@@ -23,27 +23,27 @@ SOFTWARE.
 """
 
 """
-Tool: c_encoding_fixer
+Tool: encoding_fixer
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_encoding_fixer
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version encoding_fixer
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_encoding_fixer.py [args]
+    python encoding_fixer.py [args]
 """
 
 __version__ = "1.0.0"
 __author__ = "BACH Team"
 
 """
-c_encoding_fixer.py - Encoding-Probleme in Textdateien beheben
+encoding_fixer.py - Encoding-Probleme in Textdateien beheben
 
 Zweck: Korrigiert Encoding-Fehler (Mojibake, falsche UTF-8 Dekodierung etc.)
        mit der ftfy-Bibliothek. Erstellt automatisch Backups.
@@ -52,13 +52,13 @@ Autor: Claude (adaptiert von EncodingFixxer.py)
 Abhängigkeiten: ftfy (pip install ftfy), os, json (stdlib)
 
 Usage:
-    python c_encoding_fixer.py <file_or_folder> [--no-backup] [--recursive] [--json]
+    python encoding_fixer.py <file_or_folder> [--no-backup] [--recursive] [--json]
     
 Beispiele:
-    python c_encoding_fixer.py script.py              # Einzelne Datei
-    python c_encoding_fixer.py ./src --recursive      # Ganzer Ordner
-    python c_encoding_fixer.py file.py --no-backup    # Ohne Backup
-    python c_encoding_fixer.py file.py --json         # JSON-Output
+    python encoding_fixer.py script.py              # Einzelne Datei
+    python encoding_fixer.py ./src --recursive      # Ganzer Ordner
+    python encoding_fixer.py file.py --no-backup    # Ohne Backup
+    python encoding_fixer.py file.py --json         # JSON-Output
 """
 
 import os

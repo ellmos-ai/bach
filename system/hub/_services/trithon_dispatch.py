@@ -2,19 +2,19 @@
 """Trithon Dispatch-Layer — Folgestufe 3.
 
 Dieses Modul verbindet die interne Task-Infrastruktur (agents-heart für
-Besetzungsnachweise, task_audit für atomares Claiming) mit dem synthetischen
-ticket-master-Vertrag (routing_contract). Es implementiert einen No-op-Executor,
+Besetzungsnachweise, task_audit für atomares Claiming) mit dem neutralen
+Transportvertrag (transport_contract). Es implementiert einen No-op-Executor,
 also eine reine Durchlauf-Pipeline, die den vollständigen E2E-Pfad ohne echte
 Modellausführung validiert.
 
 Öffentliche Funktionen
 ----------------------
 * ``execute_intent_v1`` – Orchestriert atomares Claim, Besetzung, simulierte
-  Ausführung, Receipt-Erzeugung und Ticket-Master-Abschluss.
-* ``route_intent_v1`` – Wählt einen Executor und Ticket-Identität für einen Intent.
+  Ausführung, Receipt-Erzeugung und Transport-Abschluss.
+* ``route_intent_v1`` – Wählt einen Executor und Work-Item-Identität für einen Intent.
 * ``propose_outcome`` – Baut aus Evidence ein deterministisches Outcome-Dict.
 * ``generate_receipt`` – Erzeugt einen gültigen ``ExecutionReceipt``.
-* ``dispatch_to_ticket_master`` – Ruft ``record_receipt`` im Ledger auf.
+* ``dispatch_to_transport_contract`` – Ruft ``record_receipt`` im Ledger auf.
 
 Datenklassen
 ------------
@@ -37,7 +37,7 @@ from hub._services.agents_heart import (
     begin_assignment,
     finish_assignment,
 )
-from hub._services.trithon.routing_contract import (
+from hub._services.trithon.transport_contract import (
     ContractAlreadyClaimed,
     ExecutionReceipt,
     claim_contract,
@@ -54,7 +54,7 @@ def _utc_now() -> str:
 class SyntheticTicket:
     """Transportauftrag für synthetische E2E-Tests."""
 
-    ticket_id: str
+    work_item_id: str
     task_id: int
     ledger_path: Path
     db_path: Path
@@ -74,7 +74,7 @@ class Run:
     """Eine einzelne simulierte Ausführung."""
 
     run_id: str
-    ticket_id: str
+    work_item_id: str
     started_at: str
     executor_type: str
     intent_summary: str
@@ -95,7 +95,7 @@ class NoopExecutor:
         """Führt einen simulierten Schritt aus und liefert Evidence."""
         evidence: Dict[str, Any] = {
             "run_id": run.run_id,
-            "ticket_id": ticket.ticket_id,
+            "work_item_id": ticket.work_item_id,
             "task_id": ticket.task_id,
             "executor_type": self.executor_type,
             "host": ticket.host,
@@ -109,13 +109,13 @@ class NoopExecutor:
 
 
 def route_intent_v1(intent: Dict[str, Any]) -> tuple[str, NoopExecutor]:
-    """Wählt anhand eines Intents den Executor und eine Ticket-ID.
+    """Wählt anhand eines Intents den Executor und eine Work-Item-ID.
 
     In dieser Stufe wird jeder Intent auf den NoopExecutor geroutet.
     """
     executor = NoopExecutor(executor_type="noop")
-    ticket_id = f"TKT-{uuid.uuid4().hex[:12].upper()}"
-    return ticket_id, executor
+    work_item_id = f"WIT-{uuid.uuid4().hex[:12].upper()}"
+    return work_item_id, executor
 
 
 def propose_outcome(run: Run, evidence: Dict[str, Any]) -> Dict[str, Any]:
@@ -154,18 +154,18 @@ def generate_receipt(
         evidence=dict(evidence),
         assignment_id=assignment.assignment_id,
         run_id=run.run_id,
-        ticket_id=run.ticket_id,
+        work_item_id=run.work_item_id,
     )
 
 
-def dispatch_to_ticket_master(
+def dispatch_to_transport_contract(
     ticket: SyntheticTicket,
     receipt: ExecutionReceipt,
 ) -> None:
-    """Persistiert das Receipt im Ticket-Ledger via ``record_receipt``."""
+    """Persistiert das Receipt im Transport-Ledger via ``record_receipt``."""
     record_receipt(
         path=ticket.ledger_path,
-        ticket_id=ticket.ticket_id,
+        work_item_id=ticket.work_item_id,
         receipt=receipt,
     )
 
@@ -192,17 +192,17 @@ def execute_intent_v1(
     3. Besetzung starten (agents-heart ``begin_assignment``).
     4. Intent routen und NoopExecutor ausführen.
     5. Outcome vorschlagen und Receipt erzeugen.
-    6. Receipt im Ticket-Ledger recorden.
+    6. Receipt im Transport-Ledger recorden.
     7. Besetzung beenden (agents-heart ``finish_assignment``).
 
     Rückgabe ist ein Dict mit ``success``, ``status``, ``assignment_id``,
-    ``run_id``, ``ticket_id`` und ggf. ``error``.
+    ``run_id``, ``ticket_id`` (legacy) und ggf. ``error``.
     """
     assignment: Optional[Assignment] = None
     run_id = f"run-{uuid.uuid4().hex}"
     run = Run(
         run_id=run_id,
-        ticket_id=ticket.ticket_id,
+        work_item_id=ticket.work_item_id,
         started_at=_utc_now(),
         executor_type="noop",
         intent_summary=str(ticket.intent)[:200],
@@ -242,53 +242,33 @@ def execute_intent_v1(
             return {
                 "success": False,
                 "status": "claim_failed",
-                "ticket_id": ticket.ticket_id,
+                "ticket_id": ticket.work_item_id,
                 "task_id": ticket.task_id,
                 "assignment_id": assignment.assignment_id,
                 "run_id": run_id,
             }
         conn.commit()
 
-        # 2b. Atomares Claim des Tickets im Ledger.
-        try:
-            claim_contract(
-                ticket.ledger_path,
-                ticket.ticket_id,
-                ticket.host,
-                ticket.runner,
-                assignment_id=assignment.assignment_id,
-                run_id=run_id,
-            )
-        except ContractAlreadyClaimed:
-            pass
-        except Exception as exc:
-            finish_assignment(
-                assignment,
-                status="interrupted",
-                reason=f"ledger_claim_failed: {exc}",
-                path=str(ticket.slots_path),
-            )
-            return {
-                "success": False,
-                "status": "claim_failed",
-                "ticket_id": ticket.ticket_id,
-                "task_id": ticket.task_id,
-                "assignment_id": assignment.assignment_id,
-                "run_id": run_id,
-                "error": str(exc),
-            }
+        # 4. Transportvertrag claimen.
+        claim_contract(
+            ticket.ledger_path,
+            work_item_id=ticket.work_item_id,
+            host=ticket.host,
+            runner=ticket.runner,
+            assignment_id=assignment.assignment_id,
+            run_id=run_id,
+        )
 
-        # 4. Ausführen.
-        _, executor = route_intent_v1(ticket.intent)
+        # 5. Executor ausführen.
+        executor = NoopExecutor(executor_type="noop")
         evidence = executor.execute(run, ticket)
-        run.ended_at = _utc_now()
-
-        # 5. Outcome + Receipt.
         outcome = propose_outcome(run, evidence)
+
+        # 6. Receipt erzeugen.
         receipt = generate_receipt(run, assignment, outcome, evidence)
 
         # 6. Im Ledger recorden.
-        dispatch_to_ticket_master(ticket, receipt)
+        dispatch_to_transport_contract(ticket, receipt)
 
         # 6b. Task in DB auf done setzen wenn erfolgreich
         if outcome.get("status") == "done":
@@ -318,7 +298,7 @@ def execute_intent_v1(
         return {
             "success": True,
             "status": outcome["status"],
-            "ticket_id": ticket.ticket_id,
+            "ticket_id": ticket.work_item_id,
             "task_id": ticket.task_id,
             "assignment_id": assignment.assignment_id,
             "run_id": run_id,
@@ -336,7 +316,7 @@ def execute_intent_v1(
         return {
             "success": False,
             "status": "role_denied",
-            "ticket_id": ticket.ticket_id,
+            "ticket_id": ticket.work_item_id,
             "task_id": ticket.task_id,
             "run_id": run_id,
             "error": str(exc),
@@ -353,7 +333,7 @@ def execute_intent_v1(
         return {
             "success": False,
             "status": "error",
-            "ticket_id": ticket.ticket_id,
+            "ticket_id": ticket.work_item_id,
             "task_id": ticket.task_id,
             "run_id": run_id,
             "error": str(exc),

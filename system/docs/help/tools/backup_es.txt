@@ -142,7 +142,7 @@ CASOS DE USO TÍPICOS
 
 HABILIDADES RELACIONADAS
 ----------------
-  skills/_services/builder.md CREAR, EXPORTAR, DISTRIBUIR, RESPALDAR
+  hub/_services/builder.md CREAR, EXPORTAR, DISTRIBUIR, RESPALDAR
   docs/BACKUP_SYSTEM.md Concepto original
 
 VER TAMBIÉN

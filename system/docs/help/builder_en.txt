@@ -14,8 +14,8 @@ bach skills version <name>              Version check
 
 TOOLS IN system/tools/
 ---------------------------
-c_structure_generator.py <n> <profile> Create skill/agent
-c_structure_generator.py <n> --embedded For BACH (lightweight)
+structure_generator.py <n> <profile> Create skill/agent
+structure_generator.py <n> --embedded For BACH (lightweight)
 
 generators/os_generator.py <n> [target] Create new OS
 generators/exporter.py skill <n> Export skill

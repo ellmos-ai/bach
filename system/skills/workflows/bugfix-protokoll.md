@@ -1,5 +1,7 @@
 # Bugfix-Protokoll für Python/PyQt6 Projekte
 
+**Version:** 1.0.0
+
 > **Ziel:** Systematisches Vorgehen bei Bugs, um Zeit zu sparen und bekannte Probleme schnell zu erkennen.
 
 ---

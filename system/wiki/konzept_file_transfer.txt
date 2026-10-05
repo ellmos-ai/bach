@@ -33,7 +33,7 @@ BACH verwendet ein Zwei-Ebenen-System:
 ├─────────────────────────────────────────────────────────────────┤
 │  SERVICE-EBENE (Wiederverwendbare Komponenten)                  │
 │                                                                 │
-│  skills/_services/file_transfer/                                │
+│  hub/_services/file_transfer/                                │
 │  ├── folder_watch.py      # Ordner ueberwachen (watchdog)       │
 │  ├── folder_scan.py       # Einmaliger Ordner-Scan              │
 │  ├── folder_import.py     # Ordner-Inhalte importieren          │
@@ -112,7 +112,7 @@ dann fachlich (B-Nummer, Posten, Export).
 ### file_transfer Service
 
 ```
-skills/_services/file_transfer/
+hub/_services/file_transfer/
 ├── README.md
 ├── config.json
 ├── file_transfer.py           # Hauptmodul (Fassade)
@@ -183,7 +183,7 @@ skills/_services/file_transfer/
 ## Naechste Schritte
 
 Wenn dieses Konzept passt:
-1. Service-Grundstruktur unter `skills/_services/file_transfer/` anlegen
+1. Service-Grundstruktur unter `hub/_services/file_transfer/` anlegen
 2. ROADMAP Phase 10 entsprechend erweitern (INBOX + FT Tasks)
 3. Handler `hub/inbox.py` erstellen
 

@@ -14,8 +14,8 @@ bach skills version <name>              Проверка версий
 
 ИНСТРУМЕНТЫ В system/tools/
 ---------------------------
-c_structure_generator.py <n> <profile> Создать навык/агента
-c_structure_generator.py <n> --embedded Для BACH (облегченный)
+structure_generator.py <n> <profile> Создать навык/агента
+structure_generator.py <n> --embedded Для BACH (облегченный)
 
 generators/os_generator.py <n> [цель] Создать новую ОС
 генераторы/exporter.py навык <n> Экспорт навыка

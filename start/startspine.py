@@ -285,6 +285,8 @@ def _service_health(name: str, record: dict[str, Any]) -> bool:
             f"http://{record['host']}:{record['actual_port']}/api/status"
         )
         return _chat_payload_ready(payload)
+    if name == "bridge":
+        return _url_ready(f"http://{record['host']}:{record['actual_port']}/docs")
     if name == "tray":
         ready = _read_json(_ready_receipt_path("tray"))
         return bool(
@@ -298,7 +300,7 @@ def _service_health(name: str, record: dict[str, Any]) -> bool:
 def _service_ready_owned(name: str, record: dict[str, Any]) -> bool:
     if not _record_is_owned(record) or not _service_health(name, record):
         return False
-    if name in {"gui", "chat"}:
+    if name in {"gui", "chat", "bridge"}:
         return _process_listens(record, record.get("actual_port"))
     return True
 
@@ -560,7 +562,7 @@ def _rollback_started_services(
     previous_launches: dict[str, str | None],
 ) -> None:
     """Rolls back only services launched by the current start transaction."""
-    for name in ("tray", "chat", "gui"):
+    for name in ("bridge", "tray", "chat", "gui"):
         record = state.get("services", {}).get(name, {})
         launch_id = record.get("launch_id")
         if not launch_id or launch_id == previous_launches.get(name):
@@ -766,7 +768,8 @@ def command_start(args: argparse.Namespace) -> int:
     host = args.host or os.environ.get("BACH_HOST", "127.0.0.1")
     gui_port = _port_value(args.gui_port, "BACH_GUI_PORT", 8000)
     control_port = _port_value(args.control_port, "BACH_CONTROL_PORT", 8081)
-    requested = args.gui or args.chat or args.tray
+    bridge_port = _port_value(getattr(args, "bridge_port", None), "BACH_BRIDGE_PORT", 8091)
+    requested = args.gui or args.chat or args.tray or args.bridge
     if not requested:
         args.gui = True
         args.tray = True
@@ -786,6 +789,7 @@ def command_start(args: argparse.Namespace) -> int:
         ok = True
         actual_gui = gui_port
         actual_control = control_port
+        actual_bridge = bridge_port
         # Eine Transaktionsgrenze über ALLE Startschritte: auch Portauflösung
         # und Spawn dürfen nicht ohne Rollback aus command_start entkommen.
         try:
@@ -870,6 +874,35 @@ def command_start(args: argparse.Namespace) -> int:
             elif args.chat:
                 print("[FEHLER] chat: wegen vorherigem Startfehler übersprungen")
 
+            if args.bridge and ok and not remote:
+                bridge_existing = state["services"].get("bridge", {})
+                _sync_receipt("bridge", bridge_existing)
+                if (
+                    bridge_existing.get("desired_port") == bridge_port
+                    and bridge_existing.get("host") == "127.0.0.1"
+                    and _service_ready_owned("bridge", bridge_existing)
+                ):
+                    actual_bridge = int(bridge_existing["actual_port"])
+                else:
+                    bridge_owner = _listener_owner(bridge_port)
+                    if bridge_owner is not None:
+                        print(f"[WARNUNG] Bridge-Wunschport {bridge_port} belegt durch PID {bridge_owner['pid']} ({bridge_owner['name']}); Bridge-Daemon bindet lt. config.json fest auf 8091, Start wird übersprungen.")
+                    else:
+                        ok = _start_service(
+                            state,
+                            "bridge",
+                            command=[sys.executable, str(SYSTEM_DIR / "hub" / "_services" / "claude_bridge" / "bridge_daemon.py"), "--server"],
+                            cwd=SYSTEM_DIR,
+                            env=_child_environment(),
+                            required=False,
+                            host="127.0.0.1",
+                            desired_port=bridge_port,
+                            actual_port=bridge_port,
+                            readiness_timeout=args.readiness_timeout,
+                        ) and ok
+            elif args.bridge:
+                print("[INFO] bridge: übersprungen (Remote-Modus oder vorheriger Startfehler)")
+
             if args.tray and ok:
                 tray_host = host if remote else "127.0.0.1"
                 tray_control = control_port if remote else actual_control
@@ -947,7 +980,7 @@ def _print_status(discovery: dict[str, Any]) -> None:
             f"{discovery.get('registered_root')}; aktuell: {discovery.get('root')}"
         )
     services = discovery.get("services", {})
-    for name in ("gui", "chat", "tray"):
+    for name in ("gui", "chat", "tray", "bridge"):
         item = services.get(name)
         if not item:
             print(f"  {name}: nicht registriert")
@@ -1012,15 +1045,15 @@ def command_status(args: argparse.Namespace) -> int:
 
 
 def command_stop(args: argparse.Namespace) -> int:
-    requested = set(args.services.split(",")) if args.services != "all" else {"gui", "chat", "tray"}
-    unknown = requested - {"gui", "chat", "tray"}
+    requested = set(args.services.split(",")) if args.services != "all" else {"gui", "chat", "tray", "bridge"}
+    unknown = requested - {"gui", "chat", "tray", "bridge"}
     if unknown:
         print(f"[FEHLER] Unbekannte Services: {', '.join(sorted(unknown))}")
         return 2
     with _operation_lease():
         state = _load_mutable_state()
         ok = True
-        for name in ("tray", "chat", "gui"):
+        for name in ("bridge", "tray", "chat", "gui"):
             if name not in requested:
                 continue
             record = state["services"].get(name)
@@ -1159,10 +1192,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--gui", action="store_true")
     start.add_argument("--chat", action="store_true")
     start.add_argument("--tray", action="store_true")
+    start.add_argument("--bridge", action="store_true", help="Claude-Bridge-Daemon (Port 8091 aus config.json) mitstarten")
     start.add_argument("--remote-client", action="store_true", help="Nur Tray/Browser gegen vorhandenen Remote-Dienst")
     start.add_argument("--host", help="Tray-/Remote-Host; Standard BACH_HOST oder 127.0.0.1")
     start.add_argument("--gui-port", type=int)
     start.add_argument("--control-port", type=int)
+    start.add_argument("--bridge-port", type=int)
     start.add_argument("--activity-url", help="Konfigurierbare Aktivitätsanzeige-URL")
     start.add_argument("--gui-url", help="Konfigurierbare GUI-URL")
     start.add_argument("--open-browser", action="store_true")
@@ -1177,7 +1212,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.set_defaults(func=command_status)
 
     stop = sub.add_parser("stop", help="Nur von der Startspine registrierte Prozesse beenden")
-    stop.add_argument("--services", default="all", help="all oder Kommaliste: gui,chat,tray")
+    stop.add_argument("--services", default="all", help="all oder Kommaliste: gui,chat,tray,bridge")
     stop.set_defaults(func=command_stop)
 
     autostart_install = sub.add_parser(

@@ -49,7 +49,7 @@ BACH 是一个自扩展系统。人工智能合作伙伴应该
     → BaseHandler 子类具有 get_operations()
 
   bach skills create data-sync --type service
-    → 创建：system/skills/_services/data-sync/
+    → 创建：system/hub/_services/data-sync/
     → 使用 __init__.py 和 service.py 进行服务
     → 处理程序附近，一般使用
 

@@ -1,0 +1,1409 @@
+{
+  "version": 3,
+  "updated_at": "2026-09-28T01:21:24.917411+00:00",
+  "slots": {
+    "buddha_chat": {
+      "id": "buddha_chat",
+      "name": "Buddha Chat",
+      "description": "Interaktiver Chat (GUI & WebChat)",
+      "backend": "ollama",
+      "model": "qwen3.8:27b-mlx",
+      "mode": "safe",
+      "think": true,
+      "max_tool_rounds": 12,
+      "chat_id": "gui-web",
+      "status": "ready",
+      "current_activity": "",
+      "pause_after": 5,
+      "pause_minutes": 1,
+      "pause_basis": "runs",
+      "pause_counter": 0,
+      "pause_started_at": ""
+    },
+    "buddha_always_on": {
+      "id": "buddha_always_on",
+      "name": "Buddha Always-On",
+      "description": "Hintergrundworker für offene Aufgaben im Leerlauf",
+      "enabled": true,
+      "backend": "ollama",
+      "model": "qwen3.8:27b-mlx",
+      "mode": "full",
+      "think": true,
+      "max_tool_rounds": 25,
+      "category": "all",
+      "chat_id": "idle-worker",
+      "status": "idle",
+      "current_activity": "Slot buddha_always_on aktualisiert",
+      "pause_after": 5,
+      "pause_minutes": 1,
+      "pause_basis": "runs",
+      "pause_counter": 0,
+      "pause_started_at": "",
+      "pickup_filter": {
+        "enabled": true,
+        "categories": [
+          "INBOX"
+        ],
+        "priorities": [
+          "P1",
+          "P2"
+        ],
+        "tags": [],
+        "exclude_tags": [
+          "delegated",
+          "waiting"
+        ]
+      }
+    },
+    "buddha_connector": {
+      "id": "buddha_connector",
+      "name": "Buddha Connector",
+      "description": "Messaging-Konnektoren (Telegram, WhatsApp, Signal)",
+      "backend": "ollama",
+      "model": "qwen3.8:27b-mlx",
+      "mode": "safe",
+      "think": true,
+      "max_tool_rounds": 10,
+      "chat_id": "telegram",
+      "status": "ready",
+      "current_activity": "",
+      "providers": {
+        "telegram": {
+          "backend": "ollama",
+          "model": "qwen3.8:27b-mlx",
+          "max_tool_rounds": 10
+        },
+        "whatsapp": {
+          "backend": "ollama",
+          "model": "qwen3.8:27b-mlx",
+          "max_tool_rounds": 10
+        },
+        "signal": {
+          "backend": "ollama",
+          "model": "qwen3.8:27b-mlx",
+          "max_tool_rounds": 10
+        }
+      },
+      "pause_after": 5,
+      "pause_minutes": 1,
+      "pause_basis": "runs",
+      "pause_counter": 0,
+      "pause_started_at": ""
+    }
+  },
+  "dynamic_workers": [
+    {
+      "id": "worker-01a5cde0",
+      "name": "worker durare",
+      "role": "general",
+      "backend": "ollama-cloud",
+      "model": "kimi-k2.7-code:cloud",
+      "mode": "full",
+      "think": true,
+      "max_tool_rounds": 200,
+      "allow_tools": true,
+      "system_prompt": "Du bist Buddha, der integrierte KI-Assistent für BACH (Basic Automated Computer Hub).\nDeine Aufgabe ist es, den Benutzer bei der Arbeit mit dem System, bei Programmierung, Recherche, Organisation und Systempflege zu unterstützen.\n\nWICHTIGSTE REGELN:\n- Antworte immer auf Deutsch, präzise und lösungsorientiert.\n- Nutze Werkzeuge (Tools) aktiv und direkt, wenn Aufgaben erledigt werden sollen.\n- Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.\n- 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.\n- Behalte das Werkzeug-Rundenbudget im Auge.\n\n--- ROLLE: HINTERGRUNDWORKER ---\nDu agierst als autonomer Hintergrundworker für das BACH-System.\nDeine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\nArbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\nLies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab.",
+      "custom_system_prompt": "",
+      "task_prompt": "",
+      "sub_mode": "hintergrund_worker",
+      "include_system_prompt": true,
+      "role_id": "",
+      "multi_role": false,
+      "max_experts": 3,
+      "expert_models": {},
+      "task_id": null,
+      "category": "",
+      "type": "persistent",
+      "created_at": "2026-09-27T20:33:30.887919+00:00",
+      "expires_at": null,
+      "status": "idle",
+      "current_activity": "Fertig: Ich habe die Testdatei `tests/test_trith",
+      "history": [
+        {
+          "id": "act-5f8e0c",
+          "timestamp": "2026-09-27T23:20:28.358157+00:00",
+          "source": "worker-01a5cde0",
+          "activity": "Block 1: Ich habe die Testdatei `tests/test_trithon_dispatch.py`",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-9af11e",
+          "timestamp": "2026-09-27T23:07:21.258478+00:00",
+          "source": "worker-01a5cde0",
+          "activity": "Worker gestartet: worker durare",
+          "status": "running",
+          "details": {}
+        },
+        {
+          "id": "act-9cd5e2",
+          "timestamp": "2026-09-27T21:03:10.050116+00:00",
+          "source": "worker-01a5cde0",
+          "activity": "Block 1: Zusammenfassung der bisherigen Arbeit:\n\n1. Analysiert /",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-85c99a",
+          "timestamp": "2026-09-27T20:33:38.429184+00:00",
+          "source": "worker-01a5cde0",
+          "activity": "Worker gestartet: worker durare",
+          "status": "running",
+          "details": {}
+        }
+      ]
+    },
+    {
+      "id": "worker-57fdb392",
+      "name": "worker durare veritare",
+      "role": "general",
+      "backend": "ollama-cloud",
+      "model": "kimi-k2.7-code:cloud",
+      "mode": "full",
+      "think": true,
+      "max_tool_rounds": 150,
+      "allow_tools": true,
+      "system_prompt": "Du bist Buddha, der integrierte KI-Assistent für BACH (Basic Automated Computer Hub).\nDeine Aufgabe ist es, den Benutzer bei der Arbeit mit dem System, bei Programmierung, Recherche, Organisation und Systempflege zu unterstützen.\n\nWICHTIGSTE REGELN:\n- Antworte immer auf Deutsch, präzise und lösungsorientiert.\n- Nutze Werkzeuge (Tools) aktiv und direkt, wenn Aufgaben erledigt werden sollen.\n- Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.\n- 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.\n- Behalte das Werkzeug-Rundenbudget im Auge.\n\n--- ROLLE: HINTERGRUNDWORKER ---\nDu agierst als autonomer Hintergrundworker für das BACH-System.\nDeine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\nArbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\nLies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab.\n\n--- AUFTRAG / AUFGABE ---\nmache Pause von 10 Minuten, nach 5 Läufen, sofern es dir möglich ist. Zeitmessung mit fc get time über FileCommander sofern du auf diesen zugriff hast.",
+      "custom_system_prompt": "",
+      "task_prompt": "mache Pause von 10 Minuten, nach 5 Läufen, sofern es dir möglich ist. Zeitmessung mit fc get time über FileCommander sofern du auf diesen zugriff hast.",
+      "sub_mode": "hintergrund_worker",
+      "include_system_prompt": true,
+      "role_id": "",
+      "multi_role": false,
+      "max_experts": 3,
+      "expert_models": {},
+      "task_id": null,
+      "category": "",
+      "type": "persistent",
+      "created_at": "2026-09-27T21:12:08.951992+00:00",
+      "expires_at": "2026-09-28T01:12:08.951970+00:00",
+      "status": "expired",
+      "current_activity": "Ablaufzeit erreicht (Beendet)",
+      "history": [
+        {
+          "id": "act-08c99d",
+          "timestamp": "2026-09-28T00:31:09.239634+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 17: Folge-Task wurde angelegt: **#1387** – *Dateisystem-Han",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-c8ea98",
+          "timestamp": "2026-09-28T00:30:53.624628+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 16: Ich muss leider die Implementierung in dieser Sitzung u",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-0ef9fe",
+          "timestamp": "2026-09-28T00:20:01.096211+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 15: Erledigt:\n\n1. `tests/test_path_traversal_append.txt` an",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-17f3c4",
+          "timestamp": "2026-09-28T00:13:52.841442+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 14: Bericht – Task `#1385` (CLI-Observer-Reflexion: Negativ",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-f4624a",
+          "timestamp": "2026-09-28T00:13:37.282501+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 13: Bericht zum RESUME-Punkt:\n\n**Testergebnis `pytest tests",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-02e285",
+          "timestamp": "2026-09-28T00:11:48.086150+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 12: Abgeschlossen.\n\n**Änderung:** `hub/_services/chat/chat_",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-d239de",
+          "timestamp": "2026-09-28T00:00:15.058837+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 11: Zusammenfassung des aktuellen Stands:\n\n1. Analyse/Befun",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-7c4659",
+          "timestamp": "2026-09-27T23:59:54.129944+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 10: Zusammenfassung des aktuellen Stands:\n\n1. **Analyse & B",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-fd8206",
+          "timestamp": "2026-09-27T23:39:44.929463+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 9: ## Pause angesagt – 5 Läufe erreicht\n\nHinweis: Du hast ",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-a917dc",
+          "timestamp": "2026-09-27T23:38:49.746760+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 8: Ich habe die Sitzung gerade erst begonnen und bisher nu",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-117c53",
+          "timestamp": "2026-09-27T23:28:42.754964+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 7: # ✅ Task #1475 abgeschlossen\n\n## Erledigt\n\n1. **Datei: ",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-a3e985",
+          "timestamp": "2026-09-27T23:28:24.927696+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 6: 1. **Analyse & Befund**\n   - `execute_intent_v1` in `hu",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-409f6b",
+          "timestamp": "2026-09-27T23:19:32.787611+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 5: ABGESCHLOSSEN.\n\n## Erledigt\n\n1. **Task #1465 aktualisie",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-66eade",
+          "timestamp": "2026-09-27T23:19:14.139607+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 4: Zusammenfassung des bisherigen Stands:\n\n1. Analyse/Befu",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-97aed6",
+          "timestamp": "2026-09-27T23:09:19.807977+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 3: Ich muss diese Sitzung zusammenfassen, da die Werkzeugr",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-52799f",
+          "timestamp": "2026-09-27T22:57:48.635610+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 2: ERLEDIGT.\n\nHabe `tests/test_bach_api_task_due_date.py` ",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-e4fe07",
+          "timestamp": "2026-09-27T22:54:23.088855+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 1: Zusammenfassung des bisherigen Laufes:\n\n1. Analyse/Befu",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-e41a22",
+          "timestamp": "2026-09-27T22:46:51.941267+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Worker gestartet: worker durare veritare",
+          "status": "running",
+          "details": {}
+        },
+        {
+          "id": "act-4b116d",
+          "timestamp": "2026-09-27T22:33:16.965845+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 7: Backend-Fehler: HTTPStatusError: Server error '502 Bad ",
+          "status": "error",
+          "details": {}
+        },
+        {
+          "id": "act-e618fb",
+          "timestamp": "2026-09-27T22:30:07.291742+00:00",
+          "source": "worker-57fdb392",
+          "activity": "Block 6: ABGESCHLOSSEN.\n\n**Erledigt:**\n1. `pytest tests/test_slo",
+          "status": "ok",
+          "details": {}
+        }
+      ]
+    },
+    {
+      "id": "worker-36761890",
+      "name": "glm durare",
+      "role": "general",
+      "backend": "ollama-cloud",
+      "model": "glm-5.3:cloud",
+      "mode": "full",
+      "think": true,
+      "max_tool_rounds": 150,
+      "allow_tools": true,
+      "system_prompt": "Du bist Buddha, der integrierte KI-Assistent für BACH (Basic Automated Computer Hub).\nDeine Aufgabe ist es, den Benutzer bei der Arbeit mit dem System, bei Programmierung, Recherche, Organisation und Systempflege zu unterstützen.\n\nWICHTIGSTE REGELN:\n- Antworte immer auf Deutsch, präzise und lösungsorientiert.\n- Nutze Werkzeuge (Tools) aktiv und direkt, wenn Aufgaben erledigt werden sollen.\n- Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.\n- 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.\n- Behalte das Werkzeug-Rundenbudget im Auge.\n\n--- ROLLE: HINTERGRUNDWORKER ---\nDu agierst als autonomer Hintergrundworker für das BACH-System.\nDeine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\nArbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\nLies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab.",
+      "custom_system_prompt": "",
+      "task_prompt": "",
+      "sub_mode": "hintergrund_worker",
+      "include_system_prompt": true,
+      "role_id": "",
+      "multi_role": false,
+      "max_experts": 3,
+      "expert_models": {},
+      "task_id": null,
+      "category": "",
+      "type": "persistent",
+      "created_at": "2026-09-27T21:21:20.209963+00:00",
+      "expires_at": "2026-09-28T01:21:20.209888+00:00",
+      "status": "expired",
+      "current_activity": "Ablaufzeit erreicht (Beendet)",
+      "history": [
+        {
+          "id": "act-7eed66",
+          "timestamp": "2026-09-27T21:48:53.030342+00:00",
+          "source": "worker-36761890",
+          "activity": "Block 1: Kein History-Eintrag für Task 1420 — das rohe UPDATE ha",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-a49f48",
+          "timestamp": "2026-09-27T21:34:20.888227+00:00",
+          "source": "worker-36761890",
+          "activity": "Worker gestartet: glm durare",
+          "status": "running",
+          "details": {}
+        },
+        {
+          "id": "act-37a167",
+          "timestamp": "2026-09-27T21:31:12.717396+00:00",
+          "source": "worker-36761890",
+          "activity": "Block 1: Backend-Fehler: RuntimeError: Kontext-Übergabe fehlgesc",
+          "status": "error",
+          "details": {}
+        },
+        {
+          "id": "act-ae92b3",
+          "timestamp": "2026-09-27T21:30:11.635216+00:00",
+          "source": "worker-36761890",
+          "activity": "Worker gestartet: glm durare",
+          "status": "running",
+          "details": {}
+        },
+        {
+          "id": "act-75d75b",
+          "timestamp": "2026-09-27T21:29:25.896450+00:00",
+          "source": "worker-36761890",
+          "activity": "Block 2: Backend-Fehler: RuntimeError: Ollama lieferte eine leer",
+          "status": "error",
+          "details": {}
+        },
+        {
+          "id": "act-c2612b",
+          "timestamp": "2026-09-27T21:26:57.782363+00:00",
+          "source": "worker-36761890",
+          "activity": "Block 1: **Task #1419 abgeschlossen.** ✅\n\nZusammenfassung des Ab",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-6a2f60",
+          "timestamp": "2026-09-27T21:21:28.795098+00:00",
+          "source": "worker-36761890",
+          "activity": "Worker gestartet: glm durare",
+          "status": "running",
+          "details": {}
+        }
+      ]
+    },
+    {
+      "id": "worker-ae9d9be9",
+      "name": "k3",
+      "role": "general",
+      "backend": "ollama-cloud",
+      "model": "kimi-k3:cloud",
+      "mode": "full",
+      "think": true,
+      "max_tool_rounds": 50,
+      "allow_tools": true,
+      "system_prompt": "Du bist Buddha, der integrierte KI-Assistent für BACH (Basic Automated Computer Hub).\nDeine Aufgabe ist es, den Benutzer bei der Arbeit mit dem System, bei Programmierung, Recherche, Organisation und Systempflege zu unterstützen.\n\nWICHTIGSTE REGELN:\n- Antworte immer auf Deutsch, präzise und lösungsorientiert.\n- Nutze Werkzeuge (Tools) aktiv und direkt, wenn Aufgaben erledigt werden sollen.\n- Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.\n- 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.\n- Behalte das Werkzeug-Rundenbudget im Auge.\n\n--- ROLLE: HINTERGRUNDWORKER ---\nDu agierst als autonomer Hintergrundworker für das BACH-System.\nDeine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\nArbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\nLies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab.",
+      "custom_system_prompt": "",
+      "task_prompt": "",
+      "sub_mode": "hintergrund_worker",
+      "include_system_prompt": true,
+      "role_id": "",
+      "multi_role": false,
+      "max_experts": 3,
+      "expert_models": {},
+      "task_id": null,
+      "category": "",
+      "type": "persistent",
+      "created_at": "2026-09-27T22:30:40.397355+00:00",
+      "expires_at": "2026-09-27T23:30:40.397315+00:00",
+      "status": "expired",
+      "current_activity": "Worker TTL abgelaufen",
+      "history": [
+        {
+          "id": "act-4ba5ee",
+          "timestamp": "2026-09-27T23:32:39.179649+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Worker TTL abgelaufen",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-509d5c",
+          "timestamp": "2026-09-27T23:32:27.090809+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 13: Fix ist bestätigt an Ort und Stelle (`trithon_dispatch.",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-6f7365",
+          "timestamp": "2026-09-27T23:27:10.364457+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 12: Die nächste wichtige Aufgabe ist weiterhin **#1473 (pyt",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-69a357",
+          "timestamp": "2026-09-27T23:26:53.588443+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 11: Verifikation abgeschlossen — alles ist in Ordnung:\n\n**Z",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-0dc695",
+          "timestamp": "2026-09-27T23:17:19.834030+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 10: ## ✅ Abschluss-Report (3.10.2026, 01:56)\n\n### Status: *",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-77f47f",
+          "timestamp": "2026-09-27T23:17:00.088047+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 9: ## Zusammenfassung Übergabezettel-Fortsetzung\n\n### 1. A",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-15a03f",
+          "timestamp": "2026-09-27T23:07:23.867874+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 8: ## ✅ Task #1473 abgeschlossen: Duplikat-Guard implement",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-197d33",
+          "timestamp": "2026-09-27T23:07:02.965406+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 7: ## Findings & Design: Duplikat-Guard für Task-Add (Task",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-4865da",
+          "timestamp": "2026-09-27T23:06:34.368810+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 6: ## ✅ Task #1126 – Duplikat-Bereinigung abgeschlossen\n\n#",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-8f0798",
+          "timestamp": "2026-09-27T23:06:12.510603+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 5: Beide Aufgaben erledigt.\n\n**Task #1472 (Smoke-Test) → `",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-9a8dd2",
+          "timestamp": "2026-09-27T23:05:55.463086+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 4: ## Analyse: #1053 MCP-SDK-Update\n\nDie Lage ist klar. Zu",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-4995c4",
+          "timestamp": "2026-09-27T23:05:29.389402+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 3: ## Status Task #1126 – Zusammenfassung\n\n**Abgeschlossen",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-a47231",
+          "timestamp": "2026-09-27T23:05:07.048420+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 2: Alles abgeschlossen und verifiziert. Abschluss-Report:\n",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-5ade7c",
+          "timestamp": "2026-09-27T22:55:13.948868+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 1: ## Zusammenfassung Task 1468 (Zweitmodell-Review)\n\n### ",
+          "status": "ok",
+          "details": {}
+        },
+        {
+          "id": "act-55cc1a",
+          "timestamp": "2026-09-27T22:46:50.085758+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Worker gestartet: k3",
+          "status": "running",
+          "details": {}
+        },
+        {
+          "id": "act-0437c5",
+          "timestamp": "2026-09-27T22:33:17.390203+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Block 1: Backend-Fehler: HTTPStatusError: Server error '500 Inte",
+          "status": "error",
+          "details": {}
+        },
+        {
+          "id": "act-101ed3",
+          "timestamp": "2026-09-27T22:30:44.482410+00:00",
+          "source": "worker-ae9d9be9",
+          "activity": "Worker gestartet: k3",
+          "status": "running",
+          "details": {}
+        }
+      ]
+    }
+  ],
+  "activity_history": [
+    {
+      "id": "act-08c99d",
+      "timestamp": "2026-09-28T00:31:09.239634+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 17: Folge-Task wurde angelegt: **#1387** – *Dateisystem-Han",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-c8ea98",
+      "timestamp": "2026-09-28T00:30:53.624628+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 16: Ich muss leider die Implementierung in dieser Sitzung u",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-34322f",
+      "timestamp": "2026-09-28T00:21:23.701370+00:00",
+      "source": "fackel",
+      "activity": "Fackel-Vorrang compute -> ollama (Quelle: api)",
+      "status": "ok",
+      "details": {
+        "alt": "compute",
+        "neu": "ollama",
+        "quelle": "api",
+        "datei": "/Users/lukas/services/bach/system/data/fackel_preference.json"
+      }
+    },
+    {
+      "id": "act-57ce12",
+      "timestamp": "2026-09-28T00:21:23.581998+00:00",
+      "source": "fackel",
+      "activity": "Fackel-Vorrang ollama -> compute (Quelle: api)",
+      "status": "ok",
+      "details": {
+        "alt": "ollama",
+        "neu": "compute",
+        "quelle": "api",
+        "datei": "/Users/lukas/services/bach/system/data/fackel_preference.json"
+      }
+    },
+    {
+      "id": "act-0ef9fe",
+      "timestamp": "2026-09-28T00:20:01.096211+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 15: Erledigt:\n\n1. `tests/test_path_traversal_append.txt` an",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-17f3c4",
+      "timestamp": "2026-09-28T00:13:52.841442+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 14: Bericht – Task `#1385` (CLI-Observer-Reflexion: Negativ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f4624a",
+      "timestamp": "2026-09-28T00:13:37.282501+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 13: Bericht zum RESUME-Punkt:\n\n**Testergebnis `pytest tests",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-02e285",
+      "timestamp": "2026-09-28T00:11:48.086150+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 12: Abgeschlossen.\n\n**Änderung:** `hub/_services/chat/chat_",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-d239de",
+      "timestamp": "2026-09-28T00:00:15.058837+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 11: Zusammenfassung des aktuellen Stands:\n\n1. Analyse/Befun",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-7c4659",
+      "timestamp": "2026-09-27T23:59:54.129944+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 10: Zusammenfassung des aktuellen Stands:\n\n1. **Analyse & B",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-fd8206",
+      "timestamp": "2026-09-27T23:39:44.929463+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 9: ## Pause angesagt – 5 Läufe erreicht\n\nHinweis: Du hast ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-a917dc",
+      "timestamp": "2026-09-27T23:38:49.746760+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 8: Ich habe die Sitzung gerade erst begonnen und bisher nu",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-4ba5ee",
+      "timestamp": "2026-09-27T23:32:39.179649+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Worker TTL abgelaufen",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-509d5c",
+      "timestamp": "2026-09-27T23:32:27.090809+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 13: Fix ist bestätigt an Ort und Stelle (`trithon_dispatch.",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-117c53",
+      "timestamp": "2026-09-27T23:28:42.754964+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 7: # ✅ Task #1475 abgeschlossen\n\n## Erledigt\n\n1. **Datei: ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-a3e985",
+      "timestamp": "2026-09-27T23:28:24.927696+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 6: 1. **Analyse & Befund**\n   - `execute_intent_v1` in `hu",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-6f7365",
+      "timestamp": "2026-09-27T23:27:10.364457+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 12: Die nächste wichtige Aufgabe ist weiterhin **#1473 (pyt",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-69a357",
+      "timestamp": "2026-09-27T23:26:53.588443+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 11: Verifikation abgeschlossen — alles ist in Ordnung:\n\n**Z",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-5f8e0c",
+      "timestamp": "2026-09-27T23:20:28.358157+00:00",
+      "source": "worker-01a5cde0",
+      "activity": "Block 1: Ich habe die Testdatei `tests/test_trithon_dispatch.py`",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-409f6b",
+      "timestamp": "2026-09-27T23:19:32.787611+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 5: ABGESCHLOSSEN.\n\n## Erledigt\n\n1. **Task #1465 aktualisie",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-66eade",
+      "timestamp": "2026-09-27T23:19:14.139607+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 4: Zusammenfassung des bisherigen Stands:\n\n1. Analyse/Befu",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-0dc695",
+      "timestamp": "2026-09-27T23:17:19.834030+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 10: ## ✅ Abschluss-Report (3.10.2026, 01:56)\n\n### Status: *",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-77f47f",
+      "timestamp": "2026-09-27T23:17:00.088047+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 9: ## Zusammenfassung Übergabezettel-Fortsetzung\n\n### 1. A",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-97aed6",
+      "timestamp": "2026-09-27T23:09:19.807977+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 3: Ich muss diese Sitzung zusammenfassen, da die Werkzeugr",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-15a03f",
+      "timestamp": "2026-09-27T23:07:23.867874+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 8: ## ✅ Task #1473 abgeschlossen: Duplikat-Guard implement",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-9af11e",
+      "timestamp": "2026-09-27T23:07:21.258478+00:00",
+      "source": "worker-01a5cde0",
+      "activity": "Worker gestartet: worker durare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-197d33",
+      "timestamp": "2026-09-27T23:07:02.965406+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 7: ## Findings & Design: Duplikat-Guard für Task-Add (Task",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-4865da",
+      "timestamp": "2026-09-27T23:06:34.368810+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 6: ## ✅ Task #1126 – Duplikat-Bereinigung abgeschlossen\n\n#",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-8f0798",
+      "timestamp": "2026-09-27T23:06:12.510603+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 5: Beide Aufgaben erledigt.\n\n**Task #1472 (Smoke-Test) → `",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-9a8dd2",
+      "timestamp": "2026-09-27T23:05:55.463086+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 4: ## Analyse: #1053 MCP-SDK-Update\n\nDie Lage ist klar. Zu",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-4995c4",
+      "timestamp": "2026-09-27T23:05:29.389402+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 3: ## Status Task #1126 – Zusammenfassung\n\n**Abgeschlossen",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-a47231",
+      "timestamp": "2026-09-27T23:05:07.048420+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 2: Alles abgeschlossen und verifiziert. Abschluss-Report:\n",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-52799f",
+      "timestamp": "2026-09-27T22:57:48.635610+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 2: ERLEDIGT.\n\nHabe `tests/test_bach_api_task_due_date.py` ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-5ade7c",
+      "timestamp": "2026-09-27T22:55:13.948868+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 1: ## Zusammenfassung Task 1468 (Zweitmodell-Review)\n\n### ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-e4fe07",
+      "timestamp": "2026-09-27T22:54:23.088855+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 1: Zusammenfassung des bisherigen Laufes:\n\n1. Analyse/Befu",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-e41a22",
+      "timestamp": "2026-09-27T22:46:51.941267+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Worker gestartet: worker durare veritare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-55cc1a",
+      "timestamp": "2026-09-27T22:46:50.085758+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Worker gestartet: k3",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-0437c5",
+      "timestamp": "2026-09-27T22:33:17.390203+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Block 1: Backend-Fehler: HTTPStatusError: Server error '500 Inte",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-4b116d",
+      "timestamp": "2026-09-27T22:33:16.965845+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 7: Backend-Fehler: HTTPStatusError: Server error '502 Bad ",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-51dd60",
+      "timestamp": "2026-09-27T22:30:51.384315+00:00",
+      "source": "system",
+      "activity": "Worker gelöscht: worker-3c005af2",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-101ed3",
+      "timestamp": "2026-09-27T22:30:44.482410+00:00",
+      "source": "worker-ae9d9be9",
+      "activity": "Worker gestartet: k3",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-d3f95f",
+      "timestamp": "2026-09-27T22:30:40.406602+00:00",
+      "source": "system",
+      "activity": "Neuer Worker erstellt: k3",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-e618fb",
+      "timestamp": "2026-09-27T22:30:07.291742+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 6: ABGESCHLOSSEN.\n\n**Erledigt:**\n1. `pytest tests/test_slo",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-d4cac4",
+      "timestamp": "2026-09-27T22:26:31.696417+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 5: Mit den Werkzeugrunden fast aufgebraucht habe ich zunäc",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-aab851",
+      "timestamp": "2026-09-27T22:15:35.569938+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 4: Zusammenfassung:\n\n1. Analyse/Befund:\n- Problem: pytest ",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-2e86d1",
+      "timestamp": "2026-09-27T22:01:41.693444+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 3: Ich habe die offenen Tasks geprüft und die wichtigste o",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f7c59a",
+      "timestamp": "2026-09-27T22:01:21.483605+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 2: Ich habe die offenen BACH-Tasks geprüft und die wichtig",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f54d23",
+      "timestamp": "2026-09-27T22:01:00.955536+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 1: Task 1451 abgeschlossen.\n\n**Zusammenfassung:**\n\n1. **An",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f2aedb",
+      "timestamp": "2026-09-27T22:00:46.300647+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Worker gestartet: worker durare veritare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-ce3c55",
+      "timestamp": "2026-09-27T21:57:13.406473+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 5: Backend-Fehler: Abschluss-Zusammenfassung ist leer",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-7eed66",
+      "timestamp": "2026-09-27T21:48:53.030342+00:00",
+      "source": "worker-36761890",
+      "activity": "Block 1: Kein History-Eintrag für Task 1420 — das rohe UPDATE ha",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-572634",
+      "timestamp": "2026-09-27T21:44:31.592046+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 4: Erledigt.\n\n**Bereinigt:**\n- `tests/test_slots_and_worke",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-40e73a",
+      "timestamp": "2026-09-27T21:37:38.546612+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 3: Ich habe die vorhandene Codebasis analysiert und die re",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-fdf1b7",
+      "timestamp": "2026-09-27T21:36:36.962916+00:00",
+      "source": "worker-3c005af2",
+      "activity": "Block 2: Backend-Fehler: RuntimeError: Kontext-Übergabe fehlgesc",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-3528bf",
+      "timestamp": "2026-09-27T21:34:28.545268+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-a49f48",
+      "timestamp": "2026-09-27T21:34:20.888227+00:00",
+      "source": "worker-36761890",
+      "activity": "Worker gestartet: glm durare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-5b6325",
+      "timestamp": "2026-09-27T21:34:08.456979+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-7e3b79",
+      "timestamp": "2026-09-27T21:33:57.035316+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-37a167",
+      "timestamp": "2026-09-27T21:31:12.717396+00:00",
+      "source": "worker-36761890",
+      "activity": "Block 1: Backend-Fehler: RuntimeError: Kontext-Übergabe fehlgesc",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-ae92b3",
+      "timestamp": "2026-09-27T21:30:11.635216+00:00",
+      "source": "worker-36761890",
+      "activity": "Worker gestartet: glm durare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-9e3fd5",
+      "timestamp": "2026-09-27T21:30:07.815656+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-18fdb5",
+      "timestamp": "2026-09-27T21:29:48.107640+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-75d75b",
+      "timestamp": "2026-09-27T21:29:25.896450+00:00",
+      "source": "worker-36761890",
+      "activity": "Block 2: Backend-Fehler: RuntimeError: Ollama lieferte eine leer",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-1d9c4f",
+      "timestamp": "2026-09-27T21:28:25.902978+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 2: **Entscheidung: `Request changes`**\n\nDer Bug ist ein AP",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-c2612b",
+      "timestamp": "2026-09-27T21:26:57.782363+00:00",
+      "source": "worker-36761890",
+      "activity": "Block 1: **Task #1419 abgeschlossen.** ✅\n\nZusammenfassung des Ab",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-83460c",
+      "timestamp": "2026-09-27T21:22:08.818347+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Block 1: Abgeschlossen. Resume ausgeführt:\n\n1. ✅ `git add system",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-6a2f60",
+      "timestamp": "2026-09-27T21:21:28.795098+00:00",
+      "source": "worker-36761890",
+      "activity": "Worker gestartet: glm durare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-a52575",
+      "timestamp": "2026-09-27T21:21:20.218641+00:00",
+      "source": "system",
+      "activity": "Neuer Worker erstellt: glm durare",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-5d78cc",
+      "timestamp": "2026-09-27T21:20:17.014016+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-3804dd",
+      "timestamp": "2026-09-27T21:12:18.488624+00:00",
+      "source": "worker-57fdb392",
+      "activity": "Worker gestartet: worker durare veritare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-f59f29",
+      "timestamp": "2026-09-27T21:12:08.957147+00:00",
+      "source": "system",
+      "activity": "Neuer Worker erstellt: worker durare veritare",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-84a813",
+      "timestamp": "2026-09-27T21:09:19.461246+00:00",
+      "source": "system",
+      "activity": "Worker gelöscht: worker-d9ad85e2",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-58e77e",
+      "timestamp": "2026-09-27T21:09:09.417448+00:00",
+      "source": "system",
+      "activity": "Worker gelöscht: worker-162f9e75",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-9cd5e2",
+      "timestamp": "2026-09-27T21:03:10.050116+00:00",
+      "source": "worker-01a5cde0",
+      "activity": "Block 1: Zusammenfassung der bisherigen Arbeit:\n\n1. Analysiert /",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-933f43",
+      "timestamp": "2026-09-27T21:02:49.072651+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Worker TTL abgelaufen",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-028bff",
+      "timestamp": "2026-09-27T21:02:36.914789+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 1: ## Zusammenfassung Session #1386 (Model/Slot-Bindung)\n\n",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-b376db",
+      "timestamp": "2026-09-27T20:52:14.563481+00:00",
+      "source": "worker-d9ad85e2",
+      "activity": "Worker TTL abgelaufen",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-b569b5",
+      "timestamp": "2026-09-27T20:52:01.736636+00:00",
+      "source": "worker-d9ad85e2",
+      "activity": "Block 1: ✓ **1434 (Stichprobe)**: [P1], category BACH, status pe",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-49041c",
+      "timestamp": "2026-09-27T20:41:16.770774+00:00",
+      "source": "worker-3c005af2",
+      "activity": "Block 1: Kontrolle bestätigt: **1373 aus der Liste verschwunden*",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-90e3bb",
+      "timestamp": "2026-09-27T20:35:15.902089+00:00",
+      "source": "worker-3c005af2",
+      "activity": "Worker gestartet: worker glm helper",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-712689",
+      "timestamp": "2026-09-27T20:35:01.634040+00:00",
+      "source": "system",
+      "activity": "Neuer Worker erstellt: worker glm helper",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-85c99a",
+      "timestamp": "2026-09-27T20:33:38.429184+00:00",
+      "source": "worker-01a5cde0",
+      "activity": "Worker gestartet: worker durare",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-c83cbd",
+      "timestamp": "2026-09-27T20:33:30.897968+00:00",
+      "source": "system",
+      "activity": "Neuer Worker erstellt: worker durare",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-4237bb",
+      "timestamp": "2026-09-27T20:31:30.552960+00:00",
+      "source": "buddha_always_on",
+      "activity": "Slot buddha_always_on aktualisiert",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-7256f2",
+      "timestamp": "2026-09-27T20:29:24.603044+00:00",
+      "source": "worker-d9ad85e2",
+      "activity": "Worker gestartet: Offene BACH-/OCEAN-Arbeit in BACH-Aufgaben übernehmen",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-a998e5",
+      "timestamp": "2026-09-27T20:29:22.578242+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Worker gestartet: Task worker",
+      "status": "running",
+      "details": {}
+    },
+    {
+      "id": "act-cc46cc",
+      "timestamp": "2026-09-27T20:27:07.704646+00:00",
+      "source": "worker-d9ad85e2",
+      "activity": "Block 1: Backend-Fehler: HTTPStatusError: Client error '429 Too ",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-9b579d",
+      "timestamp": "2026-09-27T20:27:07.014804+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 24: Backend-Fehler: HTTPStatusError: Client error '429 Too ",
+      "status": "error",
+      "details": {}
+    },
+    {
+      "id": "act-9c3323",
+      "timestamp": "2026-09-27T20:24:08.622737+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 23: ## Session abgeschlossen — #1384 abgeschlossen, #1368 (",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-fa84d0",
+      "timestamp": "2026-09-27T20:23:40.763342+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 22: # Session abgeschlossen — #1353 (Multi-User-Architektur",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f096d6",
+      "timestamp": "2026-09-27T20:23:15.161777+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 21: ## Übergabe abgeschlossen — Task #1382 ✅ completed\n\n**A",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-d4f4b0",
+      "timestamp": "2026-09-27T20:18:12.942143+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 20: # Session abgeschlossen — #1353 weiter fortgeschrieben,",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-f5cb91",
+      "timestamp": "2026-09-27T20:17:43.694466+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 19: # Session abgeschlossen — #1353 fortgeschrieben, Audit-",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-5b18fb",
+      "timestamp": "2026-09-27T20:17:18.179140+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 18: **Session abgeschlossen — #1353 fortgeschrieben, SQLite",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-eec00f",
+      "timestamp": "2026-09-27T20:16:42.736783+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 17: # Session abgeschlossen — #1353 fortgeschrieben, Zugrif",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-83ad03",
+      "timestamp": "2026-09-27T20:16:21.402607+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 16: # Session abgeschlossen — #1353 fortgeschrieben, Sessio",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-bf7507",
+      "timestamp": "2026-09-27T20:16:01.107138+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 15: # Session abgeschlossen — #1319 abgeschlossen (P3), #13",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-3eff86",
+      "timestamp": "2026-09-27T20:15:36.572550+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 14: # Session abgeschlossen — #1319 Skill-Dokumentation fer",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-9b7148",
+      "timestamp": "2026-09-27T20:15:15.924443+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 13: # Session abgeschlossen — #1368 weiter bearbeitet, ~85%",
+      "status": "ok",
+      "details": {}
+    },
+    {
+      "id": "act-74fbdc",
+      "timestamp": "2026-09-27T20:14:54.199355+00:00",
+      "source": "worker-162f9e75",
+      "activity": "Block 12: # Session abgeschlossen — #1368 weiter bearbeitet, ~75%",
+      "status": "ok",
+      "details": {}
+    }
+  ],
+  "fackel_preference": "ollama"
+}

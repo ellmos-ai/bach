@@ -44,7 +44,7 @@ ATI bietet ein **Project Bootstrapping System**, das:
 | `distribution_system.py` | `skills/tools/` | Tier-System, Siegel | Dist-Policies |
 | `unified_path_healer.py` | `skills/tools/_FUTURES/maintain/` | Pfad-Korrektur | Selbstheilungsmodul |
 | `exporter.py` | `skills/tools/generators/` | Export-Funktion | Release-Pipeline |
-| `builder.md` | `skills/_services/` | Build-Skill | Orchestrierung |
+| `builder.md` | `hub/_services/` | Build-Skill | Orchestrierung |
 
 ---
 
@@ -274,7 +274,7 @@ safe_write(filepath, content)   # UTF-8 ohne BOM
 
 ### 4.4 backup (Snapshot-System)
 
-**Quelle:** `skills/_services/builder.md` (Konzept)
+**Quelle:** `hub/_services/builder.md` (Konzept)
 
 **Funktion:**
 - Snapshot vor kritischen Operationen
@@ -698,7 +698,7 @@ Ausfuehren mit: bach ati migrate ... --execute
 ## Verwandte Dokumente
 
 - `ATI.md` - Hauptdokumentation ATI-Agent
-- `skills/_services/builder.md` - Build-Skill v3.0
+- `hub/_services/builder.md` - Build-Skill v3.0
 - `skills/tools/structure_generator.py` - Struktur-Generator
 - `skills/tools/distribution_system.py` - Distribution-System
 - `skills/tools/_FUTURES/maintain/unified_path_healer.py` - Pfad-Heilung

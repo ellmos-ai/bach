@@ -1,0 +1,12 @@
+# BACH Inbox Watcher - ueberwachte Ordner
+# Format: pfad|mode|filter|target
+#   mode:   manual (nur Transfer-Zone), auto (Sortier-Regeln anwenden), review (Transfer-Zone + Task)
+#   filter: * oder GENAU EINE Extension pro Zeile (Trennzeichen | ist Feldtrenner!)
+#           Fuer mehrere Extensions: mehrere Zeilen mit gleichem Ordner (disjunkte Filter = keine Doppelverarbeitung)
+#   target: nur fuer watch-Modus relevant; --process nutzt Regel-Targets aus inbox_config.json
+#
+# Downloads-Watcher (Tasks #1462 E07-CAMT / #1463 E04-Export):
+# Hinweis: Dateien werden KOPIERT (nicht verschoben) - Originale bleiben in ~/Downloads
+/Users/lukas/Downloads|auto|xml|inbox
+/Users/lukas/Downloads|auto|csv|inbox
+/Users/lukas/Downloads|auto|zip|inbox

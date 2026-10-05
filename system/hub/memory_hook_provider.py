@@ -110,6 +110,11 @@ CONTEXT_SOURCES = ["manual", "theme", "lesson", "tool", "workflow", "skill"]
 #: bach_api._CLI_PATTERN, dort filtert der Altpfad nach der Auswahl).
 _CLI_PATTERN = re.compile(r'bach\s+\w+|--\w+|python\s+\w+\.py')
 
+#: Hinweise mit konkretem Dateipfad (Endung wie .py/.md/.sql): duerfen im
+#: Chat auch ohne CLI-Befehl durch, weil sie auf Dateien verweisen statt
+#: auf Terminal-Aktionen (vgl. cli-Modus: dort laeuft _CLI_PATTERN allein).
+_FILE_HINT_PATTERN = re.compile(r"\.(?:py|md|sql|json|toml|sh|yaml|yml|db)\b")
+
 
 def _context_triggers_db_on() -> bool:
     return os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() in _ON_VALUES
@@ -462,10 +467,11 @@ class ExternalMemoryHook:
         Ruft session_start_message (einmalig) + evaluate_prompt auf und
         schreibt den Audit-Trail fuer jede tatsaechliche Injektion.
         cli_hints=False (Chat im api-Modus): Trigger-Hinweise mit CLI-Befehlen
-        werden VOR der Auswahl uebersprungen -- bewusst anders als der
-        Altpfad, der sie nach der Auswahl verwarf und dabei den Cooldown
-        verbrauchte (Positivmessung 2026-09-26). Das gilt nur fuer Kontext-
-        Hinweise; Strategy und Tool-Warn zeigte auch der Altpfad im Chat.
+        aber ohne Dateipfad werden VOR der Auswahl uebersprungen -- bewusst
+        anders als der Altpfad, der sie nach der Auswahl verwarf und dabei
+        den Cooldown verbrauchte (Positivmessung 2026-09-26). Das gilt nur
+        fuer Kontext-Hinweise; Strategy und Tool-Warn zeigte auch der Altpfad
+        im Chat.
         disabled: in BACH abgeschaltete Injektoren -- auch hier stumm.
         """
         if not external_memoryhooker_available():
@@ -506,7 +512,8 @@ class ExternalMemoryHook:
             if not cli_hints:
                 kwargs["accept"] = lambda rule: (
                     rule.source not in CONTEXT_SOURCES
-                    or not _CLI_PATTERN.search(rule.hint))
+                    or not _CLI_PATTERN.search(rule.hint)
+                    or _FILE_HINT_PATTERN.search(rule.hint))
         hints = self._evaluate_triggers(text, cfg, self.backend, state, **kwargs)
         # usage_count zaehlte der Altpfad nur fuer den ContextInjector.
         self._mark_usage([r.rule_id for r in fired

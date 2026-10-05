@@ -97,7 +97,7 @@ GUI：无（仅 CLI + 集成在 /daemon 页面中）
      检查新工具： bach ati onboard --check
 
   3. 代码质量（30d）
-     检查代码质量：所有工具上的 c_method_analyzer
+     检查代码质量：所有工具上的 method_analyzer
 
   系统任务：
   -------------

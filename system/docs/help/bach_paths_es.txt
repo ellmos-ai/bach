@@ -65,13 +65,13 @@ Problema: Las herramientas están en el sistema/tools/
 Solución con bach_paths:
 
     prueba:
-        desde c_ocr_engine importar ocr_pdf
+        desde ocr_engine importar ocr_pdf
     excepto ImportError:
         desde bach_paths importar get_path
         herramientas_dir = get_path("herramientas")
         si str(tools_dir) no está en sys.path:
             sys.path.insert(0, str(tools_dir))
-        desde c_ocr_engine importar ocr_pdf
+        desde ocr_engine importar ocr_pdf
 
 EJEMPLO: ruta de plantilla
 -----------------------

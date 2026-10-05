@@ -1,0 +1,39 @@
+{
+  "settings": {
+    "enabled": true,
+    "transfer_zone": "user/inbox/unsortiert",
+    "auto_task_on_unknown": false
+  },
+  "rules": [
+    {
+      "id": "camt",
+      "pattern": "camt.*\\.xml$|\\.zip$",
+      "pattern_type": "filename",
+      "target": "data/inbox",
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "id": "e04-export",
+      "pattern": "export|e04|steuer",
+      "pattern_type": "filename",
+      "target": "data/inbox",
+      "enabled": true,
+      "priority": 2
+    },
+    {
+      "id": "all-financial",
+      "pattern": "\\.(xml|csv|zip)$",
+      "pattern_type": "filename",
+      "target": "data/inbox",
+      "enabled": true,
+      "priority": 99
+    }
+  ],
+  "stats": {
+    "files_processed": 3,
+    "files_sorted": 3,
+    "files_manual": 0,
+    "last_run": "2026-09-29T11:27:32.479337"
+  }
+}

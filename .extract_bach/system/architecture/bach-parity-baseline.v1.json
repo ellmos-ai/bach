@@ -1,0 +1,323 @@
+{
+  "schema": "ellmos.open-ocean-bach-parity-baseline.v1",
+  "status": "planning-baseline-not-parity-proof",
+  "recorded_at": "2026-08-22",
+  "release_bar": {
+    "historic_runtime_snapshot": 113,
+    "rule": "The 113-name runtime snapshot remains the minimum release commitment. Current source-declared names are additive until a side-effect-free runtime dump resolves the drift; no newer command may silently fall out of scope."
+  },
+  "sources": {
+    "bach_commit": "5e8fe80607091378477523b2b6dc99e8c17d7d18",
+    "historic_inventory": ".AI/.STACKS/sovereign-private/_concepts/BACH_HANDLER_CLUSTER_UND_ARCHITEKTUR.md",
+    "module_catalog": ".AI/.MODULES/modules.catalog.json",
+    "audit_method": "static AST over system/hub/*.py plus effective COMMAND_ALIASES; BACH is not imported or booted"
+  },
+  "re_audit_2026-08-18": {
+    "purpose": "Ticket T-20260818-229528104 (PRIVATE.txt condition 3, BACH parity), read-only re-run of tools/audit_bach_handlers.py against the live BACH source. Appended, not overwritten: the 2026-08-08 source_audit block above stays the historic anchor that release_bar.rule refers to.",
+    "counts": {
+      "handler_classes": 106,
+      "canonical_profiles": 105,
+      "aliases_declared": 13,
+      "aliases_effective": 9,
+      "registered_names": 114
+    },
+    "baseline_drift_vs_2026-08-08": [
+      "count handler_classes: expected 105, got 106"
+    ],
+    "root_cause_identified": "BACH's system/hub/ carries two files that both define a class whose profile_name() returns 'upgrade': upgrade.py and upgrade-<FRESH-HOST>.py (a host-suffixed duplicate). This is the extra handler_classes count; registered_names stayed at 114 because both collapse to the same profile name. NOT fixed here: BACH is read-only for this ticket (user lock, buildweek-no-push) and the fix belongs upstream, not in this repository.",
+    "registered_names_count_unchanged": true,
+    "dangling_aliases_unchanged": true,
+    "conclusion": "The 114-name/113-name release bar from 2026-08-08 is still current and accurate as of 2026-08-18; the only drift is the duplicate-file artifact above, which does not change scope or coverage."
+  },
+  "re_audit_2026-09-21": {
+    "purpose": "T-20260920-157560721: read-only composition re-measurement against clean BACH main 39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed and the current module, bundle and Skills Registry catalogues. This is appended evidence; it does not replace the historic 113/114 release record.",
+    "counts": {
+      "handler_classes": 109,
+      "canonical_profiles": 109,
+      "aliases_declared": 13,
+      "aliases_effective": 9,
+      "registered_names": 118
+    },
+    "historic_surface": {
+      "registered_names": 114,
+      "preserved": true,
+      "additions": ["cloud", "mcp", "security", "theme"],
+      "removals": []
+    },
+    "composition_matrix": "architecture/bach-composition-matrix.v1.json",
+    "catalogue_snapshot": {
+      "modules": 75,
+      "bundles": 33,
+      "skills": 142
+    },
+    "conclusion": "Current source has grown to 118 names. The matrix records one explicit carrier, gap or intentional-non-module outcome per name, while keeping declared carriers and functional use-case evidence separate. It proves neither equivalence nor release parity."
+  },
+  "source_audit": {
+    "counts": {
+      "handler_classes": 105,
+      "canonical_profiles": 105,
+      "aliases_declared": 13,
+      "aliases_effective": 9,
+      "registered_names": 114
+    },
+    "canonical_profiles_sha256": "49878e79b9b9e0a64bac25f4abec4aa1c6a552ec47ec9a7e89eb4dff28f14d9f",
+    "registered_names_sha256": "b129f2c5f9ac0aef5341c0684305c7556e41a17de32b0fd20cf522ef2c836770",
+    "known_dangling_aliases": {
+      "cv": "curriculum",
+      "data": "data_analysis",
+      "msg": "messages"
+    },
+    "registered_name_set": [
+      "abo",
+      "agent",
+      "agents",
+      "api",
+      "apiprober",
+      "ati",
+      "backup",
+      "beat",
+      "bericht",
+      "between",
+      "calendar",
+      "chain",
+      "claude-bridge",
+      "clock",
+      "clutch",
+      "connections",
+      "connector",
+      "consolidate",
+      "consolidation",
+      "contact",
+      "context",
+      "cookbook",
+      "countdown",
+      "cv",
+      "daily-agent",
+      "daemon",
+      "data",
+      "db",
+      "dbsync",
+      "denkarium",
+      "dist",
+      "doc",
+      "docs",
+      "docs-search",
+      "email",
+      "extensions",
+      "fs",
+      "gesundheit",
+      "gui",
+      "haushalt",
+      "health",
+      "healthcheck",
+      "help",
+      "hook",
+      "hooks",
+      "inject",
+      "integration",
+      "lang",
+      "lesson",
+      "literatur",
+      "logs",
+      "mail",
+      "maintain",
+      "media",
+      "mediplaner",
+      "mem",
+      "memory",
+      "mount",
+      "msg",
+      "news",
+      "newspaper",
+      "notespace",
+      "notify",
+      "obsidian",
+      "ollama",
+      "partner",
+      "path",
+      "permissions",
+      "plugin",
+      "plugins",
+      "press",
+      "profile",
+      "profiler",
+      "prompt",
+      "recurring",
+      "reflection",
+      "restore",
+      "routine",
+      "sandbox",
+      "scan",
+      "scheduler",
+      "schwarm",
+      "search",
+      "session",
+      "settings",
+      "setup",
+      "shared-mem",
+      "shutdown",
+      "skill",
+      "skills",
+      "smarthome",
+      "snapshot",
+      "sources",
+      "startup",
+      "status",
+      "steuer",
+      "swarm",
+      "sync",
+      "task",
+      "test",
+      "timer",
+      "tokens",
+      "tool",
+      "tools",
+      "trash",
+      "tuev",
+      "update",
+      "upgrade",
+      "usecase",
+      "versicherung",
+      "watcher",
+      "web-parse",
+      "web-scrape",
+      "wiki"
+    ]
+  },
+  "module_catalog": {
+    "schema": "ellmos.modules-catalog.v1",
+    "module_count": 51,
+    "sha256": "99e520573dc334381514c71565e2c2438513e2c621b09bcd5302cb1564ac5424"
+  },
+  "k9_1_evidence": {
+    "status": "adapter-specified-two-carrier-fixtures-green-not-equivalence",
+    "contract": "architecture/bach-k9-data-contract.v1.json",
+    "checker": "tools/check_k9_data_contract.py",
+    "carrier": {
+      "id": "sqlite-transit-sync",
+      "commit": "7648a20b11ca958e9622d2b5d8a13fd02613e92a",
+      "capability_added": "verified conservative cleanup and selected pending pull for thin lifecycle adapters"
+    },
+    "session_checkpoint_carrier": {
+      "id": "session-checkpoint",
+      "commit": "2a9ce5ec5c5c47fb07615ae7b0aa19b04ef53098",
+      "capability_added": "module-owned local session checkpoints with integrity verification, bounded import and private POSIX file creation"
+    },
+    "findings": {
+      "dbsync": "candidate-partial; generic backup, merge, status and cleanup mechanics exist, but adapter and runtime equivalence remain open",
+      "snapshot": "candidate-partial; the correct neutral session-checkpoint carrier and synthetic fixture exist, but BACH collection/output parity and reintegration remain open"
+    }
+  },
+  "coverage_states": {
+    "accepted": "Operation-level equivalence, state migration, BACH delegation, rollback and tests are evidenced.",
+    "candidate-partial": "A current carrier provides related capabilities, but BACH equivalence is not evidenced.",
+    "gap": "No current catalog carrier plausibly covers the handler contract.",
+    "alias": "No independent function; parity follows the canonical target."
+  },
+  "clusters": {
+    "9": {
+      "name": "System, Daten und Betrieb (Kernel)",
+      "priority": 1,
+      "canonical_profiles": [
+        "db",
+        "dbsync",
+        "sync",
+        "backup",
+        "restore",
+        "snapshot",
+        "status",
+        "healthcheck",
+        "logs",
+        "tokens",
+        "maintain",
+        "tuev",
+        "update",
+        "upgrade",
+        "setup",
+        "settings",
+        "session",
+        "shutdown",
+        "path",
+        "fs",
+        "mount",
+        "trash",
+        "scan",
+        "watcher",
+        "sandbox",
+        "dist",
+        "lang",
+        "gui",
+        "help"
+      ],
+      "aliases": {
+        "health": "healthcheck"
+      },
+      "coverage_summary": {
+        "command_names": 30,
+        "canonical_profiles": 29,
+        "accepted": 0,
+        "candidate-partial": 20,
+        "gap": 9,
+        "alias": 1
+      },
+      "work_packages": [
+        {
+          "id": "K9-DATA",
+          "profiles": ["db", "dbsync", "sync", "backup", "restore"],
+          "state": "candidate-partial",
+          "candidate_carriers": ["sqlite-transit-sync", "system-gap-master", "system-explorer", "mac-backup"]
+        },
+        {
+          "id": "K9-SESSION-CHECKPOINT",
+          "profiles": ["snapshot"],
+          "state": "candidate-partial",
+          "candidate_carriers": ["session-checkpoint"],
+          "evidence": "architecture/bach-k9-data-contract.v1.json",
+          "finding": "BACH snapshot is a session-context row checkpoint. A correct neutral carrier now exists; application adapter and old/new equivalence remain open."
+        },
+        {
+          "id": "K9-OBSERVE",
+          "profiles": ["status", "logs", "tokens", "maintain", "tuev", "scan"],
+          "state": "candidate-partial",
+          "candidate_carriers": ["system-explorer", "ellmos-tests", "project-docs-template", "ellmos-unified-gui"]
+        },
+        {
+          "id": "K9-OBSERVE-GAPS",
+          "profiles": ["healthcheck", "watcher"],
+          "state": "gap",
+          "candidate_carriers": []
+        },
+        {
+          "id": "K9-LIFECYCLE",
+          "profiles": ["settings", "path", "mount", "dist"],
+          "state": "candidate-partial",
+          "candidate_carriers": ["policy-registry", "ellmos-core", "bundles"]
+        },
+        {
+          "id": "K9-LIFECYCLE-GAPS",
+          "profiles": ["update", "upgrade", "setup", "session", "shutdown"],
+          "state": "gap",
+          "candidate_carriers": []
+        },
+        {
+          "id": "K9-BOUNDARY",
+          "profiles": ["fs", "sandbox", "gui", "help"],
+          "state": "candidate-partial",
+          "candidate_carriers": ["system-explorer", "lock-master", "ellmos-unified-gui", "project-docs-template"]
+        },
+        {
+          "id": "K9-BOUNDARY-GAPS",
+          "profiles": ["trash", "lang"],
+          "state": "gap",
+          "candidate_carriers": []
+        },
+        {
+          "id": "K9-ALIASES",
+          "profiles": ["health"],
+          "state": "alias",
+          "candidate_carriers": ["healthcheck"]
+        }
+      ]
+    }
+  }
+}

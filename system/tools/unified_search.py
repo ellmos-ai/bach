@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: unified_search
-Version: 1.0.0
+Version: 1.1.0
 Author: Claude Opus 4.6
 Created: 2026-02-20
 Implements: SQ064 (Semantische Suche) + SQ047 (Wissensindexierung)
@@ -22,7 +22,7 @@ Architecture:
     search_tags  (table)  <-- tags per indexed item (ProFiler pattern)
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Claude Opus 4.6"
 
 import sqlite3
@@ -30,6 +30,7 @@ import hashlib
 import os
 import sys
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
@@ -37,6 +38,8 @@ from typing import Dict, List, Optional, Tuple, Any
 # BACH Root
 BACH_ROOT = Path(__file__).parent.parent
 DB_PATH = BACH_ROOT / "data" / "bach.db"
+
+logger = logging.getLogger(__name__)
 
 # --- File type mappings (from DocumentIndexer + ProFiler) ---
 
@@ -455,11 +458,31 @@ class UnifiedSearch:
             Tuple[bool, str]: (Erfolg, Statusmeldung)
         """
         # Lazy-Import: KnowledgeDigest aus MODULAR_AGENTS
-        modular_agents_dir = BACH_ROOT.parent.parent / "MODULAR_AGENTS"
+        # Z567/#1674: Pfad konfigurierbar via ENV BACH_MODULAR_AGENTS_DIR,
+        # Fallback auf den historischen Standardpfad.
+        modular_agents_dir = Path(
+            os.environ.get(
+                "BACH_MODULAR_AGENTS_DIR",
+                str(BACH_ROOT.parent.parent / "MODULAR_AGENTS"),
+            )
+        ).expanduser()
         kd_package_dir = modular_agents_dir / "KnowledgeDigest"
 
+        # Z567/#1674 Watcher: Pfad-Existenz pro Lauf pruefen und Zustand
+        # loggen statt still zu ueberspringen (Fail-soft bleibt True).
         if not kd_package_dir.exists():
-            return True, "[KnowledgeDigest] Nicht gefunden, uebersprungen."
+            logger.warning(
+                "[KnowledgeDigest] Verzeichnis nicht gefunden, "
+                "Indexierung inaktiv (Fail-soft): %s",
+                kd_package_dir,
+            )
+            return True, (
+                "[KnowledgeDigest] Nicht gefunden, uebersprungen. "
+                f"(Pfad: {kd_package_dir})"
+            )
+        logger.debug(
+            "[KnowledgeDigest] Aktiver Pfad: %s", kd_package_dir
+        )
 
         # sys.path erweitern fuer Import
         kd_parent = str(modular_agents_dir)
@@ -480,6 +503,10 @@ class UnifiedSearch:
             kd_db_path = kd_package_dir / "data" / "knowledge.db"
         kd_db_path = Path(kd_db_path)
         if not kd_db_path.exists():
+            logger.warning(
+                "[KnowledgeDigest] knowledge.db nicht gefunden (Fail-soft): %s",
+                kd_db_path,
+            )
             return True, f"[KnowledgeDigest] knowledge.db nicht gefunden: {kd_db_path}"
 
         conn = self._get_db()

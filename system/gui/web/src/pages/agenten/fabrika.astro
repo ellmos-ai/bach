@@ -1,0 +1,988 @@
+---
+// fabrika.astro - Agenten-Fabrika Schablonen-Baukasten
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Agenten-Fabrik" currentPath="/agenten/fabrika">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        🤖 Agenten-Fabrik
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Schablonen-Baukasten • Einzelagenten, Teambuilding (Swarm-AI) & Agenten-Staffeln
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;">
+      <a href="/agenten/running" class="btn">
+        <span>⚡</span> Zu Living & Running
+      </a>
+      <button class="btn btn-primary" onclick="resetForm()">
+        <span>+</span> Neue Schablone
+      </button>
+    </div>
+  </div>
+
+  <!-- 3 Tabs der Agenten-Fabrik (Segmented Pill Design) -->
+  <div class="fab-tabs-container" style="display:flex;align-items:center;background:var(--bg-dark);padding:5px;border-radius:32px;border:1px solid var(--border);width:fit-content;margin-bottom:1.5rem;box-shadow:0 2px 10px rgba(0,0,0,0.25);gap:6px;">
+    <button class="fab-tab-btn active" data-tab="einzelagenten">🤖 Tab 1: Einzelagenten (Baukasten)</button>
+    <button class="fab-tab-btn" data-tab="teambuilding">👥 Tab 2: Teambuilding (Swarm-AI)</button>
+    <button class="fab-tab-btn" data-tab="staffel">⛓️ Tab 3: Agenten-Staffel (MarbleRun)</button>
+  </div>
+
+  <div class="fab-pane active" id="pane-einzelagenten">
+  <div class="grid grid-cols-3" style="align-items:start;">
+    <!-- Linke Spalte: Baukasten-Editor (2 Spalten breit auf Desktop) -->
+    <div style="grid-column: span 2; display:flex;flex-direction:column;gap:1.5rem;">
+      <!-- 1. Persona & Rolle -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">1. Persona & Rolle</h2>
+          <span class="badge badge-accent">Schritt 1</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Schablonen-Name</label>
+            <input type="text" id="bp-name" placeholder="z. B. Forschungs-Agent" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Vordefinierte Vorlage laden</label>
+            <select id="bp-template-select" onchange="loadPresetTemplate(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="">-- Eigene Persona schreiben --</option>
+              <option value="buddha">🧘 Buddha (Allround-Assistent & Chat)</option>
+              <option value="wartung">🛠️ Wartungs-Agent (Routinen & Code-Hygiene)</option>
+              <option value="ati">💻 Ati (Software & Architektur)</option>
+              <option value="research">🔬 Research Scout (Recherche & Quellen)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">System-Prompt / Persönlichkeit (Persona)</label>
+          <textarea id="bp-persona" rows="4" placeholder="Der Standardprompt wird aus der aktiven Control-Konfiguration geladen." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <small id="bp-persona-source" style="display:block;margin-top:0.35rem;color:var(--text-muted);">Original-Standardprompt wird geprüft. Gespeicherte eigene Persona bleibt erhalten.</small>
+        </div>
+      </div>
+
+      <details class="card" id="core-prompt-library" style="margin:0 0 1rem;">
+        <summary style="cursor:pointer;font-weight:700;">Original-System- und Rollenprompts</summary>
+        <p style="color:var(--text-muted);font-size:0.82rem;">Quelle ist die bestehende Control-Konfiguration. Werkstandards bleiben unverändert; Speichern setzt die aktive eigene Anpassung. Eine Versionshistorie ist noch nicht angebunden. Zurücksetzen entfernt nur diese Anpassung und startet keinen Worker.</p>
+        <label for="core-prompt-key" style="display:block;margin:.75rem 0 .25rem;">Promptvorlage</label>
+        <select id="core-prompt-key" style="width:100%;padding:.55rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);" onchange="showCorePrompt()"></select>
+        <p id="core-prompt-status" role="status" style="font-size:.8rem;color:var(--text-muted);">Promptquelle wird geprüft…</p>
+        <label for="core-prompt-text" style="display:block;margin:.75rem 0 .25rem;">Aktiver Prompttext</label>
+        <textarea id="core-prompt-text" rows="8" style="width:100%;padding:.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);font-family:monospace;"></textarea>
+         <details style="margin-top:.75rem;">
+           <summary style="cursor:pointer;">Gemeldeten Werkstandard getrennt ansehen</summary>
+           <label for="core-prompt-default" style="display:block;margin:.5rem 0 .25rem;">Werkstandard der ausgewählten Quelle · nur lesen</label>
+           <textarea id="core-prompt-default" rows="8" readonly style="width:100%;padding:.6rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);font-family:monospace;"></textarea>
+         </details>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+          <button type="button" id="core-prompt-save" class="btn btn-sm btn-primary" onclick="saveCorePrompt()" disabled>Anpassung speichern</button>
+          <button type="button" id="core-prompt-reset" class="btn btn-sm" onclick="resetCorePrompt()" disabled>Auf Werkstandard zurücksetzen</button>
+          <button type="button" id="core-prompt-use" class="btn btn-sm" onclick="useCorePromptAsPersona()" disabled>Als Persona-Entwurf übernehmen</button>
+        </div>
+      </details>
+
+      <!-- 2. Skills & Capabilities -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">2. Skills & Fähigkeiten</h2>
+          <span class="badge badge-accent">Schritt 2</span>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
+          Wähle die Fähigkeiten, die dieser Agent besitzen soll (Multi-Select aus dem Capabilities Hub):
+        </p>
+        <div id="skills-selector" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.5rem;max-height:160px;overflow-y:auto;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="git-hygiene" checked /> git-hygiene</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="lock-master" checked /> lock-master</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="pipeline-optimizer" /> pipeline-optimizer</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="brainstorm" /> brainstorm</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="decide" /> decide</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="bugfix-protocol" /> bugfix-protocol</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="gardener-search" checked /> gardener-search</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="literature-search-arxiv" /> arxiv-search</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;"><input type="checkbox" value="document-chunker" /> doc-chunker</label>
+        </div>
+      </div>
+
+      <!-- 3. Contractus & Modus -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">3. Contractus & Modus (Arbeitsvertrag & Auslöser)</h2>
+          <span class="badge badge-accent">Schritt 3</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:1rem;margin-bottom:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Max. Turns am Stück</label>
+            <input type="number" id="bp-turns" value="15" min="1" max="100" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Pausenzeit / Cooldown (s)</label>
+            <input type="number" id="bp-cooldown" value="30" min="0" max="600" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Aufgabentyp</label>
+            <select id="bp-task-type" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="code">Code & Entwicklung</option>
+              <option value="routine">System-Routine / Wartung</option>
+              <option value="recherche">Recherche & Analyse</option>
+              <option value="allround" selected>Allrounder</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Modus (Usus vs. Impetus)</label>
+            <select id="bp-modus" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="usus">Usus (Wiederkehrende Routinen / Dauerbetrieb)</option>
+              <option value="impetus_temporal">Impetus: Temporal (Zeitgesteuert / Intervall)</option>
+              <option value="impetus_causa">Impetus: Causa (Ereignisgesteuert / Trigger)</option>
+              <option value="casualis" selected>Casualis (Prompt-/Task-getrieben / Einzelfall)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Weck-Verhalten</label>
+            <select id="bp-wake" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="idle_wake">Aus Idle wecken, sobald Task ansteht</option>
+              <option value="always_on">Dauerhaft aktiv (Worker Pool)</option>
+              <option value="manual">Nur bei manuellem Start</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Governance & Sicherheits-Bindung -->
+      <div class="card" style="border:1px solid rgba(239,68,68,0.3);background:radial-gradient(ellipse at top left, rgba(239,68,68,0.05) 0%, var(--bg-card) 100%);">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <span style="font-size:1.2rem;">🛡️</span>
+            <h2 class="card-title" style="margin:0;">4. Governance-Bindung & Tool-Sicherheit</h2>
+          </div>
+          <span class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;">Schritt 4 • Sicherheits-Engpass</span>
+        </div>
+
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5;">
+          <strong>Fabrik-Grundsatz:</strong> Hier binden wir alle Sicherheits-Leitplanken fest an den Agenten.
+          Nach dem Absenden existiert für neue Informationen nur noch der Weg über das <strong>Dateisystem (aktiver Pull)</strong>
+          oder über streng <strong>überwachte Hooker-Injektoren</strong> ins Kontextfenster.
+        </p>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Governance-Profil</label>
+            <select id="bp-gov-profile" onchange="applyGovProfile(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+              <option value="fail_closed_standard" selected>🛡️ Fail-Closed Standard (P-001 & P-004)</option>
+              <option value="read_only_research">🔬 Read-Only Rechercheur (Kein Schreibzugriff)</option>
+              <option value="full_dev_guarded">⚡ Entwicklungs-Operator (Guarded CLI & Tests)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Hooker-Überwachung</label>
+            <div style="padding:0.6rem;background:var(--bg-dark);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);color:#10b981;font-size:0.8rem;display:flex;align-items:center;gap:0.4rem;">
+              <span>✅</span> <strong>Audit-Gate Aktiv:</strong> Jede spätere Injektion wird gefiltert.
+            </div>
+          </div>
+        </div>
+
+        <!-- Tool-Whitelist -->
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">Freigegebene Tool-Kategorien (Whitelist):</label>
+          <div id="gov-tools-selector" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.5rem;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-read" checked /> Dateilesen & Suche</label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-write" checked /> Dateimodifikation</label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-cmd" checked /> Terminal-Befehle</label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-git" checked /> Git (P-001 No-Push)</label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-mcp" checked /> MCP Cookbooks</label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;cursor:pointer;"><input type="checkbox" id="tool-web" /> Web-Fetch / APIs</label>
+          </div>
+        </div>
+
+        <!-- Startprompt Formel-Vorschau -->
+        <div style="background:#0b1120;border:1px solid rgba(139,92,246,0.3);padding:0.8rem;border-radius:6px;margin-bottom:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+            <strong style="color:#c4b5fd;font-size:0.8rem;">🚀 Startprompt-Synthese (Vorschau vor dem Boot)</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);font-family:monospace;">Startprompt = Agent + System + Aufgabe</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);line-height:1.5;font-family:monospace;">
+            [Boot:Agent] Rolle + Persona + gewählte Skills + Governance-Contractus.<br>
+            [Boot:System] Host-Pfade (Windows/Mac), Policies, Orientierungsdaten.<br>
+            [Boot:Aufgabe] Spezifischer Arbeitsauftrag von Lukas.<br>
+            <span style="color:#10b981;">➔ Initialer Boot-Bus erzeugt sauberen Einstiegspunkt ins Kontextfenster.</span>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+          <button type="button" class="btn" onclick="saveBlueprint()">💾 Schablone & Governance speichern</button>
+          <button type="button" class="btn btn-primary" onclick="openBeseelenModal()">✨ Schablone als Konfiguration vormerken</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rechte Spalte: Gespeicherte Schablonen-Bibliothek -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📚 Schablonen-Bibliothek</h2>
+        <span class="badge badge-accent" id="bp-count">3</span>
+      </div>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem;">
+        Wiederverwendbare Agenten-Blaupausen ohne feste Bindung an ein Modell.
+      </p>
+
+      <div id="blueprints-list" style="display:flex;flex-direction:column;gap:0.75rem;">
+        <p style="text-align:center;color:var(--text-muted);padding:2rem;">Lade Schablonen...</p>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- PANE 2: TEAMBUILDING (SWARM-AI) -->
+  <div class="fab-pane" id="pane-teambuilding" style="display:none;flex-direction:column;gap:1.5rem;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
+      <!-- Team Assembler Form -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">👥 Team assemblieren (Swarm-AI)</h2>
+          <span class="badge badge-accent">Schwarm-Modus</span>
+        </div>
+        <p style="font-size:0.825rem;color:var(--text-muted);margin-bottom:1rem;">
+          Kombiniere spezialisierte Einzelagenten zu einem kollaborativen Team mit Operator-Koordination.
+        </p>
+        <form id="form-team-assemble" onsubmit="event.preventDefault(); assembleTeam();" style="display:flex;flex-direction:column;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Team-Name</label>
+            <input type="text" id="team-name" placeholder="z. B. Audit & Refactoring Schwarm" required style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Mission / Auftrag</label>
+            <textarea id="team-desc" rows="3" placeholder="Ziele, Teilaufgaben und Abnahmekriterien des Teams..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;"></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div>
+              <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Teamleader / Operator</label>
+              <select id="team-leader" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+                <option value="Operator">👑 Operator (Koordinator & Abnahme)</option>
+                <option value="Auditor-Prime">🛡️ Auditor-Prime</option>
+                <option value="Architect-Lead">🏛️ Architect-Lead</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Kooperations-Strategie</label>
+              <select id="team-strategy" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+                <option value="swarm_parallel">⚡ Parallel-Schwarm (Epstein-Modell)</option>
+                <option value="swarm_hierarchy">🌲 Hierarchie-Team (Top-Down)</option>
+                <option value="swarm_stigmergy">🐜 Stigmergy (Spuren-basiert)</option>
+                <option value="swarm_consensus">🤝 Konsensus (Voting-basiert)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">
+              Agenten-Schablonen auswählen (Klicke zum Hinzufügen / Entfernen):
+            </label>
+            <div id="team-blueprint-picker" style="display:flex;flex-wrap:wrap;gap:0.4rem;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);min-height:44px;align-items:center;">
+              <span style="color:var(--text-muted);font-size:0.8rem;">Lade verfügbare Schablonen...</span>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Mitglieder-Agenten (kommasepariert oder oben per Klick)</label>
+            <input type="text" id="team-members" placeholder="z. B. Buddha, Wartungs-Agent, Ati" required style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Team speichern & bereitstellen</button>
+        </form>
+      </div>
+
+      <!-- Active Teams List -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🏆 Konfigurierte Agenten-Teams</h2>
+          <span class="badge badge-success">Aktiv</span>
+        </div>
+        <p style="font-size:0.825rem;color:var(--text-muted);margin-bottom:1rem;">
+          Bereitgestellte Teams für Routine- oder Projektbindung. Diese können in Living & Running mit Modellen beseelt werden.
+        </p>
+        <div id="teams-list-container" style="display:flex;flex-direction:column;gap:0.75rem;">
+          <p class="loading-state">Lade Teams...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANE 3: AGENTEN-STAFFEL (MARBLERUN) -->
+  <div class="fab-pane" id="pane-staffel" style="display:none;flex-direction:column;gap:1.5rem;">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">⛓️ Agenten-Staffel (MarbleRun) & Übergabe-Pipelines</h2>
+          <p style="font-size:0.825rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
+            Sequenzielle Kette: Output von Agent A wird geprüft und dient als getypte Eingabe für Agent B
+          </p>
+        </div>
+        <a href="/agenten/marblerun" class="btn btn-secondary">Vollbild Agenten-Staffel Editor ↗</a>
+      </div>
+
+      <div class="staffel-flow" style="display:flex;align-items:center;gap:1rem;overflow-x:auto;padding:1.5rem 0;">
+        <div class="staffel-step" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;min-width:200px;">
+          <span class="badge badge-accent">Station 1</span>
+          <h4 style="margin:0.5rem 0 0.25rem 0;">Research & Extraktion</h4>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0;">Agent: Research Scout</p>
+        </div>
+        <span style="font-size:1.5rem;color:var(--accent);">➔</span>
+        <div class="staffel-step" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;min-width:200px;">
+          <span class="badge badge-accent">Station 2</span>
+          <h4 style="margin:0.5rem 0 0.25rem 0;">Struktur & Code</h4>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0;">Agent: Ati Architekt</p>
+        </div>
+        <span style="font-size:1.5rem;color:var(--accent);">➔</span>
+        <div class="staffel-step" style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;min-width:200px;">
+          <span class="badge badge-accent">Station 3</span>
+          <h4 style="margin:0.5rem 0 0.25rem 0;">Audit & P-001 Check</h4>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0;">Agent: Sentinel Auditor</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Beseelung an Animus -->
+  <div id="modal-beseelen" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;">
+    <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:550px;padding:2rem;box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+      <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;color:var(--text);">Schablone vormerken</h2>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1.25rem;">
+        Die Schablone erscheint danach als konfiguriert in Living & Running. Ein Agentenprozess wird dadurch nicht gestartet.
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <p style="font-size:0.8rem;color:var(--text-muted);">Diese Auswahl wird als Konfiguration gespeichert. Ein Agentenprozess wertet sie derzeit noch nicht aus.</p>
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Animus-Typ</label>
+          <select id="animus-type" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+            <option value="api">API (z. B. Anthropic Claude, OpenAI, Google)</option>
+            <option value="mcp">MCP Worker (Lokales oder Cluster Tool)</option>
+            <option value="cli">CLI Worker (z. B. claude-code CLI, agy CLI)</option>
+            <option value="subscription">Subscription / Avatar Agent (Selbstwartend)</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Primäres Modell</label>
+          <select id="animus-model" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+            <option value="ollama/qwen2.5-coder:32b">🦙 Ollama: Qwen 2.5 Coder 32B (Mac Studio Local)</option>
+            <option value="claude-3-7-sonnet">🧠 Claude 3.7 Sonnet (Anthropic API)</option>
+            <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash (Google API)</option>
+            <option value="codex-cli">💻 Codex CLI (OpenAI)</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Tokenlimit-Fallback</label>
+          <select id="animus-fallback" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+            <option value="ollama/qwen2.5-coder:32b" selected>Automatisch auf Mac Studio Ollama ausweichen</option>
+            <option value="pause">Pausieren und Meldung an Governance</option>
+            <option value="gemini-2.0-flash">Auf schnelles Flash-Modell wechseln</option>
+          </select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1rem;">
+          <button type="button" class="btn" onclick="document.getElementById('modal-beseelen').classList.add('hidden')">Abbrechen</button>
+          <button type="button" class="btn btn-primary" onclick="confirmBeseelen()">Konfiguration vormerken</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .hidden { display: none !important; }
+    .fab-tab-btn {
+      padding: 0.55rem 1.35rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .fab-tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .fab-tab-btn.active {
+      background: var(--accent);
+      color: #0b0d14;
+      font-weight: 700;
+      border-color: var(--accent);
+      box-shadow: 0 2px 10px rgba(56, 189, 248, 0.35);
+    }
+    .blueprint-chip {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--bg-card);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .blueprint-chip:hover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .blueprint-chip.selected {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #0b0d14;
+      font-weight: 600;
+    }
+  </style>
+
+  <script is:inline>
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    let _allBlueprints = [];
+    let _selectedTeamMembers = new Set();
+
+    function renderTeamBlueprintPicker(blueprints) {
+      _allBlueprints = blueprints || [];
+      const picker = document.getElementById('team-blueprint-picker');
+      if (!picker) return;
+      if (_allBlueprints.length === 0) {
+        picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">Keine Schablonen vorhanden. Erstelle zuerst eine Schablone in Tab 1!</span>';
+        return;
+      }
+      picker.innerHTML = _allBlueprints.map(b => {
+        const isSel = _selectedTeamMembers.has(b.name);
+        return `<button type="button" class="blueprint-chip ${isSel ? 'selected' : ''}" onclick="toggleTeamMemberById(${Number(b.id)})">
+          <span>${isSel ? '✓' : '+'}</span>
+          <span>${escapeHtml(b.name)}</span>
+          <span style="opacity:0.7;font-size:0.7rem;">(${escapeHtml(b.persona_role || b.role || 'Agent')})</span>
+        </button>`;
+      }).join('');
+    }
+
+    function toggleTeamMemberById(id) {
+      const blueprint = _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) return;
+      const name = blueprint.name;
+      if (_selectedTeamMembers.has(name)) {
+        _selectedTeamMembers.delete(name);
+      } else {
+        _selectedTeamMembers.add(name);
+      }
+      document.getElementById('team-members').value = Array.from(_selectedTeamMembers).join(', ');
+      renderTeamBlueprintPicker(_allBlueprints);
+    }
+
+
+    const NEUTRAL_PERSONA_DRAFT = 'Du bist ein konfigurierbarer Assistent. Ergänze hier deine konkrete Rolle, Arbeitsweise und Grenzen. Diese Persona ersetzt keine Systemregeln und aktiviert keinen Worker.';
+    let _corePromptData = null;
+
+    function corePromptMessage(message) {
+      document.getElementById('core-prompt-status').textContent = message;
+    }
+
+    function showCorePrompt() {
+      const key = document.getElementById('core-prompt-key').value;
+      const prompt = _corePromptData?.prompts?.[key];
+      const editor = document.getElementById('core-prompt-text');
+      editor.value = prompt?.effective || '';
+      document.getElementById('core-prompt-default').value = prompt?.default || '';
+      editor.disabled = !prompt;
+      for (const id of ['core-prompt-save', 'core-prompt-reset', 'core-prompt-use']) {
+        document.getElementById(id).disabled = !prompt ||
+          (id === 'core-prompt-use' && _corePromptData?.source === 'in_memory_defaults') ||
+          (id !== 'core-prompt-use' && _corePromptData?.mutation_supported !== true);
+      }
+      corePromptMessage(prompt ? (_corePromptData?.source === 'in_memory_defaults' ?
+        'Nur unbestätigte Speicher-Defaults. Keine aktive Control-Konfiguration nachgewiesen; Übernahme und Schreiben gesperrt.' :
+        _corePromptData?.mutation_supported !== true ?
+        'Unversionierte Control-Antwort: Prompt zur ausdrücklichen Vorschau, aktive Konfiguration nicht bestätigt. Schreiben gesperrt.' :
+        prompt.is_custom ? 'Aktive eigene Anpassung · Werkstandard bleibt separat erhalten.' :
+        'Aktiver Werkstandard aus der Control-Quelle.') : 'Promptquelle nicht verfügbar.');
+    }
+
+    async function loadCorePromptLibrary() {
+      try {
+        const res = await fetch('/api/system/core-prompts');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.schema !== 'bach.core-prompts.v1' || !data.prompts?.system_default ||
+            (data.mutation_supported === true && typeof data.configuration_version !== 'string')) throw new Error('Promptantwort ungültig');
+        const select = document.getElementById('core-prompt-key');
+        select.disabled = false;
+        const previous = select.value;
+        select.replaceChildren();
+        for (const key of Object.keys(data.prompts)) {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = key === 'system_default' ? 'Buddha-Systemprompt' :
+            'Rolle: ' + key.slice('role_'.length).replaceAll('_', ' ');
+          select.append(option);
+        }
+        _corePromptData = data;
+        select.value = data.prompts[previous] ? previous : 'system_default';
+        showCorePrompt();
+      } catch (_error) {
+        _corePromptData = null;
+        document.getElementById('core-prompt-key').disabled = true;
+        for (const id of ['core-prompt-save', 'core-prompt-reset', 'core-prompt-use']) {
+          document.getElementById(id).disabled = true;
+        }
+        corePromptMessage('Promptquelle nicht erreichbar. Vorhandene Eingaben bleiben sichtbar; Speichern und Übernehmen sind bis zur erneuten Prüfung gesperrt.');
+      }
+    }
+
+    async function saveCorePrompt() {
+      if (!_corePromptData) return;
+      const key = document.getElementById('core-prompt-key').value;
+      const value = document.getElementById('core-prompt-text').value;
+      if (!value.trim()) { corePromptMessage('Prompttext darf nicht leer sein.'); return; }
+      corePromptMessage('Anpassung wird gespeichert…');
+      try {
+        const res = await fetch('/api/system/core-prompts/' + encodeURIComponent(key), {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({configuration_version:_corePromptData.configuration_version,text:value})
+        });
+        const data = await res.json();
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            data.prompts?.[key]?.effective !== value || data.prompts?.[key]?.is_custom !== true) {
+          throw new Error('Readback nicht bestätigt');
+        }
+        _corePromptData = data;
+        showCorePrompt();
+        corePromptMessage('Eigene Anpassung gespeichert und aus der Control-Konfiguration bestätigt.');
+      } catch (_error) {
+        corePromptMessage('Speicherung nicht bestätigt; Entwurf bleibt im Editor. Konfiguration vor erneutem Speichern prüfen.');
+      }
+    }
+
+    async function resetCorePrompt() {
+      if (!_corePromptData) return;
+      const key = document.getElementById('core-prompt-key').value;
+      if (!window.confirm('Nur die aktive eigene Anpassung dieser Promptvorlage entfernen?')) return;
+      try {
+        const res = await fetch('/api/system/core-prompts/' + encodeURIComponent(key) + '/reset', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({configuration_version:_corePromptData.configuration_version})
+        });
+        const data = await res.json();
+        const prompt = data.prompts?.[key];
+        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
+            !prompt || prompt.is_custom !== false || prompt.effective !== prompt.default) {
+          throw new Error('Readback nicht bestätigt');
+        }
+        _corePromptData = data;
+        showCorePrompt();
+        corePromptMessage('Aktive Anpassung entfernt; unveränderlicher Werkstandard ist wieder wirksam.');
+      } catch (_error) {
+        corePromptMessage('Zurücksetzen nicht bestätigt. Bitte Status neu laden.');
+      }
+    }
+
+    function useCorePromptAsPersona() {
+      const key = document.getElementById('core-prompt-key').value;
+      const prompt = _corePromptData?.prompts?.[key];
+      if (!prompt) return;
+      const target = document.getElementById('bp-persona');
+      if (target.value.trim() && target.value !== NEUTRAL_PERSONA_DRAFT &&
+          !window.confirm('Den vorhandenen Persona-Entwurf durch diesen Prompt ersetzen?')) return;
+      target.value = prompt.effective;
+      document.getElementById('bp-persona-source').textContent =
+        'Entwurf aus Original-Control-Prompt ' + key + '. Für andere Agenten Identität und Brand vor dem Speichern anpassen.';
+    }
+
+    const PRESETS = {
+      buddha: {
+        name: "Buddha",
+        persona: null, // Der echte Buddha-Prompt kommt ausschließlich aus der Control-Quelle.
+        turns: 20,
+        modus: "casualis"
+      },
+      wartung: {
+        name: "Wartungs-Agent",
+        persona: "Du bist der Wartungs-Agent. Deine Aufgabe ist die systematische System- und Repository-Hygiene: Tests ausführen, Linter prüfen, tote Dateien bereinigen und Statusberichte erstellen.",
+        turns: 30,
+        modus: "usus"
+      },
+      ati: {
+        name: "Ati (Entwickler)",
+        persona: "Du bist Ati, der Senior Software-Architekt in BACH. Du planst und implementierst robuste, modulare Softwarekomponenten unter strikter Beachtung von TDD, Security-Policies und Zero-Drift.",
+        turns: 25,
+        modus: "casualis"
+      },
+      research: {
+        name: "Research Scout",
+        persona: "Du bist der wissenschaftliche Recherche-Scout. Du durchsuchst arXiv, Crossref und lokale Wissensbestände nach validen Quellen und stellst evidenzbasierte Fact-Sheets zusammen.",
+        turns: 15,
+        modus: "impetus_causa"
+      }
+    };
+
+    function loadPresetTemplate(key) {
+      if (!key || !PRESETS[key]) return;
+      const p = PRESETS[key];
+      const sourcePrompt = key === 'buddha' ? _corePromptData?.prompts?.system_default?.effective : null;
+      if (key === 'buddha' && !sourcePrompt) {
+        document.getElementById('bp-persona-source').textContent = 'Buddha-Originalprompt ist nicht verfügbar; keine Ersatzpersona eingesetzt.';
+        return;
+      }
+      const currentPersona = document.getElementById('bp-persona').value;
+      if (currentPersona && currentPersona !== NEUTRAL_PERSONA_DRAFT &&
+          !window.confirm('Den bestehenden Persona-Entwurf durch diese Vorlage ersetzen?')) return;
+      document.getElementById('bp-name').value = `${p.name} (eigene)`;
+      document.getElementById('bp-name').readOnly = false;
+      document.getElementById('bp-persona').value = sourcePrompt || p.persona;
+      document.getElementById('bp-persona-source').textContent = key === 'buddha' ?
+        'Original-Buddha-Prompt aus aktiver Control-Konfiguration. Eigene Änderungen bleiben editierbar.' :
+        'Beispielpersona; fachliche Registry-Anbindung noch nicht geprüft.';
+      document.getElementById('bp-turns').value = p.turns;
+      document.getElementById('bp-modus').value = p.modus;
+    }
+
+    function resetForm() {
+      document.getElementById('bp-name').value = '';
+      document.getElementById('bp-name').readOnly = false;
+      document.getElementById('bp-persona').value = NEUTRAL_PERSONA_DRAFT;
+      document.getElementById('bp-persona-source').textContent = 'Neutrale Bearbeitungsvorlage; kein bestätigter Laufzeitprompt.';
+      document.getElementById('bp-template-select').value = '';
+      document.getElementById('bp-turns').value = 15;
+    }
+
+    async function loadBlueprints() {
+      const container = document.getElementById('blueprints-list');
+      try {
+        const res = await fetch('/api/agent-studio/blueprints');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const blueprints = data.blueprints || [];
+        document.getElementById('bp-count').textContent = blueprints.length;
+        renderTeamBlueprintPicker(blueprints);
+
+        if (blueprints.length === 0) {
+          container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:1.5rem;">Keine Schablonen vorhanden.</p>';
+          return;
+        }
+
+        container.innerHTML = blueprints.map(b => `
+          <div style="padding:0.75rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="font-size:0.9rem;color:var(--text);">${escapeHtml(b.name)}</strong>
+              <span class="badge badge-accent">${escapeHtml(b.persona_role || 'Schablone')}</span>
+            </div>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.4rem 0;">${escapeHtml((b.persona_prompt || b.description || '').slice(0, 80))}...</p>
+            <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:0.5rem;">
+              <button class="btn" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="loadBlueprintToEditor(${Number(b.id)})">Bearbeiten</button>
+              <button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.7rem;" onclick="openBeseelenModal(${Number(b.id)})">Vormerken ✨</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--error);font-size:0.8rem;">Fehler: ${e.message}</p>`;
+      }
+    }
+
+    function loadBlueprintToEditor(id) {
+      const blueprint = _allBlueprints.find(b => String(b.id) === String(id));
+      if (!blueprint) { alert('Schablone nicht gefunden. Bitte Liste neu laden.'); return; }
+      document.getElementById('bp-name').value = blueprint.name;
+      document.getElementById('bp-name').readOnly = true;
+      document.getElementById('bp-persona').value = blueprint.persona_prompt || '';
+      document.getElementById('bp-turns').value = blueprint.contractus?.turns ?? 15;
+      document.getElementById('bp-modus').value = blueprint.modus || 'casualis';
+      const profile = document.getElementById('bp-gov-profile');
+      if (profile && blueprint.governance?.profile) profile.value = blueprint.governance.profile;
+      const skills = new Set(blueprint.skills || []);
+      document.querySelectorAll('#skills-selector input[type="checkbox"]').forEach(box => {
+        box.checked = skills.has(box.value);
+      });
+      const tools = new Set(blueprint.governance?.tool_whitelist || []);
+      document.getElementById('tool-read').checked = tools.has('read_files');
+      document.getElementById('tool-write').checked = tools.has('write_files');
+      document.getElementById('tool-cmd').checked = tools.has('execute_command');
+      document.getElementById('tool-git').checked = tools.has('git_guarded_p001');
+      document.getElementById('tool-mcp').checked = tools.has('mcp_cookbooks');
+      document.getElementById('tool-web').checked = tools.has('web_fetch');
+      document.getElementById('bp-name').focus();
+    }
+
+    let selectedBlueprintId = null;
+
+    function selectConfiguredValue(id, value) {
+      const field = document.getElementById(id);
+      Array.from(field.options).filter(option => option.dataset.saved === 'true').forEach(option => option.remove());
+      if (!value) { field.selectedIndex = 0; return; }
+      if (!Array.from(field.options).some(option => option.value === value)) {
+        const option = new Option(value + ' (gespeichert)', value);
+        option.dataset.saved = 'true';
+        field.add(option);
+      }
+      field.value = value;
+    }
+
+    async function fetchBlueprintById(id) {
+      const response = await fetch('/api/agent-studio/blueprints');
+      if (!response.ok) throw new Error('Readback HTTP ' + response.status);
+      const data = await response.json();
+      return (data.blueprints || []).find(b => Number(b.id) === id);
+    }
+
+    function openBeseelenModal(id) {
+      const blueprint = id == null
+        ? _allBlueprints.find(b => b.name === document.getElementById('bp-name').value.trim().toLowerCase())
+        : _allBlueprints.find(b => Number(b.id) === id);
+      if (!blueprint) { alert('Bitte speichere zuerst die Schablone.'); return; }
+      selectedBlueprintId = Number(blueprint.id);
+      selectConfiguredValue('animus-type', blueprint.animus_type);
+      selectConfiguredValue('animus-model', blueprint.contractus?.model);
+      selectConfiguredValue('animus-fallback', blueprint.contractus?.fallback);
+      document.getElementById('modal-beseelen').classList.remove('hidden');
+    }
+
+    async function confirmBeseelen() {
+      if (!Number.isInteger(selectedBlueprintId)) return;
+      try {
+        const blueprint = await fetchBlueprintById(selectedBlueprintId);
+        if (!blueprint) throw new Error('Schablone nicht mehr vorhanden');
+        const animusType = document.getElementById('animus-type').value;
+        const model = document.getElementById('animus-model').value;
+        const fallback = document.getElementById('animus-fallback').value;
+        const configured = await fetch('/api/agent-studio/blueprints', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: blueprint.name,
+            title: blueprint.title,
+            description: blueprint.description,
+            persona_role: blueprint.persona_role,
+            persona_prompt: blueprint.persona_prompt,
+            skills: blueprint.skills,
+            animus_type: animusType,
+            contractus: { ...blueprint.contractus, model, fallback },
+            modus: blueprint.modus,
+            governance: blueprint.governance
+          })
+        });
+        if (!configured.ok || (await configured.json()).success !== true) {
+          throw new Error('Konfiguration HTTP ' + configured.status);
+        }
+        const saved = await fetchBlueprintById(selectedBlueprintId);
+        if (!saved || saved.animus_type !== animusType || saved.contractus?.model !== model || saved.contractus?.fallback !== fallback) {
+          throw new Error('Modellkonfiguration nicht bestätigt');
+        }
+        const response = await fetch(`/api/agent-studio/blueprints/${selectedBlueprintId}/materialize`, { method: 'POST' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result.success !== true || result.status !== 'configured') throw new Error('Keine Bestätigung der Konfiguration');
+        const materialized = await fetchBlueprintById(selectedBlueprintId);
+        if (!materialized || Number(materialized.is_materialized) !== 1) throw new Error('Konfiguration nicht bestätigt');
+        document.getElementById('modal-beseelen').classList.add('hidden');
+        alert('Modell, Typ und Fallback als Konfiguration gespeichert. Kein Agentenprozess gestartet.');
+        window.location.href = '/agenten/running';
+      } catch (error) {
+        alert('Konfiguration konnte nicht bestätigt werden: ' + error.message);
+      }
+    }
+
+    function applyGovProfile(profile) {
+      const read = document.getElementById('tool-read');
+      const write = document.getElementById('tool-write');
+      const cmd = document.getElementById('tool-cmd');
+      const git = document.getElementById('tool-git');
+      const mcp = document.getElementById('tool-mcp');
+      const web = document.getElementById('tool-web');
+
+      if (profile === 'read_only_research') {
+        if (read) read.checked = true;
+        if (write) write.checked = false;
+        if (cmd) cmd.checked = false;
+        if (git) git.checked = false;
+        if (mcp) mcp.checked = true;
+        if (web) web.checked = true;
+      } else if (profile === 'full_dev_guarded') {
+        if (read) read.checked = true;
+        if (write) write.checked = true;
+        if (cmd) cmd.checked = true;
+        if (git) git.checked = true;
+        if (mcp) mcp.checked = true;
+        if (web) web.checked = true;
+      } else { // fail_closed_standard
+        if (read) read.checked = true;
+        if (write) write.checked = true;
+        if (cmd) cmd.checked = true;
+        if (git) git.checked = true;
+        if (mcp) mcp.checked = true;
+        if (web) web.checked = false;
+      }
+    }
+
+    async function saveBlueprint() {
+      const name = document.getElementById('bp-name').value.trim();
+      const persona = document.getElementById('bp-persona').value.trim();
+      const turns = parseInt(document.getElementById('bp-turns').value || '15', 10);
+      const modus = document.getElementById('bp-modus').value;
+      const govProfile = document.getElementById('bp-gov-profile') ? document.getElementById('bp-gov-profile').value : 'fail_closed_standard';
+
+      const allowedTools = [];
+      if (document.getElementById('tool-read')?.checked) allowedTools.push('read_files', 'search_content');
+      if (document.getElementById('tool-write')?.checked) allowedTools.push('write_files');
+      if (document.getElementById('tool-cmd')?.checked) allowedTools.push('execute_command', 'run_tests');
+      if (document.getElementById('tool-git')?.checked) allowedTools.push('git_guarded_p001');
+      if (document.getElementById('tool-mcp')?.checked) allowedTools.push('mcp_cookbooks');
+      if (document.getElementById('tool-web')?.checked) allowedTools.push('web_fetch');
+
+      if (!name) { alert('Bitte gib einen Schablonen-Namen an.'); return; }
+      const existing = _allBlueprints.find(b => b.name === name.toLowerCase());
+      const visibleSkills = new Set(Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]'), box => box.value));
+      const selectedSkills = Array.from(document.querySelectorAll('#skills-selector input[type="checkbox"]:checked'), box => box.value);
+      for (const skill of existing?.skills || []) {
+        if (!visibleSkills.has(skill)) selectedSkills.push(skill);
+      }
+
+      const governance = {
+        profile: govProfile,
+        tool_whitelist: allowedTools,
+        hooker_auditing: true,
+        policies: ["P-001 Fail-Closed Git", "P-004 Lock-Master"]
+      };
+
+      try {
+        const res = await fetch('/api/agent-studio/blueprints', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            title: existing?.title || name,
+            description: existing?.description || '',
+            persona_role: existing?.persona_role || name,
+            persona_prompt: persona,
+            skills: selectedSkills,
+            animus_type: existing?.animus_type || 'subscription',
+            contractus: { ...(existing?.contractus || {}), turns },
+            modus,
+            governance: { ...(existing?.governance || {}), ...governance }
+          })
+        });
+        if (res.ok) {
+          const check = await fetch('/api/agent-studio/blueprints');
+          if (!check.ok) throw new Error('Readback HTTP ' + check.status);
+          const saved = ((await check.json()).blueprints || []).find(b => b.name === name.toLowerCase());
+          if (!saved || saved.persona_prompt !== persona || saved.persona_role !== (existing?.persona_role || name)) {
+            throw new Error('Persona und Rolle wurden nicht bestätigt');
+          }
+          await loadBlueprints();
+          alert('Schablone & Governance gespeichert. Persona bestätigt.');
+        } else {
+          alert('Fehler beim Speichern der Schablone (HTTP ' + res.status + ')');
+        }
+      } catch (err) {
+        alert('Netzwerkfehler: ' + err.message);
+      }
+    }
+
+    function setupFabrikaTabs() {
+      const tabBtns = document.querySelectorAll('.fab-tab-btn');
+      const tabPanes = document.querySelectorAll('.fab-pane');
+      tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-tab');
+          tabBtns.forEach(b => b.classList.remove('active'));
+          tabPanes.forEach(p => p.style.display = 'none');
+
+          btn.classList.add('active');
+          const pane = document.getElementById('pane-' + tab);
+          if (pane) {
+            pane.style.display = 'flex';
+          }
+          if (tab === 'teambuilding') {
+            loadTeams();
+            renderTeamBlueprintPicker(_allBlueprints);
+          }
+        });
+      });
+    }
+
+    async function loadTeams() {
+      const container = document.getElementById('teams-list-container');
+      if (!container) return;
+      try {
+        const res = await fetch('/api/agenten/teams');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const teams = data.teams || [];
+        container.innerHTML = teams.map(t => `
+          <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+              <strong>${escapeHtml(t.name)}</strong>
+              <span class="badge badge-accent">${escapeHtml(t.strategy)}</span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0;">${escapeHtml(t.description || 'Keine Beschreibung')}</p>
+            <div style="font-size:0.75rem;color:var(--accent);margin-top:0.5rem;">
+              👑 Leader: <strong>${escapeHtml(t.leader_agent)}</strong> | 👥 Mitglieder: ${escapeHtml(t.member_agents)}
+            </div>
+            <div style="margin-top:0.75rem;display:flex;justify-content:flex-end;">
+              <a href="/agenten/running#teams" class="btn btn-primary" style="padding:0.25rem 0.6rem;font-size:0.75rem;">
+                ✨ Beseelen in Living & Running ➔
+              </a>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p class="text-danger">Fehler beim Laden: ${err.message}</p>`;
+      }
+    }
+
+    async function assembleTeam() {
+      const name = document.getElementById('team-name').value.trim();
+      const description = document.getElementById('team-desc').value.trim();
+      const leader_agent = document.getElementById('team-leader').value;
+      const strategy = document.getElementById('team-strategy').value;
+      const member_agents = document.getElementById('team-members').value.trim();
+
+      if (!name || !member_agents) {
+        alert('Name und Mitglieder erforderlich');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/agenten/teams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, leader_agent, strategy, member_agents })
+        });
+        if (res.ok) {
+          alert(`Team "${name}" erfolgreich assembliert!`);
+          document.getElementById('team-name').value = '';
+          document.getElementById('team-desc').value = '';
+          document.getElementById('team-members').value = '';
+          loadTeams();
+        } else {
+          alert('Fehler beim Assemblieren des Teams.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      resetForm();
+      loadCorePromptLibrary();
+      loadBlueprints();
+      setupFabrikaTabs();
+    });
+  </script>
+</BachLayout>

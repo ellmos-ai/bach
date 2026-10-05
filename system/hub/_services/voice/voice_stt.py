@@ -28,7 +28,7 @@ Tool: voice_service
 Version: 1.2.0
 Author: BACH Team
 Created: 2026-02-08
-Updated: 2026-09-21
+Updated: 2026-09-29
 Anthropic-Compatible: True
 
 Description:
@@ -58,7 +58,7 @@ Dependencies (alle optional):
     ffmpeg                       # Optional: MP3/OGG Export
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import os
 import json
@@ -289,7 +289,7 @@ class VoiceTTS:
     def __init__(self, rate: int = 170, voice_name: str = "auto", engine: str = "auto"):
         """
         rate: Sprechgeschwindigkeit (Standard: 170, schneller als pyttsx3-Default 200)
-        voice_name: 'auto' (Zira bevorzugt), oder Name-Fragment der Stimme
+        voice_name: 'auto' (sprachabhaengige DE/EN-Auswahl), oder Name-Fragment der Stimme
         engine: 'pyttsx3', 'piper', oder 'auto' (erster verfuegbarer)
         """
         self.rate = rate
@@ -338,19 +338,50 @@ class VoiceTTS:
         return "en" if en_score > de_score else "de"
 
     def _select_voice_id(self, lang: str) -> Optional[str]:
-        """Liefert die voice.id zur passenden Sprache (de=Hedda, en=Zira) oder None."""
+        """Liefert die voice.id zur passenden Sprache (sprach-/plattformbewusst) oder None."""
         if not self._engine:
             return None
         try:
             voices = self._engine.getProperty("voices")
         except Exception:
             return None
-        prefs_de = ("hedda", "katja", "stefan", "german")
-        prefs_en = ("zira", "david", "mark", "english")
+        # Bevorzugte Stimmen je Sprache (Windows-SAPI zuerst, dann macOS); Reihenfolge = Prioritaet.
+        prefs_de = ("hedda", "katja", "stefan", "german", "deutsch",
+                    "anna", "markus", "yello", "milena", "serena")
+        prefs_en = ("zira", "david", "mark", "english",
+                    "samantha", "ava", "daniel", "alex", "karen")
         prefs = prefs_en if lang == "en" else prefs_de
+
+        def _lang_text(voice):
+            """Sprachkennung als Text (macOS: b'de\\x00', Windows: Strings)."""
+            try:
+                return str(getattr(voice, "languages", "") or "").lower()
+            except Exception:
+                return ""
+
+        # 1) Stimmen mit passender Sprachkennung: Namensmatch nur innerhalb der Sprache
+        #    (verhindert 'Markus' (de) als Treffer fuer 'mark' (en)).
+        if lang == "en":
+            lang_tags = ("en", "english")
+        else:
+            lang_tags = ("de", "german", "deutsch")
+        lang_voices = [v for v in voices
+                       if any(tag in _lang_text(v) for tag in lang_tags)]
+        for pref in prefs:
+            for v in lang_voices:
+                if pref in v.name.lower():
+                    return v.id
+        if lang_voices:
+            return lang_voices[0].id
+
+        # 2) Fallback ohne verwertbare Sprachkennung: Namensheuristik;
+        #    'mark' darf nicht die deutsche macOS-Stimme 'Markus' liefern.
         for pref in prefs:
             for v in voices:
-                if pref in v.name.lower():
+                name = v.name.lower()
+                if pref in name:
+                    if pref == "mark" and "markus" in name:
+                        continue
                     return v.id
         return None
 

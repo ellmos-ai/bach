@@ -186,7 +186,7 @@ docs/help/partner.txt Partner system CLI commands
   docs/help/delegate.txt Delegation details
   docs/help/communicate.txt Communication protocols
 
-  skills/_services/communicate.md Skill definition
+  hub/_services/communicate.md Skill definition
   tools/partner_communication/README.md Developer documentation
 
 VERSION: v1.0.0 (2026-01-23)

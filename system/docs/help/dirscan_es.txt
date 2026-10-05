@@ -47,17 +47,17 @@ BENEFICIOS:
 INTEGRACIÓN:
   - Automáticamente en hub/startup.py (DirectoryScanner al inicio)
   - Automáticamente en hub/shutdown.py (guardar estado durante el apagado)
-  - Sin controlador propio, basado en herramientas (tools/c_dirscan.py)
+  - Sin controlador propio, basado en herramientas (tools/dirscan.py)
 
 CLI (MANUAL):
-  python c_dirscan.py # Mostrar estado
-  python c_dirscan.py --scan # Escanear el estado actual
-  python c_dirscan.py --compare # Comparación ES vs DEBE
-  python c_dirscan.py --update # La actualización DEBE estado
-  python c_dirscan.py --path /path # Otro directorio
-  python c_dirscan.py --json # Salida JSON
+  python dirscan.py # Mostrar estado
+  python dirscan.py --scan # Escanear el estado actual
+  python dirscan.py --compare # Comparación ES vs DEBE
+  python dirscan.py --update # La actualización DEBE estado
+  python dirscan.py --path /path # Otro directorio
+  python dirscan.py --json # Salida JSON
 
 ARCHIVOS:
-  - Herramienta: system/tools/c_dirscan.py (clase DirectoryScanner)
+  - Herramienta: system/tools/dirscan.py (clase DirectoryScanner)
   - Datos: system/data/directory_truth.json (generado durante el primer escaneo)
   - Estructura: {marca de tiempo, directorios[], archivos{ruta: {hash, tamaño}}}

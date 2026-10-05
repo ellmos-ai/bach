@@ -1,0 +1,175 @@
+files_healed 75
+
+OLD: _partners/ TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: _partners\ TOTAL: 3
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  2 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: exports/ TOTAL: 16
+  6 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/es.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/ja.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/ru.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/zh.json
+  1 /Users/lukas/services/bach/system/hub/lang.py
+  2 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+  1 /Users/lukas/services/bach/system/tools/translations/analyze_quality.py
+
+OLD: exports\ TOTAL: 14
+  3 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_230444.json
+  3 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_231209.json
+  3 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_231904.json
+  1 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  3 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: from help. TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: help/ TOTAL: 93
+  1 /Users/lukas/services/bach/system/data/directory_truth.json
+  1 /Users/lukas/services/bach/system/data/skills_hierarchy.json
+  1 /Users/lukas/services/bach/system/docs/help/consolidation_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/consolidation_ru.txt
+  1 /Users/lukas/services/bach/system/docs/help/daemon_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/sources_ru.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools_zh.txt
+  4 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_230444.json
+  4 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_231209.json
+  4 /Users/lukas/services/bach/system/exports/translations/backup_identical_en_helpdoc_20260915_231904.json
+  1 /Users/lukas/services/bach/system/exports/translations/fix_helpdoc_20260915_231509.json
+  1 /Users/lukas/services/bach/system/exports/translations/fix_helpdoc_20260915_231904.json
+  1 /Users/lukas/services/bach/system/exports/translations/helpdoc_llm_cache.json
+  30 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  6 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  8 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  4 /Users/lukas/services/bach/system/exports/translations/locales/ja.json
+  6 /Users/lukas/services/bach/system/exports/translations/locales/ru.json
+  6 /Users/lukas/services/bach/system/exports/translations/locales/zh.json
+  1 /Users/lukas/services/bach/system/exports/translations/review_consolidation_zh.txt
+  3 /Users/lukas/services/bach/system/gui/server.py
+  2 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  4 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+  1 /Users/lukas/services/bach/system/tools/testing/results/system/TEST_system_QUICK_2026-09-12.json
+
+OLD: help\ TOTAL: 12
+  3 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  2 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/hub/startup.py
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  4 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills._agents. TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills._agents.ati. TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills._agents.reflection TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills._connectors. TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_agents/ TOTAL: 14
+  6 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/es.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/ja.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/ru.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/zh.json
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_agents/ati/ TOTAL: 14
+  6 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  2 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  2 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/es.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/zh.json
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_connectors/ TOTAL: 2
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_experts/ TOTAL: 6
+  2 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_partners/ TOTAL: 2
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: skills/_services/ TOTAL: 107
+  1 /Users/lukas/services/bach/system/ARCHITECTURE.md
+  1 /Users/lukas/services/bach/system/CHANGELOG.md
+  3 /Users/lukas/services/bach/system/agents/ati/ATI_PROJECT_BOOTSTRAPPING.md
+  3 /Users/lukas/services/bach/system/agents/ati/_archive/session_DEPRECATED.md
+  1 /Users/lukas/services/bach/system/agents/ati/export/manifest.json
+  22 /Users/lukas/services/bach/system/data/directory_truth.json
+  1 /Users/lukas/services/bach/system/data/logs/help_expert_review_tools_2026-03-04.md
+  2 /Users/lukas/services/bach/system/data/security_scan_latest.json
+  2 /Users/lukas/services/bach/system/docs/help/dev.txt
+  2 /Users/lukas/services/bach/system/docs/help/dev_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/documentation.txt
+  1 /Users/lukas/services/bach/system/docs/help/documentation_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/prompt-generator.txt
+  1 /Users/lukas/services/bach/system/docs/help/prompt-generator_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/prompt-generator_es.txt
+  1 /Users/lukas/services/bach/system/docs/help/prompt-generator_ja.txt
+  2 /Users/lukas/services/bach/system/docs/help/self_extension.txt
+  2 /Users/lukas/services/bach/system/docs/help/self_extension_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/self_extension_es.txt
+  1 /Users/lukas/services/bach/system/docs/help/self_extension_ja.txt
+  1 /Users/lukas/services/bach/system/docs/help/self_extension_ru.txt
+  1 /Users/lukas/services/bach/system/docs/help/self_extension_zh.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills_es.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills_ja.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills_ru.txt
+  1 /Users/lukas/services/bach/system/docs/help/skills_zh.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/backup.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/backup_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/backup_es.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/partner.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/partner_en.txt
+  1 /Users/lukas/services/bach/system/docs/help/tools/partner_es.txt
+  1 /Users/lukas/services/bach/system/hub/_archive/_archive_handlers/recurring.py
+  1 /Users/lukas/services/bach/system/hub/recurring.py
+  1 /Users/lukas/services/bach/system/hub/skills.py
+  2 /Users/lukas/services/bach/system/skills/_services/builder.md
+  1 /Users/lukas/services/bach/system/skills/_services/claude-self-backup.md
+  3 /Users/lukas/services/bach/system/skills/workflows/dev-zyklus.md
+  1 /Users/lukas/services/bach/system/skills/workflows/help-expert-review.md
+  2 /Users/lukas/services/bach/system/skills/workflows/help-forensic.md
+  2 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/fs_protection.py
+  15 /Users/lukas/services/bach/system/tools/injectors.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+  5 /Users/lukas/services/bach/system/tools/maintenance/migrate_restructure.py
+  1 /Users/lukas/services/bach/system/tools/partner_communication/README.md
+  1 /Users/lukas/services/bach/system/tools/testing/results/system/TEST_system_QUICK_2026-09-12.json
+  3 /Users/lukas/services/bach/system/wiki/konzept_file_transfer.txt
+  2 /Users/lukas/services/bach/system/wiki/synthese_workflow.txt
+
+OLD: skills/_workflows/ TOTAL: 6
+  2 /Users/lukas/services/bach/system/exports/translations/languages_translations.release.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/de.json
+  1 /Users/lukas/services/bach/system/exports/translations/locales/en.json
+  1 /Users/lukas/services/bach/system/tools/doc_update_checker.py
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py
+
+OLD: system/config/ TOTAL: 1
+  1 /Users/lukas/services/bach/system/tools/maintenance/doc_path_updater.py

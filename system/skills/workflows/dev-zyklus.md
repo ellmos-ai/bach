@@ -1,5 +1,7 @@
 # BACH Entwicklungszyklus (Dev-Zyklus)
 
+**Version:** 1.0.0
+
 > **Ziel:** Strukturierter Ablauf von Feature-Wunsch bis validiertem System.
 > Jede Entwicklung durchlaeuft diese 8 Phasen.
 
@@ -101,8 +103,8 @@
 | Workflow | WANN/WIE wird koordiniert? | skills/workflows/*.md |
 | Agent | WER fuehrt aus? | agents/*.txt |
 | Experte | WER hat Fachwissen? | agents/_experts/*/ |
-| Skill | WAS wird getan? | skills/_services/*.md |
-| Service | WIE wird es technisch getan? | skills/_services/*/ |
+| Skill | WAS wird getan? | hub/_services/*.md |
+| Service | WIE wird es technisch getan? | hub/_services/*/ |
 
 **Regeln:**
 - Erst funktional denken, dann technisch
@@ -120,7 +122,7 @@ Das "Frontend" ist hier die funktionale Beschreibungsebene:
 - Workflow-Dateien (.md) in skills/workflows/
 - Agent-Profile (.txt) in agents/
 - Experten-Wissen in agents/_experts/
-- Service-Beschreibungen in skills/_services/
+- Service-Beschreibungen in hub/_services/
 - Help-Dateien in skills/docs/help/
 
 **Ergebnis:**

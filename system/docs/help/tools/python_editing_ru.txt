@@ -34,7 +34,7 @@
 
 Подробнее: bach --help Tools/python_cli_editor
 
-PYCUTTER: c_pycutter
+PYCUTTER: pycutter
 --------------------
 Разбивает большие файлы Python на отдельные текстовые файлы для каждого класса.
 
@@ -47,13 +47,13 @@ PYCUTTER: c_pycutter
 ОСНОВНЫЕ КОМАНДЫ:
 
   # Разделить файл (создать подпапки)
-  bach c_pycutter main.py
+  bach pycutter main.py
 
   # Вывод в определенную папку
-  bach c_pycutter main.py --output-dir ./extracted
+  bach pycutter main.py --output-dir ./extracted
 
   # Вывод JSON (для дальнейшей обработки)
-  bach c_pycutter main.py --json
+  bach pycutter main.py --json
 
 ОПЦИИ:
   --output-dir DIR Выходной каталог
@@ -68,7 +68,7 @@ PYCUTTER: c_pycutter
 
 Пример рабочего процесса:
   # 1. Разделить большой файл
-  bach c_pycutter riesige_app.py --output-dir ./review
+  bach pycutter riesige_app.py --output-dir ./review
 
   №2. Редактировать отдельный класс
   # (в отдельном редакторе или с помощью python_cli_editor)
@@ -76,7 +76,7 @@ PYCUTTER: c_pycutter
   # 3. Применить изменения обратно
   # (вручную или с помощью инструмента сравнения)
 
-МЕТОД АНАЛИЗАТОР: c_method_analyzer
+МЕТОД АНАЛИЗАТОР: method_analyzer
 ----------------------------------
 Углубленный анализ кода Python на наличие проблем и структуры.
 
@@ -91,16 +91,16 @@ PYCUTTER: c_pycutter
 ОСНОВНЫЕ КОМАНДЫ:
 
   # Анализ файла
-  bach c_method_analyzer script.py
+  bach method_analyzer script.py
 
   # Вывод JSON
-  bach c_method_analyzer script.py --json
+  bach method_analyzer script.py --json
 
   # Только сводка
-  bach c_method_analyzer script.py --summary
+  bach method_analyzer script.py --summary
 
   # Анализ конкретного класса
-  bach c_method_analyzer script.py --class MyClass
+  bach method_analyzer script.py --class MyClass
 
 ОПЦИИ:
   --json Вывод JSON (машиночитаемый)
@@ -139,12 +139,12 @@ PYCUTTER: c_pycutter
    bach python_cli_editor grosse_datei.py --show-all
 
    # Или разделить на проверку
-   bach c_pycutter grosse_datei.py
+   bach pycutter grosse_datei.py
 
 2. НАЙТИ ПРОБЛЕМЫ ПЕРЕД СОВЕРШЕНИЕМ
    Анализ кода:
 
-   bach c_method_analyzer script.py
+   bach method_analyzer script.py
 
    Показывает: опечатки, неиспользуемые методы, отсутствующие ссылки
 
@@ -152,10 +152,10 @@ PYCUTTER: c_pycutter
    Понимание зависимостей:
 
    # Кто кому звонит?
-   bach c_method_analyzer script.py --verbose
+   bach method_analyzer script.py --verbose
 
    # Посмотрите на класс изолированно
-   bach c_pycutter script.py
+   bach pycutter script.py
 
 4. СОХРАНИТЬ ТОКЕНЫ (контекст AI)
    Вместо чтения всего файла:
@@ -173,10 +173,10 @@ PYCUTTER: c_pycutter
 |--------------------------------|---------------------|
 | Показать структуру | python_cli_editor |
 | Специально изменить код | python_cli_editor |
-| Разделить файл на части | c_pycutter |
-| Найти проблемы/ошибки | c_method_analyzer |
-| Проверить импорт | c_method_analyzer |
-| Найдите опечатки | c_method_analyzer
+| Разделить файл на части | pycutter |
+| Найти проблемы/ошибки | method_analyzer |
+| Проверить импорт | method_analyzer |
+| Найдите опечатки | method_analyzer
 
 |CONTEXT INJECTOR
 ----------------
@@ -186,8 +186,8 @@ ContextInjector распознает ключевые слова и рекоме
   «редактировать класс» -> bach python_cli_editor <файл> --show-all
   «метод редактирования» -> bach python_cli_editor <файл> --show-all
   «структура кода» -> bach python_cli_editor <файл> --show-all
-  «разделить файл» -> bach c_pycutter <файл>
-  «слишком большой» -> bach c_pycutter <файл>
+  «разделить файл» -> bach pycutter <файл>
+  «слишком большой» -> bach pycutter <файл>
 
 СМОТРИ ТАКЖЕ
 ----------

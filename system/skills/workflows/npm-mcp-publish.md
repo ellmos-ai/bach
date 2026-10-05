@@ -1,5 +1,7 @@
 # MCP Server Release Protokoll (NPM + GitHub)
 
+**Version:** 1.0.0
+
 > **Ziel:** Strukturierter Ablauf fuer das Veroeffentlichen von BACH MCP Servern auf GitHub und NPM.
 > Gilt fuer: ellmos-filecommander-mcp, ellmos-codecommander-mcp
 

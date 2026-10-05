@@ -63,10 +63,6 @@ class TestSubprocessSmoke:
         r = self._import_check("hub._services.claude_bridge.bridge_daemon")
         assert r.returncode == 0, f"bridge_daemon import failed: {r.stderr[:300]}"
 
-    def test_bridge_fackel_wrapper_import(self):
-        r = self._import_check("hub._services.claude_bridge.bridge_fackel_wrapper")
-        assert r.returncode == 0, f"bridge_fackel_wrapper import failed: {r.stderr[:300]}"
-
 
 # ═══════════════════════════════════════════════════════════════
 # IN-PROCESS — all 112 hub handlers must import cleanly

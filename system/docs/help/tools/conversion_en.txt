@@ -7,7 +7,7 @@ and repair/standardize files.
 
 UNIVERSAL CONVERTER
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 Universal conversion tool for many formats.
 Supports:
@@ -17,11 +17,11 @@ Supports:
   - Excel -> CSV
   - Images (resize, format)
 
-Call: python tools/c_universal_converter.py <input> <output>
+Call: python tools/universal_converter.py <input> <output>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 Converts Markdown files into PDF with styling.
 Features:
@@ -29,33 +29,33 @@ Features:
   - Tables
   - Embed images
 
-Call: python tools/c_md_to_pdf.py <md file> [--output <pdf>]
+Call: python tools/md_to_pdf.py <md file> [--output <pdf>]
 
 ENCODING & TEXT
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   Fixes encoding problems (UTF-8, Latin-1, etc.)
   Automatically detects incorrect coding.
-  Call: python tools/c_encoding_fixer.py <file>
+  Call: python tools/encoding_fixer.py <file>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   Fixes German umlauts in files.
   Replaces broken characters (ae->ä, ue->ü, etc.)
-  Call: python tools/c_umlaut_fixer.py <file>
+  Call: python tools/umlaut_fixer.py <file>
 
-c_standard_fixer.py
+standard_fixer.py
   Standardizes code formatting.
   Removes trailing whitespace, unifies line endings.
-  Call: python tools/c_standard_fixer.py <file>
+  Call: python tools/standard_fixer.py <file>
 
 JSON TOOLS
 ----------
 
-c_json_repair.py
+json_repair.py
   Repairs broken JSON files.
   Fixes missing commas, quotes, brackets.
-  Call: python tools/c_json_repair.py <file>
+  Call: python tools/json_repair.py <file>
 
 json_fixer.py
   Alternative JSON repair with advanced options.
@@ -64,15 +64,15 @@ json_fixer.py
 CODE TOOLS
 ----------
 
-c_import_organizer.py
+import_organizer.py
   Sorts and organizes Python imports.
   Grouped: Standard, Third-Party, Local.
-  Call: python tools/c_import_organizer.py <file>
+  Call: python tools/import_organizer.py <file>
 
-c_indent_checker.py
+indent_checker.py
   Checks and corrects indentation.
   Options: --tabs, --spaces N
-  Call: python tools/c_indent_checker.py <file>
+  Call: python tools/indent_checker.py <file>
 
 EXPORT
 ------

@@ -92,7 +92,7 @@
 Роль: собственные разработки, автоматизация, специальные задачи
 
 Категории:
-  - Инструменты кодирования c_encoding_fixer, c_json_repair и т. д.
+  - Инструменты кодирования encoding_fixer, json_repair и т. д.
   - Налоговые инструменты Tax_scanner, Tax_sync и т. д.
   - Скрипты агента: Agent_framework, Developer_agent.
   - Инструменты резервного копирования backup_manager

@@ -16,13 +16,13 @@ VERFÜGBARE MODULE:
    - emoji_to_safe(text): Emoji → ASCII-Tags via emoji.demojize()
    - emoji_to_display(text): ASCII-Tags → Emoji via emoji.emojize()
 
-2. Scanner-Tool (system/tools/c_emoji_scanner.py)
-   - CLI: python c_emoji_scanner.py --status
-   - CLI: python c_emoji_scanner.py --scan-batch
-   - CLI: python c_emoji_scanner.py <datei/ordner>
+2. Scanner-Tool (system/tools/emoji_scanner.py)
+   - CLI: python emoji_scanner.py --status
+   - CLI: python emoji_scanner.py --scan-batch
+   - CLI: python emoji_scanner.py <datei/ordner>
    - Nicht als BACH-Befehl integriert
 
-3. JSON-Repair (system/tools/c_json_repair.py)
+3. JSON-Repair (system/tools/json_repair.py)
    - Nutzt Emoji-Konvertierung beim Repair-Prozess
 
 KONVERTIERUNGS-BEISPIELE:

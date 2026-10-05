@@ -13,7 +13,7 @@ Tools for fixing common code problems:
   - JSON repair
   - Indentation problems
 
-MAIN TOOL: c_standard_fixer
+MAIN TOOL: standard_fixer
 ----------------------------
 The collection tool runs several fixers one after the other.
 Recommended as a first choice for code issues.
@@ -28,23 +28,23 @@ INCLUDED FIXES:
 BASIC COMMANDS:
 
   # Repair individual file
-  bach c_standard_fixer script.py
+  bach standard_fixer script.py
 
   # Just check without changes
-  bach c_standard_fixer script.py --dry-run
+  bach standard_fixer script.py --dry-run
 
   # Process folders recursively
-  bach c_standard_fixer projekt/ --recursive
+  bach standard_fixer projekt/ --recursive
 
   # Apply only specific fixes
-  bach c_standard_fixer script.py --only bom,encoding
-  bach c_standard_fixer script.py --only umlaut
+  bach standard_fixer script.py --only bom,encoding
+  bach standard_fixer script.py --only umlaut
 
   # Show available tools
-  bach c_standard_fixer --list-tools
+  bach standard_fixer --list-tools
 
   # With detailed output
-  bach c_standard_fixer script.py --verbose
+  bach standard_fixer script.py --verbose
 
 OPTIONS:
   --dry-run Just check, no changes
@@ -67,7 +67,7 @@ WARNING:
   DO NOT apply to batch_manager.py (known bug).
   See: bach --help lessons
 
-JSON REPAIR: c_json_repair
+JSON REPAIR: json_repair
 -----------------------------
 Specialized tool for JSON problems.
 
@@ -80,19 +80,19 @@ FUNCTIONS:
 BASIC COMMANDS:
 
   # Repair JSON
-  bach c_json_repair config.json
+  bach json_repair config.json
 
   # Just check
-  bach c_json_repair config.json --dry-run
+  bach json_repair config.json --dry-run
 
   # JSON output (for scripts)
-  bach c_json_repair config.json --json
+  bach json_repair config.json --json
 
   # Update emoji database
-  bach c_json_repair --update-gemoji
+  bach json_repair --update-gemoji
 
   # View stats
-  bach c_json_repair --stats
+  bach json_repair --stats
 
 OPTIONS:
   --dry-run Just check, no changes
@@ -134,70 +134,70 @@ BASIC COMMANDS:
   bach json_fixer config.json --backup
 
 WHEN WHICH TOOL?
-  c_json_repair -> Emoji problems, complex repairs
+  json_repair -> Emoji problems, complex repairs
   json_fixer -> Simple syntax errors (commas, quotes)
 
-SINGLE TOOLS (included in c_standard_fixer)
+SINGLE TOOLS (included in standard_fixer)
 --------------------------------------------
-These tools are usually called via c_standard_fixer,
+These tools are usually called via standard_fixer,
 but can also be used individually:
 
-c_encoding_fixer.py
+encoding_fixer.py
   Fix encoding to UTF-8
-  bach c_encoding_fixer script.py
+  bach encoding_fixer script.py
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   Repair broken German umlauts (ae->ä, ue->ü, etc.)
-  bach c_umlaut_fixer script.py
+  bach umlaut_fixer script.py
 
-c_indent_checker.py
+indent_checker.py
   Find indentation problems (Tab vs Space, inconsistent)
-  bach c_indent_checker script.py
+  bach indent_checker script.py
 
-c_emoji_scanner.py
+emoji_scanner.py
   Find emojis in files
-  bach c_emoji_scanner script.py
+  bach emoji_scanner script.py
 
-c_german_scanner.py
+german_scanner.py
   Find German words/umlauts
-  bach c_german_scanner script.py
+  bach german_scanner script.py
 
-RECOMMENDATION: Use c_standard_fixer instead of individual tools.
+RECOMMENDATION: Use standard_fixer instead of individual tools.
 
 TYPICAL USE CASES
 -------------------------
 
 1. BY GIT CLONE (Windows)
    Encoding problems caused by different systems:
-   bach c_standard_fixer projekt/ --recursive
+   bach standard_fixer projekt/ --recursive
 
 2. AFTER COPY/PASTE FROM WEB
    Broken special characters:
-   bach c_standard_fixer datei.py --only umlaut,encoding
+   bach standard_fixer datei.py --only umlaut,encoding
 
 3. JSON WILL NOT LOAD
    Syntax or encoding error:
-   bach c_json_repair config.json
+   bach json_repair config.json
 
 4. EMOJIS CRASHES WINDOWS CONSOLE
    Convert Emojis to ASCII:
-   bach c_json_repair datei.json
+   bach json_repair datei.json
    # or for Python:
-   bach c_standard_fixer script.py
+   bach standard_fixer script.py
 
 5. BEFORE COMMIT
    Check all code files:
-   bach c_standard_fixer src/ --recursive --dry-run
+   bach standard_fixer src/ --recursive --dry-run
 
 CONTEXT INJECTOR
 ----------------
 The ContextInjector recognizes keywords and recommends these tools:
 
-  "encoding problem" -> bach c_standard_fixer <file>
-  "umlaute broken" -> bach c_standard_fixer <file>
-  "json problem" -> bach c_json_repair <file>
-  "emoji" -> bach c_emoji_scanner <file>
-  "utf-8" -> bach c_encoding_fixer <file>
+  "encoding problem" -> bach standard_fixer <file>
+  "umlaute broken" -> bach standard_fixer <file>
+  "json problem" -> bach json_repair <file>
+  "emoji" -> bach emoji_scanner <file>
+  "utf-8" -> bach encoding_fixer <file>
 
 SEE ALSO
 ----------

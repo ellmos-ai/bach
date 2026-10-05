@@ -34,7 +34,7 @@ python_cli_editor 是专门为 AI 助手构建的：
 
 详细信息： bach --help tools/python_cli_editor
 
-PYCUTTER: c_pycutter
+PYCUTTER: pycutter
 --------------------
 将大型 Python 文件分成每个类的单独文本文件。
 
@@ -47,13 +47,13 @@ PYCUTTER: c_pycutter
 基本命令：
 
   # 分割文件（创建子文件夹）
-  bach c_pycutter main.py
+  bach pycutter main.py
 
   # 输出到特定文件夹
-  bach c_pycutter main.py --output-dir ./extracted
+  bach pycutter main.py --output-dir ./extracted
 
   # JSON 输出（用于进一步处理）
-  bach c_pycutter main.py --json
+  bach pycutter main.py --json
 
 选项：
   --output-dir DIR 输出目录
@@ -68,7 +68,7 @@ PYCUTTER: c_pycutter
 
 示例工作流程：
   # 1.分割大文件
-  bach c_pycutter riesige_app.py --output-dir ./review
+  bach pycutter riesige_app.py --output-dir ./review
 
   #2.编辑个人班级
   #（在单独的编辑器中或使用 python_cli_editor）
@@ -76,7 +76,7 @@ PYCUTTER: c_pycutter
   # 3. 应用更改
   #（手动或使用 diff 工具）
 
-方法分析器：c_method_analyzer
+方法分析器：method_analyzer
 ----------------------------------
 深入分析 Python 代码的问题和结构。
 
@@ -91,16 +91,16 @@ PYCUTTER: c_pycutter
 基本命令：
 
   # 分析文件
-  bach c_method_analyzer script.py
+  bach method_analyzer script.py
 
   # JSON 输出
-  bach c_method_analyzer script.py --json
+  bach method_analyzer script.py --json
 
   # 仅摘要
-  bach c_method_analyzer script.py --summary
+  bach method_analyzer script.py --summary
 
   # 分析具体类
-  bach c_method_analyzer script.py --class MyClass
+  bach method_analyzer script.py --class MyClass
 
 OPTIONS:
   --json JSON输出（机器可读）
@@ -139,12 +139,12 @@ OPTIONS:
    bach python_cli_editor grosse_datei.py --show-all
 
    # 或拆分以供审核
-   bach c_pycutter grosse_datei.py
+   bach pycutter grosse_datei.py
 
 2.提交前发现问题
    分析代码：
 
-   bach c_method_analyzer script.py
+   bach method_analyzer script.py
 
    显示：拼写错误、未使用的方法、缺少参考文献
 
@@ -152,10 +152,10 @@ OPTIONS:
    了解依赖关系：
 
    # 谁给谁打电话？
-   bach c_method_analyzer script.py --verbose
+   bach method_analyzer script.py --verbose
 
    # 隔离地查看类
-   bach c_pycutter script.py
+   bach pycutter script.py
 
 4.保存代币（AI 环境）
    而不是读取整个文件：
@@ -173,10 +173,10 @@ WHEN WHICH TOOL?
 |--------------------------------|--------------------------------|
 |显示结构| python_cli_editor |
 |具体更改代码 | python_cli_editor |
-|将文件拆分为多个部分 | c_pycutter |
-|查找问题/错误 | c_method_analyzer | c_method_analyzer |
-|检查进口| c_method_analyzer | c_method_analyzer |
-|查找错别字 | c_method_analyzer
+|将文件拆分为多个部分 | pycutter |
+|查找问题/错误 | method_analyzer | method_analyzer |
+|检查进口| method_analyzer | method_analyzer |
+|查找错别字 | method_analyzer
 
 |上下文注入器
 ----------------
@@ -186,8 +186,8 @@ ContextInjector 识别关键字并推荐这些工具：
   “编辑类”-> 巴赫 python_cli_editor <文件> --show-all
   “编辑方法”-> bach python_cli_editor <文件> --show-all
   “代码结构”-> bach python_cli_editor <文件> --show-all
-  “分割文件”-> bach c_pycutter <文件>
-  “太大”-> bach c_pycutter <文件>
+  “分割文件”-> bach pycutter <文件>
+  “太大”-> bach pycutter <文件>
 
 另请参见
 ----------

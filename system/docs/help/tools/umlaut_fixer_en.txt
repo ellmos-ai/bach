@@ -1,0 +1,33 @@
+BACH Tool: umlaut_fixer
+--------------------------------------------------
+Generated: 2026-01-23 10:36
+Source: tools/umlaut_fixer.py
+
+DESCRIPTION
+----------------------------------------
+umlaut_fixer.py - Repairs broken German umlauts in Python files
+
+Fixes typical encoding problems such as:
+  - Delete -> Delete
+  - open -> open
+  - about -> about
+
+Extracted from: A1 ProFiler/_Wartung/fix_profiler_complete.py
+
+Usage:
+    python umlaut_fixer.py <file.py>
+    python umlaut_fixer.py <file.py> --dry-run
+    python umlaut_fixer.py <file.py> --json
+
+Author: Claude (adapted)
+Dependencies: none (stdlib only)
+
+USE
+----------------------------------------
+python bach.py tools run umlaut_fixer [args]
+or directly: python tools/umlaut_fixer.py [args]
+
+NOTES
+----------------------------------------
+- Automatically generated from docstring
+- If you have any questions: bach tools show umlaut_fixer

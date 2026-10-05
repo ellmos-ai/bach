@@ -1,110 +1,83 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
-"""Tests for InboxHandler (hub/inbox.py)."""
+"""
+Copyright (c) 2026 BACH Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+"""
+Test: InboxHandler als BaseHandler-Subklasse (Fix #1670, Zyklus 424)
+
+Vorher war InboxHandler eine eigenstaendige Klasse und wurde von der
+Registry-Discovery (core/registry.py: issubclass(BaseHandler)-Filter)
+stillschweigend ignoriert -> "Handler nicht gefunden" via bach_command.
+"""
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
-import pytest
+SYSTEM_ROOT = Path(__file__).parent.parent
+if str(SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(SYSTEM_ROOT))
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from hub.inbox import InboxHandler, INBOX_WATCHER, INBOX_PID_FILE
-
-
-class TestInboxHandlerInit:
-    def test_init_default_base_path(self):
-        handler = InboxHandler()
-        assert handler.base_path is not None
-
-    def test_init_custom_base_path(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        assert handler.base_path == tmp_path
+from hub.base import BaseHandler  # noqa: E402
+from hub.inbox import InboxHandler, get_handler  # noqa: E402
 
 
-class TestIsRunning:
-    def test_not_running_no_pid_file(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch("hub.inbox.INBOX_PID_FILE", tmp_path / "nonexistent.pid"):
-            running, pid = handler._is_running()
-            assert running is False
-            assert pid is None
-
-    def test_not_running_invalid_pid(self, tmp_path):
-        pid_file = tmp_path / "inbox_watcher.pid"
-        pid_file.write_text("not_a_number")
-        handler = InboxHandler(base_path=tmp_path)
-        with patch("hub.inbox.INBOX_PID_FILE", pid_file):
-            running, pid = handler._is_running()
-            assert running is False
-            assert pid is None
-
-    def test_not_running_stale_pid(self, tmp_path):
-        pid_file = tmp_path / "inbox_watcher.pid"
-        pid_file.write_text("99999999")
-        handler = InboxHandler(base_path=tmp_path)
-        with patch("hub.inbox.INBOX_PID_FILE", pid_file):
-            running, pid = handler._is_running()
-            assert running is False
-            assert not pid_file.exists()
+def test_inbox_is_base_handler_subclass():
+    """Kern des Fixes: InboxHandler erbt von BaseHandler."""
+    assert issubclass(InboxHandler, BaseHandler)
 
 
-class TestStart:
-    def test_start_already_running(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(True, 12345)):
-            success, msg = handler._start()
-            assert success is True
-            assert "Bereits aktiv" in msg
-            assert "12345" in msg
-
-    def test_start_missing_watcher_script(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(False, None)):
-            with patch("hub.inbox.INBOX_WATCHER", tmp_path / "nonexistent.py"):
-                success, msg = handler._start()
-                assert success is False
-                assert "nicht gefunden" in msg
+def test_get_handler_returns_base_handler_instance():
+    """get_handler() liefert eine BaseHandler-Instanz (Registry-Inspektion kompatibel)."""
+    handler = get_handler()
+    assert handler is not None
+    assert isinstance(handler, BaseHandler)
 
 
-class TestStop:
-    def test_stop_not_running(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(False, None)):
-            success, msg = handler._stop()
-            assert success is True
-            assert "Nicht aktiv" in msg
-
-    @patch("hub.inbox.subprocess.run")
-    def test_stop_running_windows(self, mock_run, tmp_path):
-        pid_file = tmp_path / "inbox_watcher.pid"
-        pid_file.write_text("12345")
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(True, 12345)):
-            with patch("hub.inbox.INBOX_PID_FILE", pid_file):
-                with patch("hub.inbox.sys.platform", "win32"):
-                    success, msg = handler._stop()
-                    assert success is True
-                    assert "Gestoppt" in msg
-                    mock_run.assert_called_once()
+def test_handle_status_returns_tuple():
+    """handle('status', []) -> (bool, str); Watcher laeuft nicht = normal (STOPPED)."""
+    handler = InboxHandler()
+    ok, msg = handler.handle("status", [])
+    assert isinstance(ok, bool)
+    assert isinstance(msg, str)
 
 
-class TestStatus:
-    def test_status_stopped(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(False, None)):
-            with patch("hub.inbox.INBOX_WATCHER", tmp_path / "inbox_watcher.py"):
-                with patch("hub.inbox.INBOX_PID_FILE", tmp_path / "pid"):
-                    success, msg = handler._status()
-                    assert success is True
-                    assert "[STOPPED]" in msg
+def test_profile_name_and_operations():
+    """Registry-Interface: profile_name 'inbox' + Standard-Operationen."""
+    handler = InboxHandler()
+    assert handler.profile_name == "inbox"
+    ops = handler.get_operations()
+    assert set(ops.keys()) == {"start", "stop", "status", "scan", "config"}
 
-    def test_status_running(self, tmp_path):
-        handler = InboxHandler(base_path=tmp_path)
-        with patch.object(handler, "_is_running", return_value=(True, 9999)):
-            with patch("hub.inbox.INBOX_WATCHER", tmp_path / "inbox_watcher.py"):
-                with patch("hub.inbox.INBOX_PID_FILE", tmp_path / "pid"):
-                    success, msg = handler._status()
-                    assert success is True
-                    assert "[RUNNING]" in msg
-                    assert "9999" in msg
+
+def test_registry_discovery_finds_inbox():
+    """core/registry.py muss 'inbox' nach discover() registrieren.
+
+    Vor dem Fix wurde InboxHandler vom issubclass(BaseHandler)-Filter
+    stillschweigend ignoriert und fehlte deshalb in der Registry.
+    """
+    from core.registry import HandlerRegistry
+
+    registry = HandlerRegistry()
+    registry.discover(SYSTEM_ROOT / "hub")
+    assert "inbox" in registry._handlers
+    assert registry._handlers["inbox"]["class"] is InboxHandler

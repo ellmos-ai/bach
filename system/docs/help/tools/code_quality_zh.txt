@@ -13,7 +13,7 @@
   - JSON修复
   - 缩进问题
 
-主要工具：c_standard_fixer
+主要工具：standard_fixer
 ----------------------------
 收集工具依次运行多个修复程序。
 推荐作为代码问题的首选。
@@ -28,23 +28,23 @@
 基本命令：
 
   # 修复单个文件
-  bach c_standard_fixer script.py
+  bach standard_fixer script.py
 
   # 只检查没有更改
-  bach c_standard_fixer script.py --dry-run
+  bach standard_fixer script.py --dry-run
 
   # 递归处理文件夹
-  bach c_standard_fixer projekt/ --recursive
+  bach standard_fixer projekt/ --recursive
 
   # 仅应用特定修复
-  bach c_standard_fixer script.py --only bom,encoding
-  bach c_standard_fixer script.py --only umlaut
+  bach standard_fixer script.py --only bom,encoding
+  bach standard_fixer script.py --only umlaut
 
   # 显示可用工具
-  bach c_standard_fixer --list-tools
+  bach standard_fixer --list-tools
 
   # 详细输出
-  bach c_standard_fixer script.py --verbose
+  bach standard_fixer script.py --verbose
 
 选项：
   --dry-run 只是检查，没有改变
@@ -67,7 +67,7 @@
   请勿应用于batch_manager.py（已知错误）。
   请参阅：bach --help 课程
 
-JSON 修复：c_json_repair
+JSON 修复：json_repair
 -----------------------------
 解决 JSON 问题的专用工具。
 
@@ -80,19 +80,19 @@ JSON 修复：c_json_repair
 基本命令：
 
   # 修复 JSON
-  bach c_json_repair config.json
+  bach json_repair config.json
 
   # 只需检查
-  bach c_json_repair config.json --dry-run
+  bach json_repair config.json --dry-run
 
   # JSON 输出（用于脚本）
-  bach c_json_repair config.json --json
+  bach json_repair config.json --json
 
   # 更新表情符号数据库
-  bach c_json_repair --update-gemoji
+  bach json_repair --update-gemoji
 
   # 查看统计数据
-  bach c_json_repair --stats
+  bach json_repair --stats
 
 选项：
   --dry-run 只是检查，没有改变
@@ -134,70 +134,70 @@ JSON FIXER（替代）：json_fixer
   bach json_fixer config.json --backup
 
 什么时候使用哪个工具？
-  c_json_repair -> Emoji 问题，修复复杂
+  json_repair -> Emoji 问题，修复复杂
   json_fixer -> 简单语法错误（逗号、引号）
 
-单一工具（包含在 c_standard_fixer 中）
+单一工具（包含在 standard_fixer 中）
 --------------------------------------------
-这些工具通常通过 c_standard_fixer 调用，
+这些工具通常通过 standard_fixer 调用，
 但也可以单独使用：
 
-c_encoding_fixer.py
+encoding_fixer.py
   将编码修复为 UTF-8
-  bach c_encoding_fixer script.py
+  bach encoding_fixer script.py
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   修复损坏的德语变音符号（ae->ä、ue->ü 等）
-  bach c_umlaut_fixer script.py
+  bach umlaut_fixer script.py
 
-c_indent_checker.py
+indent_checker.py
   查找缩进问题（Tab 与 Space，不一致）
-  bach c_indent_checker script.py
+  bach indent_checker script.py
 
-c_emoji_scanner.py
+emoji_scanner.py
   在文件
-  bach c_emoji_scanner script.py
+  bach emoji_scanner script.py
 
-c_german_scanner.py 中查找表情符号
+german_scanner.py 中查找表情符号
   查找德语单词/元音变音
-  bach c_german_scanner script.py
+  bach german_scanner script.py
 
-建议：使用 c_standard_fixer 而不是单个工具。
+建议：使用 standard_fixer 而不是单个工具。
 
 典型用例
 -------------------------
 
 1.通过 GIT 克隆（Windows）
    不同系统引起的编码问题：
-   bach c_standard_fixer projekt/ --recursive
+   bach standard_fixer projekt/ --recursive
 
 2．从网络复制/粘贴后
    损坏的特殊字符：
-   bach c_standard_fixer datei.py --only umlaut,encoding
+   bach standard_fixer datei.py --only umlaut,encoding
 
 3。 JSON 不会加载
    语法或编码错误：
-   bach c_json_repair config.json
+   bach json_repair config.json
 
 4。表情符号导致 Windows 控制台崩溃
    将表情符号转换为 ASCII：
-   bach c_json_repair datei.json
+   bach json_repair datei.json
    # 或者对于 Python：
-   bach c_standard_fixer script.py
+   bach standard_fixer script.py
 
 5.提交之前
    检查所有代码文件：
-   bach c_standard_fixer src/ --recursive --dry-run
+   bach standard_fixer src/ --recursive --dry-run
 
 CONTEXT INJECTOR
 ----------------
 ContextInjector 识别关键字并推荐这些工具：
 
-  “编码问题”-> bach c_standard_fixer <文件>
-  “元音变音损坏”-> bach c_standard_fixer <文件>
-  “json 问题”-> 巴赫 c_json_repair <文件>
-  “表情符号” -> 巴赫 c_emoji_scanner <文件>
-  "utf-8" -> bach c_encoding_fixer <文件>
+  “编码问题”-> bach standard_fixer <文件>
+  “元音变音损坏”-> bach standard_fixer <文件>
+  “json 问题”-> 巴赫 json_repair <文件>
+  “表情符号” -> 巴赫 emoji_scanner <文件>
+  "utf-8" -> bach encoding_fixer <文件>
 
 另请参见
 ----------

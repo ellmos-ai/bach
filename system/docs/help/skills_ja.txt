@@ -69,7 +69,7 @@ BACH SKILLS SYSTEM (Architecture v2.0)
 -----------------
 ルール: 迷った場合は、二重にしておいてください!
 
-  system/tools/c_ocr_engine.py # 一般バージョン
+  system/tools/ocr/engine.py # 一般バージョン
   Agents/_experts/steuer/steuer_ocr.py # スキル固有のバージョン
 
 利点:
@@ -183,7 +183,7 @@ CLI コマンド
                        get_operations() を使用した BaseHandler サブクラス
                        'reload' 後に bach <name> 経由でアクセス可能
 
-    --type 作成されたサービス: system/skills/_services/<名前>/
+    --type 作成されたサービス: system/hub/_services/<名前>/
                        __init__.py と service.py が含まれるフォルダー
                        ハンドラークローズ、通常使用可能
 

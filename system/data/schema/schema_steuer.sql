@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS steuer_posten (
     ist_eigenbeleg INTEGER DEFAULT 0, -- 1 = Eigenbeleg (STEUER_002)
     zahlungsart TEXT,               -- Ueberweisung/PayPal/Kreditkarte/Bar
     bank_referenz TEXT,             -- CAMT Entry-Reference fuer Bank-Matching
+    match_status TEXT,              -- AUTO_MATCHED/SUGGESTED/UNMATCHED (Migration 052)
+    bank_tx_id INTEGER,             -- Referenz auf steuer_bank_transactions.id (Migration 052)
     version INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
@@ -219,6 +221,36 @@ BEGIN
         absetzbar_brutto = NEW.brutto * NEW.anteil
     WHERE id = NEW.id;
 END;
+
+-- ============================================================
+-- STEUER_BANK_TRANSACTIONS - CAMT-Buchungen (Migration 052, Task #1397)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS steuer_bank_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    steuerjahr INTEGER,
+    buchungsdatum TEXT,
+    wertstellungsdatum TEXT,
+    betrag REAL,                     -- vorzeichenbehaftet: DBIT = negativ
+    typ TEXT,                        -- CRDT/DBIT
+    partner TEXT,
+    zweck TEXT,
+    iban TEXT,
+    partner_iban TEXT,
+    waehrung TEXT DEFAULT 'EUR',
+    hash TEXT UNIQUE,                -- sha256(iban|datum|betrag|typ|partner|zweck)
+    quelle TEXT DEFAULT 'CAMT',
+    datei TEXT,
+    imported_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_steuer_bank_tx_hash
+    ON steuer_bank_transactions(hash);
+
+CREATE INDEX IF NOT EXISTS idx_steuer_bank_tx_user_jahr
+    ON steuer_bank_transactions(username, steuerjahr);
 
 -- ============================================================
 -- ENDE SCHEMA

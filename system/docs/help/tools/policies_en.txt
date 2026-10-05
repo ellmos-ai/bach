@@ -114,7 +114,6 @@ NAMING CONVENTION (concept)
 ---------------------------
 Planned naming convention for tool files:
 
-  c_ -> CLI optimized for AI (c_encoding_fixer.py)
   b_ -> BACH core (b_backup.py)
   a_ -> Agent Runner (a_developer.py)
   t_ -> Test Tools (t_runner.py)
@@ -145,7 +144,7 @@ TYPICAL USES
    -> emoji_safe for Windows compatibility
 
 4. STANDARDIZE EXISTING CODE
-   -> c_standard_fixer uses policies internally
+   -> standard_fixer uses policies internally
 
 SEE ALSO
 ----------

@@ -7,7 +7,7 @@ y reparar/estandarizar archivos.
 
 CONVERTIDOR UNIVERSAL
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 Herramienta de conversión universal para muchos formatos.
 Soporta:
@@ -17,11 +17,11 @@ Soporta:
   - Excel -> CSV
   - Imágenes (cambiar tamaño, formato)
 
-Llamada: python tools/c_universal_converter.py <entrada> <salida>
+Llamada: python tools/universal_converter.py <entrada> <salida>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 Convierte archivos Markdown en PDF con estilo.
 Características:
@@ -29,33 +29,33 @@ Características:
   - Mesas
   - Incrustar imágenes
 
-Llamada: python tools/c_md_to_pdf.py <archivo md> [--output <pdf>]
+Llamada: python tools/md_to_pdf.py <archivo md> [--output <pdf>]
 
 CODIFICACIÓN Y TEXTO
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   Soluciona problemas de codificación (UTF-8, Latin-1, etc.)
   Detecta automáticamente la codificación incorrecta.
-  Llamada: python tools/c_encoding_fixer.py <archivo>
+  Llamada: python tools/encoding_fixer.py <archivo>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   Corrige diéresis alemanas en archivos.
   Reemplaza caracteres rotos (ae->ä, ue->ü, etc.)
-  Llamada: python tools/c_umlaut_fixer.py <archivo>
+  Llamada: python tools/umlaut_fixer.py <archivo>
 
-c_standard_fixer.py
+standard_fixer.py
   Estandariza el formato del código.
   Elimina los espacios en blanco finales, unifica los finales de línea.
-  Llamada: python tools/c_standard_fixer.py <archivo>
+  Llamada: python tools/standard_fixer.py <archivo>
 
 JSON TOOLS
 ----------
 
-c_json_repair.py
+json_repair.py
   Repara archivos JSON rotos.
   Corrige comas, comillas y corchetes faltantes.
-  Llamada: python tools/c_json_repair.py <archivo>
+  Llamada: python tools/json_repair.py <archivo>
 
 json_fixer.py
   Reparación JSON alternativa con opciones avanzadas.
@@ -64,15 +64,15 @@ json_fixer.py
 HERRAMIENTAS DE CÓDIGO
 ----------
 
-c_import_organizer.py
+import_organizer.py
   Ordena y organiza las importaciones de Python.
   Agrupados: Estándar, Terceros, Local.
-  Llamada: python tools/c_import_organizer.py <archivo>
+  Llamada: python tools/import_organizer.py <archivo>
 
-c_indent_checker.py
+indent_checker.py
   Comprueba y corrige la sangría.
   Opciones: --tabs, --spaces N
-  Llamada: python tools/c_indent_checker.py <archivo>
+  Llamada: python tools/indent_checker.py <archivo>
 
 EXPORTAR
 ------

@@ -9,6 +9,43 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ---
 
+## [Unreleased] - In Arbeit
+
+### Fackelträger-System (#1583)
+
+- **FIX:** Bridge-Autostart-Logik finalisiert (`hub/_services/claude_bridge/bridge_tray.py`, Task #1590)
+  - `_should_autostart()` akzeptiert nun den Parameter `is_autostart`.
+  - Autostart (Tray-Start) startet die Bridge nur, wenn mindestens ein aktiver Connector in der DB hinterlegt ist (`connections.is_active = 1` und nicht-leerer `auth_config`).
+  - Manueller Start-Fallback (S6) berücksichtigt `bridge.start_without_connectors`; Start ohne Connector ist damit explizit möglich.
+  - Fackel-Check bleibt in beiden Pfaden aktiv.
+  - Aufrufe in `__init__` und `run()` wurden auf den neuen Parameter umgestellt.
+  - Testplan angelegt: `TESTPLAN_1590.md`.
+- **NEU:** Fackel-Handover `request_handover()` implementiert (`hub/_services/claude_bridge/fackel.py`, Task #1591)
+  - DB-basierter Handover ohne Netzwerk: Halter via `get_fackel_holder()` ermitteln, Übergabe-Notiz in `session_context.handover_notes` (heutiges Datum, Append per char(10)), danach `acquire_fackel()` als Force-Takeover.
+  - Kein aktiver Halter oder Halter == eigener PC → sofort True (nichts zu tun).
+  - Kontextpaket-Fehler nicht fatal (nur Warnung); alter Daemon beendet sich per Heartbeat-Check (<=60s) inkl. Session-Summary.
+  - Tests: `__main__`-Smoke-Test + Integrationstest (Fremd-Halter → Takeover + handover_notes) bestanden.
+- **NEU:** 24h-Limit-Gate umgesetzt (`hub/_services/claude_bridge/fackel.py`, Task #1593)
+  - Max. 2 gleichzeitig aktive 24h-Instanzen (`H24_SESSION_TYPES`) werden durchgesetzt; Reject-Meldung enthält „24h-Limit erreicht" + „Aktiv:"-Auflistung, keine neue Zeile beim Reject.
+  - Selbst-Acquire am Limit weiterhin erlaubt (`self_active`), Nicht-24h-Typen (z. B. „worker") nicht ge-gatet.
+  - Getestet mit Integrationstest Task #1597 (`data/temp/test_fackel_1597.py`, alle Checks OK, idempotent mit Backup/Restore).
+  - **Nicht implementiert:** Multiuser Single-24h-Privileg — `user_id`-Spalte existiert in `fackel_state`, `acquire_fackel()` ignoriert user_id jedoch komplett → Follow-up offen.
+- **NEU:** Single-24h-Privileg pro User in acquire_fackel() — user_id-Gate verhindert parallele bridge/personal_assistant-Sessions desselben Users (hub/_services/claude_bridge/fackel.py, Test data/temp/test_fackel_1598.py, Task #1598)
+- **DOKU:** GUI-Konzept Fackelträger-System entschieden + dokumentiert (Task #1594, `hub/_services/claude_bridge/GUI_KONZEPT_1594.md`, keine Codeänderung)
+  - Routing: Allgemeine Anfragen + Anfragen an den persönlichen Assistenten laufen an den 24h-Fackelträger-Claude; alle anderen Anfragen = zeitlich begrenzte Extrasessions (explizite Wahl, Pflicht-Timeout).
+  - Sessionstart-GUI (Follow-up): Default „Assistent (24h)" mit Attach/Handover-Hinweis, Fackelhalter-Anzeige; Extrasessions konsumieren kein 24h-Slot.
+  - Nicht-Fackelträger-Systeme dürfen eine eigene lokale GUI-24h-Session führen (kein Fackel-Claim, klar als lokal gekennzeichnet, zählt nicht auf `MAX_24H_ACTIVE = 2`).
+  - Begründung „logisch konsistent": Single-Point-Prinzip, Limit-Abbildung (#1593-Gate), Rollensymmetrie, Fackel regelt Connector-Hoheit — nicht lokale Entwicklung.
+- **NEU:** Worker-Pläne und Todos persistent über Sitzungsgrenzen (`hub/_services/worker_plan.py`, Task #1596)
+  - Neue Tabellen `worker_plans` und `worker_todos` (beide mit `day_index`), `_ensure_table()` idempotent inkl. `day_index`-ALTER-Migration für Bestands-DBs; `_db_execute` mit locked-Retry.
+  - API: `create_plan`, `add_todo`, `get_plan`, `list_open`, `set_todo_status` (open/done/blocked), `mark_done`, `mark_blocked`, `set_plan_status`, `mark_plan_done`, `resume_plan`, `bump_day`; Todos positioniert ab 0, `add_todo` hängt bei max(position)+1 an.
+  - CLI-Subcommands `create/add/list/done/blocked/plan-done/resume/bump-day` mit JSON-Ausgabe für den Daemon.
+  - `build_worker_prompt` (`hub/_services/claude_bridge/bridge_daemon.py`) erhält Persistenz-Hinweisblock vor „## Aufgabe/{task}".
+  - „34h = 1 Tag" als Soll akzeptiert (kein striktes Kalendertag-Gate).
+  - Tests: Integrationstest `data/temp/test_fackel_1596.py` (40 Checks a1–j4, Backup/Restore, direkt ausführbar) — alle OK.
+
+---
+
 ## [3.2.0-butternut] - 2026-02-28
 
 ### Datenbankschema
@@ -76,7 +113,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 - **NEU:** `tools/migrate_prompts.py` - Einmalige Migration aller Prompt-Quellen in DB
   - Quelle 1: `partners/claude/prompts/` (Partner-spezifische Prompts)
-  - Quelle 2: `skills/_services/*/prompts/` (Service-Prompts)
+  - Quelle 2: `hub/_services/*/prompts/` (Service-Prompts)
   - Quelle 3: `data/prompt_templates/` (Legacy Dateisystem-Prompts)
   - Ergebnis: Alle Prompts in `prompt_templates` DB-Tabelle, Versionierung erhalten
 

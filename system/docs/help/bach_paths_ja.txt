@@ -65,13 +65,13 @@ MAIN FUNCTION: get_path(name)
 bach_paths を使用した解決策:
 
     試してみてください:
-        c_ocr_engine から ocr_pdf をインポート
+        ocr_engine から ocr_pdf をインポート
     ImportError を除く:
         from bach_paths import get_path
         tools_dir = get_path("ツール")
         str(tools_dir) が sys.path にない場合:
             sys.path.insert(0, str(tools_dir))
-        from c_ocr_engine import ocr_pdf
+        from ocr_engine import ocr_pdf
 
 例: テンプレート パス
 -----------------------

@@ -7,7 +7,7 @@
 
 УНИВЕРСАЛЬНЫЙ КОНВЕРТЕР
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 Универсальный инструмент преобразования для многих форматов.
 Поддерживает:
@@ -17,11 +17,11 @@ c_universal_converter.py
   - Excel -> CSV
   - Изображения (изменение размера, формат)
 
-Вызов: python Tools/c_universal_converter.py <input> <output>
+Вызов: python Tools/universal_converter.py <input> <output>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 Преобразует файлы Markdown в PDF со стилем.
 Особенности:
@@ -29,33 +29,33 @@ c_md_to_pdf.py
   - Столы
   - Встраивание изображений
 
-Вызов: python Tools/c_md_to_pdf.py <md file> [--output <pdf>]
+Вызов: python Tools/md_to_pdf.py <md file> [--output <pdf>]
 
 КОДИРОВАНИЕ И ТЕКСТ
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   Исправляет проблемы с кодировкой (UTF-8, Latin-1 и т. д.)
   Автоматически обнаруживает неправильное кодирование.
-  Вызов: инструменты Python/c_encoding_fixer.py <файл>
+  Вызов: инструменты Python/encoding_fixer.py <файл>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   Исправляет немецкие умлауты в файлах.
   Заменяет неработающие символы (ae->ä, ue->ü и т. д.)
-  Вызов: инструменты Python/c_umlaut_fixer.py <файл>
+  Вызов: инструменты Python/umlaut_fixer.py <файл>
 
-c_standard_fixer.py
+standard_fixer.py
   Стандартизирует форматирование кода.
   Удаляет конечные пробелы, объединяет окончания строк.
-  Вызов: инструменты Python/c_standard_fixer.py <файл>
+  Вызов: инструменты Python/standard_fixer.py <файл>
 
 JSON ИНСТРУМЕНТЫ
 ----------
 
-c_json_repair.py
+json_repair.py
   Восстанавливает поврежденные файлы JSON.
   Исправляет пропущенные запятые, кавычки, скобки.
-  Вызов: инструменты Python/c_json_repair.py <файл>
+  Вызов: инструменты Python/json_repair.py <файл>
 
 json_fixer.py
   Альтернативное восстановление JSON с расширенными параметрами.
@@ -64,15 +64,15 @@ json_fixer.py
 ИНСТРУМЕНТЫ КОДА
 ----------
 
-c_import_organizer.py
+import_organizer.py
   Сортирует и организует импорт Python.
   Сгруппированы: Стандартные, Сторонние, Локальные.
-  Вызов: инструменты Python/c_import_organizer.py <файл>
+  Вызов: инструменты Python/import_organizer.py <файл>
 
-c_indent_checker.py
+indent_checker.py
   Проверяет и исправляет отступы.
   Опции: --tabs, --spaces N
-  Вызов: инструменты Python/c_indent_checker.py <файл>
+  Вызов: инструменты Python/indent_checker.py <файл>
 
 ЭКСПОРТ
 ------

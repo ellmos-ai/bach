@@ -58,7 +58,7 @@ ARCHITEKTUR (Inhaltliche Ebene)
                             |  nutzen & ueberwachen
   WORKFLOWS + SERVICES + TOOLS
     Workflow-Anleitungen (.md) | daemon/ document/ mail/
-    c_ocr_engine.py | data_importer.py | doc_search.py | cv_generator.py
+    ocr_engine.py | data_importer.py | doc_search.py | cv_generator.py
                             |
   DATEN
     bach.db + bach.db | User-Ordner | Externe Ordner | Exporte (.csv/.txt)

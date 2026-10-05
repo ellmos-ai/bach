@@ -186,7 +186,7 @@ SIEHE AUCH
   docs/help/delegate.txt       Delegation-Details
   docs/help/communicate.txt    Kommunikationsprotokolle
   
-  skills/_services/communicate.md   Skill-Definition
+  hub/_services/communicate.md   Skill-Definition
   tools/partner_communication/README.md   Entwickler-Doku
 
 VERSION: v1.0.0 (2026-01-23)

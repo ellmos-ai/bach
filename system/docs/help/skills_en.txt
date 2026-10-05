@@ -69,7 +69,7 @@ TOOL DUPLICATION
 -----------------
 RULE: When in doubt, keep it double!
 
-  system/tools/c_ocr_engine.py # General version
+  system/tools/ocr/engine.py # General version
   agents/_experts/steuer/steuer_ocr.py # Skill-specific version
 
 Advantages:
@@ -183,7 +183,7 @@ SELF EXPANSION (NEW v2.5)
                        BaseHandler subclass with get_operations()
                        Accessible via bach <name> after 'reload'
 
-    --type service Created: system/skills/_services/<name>/
+    --type service Created: system/hub/_services/<name>/
                        Folder with __init__.py and service.py
                        Handler-close, generally usable
 

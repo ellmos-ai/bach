@@ -92,7 +92,7 @@ Access via:
 Role: in-house developments, automation, special tasks
 
 Categories:
-  - Coding tools c_encoding_fixer, c_json_repair, etc.
+  - Coding tools encoding_fixer, json_repair, etc.
   - Tax tools tax_scanner, tax_sync, etc.
   - Agent scripts agent_framework, developer_agent
   - Backup tools backup_manager

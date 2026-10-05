@@ -92,7 +92,7 @@ THE 6 ACTORS
 役割: 社内開発、自動化、特殊タスク
 
 カテゴリ:
-  - コーディングツール c_encoding_fixer、c_json_repair など
+  - コーディングツール encoding_fixer、json_repair など
   - 税金ツール、tax_scanner、tax_sync など。
   - エージェントスクリプトagent_framework、developer_agent
   - バックアップツールbackup_manager

@@ -58,6 +58,7 @@ class SkillsHandler(BaseHandler):
             "search": t("skills_search_desc", default="Skills durchsuchen"),
             "create": t("skills_create_desc", default="Neuen Skill erstellen (v2.1 - Self-Extension, --format anthropic fuer Anthropic-Standard)"),
             "reload": t("skills_reload_desc", default="Handler-Registry + Tools neu laden (Hot-Reload, v2.1)"),
+            "reset": t("skills_reset_desc", default="Skill neu laden (before/after hook, v2.1)"),
             "export": t("skills_export_desc", default="Skill exportieren - autarkes Paket (v2.0, --format agent fuer Claude Code Agent)"),
             "export-agent": t("skills_export_agent_desc", default="Skill als Claude Code Agent exportieren (.md Datei)"),
             "install": t("skills_install_desc", default="Skill aus ZIP/Verzeichnis importieren"),
@@ -85,6 +86,8 @@ class SkillsHandler(BaseHandler):
             return self._create(clean_args[0], skill_type, dry_run, fmt=fmt)
         elif operation == "reload":
             return self._reload()
+        elif operation == "reset" and args:
+            return self._reset_skill(args[0])
         elif operation == "show" and args:
             return self._show(args[0])
         elif operation == "search" and args:
@@ -1435,6 +1438,45 @@ anthropic_compatible: true
             pass
 
         return True, "\n".join(results)
+
+    def _reset_skill(self, name: str) -> tuple:
+        """
+        Skill-Reset: Hot-Reload ausfuehren mit before/after Hooks.
+
+        Emittiert Lifecycle-Hooks `before_skill_reset` und
+        `after_skill_reset`. Der before-Hook erhaelt den Payload
+        `{"name": name}`, der after-Hook zusaetzlich `status`
+        (`"ok"` oder `"error"`).
+
+        Args:
+            name: Name des Skills, der zurueckgesetzt wird.
+
+        Returns:
+            (success, message)
+        """
+        # Hook: before_skill_reset -> {"name": name}
+        try:
+            from core.hooks import hooks
+            hooks.emit('before_skill_reset', {'name': name})
+        except Exception:
+            pass
+
+        success, reload_msg = self._reload()
+        status = 'ok' if success else 'error'
+
+        # Hook: after_skill_reset -> {"name": name, "status": "ok"|"error"}
+        try:
+            from core.hooks import hooks
+            hooks.emit('after_skill_reset', {
+                'name': name,
+                'status': status,
+            })
+        except Exception:
+            pass
+
+        header = f"SKILL RESET: {name}"
+        msg = "\n".join([header, "=" * 50, reload_msg])
+        return success, msg
 
     def _hierarchy(self, type_filter: str = None) -> tuple:
         """

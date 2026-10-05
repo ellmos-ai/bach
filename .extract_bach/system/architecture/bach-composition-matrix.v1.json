@@ -1,0 +1,1301 @@
+{
+  "schema": "ellmos.open-ocean-bach-composition-matrix.v1",
+  "recorded_at": "2026-09-21",
+  "source_audit": {
+    "bach_commit": "39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed",
+    "counts": {
+      "handler_classes": 109,
+      "canonical_profiles": 109,
+      "aliases_declared": 13,
+      "aliases_effective": 9,
+      "registered_names": 118
+    },
+    "historic_114_names": [
+      "abo",
+      "agent",
+      "agents",
+      "api",
+      "apiprober",
+      "ati",
+      "backup",
+      "beat",
+      "bericht",
+      "between",
+      "calendar",
+      "chain",
+      "claude-bridge",
+      "clock",
+      "clutch",
+      "connections",
+      "connector",
+      "consolidate",
+      "consolidation",
+      "contact",
+      "context",
+      "cookbook",
+      "countdown",
+      "cv",
+      "daily-agent",
+      "daemon",
+      "data",
+      "db",
+      "dbsync",
+      "denkarium",
+      "dist",
+      "doc",
+      "docs",
+      "docs-search",
+      "email",
+      "extensions",
+      "fs",
+      "gesundheit",
+      "gui",
+      "haushalt",
+      "health",
+      "healthcheck",
+      "help",
+      "hook",
+      "hooks",
+      "inject",
+      "integration",
+      "lang",
+      "lesson",
+      "literatur",
+      "logs",
+      "mail",
+      "maintain",
+      "media",
+      "mediplaner",
+      "mem",
+      "memory",
+      "mount",
+      "msg",
+      "news",
+      "newspaper",
+      "notespace",
+      "notify",
+      "obsidian",
+      "ollama",
+      "partner",
+      "path",
+      "permissions",
+      "plugin",
+      "plugins",
+      "press",
+      "profile",
+      "profiler",
+      "prompt",
+      "recurring",
+      "reflection",
+      "restore",
+      "routine",
+      "sandbox",
+      "scan",
+      "scheduler",
+      "schwarm",
+      "search",
+      "session",
+      "settings",
+      "setup",
+      "shared-mem",
+      "shutdown",
+      "skill",
+      "skills",
+      "smarthome",
+      "snapshot",
+      "sources",
+      "startup",
+      "status",
+      "steuer",
+      "swarm",
+      "sync",
+      "task",
+      "test",
+      "timer",
+      "tokens",
+      "tool",
+      "tools",
+      "trash",
+      "tuev",
+      "update",
+      "upgrade",
+      "usecase",
+      "versicherung",
+      "watcher",
+      "web-parse",
+      "web-scrape",
+      "wiki"
+    ],
+    "additions_since_historic_114": [
+      "cloud",
+      "mcp",
+      "security",
+      "theme"
+    ],
+    "registered_names": [
+      "abo",
+      "agent",
+      "agents",
+      "api",
+      "apiprober",
+      "ati",
+      "backup",
+      "beat",
+      "bericht",
+      "between",
+      "calendar",
+      "chain",
+      "claude-bridge",
+      "clock",
+      "cloud",
+      "clutch",
+      "connections",
+      "connector",
+      "consolidate",
+      "consolidation",
+      "contact",
+      "context",
+      "cookbook",
+      "countdown",
+      "cv",
+      "daemon",
+      "daily-agent",
+      "data",
+      "db",
+      "dbsync",
+      "denkarium",
+      "dist",
+      "doc",
+      "docs",
+      "docs-search",
+      "email",
+      "extensions",
+      "fs",
+      "gesundheit",
+      "gui",
+      "haushalt",
+      "health",
+      "healthcheck",
+      "help",
+      "hook",
+      "hooks",
+      "inject",
+      "integration",
+      "lang",
+      "lesson",
+      "literatur",
+      "logs",
+      "mail",
+      "maintain",
+      "mcp",
+      "media",
+      "mediplaner",
+      "mem",
+      "memory",
+      "mount",
+      "msg",
+      "news",
+      "newspaper",
+      "notespace",
+      "notify",
+      "obsidian",
+      "ollama",
+      "partner",
+      "path",
+      "permissions",
+      "plugin",
+      "plugins",
+      "press",
+      "profile",
+      "profiler",
+      "prompt",
+      "recurring",
+      "reflection",
+      "restore",
+      "routine",
+      "sandbox",
+      "scan",
+      "scheduler",
+      "schwarm",
+      "search",
+      "security",
+      "session",
+      "settings",
+      "setup",
+      "shared-mem",
+      "shutdown",
+      "skill",
+      "skills",
+      "smarthome",
+      "snapshot",
+      "sources",
+      "startup",
+      "status",
+      "steuer",
+      "swarm",
+      "sync",
+      "task",
+      "test",
+      "theme",
+      "timer",
+      "tokens",
+      "tool",
+      "tools",
+      "trash",
+      "tuev",
+      "update",
+      "upgrade",
+      "usecase",
+      "versicherung",
+      "watcher",
+      "web-parse",
+      "web-scrape",
+      "wiki"
+    ]
+  },
+  "catalogues": {
+    "modules": {
+      "locator": "catalog://modules?sha256=3dd188d8a39db379a20002926113f348d72baa3b26eae8e5255f94727393bbfc",
+      "entries": 75,
+      "sha256": "3dd188d8a39db379a20002926113f348d72baa3b26eae8e5255f94727393bbfc"
+    },
+    "bundles": {
+      "locator": "catalog://bundles?sha256=0046da4755df840b792d7efa6e5bb60598d5799885788321b0373cc46deae240",
+      "entries": 33,
+      "sha256": "0046da4755df840b792d7efa6e5bb60598d5799885788321b0373cc46deae240"
+    },
+    "skills": {
+      "locator": "catalog://skills?sha256=0a9758ba1b51bdb1391e28cfbe1d1899f976a7be8b4f48296ddf4078282c1c8e",
+      "entries": 142,
+      "sha256": "0a9758ba1b51bdb1391e28cfbe1d1899f976a7be8b4f48296ddf4078282c1c8e"
+    }
+  },
+  "claim_boundary": "Carrier presence is a composition lead only. It does not prove operation equivalence, state migration, BACH delegation, bundle installation, a foreign-host sluice test, or release parity.",
+  "rows": [
+    {
+      "name": "abo",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/abo.py#AboHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "agent",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/agent_launcher.py#AgentLauncherHandler",
+      "carrier": "agent-launcher",
+      "carrier_locator": "module:agent-launcher",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "agents",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/agents.py#AgentsHandler",
+      "carrier": "agent-launcher",
+      "carrier_locator": "module:agent-launcher",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "api",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/apibook.py#ApiBookHandler",
+      "carrier": "ApiProber",
+      "carrier_locator": "module:ApiProber",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "apiprober",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/api_prober.py#ApiProberHandler",
+      "carrier": "ApiProber",
+      "carrier_locator": "module:ApiProber",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "ati",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/ati.py#ATIHandler",
+      "carrier": "task-master",
+      "carrier_locator": "module:task-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "backup",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/backup.py#BackupHandler",
+      "carrier": "sqlite-transit-sync",
+      "carrier_locator": "module:sqlite-transit-sync",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "beat",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/time.py#BeatHandler",
+      "finding": "The scheduler has scheduling capabilities, but no timer/countdown contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "bericht",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/bericht.py#BerichtHandler",
+      "carrier": "report-forge",
+      "carrier_locator": "module:report-forge",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "between",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/time.py#BetweenHandler",
+      "finding": "The scheduler has scheduling capabilities, but no timer/countdown contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "calendar",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/calendar_handler.py#CalendarHandler",
+      "carrier": "assist:assist:kalender",
+      "carrier_locator": "skill:assist:assist:kalender",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "chain",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/chain.py#ChainHandler",
+      "carrier": "marblerun",
+      "carrier_locator": "module:marblerun",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "claude-bridge",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/claude_bridge.py#ClaudeBridgeHandler",
+      "carrier": "claude-bridge",
+      "carrier_locator": "module:claude-bridge",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "clock",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/time.py#ClockHandler",
+      "finding": "The scheduler has scheduling capabilities, but no timer/countdown contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "cloud",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/cloud.py#CloudHandler",
+      "carrier": "open-compute",
+      "carrier_locator": "module:open-compute",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "clutch",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/clutch.py#ClutchHandler",
+      "carrier": "clutch",
+      "carrier_locator": "module:clutch",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "connections",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/connections.py#ConnectionsHandler",
+      "carrier": "ellmos-agent-bridge",
+      "carrier_locator": "module:ellmos-agent-bridge",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "connector",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/connector.py#ConnectorHandler",
+      "carrier": "connectors",
+      "carrier_locator": "module:connectors",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "consolidate",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['consolidate'->'consolidation']",
+      "target": "consolidation",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "consolidation",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/consolidation.py#ConsolidationHandler",
+      "carrier": "GARDENER",
+      "carrier_locator": "module:GARDENER",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "contact",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/contact.py#ContactHandler",
+      "carrier": "mail-connector",
+      "carrier_locator": "module:mail-connector",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "context",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/context.py#ContextHandler",
+      "carrier": "GARDENER",
+      "carrier_locator": "module:GARDENER",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "cookbook",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/cookbook.py#CookbookHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "countdown",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/time.py#CountdownHandler",
+      "finding": "The scheduler has scheduling capabilities, but no timer/countdown contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "cv",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/cv.py#CVHandler",
+      "carrier": "expert:utilities:bewerbungsexperte",
+      "carrier_locator": "skill:expert:utilities:bewerbungsexperte",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "daemon",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['daemon'->'scheduler']",
+      "target": "scheduler",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "daily-agent",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/daily_agent.py#DailyAgentHandler",
+      "carrier": "task-master",
+      "carrier_locator": "module:task-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "data",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/data_analysis.py#DataAnalysisHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "db",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/db.py#DbHandler",
+      "carrier": "sqlite-transit-sync",
+      "carrier_locator": "module:sqlite-transit-sync",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "dbsync",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/db_sync.py#DBSyncHandler",
+      "carrier": "sqlite-transit-sync",
+      "carrier_locator": "module:sqlite-transit-sync",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "partially-evidenced",
+      "use_case_evidence": "architecture/bach-parity-evidence.v1.json#rows.dbsync"
+    },
+    {
+      "name": "denkarium",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/denkarium.py#DenkariumHandler",
+      "carrier": "llm-note",
+      "carrier_locator": "module:llm-note",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "dist",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/dist.py#DistHandler",
+      "carrier": "ellmos-installer",
+      "carrier_locator": "module:ellmos-installer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "doc",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/doc.py#DocHandler",
+      "carrier": "GARDENER",
+      "carrier_locator": "module:GARDENER",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "docs",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/docs.py#DocsHandler",
+      "carrier": "project-docs-template",
+      "carrier_locator": "module:project-docs-template",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "docs-search",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/docs_search.py#DocsSearchHandler",
+      "carrier": "GARDENER",
+      "carrier_locator": "module:GARDENER",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "email",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/email.py#EmailHandler",
+      "carrier": "connectors",
+      "carrier_locator": "module:connectors",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "extensions",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/extensions.py#ExtensionsHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "fs",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/fs.py#FSHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "gesundheit",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/gesundheit.py#GesundheitHandler",
+      "carrier": "assist:assist:gesundheit",
+      "carrier_locator": "skill:assist:assist:gesundheit",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "gui",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/gui.py#GuiHandler",
+      "carrier": "ellmos-unified-gui",
+      "carrier_locator": "module:ellmos-unified-gui",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "haushalt",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/haushalt.py#HaushaltHandler",
+      "carrier": "assist:assist:haushalt-manager",
+      "carrier_locator": "skill:assist:assist:haushalt-manager",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "health",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['health'->'healthcheck']",
+      "target": "healthcheck",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "healthcheck",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/health.py#HealthCheckHandler",
+      "carrier": "system-auditor",
+      "carrier_locator": "module:system-auditor",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "help",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/help.py#HelpHandler",
+      "carrier": "project-docs-template",
+      "carrier_locator": "module:project-docs-template",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "hook",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['hook'->'hooks']",
+      "target": "hooks",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "hooks",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/hooks.py#HooksHandler",
+      "carrier": "hook-master",
+      "carrier_locator": "module:hook-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "inject",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/inject.py#InjectHandler",
+      "carrier": "hook-master",
+      "carrier_locator": "module:hook-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "integration",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/integration.py#IntegrationHandler",
+      "carrier": "ellmos-agent-bridge",
+      "carrier_locator": "module:ellmos-agent-bridge",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "lang",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/lang.py#LangHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "lesson",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/lesson.py#LessonHandler",
+      "carrier": "USMC",
+      "carrier_locator": "module:USMC",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "literatur",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/literatur.py#LiteraturHandler",
+      "carrier": "tool:research:research-agent",
+      "carrier_locator": "skill:tool:research:research-agent",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "logs",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/logs.py#LogsHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "mail",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['mail'->'email']",
+      "target": "email",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "maintain",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/maintain.py#MaintainHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "mcp",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/mcp.py#McpHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "media",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/media.py#MediaHandler",
+      "carrier": "ai-media-editor",
+      "carrier_locator": "module:ai-media-editor",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "mediplaner",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/mediplaner.py#MediPlanerHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "mem",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/mem.py#MemHandler",
+      "carrier": "USMC",
+      "carrier_locator": "module:USMC",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "memory",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/memory.py#MemoryHandler",
+      "carrier": "USMC",
+      "carrier_locator": "module:USMC",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "mount",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/mount.py#MountHandler",
+      "carrier": "ellmos-core",
+      "carrier_locator": "module:ellmos-core",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "msg",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/messages.py#MessagesHandler",
+      "carrier": "connectors",
+      "carrier_locator": "module:connectors",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "news",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/news.py#NewsHandler",
+      "carrier": "umbruch-social-media-runner",
+      "carrier_locator": "module:umbruch-social-media-runner",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "newspaper",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/newspaper.py#NewspaperHandler",
+      "carrier": "umbruch-social-media-runner",
+      "carrier_locator": "module:umbruch-social-media-runner",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "notespace",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/notespace.py#NoteSpaceHandler",
+      "carrier": "llm-note",
+      "carrier_locator": "module:llm-note",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "notify",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/notify.py#NotifyHandler",
+      "carrier": "assistant-core",
+      "carrier_locator": "module:assistant-core",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "obsidian",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/obsidian.py#ObsidianHandler",
+      "carrier": "llm-note",
+      "carrier_locator": "module:llm-note",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "ollama",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/ollama.py#OllamaHandler",
+      "target": "access_surface:ollama",
+      "decision_ref": "D-20260906-003",
+      "binding": "External model runtime; bind as an access surface, not a module.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "partner",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/partner.py#PartnerHandler",
+      "carrier": "ellmos-agent-bridge",
+      "carrier_locator": "module:ellmos-agent-bridge",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "path",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/path.py#PathHandler",
+      "carrier": "ellmos-core",
+      "carrier_locator": "module:ellmos-core",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "permissions",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/claude_permissions.py#ClaudePermissionsHandler",
+      "carrier": "lock-master",
+      "carrier_locator": "module:lock-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "plugin",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['plugin'->'plugins']",
+      "target": "plugins",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "plugins",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/plugins.py#PluginsHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "press",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/press.py#PressHandler",
+      "carrier": "umbruch-social-media-runner",
+      "carrier_locator": "module:umbruch-social-media-runner",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "profile",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/profile.py#ProfileHandler",
+      "carrier": "build-your-users-mind",
+      "carrier_locator": "module:build-your-users-mind",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "profiler",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/profiler.py#ProfilerHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "prompt",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/prompt.py#PromptHandler",
+      "carrier": "prompt-listener",
+      "carrier_locator": "module:prompt-listener",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "recurring",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/recurring.py#RecurringHandler",
+      "carrier": "marblerun",
+      "carrier_locator": "module:marblerun",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "reflection",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/reflection.py#ReflectionHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "restore",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/restore.py#RestoreHandler",
+      "carrier": "sqlite-transit-sync",
+      "carrier_locator": "module:sqlite-transit-sync",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "routine",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/routine.py#RoutineHandler",
+      "carrier": "marblerun",
+      "carrier_locator": "module:marblerun",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "sandbox",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/sandbox.py#SandboxHandler",
+      "carrier": "lock-master",
+      "carrier_locator": "module:lock-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "scan",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/scan.py#ScanHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "scheduler",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/scheduler.py#SchedulerHandler",
+      "carrier": "ellmos-scheduler",
+      "carrier_locator": "module:ellmos-scheduler",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "schwarm",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/schwarm.py#SchwarmHandler",
+      "carrier": "swarm_ai",
+      "carrier_locator": "module:swarm_ai",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "search",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/search.py#SearchHandler",
+      "carrier": "GARDENER",
+      "carrier_locator": "module:GARDENER",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "security",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/security.py#SecurityHandler",
+      "carrier": "policy-registry",
+      "carrier_locator": "module:policy-registry",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "session",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/session.py#SessionHandler",
+      "carrier": "session-checkpoint",
+      "carrier_locator": "module:session-checkpoint",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "settings",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/settings.py#SettingsHandler",
+      "carrier": "policy-registry",
+      "carrier_locator": "module:policy-registry",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "setup",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/setup.py#SetupHandler",
+      "carrier": "ellmos-installer",
+      "carrier_locator": "module:ellmos-installer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "shared-mem",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/shared_memory.py#SharedMemoryHandler",
+      "carrier": "USMC",
+      "carrier_locator": "module:USMC",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "shutdown",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/shutdown.py#ShutdownHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "skill",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['skill'->'skills']",
+      "target": "skills",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "skills",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/skills.py#SkillsHandler",
+      "carrier": "skill:infrastructure:skill-explorer",
+      "carrier_locator": "skill:skill:infrastructure:skill-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "smarthome",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/smarthome.py#SmartHomeHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "snapshot",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/snapshot.py#SnapshotHandler",
+      "carrier": "session-checkpoint",
+      "carrier_locator": "module:session-checkpoint",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "sources",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/sources.py#SourcesHandler",
+      "carrier": "source-resolver",
+      "carrier_locator": "module:source-resolver",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "startup",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/startup.py#StartupHandler",
+      "carrier": "ellmos-installer",
+      "carrier_locator": "module:ellmos-installer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "status",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/status.py#StatusHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "steuer",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/steuer.py#SteuerHandler",
+      "carrier": "steuer-suite",
+      "carrier_locator": "module:steuer-suite",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "swarm",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['swarm'->'schwarm']",
+      "target": "schwarm",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "sync",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/sync.py#SyncHandler",
+      "carrier": "sqlite-transit-sync",
+      "carrier_locator": "module:sqlite-transit-sync",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "task",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/task.py#TaskHandler",
+      "carrier": "task-master",
+      "carrier_locator": "module:task-master",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "test",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/test.py#TestHandler",
+      "carrier": "ellmos-tests",
+      "carrier_locator": "module:ellmos-tests",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "theme",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/theme.py#ThemeHandler",
+      "carrier": "ellmos-unified-gui",
+      "carrier_locator": "module:ellmos-unified-gui",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "timer",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/time.py#TimerHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "tokens",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/tokens.py#TokensHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "tool",
+      "class": "not-adopted",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/core/aliases.py#COMMAND_ALIASES['tool'->'tools']",
+      "target": "tools",
+      "decision_ref": "D-20260906-003",
+      "binding": "Alias resolves to the canonical target; no independent implementation.",
+      "use_case_state": "not-independent"
+    },
+    {
+      "name": "tools",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/tools.py#ToolsHandler",
+      "carrier": "ellmos-code-tools",
+      "carrier_locator": "module:ellmos-code-tools",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "trash",
+      "class": "gap",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/trash.py#TrashHandler",
+      "finding": "No declared module or Skills Registry carrier for the BACH contract.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "tuev",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/tuev.py#TuevHandler",
+      "carrier": "ellmos-tests",
+      "carrier_locator": "module:ellmos-tests",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "update",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/update.py#UpdateHandler",
+      "carrier": "ellmos-installer",
+      "carrier_locator": "module:ellmos-installer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "upgrade",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/upgrade.py#UpgradeHandler",
+      "carrier": "ellmos-installer",
+      "carrier_locator": "module:ellmos-installer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "usecase",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/tuev.py#UsecaseHandler",
+      "carrier": "ellmos-tests",
+      "carrier_locator": "module:ellmos-tests",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "versicherung",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/versicherung.py#VersicherungHandler",
+      "carrier": "assist:assist:finanz-versicherung",
+      "carrier_locator": "skill:assist:assist:finanz-versicherung",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "watcher",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/watcher.py#WatcherHandler",
+      "carrier": "system-explorer",
+      "carrier_locator": "module:system-explorer",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "web-parse",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/web_parse.py#WebParseHandler",
+      "carrier": "web-scraper",
+      "carrier_locator": "module:web-scraper",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "web-scrape",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/web_scrape.py#WebScrapeHandler",
+      "carrier": "web-scraper",
+      "carrier_locator": "module:web-scraper",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    },
+    {
+      "name": "wiki",
+      "class": "carrier",
+      "source_locator": "bach://39d2457adeb0bcbcd9f1205dfb2c08f3086b30ed/system/hub/wiki.py#WikiHandler",
+      "carrier": "WikiStub-Seed",
+      "carrier_locator": "module:WikiStub-Seed",
+      "binding": "Contract, adapter/reintegration, bundle membership and functional use-case evidence remain open.",
+      "use_case_state": "not-evidenced"
+    }
+  ]
+}

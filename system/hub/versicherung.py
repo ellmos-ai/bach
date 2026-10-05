@@ -42,10 +42,15 @@ Operationen:
 Nutzt: bach.db / fin_insurances, fin_insurance_claims, insurance_types
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import sqlite3
 from typing import List, Tuple, Optional
+
+from hub._services.contract_dates import (
+    _parse_date, _format_date, calc_monthly, calc_yearly,
+    calc_next_cancellation,
+)
 
 from ._services.alltag_import import (
     AlltagImportError,
@@ -240,7 +245,7 @@ class VersicherungHandler(BaseHandler):
                 "ablauf_datum": item.get("ablauf_datum"),
                 "kuendigungsfrist_monate": notice,
                 "verlaengerung_monate": extension,
-                "naechste_kuendigung": item.get("naechste_kuendigung"),
+                "naechste_kuendigung": item.get("naechste_kuendigung") or _format_date(calc_next_cancellation(_parse_date(item.get("beginn_datum")), _parse_date(item.get("ablauf_datum")), notice, extension or 12)),
                 "beitrag": contribution,
                 "zahlweise": payment_map[payment_raw],
                 "ordner_pfad": item.get("ordner_pfad"),
@@ -301,51 +306,31 @@ class VersicherungHandler(BaseHandler):
                 return a[len(flag) + 1:]
         return None
 
-    def _parse_date(self, date_str: str) -> Optional[str]:
-        """Parse DD.MM.YYYY oder YYYY-MM-DD zu YYYY-MM-DD."""
-        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
-            try:
-                dt = datetime.strptime(date_str, fmt)
-                return dt.strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-        return None
+    def _parse_date(self, date_str) -> Optional[str]:
+        """Parse beliebiges Datum zu ISO-String (YYYY-MM-DD) fuer DB."""
+        d = _parse_date(date_str)
+        if d is None:
+            return None
+        return d.isoformat()
 
-    def _format_date(self, date_str: Optional[str]) -> str:
-        """Formatiert YYYY-MM-DD zu DD.MM.YYYY fuer Anzeige."""
+    def _format_date(self, date_str) -> str:
+        """Formatiert ISO-String zu DD.MM.YYYY fuer Anzeige."""
         if not date_str:
             return "---"
-        try:
-            dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-            return dt.strftime("%d.%m.%Y")
-        except (ValueError, TypeError):
-            return date_str
+        d = _parse_date(date_str)
+        if d is None:
+            return "---"
+        return d.strftime("%d.%m.%Y")
 
     def _calc_monthly(self, beitrag: Optional[float], zahlweise: Optional[str]) -> float:
         """Berechnet monatlichen Beitrag aus Beitrag + Zahlweise."""
-        if not beitrag:
-            return 0.0
-        zw = (zahlweise or "monatlich").lower()
-        if zw == "jaehrlich":
-            return beitrag / 12
-        elif zw == "quartalsweise":
-            return beitrag / 3
-        elif zw == "halbjaehrlich":
-            return beitrag / 6
-        return beitrag  # monatlich
+        result = calc_monthly(beitrag, zahlweise)
+        return result if result is not None else 0.0
 
     def _calc_yearly(self, beitrag: Optional[float], zahlweise: Optional[str]) -> float:
         """Berechnet jaehrlichen Beitrag aus Beitrag + Zahlweise."""
-        if not beitrag:
-            return 0.0
-        zw = (zahlweise or "monatlich").lower()
-        if zw == "monatlich":
-            return beitrag * 12
-        elif zw == "quartalsweise":
-            return beitrag * 4
-        elif zw == "halbjaehrlich":
-            return beitrag * 2
-        return beitrag  # jaehrlich
+        result = calc_yearly(beitrag, zahlweise)
+        return result if result is not None else 0.0
 
     # ------------------------------------------------------------------
     # LIST - Alle Versicherungen
@@ -543,6 +528,9 @@ class VersicherungHandler(BaseHandler):
             except ValueError:
                 return False, f"Ungueltige Kuendigungsfrist: {frist_str}\nErwartet: Ganzzahl (Monate)"
 
+        if kuendigung is None:
+            kuendigung = _format_date(calc_next_cancellation(_parse_date(beginn), _parse_date(ablauf), frist, 12))
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         conn = self._get_db()
@@ -671,6 +659,20 @@ class VersicherungHandler(BaseHandler):
                     updates["kuendigungsfrist_monate"] = int(frist_str)
                 except ValueError:
                     return False, f"Ungueltige Frist: {frist_str}"
+
+            if "naechste_kuendigung" not in updates and (
+                "kuendigungsfrist_monate" in updates
+                or "beginn_datum" in updates
+                or "ablauf_datum" in updates
+            ):
+                neu_kuendigung = _format_date(calc_next_cancellation(
+                    _parse_date(updates.get("beginn_datum") or row["beginn_datum"]),
+                    _parse_date(updates.get("ablauf_datum") or row["ablauf_datum"]),
+                    updates.get("kuendigungsfrist_monate") or row["kuendigungsfrist_monate"] or 3,
+                    12,
+                ))
+                if neu_kuendigung is not None:
+                    updates["naechste_kuendigung"] = neu_kuendigung
 
             steuer = self._get_arg(rest, "--steuer")
             if steuer:

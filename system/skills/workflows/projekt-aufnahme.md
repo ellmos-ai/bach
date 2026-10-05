@@ -1,5 +1,7 @@
 # Standardaufnahmeverfahren für neue Software-Projekte
 
+> Definiert, welche Schritte bei neu entdeckten Software-Ordnern durchzuführen sind, bevor sie in den Task-Manager aufgenommen werden.
+
 **Version:** 1.0  
 **Stand:** 2026-01-10
 

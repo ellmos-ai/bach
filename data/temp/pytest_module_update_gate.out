@@ -1,0 +1,32 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /Users/lukas/.venvs/bach/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/lukas/services/bach
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 18 items
+
+tests/test_module_update_gate.py::test_a_unbekannte_werte_werfen_valueerror PASSED [  5%]
+tests/test_module_update_gate.py::test_b_probe_stage_sauber_ohne_journal PASSED [ 11%]
+tests/test_module_update_gate.py::test_c_probe_ohne_nachweis PASSED      [ 16%]
+tests/test_module_update_gate.py::test_d_offene_hostlaeufe PASSED        [ 22%]
+tests/test_module_update_gate.py::test_e_gates_rahmen PASSED             [ 27%]
+tests/test_module_update_gate.py::test_f_gate_details PASSED             [ 33%]
+tests/test_module_update_gate.py::test_g_pin_bei_stage_blockiert PASSED  [ 38%]
+tests/test_module_update_gate.py::test_h_activate_erlaubt PASSED         [ 44%]
+tests/test_module_update_gate.py::test_i_gate_prueft_pin_nicht PASSED    [ 50%]
+tests/test_module_update_gate.py::test_j_manifest_hash PASSED            [ 55%]
+tests/test_module_update_gate.py::test_k_gate_ohne_journal PASSED        [ 61%]
+tests/test_module_update_gate.py::test_l_single_writer_blockiert_alle_module PASSED [ 66%]
+tests/test_module_update_gate.py::test_m_vorgaenger_stufe_fehlt PASSED   [ 72%]
+tests/test_module_update_gate.py::test_n_journal_kaputt PASSED           [ 77%]
+tests/test_module_update_gate.py::test_o_record_update_erlaubt_schreibt_offen PASSED [ 83%]
+tests/test_module_update_gate.py::test_p_record_update_blockiert_schreibt_nichts PASSED [ 88%]
+tests/test_module_update_gate.py::test_q_confirm_green PASSED            [ 94%]
+tests/test_module_update_gate.py::test_r_rollback PASSED                 [100%]
+
+============================== 18 passed in 0.29s ==============================
+
+
+EXIT:0

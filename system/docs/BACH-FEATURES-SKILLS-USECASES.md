@@ -60,13 +60,13 @@
 | **hooks** | Event-System mit 17 Lifecycle-Events (before/after startup, command, task, memory, skill) |
 | **injectors / inject** | 5 kognitive Injektoren (Strategy, Context, Time, Between, Tool) mit Cooldown |
 
-## 5. Code- & Datei-Werkzeuge (`c_*`-Toolchain)
+## 5. Code- & Datei-Werkzeuge (Toolchain)
 
-- **Reparatur:** `c_encoding_fixer`, `c_umlaut_fixer`, `c_json_repair`/`json_fixer`, `c_standard_fixer` (BOM/Encoding/Umlaute), `c_indent_checker`, `path_healer`
-- **Analyse:** `c_method_analyzer`, `c_import_diagnose`, `c_german_scanner`, `c_emoji_scanner`, `duplicate_detector`
-- **Editieren:** `python_cli_editor`, `c_pycutter` (Klassen-Zerlegung), `c_import_organizer` (PEP8)
-- **Konvertieren:** `c_md_to_pdf`/`converters` (Dual-Engine MD→PDF), `c_universal_converter` (JSON/YAML/TOML/XML/TOON), `ocr`/`ocr_engine` (Tesseract)
-- **Build/Dist:** `universal_compiler` (PyInstaller→EXE), `installer_exe`, `c_license_generator`, `c_audit_bundler`
+- **Reparatur:** `encoding_fixer`, `umlaut_fixer`, `json_repair`/`json_fixer`, `standard_fixer` (BOM/Encoding/Umlaute), `indent_checker`, `path_healer`
+- **Analyse:** `method_analyzer`, `import_diagnose`, `german_scanner`, `emoji_scanner`, `duplicate_detector`
+- **Editieren:** `python_cli_editor`, `pycutter` (Klassen-Zerlegung), `import_organizer` (PEP8)
+- **Konvertieren:** `md_to_pdf`/`converters` (Dual-Engine MD→PDF), `universal_converter` (JSON/YAML/TOML/XML/TOON), `ocr`/`ocr_engine` (Tesseract)
+- **Build/Dist:** `universal_compiler` (PyInstaller→EXE), `installer_exe`, `license_generator`, `audit_bundler`
 - **Policies:** `policies`/`policy_applier`/`policy_control` (Code-Standards-Injection + Compliance)
 
 ## 6. Tasks, Workflows & Scheduling
@@ -131,7 +131,7 @@
 2. **Aufgabe an günstigsten Partner delegieren** — Token-Zone prüfen → `delegate`/`schwarm` → Ergebnis ins `messages`-System
 3. **Steuer/Finanzen** — Belege per `ocr` → `steuer`/`abo`/`versicherung` erfassen → `export_txt`/Finanzamt-Export
 4. **Förderbericht** — ICF-Struktur (`foerderplaner_cli`) → anonymisieren → `bericht` generieren → de-anonymisieren
-5. **Code-Hygiene** — `c_standard_fixer`/`c_import_diagnose` → `bugfix`-Protokoll → `sandbox`-Test → `tuev`
+5. **Code-Hygiene** — `standard_fixer`/`import_diagnose` → `bugfix`-Protokoll → `sandbox`-Test → `tuev`
 6. **Wissen aufbauen** — `rag`/`doc` indizieren → `search`/`docs_search` → `consolidation` ins Memory
 7. **Automatisierung** — `chain`/`llmauto` (MarbleRun) + `scheduler`/`recurring` für autonome Läufe
 8. **Tägliche Routine** — `daily_agent` Task-Queue + `newspaper` PDF-Zeitung + `routine`/`haushalt`-Fälligkeiten

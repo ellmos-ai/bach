@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.lukas.computequeue</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>PYTHONIOENCODING</key>
+		<string>utf-8</string>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/python3</string>
+		<string>/Users/lukas/compute/abc_hct/compute_queue/scripts/compute_queue_runner.py</string>
+		<string>--root</string>
+		<string>/Users/lukas/compute/abc_hct</string>
+		<string>--loop</string>
+		<string>--interval</string>
+		<string>300</string>
+		<string>--status-json</string>
+		<string>/Users/lukas/compute/abc_hct/compute_queue/state/runner_status.json</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/lukas/compute/abc_hct</string>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>60</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/lukas/compute/abc_hct/compute_queue/logs/runner.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/lukas/compute/abc_hct/compute_queue/logs/runner.launchd.err.log</string>
+</dict>
+</plist>

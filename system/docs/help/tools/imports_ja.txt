@@ -17,7 +17,7 @@ Python インポートを診断および整理するためのツール:
   - 二重インポート
   - コードの先頭ではなく途中でインポートします
 
-インポート診断: c_import_diagnose
+インポート診断: import_diagnose
 ----------------------------------
 インポートの問題を体系的に分析します。
 
@@ -32,13 +32,13 @@ Python インポートを診断および整理するためのツール:
 基本コマンド:
 
   # プロジェクトを分析する
-  bach c_import_diagnose projekt/src/
+  bach import_diagnose projekt/src/
 
   # JSON 出力あり
-  bach c_import_diagnose projekt/src/ --json
+  bach import_diagnose projekt/src/ --json
 
   # 特定のモジュールをテストします
-  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+  bach import_diagnose . --modules core.app:App,gui.main:MainWindow
 
 オプション:
   --json JSON 出力 (機械可読)
@@ -63,7 +63,7 @@ Python インポートを診断および整理するためのツール:
   2. 循環インポート core.utils <-> core.app を解決します。
   3. gui/__init__.py を作成します
 
-インポート オーガナイザー: c_import_organizer
+インポート オーガナイザー: import_organizer
 ------------------------------------
 PEP8 に従って Python インポートをソートおよびクリーンアップします。
 
@@ -76,16 +76,16 @@ PEP8 に従って Python インポートをソートおよびクリーンアッ�
 基本コマンド:
 
   # ファイルを整理する
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
   # 変更せずに確認してください
-  bach c_import_organizer script.py --dry-run
+  bach import_organizer script.py --dry-run
 
   # JSON 出力
-  bach c_import_organizer script.py --json
+  bach import_organizer script.py --json
 
   # 標準入力から読み取る
-  猫スクリプト.py | bach c_import_organizer --stdin
+  猫スクリプト.py | bach import_organizer --stdin
 
 オプション:
   --dry-run 表示のみ、変更しない
@@ -124,14 +124,14 @@ PEP8 に従って Python インポートをソートおよびクリーンアッ�
 1.デバッグ「インポートエラー」。
    プロジェクトを分析してクラッシュ ポイントを見つけます:
 
-   bach c_import_diagnose projekt/src/ --json
+   bach import_diagnose projekt/src/ --json
 
    その後は推奨事項に従ってください。
 
 2.循環インポートを探す
    モジュールが相互にインポートする場合:
 
-   bach c_import_diagnose projekt/src/
+   bach import_diagnose projekt/src/
 
    出力は次のようになります: A -> B -> A (コンパス!)
 
@@ -140,30 +140,30 @@ PEP8 に従って Python インポートをソートおよびクリーンアッ�
 3.コードレビューの前に
    コードをレビューする前にインポートをクリーンアップします:
 
-   bach c_import_organizer script.py
+   bach import_organizer script.py
 
    またはプロジェクト全体に対して:
-   *.py の f について; do bach c_import_organizer "$f";完了
+   *.py の f について; do bach import_organizer "$f";完了
 
 4。リファクタリング後
    主要な変換後、インポートを確認します:
 
    # まず診断してください
-   bach c_import_diagnose src/
+   bach import_diagnose src/
 
    #その後掃除する
-   src/*.py の f について; do bach c_import_organizer "$f";完了
+   src/*.py の f について; do bach import_organizer "$f";完了
 
 5。新しいプロジェクトをセットアップする
    __init__.py ファイルをチェックします:
 
-   bach c_import_diagnose mein_paket/
+   bach import_diagnose mein_paket/
 
    欠落している __init__.py ファイルを表示します。
 
 PEP8 インポート順序
 -----------------------
-c_import_organizer は PEP8 標準に従って並べ替えます:
+import_organizer は PEP8 標準に従って並べ替えます:
 
   1.標準ライブラリ（import os、import sys）
   2. サードパーティ (インポートリクエスト、インポート numpy)
@@ -175,9 +175,9 @@ CONTEXT INJECTOR
 ----------------
 ContextInjector はキーワードを認識し、次のツールを推奨します。
 
-  「インポートの並べ替え」 -> bach c_import_organizer <ファイル>
-  「インポートの問題」 -> bach c_import_diagnose <プロジェクト>
-  「インポートが見つかりません」 -> bach c_import_diagnose <プロジェクト>
+  「インポートの並べ替え」 -> bach import_organizer <ファイル>
+  「インポートの問題」 -> bach import_diagnose <プロジェクト>
+  「インポートが見つかりません」 -> bach import_diagnose <プロジェクト>
 
 他のツールとの統合
 -----------------------------
@@ -187,7 +187,7 @@ ContextInjector はキーワードを認識し、次のツールを推奨しま�
   bach python_cli_editor script.py --imports
 
   # 次に整理します
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
 関連項目
 ----------

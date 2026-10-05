@@ -114,7 +114,6 @@ Python CLI の標準ポリシー:
 ---------------------------
 ツール ファイルの計画された命名規則:
 
-  c_ -> AI 用に最適化された CLI (c_encoding_fixer.py)
   b_ -> BACH コア (b_backup.py)
   a_ -> エージェント ランナー (a_developer.py)
   t_ -> テストツール (t_runner.py)
@@ -145,7 +144,7 @@ Python CLI の標準ポリシー:
    -> Windows との互換性のための emoji_safe
 
 4.既存のコードを標準化する
-   -> c_standard_fixer は内部的にポリシーを使用します
+   -> standard_fixer は内部的にポリシーを使用します
 
 関連項目
 ----------

@@ -1,0 +1,37 @@
+BACH Tool: standard_fixer
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/standard_fixer.py
+
+BESCHREIBUNG
+----------------------------------------
+standard_fixer.py - Toolchain für haeufige Code-Probleme
+
+Führt mehrere Fixer nacheinander aus:
+  1. BOM-Fix (entfernt/korrigiert Byte Order Mark)
+  2. Encoding-Fix (utf-8 sicherstellen)
+  3. Umlaut-Fix (kaputte deutsche Umlaute reparieren)
+  4. Indent-Check (Einrückungsprobleme erkennen)
+
+Usage:
+    python standard_fixer.py <datei.py>
+    python standard_fixer.py <datei.py> --dry-run
+    python standard_fixer.py <ordner> --recursive
+    python standard_fixer.py <datei.py> --only bom,umlaut
+    python standard_fixer.py --list-tools
+
+Konfiguration:
+    Die aktiven Tools können in STANDARD_FIXER_CONFIG angepasst werden.
+
+Autor: Claude
+Version: 1.0
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run standard_fixer [args]
+oder direkt: python tools/standard_fixer.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show standard_fixer

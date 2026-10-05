@@ -48,8 +48,8 @@ EBENEN DER PLANUNG (Phase 3)
   Workflow   WANN/WIE koordinieren?       skills/workflows/*.md
   Agent      WER führt aus?              agents/*.txt
   Experte    WER hat Fachwissen?          agents/_experts/*/
-  Skill      WAS wird getan?              skills/_services/*.md
-  Service    WIE technisch?               skills/_services/*/
+  Skill      WAS wird getan?              hub/_services/*.md
+  Service    WIE technisch?               hub/_services/*/
   Tool       WOMIT wird gearbeitet?       tools/*.py
 
 CHECKLISTE NEUER SERVICE (Phase 6)

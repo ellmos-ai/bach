@@ -123,7 +123,7 @@ EJEMPLO: FLUJO DE TRABAJO DE AUTOEXTENSIÓN COMPLETA
   Coloque el script Python de herramientas en herramientas/tools/<nombre>.py
   Agentes Carpeta del agente con SKILL.md agentes/<nombre>/
   Expertos Carpeta de expertos con SKILL.md agentes/_experts/<nombre>/
-  Servicios Crear carpeta de servicios skills/_services/<nombre>/
+  Servicios Crear carpeta de servicios hub/_services/<nombre>/
   Flujos de trabajo Crear archivo Markdown skills/workflows/<nombre>.md
   Registrar Hooks Listener core/hooks.py: hooks.on()
   Migración del esquema de base de datos en db/crear db/migrations/

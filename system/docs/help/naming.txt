@@ -32,8 +32,8 @@ Praefixe kennzeichnen den Typ und Einsatzzweck eines Tools.
 
   PRAEFIX   BEDEUTUNG                BEISPIELE
   -------   ----------------------   ---------------------------
-  c_        CLI-optimiert für AI    c_encoding_fixer.py
-            (Claude/recludOS)        c_json_repair.py
+  (ohne)       CLI-optimiert für AI    encoding_fixer.py
+            (Claude/recludOS)        json_repair.py
             - Klare, parsbare Outputs
             - Encoding-sicher (UTF-8)
 
@@ -63,7 +63,7 @@ Tools die nur für einen Skill relevant sind:
     task_scanner.py         # ATI-Agent spezifisch (in agents/ati/scanner/)
 
   Speicherort:
-    - Allgemein:  tools/c_ocr_engine.py
+    - Allgemein:  tools/ocr/engine.py
     - Spezifisch: agents/_experts/steuer/steuer_scanner.py
     - Agent-Tool: agents/ati/scanner/task_scanner.py
 

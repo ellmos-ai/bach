@@ -34,7 +34,7 @@ Resumen rápido python_cli_editor:
 
 Para más detalles: bach --help tools/python_cli_editor
 
-PYCUTTER: c_pycutter
+PYCUTTER: pycutter
 --------------------
 Divide archivos grandes de Python en archivos de texto separados por clase.
 
@@ -47,13 +47,13 @@ CASOS DE APLICACIÓN:
 COMANDOS BÁSICOS:
 
   # Dividir archivo (crea subcarpetas)
-  bach c_pycutter main.py
+  bach pycutter main.py
 
   # Salida a una carpeta específica
-  bach c_pycutter main.py --output-dir ./extracted
+  bach pycutter main.py --output-dir ./extracted
 
   # Salida JSON (para procesamiento posterior)
-  bach c_pycutter main.py --json
+  bach pycutter main.py --json
 
 OPCIONES:
   --output-dir DIR Directorio de salida
@@ -68,7 +68,7 @@ ESTRUCTURA DE SALIDA:
 
 FLUJO DE TRABAJO DE EJEMPLO:
   # 1. Dividir archivos grandes
-  bach c_pycutter riesige_app.py --output-dir ./review
+  bach pycutter riesige_app.py --output-dir ./review
 
   #2. Editar clase individual
   # (en un editor independiente o con python_cli_editor)
@@ -76,7 +76,7 @@ FLUJO DE TRABAJO DE EJEMPLO:
   # 3. Aplicar cambios nuevamente
   # (manualmente o con herramienta de diferenciación)
 
-ANALIZADOR DE MÉTODOS: c_method_analyzer
+ANALIZADOR DE MÉTODOS: method_analyzer
 ----------------------------------
 Análisis en profundidad del código Python para problemas y estructura.
 
@@ -91,16 +91,16 @@ FUNCIONES:
 COMANDOS BÁSICOS:
 
   # Analizar archivo
-  bach c_method_analyzer script.py
+  bach method_analyzer script.py
 
   # Salida JSON
-  bach c_method_analyzer script.py --json
+  bach method_analyzer script.py --json
 
   # Solo resumen
-  bach c_method_analyzer script.py --summary
+  bach method_analyzer script.py --summary
 
   # Analizar clase específica
-  bach c_method_analyzer script.py --class MyClass
+  bach method_analyzer script.py --class MyClass
 
 OPCIONES:
   --json Salida JSON (legible por máquina)
@@ -139,12 +139,12 @@ FLUJOS DE TRABAJO TÍPICOS
    bach python_cli_editor grosse_datei.py --show-all
 
    # O dividir para revisión
-   bach c_pycutter grosse_datei.py
+   bach pycutter grosse_datei.py
 
 2. ENCUENTRE PROBLEMAS ANTES DE COMPROMETERSE
    Analizar código:
 
-   bach c_method_analyzer script.py
+   bach method_analyzer script.py
 
    Muestra: errores tipográficos, métodos no utilizados, referencias faltantes
 
@@ -152,10 +152,10 @@ FLUJOS DE TRABAJO TÍPICOS
    Comprender las dependencias:
 
    # ¿Quién llama a quién?
-   bach c_method_analyzer script.py --verbose
+   bach method_analyzer script.py --verbose
 
    # Mira la clase de forma aislada
-   bach c_pycutter script.py
+   bach pycutter script.py
 
 4. GUARDAR TOKENS (contexto de IA)
    En lugar de leer el archivo completo:
@@ -173,10 +173,10 @@ FLUJOS DE TRABAJO TÍPICOS
 |--------------------------------|---------------------|
 | Mostrar estructura | python_cli_editor |
 | Cambiar código específicamente | python_cli_editor |
-| Dividir el archivo en partes | c_pycutter |
-| Buscar problemas/errores | c_method_analyzer |
-| Consultar importaciones | c_method_analyzer |
-| Buscar errores tipográficos | c_method_analyzer
+| Dividir el archivo en partes | pycutter |
+| Buscar problemas/errores | method_analyzer |
+| Consultar importaciones | method_analyzer |
+| Buscar errores tipográficos | method_analyzer
 
 |CONTEXT INYECTOR
 ----------------
@@ -186,8 +186,8 @@ El ContextInjector reconoce palabras clave y recomienda estas herramientas:
   "editar clase" -> bach python_cli_editor <archivo> --mostrar todo
   "método de edición" -> bach python_cli_editor <archivo> --show-all
   "estructura del código" -> bach python_cli_editor <archivo> --show-all
-  "archivo dividido" -> bach c_pycutter <archivo>
-  "demasiado grande" -> bach c_pycutter <archivo>
+  "archivo dividido" -> bach pycutter <archivo>
+  "demasiado grande" -> bach pycutter <archivo>
 
 VER TAMBIÉN
 ----------

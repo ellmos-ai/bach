@@ -2,6 +2,7 @@
 <html lang="de">
 
 <head>
+    <script src="/static/js/device-auth.js"></script>
     <meta charset="UTF-8">
     <title>BACH - Tasks Board</title>
     <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
@@ -143,6 +144,21 @@
             font-size: 0.65rem;
         }
 
+        /* Fackel-Modus-Badge (#1601): sichtbar, wenn Bridge nicht erreichbar (lokaler Modus) */
+        .badge-fackel {
+            background: rgba(245, 197, 66, 0.12);
+            color: var(--warning);
+            border: 1px solid rgba(245, 197, 66, 0.4);
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-right: 0.75rem;
+            white-space: nowrap;
+        }
+
         .filter-bar {
             display: flex;
             gap: 1rem;
@@ -235,6 +251,50 @@
             padding-top: 1rem;
             border-top: 1px solid var(--border);
             justify-content: flex-end;
+        }
+
+        /* Fackel-Dialog (#1601) */
+        .fackel-trigger {
+            background: transparent;
+            border: 1px solid rgba(245, 197, 66, 0.4);
+            color: var(--warning);
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-right: 0.75rem;
+            white-space: nowrap;
+        }
+        .fackel-trigger:hover {
+            background: rgba(245, 197, 66, 0.12);
+        }
+        .fackel-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .fackel-row input {
+            flex: 1;
+        }
+        .fackel-result {
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            background: var(--bg-card);
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            margin-top: 0.5rem;
+        }
+        .fackel-result.ok {
+            color: var(--success);
+        }
+        .fackel-result.err {
+            color: var(--error);
         }
     </style>
 </head>
@@ -355,7 +415,35 @@
         </div>
     </div>
 
+    <!-- Fackel-Verwaltung (#1601): Status, Übernahme/Freigabe, Handover an anderes System -->
+    <div class="modal-overlay" id="fackel-modal" onclick="closeFackelDialog()">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h2>Fackel-Verwaltung</h2>
+            <div id="fackel-status" style="font-size:0.9rem;line-height:1.6;">…</div>
+            <div class="form-actions">
+                <span id="fackel-info" style="font-size:0.8rem;color:var(--text-muted);margin-right:auto;"></span>
+                <button type="button" class="btn btn-secondary" id="fackel-btn-request" onclick="fackelRequest()">Fackel übernehmen</button>
+                <button type="button" class="btn btn-secondary" id="fackel-btn-release" onclick="fackelRelease()">Freigeben</button>
+            </div>
+            <div class="form-group">
+                <label>Handover an anderes System</label>
+                <div class="fackel-row">
+                    <input id="fackel-target-id" placeholder="Ziel system_id">
+                    <input id="fackel-target-pc" placeholder="Ziel PC-Name">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary" onclick="fackelHandover()">Handover anfordern</button>
+                <button type="button" class="btn btn-secondary" onclick="closeFackelDialog()">Schließen</button>
+            </div>
+            <div id="fackel-result" class="fackel-result" style="display:none;"></div>
+        </div>
+    </div>
+    <button id="fackel-trigger" class="fackel-trigger" onclick="openFackelDialog()" style="display:none;"
+        title="Fackel verwalten / Handover">Fackel</button>
+
     <script src="/static/js/api.js"></script>
+    <script src="/static/js/device-auth.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         let tasksData = [];
@@ -671,10 +759,148 @@
             return div.innerHTML;
         }
 
+        // Fackel-Modus-Badge (#1601): 'lokal' anzeigen, wenn Bridge nicht erreichbar.
+        // fetch laeuft ueber device-auth.js (Bearer-Token wird automatisch angehaengt).
+        // nav.js registriert seinen DOMContentLoaded-Handler vor diesem Script,
+        // der Header mit .header-status existiert also bereits.
+        function checkFackelStatus() {
+            fetch('/api/fackel/status')
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (!d || d.bridge_reachable !== false) return;
+                    if (document.querySelector('.badge-fackel')) return;
+                    var b = document.createElement('span');
+                    b.className = 'badge-fackel';
+                    b.textContent = 'lokal';
+                    b.title = 'Bridge nicht erreichbar — lokaler Modus';
+                    var s = document.querySelector('.header-status');
+                    if (s && s.parentNode) s.parentNode.insertBefore(b, s);
+                    var fb = document.getElementById('fackel-trigger');
+                    if (fb && s && s.parentNode) {
+                        if (fb.parentNode !== s.parentNode) s.parentNode.insertBefore(fb, s);
+                        fb.style.display = 'inline-block';
+                    }
+                })
+                .catch(function () { /* Status nicht abrufbar — kein Badge */ });
+        }
+
+        // Fackel-Dialog (#1601): Status anzeigen, Übernahme/Freigabe, Handover anfordern.
+        function openFackelDialog() {
+            document.getElementById('fackel-modal').classList.add('active');
+            var r = document.getElementById('fackel-result');
+            r.style.display = 'none';
+            r.textContent = '';
+            fackelRefresh();
+        }
+
+        function closeFackelDialog() {
+            document.getElementById('fackel-modal').classList.remove('active');
+        }
+
+        function fackelRefresh() {
+            fetch('/api/fackel/status')
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (!d) {
+                        fackelShowResult(false, 'Status nicht abrufbar.');
+                        return;
+                    }
+                    fackelRenderStatus(d);
+                })
+                .catch(function () { fackelShowResult(false, 'Status nicht abrufbar.'); });
+        }
+
+        function fackelRenderStatus(d) {
+            var box = document.getElementById('fackel-status');
+            var lines = [];
+            lines.push('Bridge: ' + (d.bridge_reachable ? 'erreichbar' : 'nicht erreichbar'));
+            if (d.holder) {
+                lines.push('Fackel: ' + d.holder[1] + ' (' + d.holder[0] + ')');
+            } else {
+                lines.push('Fackel: frei');
+            }
+            var h = d.handover || {};
+            if (h.handover_state && h.handover_state !== 'idle') {
+                lines.push('Handover: ' + h.handover_state + (h.target_pc_name ? ' → ' + h.target_pc_name : ''));
+            }
+            box.textContent = lines.join('\n');
+            box.style.whiteSpace = 'pre-line';
+
+            var info = document.getElementById('fackel-info');
+            if (d.mine) {
+                info.textContent = 'Ich halte die Fackel.';
+            } else if (d.holder) {
+                info.textContent = 'Fremdhalter: ' + d.holder[1];
+            } else {
+                info.textContent = 'Fackel frei.';
+            }
+            document.getElementById('fackel-btn-request').style.display = d.mine ? 'none' : 'inline-block';
+            document.getElementById('fackel-btn-release').style.display = d.mine ? 'inline-block' : 'none';
+        }
+
+        function fackelShowResult(ok, text) {
+            var r = document.getElementById('fackel-result');
+            r.className = 'fackel-result ' + (ok ? 'ok' : 'err');
+            r.textContent = text;
+            r.style.display = 'block';
+        }
+
+        function fackelAction(url, opts) {
+            fetch(url, opts)
+                .then(function (r) {
+                    return r.json().then(function (j) {
+                        return { ok: r.ok, status: r.status, body: j };
+                    }).catch(function () {
+                        return { ok: r.ok, status: r.status, body: {} };
+                    });
+                })
+                .then(function (res) {
+                    if (res.ok && res.body.ok !== false) {
+                        fackelShowResult(true, 'OK' + (res.body.message ? ': ' + res.body.message : ''));
+                        fackelRefresh();
+                    } else {
+                        fackelShowResult(false, 'HTTP ' + res.status + ' — ' + (res.body.detail || res.body.message || 'Fehler'));
+                    }
+                })
+                .catch(function (e) {
+                    fackelShowResult(false, 'Fehler: ' + e);
+                });
+        }
+
+        function fackelRequest() {
+            fackelAction('/api/fackel/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_type: 'bridge' })
+            });
+        }
+
+        function fackelRelease() {
+            fackelAction('/api/fackel/release?session_type=bridge', { method: 'POST' });
+            var b = document.querySelector('.badge-fackel');
+            if (b) b.remove();
+            checkFackelStatus();
+        }
+
+        function fackelHandover() {
+            var tid = document.getElementById('fackel-target-id').value.trim();
+            var tpc = document.getElementById('fackel-target-pc').value.trim();
+            if (!tid || !tpc) {
+                fackelShowResult(false, 'Bitte Ziel system_id und PC-Name angeben.');
+                return;
+            }
+            fackelAction('/api/fackel/handover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_system_id: tid, target_pc_name: tpc })
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadAssignees();
             loadFilterOptions();
             loadTasks();
+            checkFackelStatus();
         });
     </script>
 </body>

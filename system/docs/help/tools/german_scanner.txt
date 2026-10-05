@@ -1,0 +1,38 @@
+BACH Tool: german_scanner
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/german_scanner.py
+
+BESCHREIBUNG
+----------------------------------------
+german_scanner.py - Findet deutsche Strings in Python-Projekten
+
+Scannt Python-Dateien nach:
+  - Strings mit Umlauten (ae, oe, ue, ss)
+  - GUI-Texten (setText, setWindowTitle, QLabel, etc.)
+  - Deutschen Keywords (Datei, Bearbeiten, Speichern, etc.)
+
+Nützlich für:
+  - Internationalisierung (i18n) vorbereiten
+  - Hardcoded Strings finden
+  - Übersetzungs-Listen erstellen
+
+Extrahiert aus: A3 Entwicklungsschleife Advanced/TranslationSystem.py
+
+Usage:
+    python german_scanner.py <ordner>
+    python german_scanner.py <ordner> --json
+    python german_scanner.py <ordner> --export translations.json
+
+Autor: Claude (adaptiert)
+Abhängigkeiten: keine (nur stdlib)
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run german_scanner [args]
+oder direkt: python tools/german_scanner.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show german_scanner

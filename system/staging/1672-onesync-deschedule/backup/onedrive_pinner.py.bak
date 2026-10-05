@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""OneDrive Pinner v2 — Pinnt OneDrive-Ordner auf macOS via offizielle CLI.
+
+Nutzt /Applications/OneDrive.app/Contents/MacOS/OneDrive /pin um Dateien
+als "Always Keep on this Device" zu markieren. OneDrive lädt sie dann
+automatisch herunter.
+
+Tier-System:
+  CORE   — BACH System + .SYNC (sofort, alle 5 Min re-check)
+  NORMAL — Weitere wichtige Ordner (alle 30 Min)
+  LOW    — Alles andere (alle 2 Stunden)
+"""
+import subprocess
+import time
+import os
+import sys
+import signal
+import logging
+import json
+from pathlib import Path
+from datetime import datetime
+
+ONEDRIVE_CLI = "/Applications/OneDrive.app/Contents/MacOS/OneDrive"
+ONEDRIVE_BASE = os.path.expanduser("~/Library/CloudStorage")
+STATE_FILE = os.path.expanduser("~/services/onedrive-pinner/state.json")
+LOG_FILE = os.path.expanduser("~/services/onedrive-pinner/pinner.log")
+
+TIERS = {
+    "CORE": {
+        "interval": 300,   # 5 min
+        "paths": [
+            ".TOPICS/.AI/.OS/BACH/system",
+            ".SYNC",
+            ".SYNC/scripts",
+        ]
+    },
+    "NORMAL": {
+        "interval": 1800,  # 30 min
+        "paths": [
+            ".TOPICS/.AI/.OS/BACH",
+            ".TOPICS/.AI/.MCP",
+            ".TOPICS/.AI/.SKILLS",
+            ".TOPICS/.AI/.MODULES",
+            ".GITHUBBOT",
+        ]
+    },
+    "LOW": {
+        "interval": 7200,  # 2h
+        "paths": [
+            ".TOPICS/.AI",
+            ".TOPICS/.RESEARCH",
+            ".TOPICS/.SOFTWARE",
+            ".TOPICS/.UMBRUCH",
+            ".OFFICE",
+        ]
+    }
+}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ]
+)
+log = logging.getLogger("onedrive-pinner")
+
+running = True
+
+def signal_handler(sig, frame):
+    global running
+    log.info("Signal %s empfangen, beende...", sig)
+    running = False
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+
+def find_onedrive():
+    """Findet den OneDrive-Ordner."""
+    if not os.path.isdir(ONEDRIVE_BASE):
+        return None
+    for d in os.listdir(ONEDRIVE_BASE):
+        full = os.path.join(ONEDRIVE_BASE, d)
+        if os.path.isdir(full) and "OneDrive" in d:
+            return full
+    return None
+
+
+def pin_path(full_path, recursive=True):
+    """Pinnt einen Pfad via OneDrive CLI. Gibt (success, message) zurück."""
+    if not os.path.exists(ONEDRIVE_CLI):
+        return False, "OneDrive CLI nicht gefunden"
+
+    args = [ONEDRIVE_CLI, "/pin"]
+    if recursive:
+        args.append("/r")
+    args.append(full_path)
+
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = (proc.stdout + proc.stderr).strip()
+        if "Another instance" in output:
+            return False, "OneDrive-Instanz blockiert"
+        return True, output or "OK"
+    except subprocess.TimeoutExpired:
+        return False, "Timeout"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_pin_state(full_path):
+    """Prüft den Pin-Status einer Datei."""
+    try:
+        proc = subprocess.run(
+            [ONEDRIVE_CLI, "/getpin", full_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = (proc.stdout + proc.stderr).strip()
+        if "Pinned" in output:
+            return "Pinned"
+        elif "Excluded" in output:
+            return "Excluded"
+        elif "None" in output:
+            return "None"
+        return output
+    except Exception:
+        return "Unknown"
+
+
+def load_state():
+    """Lädt den persistierten State."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"last_pin": {}, "stats": {"total_pins": 0, "errors": 0}}
+
+
+def save_state(state):
+    """Speichert den State."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def pin_tier(tier_name, tier_config, onedrive_root, state):
+    """Pinnt alle Pfade eines Tiers."""
+    interval = tier_config["interval"]
+    now = time.time()
+
+    for rel_path in tier_config["paths"]:
+        state_key = f"{tier_name}:{rel_path}"
+        last = state["last_pin"].get(state_key, 0)
+
+        if now - last < interval:
+            continue
+
+        full_path = os.path.join(onedrive_root, rel_path)
+        log.info("[%s] Pinne: %s", tier_name, rel_path)
+
+        success, msg = pin_path(full_path, recursive=True)
+        if success:
+            log.info("[%s] OK: %s — %s", tier_name, rel_path, msg)
+            state["stats"]["total_pins"] += 1
+        else:
+            log.warning("[%s] FEHLER: %s — %s", tier_name, rel_path, msg)
+            state["stats"]["errors"] += 1
+
+        state["last_pin"][state_key] = now
+        save_state(state)
+
+        if not running:
+            return
+
+
+def status_report(state, onedrive_root):
+    """Gibt einen kurzen Statusbericht aus."""
+    log.info("=== Status Report ===")
+    log.info("Total Pins: %d | Errors: %d", state["stats"]["total_pins"], state["stats"]["errors"])
+
+    for tier_name in ["CORE", "NORMAL", "LOW"]:
+        sample_path = TIERS[tier_name]["paths"][0]
+        full = os.path.join(onedrive_root, sample_path)
+        pin_state = get_pin_state(full)
+        log.info("[%s] %s → %s", tier_name, sample_path, pin_state)
+
+    log.info("====================")
+
+
+def main():
+    log.info("OneDrive Pinner v2 gestartet")
+
+    onedrive_root = find_onedrive()
+    if not onedrive_root:
+        log.error("OneDrive-Ordner nicht gefunden!")
+        sys.exit(1)
+    log.info("OneDrive: %s", onedrive_root)
+
+    if not os.path.exists(ONEDRIVE_CLI):
+        log.error("OneDrive CLI nicht gefunden: %s", ONEDRIVE_CLI)
+        sys.exit(1)
+
+    state = load_state()
+    cycle = 0
+
+    while running:
+        cycle += 1
+        log.info("--- Zyklus %d ---", cycle)
+
+        for tier_name in ["CORE", "NORMAL", "LOW"]:
+            if not running:
+                break
+            pin_tier(tier_name, TIERS[tier_name], onedrive_root, state)
+
+        if cycle % 12 == 1:
+            status_report(state, onedrive_root)
+
+        if running:
+            log.info("Nächster Check in 60s...")
+            for _ in range(60):
+                if not running:
+                    break
+                time.sleep(1)
+
+    log.info("OneDrive Pinner beendet")
+    save_state(state)
+
+
+if __name__ == "__main__":
+    main()

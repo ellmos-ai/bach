@@ -69,9 +69,9 @@ VENDOR CONVENTIONS
 RELATED TOOLS
 ---------------
 
-  tools/c_skill_init.py Create new skill (Anthropic standard)
-  tools/c_skill_validate.py Validate SKILL.md
-  tools/c_skill_package.py Package Skill
+  tools/skill_init.py Create new skill (Anthropic standard)
+  tools/skill_validate.py Validate SKILL.md
+  tools/skill_package.py Package Skill
 
 SEE ALSO
 ----------

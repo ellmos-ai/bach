@@ -1,0 +1,33 @@
+BACH Tool: umlaut_fixer
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/umlaut_fixer.py
+
+BESCHREIBUNG
+----------------------------------------
+umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Python-Dateien
+
+Behebt typische Encoding-Probleme wie:
+  - Lschen -> Löschen
+  - ffnen -> öffnen
+  - ber -> über
+  
+Extrahiert aus: A1 ProFiler/_Wartung/fix_profiler_complete.py
+
+Usage:
+    python umlaut_fixer.py <datei.py>
+    python umlaut_fixer.py <datei.py> --dry-run
+    python umlaut_fixer.py <datei.py> --json
+
+Autor: Claude (adaptiert)
+Abhängigkeiten: keine (nur stdlib)
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run umlaut_fixer [args]
+oder direkt: python tools/umlaut_fixer.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show umlaut_fixer

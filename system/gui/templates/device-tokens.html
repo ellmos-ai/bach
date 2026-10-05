@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerätetokens — BACH</title>
+    <!-- WICHTIG: device-auth.js hier NICHT einbinden — sonst Redirect-Loop bei 401.
+         Das Inline-JS unten haengt den Geraetetoken selbst an /api/devices*-Requests
+         und zeigt bei 401 einen Hinweistext statt einen Redirect. -->
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: #f4f5f7;
+            color: #1f2430;
+            margin: 0;
+        }
+        .page { max-width: 720px; margin: 0 auto; padding: 16px; }
+        header h1 { font-size: 1.5rem; margin-bottom: 4px; }
+        .subtitle, .hint { color: #5a6472; font-size: 0.9rem; }
+        section {
+            background: #ffffff;
+            border: 1px solid #e3e6ea;
+            border-radius: 10px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        section h2 { font-size: 1.05rem; margin-top: 0; }
+        .status-ok { color: #14601f; }
+        .status-warn { color: #8a4b00; }
+        .device-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 0;
+            border-bottom: 1px solid #eef0f2;
+        }
+        .device-row:last-child { border-bottom: none; }
+        .badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            vertical-align: middle;
+        }
+        .badge-active { background: #ddf3e0; color: #14601f; }
+        .badge-revoked { background: #f9e2e4; color: #8f1d24; }
+        .meta { color: #5a6472; font-size: 0.8rem; margin-top: 2px; }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #c9ced6;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            margin: 6px 0;
+        }
+        button {
+            padding: 9px 14px;
+            border: none;
+            border-radius: 8px;
+            background: #2f6fed;
+            color: #ffffff;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin: 6px 6px 0 0;
+        }
+        button:hover { background: #1f5cd6; }
+        button:disabled { background: #aab3bf; cursor: default; }
+        button.danger { background: #b23a3a; }
+        button.danger:hover { background: #972c2c; }
+        button.secondary { background: #e7eaee; color: #1f2430; }
+        button.secondary:hover { background: #d8dde3; }
+        .token-display {
+            display: block;
+            word-break: break-all;
+            background: #eef1f5;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.85rem;
+            margin: 8px 0;
+        }
+        .message { margin-top: 8px; font-size: 0.9rem; }
+        .message.ok { color: #14601f; }
+        .message.warn { color: #8a4b00; }
+        @media (max-width: 480px) {
+            .page { padding: 10px; }
+            section { padding: 12px; }
+            .device-row { flex-direction: column; align-items: flex-start; }
+            button { width: 100%; margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header>
+            <h1>Gerätetokens</h1>
+            <p class="subtitle">Nicht verfallender Token pro Gerät — jedes Gerät ist einzeln sperrbar. Der Klartext-Token liegt im OS-Keyring des jeweiligen Geräts und wird hier nur einmalig angezeigt.</p>
+            <p id="connection-status" class="hint"></p>
+        </header>
+
+        <section>
+            <h2>Verwaltete Geräte</h2>
+            <p id="list-hint" class="hint"></p>
+            <div id="device-list"><p class="hint">Lade…</p></div>
+        </section>
+
+        <section>
+            <h2>Neues Gerät registrieren</h2>
+            <p class="hint">Legt einen Geräteeintrag an und zeigt den zugehörigen Token genau einmal. Speichere ihn sicher und trage ihn auf dem neuen Gerät unten unter „Dieses Gerät verbinden“ ein.</p>
+            <form id="create-form">
+                <input id="create-name" placeholder="Gerätename (z. B. MacBook, iPad, Tray)" autocomplete="off">
+                <button type="submit">Gerät anlegen</button>
+            </form>
+            <div id="create-result"></div>
+        </section>
+
+        <section>
+            <h2>Dieses Gerät verbinden</h2>
+            <p class="hint">Den Gerätetoken einmalig eintragen — er wird im lokalen Browser-Speicher hinterlegt. „Gerät abmelden“ entfernt ihn wieder.</p>
+            <form id="connect-form">
+                <input id="connect-token" placeholder="Gerätetoken (vom Mac-Terminal: create … --store)" autocomplete="off">
+                <button type="submit">Verbinden</button>
+                <button type="button" id="disconnect-btn" class="secondary">Gerät abmelden</button>
+            </form>
+            <p id="connect-message" class="message"></p>
+        </section>
+    </div>
+
+    <script>
+    (function () {
+        "use strict";
+
+        var STORAGE_KEY = "bach_device_token";
+
+        function getStoredToken() {
+            try {
+                return window.localStorage.getItem(STORAGE_KEY) || "";
+            } catch (e) {
+                return "";
+            }
+        }
+
+        function el(id) {
+            return document.getElementById(id);
+        }
+
+        // Eigenes API-Wrapper: haengt selbst "Authorization: Bearer <localStorage>"
+        // an alle /api/devices*-Requests (device-auth.js ist hier nicht eingebunden).
+        function api(path, options) {
+            options = options || {};
+            var headers = {};
+            if (options.headers) {
+                for (var key in options.headers) {
+                    if (Object.prototype.hasOwnProperty.call(options.headers, key)) {
+                        headers[key] = options.headers[key];
+                    }
+                }
+            }
+            var token = getStoredToken();
+            if (token) {
+                headers["Authorization"] = "Bearer " + token;
+            }
+            options.headers = headers;
+            return fetch(path, options);
+        }
+
+        function formatTime(iso) {
+            if (!iso) {
+                return "—";
+            }
+            try {
+                return new Date(iso).toLocaleString("de-DE");
+            } catch (e) {
+                return iso;
+            }
+        }
+
+        function updateConnectionStatus() {
+            var status = el("connection-status");
+            var disconnect = el("disconnect-btn");
+            if (getStoredToken()) {
+                status.textContent = "Dieses Gerät ist verbunden (Token im lokalen Browser-Speicher hinterlegt).";
+                status.className = "hint status-ok";
+                disconnect.disabled = false;
+            } else {
+                status.textContent = "Dieses Gerät hat noch keinen Token hinterlegt.";
+                status.className = "hint status-warn";
+                disconnect.disabled = true;
+            }
+        }
+
+        function authProblem() {
+            // 401: Hinweistext statt Redirect (Loop-Schutz ist hier irrelevant,
+            // weil diese Seite device-auth.js nicht einbindet).
+            var hint = el("list-hint");
+            hint.textContent = "Token fehlt, ist ungültig oder gesperrt. Bitte unten mit gültigem Token verbinden.";
+            hint.className = "hint status-warn";
+            el("device-list").textContent = "";
+            try {
+                window.localStorage.removeItem(STORAGE_KEY);
+            } catch (e) { /* localStorage blockiert */ }
+            updateConnectionStatus();
+        }
+
+        function loadDevices() {
+            var hint = el("list-hint");
+            var list = el("device-list");
+            if (!getStoredToken()) {
+                hint.textContent = "Mit Token unten anmelden, um die Geräteliste zu sehen.";
+                hint.className = "hint";
+                list.textContent = "";
+                return;
+            }
+            hint.textContent = "";
+            api("/api/devices", { method: "GET" }).then(function (response) {
+                if (response.status === 401) {
+                    authProblem();
+                    return null;
+                }
+                if (!response.ok) {
+                    hint.textContent = "Geräteliste konnte nicht geladen werden (HTTP " + response.status + ").";
+                    hint.className = "hint status-warn";
+                    return null;
+                }
+                return response.json();
+            }).then(function (data) {
+                if (!data) {
+                    return;
+                }
+                renderDevices(data.devices || []);
+            }).catch(function () {
+                hint.textContent = "Geräteliste konnte nicht geladen werden (Netzwerkfehler).";
+                hint.className = "hint status-warn";
+            });
+        }
+
+        function renderDevices(devices) {
+            var list = el("device-list");
+            list.textContent = "";
+            if (!devices.length) {
+                var empty = document.createElement("p");
+                empty.className = "hint";
+                empty.textContent = "Noch keine Geräte registriert.";
+                list.appendChild(empty);
+                return;
+            }
+            devices.forEach(function (device) {
+                var row = document.createElement("div");
+                row.className = "device-row";
+
+                var info = document.createElement("div");
+                var name = document.createElement("strong");
+                name.textContent = device.name;
+                info.appendChild(name);
+
+                var badge = document.createElement("span");
+                var active = device.status === "active";
+                badge.className = "badge " + (active ? "badge-active" : "badge-revoked");
+                badge.textContent = active ? "aktiv" : "gesperrt";
+                info.appendChild(badge);
+
+                var meta = document.createElement("div");
+                meta.className = "meta";
+                meta.textContent = active
+                    ? ("Zuletzt gesehen: " + formatTime(device.last_seen_at))
+                    : ("Gesperrt am: " + formatTime(device.revoked_at));
+                info.appendChild(meta);
+
+                row.appendChild(info);
+
+                if (active) {
+                    var revokeBtn = document.createElement("button");
+                    revokeBtn.type = "button";
+                    revokeBtn.className = "danger";
+                    revokeBtn.textContent = "Sperren";
+                    revokeBtn.addEventListener("click", function () {
+                        revokeDevice(device.name, revokeBtn);
+                    });
+                    row.appendChild(revokeBtn);
+                }
+                list.appendChild(row);
+            });
+        }
+
+        function revokeDevice(name, button) {
+            button.disabled = true;
+            var hint = el("list-hint");
+            api("/api/devices/revoke", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: name })
+            }).then(function (response) {
+                if (response.status === 401) {
+                    authProblem();
+                    return;
+                }
+                if (response.status === 404) {
+                    hint.textContent = "Gerät „" + name + "“ wurde nicht gefunden.";
+                    hint.className = "hint status-warn";
+                    loadDevices();
+                    return;
+                }
+                if (!response.ok) {
+                    hint.textContent = "Sperren fehlgeschlagen (HTTP " + response.status + ").";
+                    hint.className = "hint status-warn";
+                    button.disabled = false;
+                    return;
+                }
+                loadDevices();
+            }).catch(function () {
+                hint.textContent = "Sperren fehlgeschlagen (Netzwerkfehler).";
+                hint.className = "hint status-warn";
+                button.disabled = false;
+            });
+        }
+
+        el("create-form").addEventListener("submit", function (event) {
+            event.preventDefault();
+            var nameInput = el("create-name");
+            var result = el("create-result");
+            var name = nameInput.value.trim();
+            result.textContent = "";
+            result.className = "message";
+
+            if (!name) {
+                result.textContent = "Bitte einen Gerätenamen angeben.";
+                result.className = "message warn";
+                return;
+            }
+            if (!getStoredToken()) {
+                result.textContent = "Mit Token unten anmelden, um Geräte anzulegen.";
+                result.className = "message warn";
+                return;
+            }
+
+            api("/api/devices/create", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: name })
+            }).then(function (response) {
+                if (response.status === 401) {
+                    result.textContent = "Token fehlt, ist ungültig oder gesperrt — bitte unten neu verbinden.";
+                    result.className = "message warn";
+                    return null;
+                }
+                if (response.status === 409) {
+                    result.textContent = "Ein Gerät mit diesem Namen existiert bereits.";
+                    result.className = "message warn";
+                    return null;
+                }
+                if (response.status === 400) {
+                    result.textContent = "Der Name darf nicht leer sein.";
+                    result.className = "message warn";
+                    return null;
+                }
+                if (!response.ok) {
+                    result.textContent = "Anlegen fehlgeschlagen (HTTP " + response.status + ").";
+                    result.className = "message warn";
+                    return null;
+                }
+                return response.json();
+            }).then(function (data) {
+                if (!data || !data.token) {
+                    return;
+                }
+                showTokenOnce(name, data);
+                nameInput.value = "";
+                loadDevices();
+            }).catch(function () {
+                result.textContent = "Anlegen fehlgeschlagen (Netzwerkfehler).";
+                result.className = "message warn";
+            });
+        });
+
+        function showTokenOnce(name, data) {
+            var result = el("create-result");
+            result.textContent = "";
+            result.className = "message";
+
+            var info = document.createElement("p");
+            info.textContent = "Gerät „" + name + "“ angelegt. Der Token wird nur diesmal angezeigt:";
+            result.appendChild(info);
+
+            var code = document.createElement("code");
+            code.className = "token-display";
+            code.textContent = data.token;
+            result.appendChild(code);
+
+            var copyBtn = document.createElement("button");
+            copyBtn.type = "button";
+            copyBtn.textContent = "Token kopieren";
+            copyBtn.addEventListener("click", function () {
+                copyToken(data.token, copyBtn);
+            });
+            result.appendChild(copyBtn);
+
+            if (data.hint) {
+                var hint = document.createElement("p");
+                hint.className = "hint";
+                hint.textContent = data.hint;
+                result.appendChild(hint);
+            }
+        }
+
+        function copyToken(text, button) {
+            function done() {
+                button.textContent = "Kopiert ✓";
+                window.setTimeout(function () {
+                    button.textContent = "Token kopieren";
+                }, 2000);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done, function () {
+                    fallbackCopy(text);
+                    done();
+                });
+            } else {
+                fallbackCopy(text);
+                done();
+            }
+        }
+
+        function fallbackCopy(text) {
+            var area = document.createElement("textarea");
+            area.value = text;
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            try {
+                document.execCommand("copy");
+            } catch (e) { /* ignoriert */ }
+            document.body.removeChild(area);
+        }
+
+        el("connect-form").addEventListener("submit", function (event) {
+            event.preventDefault();
+            var message = el("connect-message");
+            var token = el("connect-token").value.trim();
+            if (!token) {
+                message.textContent = "Bitte einen Token eingeben.";
+                message.className = "message warn";
+                return;
+            }
+            try {
+                window.localStorage.setItem(STORAGE_KEY, token);
+            } catch (e) {
+                message.textContent = "Lokaler Browser-Speicher ist nicht verfügbar.";
+                message.className = "message warn";
+                return;
+            }
+            el("connect-token").value = "";
+            message.textContent = "Token hinterlegt — prüfe die Geräteliste…";
+            message.className = "message ok";
+            updateConnectionStatus();
+            loadDevices();
+        });
+
+        el("disconnect-btn").addEventListener("click", function () {
+            try {
+                window.localStorage.removeItem(STORAGE_KEY);
+            } catch (e) { /* localStorage blockiert */ }
+            el("connect-message").textContent = "Gerät abgemeldet — Token aus dem Browser entfernt.";
+            el("connect-message").className = "message";
+            updateConnectionStatus();
+            loadDevices();
+        });
+
+        updateConnectionStatus();
+        loadDevices();
+    })();
+    </script>
+</body>
+</html>

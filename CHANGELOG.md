@@ -12,6 +12,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Fackelträger-Bridge bereinigt (Task #1583):** `bridge_tray.py` startet `bridge_daemon.py` nun direkt, der veraltete `fackel_wrapper`-Zwischenschritt wurde entfernt. `setup_wizard.py` erzeugt keine `use_fackel_wrapper`-Config mehr und `config.json` wurde bereinigt. Py-Compile- und JSON-Validierung erfolgreich.
+- **help/abo.txt: `import` + `schedule-import` dokumentiert (Forensik #1345):** Beide CLI-Befehle waren implementiert (`hub/abo.py`, `_import_abotracker` idempotent via Schema `abotracker-export-v1`; `schedule-import` über `_services/alltag_import.py`), durch Tests abgedeckt (`test_abo_handler.py`) und in `docs/README.md` erwähnt, fehlten aber in der Hilfedatei. Ergänzt inkl. Beispielen; Version 1.0.2, nächste Prüfung 2026-12-29.
 - **Task-Sicherheit bei Legacy-Abhängigkeiten und Rheingold-ID-Kollisionen (Task #1344):** Ein gemeinsamer Parser behandelt nichtnumerische oder fehlende `depends_on`-Ziele nun auf API-, CLI-, Session- und Chat-Runner-Pfaden fail-closed, statt Tasklisten abstürzen zu lassen oder Arbeit fälschlich freizugeben. Rheingold-Add, Draft-Promotion und Pull überschreiben bei kollidierenden positiven IDs keine lokalen Tasks mehr; sie brechen mit einem expliziten Kollisionsbefund ab und erhalten Draft-/Lokaldaten zur kontrollierten Reconciliation.
 - **Einheitliche FERTIG-Erkennung:** `ist_fertig()` in `chat_runtime` prüft Anfang und Ende der Antwort; der `/auto`-Loop (`_auto_next`) und der Idle-Worker nutzen dieselbe Regel. Vorher las `_auto_next` nur die ersten 200 Zeichen und schob nach einem Abschlussbericht mit FERTIG am Ende weiter an.
 

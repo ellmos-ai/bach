@@ -5,6 +5,14 @@ BACH Unified System Tray
 Cross-platform (macOS/Windows/Linux) System Tray für das BACH OS.
 Steuert: Chat-Backend, Services, Prompts (PromptBoard), Idle Worker.
 
+GUI-Zugangswege (Kette #1410 -> #1414 -> #1416):
+  - "GUI Dashboard" (_open_gui) öffnet nur die GUI-URL im Browser.
+  - "GUI Schale" (#1414, QUEUED 112086128) startet system/gui/shell.py
+    (#1410, QUEUED 652455601) als Subprozess mit JSON-stdout;
+    ok nur bei Status "completed" -> Notify, sonst Notify-Fehler.
+  - #1416 (QUEUED 387788448): composition.rules.json (Kompositionsregeln
+    der GUI-Schale).
+
 Voraussetzungen:
   pip install pystray Pillow
 
@@ -85,6 +93,11 @@ DEFAULT_PROMPTS = {
 PROMPTBOARD_LIBRARY_ENV = "BACH_PROMPTBOARD_LIBRARY"
 PROMPTBOARD_APP_ENV = "BACH_PROMPTBOARD_APP"
 TRAY_LOCK_FILE = Path.home() / ".bach" / "chat_tray.lock"
+
+# GUI-Schale (#1414, QUEUED 112086128; externes Ticket, Body lokal nicht
+# verfuegbar, minimale Umsetzung aus Tasktitel): Pfad zu system/gui/shell.py
+# (QUEUED 652455601). _system_dir ist ein str, daher _here.parents[3].
+GUI_SHELL_PATH = _here.parents[3] / "gui" / "shell.py"
 
 
 def _is_terminal_parked(task) -> bool:
@@ -212,6 +225,9 @@ class BACHTray:
             or os.environ.get("BACH_GUI_URL")
             or f"http://{host}:{gui_port}"
         )
+        # Geraetetoken fuer GUI-Zugriffe (Task #1456): Klartext im OS-Keyring;
+        # fehlt er, bleiben GUI-Calls ohne Header (UEBERGANGS-Exempt #1499).
+        self.gui_auth_header = self._read_gui_auth_header()
         self.activity_url = (
             activity_url
             or os.environ.get("BACH_ACTIVITY_URL")
@@ -255,6 +271,15 @@ class BACHTray:
         self.prompt_source = "defaults"
         self.prompts = self._load_prompts()
 
+    def _read_gui_auth_header(self):
+        """GUI-Geraetetoken aus dem OS-Keyring ('tray'); '' bei jedem Fehler."""
+        try:
+            from gui.device_auth import get_device_token
+            token = get_device_token("tray")
+        except Exception:
+            return ""
+        return f"Bearer {token}" if token else ""
+
     # --- API ---
 
     def _api(self, method, path, body=None, base=None, timeout=8):
@@ -264,6 +289,8 @@ class BACHTray:
         headers = {"Content-Type": "application/json"} if data else {}
         if self.control_api_auth_header and target_base == self.base_url:
             headers["Authorization"] = self.control_api_auth_header
+        elif self.gui_auth_header and target_base != self.base_url and target_base.rstrip("/") == self.gui_url.rstrip("/"):
+            headers["Authorization"] = self.gui_auth_header
         req = urllib.request.Request(
             url, data=data, method=method,
             headers=headers,
@@ -566,11 +593,13 @@ class BACHTray:
         return (clean, display, desc)
 
     def _auto_commit_task(self, task_id: int, title: str):
-        """Erzeugt einen sauberen, atomaren lokalen Git-Commit fuer alle durch
-        den Task modifizierten tracked Files.
-        Regel D-20260830-001: Rein lokaler Commit, NIEMALS push!
-        Niemals ungetrackte Runtime-Dateien (system/data/) stagen.
+        """Optionaler lokaler Commit nach Taskabschluss.
+        Kein Push. BACH_IDLE_WORKER_AUTO_COMMIT kann das Committen pro Host abschalten.
+        Ungetrackte Runtime-Dateien (system/data/) werden nie gestaged.
         """
+        if os.environ.get("BACH_IDLE_WORKER_AUTO_COMMIT", "1").strip().lower() in ("0", "false", "no", "off"):
+            print("[Idle] Auto-Commit disabled by host configuration")
+            return
         try:
             repo_dir = "/Users/lukas/services/bach"
             res = subprocess.run(
@@ -1165,6 +1194,9 @@ class BACHTray:
 
         # ── Zugangswege ──
         items.append(pystray.MenuItem("GUI Dashboard", self._open_gui))
+        # GUI Schale (#1414, QUEUED 112086128): verbindet/startet den
+        # GUI-Server unter Rollen-Autorisierung (system/gui/shell.py).
+        items.append(pystray.MenuItem("GUI Schale", self._start_gui_shell))
         items.append(pystray.MenuItem("Buddha Chat", self._open_webchat))
         items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
@@ -1353,6 +1385,29 @@ class BACHTray:
     def _open_gui(self, *_):
         import webbrowser
         webbrowser.open(self.gui_url)
+
+    def _start_gui_shell(self, *_):
+        """GUI-Schale (#1414, QUEUED 112086128): startet system/gui/shell.py
+        (QUEUED 652455601) als Subprozess und wertet dessen JSON-stdout aus.
+        ok=True -> Notify; jeder andere Ausgang (ok=False, kein JSON, OSError,
+        Timeout) -> _notify_error (fail-closed; shell.py: ok nur bei "completed")."""
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(GUI_SHELL_PATH)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=120,
+            )
+            result = json.loads(proc.stdout.strip() or "")
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            self._notify_error("GUI Schale")
+            return
+        if isinstance(result, dict) and result.get("ok"):
+            if self.icon:
+                self.icon.notify("GUI Schale bereit", "BACH GUI")
+        else:
+            self._notify_error("GUI Schale")
 
     def _open_webchat(self, *_):
         import webbrowser

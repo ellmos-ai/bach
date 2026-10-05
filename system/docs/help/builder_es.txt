@@ -14,8 +14,8 @@ bach skills version <name>              Verificación de versión
 
 HERRAMIENTAS EN system/tools/
 ---------------------------
-c_structure_generator.py <n> <perfil> Crear habilidad/agente
-c_structure_generator.py <n> --embedded Para BACH (ligero)
+structure_generator.py <n> <perfil> Crear habilidad/agente
+structure_generator.py <n> --embedded Para BACH (ligero)
 
 generators/os_generator.py <n> [destino] Crear nuevo sistema operativo
 generadores/exporter.py habilidad <n> Exportar habilidad

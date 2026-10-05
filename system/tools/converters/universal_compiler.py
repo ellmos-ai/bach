@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_universal_compiler
+Tool: universal_compiler
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_universal_compiler
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version universal_compiler
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_universal_compiler.py [args]
+    python universal_compiler.py [args]
 """
 
 __version__ = "1.0.0"

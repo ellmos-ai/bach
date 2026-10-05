@@ -70,9 +70,9 @@ VENDOR-KONVENTIONEN
 VERWANDTE TOOLS
 ---------------
 
-  tools/c_skill_init.py        Neuen Skill anlegen (Anthropic-Standard)
-  tools/c_skill_validate.py    SKILL.md validieren
-  tools/c_skill_package.py     Skill verpacken
+  tools/skill_init.py        Neuen Skill anlegen (Anthropic-Standard)
+  tools/skill_validate.py    SKILL.md validieren
+  tools/skill_package.py     Skill verpacken
 
 SIEHE AUCH
 ----------

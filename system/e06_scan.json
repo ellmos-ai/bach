@@ -1,0 +1,264 @@
+{
+  "timestamp": "2026-09-29T09:38:09.539631",
+  "total_docs": 2103,
+  "outdated": [],
+  "invalid_paths": [
+    {
+      "doc_path": "docs/help/prompt-generator.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension_zh.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/dev.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills_zh.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/documentation_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills_ja.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension_ru.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills_ru.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension_ja.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/documentation.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/prompt-generator_ja.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/prompt-generator_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills_es.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/prompt-generator_es.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/skills.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/self_extension_es.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/dev_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/partner.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/partner_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/backup.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/backup_es.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/backup_en.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "docs/help/tools/partner_es.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "agents/ati/ATI_PROJECT_BOOTSTRAPPING.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "skills/_services/builder.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "skills/_services/claude-self-backup.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "skills/workflows/dev-zyklus.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "skills/workflows/help-forensic.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "skills/workflows/help-expert-review.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "wiki/synthese_workflow.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "wiki/konzept_file_transfer.txt",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    },
+    {
+      "doc_path": "CHANGELOG.md",
+      "invalid_path": "skills/_services/",
+      "correct_path": "hub/_services/",
+      "auto_fixable": true
+    }
+  ],
+  "version_mismatch": [],
+  "missing_sections": [],
+  "suggestions": [
+    {
+      "priority": "high",
+      "action": "auto_fix_paths",
+      "targets": [
+        "docs/help/prompt-generator.txt",
+        "docs/help/self_extension_zh.txt",
+        "docs/help/dev.txt",
+        "docs/help/self_extension.txt",
+        "docs/help/skills_zh.txt",
+        "docs/help/documentation_en.txt",
+        "docs/help/skills_ja.txt",
+        "docs/help/skills_en.txt",
+        "docs/help/self_extension_ru.txt",
+        "docs/help/skills_ru.txt",
+        "docs/help/self_extension_en.txt",
+        "docs/help/self_extension_ja.txt",
+        "docs/help/documentation.txt",
+        "docs/help/prompt-generator_ja.txt",
+        "docs/help/prompt-generator_en.txt",
+        "docs/help/skills_es.txt",
+        "docs/help/prompt-generator_es.txt",
+        "docs/help/skills.txt",
+        "docs/help/self_extension_es.txt",
+        "docs/help/dev_en.txt",
+        "docs/help/tools/partner.txt",
+        "docs/help/tools/partner_en.txt",
+        "docs/help/tools/backup.txt",
+        "docs/help/tools/backup_es.txt",
+        "docs/help/tools/backup_en.txt",
+        "docs/help/tools/partner_es.txt",
+        "agents/ati/ATI_PROJECT_BOOTSTRAPPING.md",
+        "skills/_services/builder.md",
+        "skills/_services/claude-self-backup.md",
+        "skills/workflows/dev-zyklus.md",
+        "skills/workflows/help-forensic.md",
+        "skills/workflows/help-expert-review.md",
+        "wiki/synthese_workflow.txt",
+        "wiki/konzept_file_transfer.txt",
+        "CHANGELOG.md"
+      ],
+      "count": 35,
+      "suggestion": "35 Pfade können automatisch korrigiert werden"
+    }
+  ]
+}

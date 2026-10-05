@@ -1,0 +1,33 @@
+BACH Tool: pycutter
+==================================================
+Generiert: 2026-01-23 10:36
+Quelle: tools/pycutter.py
+
+BESCHREIBUNG
+----------------------------------------
+pycutter.py - Python-Klassen-Extractor
+
+Zweck: Zerlegt Python-Dateien in separate Textdateien für jede Klasse,
+       plus eine Hilfsfunktionen.txt für Imports, Funktionen und globalen Code.
+       Ideal für Code-Review, Dokumentation oder LLM-Kontextmanagement.
+
+Autor: Claude (adaptiert von pyCuttertxt.py)
+Abhängigkeiten: ast, os, datetime (stdlib)
+
+Usage:
+    python pycutter.py <python_file> [--output-dir <dir>] [--json]
+    
+Beispiele:
+    python pycutter.py main.py                    # Ausgabe im aktuellen Verzeichnis
+    python pycutter.py main.py --output-dir ./out # Ausgabe in ./out
+    python pycutter.py main.py --json             # JSON-Output für Weiterverarbeitung
+
+VERWENDUNG
+----------------------------------------
+python bach.py tools run pycutter [args]
+oder direkt: python tools/pycutter.py [args]
+
+HINWEISE
+----------------------------------------
+- Automatisch generiert aus Docstring
+- Bei Fragen: bach tools show pycutter

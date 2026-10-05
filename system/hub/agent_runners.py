@@ -39,7 +39,9 @@ CONFIG_PATH = Path(os.path.expanduser("~/.config/bach/agent_runners.json"))
 BUILTIN: dict[str, dict] = {
     "claude": {
         "match": ["claude-*", "claude", "opus*", "sonnet*", "haiku*", "fable*"],
-        "cmd": ["claude", "--model", "{model}"],
+        # OAuth-Session-Brueche vermeiden: --bare nutzt ANTHROPIC_API_KEY aus
+        # der Umgebung, die der Launcher aus dem BACH-Keyring injiziert.
+        "cmd": ["claude", "--bare", "--model", "{model}"],
         "max_turns": ["--max-turns", "{max_turns}"],
         "full_access": ["--dangerously-skip-permissions"],
         "restricted": ["--allowedTools", "{allowed_tools}"],

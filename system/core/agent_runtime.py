@@ -54,6 +54,8 @@ import hashlib
 import importlib
 import importlib.util
 import re
+import threading
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
@@ -110,6 +112,10 @@ class AgentConfig:
 class BaseAgent:
     """Basis-Klasse für alle BACH-Agenten (analog zu BaseConnector)."""
 
+    _FINALIZE_MAX_RETRIES = 3
+    _FINALIZE_TIMEOUT = 5.0
+    _FINALIZE_BASE_DELAY = 1.0
+
     def __init__(self, config: AgentConfig):
         """
         Args:
@@ -131,15 +137,78 @@ class BaseAgent:
         """
         raise NotImplementedError("Subclass must implement connect()")
 
+    def before_agent_finalize(self) -> bool:
+        """
+        Hook, der vor dem eigentlichen Disconnect ausgeführt wird.
+        Kann von Subklassen überschrieben werden, um Aufräumarbeiten
+        durchzuführen.
+
+        Returns:
+            True wenn erfolgreich, False bei Fehler
+        """
+        return True
+
     def disconnect(self) -> bool:
         """
         Räumt Ressourcen auf.
 
+        Ruft before_agent_finalize() mit Retry-Logik (max. 3 Versuche,
+        exponentiellem Backoff und Timeout pro Versuch) auf.
+
         Returns:
-            True wenn erfolgreich
+            True wenn erfolgreich, False bei Dauerfehler
         """
-        self.status = AgentStatus.DISCONNECTED
-        return True
+        max_retries = self._FINALIZE_MAX_RETRIES
+        timeout_per_attempt = self._FINALIZE_TIMEOUT
+        base_delay = self._FINALIZE_BASE_DELAY
+
+        for attempt in range(1, max_retries + 1):
+            result = None
+            exception = None
+
+            def _run_hook():
+                nonlocal result, exception
+                try:
+                    result = self.before_agent_finalize()
+                except Exception as e:
+                    exception = e
+
+            thread = threading.Thread(target=_run_hook, daemon=True)
+            thread.start()
+            thread.join(timeout=timeout_per_attempt)
+
+            if thread.is_alive():
+                self._log(
+                    f"before_agent_finalize timed out in attempt {attempt}/{max_retries}",
+                    level="WARNING",
+                )
+            elif exception is not None:
+                self._log(
+                    f"before_agent_finalize raised {type(exception).__name__}: {exception} "
+                    f"(attempt {attempt}/{max_retries})",
+                    level="WARNING",
+                )
+            elif result is True:
+                self.status = AgentStatus.DISCONNECTED
+                return True
+
+            if attempt < max_retries:
+                delay = base_delay * (2 ** (attempt - 1))
+                self._log(
+                    f"Retrying before_agent_finalize in {delay:.1f}s "
+                    f"(attempt {attempt}/{max_retries})",
+                    level="INFO",
+                )
+                time.sleep(delay)
+
+        # Dauerfehler nach allen Retries
+        self.status = AgentStatus.ERROR
+        self._log(
+            f"before_agent_finalize failed after {max_retries} attempts; "
+            f"agent left in ERROR state",
+            level="ERROR",
+        )
+        return False
 
     def execute(self, operation: str, args: List[str]) -> Tuple[bool, str]:
         """

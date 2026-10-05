@@ -40,6 +40,7 @@ Erstellt: 2026-02-11
 import json
 import os
 import sys
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -58,11 +59,46 @@ except ImportError:
 
 BRIDGE_DIR = Path(__file__).parent.resolve()
 DAEMON_SCRIPT = BRIDGE_DIR / "bridge_daemon.py"
-WRAPPER_SCRIPT = BRIDGE_DIR / "bridge_fackel_wrapper.py"
 CONFIG_FILE = BRIDGE_DIR / "config.json"
 STATE_FILE = BRIDGE_DIR / "state.json"
 BACH_DIR = BRIDGE_DIR.parent.parent.parent
 LOG_FILE = BACH_DIR / "data" / "logs" / "claude_bridge.log"
+
+# Stelle sicher, dass hub/ im Python-Pfad liegt, damit bach_paths importierbar ist.
+_HUB_DIR = BACH_DIR / "hub"
+if str(_HUB_DIR) not in sys.path:
+    sys.path.insert(0, str(_HUB_DIR))
+from hub.bach_paths import BACH_DB  # noqa: E402
+
+# ============ DATABASE HELPERS ============
+
+def db_connect():
+    """Oeffnet eine SQLite-Verbindung zur zentralen BACH-Datenbank."""
+    conn = sqlite3.connect(str(BACH_DB), timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def db_execute(query, params=(), fetch=False, fetchone=False):
+    """Sichere DB-Operation mit Retry bei BUSY."""
+    for attempt in range(3):
+        try:
+            conn = db_connect()
+            cursor = conn.execute(query, params)
+            if fetchone:
+                result = cursor.fetchone()
+            elif fetch:
+                result = cursor.fetchall()
+            else:
+                conn.commit()
+                result = cursor.lastrowid
+            conn.close()
+            return result
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
 
 # ============ ICON ERSTELLEN ============
 
@@ -121,7 +157,7 @@ class BridgeTray:
 
         # Autostart-Check
         if self.config.get('bridge', {}).get('autostart', False):
-            should_start = self._should_autostart(self.config)
+            should_start = self._should_autostart(self.config, is_autostart=True)
             if should_start:
                 self.log("Autostart aktiviert - Bridge wird gestartet", "INFO")
                 # Startet in run() nach Icon-Initialisierung
@@ -510,25 +546,40 @@ class BridgeTray:
                 pass
         return {}
 
-    def _should_autostart(self, config: dict) -> bool:
+    def _should_autostart(self, config: dict, is_autostart: bool = True) -> bool:
         """
-        Prüft ob Bridge automatisch starten soll.
+        Prüft ob Bridge automatisch (is_autostart=True) oder manuell (is_autostart=False) starten soll.
 
         Regeln:
-        1. Connector konfiguriert → JA
-        2. start_without_connectors=true → JA
+        1. Autostart: mindestens ein aktiver Connector in DB (is_active=1, auth_config nicht leer) → JA
+        2. Manueller Start: start_without_connectors=true oder aktiver Connector → JA
         3. Fackel blockiert → NEIN
         """
-        # 1. Connector-Check
-        telegram_enabled = config.get('enabled', False)
-        has_connector = telegram_enabled
+        # 1. Connector-Check anhand der zentralen DB
+        has_active_connector = False
+        try:
+            rows = db_execute(
+                "SELECT auth_config FROM connections WHERE is_active = 1",
+                fetch=True
+            )
+            for row in rows:
+                auth_config = row["auth_config"] if row else None
+                if auth_config and str(auth_config).strip():
+                    has_active_connector = True
+                    break
+        except Exception as e:
+            self.log(f"DB-Connector-Check fehlgeschlagen: {e}", "ERROR")
+            has_active_connector = False
 
-        # 2. start_without_connectors
-        start_without = config.get('bridge', {}).get('start_without_connectors', True)
-
-        if not has_connector and not start_without:
-            self.log("Kein Connector konfiguriert und start_without_connectors=false", "INFO")
-            return False
+        if is_autostart:
+            if not has_active_connector:
+                self.log("Autostart blockiert: kein aktiver Connector in DB", "INFO")
+                return False
+        else:
+            start_without = config.get('bridge', {}).get('start_without_connectors', True)
+            if not has_active_connector and not start_without:
+                self.log("Manueller Start blockiert: kein Connector und start_without_connectors=false", "INFO")
+                return False
 
         # 3. Fackel-Check
         if config.get('bridge', {}).get('fackel_check', True):
@@ -673,13 +724,9 @@ class BridgeTray:
                 else 0
             )
 
-            # Fackel-Wrapper nutzen?
-            use_wrapper = self.config.get('bridge', {}).get('use_fackel_wrapper', True)
-            script = WRAPPER_SCRIPT if use_wrapper else DAEMON_SCRIPT
-
             try:
                 self.daemon_proc = subprocess.Popen(
-                    [sys.executable, str(script)],
+                    [sys.executable, str(DAEMON_SCRIPT)],
                     cwd=str(BRIDGE_DIR),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -689,8 +736,7 @@ class BridgeTray:
                 self.state = "running"
                 self.watchdog_active = True
                 self._update_icon()
-                mode_label = "Fackel-Wrapper" if use_wrapper else "Direkt"
-                self.log(f"Bridge gestartet ({mode_label})", "INFO")
+                self.log("Bridge gestartet (Direkt)", "INFO")
             except Exception as e:
                 self.state = "stopped"
                 self._update_icon()
@@ -834,13 +880,14 @@ class BridgeTray:
 
     def run(self):
         """Startet Tray-App: Icon + Daemon + Watchdog."""
-        # Daemon starten (nur wenn Autostart aktiv oder kein Autostart-Flag)
+        # Daemon starten (Autostart oder manueller Start-Fallback)
         if self.config.get('bridge', {}).get('autostart', False):
-            if self._should_autostart(self.config):
+            if self._should_autostart(self.config, is_autostart=True):
                 self._start_daemon()
         else:
-            # Kein Autostart konfiguriert → Daemon trotzdem starten (bisheriges Verhalten)
-            self._start_daemon()
+            # Kein Autostart konfiguriert → manueller Start-Fallback prüfen
+            if self._should_autostart(self.config, is_autostart=False):
+                self._start_daemon()
 
         # Watchdog in eigenem Thread
         watchdog = threading.Thread(target=self._watchdog_loop, daemon=True)

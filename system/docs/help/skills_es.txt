@@ -69,7 +69,7 @@ DUPLICACIÓN DE HERRAMIENTA
 -----------------
 REGLA: En caso de duda, ¡mantenlo doble!
 
-  system/tools/c_ocr_engine.py # Versión general
+  system/tools/ocr/engine.py # Versión general
   agentes/_experts/steuer/steuer_ocr.py # Versión específica de habilidad
 
 Ventajas:
@@ -183,7 +183,7 @@ AUTO EXPANSIÓN (NUEVO v2.5)
                        Subclase BaseHandler con get_operaciones()
                        Accesible a través de bach <nombre> después de 'recargar'
 
-    --tipo servicio Creado: sistema/skills/_services/<nombre>/
+    --tipo servicio Creado: sistema/hub/_services/<nombre>/
                        Carpeta con __init__.py y service.py
                        Cierre del controlador, generalmente utilizable
 

@@ -80,6 +80,7 @@ Erstellt: 2026-02-11
 Updated: 2026-03-02
 """
 
+import argparse
 import json
 import os
 import re
@@ -102,6 +103,11 @@ _SYSTEM_ROOT = next(
 if str(_SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_ROOT))
 from hub.bach_paths import BACH_DB
+
+# Pin stdlib email (+Subpackages) BEVOR fackeltraeger spaeter hub/ auf sys.path[0] legt;
+# sonst shadowed hub/email.py stdlib email und fastapi (routing.py import email.message) bricht.
+import email.message
+import email.utils
 
 try:
     from .fackel import acquire_fackel, heartbeat, release_fackel, get_fackel_holder, check_fackel_mine
@@ -236,7 +242,7 @@ def _resolve_claude_cli_path(config: dict) -> dict:
         str(Path.home() / ".local" / "bin" / "claude"),
     ]
     localappdata = os.environ.get("LOCALAPPDATA", "")
-    if localappdata:
+    if localappdata and sys.platform == "win32":
         for _p in Path(localappdata).glob("Microsoft/WinGet/Packages/Anthropic.ClaudeCode*/**/claude.exe"):
             candidates.append(str(_p))
 
@@ -1301,6 +1307,29 @@ Nutze diesen Befehl um den User ueber Fortschritte zu informieren:
 
 Sende Updates bei: Beginn, wichtigen Fortschritten, Problemen, Abschluss.
 
+## Persistenz ueber Sitzungen (Plan/Todos)
+Damit die Arbeit ueber Tage und Sitzungsgrenzen hinweg fortgesetzt werden
+kann, schreibst du zu Beginn deinen Plan und deine Todos nieder und
+pflegst den Status laufend. CLI (JSON-Output):
+  Plan mit Todos anlegen (zu ALLERERST, plan_id merken):
+    python hub/_services/worker_plan.py create --task "..." --plan "..." \
+      --todo "Schritt 1" --todo "Schritt 2" --todo "..."
+  Offene Todos laden / Fortsetzung (Status -> in_progress):
+    python hub/_services/worker_plan.py resume --plan-id N
+  Ueberblick (optional auf Plan eingegrenzt):
+    python hub/_services/worker_plan.py list [--plan-id N]
+  Todo erledigt / blockiert:
+    python hub/_services/worker_plan.py done --todo-id N
+    python hub/_services/worker_plan.py blocked --todo-id N
+  Neues Todo nachschieben:
+    python hub/_services/worker_plan.py add --plan-id N --text "..."
+  Plan abgeschlossen:
+    python hub/_services/worker_plan.py plan-done --plan-id N
+  Tageswechsel (34h = 1 Arbeitstag ist OK):
+    python hub/_services/worker_plan.py bump-day --plan-id N
+Fortsetzung nach Unterbrechung: Ein neuer Lauf laedt offene Todos per
+resume/list und arbeitet genau daran weiter - nicht von vorn beginnen.
+
 ## Aufgabe
 {task}
 
@@ -1558,6 +1587,17 @@ class BridgeDaemon:
     def handle_codeword(self, msg: dict) -> bool:
         """Prueft und verarbeitet Codewort-Befehle."""
         content = msg["content"].strip()
+        # Telegram sendet Bot-Befehle typischerweise mit fuehrendem Slash
+        # ("/help" statt "help", evtl. "/help@BotName") - normalisieren,
+        # damit die Dispatcher-Kette sie erkennt. Nur der lokale Codewort-
+        # Check nutzt die Normalisierung; msg["content"] bleibt original
+        # (nicht erkannte Nachrichten gehen unveraendert an Claude).
+        if content.startswith("/"):
+            content = content[1:].lstrip()
+            head = content.split(" ", 1)
+            if "@" in head[0]:
+                head[0] = head[0].split("@", 1)[0]
+                content = " ".join(head).strip()
         content_lower = content.lower()
         first_word = content_lower.split()[0] if content_lower else ""
 
@@ -2944,25 +2984,50 @@ def start_server_mode(config: dict):
 # ============ CLI ============
 
 def main():
-    if "--stop" in sys.argv:
+    parser = argparse.ArgumentParser(
+        prog="bridge_daemon.py",
+        description="Bridge-Daemon v2.3 — BACH Claude Bridge",
+    )
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version="Bridge-Daemon v2.3.0 — BACH Claude Bridge",
+    )
+    parser.add_argument(
+        "--status", action="store_true",
+        help="Status des Daemons anzeigen",
+    )
+    parser.add_argument(
+        "--stop", action="store_true",
+        help="Daemon stoppen",
+    )
+    parser.add_argument(
+        "--test", metavar="TEXT",
+        help="Testnachricht an den Daemon senden",
+    )
+    parser.add_argument(
+        "--server", action="store_true",
+        help="Server-Modus mit FastAPI starten",
+    )
+    args = parser.parse_args()
+
+    if args.stop:
         stop_daemon()
         return
 
-    if "--status" in sys.argv:
+    if args.status:
         show_status()
         return
 
-    if "--test" in sys.argv:
-        idx = sys.argv.index("--test")
-        text = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "Test-Nachricht"
-        test_message(text)
+    if args.test:
+        test_message(args.test)
         return
 
     config = load_config()
     mode = config.get("mode", "local")
 
     # --server Flag oder config mode=server
-    if "--server" in sys.argv or mode == "server":
+    if args.server or mode == "server":
         start_server_mode(config)
         return
 

@@ -1,5 +1,7 @@
 # System-Testverfahren: B/O/E-Tests
 
+> Systematisches Testen von LLM-OS und Skills aus drei Perspektiven: Beobachtung, Ausgabe, Erfahrung (B/O/E).
+
 **Version:** 1.0  
 **Stand:** 2026-01-18  
 **Quelle:** Konsolidiert aus BACH_STREAM
@@ -24,7 +26,7 @@ Dieses Verfahren beschreibt das systematische Testen von LLM-OS und Skills aus d
 
 ---
 
-## B-Tests (Beobachtung)
+## Phase 1: B-Tests (Beobachtung)
 
 **Konzept:** Externe Skripte inventarisieren System
 
@@ -46,7 +48,7 @@ python skills/tools/testing/run_external.py --system "<pfad>" --b-tests
 
 ---
 
-## O-Tests (Ausgabe)
+## Phase 2: O-Tests (Ausgabe)
 
 **Konzept:** Input → System → Output validieren
 
@@ -71,7 +73,7 @@ Status: PASS/FAIL
 
 ---
 
-## E-Tests (Erfahrung)
+## Phase 3: E-Tests (Erfahrung)
 
 **Konzept:** Claude testet System aus eigener Perspektive
 

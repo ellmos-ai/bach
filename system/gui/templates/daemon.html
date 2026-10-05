@@ -2,6 +2,7 @@
 <html lang="de">
 
 <head>
+    <script src="/static/js/device-auth.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Daemon &amp; Chains</title>
@@ -410,7 +411,10 @@
         <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <h1 style="margin: 0;">Daemon &amp; Chains</h1>
             <div class="page-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button class="btn btn-danger" onclick="killAllDaemons()" title="Alle Daemon/Session-Prozesse sofort beenden">Kill All</button>
+                <span id="daemon-status-text" role="status">Daemon-Identität nicht geprüft</span>
+                <button id="btn-start" class="btn btn-primary" onclick="startDaemon()" disabled>Starten</button>
+                <button id="btn-stop" class="btn btn-secondary" onclick="stopDaemon()" disabled>Stoppen</button>
+                <button class="btn btn-danger" disabled title="Massenbeenden ohne Prozessidentität gesperrt">Alle beenden</button>
                 <button class="btn btn-secondary" onclick="refreshAll()">Aktualisieren</button>
             </div>
         </div>
@@ -697,6 +701,7 @@
     </div>
 
     <script src="/static/js/api.js"></script>
+    <script src="/static/js/device-auth.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         // ═══════════════════════════════════════════════════════════════
@@ -753,97 +758,27 @@
         }
 
         async function loadStatus() {
+            const label = document.getElementById('daemon-status-text');
+            const start = document.getElementById('btn-start');
+            const stop = document.getElementById('btn-stop');
+            start.disabled = true;
+            stop.disabled = true;
             try {
                 const data = await api.get('/api/daemon/status');
-
-                const statusEl = document.getElementById('stat-status');
-                const btnStart = document.getElementById('btn-start');
-                const btnStop = document.getElementById('btn-stop');
-                const dotEl = document.getElementById('daemon-status-dot');
-                const textEl = document.getElementById('daemon-status-text');
-
-                // Elemente koennen fehlen wenn nicht im Jobs-Tab
-                if (!statusEl) return;
-
-                if (data.running) {
-                    statusEl.textContent = 'Running';
-                    statusEl.className = 'stat-value running';
-                    if (btnStart) btnStart.style.display = 'none';
-                    if (btnStop) btnStop.style.display = 'inline-block';
-                    if (dotEl) dotEl.className = 'status-dot online';
-                    if (textEl) textEl.textContent = 'Daemon aktiv';
-
-                    if (!daemonStartTime) {
-                        daemonStartTime = new Date();
-                        startUptimeTimer();
-                    }
+                if (data.identity === 'verified' && data.running) {
+                    label.textContent = 'Daemon-Prozessidentität bestätigt';
+                    stop.disabled = !data.control_available;
+                    stop.title = data.control_available ? 'Lokalen Daemon stoppen' : 'Externer Daemon: hier nicht steuerbar';
+                } else if (data.identity === 'stopped') {
+                    label.textContent = 'Kein Daemon-Prozessdatensatz';
+                    start.disabled = !localStorage.getItem('bach_device_token');
                 } else {
-                    statusEl.textContent = 'Bereit';
-                    statusEl.className = 'stat-value stopped';
-                    if (btnStart) btnStart.style.display = 'inline-block';
-                    if (btnStop) btnStop.style.display = 'none';
-                    if (dotEl) dotEl.className = 'status-dot offline';
-                    if (textEl) textEl.textContent = 'Daemon inaktiv';
-
-                    daemonStartTime = null;
-                    if (uptimeInterval) {
-                        clearInterval(uptimeInterval);
-                        uptimeInterval = null;
-                    }
-                    const uptimeEl = document.getElementById('stat-uptime');
-                    if (uptimeEl) uptimeEl.textContent = '-';
+                    label.textContent = 'Daemon-Identität unbekannt · Steuerung gesperrt';
                 }
-
-                if (data.stats) {
-                    const jobsEl = document.getElementById('stat-jobs');
-                    const runsEl = document.getElementById('stat-runs');
-                    if (jobsEl) jobsEl.textContent = data.stats.active_jobs || 0;
-                    if (runsEl) runsEl.textContent = data.stats.runs_today || 0;
-                }
-
-                const sessEl = document.getElementById('stat-sessions');
-                if (sessEl) sessEl.textContent = data.sessions_generated || 0;
-
-                if (data.next_session_in && data.next_session_in > 0) {
-                    updateSessionCountdown(data.next_session_in);
-                } else if (data.running) {
-                    const nextEl = document.getElementById('stat-next-session');
-                    if (nextEl) nextEl.textContent = 'Bald';
-                } else {
-                    const nextEl = document.getElementById('stat-next-session');
-                    if (nextEl) nextEl.textContent = '--:--';
-                }
-
-                const maxSessions = data.config?.max_sessions || 0;
-                const sessionsGenerated = data.sessions_generated || 0;
-                const maxInput = document.getElementById('max-sessions-input');
-                const progressContainer = document.getElementById('session-progress-container');
-                const progressFill = document.getElementById('session-progress-fill');
-                const progressText = document.getElementById('session-progress-text');
-
-                if (maxInput && maxInput !== document.activeElement) {
-                    maxInput.value = maxSessions;
-                }
-
-                if (maxSessions > 0 && progressContainer) {
-                    progressContainer.style.display = 'block';
-                    const percent = Math.min((sessionsGenerated / maxSessions) * 100, 100);
-                    progressFill.style.width = `${percent}%`;
-                    progressText.textContent = `${sessionsGenerated}/${maxSessions}`;
-
-                    if (percent >= 100) {
-                        progressFill.style.background = 'var(--error)';
-                    } else if (percent >= 80) {
-                        progressFill.style.background = 'var(--warning)';
-                    } else {
-                        progressFill.style.background = 'var(--primary)';
-                    }
-                } else if (progressContainer) {
-                    progressContainer.style.display = 'none';
-                }
-
-            } catch (e) {
-                console.error('Status laden fehlgeschlagen:', e);
+            } catch (error) {
+                label.textContent = error.message.includes('401') || error.message.includes('403')
+                    ? 'Geräteanmeldung erforderlich · /token-dashboard'
+                    : 'Daemon-Status nicht verfügbar';
             }
         }
 
@@ -1687,16 +1622,7 @@
             loadRuns();
             await loadRecurringTasks();
 
-            // Auto-Check: Faellige Recurring Tasks automatisch erstellen (silent)
-            try {
-                const result = await api.post('/api/recurring/check');
-                if (result.created_count > 0) {
-                    console.log(`[Recurring] ${result.created_count} Task(s) automatisch erstellt`);
-                    loadRecurringTasks();
-                }
-            } catch(e) {
-                console.log('[Recurring] Auto-Check fehlgeschlagen:', e.message);
-            }
+            // Ansichtsaufruf löst keine wiederkehrenden Aufgaben aus.
 
             // Auto-Refresh alle 30 Sekunden
             setInterval(() => {

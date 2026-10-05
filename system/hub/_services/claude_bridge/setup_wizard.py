@@ -143,7 +143,7 @@ def run_wizard(base_path: Path = None):
         "budget": {"daily_limit_usd": 5.0, "warn_at_percent": 80, "chat_cost_estimate": 0.03, "worker_minute_cost": 0.05},
         "quiet_hours": {"enabled": False, "start": "23:00", "end": "07:00"},
         "bridge": {"autostart": True, "start_without_connectors": True, "fackel_check": True,
-                    "heartbeat_interval": 60, "timeout_threshold": 300, "use_fackel_wrapper": True}
+                    "heartbeat_interval": 60, "timeout_threshold": 300}
     }
 
     # --- Schritt 1: Bot-Token ---

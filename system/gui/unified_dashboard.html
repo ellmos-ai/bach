@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH / OCEAN Unified Workstation</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <style>
+        :root {
+            --bg-base: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --border-color: #334155;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1.25rem;
+            letter-spacing: -0.5px;
+        }
+        .brand-badge {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        .cluster-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: rgba(0,0,0,0.25);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-emerald);
+            box-shadow: 0 0 8px var(--accent-emerald);
+        }
+        nav.tabs {
+            display: flex;
+            gap: 6px;
+            background: #0b1120;
+            padding: 8px 24px;
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .tab-btn:hover { background: var(--bg-hover); color: var(--text-main); }
+        .tab-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+            box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+        }
+        main {
+            flex: 1;
+            padding: 24px;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .view-panel { display: none; }
+        .view-panel.active { display: block; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
+        }
+        .card-title { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; }
+        .badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-p1 { background: rgba(244, 63, 94, 0.2); color: var(--accent-rose); border: 1px solid var(--accent-rose); }
+        .badge-p2 { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+        .badge-p3 { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+        .badge-sub { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); border: 1px solid var(--accent-purple); }
+        .badge-cli { background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald); border: 1px solid var(--accent-emerald); }
+        .badge-api { background: rgba(6, 182, 212, 0.2); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); }
+        .btn {
+            background: var(--accent-blue);
+            color: #fff;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.85rem;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-secondary { background: var(--bg-hover); color: var(--text-main); }
+        .btn-emerald { background: var(--accent-emerald); }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+        input, select, textarea {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            width: 100%;
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th { color: var(--text-muted); font-weight: 600; }
+        tr:hover { background: rgba(255,255,255,0.02); }
+        .code-preview {
+            background: #090d16;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: Consolas, monospace;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            border: 1px solid var(--border-color);
+        }
+        .pipeline-step {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--accent-cyan);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="brand">
+        <a href="/" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
+            <span>BACH / OCEAN</span>
+            <span class="brand-badge">Unified Workstation</span>
+        </a>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 0.82rem; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.03); transition: all 0.2s;" onmouseover="this.style.color='#fff'; this.style.borderColor='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'; this.style.borderColor='var(--border-color)'">
+            ⬅️ Zur BACH Haupt-GUI
+        </a>
+        <div class="cluster-status">
+            <div class="status-dot"></div>
+            <span>Cluster: Online (Mac Studio &amp; Lokaler Hub)</span>
+        </div>
+    </div>
+</header>
+
+<nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('tasks')">📋 Aufgaben &amp; Cluster</button>
+    <button class="tab-btn" onclick="switchTab('agent-studio')">🤖 Agenten-Fabrika &amp; Living</button>
+    <button class="tab-btn" onclick="switchTab('capabilities')">⚡ Capabilities Hub</button>
+    <button class="tab-btn" onclick="switchTab('marblerun')">⛓️ MarbleRun &amp; Agents-Map</button>
+    <button class="tab-btn" onclick="switchTab('governance')">🛡️ Governance CONTROL</button>
+    <button class="tab-btn" onclick="switchTab('memory')">🧠 Deep Memory &amp; Wissen</button>
+    <button class="tab-btn" onclick="switchTab('artifacts')">📦 Artefakte &amp; Dateien</button>
+</nav>
+
+<main>
+
+    <!-- 1. TASKS & CLUSTER -->
+    <section id="panel-tasks" class="view-panel active">
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card-header">
+                <h2 class="card-title">Live Cluster Taskboard</h2>
+                <div>
+                    <button class="btn btn-secondary btn-sm" onclick="loadTasks()">🔄 Aktualisieren</button>
+                </div>
+            </div>
+            <div id="tasks-table-container">Lade Tasks...</div>
+        </div>
+    </section>
+
+    <!-- 2. AGENT STUDIO & FABRIKA -->
+    <section id="panel-agent-studio" class="view-panel">
+        <div class="grid-2">
+            <!-- Fabrika: Blueprints -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Agenten-Fabrika (Schablonen &amp; Blueprints)</h2>
+                    <button class="btn btn-sm btn-emerald" onclick="openBlueprintModal()">+ Neuer Agent</button>
+                </div>
+                <div id="blueprints-container">Lade Blueprints...</div>
+            </div>
+
+            <!-- Living & Running -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Living &amp; Running (Kreaturen &amp; Avatare)</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadLiving()">🔄 Refresh</button>
+                </div>
+                <div id="living-container">Lade aktive Kreaturen...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. CAPABILITIES HUB -->
+    <section id="panel-capabilities" class="view-panel">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Zentraler Capabilities Hub</h2>
+                <div id="capabilities-stats">Lade Statistiken...</div>
+            </div>
+            <div id="capabilities-container">Lade Fähigkeiten...</div>
+        </div>
+    </section>
+
+    <!-- 4. MARBLERUN & AGENTS-MAP -->
+    <section id="panel-marblerun" class="view-panel">
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">MarbleRun Ketten-Bibliothek</h2>
+                    <button class="btn btn-sm" onclick="openChainModal()">+ Neue Kette</button>
+                </div>
+                <div id="chains-container">Lade Ketten...</div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Agents-Map (Lock-Master Graph)</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadAgentsMap()">🔄 Graph laden</button>
+                </div>
+                <div id="agents-map-container">Lade Agents-Map...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. GOVERNANCE CONTROL ROOM -->
+    <section id="panel-governance" class="view-panel">
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Aktive Locks &amp; Haltefristen (P-001/P-002)</h2>
+                    <span class="badge badge-p1">Fail-Closed Enforced</span>
+                </div>
+                <div id="locks-container">Lade Locks...</div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Kanonische Richtlinien (Policies)</h2>
+                    <span class="badge badge-cli">P-001 bis P-007</span>
+                </div>
+                <div id="policies-container">Lade Richtlinien...</div>
+            </div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+                <h2 class="card-title">Entscheidungs-Historie (Decisions)</h2>
+            </div>
+            <div id="decisions-container">Lade Entscheidungen...</div>
+        </div>
+    </section>
+
+    <!-- 6. DEEP MEMORY & WISSEN -->
+    <section id="panel-memory" class="view-panel">
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Gardener Suche &amp; KnowledgeDigest</h2>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                    <input type="text" id="gardener-search-input" placeholder="Wissen oder Fakt suchen (z.B. architecture)..." style="margin: 0;">
+                    <button class="btn btn-sm" onclick="searchGardener()">Suchen</button>
+                </div>
+                <div id="gardener-results"></div>
+                <div id="knowledge-folders" style="margin-top: 16px;">Lade Knowledge-Ordner...</div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Chat Compare-Race</h2>
+                </div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
+                    Teste Prompts parallel im Rennen zwischen mehreren Modell-Kandidaten.
+                </p>
+                <textarea id="compare-prompt" rows="3" placeholder="Gib einen Testauftrag ein..."></textarea>
+                <button class="btn btn-sm btn-emerald" onclick="runCompareRace()">🏁 Race starten</button>
+                <div id="compare-results" style="margin-top: 16px;"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 7. ARTIFAKTE & DATEIEN -->
+    <section id="panel-artifacts" class="view-panel">
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Generierte Artefakte &amp; Deliverables</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadArtifacts()">🔄 Refresh</button>
+                </div>
+                <div id="artifacts-list">Lade Artefakte...</div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title" id="artifact-preview-title">Artefakt-Vorschau</h2>
+                    <button id="artifact-download-btn" class="btn btn-sm" type="button" style="display:none;">📥 Download</button>
+                </div>
+                <div id="artifact-preview-body" class="code-preview">Wähle links ein Artefakt aus.</div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<script>
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
+        
+        const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => {
+            const oc = b.getAttribute('onclick') || '';
+            return oc.includes("'" + tabName + "'") || oc.includes('"' + tabName + '"');
+        });
+        if (activeBtn) activeBtn.classList.add('active');
+        
+        const activePanel = document.getElementById('panel-' + tabName);
+        if (activePanel) activePanel.classList.add('active');
+        
+        try {
+            if (window.location.hash !== '#' + tabName) {
+                history.replaceState(null, '', '#' + tabName);
+            }
+        } catch (_) {}
+
+        if (tabName === 'tasks') loadTasks();
+        if (tabName === 'agent-studio') { loadBlueprints(); loadLiving(); }
+        if (tabName === 'capabilities') loadCapabilities();
+        if (tabName === 'marblerun') { loadChains(); loadAgentsMap(); }
+        if (tabName === 'governance') loadGovernance();
+        if (tabName === 'memory') loadMemoryDigest();
+        if (tabName === 'artifacts') loadArtifacts();
+    }
+
+    async function loadTasks() {
+        const container = document.getElementById('tasks-table-container');
+        try {
+            const res = await fetch('/api/tasks?limit=50');
+            const data = await res.json();
+            const tasks = data.tasks || [];
+            if (tasks.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted)">Keine Tasks gefunden.</p>';
+                return;
+            }
+            let html = `<table><thead><tr><th>ID</th><th>Titel</th><th>Prio</th><th>Kategorie</th><th>Status</th><th>Zuweisung</th></tr></thead><tbody>`;
+            tasks.forEach(t => {
+                const prioClass = t.priority === 'P1' ? 'badge-p1' : (t.priority === 'P2' ? 'badge-p2' : 'badge-p3');
+                html += `<tr>
+                    <td>#${t.id}</td>
+                    <td><strong>${t.title}</strong></td>
+                    <td><span class="badge ${prioClass}">${t.priority || 'P3'}</span></td>
+                    <td>${t.category || '-'}</td>
+                    <td>${t.status || 'open'}</td>
+                    <td><code>${t.assigned_to || 'bach'}</code></td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler beim Laden der Tasks: ${e.message}</p>`;
+        }
+    }
+
+    async function loadBlueprints() {
+        const container = document.getElementById('blueprints-container');
+        try {
+            const res = await fetch('/api/agent-studio/blueprints');
+            const data = await res.json();
+            const all = (data.templates || []).concat(data.blueprints || []);
+            let html = '';
+            all.forEach(bp => {
+                const animusClass = 'badge-' + (bp.animus_type === 'subscription' ? 'sub' : (bp.animus_type === 'cli' ? 'cli' : 'api'));
+                html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px; border-left:3px solid var(--accent-blue);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${bp.title || bp.name}</strong>
+                        <span class="badge ${animusClass}">${bp.animus_type}</span>
+                    </div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${bp.description || bp.persona_role || ''}</p>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:0.75rem; color:var(--text-muted);">Modus: ${bp.modus}</span>
+                        <button class="btn btn-sm btn-emerald" onclick="materializeAgent(${bp.id})">Materialisieren</button>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+        }
+    }
+
+    async function materializeAgent(id) {
+        try {
+            const res = await fetch(`/api/agent-studio/blueprints/${id}/materialize`, { method: 'POST' });
+            const data = await res.json();
+            alert(data.message || 'Agent materialisiert!');
+            loadLiving();
+        } catch (e) {
+            alert('Fehler: ' + e.message);
+        }
+    }
+
+    async function loadLiving() {
+        const container = document.getElementById('living-container');
+        try {
+            const res = await fetch('/api/agent-studio/living');
+            const data = await res.json();
+            const agents = data.living_agents || [];
+            let html = '';
+            agents.forEach(a => {
+                const isOnline = a.status === 'online' || a.status === 'active' || a.status === 'living';
+                html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px; border-left:3px solid ${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${a.title || a.name}</strong>
+                        <span class="badge" style="background:${isOnline ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.1)'}; color:${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">${a.status}</span>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">
+                        <span>Animus: <code>${a.animus}</code></span> | 
+                        <span>Aufgabe: ${a.current_task || 'Keine zugewiesen'}</span>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+        }
+    }
+
+    async function loadCapabilities() {
+        const statsEl = document.getElementById('capabilities-stats');
+        const container = document.getElementById('capabilities-container');
+        try {
+            const res = await fetch('/api/capabilities');
+            const data = await res.json();
+            statsEl.innerHTML = `<span class="badge badge-api">${data.stats.total_skills} Skills</span> <span class="badge badge-cli">${data.stats.total_tools} Tools</span> <span class="badge badge-sub">${data.stats.total_mcps} MCPs</span>`;
+            let html = '<div class="grid-3">';
+            for (const [cat, skills] of Object.entries(data.skills_by_category)) {
+                html += `<div style="background:#0f172a; padding:12px; border-radius:8px;">
+                    <h4 style="color:var(--accent-cyan); margin-bottom:8px; text-transform:uppercase; font-size:0.8rem;">${cat} (${skills.length})</h4>
+                    <ul style="list-style:none; font-size:0.8rem;">`;
+                skills.slice(0, 8).forEach(s => {
+                    html += `<li style="padding:4px 0; border-bottom:1px solid #1e293b;"><strong>${s.name}</strong></li>`;
+                });
+                html += `</ul></div>`;
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+        }
+    }
+
+    async function loadChains() {
+        const container = document.getElementById('chains-container');
+        try {
+            const res = await fetch('/api/marblerun/chains');
+            const data = await res.json();
+            const chains = data.chains || [];
+            if (chains.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted)">Keine Ketten vorhanden.</p>';
+                return;
+            }
+            let html = '';
+            chains.forEach(ch => {
+                html += `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${ch.title || ch.name}</strong>
+                        <button class="btn btn-sm btn-emerald" onclick="runChain(${ch.id})">▶ Ausführen</button>
+                    </div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0 8px 0;">${ch.description || ''}</p>
+                    <div style="font-size:0.75rem; color:var(--accent-cyan);">Schritte: ${(ch.steps || []).map(s => s.name).join(' ➔ ')}</div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+        }
+    }
+
+    async function runChain(id) {
+        try {
+            const res = await fetch(`/api/marblerun/chains/${id}/run`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({input: 'Pipeline Start'}) });
+            const data = await res.json();
+            alert(`Kette ${data.chain_name} erfolgreich ausgeführt (${data.steps_executed} Schritte)!`);
+        } catch (e) {
+            alert('Fehler: ' + e.message);
+        }
+    }
+
+    async function loadAgentsMap() {
+        const container = document.getElementById('agents-map-container');
+        try {
+            const res = await fetch('/api/marblerun/agents-map');
+            const data = await res.json();
+            let html = `<div style="margin-bottom:12px;"><span class="badge badge-api">${data.stats.total_nodes} Knoten</span> <span class="badge badge-sub">${data.stats.total_links} Kanten</span></div>`;
+            html += `<div style="background:#0f172a; padding:14px; border-radius:8px;">`;
+            data.nodes.forEach(n => {
+                html += `<span class="badge" style="background:#1e293b; margin:4px; display:inline-block;">🟢 ${n.label} (${n.animus})</span>`;
+            });
+            html += `</div>`;
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:var(--accent-rose)">Fehler: ${e.message}</p>`;
+        }
+    }
+
+    async function loadGovernance() {
+        try {
+            const locksRes = await fetch('/api/governance/locks');
+            const locksData = await locksRes.json();
+            let locksHtml = '<table><thead><tr><th>Sperr-Objekt</th><th>Typ</th><th>Status</th></tr></thead><tbody>';
+            (locksData.locks || []).forEach(l => {
+                locksHtml += `<tr><td><strong>${l.name}</strong></td><td>${l.type}</td><td><span class="badge badge-p1">${l.status}</span></td></tr>`;
+            });
+            locksHtml += '</tbody></table>';
+            document.getElementById('locks-container').innerHTML = locksHtml;
+
+            const polRes = await fetch('/api/governance/policies');
+            const polData = await polRes.json();
+            let polHtml = '<table><thead><tr><th>ID</th><th>Name</th><th>Durchsetzung</th><th>Beschreibung</th></tr></thead><tbody>';
+            (polData.policies || []).forEach(p => {
+                polHtml += `<tr><td><code>${p.id}</code></td><td><strong>${p.name}</strong></td><td><span class="badge badge-cli">${p.enforcement}</span></td><td>${p.desc}</td></tr>`;
+            });
+            polHtml += '</tbody></table>';
+            document.getElementById('policies-container').innerHTML = polHtml;
+
+            const decRes = await fetch('/api/governance/decisions');
+            const decData = await decRes.json();
+            let decHtml = '<div class="grid-3">';
+            (decData.decisions || []).slice(0, 9).forEach(d => {
+                decHtml += `<div style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.8rem;"><strong>${d.title}</strong><div style="color:var(--text-muted); font-size:0.7rem;">${d.id}</div></div>`;
+            });
+            decHtml += '</div>';
+            document.getElementById('decisions-container').innerHTML = decHtml;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function searchGardener() {
+        const q = document.getElementById('gardener-search-input').value.trim();
+        if (!q) return;
+        const resEl = document.getElementById('gardener-results');
+        resEl.innerHTML = 'Suche läuft...';
+        try {
+            const res = await fetch(`/api/gardener/search?q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            let html = '<ul style="list-style:none; font-size:0.85rem; margin-top:8px;">';
+            (data.results || []).forEach(r => {
+                html += `<li style="padding:6px 0; border-bottom:1px solid #334155;">📌 <strong>${r.name}</strong> <span class="badge badge-api">${r.type || 'entry'}</span></li>`;
+            });
+            html += '</ul>';
+            resEl.innerHTML = html;
+        } catch (e) {
+            resEl.innerHTML = 'Fehler: ' + e.message;
+        }
+    }
+
+    async function loadMemoryDigest() {
+        try {
+            const res = await fetch('/api/memory/knowledge-digest');
+            const data = await res.json();
+            let html = '<div class="grid-2">';
+            (data.knowledge_folders || []).forEach(f => {
+                html += `<div style="background:#0f172a; padding:12px; border-radius:8px; border-left:3px solid var(--accent-purple);">
+                    <strong>${f.label}</strong>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">${f.path}</div>
+                    <div style="font-size:0.8rem; margin-top:6px;"><span class="badge badge-sub">${f.file_count} Docs</span></div>
+                </div>`;
+            });
+            html += '</div>';
+            document.getElementById('knowledge-folders').innerHTML = html;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function runCompareRace() {
+        const prompt = document.getElementById('compare-prompt').value.trim();
+        if (!prompt) return;
+        const resEl = document.getElementById('compare-results');
+        resEl.innerHTML = 'Race läuft parallel auf candidate models...';
+        try {
+            const res = await fetch('/api/chat/compare-race', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt: prompt, models: ['claude', 'gemini', 'codex', 'ollama']})
+            });
+            const data = await res.json();
+            let html = `<div style="margin-bottom:8px;">🏆 <strong>Gewinner: ${data.winner.toUpperCase()}</strong></div>`;
+            (data.candidates || []).forEach(c => {
+                html += `<div style="background:#0f172a; padding:10px; border-radius:6px; margin-bottom:6px; font-size:0.8rem;">
+                    <strong>${c.model.toUpperCase()}</strong> (${c.latency_ms}ms | Score: ${c.score}):
+                    <p style="color:var(--text-muted); margin-top:4px;">${c.response}</p>
+                </div>`;
+            });
+            resEl.innerHTML = html;
+        } catch (e) {
+            resEl.innerHTML = 'Fehler: ' + e.message;
+        }
+    }
+
+    function artifactAuthHeaders() {
+        const token = localStorage.getItem('bach_device_token');
+        if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
+        return { Authorization: 'Bearer ' + token };
+    }
+
+    async function artifactRequest(url) {
+        const res = await fetch(url, { headers: artifactAuthHeaders(), cache: 'no-store' });
+        if (res.status === 401 || res.status === 403) {
+            throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res;
+    }
+
+    async function loadArtifacts() {
+        const listEl = document.getElementById('artifacts-list');
+        listEl.textContent = 'Lade Exportverzeichnis…';
+        try {
+            const data = await (await artifactRequest('/api/artifacts?limit=30')).json();
+            if (!Array.isArray(data.artifacts)) throw new Error('Ungültige Katalogantwort');
+            listEl.replaceChildren();
+            if (data.availability !== 'available') {
+                listEl.textContent = 'Exportverzeichnis nicht verfügbar.';
+                return;
+            }
+            if (!data.artifacts.length) {
+                listEl.textContent = 'Keine unterstützten Dateien im Exportverzeichnis.';
+                return;
+            }
+            const list = document.createElement('ul');
+            list.style.cssText = 'list-style:none;font-size:0.85rem';
+            data.artifacts.forEach(item => {
+                const row = document.createElement('li');
+                row.style.cssText = 'padding:8px;border-bottom:1px solid #334155';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.style.cssText = 'width:100%;text-align:left;background:none;border:0;color:inherit;cursor:pointer';
+                button.textContent = (['json', 'csv'].includes(item.type) ? '💾 ' : '📄 ') + item.name +
+                    ' · ' + (Number(item.size_bytes) / 1024).toFixed(1) + ' KB · Herkunft ungeprüft';
+                button.addEventListener('click', () => previewArtifact(item));
+                row.append(button);
+                list.append(row);
+            });
+            listEl.append(list);
+        } catch (error) {
+            listEl.textContent = 'Artefakte nicht verfügbar: ' + error.message;
+        }
+    }
+
+    async function previewArtifact(item) {
+        const titleEl = document.getElementById('artifact-preview-title');
+        const bodyEl = document.getElementById('artifact-preview-body');
+        const downloadBtn = document.getElementById('artifact-download-btn');
+        titleEl.textContent = 'Vorschau: ' + item.name;
+        bodyEl.textContent = 'Lade Vorschau…';
+        downloadBtn.style.display = 'none';
+        downloadBtn.onclick = async event => {
+            event.preventDefault();
+            try {
+                const res = await artifactRequest('/api/artifacts/download?artifact_id=' + encodeURIComponent(item.id));
+                const url = URL.createObjectURL(await res.blob());
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = item.name;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (error) {
+                bodyEl.textContent = 'Download fehlgeschlagen: ' + error.message;
+            }
+        };
+        downloadBtn.removeAttribute('href');
+        downloadBtn.style.display = 'inline-block';
+        if (!['md', 'txt', 'json', 'csv'].includes(item.type)) {
+            bodyEl.textContent = 'Für dieses Format gibt es keine Textvorschau.';
+            return;
+        }
+        try {
+            const data = await (await artifactRequest('/api/artifacts/content?artifact_id=' + encodeURIComponent(item.id))).json();
+            bodyEl.textContent = data.content || '(Leere Datei)';
+            if (data.truncated) bodyEl.textContent += '\n\n[Vorschau gekürzt]';
+        } catch (error) {
+            bodyEl.textContent = 'Vorschau nicht verfügbar: ' + error.message;
+        }
+    }
+
+    // Initial load & hash navigation
+    window.addEventListener('hashchange', () => {
+        const hash = window.location.hash.replace('#', '');
+        if (hash) switchTab(hash);
+    });
+
+    const initHash = window.location.hash.replace('#', '');
+    if (initHash) {
+        switchTab(initHash);
+    } else {
+        loadTasks();
+    }
+</script>
+</body>
+</html>

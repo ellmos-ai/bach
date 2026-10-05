@@ -28,17 +28,17 @@
 
 4。表情符号
    - 允许在文件中使用，但仅限已注册的文件！
-   - 注册表：system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
-   - 扫描仪：bach c_emoji_scanner <文件>
+   - 注册表：system/tools/emoji_scanner.py (ASCII_OVERRIDES)
+   - 扫描仪：bach emoji_scanner <文件>
 
 5。 JSON编辑
    - 首选：bach.py 或 Python 脚本
    - 切勿将 fc_str_replace 替换为 JSON
    - 切勿将 PowerShell 用于 JSON
-   - 如果出现问题：bach c_json_repair <文件>
+   - 如果出现问题：bach json_repair <文件>
 
 6。进口
    - 标准库优先
    - 然后是第三方
    - 然后是本地模块
-   - 工具：bach c_import_organizer <文件>
+   - 工具：bach import_organizer <文件>

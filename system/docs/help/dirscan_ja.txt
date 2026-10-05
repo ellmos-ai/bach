@@ -47,17 +47,17 @@
 統合:
   - Hub/startup.py で自動的に (起動時の DirectoryScanner)
   - Hub/shutdown.py に自動的に保存 (シャットダウン中に状態を保存)
-  - 独自のハンドラーなし、ツールベース (tools/c_dirscan.py)
+  - 独自のハンドラーなし、ツールベース (tools/dirscan.py)
 
 CLI (手動):
-  python c_dirscan.py # ステータスを表示
-  python c_dirscan.py --scan # 現在の状態をスキャンします
-  python c_dirscan.py --compare # IS と SHOULD の比較
-  python c_dirscan.py --update # SHOULD 状態を更新します
-  python c_dirscan.py --path /path # 他のディレクトリ
-  python c_dirscan.py --json # JSON 出力
+  python dirscan.py # ステータスを表示
+  python dirscan.py --scan # 現在の状態をスキャンします
+  python dirscan.py --compare # IS と SHOULD の比較
+  python dirscan.py --update # SHOULD 状態を更新します
+  python dirscan.py --path /path # 他のディレクトリ
+  python dirscan.py --json # JSON 出力
 
 ファイル:
-  - ツール：system/tools/c_dirscan.py（DirectoryScannerクラス）
+  - ツール：system/tools/dirscan.py（DirectoryScannerクラス）
   - データ: system/data/directory_truth.json (最初のスキャン時に生成)
   - 構造: {タイムスタンプ、ディレクトリ[]、ファイル{パス: {ハッシュ、サイズ}}}

@@ -92,25 +92,25 @@ def seeded_tuev(tuev, tmp_tuev):
     conn.execute(
         "INSERT INTO workflow_tuev (workflow_path, workflow_name, tuev_status, tuev_valid_until, avg_score) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("skills/_workflows/expired.md", "expired-wf", "passed",
+        ("skills/workflows/expired.md", "expired-wf", "passed",
          (now - timedelta(days=5)).isoformat(), 80.0),
     )
     conn.execute(
         "INSERT INTO workflow_tuev (workflow_path, workflow_name, tuev_status, tuev_valid_until, avg_score) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("skills/_workflows/soon.md", "soon-wf", "passed",
+        ("skills/workflows/soon.md", "soon-wf", "passed",
          (now + timedelta(days=7)).isoformat(), 90.0),
     )
     conn.execute(
         "INSERT INTO workflow_tuev (workflow_path, workflow_name, tuev_status, tuev_valid_until, avg_score) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("skills/_workflows/ok.md", "ok-wf", "passed",
+        ("skills/workflows/ok.md", "ok-wf", "passed",
          (now + timedelta(days=60)).isoformat(), 95.0),
     )
     conn.execute(
         "INSERT INTO workflow_tuev (workflow_path, workflow_name, tuev_status) "
         "VALUES (?, ?, ?)",
-        ("skills/_workflows/no-date.md", "no-date-wf", "pending"),
+        ("skills/workflows/no-date.md", "no-date-wf", "pending"),
     )
     conn.commit()
     conn.close()
@@ -124,12 +124,12 @@ def seeded_usecase(usecase, tmp_tuev):
     conn.execute(
         "INSERT INTO workflow_tuev (workflow_path, workflow_name, tuev_status) "
         "VALUES (?, ?, ?)",
-        ("skills/_workflows/test-wf.md", "test-wf", "pending"),
+        ("skills/workflows/test-wf.md", "test-wf", "pending"),
     )
     conn.execute(
         "INSERT INTO usecases (title, description, workflow_name, workflow_path, test_input, expected_output, test_result, test_score, created_by) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("Login-Test", "Prueft Login-Flow", "test-wf", "skills/_workflows/test-wf.md",
+        ("Login-Test", "Prueft Login-Flow", "test-wf", "skills/workflows/test-wf.md",
          '{"user": "admin"}', '{"status": "ok"}', "pass", 90, "user"),
     )
     conn.execute(

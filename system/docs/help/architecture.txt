@@ -35,7 +35,7 @@ SCHICHTEN-MODELL
 
 4. EXECUTION LAYER (tools/)
    290+ spezialisierte Python-Scripts für Dateisystem, Steuer, Analyse etc.
-   Standardisiertes Interface (c_ prefix) für AI-Kompatibilität.
+   Standardisiertes Interface für AI-Kompatibilität.
 
 5. DATA & PERSISTENCE (bach.db, data/logs/)
    SQLite-Grundlage mit 210+ Tabellen (Zentralisierte Datenhaltung).
@@ -112,7 +112,7 @@ ARCHITEKTUR-DIAGRAMM (Registry v2.0)
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ EXECUTION LAYER (tools/)                                        │
-│ 290+ Python-Scripts mit standardisiertem c_ Interface          │
+│ 290+ Python-Scripts mit standardisiertem Interface             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐

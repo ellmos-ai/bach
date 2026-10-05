@@ -31,11 +31,6 @@ Los prefijos identifican el tipo y propósito de una herramienta.
 
   EJEMPLOS DE SIGNIFICADO DE PRAEFIX
   ------- ---------------------- ------------------------
-  c_ CLI optimizado para IA c_encoding_fixer.py
-            (Claude/recludOS) c_json_repair.py
-            - Salidas claras y analizables
-            - Codificación segura (UTF-8)
-
   m_ Mantener m_migrate_triggers.py
             - Herramientas de limpieza m_cleanup_logs.py
             - Scripts de migración
@@ -62,7 +57,7 @@ Herramientas que solo son relevantes para una habilidad:
     task_scanner.py # Agente ATI específico (en agentes/ati/scanner/)
 
   Ubicación:
-    - General: herramientas/c_ocr_engine.py
+    - General: herramientas/ocr_engine.py
     - Específico: agentes/_experts/steuer/steuer_scanner.py
     - Herramienta de agente: agentes/ati/scanner/task_scanner.py
 

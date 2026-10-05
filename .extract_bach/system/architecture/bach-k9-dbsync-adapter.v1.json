@@ -1,0 +1,231 @@
+{
+  "schema": "ellmos.open-ocean-bach-k9-dbsync-adapter.v1",
+  "status": "specified-carrier-surfaces-green-not-implemented",
+  "recorded_at": "2026-09-21",
+  "claim_boundary": "This specification makes the future BACH adapter implementable without copying generic merge mechanics. The inspected BACH source can lazily select its existing external TransitSync seam, but this document is not an implemented Ocean adapter, old/new equivalence, BACH-IN, migration, rollback, bundle, installer, or off-host evidence.",
+  "sources": {
+    "bach": {
+      "commit": "8392ed8cecd9ac598d1b3b711b8e3df1b7c1dc4d",
+      "handler": "system/hub/db_sync.py",
+      "sha256": "9947344814dc65feff22bdd0ef078de9255d202f4f8252a64c76e43415e96444"
+    },
+    "carrier": {
+      "id": "sqlite-transit-sync",
+      "repository": "https://github.com/ellmos-ai/sqlite-transit-sync",
+      "commit": "7648a20b11ca958e9622d2b5d8a13fd02613e92a",
+      "required_surfaces": [
+        "TransitSync.push",
+        "TransitSync.pending",
+        "TransitSync.pull_selected",
+        "TransitSync.status",
+        "TransitSync.cleanup"
+      ]
+    }
+  },
+  "state_ownership": {
+    "application": [
+      "live BACH database schema and application rows",
+      "BACH-specific snapshot redaction policy",
+      "BACH startup and exit lifecycle"
+    ],
+    "carrier": [
+      "verified transit snapshot and manifest pairs",
+      "transactional row merge",
+      "per-node last-pulled carrier state"
+    ],
+    "adapter": [
+      "activation marker",
+      "daily push guard",
+      "heartbeat compatibility state",
+      "transient-failure cooldown",
+      "BACH tuple and text output translation"
+    ],
+    "forbidden": [
+      "adapter reimplementation of SQLite backup or merge",
+      "carrier access to BACH tables beyond configured merge and redaction policies",
+      "parallel legacy and carrier writes after BACH-IN",
+      "automatic first-copy or schema guessing"
+    ]
+  },
+  "adapter_state": {
+    "schema": "ellmos.bach-dbsync-adapter-state.v1",
+    "location": "injected local path outside transit",
+    "fields": {
+      "deferred_snapshots": "map from verified snapshot basename to failed_at, retry_after and error class",
+      "last_daily_push": "local calendar date plus published snapshot basename",
+      "migration": "legacy sync-state import marker and source hash"
+    },
+    "atomic_write": true,
+    "secrets": "none"
+  },
+  "policies": {
+    "activation": {
+      "source": "system/data/config/db_sync_enabled",
+      "adapter_input": "injected marker path",
+      "enable": "atomically write UTF-8 value enabled",
+      "disable": "remove only the injected marker if present"
+    },
+    "daily_push": {
+      "clock": "injected timezone-aware clock",
+      "rule": "publish at most once per configured local calendar day",
+      "evidence": "carrier snapshot identity recorded in adapter state",
+      "failure": "do not advance last_daily_push unless carrier push succeeds"
+    },
+    "heartbeat": {
+      "compatibility_file": "injected heartbeat.json path outside the carrier",
+      "entry": {
+        "last_seen": "ISO-8601 local timestamp",
+        "pid": "current process id",
+        "active": true
+      },
+      "conflict_window_seconds": 300,
+      "write": "atomic JSON update",
+      "malformed_input": "fail closed for explicit sync; status may report unavailable without rewriting"
+    },
+    "pull_selection": {
+      "rule": "from carrier pending snapshots, exclude active cooldown entries and choose the greatest created_at; tie-break by node_id and basename",
+      "carrier_call": "TransitSync.pull_selected([snapshot.path.name])",
+      "no_pending": "update own heartbeat and return the legacy no-newer-backups tuple",
+      "success": "clear the selected cooldown entry and update heartbeat only after carrier state advances"
+    },
+    "cooldown": {
+      "seconds": 1800,
+      "transient_classes": [
+        "SQLite disk I/O error",
+        "Windows cloud operation error 426"
+      ],
+      "non_transient": "return failure without cooldown",
+      "pruning": "remove expired or malformed entries before selection"
+    },
+    "cleanup": {
+      "keep_days_default": 7,
+      "keep_per_node_default": 10,
+      "interactive_bach_command_authority": "dry_run false authorizes carrier apply and all-node scope",
+      "dry_run": "carrier dry-run; no pair is removed",
+      "carrier_call": "TransitSync.cleanup(keep_days, keep_per_node, include_foreign=True, dry_run=dry_run)"
+    }
+  },
+  "operations": [
+    {
+      "name": "backup",
+      "carrier_calls": [
+        "TransitSync.push"
+      ],
+      "dry_run_target": "plan without publishing",
+      "success_output": "Backup erstellt: {snapshot_basename}",
+      "failure_output": "Backup fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "cleanup",
+      "carrier_calls": [
+        "TransitSync.cleanup"
+      ],
+      "dry_run_target": "honored",
+      "success_output": "Cleanup abgeschlossen: {deleted_count} Backups gelöscht",
+      "failure_output": "Cleanup fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "disable",
+      "carrier_calls": [],
+      "dry_run_target": "honored",
+      "success_output": "Auto-Sync deaktiviert",
+      "failure_output": "Disable fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "enable",
+      "carrier_calls": [],
+      "dry_run_target": "honored",
+      "success_output": "Auto-Sync aktiviert (wirkt bei nächstem Start)",
+      "failure_output": "Enable fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "init",
+      "carrier_calls": [],
+      "dry_run_target": "honored",
+      "status": "blocked-by-source-defect",
+      "rule": "Do not copy an application database. Require an application-created schema, then validate carrier configuration.",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "pull",
+      "carrier_calls": [
+        "TransitSync.pending",
+        "TransitSync.pull_selected"
+      ],
+      "dry_run_target": "honored",
+      "success_output": "ProSync Pull: {merged_rows} Zeilen aus {snapshot_basename} gemergt",
+      "failure_output": "ProSync Pull fehlgeschlagen: {snapshot_basename} ({safe_error})",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "push",
+      "carrier_calls": [
+        "TransitSync.push"
+      ],
+      "dry_run_target": "honored",
+      "success_output": "ProSync Push: {snapshot_basename}",
+      "guard_output": "ProSync Push: Bereits heute gepusht",
+      "failure_output": "Push fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "status",
+      "carrier_calls": [
+        "TransitSync.status"
+      ],
+      "dry_run_target": "read-only operation",
+      "output": "legacy-compatible text assembled from carrier status, verified snapshot metadata and heartbeat compatibility state",
+      "parity": "not-accepted"
+    },
+    {
+      "name": "sync",
+      "carrier_calls": [
+        "TransitSync.pending",
+        "TransitSync.pull_selected",
+        "TransitSync.push"
+      ],
+      "dry_run_target": "honored",
+      "rule": "check heartbeat conflicts, select at most one pending snapshot, merge it, then publish one snapshot; never publish after a failed merge",
+      "success_output": "Sync erfolgreich",
+      "failure_output": "Sync fehlgeschlagen: {safe_error}",
+      "parity": "not-accepted"
+    }
+  ],
+  "known_source_defects": [
+    {
+      "id": "dbsync-init-stale-source",
+      "effect": "Current init copies a documented stale application database source.",
+      "target": "No automatic first-copy; application creates and migrates its schema."
+    },
+    {
+      "id": "dbsync-dry-run-ignored",
+      "effect": "Current handler accepts dry_run but ignores it for every operation.",
+      "target": "The adapter honors dry_run for every state-changing operation; this correction needs explicit equivalence classification after the hold."
+    }
+  ],
+  "migration": {
+    "preconditions": [
+      "copy-only test database",
+      "legacy transit inventory and sync_state hash recorded",
+      "carrier configuration validated",
+      "no live BACH process"
+    ],
+    "steps": [
+      "map legacy host names to carrier node ids without changing snapshot payloads",
+      "translate last_pulled and active deferred entries into carrier and adapter state",
+      "leave legacy .bachdb files untouched until equivalence and rollback tests pass",
+      "enable one adapter write path and guard the legacy write path"
+    ],
+    "rollback": "disable the adapter, restore the recorded legacy state copy, and keep carrier artifacts additive until reviewed"
+  },
+  "acceptance": [
+    "all nine operations exercised against the same anonymized old/new starting state after the hold",
+    "allowed files, rows, messages and failure classes compared",
+    "migration and rollback executed on copies",
+    "legacy parallel writes proven disabled during BACH-IN"
+  ]
+}

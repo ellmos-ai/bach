@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from hub._services.chat.slots_config import initialize_slots_config
-from hub._services.trithon.routing_contract import create_pending_contract
+from hub._services.trithon.transport_contract import create_pending_contract
 from hub._services.trithon_dispatch import SyntheticTicket, execute_intent_v1
 
 TEST_ASSIGNMENT = {
@@ -85,11 +85,11 @@ def dispatch_setup(tmp_path: Path):
     initialize_slots_config(str(slots_path))
     task_id = _create_test_db(db_path)
 
-    ticket_id = "ticket-dispatch-001"
-    create_pending_contract(ledger_path, ticket_id)
+    work_item_id = "work-item-dispatch-001"
+    create_pending_contract(ledger_path, work_item_id)
 
     ticket = SyntheticTicket(
-        ticket_id=ticket_id,
+        work_item_id=work_item_id,
         ledger_path=ledger_path,
         db_path=db_path,
         slots_path=slots_path,
@@ -157,11 +157,11 @@ def test_execute_intent_v1_invalid_role(tmp_path: Path):
     initialize_slots_config(str(slots_path))
     task_id = _create_test_db(db_path)
 
-    ticket_id = "ticket-role-denied"
-    create_pending_contract(ledger_path, ticket_id)
+    work_item_id = "work-item-role-denied"
+    create_pending_contract(ledger_path, work_item_id)
 
     ticket = SyntheticTicket(
-        ticket_id=ticket_id,
+        work_item_id=work_item_id,
         ledger_path=ledger_path,
         db_path=db_path,
         slots_path=slots_path,

@@ -92,7 +92,7 @@ Acceso vía:
 Rol: desarrollos internos, automatización, tareas especiales
 
 Categorías:
-  - Herramientas de codificación c_encoding_fixer, c_json_repair, etc.
+  - Herramientas de codificación encoding_fixer, json_repair, etc.
   - Herramientas de impuestos tax_scanner, tax_sync, etc.
   - Scripts de agente agent_framework, desarrollador_agent
   - Herramientas de respaldo backup_manager

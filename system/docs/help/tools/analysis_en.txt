@@ -35,10 +35,10 @@ code_analyzer.py
   Analyzes Python code for quality and structure.
   Call: python tools/code_analyzer.py <file>
 
-c_method_analyzer.py
+method_analyzer.py
   Analyzes methods and functions in Python files.
   Finds long methods, complex functions.
-  Call: python tools/c_method_analyzer.py <file>
+  Call: python tools/method_analyzer.py <file>
 
 STATISTICS & REPORTS
 -------------------
@@ -74,9 +74,9 @@ duplicate_detector.py
 SYSTEM INSPECTION
 -----------------
 
-c_sqlite_viewer.py
+sqlite_viewer.py
   Inspects SQLite databases (bach.db, bach.db).
-  Call: python tools/c_sqlite_viewer.py <db>
+  Call: python tools/sqlite_viewer.py <db>
 
 inspect_db_tables.py
   Shows table schema and statistics.

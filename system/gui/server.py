@@ -29,6 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+import threading
 import httpx
 
 import sqlite3
@@ -46,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
 from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
 
@@ -83,7 +85,8 @@ except ImportError:
 
 try:
 
-    from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query, WebSocket, WebSocketDisconnect, Body
+    import shutil as _shutil
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query, WebSocket, WebSocketDisconnect, Body
 
     from fastapi.staticfiles import StaticFiles
 
@@ -211,15 +214,23 @@ def _chat_control_base_url() -> str | None:
             )
         except (OSError, ValueError, TypeError):
             same_root = False
-        chat = discovery.get("services", {}).get("chat", {})
-        host = str(chat.get("host") or "")
-        try:
-            port = int(chat.get("actual_port"))
-        except (TypeError, ValueError):
-            port = 0
-        if same_root and host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
-            return f"http://127.0.0.1:{port}/api"
-        return None
+        services = discovery.get("services")
+        if not same_root or not isinstance(services, dict):
+            return None
+        if "chat" in services:
+            chat = services["chat"]
+            if not isinstance(chat, dict):
+                return None
+            host = str(chat.get("host") or "")
+            try:
+                port = int(chat.get("actual_port"))
+            except (TypeError, ValueError):
+                port = 0
+            if host in LOCAL_CHAT_HOSTS and 1 <= port <= 65535:
+                return f"http://127.0.0.1:{port}/api"
+            return None
+        # Older Startspine discovery can register only the bridge. The proxy
+        # checks the fallback listener's typed chat-control identity each time.
 
     try:
         port = int(os.environ.get("BACH_CONTROL_PORT", "8081"))
@@ -1271,6 +1282,203 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(NoCacheMiddleware)
 
+# ── Device-Token Authentication Middleware (Task #1499) ─────────
+try:
+    from gui.device_auth import (
+        create_device,
+        has_active_devices,
+        list_devices,
+        revoke_device,
+        validate_token,
+    )
+except ImportError:
+    try:
+        from device_auth import (  # type: ignore
+            create_device,
+            has_active_devices,
+            list_devices,
+            revoke_device,
+            validate_token,
+        )
+    except ImportError:
+        import importlib.util
+        _devauth_path = Path(__file__).parent / "device_auth.py"
+        _spec = importlib.util.spec_from_file_location("device_auth", _devauth_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        create_device = _mod.create_device
+        has_active_devices = _mod.has_active_devices
+        list_devices = _mod.list_devices
+        revoke_device = _mod.revoke_device
+        validate_token = _mod.validate_token
+
+
+class DeviceAuthMiddleware(BaseHTTPMiddleware):
+    """Enforces Bearer token device authentication on API routes when devices exist."""
+
+    EXEMPT_PREFIXES = (
+        "/tokens",
+        "/token-dashboard",
+        "/static/",
+        "/favicon.ico",
+        "/docs",
+        "/openapi.json",
+    )
+
+    EXEMPT_API_PATHS = {
+        "/api/status",
+        "/api/health",
+        "/api/devices/verify",
+        "/api/gui/backend-origin",
+        "/api/gui/brand",
+    }
+
+    TRAY_TRANSITIONAL_PATHS = {
+        "/api/tasks",
+        "/api/marblerun",
+        "/api/governance",
+        "/api/memory",
+        "/api/gardener",
+        "/api/capabilities",
+        "/api/backends",
+        "/api/models",
+        "/api/slots",
+        "/api/chat",
+    }
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # 1. Non-API routes pass through
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        for prefix in self.EXEMPT_PREFIXES:
+            if path.startswith(prefix):
+                return await call_next(request)
+
+        # 2. Status & probe endpoints pass through
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
+            return await call_next(request)
+
+        # The browser authenticates as a registered device. The proxy supplies
+        # its separate Control credential only on the trusted loopback hop.
+        if (path.startswith("/api/chat-control/") and request.method in {"GET", "POST"}
+                and path.removeprefix("/api/chat-control/") in CHAT_CONTROL_PATHS):
+            auth_header = request.headers.get("Authorization", "").strip()
+            device_token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+                            else request.cookies.get("bach_device_token"))
+            if not device_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(device_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
+            return await call_next(request)
+
+        # 3. Extract Bearer token if provided (Header, Cookie, or Query Param)
+        auth_header = request.headers.get("Authorization", "").strip()
+        bearer_token = None
+        if auth_header.startswith("Bearer "):
+            bearer_token = auth_header[7:].strip()
+        elif request.cookies.get("bach_device_token"):
+            bearer_token = request.cookies.get("bach_device_token")
+        elif request.query_params.get("token"):
+            bearer_token = request.query_params.get("token")
+
+        # Inbox paths expose private file names, previews and sorting actions.
+        # Require a registered device even on loopback and with no devices set up.
+        if (path == "/api/inbox" or path.startswith("/api/inbox/")
+                or path == "/api/mounts" or path.startswith("/api/mounts/")
+                or path == "/api/artifacts" or path.startswith("/api/artifacts/")
+                or path == "/api/artefakte"
+                or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
+                or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
+                or path == "/api/governance/audit"
+                or path == "/api/daemon" or path.startswith("/api/daemon/")
+                or (path == "/api/settings/theme" and request.method == "PUT")):
+            private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
+            if not private_token:
+                return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
+            device = validate_token(private_token)
+            if not device:
+                return JSONResponse(status_code=403, content={"error": "Geräteschlüssel ungültig oder widerrufen"})
+            request.state.device = device
+            return await call_next(request)
+
+        # Memory and Agent Studio responses contain private notes and persona
+        # prompts. Transitional and loopback fallbacks must not expose them.
+        if (path == "/api/calendar" or path.startswith("/api/calendar/")
+                or path == "/api/routines" or path.startswith("/api/routines/")
+                or path == "/api/memory" or path.startswith("/api/memory/")
+                or path == "/api/gardener" or path.startswith("/api/gardener/")
+                or path == "/api/agent-studio" or path.startswith("/api/agent-studio/")):
+            private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
+            if not private_token:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Missing device authorization token", "detail": "Unauthorized"},
+                )
+            device = validate_token(private_token)
+            if not device:
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "Invalid or revoked device token", "detail": "Forbidden"},
+                )
+            request.state.device = device
+            return await call_next(request)
+
+        # If a token was supplied, validate it
+        if bearer_token:
+            device = validate_token(bearer_token)
+            if not device:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Invalid or revoked device token", "detail": "Unauthorized"},
+                )
+            request.state.device = device
+            return await call_next(request)
+
+        # If no token was supplied:
+        # Check if any active devices exist in the database
+        if not has_active_devices():
+            return await call_next(request)
+
+        # Allow transitional paths (with prefix match for subpaths like /api/tasks/{id})
+        for tpath in self.TRAY_TRANSITIONAL_PATHS:
+            if path == tpath or path.startswith(tpath + "/"):
+                return await call_next(request)
+
+        # Localhost / loopback fallback for local server operations
+        client_host = request.client.host if request.client else ""
+        if client_host in ("127.0.0.1", "::1", "localhost"):
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Missing device authorization token", "detail": "Unauthorized"},
+        )
+
+
+app.add_middleware(DeviceAuthMiddleware)
+
+try:
+    from gui.api.unified_api import router as unified_router
+    app.include_router(unified_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
+
+try:
+    from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
+    app.include_router(core_system_agents_router)
+    app.include_router(prompt_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
+
+
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1279,6 +1487,67 @@ app.add_middleware(NoCacheMiddleware)
 
 # ═══════════════════════════════════════════════════════════════
 
+
+
+@app.get("/api/gui/backend-origin")
+async def get_gui_backend_origin():
+    """Non-secret declaration plus live read-only probe of this API's BACH DB."""
+    from gui.backend_origin import observe_backend_origin
+    from gui.api import unified_api
+
+    return observe_backend_origin(BACH_DB, unified_api.BACH_DB)
+
+
+@app.get("/api/gui/brand")
+async def get_gui_brand():
+    """Return validated non-secret branding for this GUI consumer."""
+    from gui.branding import read_gui_brand
+
+    return read_gui_brand()
+
+
+@app.get("/api/gui/capabilities")
+async def get_gui_capabilities():
+    """Describe registered GUI adapters without inventing runtime availability."""
+    from datetime import datetime, timezone
+    from gui.branding import read_gui_brand
+
+    observed = datetime.now(timezone.utc).isoformat()
+    registered_paths = {getattr(route, "path", None) for route in app.routes}
+    endpoints = {
+        "ellmos-system-gui": "/",
+        "tasks": "/api/tasks",
+        "agent-studio": "/api/agent-studio/blueprints",
+        "memory": "/api/memory/search",
+        "domains": "/api/domains/installed",
+        "core-system-agents": "/api/system/core-agents",
+        "core-prompts": "/api/system/core-prompts",
+        "hardware-cockpit": "/api/system/cluster-cockpit",
+    }
+    modules = {}
+    for module_id, endpoint in endpoints.items():
+        present = endpoint in registered_paths
+        modules[module_id] = {
+            "adapter_registered": present,
+            "runtime_verified": None,
+            "available": None if present else False,
+            "reason_code": "route_registered_runtime_not_probed" if present else "adapter_not_registered",
+            "observed_at": observed if present else None,
+        }
+    return {
+        "schema": "ellmos-system-gui.capabilities.v1",
+        "schema_version": 1,
+        "kit": {
+            "revision": None, "version": None, "archive_sha256": None,
+            "verified": None, "installed": None,
+            "installed_files_verified": None, "served": None,
+            "reason_code": "release_identity_not_probed",
+        },
+        "brand": read_gui_brand(),
+        "modules": modules,
+        "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
+        "observed_at": observed,
+    }
 
 
 @app.get("/api/status")
@@ -1380,6 +1649,16 @@ async def get_status():
     except Exception as e:
         system_info = {"error": public_error_message()}
 
+    db_connected = None
+    try:
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve(strict=True).as_uri() + "?mode=ro", uri=True, timeout=2)) as probe:
+            probe.execute("PRAGMA query_only = ON")
+            if probe.execute("SELECT 1").fetchone() == (1,):
+                db_connected = True
+    except (OSError, sqlite3.Error):
+        pass
+
     return {
 
         "status": "online",
@@ -1387,7 +1666,7 @@ async def get_status():
         "version": "1.1.85",
 
         "timestamp": datetime.now().isoformat(),
-        "db_connected": True,
+        "db_connected": db_connected,
 
         "stats": {
 
@@ -1521,7 +1800,8 @@ async def api_get_tasks(
     category: str = None,
     assigned_to: str = None,
     priority: str = None,
-    limit: int = 100
+    limit: int = 100,
+    offset: int = 0
 ):
     """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
     try:
@@ -1531,7 +1811,9 @@ async def api_get_tasks(
         # (z.B. "in_progress,progress" oder "done,completed,closed")
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
-        if status and status.lower() != "all":
+        if status and status.lower() == "nonterminal":
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+        elif status and status.lower() != "all":
             STATUS_ALIASES = {
                 "in_progress": ["in_progress", "progress"],
                 "pending": ["pending", "open"],
@@ -1577,10 +1859,13 @@ async def api_get_tasks(
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
 
-        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 WHEN 'P4' THEN 4 ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
         
         rows = conn.execute(query, params).fetchall()
+        has_more = limit > 0 and len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
         tasks = rows_to_list(rows)
 
         # image_data nicht in Liste senden (Performance), nur Flag
@@ -1604,7 +1889,8 @@ async def api_get_tasks(
                     pass
 
         conn.close()
-        return {"success": True, "tasks": tasks, "count": len(tasks)}
+        return {"success": True, "tasks": tasks, "count": len(tasks), "has_more": has_more,
+                "offset": max(0, offset)}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -1738,7 +2024,9 @@ async def update_task(task_id: int, update: TaskUpdate):
                                         changed_by=changed_by,
                                         allow_reopen=bool(update.allow_reopen)):
                 did_update = True
-        except GateReopenBlocked as exc:
+        except (GateReopenBlocked, ValueError) as exc:
+            # Business-rule conflicts (for example the missing-PR completion guard)
+            # are client-resolvable conflicts, not internal server errors.
             raise HTTPException(status_code=409, detail=str(exc))
 
         if did_update:
@@ -1871,14 +2159,57 @@ async def list_assignees():
                 "name": c[1],
                 "display_name": c[1].replace('_', ' ').title(),
                 "type": "connection",
-                "category": c[2],
                 "status": "available"
             })
     except Exception:
         pass
 
+    # Avatar-Agenten (Subscription / CLI Dummies & Proxies)
+    avatar_defs = [
+        {"name": "claude", "display_name": "Claude Code (Subscription / CLI)", "animus": "subscription"},
+        {"name": "gemini", "display_name": "Gemini Antigravity (Subscription / CLI)", "animus": "subscription"},
+        {"name": "codex", "display_name": "Codex / GPT (Subscription / CLI)", "animus": "subscription"},
+        {"name": "kimi", "display_name": "Kimi Code (CLI)", "animus": "cli"},
+    ]
+    for av in avatar_defs:
+        status = presence_map.get(av["name"], "offline")
+        if status == "crashed":
+            status = "offline"
+        assignees.append({
+            "id": f"avatar:{av['name']}",
+            "name": av["name"],
+            "display_name": av["display_name"],
+            "type": "avatar",
+            "category": "cli",
+            "animus": av["animus"],
+            "status": status
+        })
+
     conn.close()
     return {"assignees": assignees, "count": len(assignees)}
+
+
+@app.post("/api/presence")
+async def update_presence(payload: dict = Body(...)):
+    """Aktualisiert die Praesenz eines Partners / Avatar-Agenten (z.B. via Hook bei SessionStart/SessionEnd)."""
+    name = (payload.get("partner_name") or payload.get("name") or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name fehlt")
+    status = payload.get("status", "online")
+    session_id = payload.get("session_id")
+    task_id = payload.get("current_task")
+    now = datetime.now().isoformat()
+    conn = get_bach_db()
+    try:
+        conn.execute("""
+            INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat, current_task, session_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, status, now if status == "online" else None, now, task_id, session_id, now, now))
+        conn.commit()
+        return {"success": True, "partner": name, "status": status}
+    finally:
+        conn.close()
+
 
 
 @app.get("/api/agents")
@@ -1922,6 +2253,13 @@ async def api_list_agents():
         for agent in agents:
 
             agent["experts"] = [e for e in experts if e["agent_id"] == agent["id"]]
+            agent["profile_chat_ready"] = False
+            try:
+                from hub._services.chat.agent_profile_context import resolve_profile
+                binding, _profile_text = resolve_profile(int(agent["id"]))
+                agent["profile_chat_ready"] = binding["agent_id"] == int(agent["id"])
+            except (ValueError, TypeError, OSError):
+                pass
 
             # Dashboard URL Fallback/Konstruktion
 
@@ -1946,6 +2284,63 @@ async def api_list_agents():
 
         return {"success": False, "error": public_error_message()}
 
+
+
+@app.get("/api/agents/runtime")
+async def api_agent_runtime(request: Request):
+    """Read only: report launcher-owned processes for verified local profiles."""
+    authorization = request.headers.get("authorization", "")
+    token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+    if not token or not validate_token(token):
+        raise HTTPException(status_code=401, detail="Geräteanmeldung erforderlich")
+
+    from hub.agent_launcher import AgentLauncherHandler
+    from hub.agent_process_provider import inspect_process_identity
+    from hub._services.chat.agent_profile_context import resolve_profile
+
+    handler = AgentLauncherHandler(BACH_DIR)
+    registered = {item["name"] for item in handler._scan_agents()}
+    conn = get_bach_db()
+    try:
+        rows = conn.execute("SELECT id FROM bach_agents").fetchall()
+    finally:
+        conn.close()
+
+    states = []
+    for row in rows:
+        agent_id = int(row["id"])
+        try:
+            binding, _text = resolve_profile(agent_id)
+        except (ValueError, TypeError, OSError):
+            continue
+        slug = binding["exact_slug"]
+        if slug not in registered:
+            states.append({"agent_id": agent_id, "process_state": "unavailable", "running": False})
+            continue
+        pid_file = handler.pid_dir / f"{slug}.pid"
+        if not pid_file.exists():
+            state = "not_started"
+            reason = None
+        else:
+            reason = None
+            pid_data = handler._load_pid_data(slug)
+            identity, _process = inspect_process_identity(pid_data)
+            if identity == "owned":
+                # inspect_process_identity verifies PID and birth time. Do not
+                # construct the optional external registry on a read-only route.
+                external_enabled = os.environ.get("BACH_USE_EXTERNAL_AGENT_REGISTRY", "").strip().lower() in {
+                    "1", "true", "yes", "on"
+                }
+                state = "unavailable" if external_enabled else "running"
+                if external_enabled:
+                    reason = "external_registry_not_probed"
+            elif identity == "gone":
+                state = "ended"
+            else:
+                state = identity
+        states.append({"agent_id": agent_id, "process_state": state, "running": state == "running",
+                       **({"reason": reason} if reason else {})})
+    return {"success": True, "agents": states}
 
 
 @app.put("/api/agents/{agent_id}/toggle")
@@ -2514,34 +2909,24 @@ async def list_scheduler_runs(job_id: Optional[int] = None, limit: int = 20):
 
 
 
+_DAEMON_CONTROL_LOCK = threading.Lock()
+_GUI_DAEMON = None
+_GUI_DAEMON_STARTING = False
+
+
 @app.get("/api/daemon/status")
 
 async def get_daemon_status():
 
     """Liefert aktuellen Daemon-Status mit Job-Statistiken und Runtime-Metriken."""
 
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    running = False
-    pid = None
-    pid_content = None
+    identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+    running = identity["running"]
+    pid = identity["pid"]
     started_at = None
-
-    if DAEMON_PID_FILE.exists():
-        try:
-            pid_content = DAEMON_PID_FILE.read_text().strip()
-            pid = int(pid_content)
-            import subprocess
-            if os.name == 'nt':
-                output = subprocess.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=subprocess.DEVNULL).decode('utf-8', errors='replace')
-                running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                running = True
-        except Exception:
-            pass
 
     config = {"interval": 15, "max_sessions": 3, "quiet_time": None}
     is_quiet = False
@@ -2557,46 +2942,47 @@ async def get_daemon_status():
                 if quiet_start and quiet_end:
                     config["quiet_time"] = f"{quiet_start}-{quiet_end}"
                     is_quiet = is_quiet_time(quiet_start, quiet_end)
-                started_at = cfg.get("started_at")
         except Exception:
             pass
 
-    runtime_str = "00:00:00"
-    sessions_generated = 0
-    next_session_in = 0
-    if running and started_at:
-        interval = config["interval"]
-        sessions_generated = get_extrapolated_session_count(started_at, interval)
-        next_session_in = get_next_session_seconds(started_at, interval)
-        runtime_str = get_runtime_string(started_at)
+    # A configured interval does not prove a session ran or when the loop began.
+    runtime_str = None
+    sessions_generated = None
+    next_session_in = None
 
-    conn = get_user_db()
-    stats = {"total_jobs": 0, "active_jobs": 0, "runs_today": 0, "failed_today": 0}
+    stats = {"total_jobs": None, "active_jobs": None, "runs_today": None, "failed_today": None}
     last_runs = []
+    stats_availability = "unavailable"
     try:
-        stats["total_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0]
-        stats["active_jobs"] = conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0]
-        stats["runs_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
-        ).fetchone()[0]
-        stats["failed_today"] = conn.execute(
-            "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
-        ).fetchone()[0]
-        last_runs = conn.execute("""
-            SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
-            FROM scheduler_runs r
-            JOIN scheduler_jobs j ON r.job_id = j.id
-            ORDER BY r.started_at DESC LIMIT 5
-        """).fetchall()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        from contextlib import closing
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            observed = {
+                "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
+                "active_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs WHERE is_active = 1").fetchone()[0],
+                "runs_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now')"
+                ).fetchone()[0],
+                "failed_today": conn.execute(
+                    "SELECT COUNT(*) FROM scheduler_runs WHERE date(started_at) = date('now') AND result = 'failed'"
+                ).fetchone()[0],
+            }
+            observed_runs = conn.execute("""
+                SELECT r.id, j.name, r.result, r.started_at, r.duration_seconds
+                FROM scheduler_runs r
+                JOIN scheduler_jobs j ON r.job_id = j.id
+                ORDER BY r.started_at DESC LIMIT 5
+            """).fetchall()
+            stats, last_runs, stats_availability = observed, observed_runs, "available"
+    except (OSError, sqlite3.Error):
         pass
-    conn.close()
 
     return {
         "running": running,
         "pid": pid,
-        "pid_file": str(DAEMON_PID_FILE),
-        "pid_content": pid_content,
+        "identity": identity["identity"],
+        "identity_reason": identity["reason"],
+        "control_available": identity["control_available"],
         "started_at": started_at,
         "config": config,
         "runtime_str": runtime_str,
@@ -2604,115 +2990,64 @@ async def get_daemon_status():
         "next_session_in": next_session_in,
         "is_quiet_time": is_quiet,
         "stats": stats,
+        "stats_availability": stats_availability,
         "last_runs": rows_to_list(last_runs),
     }
 
 
-
-
-
 @app.post("/api/daemon/start")
-
 async def start_daemon(background_tasks: BackgroundTasks):
-
-    """Startet den Daemon-Service im Hintergrund."""
-
+    """Queue a GUI-owned scheduler only when no legacy or foreign PID is present."""
+    global _GUI_DAEMON_STARTING, _GUI_DAEMON
     from gui.daemon_service import DaemonService, DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-
-
-    # Pruefen ob bereits laeuft (mit PID-Validierung)
-
-    if DAEMON_PID_FILE.exists():
-        daemon_running = False
-        try:
-            pid = int(DAEMON_PID_FILE.read_text().strip())
-            if os.name == 'nt':
-                import subprocess as _sp
-                output = _sp.check_output(
-                    ['tasklist', '/FI', f'PID eq {pid}'],
-                    stderr=_sp.DEVNULL).decode('utf-8', errors='replace')
-                daemon_running = str(pid) in output
-            else:
-                os.kill(pid, 0)
-                daemon_running = True
-        except Exception:
-            DAEMON_PID_FILE.unlink(missing_ok=True)
-        if daemon_running:
-            return {"status": "already_running", "message": "Daemon laeuft bereits"}
-
-
+    with _DAEMON_CONTROL_LOCK:
+        if _GUI_DAEMON_STARTING:
+            raise HTTPException(status_code=409, detail="Daemon-Start läuft bereits")
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if identity["running"]:
+            return {"status": "already_running", "message": "Daemon-Prozessidentität bestätigt"}
+        if identity["identity"] != "stopped":
+            raise HTTPException(status_code=409, detail="Daemon-Identität nicht bestätigt; Start gesperrt")
+        _GUI_DAEMON_STARTING = True
 
     def run_daemon():
-
-        daemon = DaemonService()
-
-        daemon.run()
-
-
+        global _GUI_DAEMON_STARTING, _GUI_DAEMON
+        daemon = None
+        try:
+            daemon = DaemonService()
+            with _DAEMON_CONTROL_LOCK:
+                _GUI_DAEMON = daemon
+            daemon.run(owner_kind="gui")
+        finally:
+            with _DAEMON_CONTROL_LOCK:
+                if _GUI_DAEMON is daemon:
+                    _GUI_DAEMON = None
+                _GUI_DAEMON_STARTING = False
 
     background_tasks.add_task(run_daemon)
-
-    return {"status": "starting", "message": "Daemon wird gestartet..."}
-
-
-
+    return {"status": "starting", "message": "Daemon-Start eingereiht; Laufstatus erneut prüfen"}
 
 
 @app.post("/api/daemon/stop")
-
 async def stop_daemon():
+    """Request graceful stop only from the verified GUI-owned service object."""
+    from gui.daemon_service import DAEMON_PID_FILE
+    from gui.daemon_identity import observe_identity
 
-    """Stoppt den Daemon-Service."""
-
-    from gui.daemon_service import DaemonService, DAEMON_PID_FILE
-
-
-
-    if not DAEMON_PID_FILE.exists():
-
-        return {"status": "not_running", "message": "Daemon laeuft nicht"}
-
-
-
-    # Signal senden (PID-File entfernen reicht meist)
-
-    try:
-
-        DAEMON_PID_FILE.unlink()
-
-        return {"status": "stopped", "message": "Stop-Signal gesendet"}
-
-    except Exception as e:
-
-        return {"status": "error", "message": public_error_message()}
-
-
-
+    with _DAEMON_CONTROL_LOCK:
+        identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+        if not identity["running"] or not identity["control_available"] or _GUI_DAEMON is None:
+            raise HTTPException(status_code=409, detail="Steuerung ohne bestätigte lokale Prozessidentität gesperrt")
+        _GUI_DAEMON.stop()
+    return {"status": "stopping", "message": "Stop-Signal an bestätigten lokalen Daemon gesendet"}
 
 
 @app.post("/api/daemon/kill-all")
-
 async def kill_all_daemons():
-
-    """Beendet alle Daemon-Prozesse (Zombie-Praevention)."""
-
-    from gui.daemon_service import DaemonService
-
-
-
-    DaemonService.kill_all_daemons()
-
-    return {
-
-        "status": "ok",
-
-        "message": "Daemon-Prozesse wurden beendet"
-
-    }
-
-
-
+    """Broad process-name termination has no safe ownership contract."""
+    raise HTTPException(status_code=409, detail="Massenbeenden ohne Prozessidentität gesperrt")
 
 
 @app.post("/api/daemon/jobs/{job_id}/run")
@@ -4170,10 +4505,16 @@ async def get_gui_theme():
 async def update_gui_theme(payload: ThemeUpdate):
     """Validate and persist the dashboard theme in user_config.json."""
     try:
-        result = ThemeHandler(BACH_DIR).set_theme(payload.theme, payload.custom)
-        return {"success": True, **result}
+        handler = ThemeHandler(BACH_DIR)
+        result = handler.set_theme(payload.theme, payload.custom)
+        persisted = handler.get_theme()
+        if persisted["theme"] != result["theme"] or persisted["custom"] != result["custom"]:
+            raise HTTPException(status_code=503, detail="Theme-Speicherung nicht bestätigt")
+        return {"success": True, **persisted}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="Theme-Speicherung nicht verfügbar") from exc
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -4191,6 +4532,11 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+ASTRO_DIST_DIR = GUI_DIR / "web" / "dist"
+if (ASTRO_DIST_DIR / "_astro").exists():
+    app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
+
+
 # Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
 # verwendet sie ihre bestehende Adapter-Konfiguration; BACH fuehrt weder eine
 # zweite Authentifizierung noch eine zweite Unified-GUI-Konfigurationsquelle ein.
@@ -4199,17 +4545,153 @@ if settings.console_enabled:
 
 
 
+@app.get("/ocean", response_class=HTMLResponse)
+@app.get("/unified", response_class=HTMLResponse)
+async def unified_ocean_dashboard():
+    """Unified BACH & Ocean Workstation Dashboard."""
+    dashboard_file = GUI_DIR / "unified_dashboard.html"
+    if dashboard_file.exists():
+        return FileResponse(dashboard_file)
+    raise HTTPException(status_code=404, detail="unified_dashboard.html nicht gefunden")
+
+
 @app.get("/", response_class=HTMLResponse)
-
 async def index():
-
-    """Startseite."""
+    """Startseite (Astro v5 Modular GUI mit Legacy-Fallback)."""
+    astro_index = ASTRO_DIST_DIR / "index.html"
+    if astro_index.exists():
+        return FileResponse(astro_index)
 
     index_file = TEMPLATES_DIR / "index.html"
-
     if index_file.exists():
-
         return FileResponse(index_file)
+
+
+@app.get("/agenten/fabrika", response_class=HTMLResponse)
+async def agenten_fabrika_page():
+    p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
+
+
+@app.get("/agenten/running", response_class=HTMLResponse)
+async def agenten_running_page():
+    p = ASTRO_DIST_DIR / "agenten" / "running.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Living & Running Seite nicht gefunden")
+
+
+@app.get("/agenten/marblerun", response_class=HTMLResponse)
+async def agenten_marblerun_page():
+    p = ASTRO_DIST_DIR / "agenten" / "marblerun.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="MarbleRun Seite nicht gefunden")
+
+
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    for candidate in [ASTRO_DIST_DIR / "governance.html", ASTRO_DIST_DIR / "governance" / "index.html"]:
+        if candidate.exists():
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="Governance Seite nicht gefunden")
+
+
+@app.get("/governance/funk", response_class=HTMLResponse)
+async def governance_funk_page():
+    p = ASTRO_DIST_DIR / "governance" / "funk.html"
+    if p.exists():
+        return FileResponse(p)
+    return await governance_page()
+
+
+@app.get("/governance/usecases", response_class=HTMLResponse)
+async def governance_usecases_page():
+    p = ASTRO_DIST_DIR / "governance" / "usecases.html"
+    if p.exists():
+        return FileResponse(p)
+    usecases_file = TEMPLATES_DIR / "usecases.html"
+    if usecases_file.exists():
+        return FileResponse(usecases_file)
+    raise HTTPException(status_code=404, detail="Governance Use Cases nicht gefunden")
+
+
+@app.get("/governance/logs", response_class=HTMLResponse)
+async def governance_logs_page():
+    p = ASTRO_DIST_DIR / "governance" / "logs.html"
+    if p.exists():
+        return FileResponse(p)
+    logs_file = TEMPLATES_DIR / "logs.html"
+    if logs_file.exists():
+        return FileResponse(logs_file)
+    raise HTTPException(status_code=404, detail="Governance Logs nicht gefunden")
+
+
+
+@app.get("/life", response_class=HTMLResponse)
+async def life_page(tab: str = None):
+    """GUX-049/051/052: tab-Dispatch statt reinem FileResponse.
+    tab=routinen -> routinen.html inline (persoenliche Routinen, kein Redirect)
+    tab=gesundheit -> gesundheit.html inline
+    tab=None/other -> life.html / persoenlich.html"""
+    if tab == 'routinen':
+        rout_file = TEMPLATES_DIR / "routinen.html"
+        if rout_file.exists():
+            return FileResponse(rout_file)
+        raise HTTPException(status_code=404, detail="Template routinen.html nicht gefunden")
+    if tab == 'gesundheit':
+        gs_file = TEMPLATES_DIR / "gesundheit.html"
+        if gs_file.exists():
+            return FileResponse(gs_file)
+        raise HTTPException(status_code=404, detail="Template gesundheit.html nicht gefunden")
+    p = ASTRO_DIST_DIR / "life.html"
+    if p.exists():
+        return FileResponse(p)
+    pers_file = TEMPLATES_DIR / "persoenlich.html"
+    if pers_file.exists():
+        return FileResponse(pers_file)
+    raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
+
+
+@app.get("/domains", response_class=HTMLResponse)
+async def domains_page():
+    p = ASTRO_DIST_DIR / "domains.html"
+    if p.exists():
+        return FileResponse(p)
+    ati_file = TEMPLATES_DIR / "ati.html"
+    if ati_file.exists():
+        return FileResponse(ati_file)
+    raise HTTPException(status_code=404, detail="Domains-Seite nicht gefunden")
+
+
+@app.get("/artefakte", response_class=HTMLResponse)
+async def artefakte_page():
+    p = ASTRO_DIST_DIR / "artefakte.html"
+    if p.exists():
+        return FileResponse(p)
+    inbox_file = TEMPLATES_DIR / "inbox.html"
+    if inbox_file.exists():
+        return FileResponse(inbox_file)
+    raise HTTPException(status_code=404, detail="Artefakte-Seite nicht gefunden")
+
+
+@app.get("/installer", response_class=HTMLResponse)
+async def installer_page():
+    for candidate in [ASTRO_DIST_DIR / "installer.html", TEMPLATES_DIR / "installer.html"]:
+        if candidate.exists():
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="Installer-Seite nicht gefunden")
+
+
+@app.get("/agenten/sessions", response_class=HTMLResponse)
+async def agenten_sessions_page():
+    p = ASTRO_DIST_DIR / "agenten" / "sessions.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=503, detail="Sessions-Seite noch nicht gebaut")
+
 
     
 
@@ -4275,10 +4757,12 @@ async def tasks_page():
 
     """Tasks Seite."""
 
+    astro_tasks = ASTRO_DIST_DIR / "tasks.html"
+    if astro_tasks.exists():
+        return FileResponse(astro_tasks)
+
     tasks_file = TEMPLATES_DIR / "tasks.html"
-
     if tasks_file.exists():
-
         return FileResponse(tasks_file)
 
     raise HTTPException(status_code=404, detail="Template tasks.html nicht gefunden")
@@ -4352,18 +4836,16 @@ async def maintenance_page():
 
 
 @app.get("/logs", response_class=HTMLResponse)
-
 async def logs_page():
-
     """Logs Anzeige Seite."""
-
+    astro_log = ASTRO_DIST_DIR / "governance" / "logs.html"
+    if astro_log.exists():
+        return FileResponse(astro_log)
     logs_file = TEMPLATES_DIR / "logs.html"
-
     if logs_file.exists():
-
         return FileResponse(logs_file)
-
     raise HTTPException(status_code=404, detail="Template logs.html nicht gefunden")
+
 
 
 @app.get("/chat", response_class=HTMLResponse)
@@ -4383,6 +4865,9 @@ async def chat_control_proxy(control_path: str, request: Request):
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
+    control_authorization = get_control_api_auth_header()
+    if not control_authorization:
+        raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung nicht verfügbar")
     # Task #1338: STT kann das Whisper-Modell nachladen (einmalig ~Minuten) —
     # daher ein deutlich hoeherer Timeout als fuer Status-/Steuerpfade.
     if control_path == "chat":
@@ -4393,9 +4878,7 @@ async def chat_control_proxy(control_path: str, request: Request):
         timeout = 8.0
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            upstream_headers = {}
-            if request.headers.get("authorization"):
-                upstream_headers["authorization"] = request.headers["authorization"]
+            upstream_headers = {"authorization": control_authorization}
             status_url = f"{base_url}/status"
             if upstream_headers:
                 status_response = await client.get(status_url, headers=upstream_headers)
@@ -4407,6 +4890,15 @@ async def chat_control_proxy(control_path: str, request: Request):
                 status_payload = None
             if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
                 raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
+            if request.method == "GET" and control_path in {"history", "sessions", "session"}:
+                auth_response = await client.get(f"{base_url}/auth/check", headers=upstream_headers)
+                try:
+                    auth_payload = auth_response.json()
+                except ValueError:
+                    auth_payload = None
+                if (auth_response.status_code != 200 or not isinstance(auth_payload, dict)
+                        or auth_payload.get("authenticated") is not True):
+                    raise HTTPException(status_code=503, detail="Interne Chat-Autorisierung fehlgeschlagen")
             if control_path == "status" and request.method == "GET":
                 upstream = status_response
             else:
@@ -4433,10 +4925,20 @@ async def chat_control_proxy(control_path: str, request: Request):
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page():
     """Zentrale GUI-Einstellungen."""
+    astro_settings = ASTRO_DIST_DIR / "settings.html"
+    if astro_settings.exists():
+        return FileResponse(astro_settings)
     settings_file = TEMPLATES_DIR / "settings.html"
     if settings_file.exists():
         return FileResponse(settings_file)
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
+
+
+@app.get("/system", response_class=HTMLResponse)
+async def system_page():
+    """System-Route leitet auf Einstellungen/Setup weiter."""
+    return await settings_page()
+
 
 
 
@@ -4560,7 +5062,11 @@ async def skills_board_page():
 
 
 @app.get("/skills")
-async def skills_redirect():
+async def skills_page():
+    """Skills & Capabilities Zentrale (Astro v5 Modular GUI mit Fallback)."""
+    p = ASTRO_DIST_DIR / "skills.html"
+    if p.exists():
+        return FileResponse(p)
     return RedirectResponse("/agents-board")
 
 @app.get("/finanzen")
@@ -4834,6 +5340,65 @@ async def tokens_page():
     raise HTTPException(status_code=404, detail="Template tokens.html nicht gefunden")
 
 
+@app.get("/token-dashboard", response_class=HTMLResponse)
+async def token_dashboard_page():
+    """Device Token Dashboard Seite (Task #1501)."""
+    tokens_file = TEMPLATES_DIR / "token-dashboard.html"
+    if tokens_file.exists():
+        return FileResponse(tokens_file)
+    raise HTTPException(status_code=404, detail="Template token-dashboard.html nicht gefunden")
+
+
+# ── API ROUTES - DEVICES AUTH (Task #1499) ──────────────────────
+
+@app.get("/api/devices")
+async def api_list_devices():
+    """List all registered devices (names, statuses, timestamps)."""
+    return {"devices": list_devices()}
+
+
+@app.post("/api/devices")
+async def api_create_device(payload: dict = Body(...)):
+    """Register a new device and return its one-time plaintext token."""
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name ist erforderlich.")
+    try:
+        token = create_device(name)
+        return {"ok": True, "name": name, "token": token, "status": "active"}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.delete("/api/devices/{name}")
+@app.post("/api/devices/{name}/revoke")
+async def api_revoke_device(name: str):
+    """Revoke a device token by name."""
+    success = revoke_device(name)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Gerät '{name}' nicht gefunden oder bereits gesperrt.")
+    return {"ok": True, "name": name, "status": "revoked"}
+
+
+@app.post("/api/devices/verify")
+async def api_verify_device(request: Request, payload: dict = Body(None)):
+    """Verify whether a token is valid and active."""
+    token = None
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif payload and isinstance(payload, dict):
+        token = payload.get("token")
+
+    if not token:
+        return {"valid": False, "reason": "No token provided"}
+
+    device = validate_token(token)
+    if device:
+        return {"valid": True, "device": device}
+    return {"valid": False, "reason": "Invalid or revoked token"}
+
+
 
 
 
@@ -4845,10 +5410,12 @@ async def tasks_board_api():
 
     """Tasks Board Seite."""
 
+    astro_tasks = ASTRO_DIST_DIR / "tasks.html"
+    if astro_tasks.exists():
+        return FileResponse(astro_tasks)
+
     board_file = TEMPLATES_DIR / "tasks_board.html"
-
     if board_file.exists():
-
         return FileResponse(board_file)
 
     raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
@@ -8249,10 +8816,12 @@ async def memory_page():
 
     """Memory Dashboard (Task 144)."""
 
+    astro_mem = ASTRO_DIST_DIR / "memory.html"
+    if astro_mem.exists():
+        return FileResponse(astro_mem)
+
     template = TEMPLATES_DIR / "memory.html"
-
     if template.exists():
-
         return template.read_text(encoding='utf-8')
 
     raise HTTPException(status_code=404, detail="Template memory.html nicht gefunden")
@@ -8344,13 +8913,58 @@ async def get_memory_overview():
             rows = conn.execute("""
                 SELECT id, category, title, solution as content, created_at
                 FROM memory_lessons
-                WHERE category IN ('practice', 'best_practice', 'best-practice')
-                ORDER BY created_at DESC LIMIT 20
+                WHERE category IN ('practice', 'best_practice', 'best-practice', 'architecture', 'gotcha', 'integration')
+                ORDER BY created_at DESC LIMIT 30
             """).fetchall()
             result["best_practices"] = rows_to_list(rows)
 
-            # Workflows (Procedural)
+            # Workflows (Procedural Memory: Lessons, Skills & Experts)
             workflows = []
+            try:
+                lesson_wf = conn.execute("""
+                    SELECT title, category, solution as content FROM memory_lessons
+                    WHERE category IN ('workflow', 'routine') OR title LIKE '%workflow%'
+                    ORDER BY created_at DESC LIMIT 20
+                """).fetchall()
+                for row in lesson_wf:
+                    workflows.append({
+                        "name": row["title"] if hasattr(row, "keys") else row[0],
+                        "filename": f"Lesson ({row['category'] if hasattr(row, 'keys') else row[1]})",
+                        "content": (row["content"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
+            try:
+                skill_wf = conn.execute("""
+                    SELECT name, category, description FROM skills
+                    WHERE category IN ('dev', 'infrastructure', 'workflow', 'utilities') OR name LIKE '%workflow%' OR name LIKE '%pipeline%'
+                    ORDER BY name ASC LIMIT 25
+                """).fetchall()
+                for row in skill_wf:
+                    workflows.append({
+                        "name": row["name"] if hasattr(row, "keys") else row[0],
+                        "filename": f"Skill: {row['category'] if hasattr(row, 'keys') else row[1]}",
+                        "content": (row["description"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
+            try:
+                expert_rows = conn.execute("""
+                    SELECT display_name, domain, description FROM bach_experts
+                    WHERE is_active = 1
+                    ORDER BY display_name ASC LIMIT 15
+                """).fetchall()
+                for row in expert_rows:
+                    workflows.append({
+                        "name": f"Expert: {row['display_name'] if hasattr(row, 'keys') else row[0]}",
+                        "filename": f"Domain: {row['domain'] if hasattr(row, 'keys') else row[1]}",
+                        "content": (row["description"] if hasattr(row, "keys") else row[2]) or ""
+                    })
+            except Exception:
+                pass
+
             try:
                 workflow_dir = BACH_DIR / "skills" / "_workflows"
                 if workflow_dir.exists():
@@ -11762,10 +12376,14 @@ async def delete_insurance(ins_id: int):
 @app.get("/usecases", response_class=HTMLResponse)
 async def usecases_page():
     """Usecase Verwaltung."""
+    astro_uc = ASTRO_DIST_DIR / "governance" / "usecases.html"
+    if astro_uc.exists():
+        return FileResponse(astro_uc)
     usecases_file = TEMPLATES_DIR / "usecases.html"
     if usecases_file.exists():
         return FileResponse(usecases_file)
     raise HTTPException(status_code=404, detail="Template usecases.html nicht gefunden")
+
 
 
 @app.get("/api/usecases")
@@ -12281,17 +12899,195 @@ async def export_contacts():
 # ═══════════════════════════════════════════════════════════════
 
 @app.get("/routinen", response_class=HTMLResponse)
-async def routinen_page():
-    """Routinen Dashboard."""
+async def routinen_page(tab: str = None):
+    """Routinen Dashboard. GUX-048: tab-Param fuer BACH/personal Filter."""
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
     raise HTTPException(status_code=404, detail="Template routinen.html nicht gefunden")
 
 
+# ── GUX-055-060: Kalender-Routes ──────────────────────────────────────────
+
+@app.get("/calendar", response_class=HTMLResponse)
+async def calendar_page():
+    """GUX-055-058: Kalender Dashboard (4 Views: Tag/Woche/Monat/Jahr)."""
+    cal_file = TEMPLATES_DIR / "kalender.html"
+    if cal_file.exists():
+        return FileResponse(cal_file)
+    raise HTTPException(status_code=404, detail="Template kalender.html nicht gefunden")
+
+
+@app.get("/api/calendar")
+async def get_calendar(filter: str = None, from_date: str = None, to_date: str = None):
+    """GUX-060: Kalender Events + Routines mit Filter.
+    filter: all|system|user|no-system
+    system = source IS NOT NULL AND source != 'manual'
+    user/no-system = source IS NULL OR source = 'manual'
+    unknown source bleibt unknown (keine erfundenen Termine)."""
+    try:
+        from datetime import date, timedelta
+        conn = get_user_db()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        today = date.today()
+
+        # Datumsmann
+        if from_date:
+            try:
+                start = date.fromisoformat(from_date)
+            except ValueError:
+                start = today - timedelta(days=365)
+        else:
+            start = today - timedelta(days=30)
+        if to_date:
+            try:
+                end = date.fromisoformat(to_date)
+            except ValueError:
+                end = today + timedelta(days=30)
+        else:
+            end = today + timedelta(days=30)
+
+        # Events aus routines (aktive, im Zeitraum)
+        r_query = "SELECT * FROM routines WHERE is_active = 1 AND (next_due_at IS NULL OR next_due_at <= ?)"
+        r_params = [end.isoformat()]
+        if filter == 'system':
+            r_query += " AND source IS NOT NULL AND source != 'manual'"
+        elif filter in ('user', 'no-system'):
+            r_query += " AND (source IS NULL OR source = 'manual')"
+        r_query += " ORDER BY next_due_at ASC, priority ASC, name ASC"
+        cursor.execute(r_query, r_params)
+        routines_rows = [dict(r) for r in cursor.fetchall()]
+
+        # Events aus events-Tabelle falls vorhanden
+        events_rows = []
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+            if cursor.fetchone():
+                e_query = "SELECT * FROM events WHERE date >= ? AND date <= ?"
+                e_params = [start.isoformat(), end.isoformat()]
+                if filter == 'system':
+                    e_query += " AND source IS NOT NULL AND source != 'manual'"
+                elif filter in ('user', 'no-system'):
+                    e_query += " AND (source IS NULL OR source = 'manual')"
+                e_query += " ORDER BY date ASC"
+                cursor.execute(e_query, e_params)
+                events_rows = [dict(r) for r in cursor.fetchall()]
+        except Exception:
+            pass
+
+        conn.close()
+        return {
+            "success": True,
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "filter": filter or "all",
+            "routines": routines_rows,
+            "events": events_rows,
+            "note": "system: source!=manual und nicht NULL; user/no-system: source IS NULL oder manual; unknown bleibt unknown"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "routines": [], "events": []}
+
+
+@app.post("/api/events")
+async def create_event(payload: dict):
+    """GUX-058: Event anlegen."""
+    try:
+        conn = get_user_db()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        title = payload.get('title', '')
+        ev_date = payload.get('date', '')
+        source = payload.get('source', None)
+        if not title or not ev_date:
+            return {"success": False, "error": "title und date erforderlich"}
+        cursor.execute(
+            "INSERT INTO events (title, date, source, created_at) VALUES (?, ?, ?, datetime('now'))",
+            [title, ev_date, source]
+        )
+        conn.commit()
+        new_id = cursor.lastrowid
+        conn.close()
+        return {"success": True, "id": new_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.delete("/api/events/{event_id}")
+async def delete_event(event_id: int):
+    """GUX-058: Event loeschen."""
+    try:
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM events WHERE id = ?", [event_id])
+        conn.commit()
+        deleted = cursor.rowcount
+        conn.close()
+        return {"success": deleted > 0}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── GUX-053: Countdown (nur per Klick, kein Auto-Popup) ──────────────────
+
+@app.get("/api/countdown")
+async def get_countdowns():
+    """GUX-053: Countdown-Daten liefern (nur per expliziter Abfrage, kein Auto)."""
+    try:
+        import shutil
+        # Routinika/UpToDay Adapter-Check (GUX-054)
+        routinika_ok = shutil.which('routinika') is not None
+        uptoday_ok = shutil.which('uptoday') is not None
+        return {
+            "success": True,
+            "countdowns": [],
+            "adapters": {
+                "routinika": {"available": routinika_ok, "status": "installed" if routinika_ok else "not_installed"},
+                "uptoday": {"available": uptoday_ok, "status": "installed" if uptoday_ok else "not_installed"},
+            },
+            "note": "GUX-053: Countdown nur per Klick abrufbar, kein Auto-Popup."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── GUX-059: Routinika/UpToDay Adapter-Status ─────────────────────────────
+
+@app.get("/api/adapters/external")
+async def external_adapters():
+    """GUX-054/059: Status externer Adapter (Routinika, UpToDay)."""
+    try:
+        import shutil
+        routinika_ok = shutil.which('routinika') is not None
+        uptoday_ok = shutil.which('uptoday') is not None
+        return {
+            "success": True,
+            "adapters": {
+                "routinika": {
+                    "available": routinika_ok,
+                    "status": "installed" if routinika_ok else "in_arbeit",
+                    "detail": "Routinika Desktop-Startvertrag / Webversion" if not routinika_ok else "Routinika verfügbar"
+                },
+                "uptoday": {
+                    "available": uptoday_ok,
+                    "status": "installed" if uptoday_ok else "in_arbeit",
+                    "detail": "UpToDay nicht konfiguriert" if not uptoday_ok else "UpToDay verfügbar"
+                },
+                "balance": {
+                    "available": False,
+                    "status": "in_arbeit",
+                    "detail": "Balance-Adapter: kein Provider konfiguriert"
+                }
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/api/routines")
-async def get_routines(category: str = None, interval: str = None):
-    """Alle Routinen laden mit Stats."""
+async def get_routines(category: str = None, interval: str = None, source: str = None):
+    """Alle Routinen laden mit Stats. GUX-048/060: source-Filter."""
     try:
         from datetime import date, timedelta
         conn = get_user_db()
@@ -12308,6 +13104,14 @@ async def get_routines(category: str = None, interval: str = None):
         if interval:
             query += " AND interval_type = ?"
             params.append(interval)
+        # GUX-048/060: source-Filter
+        if source == 'bach':
+            query += " AND source IS NOT NULL AND source != 'manual'"
+        elif source == 'personal':
+            query += " AND (source IS NULL OR source = 'manual')"
+        elif source:
+            query += " AND source = ?"
+            params.append(source)
         query += " ORDER BY priority ASC, name ASC"
 
         cursor.execute(query, params)

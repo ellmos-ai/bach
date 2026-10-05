@@ -1,0 +1,36 @@
+Herramienta BACH: import_organizer
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/import_organizer.py
+
+DESCRIPCIÓN
+----------------------------------------
+import_organizer.py - Organiza las importaciones de Python según PEP8
+
+Características:
+  - Recopila todas las declaraciones de importación/de
+  - Elimina duplicados
+  - Ordenar alfabéticamente (primero importar, luego desde)
+  - Coloca todas las importaciones al principio del archivo.
+  - Limpia varias líneas en blanco
+
+Extraído de: A1 ProFiler/PythonBox.py (ImportOptimizer)
+
+Uso:
+    python import_organizer.py <archivo.py>
+    python import_organizer.py <archivo.py> --ejecución en seco
+    python import_organizer.py <archivo.py> --json
+    python import_organizer.py --stdin < code.py
+
+Autor: Claude (adaptado)
+Dependencias: ninguna (solo stdlib)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan import_organizer [args]
+o directamente: python tools/import_organizer.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente a partir de docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran import_organizer

@@ -1,5 +1,7 @@
 # System-Mapping: Kartographie und Feature-Erfassung
 
+> Systematische Erfassung und Dokumentation eines LLM-OS oder Skills.
+
 **Version:** 1.0  
 **Stand:** 2026-01-18  
 **Quelle:** Konsolidiert aus BACH_STREAM

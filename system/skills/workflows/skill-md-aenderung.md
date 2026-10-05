@@ -23,6 +23,8 @@ description: >
 
 # SKILL.md Aenderungs-Workflow
 
+> Workflow fuer Aenderungen am zentralen BACH SKILL.md (Abfolge, Versionierung, Synchronisation, Uebersetzung).
+
 ## Wann anwenden
 
 Bei jeder Aenderung am zentralen BACH `SKILL.md` (Root: `BACH/SKILL.md`).

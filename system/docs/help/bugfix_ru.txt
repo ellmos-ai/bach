@@ -8,16 +8,16 @@
 При ошибках ВСЕГДА следуйте следующему порядку:
 
 1. СТАНДАРТНЫЙ ФИКСЕР ПЕРВЫЙ
-   python system/tools/c_standard_fixer.py <файл>
+   python system/tools/standard_fixer.py <файл>
    Исправления: спецификация, кодировка, умлауты, проблемы с JSON.
    -> Проблема решена? Работа сохранена!
 
 2. ИМПОРТНАЯ ДИАГНОСТИКА
-   python system/tools/c_import_diagnose.py <папка>
+   python system/tools/import_diagnose.py <папка>
    Проверки: циклический импорт, отсутствие модулей
 
 3. АНАЛИЗ КОДА
-   python system/tools/c_method_analyzer.py <файл>
+   python system/tools/method_analyzer.py <файл>
    Проверки: Атрибут перед определением, обратные вызовы сигналов
 
 4. ИЗОЛИРОВАННОЕ ТЕСТИРОВАНИЕ
@@ -32,10 +32,10 @@
 
 | Тип ошибки | Первое действие |
 |-----|----------------------------------------|
-| Ошибка импорта | c_import_diagnose.py |
-| Ошибка атрибута | c_method_analyzer.py |
-| Тихая авария | c_method_analyzer.py |
-| Кодировка/спецификация | c_standard_fixer.py 
+| Ошибка импорта | import_diagnose.py |
+| Ошибка атрибута | method_analyzer.py |
+| Тихая авария | method_analyzer.py |
+| Кодировка/спецификация | standard_fixer.py 
 
 |ПРИМЕЧАНИЕ. В этом файле описаны автономные инструменты, а не обработчик.
          Подробные рабочие процессы исправления ошибок: навыки/рабочие процессы/bugfix-protocol.md

@@ -6,7 +6,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from system.tests import conftest
+# Do NOT ``from system.tests import conftest`` here: pytest has already loaded
+# conftest as ``tests.conftest`` (repo-root is on sys.path via pytest.ini
+# ``pythonpath = system``). Importing it under a second module name would
+# re-execute the module, create a SECOND mkdtemp dir and overwrite the
+# BACH_* env vars to divergent paths (breaks slots_config availability).
+conftest = sys.modules.get("tests.conftest") or sys.modules.get("system.tests.conftest")
+if conftest is None:  # fallback if collected before conftest was loaded
+    from tests import conftest
 
 
 def test_session_bootstraps_slots_config_on_private_disk():

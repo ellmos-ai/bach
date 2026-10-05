@@ -186,7 +186,7 @@ docs/help/partner.txt Comandos CLI del sistema asociado
   docs/help/delegate.txt Detalles de la delegación
   docs/help/communicate.txt Protocolos de comunicación
 
-  skills/_services/communicate.md Definición de habilidad
+  hub/_services/communicate.md Definición de habilidad
   tools/partner_communication/README.md Documentación para desarrolladores
 
 VERSIÓN: v1.0.0 (2026-01-23)

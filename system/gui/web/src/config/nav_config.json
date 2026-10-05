@@ -1,0 +1,299 @@
+[
+  {
+    "id": "dashboard",
+    "label": "Dashboard",
+    "icon": "🎵",
+    "href": "/"
+  },
+  {
+    "id": "tasks",
+    "label": "Aufgaben",
+    "icon": "📋",
+    "children": [
+      {
+        "href": "/tasks",
+        "label": "Aufgaben & Taskboard",
+        "icon": "📝",
+        "description": "Zentrales Aufgabenboard mit Status, Zuweisung & Filtern"
+      },
+      {
+        "href": "/routinen?tab=bach",
+        "label": "Bachroutinen",
+        "icon": "🎼",
+        "description": "Automatisierte System- und Wartungsroutinen"
+      },
+      {
+        "href": "/routinen?tab=ocean",
+        "label": "Oceanroutinen",
+        "icon": "🌊",
+        "description": "Verteilte Schwarm- und Hintergrundzyklen"
+      }
+    ]
+  },
+  {
+    "id": "assistant",
+    "label": "Persönlicher Assistent",
+    "icon": "🧘",
+    "children": [
+      {
+        "href": "/persoenlich",
+        "label": "Assistenten-Dashboard",
+        "icon": "📊",
+        "description": "Status, Haltung und Fokus von Buddha"
+      },
+      {
+        "href": "/chat",
+        "label": "Buddha Chat (Compare-Race)",
+        "icon": "💬",
+        "description": "Multi-Modell Dialog & Race-Evaluation"
+      },
+      {
+        "href": "/prompt-library",
+        "label": "Profil & Prompts",
+        "icon": "📚",
+        "description": "Systemprompts und Persönlichkeitsprofile"
+      },
+      {
+        "href": "/denkarium",
+        "label": "Denkarium",
+        "icon": "🔮",
+        "description": "Externes Gedanken- und Ideenlabor",
+        "target": "_blank"
+      }
+    ]
+  },
+  {
+    "id": "life",
+    "label": "Life",
+    "icon": "🌱",
+    "children": [
+      {
+        "href": "/life",
+        "label": "Life-Zentrale",
+        "icon": "🌿",
+        "description": "Ganzheitliche Lebensübersicht"
+      },
+      {
+        "href": "/life?tab=kalender",
+        "label": "Kalender (Tag, Woche, Monat, Jahr)",
+        "icon": "📅",
+        "description": "Tages-, Wochen-, Monatsansicht & Jahresüberblick"
+      },
+      {
+        "href": "/life?tab=routinen",
+        "label": "Deine Routinen",
+        "icon": "⏰",
+        "description": "Persönliche Lebens-, Haushalts- und Tagesroutinen"
+      },
+      {
+        "href": "/tasks?assigned_to=user",
+        "label": "Meine Aufgaben",
+        "icon": "👤",
+        "description": "Gefiltert auf persönliche Aufgaben"
+      },
+      {
+        "href": "/life?tab=selbstmanagement",
+        "label": "Selbstmanagement & ADHS",
+        "icon": "🎯",
+        "description": "Fokusstrategien und Entlastungsmethoden"
+      },
+      {
+        "href": "/financial",
+        "label": "Finanzen & Budget",
+        "icon": "💰",
+        "description": "Einnahmen, Ausgaben und Prognosen"
+      },
+      {
+        "href": "/life?tab=balance",
+        "label": "Lebenskreise & Reflexion",
+        "icon": "☯️",
+        "description": "Work-Life-Balance und psychologische Selbsteinschätzung"
+      },
+      {
+        "href": "/gesundheit",
+        "label": "Gesundheit & Vitalität",
+        "icon": "🩺",
+        "description": "Tracking, Wohlbefinden und Förderpläne"
+      }
+    ]
+  },
+  {
+    "id": "agenten",
+    "label": "Agenten",
+    "icon": "🤖",
+    "children": [
+      {
+        "href": "/agenten/fabrika",
+        "label": "Agenten-Fabrik",
+        "icon": "🏭",
+        "description": "Baukasten: Einzelagenten, Teambuilding (Swarm) & Ketten-Staffel"
+      },
+      {
+        "href": "/agenten/running",
+        "label": "Living & Running",
+        "icon": "⚡",
+        "description": "Aktive Instanzen, Beseelungen und Health"
+      },
+      {
+        "href": "/agenten/sessions",
+        "label": "Sessions & Protokolle",
+        "icon": "📜",
+        "description": "Rohberichte und strukturierte Zusammenfassungen"
+      },
+      {
+        "href": "/messages",
+        "label": "Messages (User Inbox)",
+        "icon": "✉️",
+        "description": "Direktnachrichten von Agenten an dich"
+      },
+      {
+        "href": "/agents-board",
+        "label": "Agents-Board (Skill-Katalog)",
+        "icon": "📊",
+        "description": "Aufgabenzuweisung & Gesamtübersicht aller 388+ Skills"
+      },
+      {
+        "href": "/skills",
+        "label": "Skill- & Tool-Center",
+        "icon": "🔌",
+        "description": "Steckdosenleiste, MCP Cookbooks & Rollback"
+      },
+      {
+        "href": "/memory",
+        "label": "Memory",
+        "icon": "🧠",
+        "description": "Kognitiver Schaltplan, Arbeitsgedächtnis & Wissens-Inspektor"
+      }
+    ]
+  },
+  {
+    "id": "domains",
+    "label": "Meine Domänen",
+    "icon": "🌐",
+    "children": [
+      {
+        "href": "/domains",
+        "label": "Domänen & Fachmodule",
+        "icon": "🧩",
+        "description": "Slot-Dashboard: AI-Media, Förderplaner, Law-Checker, PC-Software"
+      },
+      {
+        "href": "/ati",
+        "label": "ATI Entwickler",
+        "icon": "🛠️",
+        "description": "Code-Entwicklung & einheitliche Entwickler-Tasks"
+      },
+      {
+        "href": "/steuer",
+        "label": "Theodor Steuer",
+        "icon": "⚖️",
+        "description": "Fachmodul Steuern, Belege & Abschreibungen"
+      },
+      {
+        "href": "/gesundheit",
+        "label": "Förderplaner & Diagnostik",
+        "icon": "🩺",
+        "description": "Spezifische pädagogische & therapeutische Pläne"
+      }
+    ]
+  },
+  {
+    "id": "files",
+    "label": "Dateien",
+    "icon": "📁",
+    "children": [
+      {
+        "href": "/inbox",
+        "label": "Inbox & Dateiverwaltung",
+        "icon": "📥",
+        "description": "Upload, Synchronisation und Cloud-Speicher"
+      },
+      {
+        "href": "/artefakte",
+        "label": "Artefakte & Exporte",
+        "icon": "🎨",
+        "description": "Generierte Berichte, Diagramme, Pläne und Mockups"
+      }
+    ]
+  },
+  {
+    "id": "governance",
+    "label": "Governance & Control",
+    "icon": "🛡️",
+    "children": [
+      {
+        "href": "/governance",
+        "label": "Governance CONTROL Room",
+        "icon": "🏛️",
+        "description": "Zentrale Sicherheitsregeln, Audit und Richtlinien"
+      },
+      {
+        "href": "/governance?tab=locks",
+        "label": "Lock-Master & Decision-Clicker",
+        "icon": "🔒",
+        "description": "Fail-Closed Sperren, Freigaben und P-001 Prüfungen"
+      },
+      {
+        "href": "/governance/funk",
+        "label": "Agentenfunk",
+        "icon": "📻",
+        "description": "Inter-Agenten-Signale, Tracing und Handshakes"
+      },
+      {
+        "href": "/governance/usecases",
+        "label": "Use Cases & Workflows",
+        "icon": "📑",
+        "description": "Definierte Einsatzszenarien und Standard-Pfade"
+      },
+      {
+        "href": "/governance/logs",
+        "label": "Logs & Audit",
+        "icon": "📜",
+        "description": "Echtzeit-Streams aller System- und Agenten-Events"
+      },
+      {
+        "href": "/help",
+        "label": "Hilfe & Dokumentation",
+        "icon": "❓",
+        "description": "Handbücher, Architektur-Guides und Shortcuts"
+      }
+    ]
+  },
+  {
+    "id": "system",
+    "label": "System",
+    "icon": "⚙️",
+    "children": [
+      {
+        "href": "/settings",
+        "label": "Einstellungen & Setup",
+        "icon": "🔧",
+        "description": "Installer, Modulschaltplan aus ellmos-ai, Trithon, Salt"
+      },
+      {
+        "href": "/tools",
+        "label": "Tools & CLI-Werkzeuge",
+        "icon": "🔨",
+        "description": "Ausführbare Helfer, Converter und Diagnose-Tools"
+      },
+      {
+        "href": "/daemon",
+        "label": "Daemon & Chains",
+        "icon": "⛓️",
+        "description": "Dauerläufer, Taktgeber und Automation-Sidecars"
+      },
+      {
+        "href": "/system?tab=ocean",
+        "label": "Ocean-Ausbaustufen",
+        "icon": "🌊",
+        "description": "Stufenplan & Cluster-Status aller Ocean-Subsysteme"
+      },
+      {
+        "href": "/maintenance",
+        "label": "Wartung & Integrität",
+        "icon": "🩺",
+        "description": "Datenbank-Bereinigung, Vacuum und Konsistenzprüfungen"
+      }
+    ]
+  }
+]

@@ -17,7 +17,7 @@
   - 双进口
   - 在代码中间而不是在开头导入
 
-导入诊断：c_import_diagnose
+导入诊断：import_diagnose
 ----------------------------------
 导入问题的系统分析。
 
@@ -32,13 +32,13 @@
 基本命令：
 
   # 分析项目
-  bach c_import_diagnose projekt/src/
+  bach import_diagnose projekt/src/
 
   # 使用 JSON 输出
-  bach c_import_diagnose projekt/src/ --json
+  bach import_diagnose projekt/src/ --json
 
   # 测试特定模块
-  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+  bach import_diagnose . --modules core.app:App,gui.main:MainWindow
 
 选项：
   --json JSON输出（机器可读）
@@ -63,7 +63,7 @@
   2.解决循环导入 core.utils <-> core.app
   3. 创建 gui/__init__.py
 
-IMPORT ORGANIZER: c_import_organizer
+IMPORT ORGANIZER: import_organizer
 ------------------------------------
 根据 PEP8 对 Python 导入进行排序和清理。
 
@@ -76,16 +76,16 @@ IMPORT ORGANIZER: c_import_organizer
 基本命令：
 
   # 组织文件
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
   # 只检查没有更改
-  bach c_import_organizer script.py --dry-run
+  bach import_organizer script.py --dry-run
 
   # JSON 输出
-  bach c_import_organizer script.py --json
+  bach import_organizer script.py --json
 
   # 从标准输入读取
-  猫脚本.py |巴赫 c_import_organizer --stdin
+  猫脚本.py |巴赫 import_organizer --stdin
 
 选项：
   --dry-run 只显示，不改变
@@ -124,14 +124,14 @@ IMPORT ORGANIZER: c_import_organizer
 1.调试“导入错误”。
    分析项目找到崩溃点：
 
-   bach c_import_diagnose projekt/src/ --json
+   bach import_diagnose projekt/src/ --json
 
    然后遵循建议。
 
 2.查找循环进口
    当模块相互导入时：
 
-   bach c_import_diagnose projekt/src/
+   bach import_diagnose projekt/src/
 
    输出显示：A -> B -> A（指南针！）
 
@@ -140,30 +140,30 @@ IMPORT ORGANIZER: c_import_organizer
 3.代码审查之前
    在检查代码之前清理导入：
 
-   bach c_import_organizer script.py
+   bach import_organizer script.py
 
    或者对于整个项目：
-   对于 *.py 中的 f；执行巴赫 c_import_organizer "$f";完成
+   对于 *.py 中的 f；执行巴赫 import_organizer "$f";完成
 
 4。重构后
    主要转换后检查导入：
 
    # 先诊断
-   bach c_import_diagnose src/
+   bach import_diagnose src/
 
    # 然后清理
-   对于 src/*.py 中的 f；执行巴赫 c_import_organizer "$f";完成
+   对于 src/*.py 中的 f；执行巴赫 import_organizer "$f";完成
 
 5。建立一个新项目
    __init__.py 检查文件：
 
-   bach c_import_diagnose mein_paket/
+   bach import_diagnose mein_paket/
 
    显示缺少 __init__.py 文件。
 
 PEP8 导入订单
 -----------------------
-c_import_organizer 根据 PEP8 标准排序：
+import_organizer 根据 PEP8 标准排序：
 
   1.标准库（导入os、导入sys）
   2.第三方（导入请求、导入numpy）
@@ -175,9 +175,9 @@ CONTEXT INJECTOR
 ----------------
 ContextInjector 识别关键字并推荐这些工具：
 
-  “对导入进行排序”-> bach c_import_organizer <文件>
-  “导入问题”-> bach c_import_diagnose <项目>
-  “导入丢失” -> bach c_import_diagnose <项目>
+  “对导入进行排序”-> bach import_organizer <文件>
+  “导入问题”-> bach import_diagnose <项目>
+  “导入丢失” -> bach import_diagnose <项目>
 
 与其他工具集成
 -----------------------------
@@ -187,7 +187,7 @@ ContextInjector 识别关键字并推荐这些工具：
   bach python_cli_editor script.py --imports
 
   # 然后组织
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
 另请参见
 ----------

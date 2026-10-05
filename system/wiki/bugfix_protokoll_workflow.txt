@@ -19,7 +19,7 @@ PHASEN DES PROTOKOLLS
    - Erkennung typischer Muster (z.B. Access Violation bei PyQt6).
 
 2. **Diagnose mit DEV_TOOLS (2-10 Min):**
-   - Nutzung vordefinierter Skripte (`c_import_diagnose.py`, `c_method_analyzer.py`).
+   - Nutzung vordefinierter Skripte (`import_diagnose.py`, `method_analyzer.py`).
    - Pruefung auf Import-Fehler, undefinierte Attribute und Syntax.
 
 3. **Isoliertes Testen (5-15 Min):**

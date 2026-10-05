@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Tool: c_image_converter
+Tool: image_converter
 Version: 1.0.0
 Author: BACH Team (basiert auf pic2pic V1)
 

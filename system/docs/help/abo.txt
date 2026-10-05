@@ -1,7 +1,7 @@
 # Portabilität: UNIVERSAL
-# Version: 1.0.1
-# Zuletzt validiert: 2026-05-17
-# Nächste Prüfung: 2026-08-17
+# Version: 1.0.2
+# Zuletzt validiert: 2026-09-29
+# Nächste Prüfung: 2026-12-29
 
 ABO - Abonnement- und Vertragsverwaltung
 =========================================
@@ -24,6 +24,8 @@ CLI-BEFEHLE:
   bach abo export            CSV-Export (data/abo_export.csv)
   bach abo patterns          Bekannte Abo-Muster anzeigen
   bach abo sync-mail         Abos aus E-Mails synchronisieren
+  bach abo import <datei>    AboTracker-JSON idempotent importieren (nur CLI)
+  bach abo schedule-import <datei> [--interval 24h]  Regelmäßigen AboTracker-Import einrichten (nur CLI)
 
 OPTIONEN:
   --jahr YYYY    Steuerjahr für Scan (Default: aktuelles Jahr)
@@ -97,3 +99,7 @@ BEISPIELE:
 
   # Bekannte Patterns anzeigen:
   bach abo patterns
+
+  # AboTracker-Export importieren:
+  bach abo import export.json
+  bach abo schedule-import export.json --interval 24h

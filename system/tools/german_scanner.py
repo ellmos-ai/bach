@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_german_scanner
+Tool: german_scanner
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_german_scanner
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version german_scanner
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_german_scanner.py [args]
+    python german_scanner.py [args]
 """
 
 __version__ = "1.0.0"
@@ -44,7 +44,7 @@ __author__ = "BACH Team"
 
 # coding: utf-8
 """
-c_german_scanner.py - Findet deutsche Strings in Python-Projekten
+german_scanner.py - Findet deutsche Strings in Python-Projekten
 
 Scannt Python-Dateien nach:
   - Strings mit Umlauten (ae, oe, ue, ss)
@@ -59,9 +59,9 @@ Nuetzlich fuer:
 Extrahiert aus: A3 Entwicklungsschleife Advanced/TranslationSystem.py
 
 Usage:
-    python c_german_scanner.py <ordner>
-    python c_german_scanner.py <ordner> --json
-    python c_german_scanner.py <ordner> --export translations.json
+    python german_scanner.py <ordner>
+    python german_scanner.py <ordner> --json
+    python german_scanner.py <ordner> --export translations.json
 
 Autor: Claude (adaptiert)
 Abhaengigkeiten: keine (nur stdlib)

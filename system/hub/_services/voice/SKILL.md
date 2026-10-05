@@ -1,28 +1,23 @@
 ---
 name: voice-service
-version: 1.1.0
+version: 1.0.0
 type: service
 author: BACH Team
-created: 2026-02-08
-updated: 2026-09-18
+created: 2026-09-29
+updated: 2026-09-29
 anthropic_compatible: true
-status: production
+status: active
 
 dependencies:
   tools: [voice_stt.py]
   services: []
   workflows: []
 
-metadata:
-  inputs: "audio-file, microphone-stream, keyboard-trigger, text-input"
-  outputs: "transcript-text, tts-audio, audio-files (mp3/ogg/wav), wake-event"
-
 description: >
-  Voice Service fuer BACH - STT, TTS und Wake-Word-Erkennung.
-  Portiert und erweitert aus BachForelle voice.py + ears.py.
-  Version 1.1: Erweitert um File-Export und Piper-TTS.
+  Voice Service fuer BACH - STT, TTS und Wake-Word-Erkennung. Portiert und
+  erweitert aus BachForelle voice.py + ears.py. Version 1.1: Erweitert um
+  File-Export und Piper-TTS.
 ---
-
 # Voice Service
 
 ## Status: PRODUCTION

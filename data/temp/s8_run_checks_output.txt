@@ -1,0 +1,49 @@
+CMD: /Users/lukas/.venvs/bach/bin/python tools/check_skills_workflow_projection.py
+returncode: 0
+--- stdout ---
+skills-workflow-projection check: PASSED (schema+fixture conformance, not equivalence with a live BACH ControlCenter registry)
+
+--- stderr ---
+
+======================================================================
+CMD: /Users/lukas/.venvs/bach/bin/python -m pytest tests/test_check_skills_workflow_projection.py tests/test_check_memory_task_transit.py -v
+returncode: 0
+--- stdout ---
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /Users/lukas/.venvs/bach/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/lukas/ocean-workspaces/MAC-FULL-INSTALL-01/src/open-ocean
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 23 items
+
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_a_contract_validates_clean PASSED [  4%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_b_fixtures_carry_no_live_environment_markers PASSED [  8%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_c_all_projection_items_validate PASSED [ 13%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_d_items_reconcile PASSED [ 17%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_e_no_double_trigger PASSED [ 21%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_f_expected_document_matches_fixtures PASSED [ 26%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_g_double_trigger_detected_for_duplicate_phrase PASSED [ 30%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_h_duplicate_projection_id_detected PASSED [ 34%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_i_reconciliation_fails_on_empty_trigger_phrases PASSED [ 39%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_j_run_all_passes PASSED [ 43%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_k_expected_json_shape PASSED [ 47%]
+tests/test_check_skills_workflow_projection.py::SkillsWorkflowProjectionTests::test_l_toolchain_alignment_findings_hold PASSED [ 52%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_a_contract_validates_clean PASSED [ 56%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_b_fixtures_carry_no_live_environment_markers PASSED [ 60%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_c_all_host_receipts_validate PASSED [ 65%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_d_receipts_reconcile PASSED [ 69%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_e_no_double_claim PASSED [ 73%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_f_expected_document_matches_fixtures PASSED [ 78%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_g_double_claim_detected_for_duplicate_host PASSED [ 82%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_h_duplicate_sequence_detected PASSED [ 86%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_i_reconciliation_fails_on_divergent_logical_task_id PASSED [ 91%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_j_run_all_passes PASSED [ 95%]
+tests/test_check_memory_task_transit.py::MemoryTaskTransitTests::test_k_expected_json_shape PASSED [100%]
+
+============================== 23 passed in 0.09s ==============================
+
+--- stderr ---
+
+======================================================================

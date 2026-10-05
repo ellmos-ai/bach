@@ -309,7 +309,9 @@ class TestHelpers:
         assert handler._format_date(None) == "---"
 
     def test_format_date_invalid(self, handler):
-        assert handler._format_date("invalid") == "invalid"
+        # 1552: Klassen-_format_date konsolidiert auf shared _parse_date;
+        # unparsebare Eingaben liefern jetzt "---" (wie None) statt Passthrough.
+        assert handler._format_date("invalid") == "---"
 
     def test_calc_monthly_monatlich(self, handler):
         assert handler._calc_monthly(100.0, "monatlich") == 100.0
@@ -481,6 +483,45 @@ class TestAdd:
         assert row["beginn_datum"] == "2025-01-01"
         assert row["ablauf_datum"] == "2030-12-31"
         assert row["naechste_kuendigung"] == "2026-10-01"
+
+    def test_add_auto_calculates_naechste_kuendigung(self, handler):
+        ok, msg = handler.handle("add", [
+            "--anbieter", "AutoCalc", "--sparte", "KFZ",
+            "--beginn", "01.01.2025", "--ablauf", "31.12.2030",
+            "--frist", "3"
+        ])
+        assert ok
+        conn = sqlite3.connect(str(handler.user_db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM fin_insurances WHERE anbieter = 'AutoCalc'").fetchone()
+        conn.close()
+        assert row is not None
+        assert row["ablauf_datum"] == "2030-12-31"
+        # Ohne --kuendigung: naechste_kuendigung automatisch = ablauf - frist
+        assert row["naechste_kuendigung"] == "2030-09-30"
+
+    def test_edit_recalculates_naechste_kuendigung(self, handler):
+        ok, msg = handler.handle("add", [
+            "--anbieter", "AutoEdit", "--sparte", "KFZ",
+            "--beginn", "01.01.2025", "--ablauf", "31.12.2030",
+            "--frist", "3"
+        ])
+        assert ok
+        conn = sqlite3.connect(str(handler.user_db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM fin_insurances WHERE anbieter = 'AutoEdit'").fetchone()
+        conn.close()
+        assert row is not None
+        ins_id = row["id"]
+        ok, msg = handler.handle("edit", [str(ins_id), "--ablauf", "31.12.2035"])
+        assert ok
+        conn = sqlite3.connect(str(handler.user_db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM fin_insurances WHERE anbieter = 'AutoEdit'").fetchone()
+        conn.close()
+        assert row["ablauf_datum"] == "2035-12-31"
+        # edit mit --ablauf (ohne --kuendigung/--frist) recalculiert naechste_kuendigung
+        assert row["naechste_kuendigung"] == "2035-09-30"
 
     def test_add_comma_beitrag(self, handler):
         ok, msg = handler.handle("add", [

@@ -40,7 +40,7 @@ BACH использует SQLite (`bach.db`) в качестве основно�
 
 ПРЕОБРАЗОВАНИЕ
 -------------
-  python system/tools/c_universal_converter.py <файл> --to [json|yaml|toml|xml|toon]
+  python system/tools/universal_converter.py <файл> --to [json|yaml|toml|xml|toon]
 
 СМОТРИ ТАКЖЕ
 ----------

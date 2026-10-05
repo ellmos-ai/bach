@@ -65,13 +65,13 @@ system/hub/bach_paths.py
 Решение с bach_paths:
 
     попробуйте:
-        из c_ocr_engine импорт ocr_pdf
+        из ocr_engine импорт ocr_pdf
     кроме ImportError:
         из bach_paths импортировать get_path
         tool_dir = get_path("инструменты")
         если str(tools_dir) нет в sys.path:
             sys.path.insert(0, str(tools_dir))
-        из c_ocr_engine import ocr_pdf
+        из ocr_engine import ocr_pdf
 
 ПРИМЕР: путь к шаблону
 -----------------------

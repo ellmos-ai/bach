@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_file_cleaner
+Tool: file_cleaner
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_file_cleaner
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version file_cleaner
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_file_cleaner.py [args]
+    python file_cleaner.py [args]
 """
 
 __version__ = "1.0.0"

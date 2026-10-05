@@ -97,7 +97,7 @@ TAREAS RECURRENTES ACTUALES
      Compruebe nuevas herramientas: bach ati onboard --check
 
   3. código_calidad (30d)
-     Verifique la calidad del código: c_method_analyzer en todas las herramientas
+     Verifique la calidad del código: method_analyzer en todas las herramientas
 
   Tareas del sistema:
   -------------

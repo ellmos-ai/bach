@@ -12,7 +12,13 @@ for _path in (SYSTEM_ROOT, TESTS_ROOT):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from session_checkpoint import CheckpointStore
+try:
+    from session_checkpoint import CheckpointStore
+except ImportError as exc:  # pragma: no cover - optional external dependency
+    pytest.skip(
+        f"requires optional session_checkpoint package: {exc}",
+        allow_module_level=True,
+    )
 
 from hub import session_checkpoint_adapter
 from hub import session_checkpoint_provider

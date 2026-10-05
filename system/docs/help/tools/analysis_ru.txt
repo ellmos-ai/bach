@@ -35,10 +35,10 @@ code_analyzer.py
   Анализирует код Python на качество и структуру.
   Вызов: инструменты Python/code_analyzer.py <файл>
 
-c_method_analyzer.py
+method_analyzer.py
   Анализирует методы и функции в файлах Python.
   Находит длинные методы, сложные функции.
-  Вызов: python Tools/c_method_analyzer.py <файл>
+  Вызов: python Tools/method_analyzer.py <файл>
 
 СТАТИСТИКА И ОТЧЕТЫ
 -------------------
@@ -74,9 +74,9 @@ duulate_detector.py
 СИСТЕМНАЯ ПРОВЕРКА
 -----------------
 
-c_sqlite_viewer.py
+sqlite_viewer.py
   Проверяет базы данных SQLite (bach.db, bach.db).
-  Вызов: инструменты Python/c_sqlite_viewer.py <db>
+  Вызов: инструменты Python/sqlite_viewer.py <db>
 
 inspect_db_tables.py
   Показывает схему таблицы и статистику.

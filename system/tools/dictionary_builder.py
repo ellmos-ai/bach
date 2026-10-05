@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Tool: c_dictionary_builder
+Tool: dictionary_builder
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_dictionary_builder
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version dictionary_builder
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_dictionary_builder.py [args]
+    python dictionary_builder.py [args]
 """
 
 __version__ = "1.0.0"

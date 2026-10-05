@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_umlaut_fixer
+Tool: umlaut_fixer
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_umlaut_fixer
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version umlaut_fixer
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_umlaut_fixer.py [args]
+    python umlaut_fixer.py [args]
 """
 
 __version__ = "1.0.0"
@@ -44,7 +44,7 @@ __author__ = "BACH Team"
 
 # coding: utf-8
 """
-c_umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Python-Dateien
+umlaut_fixer.py - Repariert kaputte deutsche Umlaute in Python-Dateien
 
 Behebt typische Encoding-Probleme wie:
   - Lschen -> Loeschen
@@ -54,9 +54,9 @@ Behebt typische Encoding-Probleme wie:
 Extrahiert aus: A1 ProFiler/_Wartung/fix_profiler_complete.py
 
 Usage:
-    python c_umlaut_fixer.py <datei.py>
-    python c_umlaut_fixer.py <datei.py> --dry-run
-    python c_umlaut_fixer.py <datei.py> --json
+    python umlaut_fixer.py <datei.py>
+    python umlaut_fixer.py <datei.py> --dry-run
+    python umlaut_fixer.py <datei.py> --json
 
 Autor: Claude (adaptiert)
 Abhaengigkeiten: keine (nur stdlib)

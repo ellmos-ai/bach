@@ -28,17 +28,17 @@
 
 4. ЭМОДЖИ
    - Разрешено в файлах, но только зарегистрированных!
-   - Реестр: system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
-   - Сканер: bach c_emoji_scanner <файл>
+   - Реестр: system/tools/emoji_scanner.py (ASCII_OVERRIDES)
+   - Сканер: bach emoji_scanner <файл>
 
 5. РЕДАКТИРОВАНИЕ JSON
    - ПЕРВЫЙ ВЫБОР: bach.py или скрипт Python.
    - НИКОГДА fc_str_replace для JSON
    - НИКОГДА PowerShell для JSON
-   - В случае проблем: bach c_json_repair <file>
+   - В случае проблем: bach json_repair <file>
 
 6. ИМПОРТ
    - Сначала стандартная библиотека
    - Тогда третье лицо
    - Затем локальные модули
-   - Инструмент: bach c_import_organizer <файл>
+   - Инструмент: bach import_organizer <файл>

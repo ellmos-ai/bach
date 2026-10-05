@@ -13,7 +13,6 @@ etablierten Praefix-Konvention.
 
 | Praefix | Bedeutung | Beispiel |
 |---------|-----------|----------|
-| c_ | CLI-optimiert fuer AI | c_encoding_fixer.py |
 | b_ | BACH-Kern (System) | b_backup.py |
 | a_ | Agent-Runner | a_entwickler.py |
 | t_ | Test-Tools | t_runner.py |
@@ -28,7 +27,6 @@ class NamingConventionValidator:
     """Prueft und migriert Tool-Namen nach Konvention."""
 
     PREFIXES = {
-        'c_': 'CLI-optimiert fuer AI',
         'b_': 'BACH-Kern',
         'a_': 'Agent-Runner',
         't_': 'Test-Tools',
@@ -82,8 +80,8 @@ TOOL NAMING CONVENTION SCAN
 ===========================
 
 Konform (16):
-  c_encoding_fixer.py     CLI-optimiert
-  c_json_repair.py        CLI-optimiert
+  encoding_fixer.py     CLI-optimiert
+  json_repair.py        CLI-optimiert
   ...
 
 Legacy (8):

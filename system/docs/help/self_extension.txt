@@ -50,7 +50,7 @@ Mit `bach skills create` werden 5 Komponenten-Typen unterstützt:
     → BaseHandler-Subklasse mit get_operations()
 
   bach skills create data-sync --type service
-    → Erstellt: system/skills/_services/data-sync/
+    → Erstellt: system/hub/_services/data-sync/
     → Service mit __init__.py und service.py
     → Handler-nah, allgemein nutzbar
 
@@ -124,7 +124,7 @@ WAS KANN ERWEITERT WERDEN?
   Tools            Python-Script in tools/ legen     tools/<name>.py
   Agents           Agent-Ordner mit SKILL.md          agents/<name>/
   Experts          Expert-Ordner mit SKILL.md         agents/_experts/<name>/
-  Services         Service-Ordner erstellen           skills/_services/<name>/
+  Services         Service-Ordner erstellen           hub/_services/<name>/
   Workflows        Markdown-Datei erstellen           skills/workflows/<name>.md
   Hooks            Listener registrieren              core/hooks.py: hooks.on()
   DB-Schema        Migration in db/ erstellen         db/migrations/

@@ -92,7 +92,7 @@
 角色：内部开发、自动化、特殊任务
 
 类别：
-  - 编码工具c_encoding_fixer、c_json_repair等
+  - 编码工具encoding_fixer、json_repair等
   - 税务工具tax_scanner、tax_sync等。
   - 代理脚本agent_framework、developer_agent
   - 备份工具backup_manager

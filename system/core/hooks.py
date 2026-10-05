@@ -74,6 +74,10 @@ class HookRegistry:
         'after_task_done',
         'after_memory_write',
         'after_task_create',
+        'after_skill_reset',
+        'after_plugin_reset',
+        'before_skill_reset',
+        'before_plugin_reset',
     }
 
     # Vordefinierte Events (Dokumentation, nicht Einschraenkung)
@@ -100,10 +104,14 @@ class HookRegistry:
         # Skill-Lifecycle
         'after_skill_create':   'Nach Skill-Erstellung (name, type, path)',
         'after_skill_reload':   'Nach Hot-Reload (handler_count)',
+        'before_skill_reset':   'Vor Skill-Reset (name)',
+        'after_skill_reset':    'Nach Skill-Reset (name, status)',
 
         # Plugin-Lifecycle
         'after_plugin_load':    'Nach Plugin-Laden (name, version, hooks, handlers)',
         'after_plugin_unload':  'Nach Plugin-Entladen (name)',
+        'before_plugin_reset':  'Vor Plugin-Reset (name)',
+        'after_plugin_reset':   'Nach Plugin-Reset (name, status)',
 
         # Security
         'after_capability_denied': 'Nach verweigerter Capability (plugin, capability, reason)',

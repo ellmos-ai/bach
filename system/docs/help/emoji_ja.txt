@@ -15,13 +15,13 @@
    - emoji_to_safe(text): emoji.demojize() 経由の絵文字 → ASCII タグ
    - emoji_to_display(text): ASCII タグ → emoji.emojize()
 
-2 経由の絵文字。スキャナーツール (system/tools/c_emoji_scanner.py)
-   - CLI: python c_emoji_scanner.py --status
-   - CLI: python c_emoji_scanner.py --scan-batch
-   - CLI: python c_emoji_scanner.py <ファイル/フォルダー>
+2 経由の絵文字。スキャナーツール (system/tools/emoji_scanner.py)
+   - CLI: python emoji_scanner.py --status
+   - CLI: python emoji_scanner.py --scan-batch
+   - CLI: python emoji_scanner.py <ファイル/フォルダー>
    - BACH コマンドとして統合されていません
 
-3。 JSON 修復 (system/tools/c_json_repair.py)
+3。 JSON 修復 (system/tools/json_repair.py)
    - 修復プロセスで絵文字変換を使用します
 
 変換例:

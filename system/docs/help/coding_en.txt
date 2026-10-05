@@ -28,17 +28,17 @@ CODING STANDARDS
 
 4. EMOJIS
    - Allowed in files, but only registered ones!
-   - Registry: system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
-   - Scanner: bach c_emoji_scanner <file>
+   - Registry: system/tools/emoji_scanner.py (ASCII_OVERRIDES)
+   - Scanner: bach emoji_scanner <file>
 
 5. JSON EDITING
    - FIRST CHOICE: bach.py or Python script
    - NEVER fc_str_replace for JSON
    - NEVER PowerShell for JSON
-   - In case of problems: bach c_json_repair <file>
+   - In case of problems: bach json_repair <file>
 
 6. IMPORTS
    - Standard library first
    - Then third party
    - Then local modules
-   - Tool: bach c_import_organizer <file>
+   - Tool: bach import_organizer <file>

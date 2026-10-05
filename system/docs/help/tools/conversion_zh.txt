@@ -7,7 +7,7 @@ BACH 中的转换工具可转换文件格式
 
 通用转换器
 -------------------
-c_universal_converter.py
+universal_converter.py
 
 多种格式的通用转换工具。
 支持：
@@ -17,11 +17,11 @@ c_universal_converter.py
   - Excel -> CSV
   - 图像（调整大小、格式）
 
-调用：python tools/c_universal_converter.py <input> <output>
+调用：python tools/universal_converter.py <input> <output>
 
 MARKDOWN -> PDF
 ---------------
-c_md_to_pdf.py
+md_to_pdf.py
 
 将 Markdown 文件转换为带有样式的 PDF。
 特点：
@@ -29,33 +29,33 @@ c_md_to_pdf.py
   - 桌子
   - 嵌入图像
 
-调用：python tools/c_md_to_pdf.py <md file> [--output <pdf>]
+调用：python tools/md_to_pdf.py <md file> [--output <pdf>]
 
 编码和文本
 ---------------
 
-c_encoding_fixer.py
+encoding_fixer.py
   修复编码问题（UTF-8、Latin-1 等）
   自动检测不正确的编码。
-  调用： python tools/c_encoding_fixer.py <文件>
+  调用： python tools/encoding_fixer.py <文件>
 
-c_umlaut_fixer.py
+umlaut_fixer.py
   修复文件中的德语变音符号。
   替换损坏的字符（ae->ä、ue->ü 等）
-  调用： python tools/c_umlaut_fixer.py <文件>
+  调用： python tools/umlaut_fixer.py <文件>
 
-c_standard_fixer.py
+standard_fixer.py
   标准化代码格式。
   删除尾随空格，统一行结尾。
-  调用： python tools/c_standard_fixer.py <文件>
+  调用： python tools/standard_fixer.py <文件>
 
 JSON 工具
 ----------
 
-c_json_repair.py
+json_repair.py
   修复损坏的 JSON 文件。
   修复缺少的逗号、引号、括号。
-  调用： python tools/c_json_repair.py <文件>
+  调用： python tools/json_repair.py <文件>
 
 json_fixer.py
   具有高级选项的替代 JSON 修复。
@@ -64,15 +64,15 @@ json_fixer.py
 代码工具
 ----------
 
-c_import_organizer.py
+import_organizer.py
   对 Python 导入进行排序和组织。
   分组：标准、第三方、本地。
-  调用： python tools/c_import_organizer.py <文件>
+  调用： python tools/import_organizer.py <文件>
 
-c_indent_checker.py
+indent_checker.py
   检查并更正缩进。
   选项：--制表符、--空格 N
-  调用： python tools/c_indent_checker.py <文件>
+  调用： python tools/indent_checker.py <文件>
 
 EXPORT
 ------

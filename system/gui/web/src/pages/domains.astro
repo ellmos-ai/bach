@@ -1,0 +1,265 @@
+---
+// src/pages/domains.astro - Meine Domänen & Fachmodule Dashboard
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Meine Domänen" currentPath="/domains">
+  <div class="domains-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">🌐</span> Meine Domänen & Fachmodule</h1>
+        <p class="subtitle">Fachmodule aus geprüften Modulmanifesten</p>
+      </div>
+      <div class="header-actions">
+        <span class="badge">Laufstatus ungeprüft</span>
+        <button class="btn btn-secondary" onclick="loadDomains()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Gefundene Fachmodule</div>
+        <div class="stat-value" id="stat-count-modules">...</div>
+        <div class="stat-sub">Öffentliche .DOMAINS-Manifeste</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Installationsnachweis</div>
+        <div class="stat-value">?</div>
+        <div class="stat-sub">Installationsregister noch nicht angebunden</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Laufende Arbeiten</div>
+        <div class="stat-value">?</div>
+        <div class="stat-sub">Kein Arbeitsstatus-Provider angebunden</div>
+      </div>
+    </div>
+
+    <!-- Fachmodule Grid -->
+    <div class="section-title">
+      <h2><span class="icon">🧩</span> Fachmodule im Manifestregister</h2>
+      <p class="section-desc">Ein Manifest belegt die Modulbeschreibung. Installation und laufende Arbeit werden getrennt geprüft.</p>
+    </div>
+
+    <div class="domains-grid" id="domains-grid">
+      <p class="loading-state">Lade Fachmodule...</p>
+    </div>
+    <div class="glass-card">
+      <h3>Domänen-Anbindung in Arbeit</h3>
+      <p>Die Manifestliste ist angebunden. Für „installiert“ fehlt ein autoritatives Installationsregister; für „arbeitet“ fehlt ein Domain-Job- oder Session-Provider. Fachliche Aktionen werden erst verlinkt, wenn Manifest-ID, Backend-Vertrag und Route eindeutig zusammenpassen.</p>
+    </div>
+
+    <!-- Aufgabensteuerung ist ein Kontrollmodul, keine Fachdomäne. -->
+    <div class="section-title" style="margin-top:2rem;">
+      <h2><span class="icon">📋</span> Aufgabensteuerung</h2>
+      <p class="section-desc">Task Master ist ein Kontrollmodul mit den Rollen Tasksolver, Taskwriter, Maintainer und Operator.</p>
+    </div>
+
+    <div class="glass-card">
+      <p>Das vorhandene Aufgabenboard liest die BACH-Taskdatenbank. Die Übernahme von Task-Master-Claims und Leases als autoritative Steuerung ist noch nicht angebunden; Ticket Master bleibt für Aufnahme und Triage vorgesehen. Bestehende ATI-Aufgaben bleiben erhalten.</p>
+      <a href="/tasks" class="btn btn-secondary">Aufgabenboard öffnen ↗</a>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .domains-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0.25rem 0;
+    color: var(--accent);
+  }
+  .stat-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .section-title h2 {
+    font-size: 1.35rem;
+    margin: 0 0 0.2rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .section-desc {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .domains-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+  }
+  .domain-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+  }
+  .domain-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .domain-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .domain-icon {
+    font-size: 1.75rem;
+  }
+  .domain-title-wrap h3 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+  .domain-type-badge {
+    font-size: 0.7rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .domain-desc {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1rem 0;
+    line-height: 1.4;
+  }
+  .domain-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 0.75rem;
+  }
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .data-table th, .data-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+</style>
+
+<script is:inline>
+  function domainElement(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    node.textContent = String(value ?? '');
+    return node;
+  }
+
+  async function loadDomains() {
+    const grid = document.getElementById('domains-grid');
+    const statModules = document.getElementById('stat-count-modules');
+    if (!grid) return;
+    grid.replaceChildren(domainElement('p', 'loading-state', 'Lade Fachmodule...'));
+    try {
+      const res = await fetch('/api/domains/installed');
+      if (!res.ok) throw new Error('domain_inventory_unavailable');
+      const data = await res.json();
+      const domains = Array.isArray(data.domains) ? data.domains : [];
+      if (statModules) statModules.textContent = data.source_available ? String(domains.length) : '?';
+      grid.replaceChildren();
+      if (!data.source_available) {
+        grid.append(domainElement('p', 'text-muted', 'Manifestquelle nicht erreichbar. Modulregister am Host anbinden; Installations- und Arbeitsstatus bleiben ungeprüft.'));
+        return;
+      }
+      if (!domains.length) {
+        grid.append(domainElement('p', 'text-muted', 'Keine öffentlichen Fachmodul-Manifeste gefunden. Modulregister prüfen.'));
+        return;
+      }
+      for (const domain of domains) {
+        const card = domainElement('div', 'domain-card', '');
+        const body = document.createElement('div');
+        const header = domainElement('div', 'domain-header', '');
+        header.append(domainElement('span', 'domain-icon', '🧩'));
+        const title = domainElement('div', 'domain-title-wrap', '');
+        title.append(domainElement('h3', '', domain.name || domain.id));
+        title.append(domainElement('span', 'domain-type-badge', domain.kind || 'Fachmodul'));
+        header.append(title);
+        body.append(header);
+        const capabilities = Array.isArray(domain.capabilities) ? domain.capabilities : [];
+        body.append(domainElement('p', 'domain-desc', capabilities.length
+          ? 'Manifest-Funktionen: ' + capabilities.join(', ')
+          : 'Keine Funktionen im öffentlichen Manifest angegeben.'));
+        const footer = domainElement('div', 'domain-footer', '');
+        footer.append(domainElement('span', 'badge', 'Manifest vorhanden'));
+        footer.append(domainElement('span', 'text-muted', 'Installation und Arbeit ungeprüft'));
+        card.append(body, footer);
+        grid.append(card);
+      }
+    } catch (_) {
+      if (statModules) statModules.textContent = '?';
+      grid.replaceChildren(domainElement('p', 'text-danger', 'Fachmodule nicht verfügbar. API- und Modulquelle prüfen.'));
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadDomains);
+</script>

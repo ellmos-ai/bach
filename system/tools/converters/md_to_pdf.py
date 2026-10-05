@@ -23,14 +23,14 @@ SOFTWARE.
 """
 
 """
-Tool: c_md_to_pdf
+Tool: md_to_pdf
 Version: 2.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-14
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Pruefe auf neuere Versionen mit: bach tools version c_md_to_pdf
+VERSIONS-HINWEIS: Pruefe auf neuere Versionen mit: bach tools version md_to_pdf
 
 Description:
     Markdown zu PDF Converter fuer das BACH-System.
@@ -41,11 +41,11 @@ Description:
     Bold/Italic, Checkboxen, Blockzitate, Links, Sonderzeichen/Umlaute.
 
 Usage:
-    python c_md_to_pdf.py report.md
-    python c_md_to_pdf.py report.md -o output.pdf
-    python c_md_to_pdf.py report.md --no-page-numbers --no-footer
-    python c_md_to_pdf.py report.md --engine reportlab
-    python c_md_to_pdf.py  # Alle .md im Workspace
+    python md_to_pdf.py report.md
+    python md_to_pdf.py report.md -o output.pdf
+    python md_to_pdf.py report.md --no-page-numbers --no-footer
+    python md_to_pdf.py report.md --engine reportlab
+    python md_to_pdf.py  # Alle .md im Workspace
 """
 
 __version__ = "2.0.0"
@@ -884,11 +884,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
-  python c_md_to_pdf.py report.md
-  python c_md_to_pdf.py report.md -o output.pdf
-  python c_md_to_pdf.py report.md --no-page-numbers --no-footer
-  python c_md_to_pdf.py report.md --engine reportlab
-  python c_md_to_pdf.py  # Alle .md im Workspace
+  python md_to_pdf.py report.md
+  python md_to_pdf.py report.md -o output.pdf
+  python md_to_pdf.py report.md --no-page-numbers --no-footer
+  python md_to_pdf.py report.md --engine reportlab
+  python md_to_pdf.py  # Alle .md im Workspace
 
 Engines:
   auto       Edge Headless (primaer) mit ReportLab-Fallback

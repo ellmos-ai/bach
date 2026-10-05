@@ -32,6 +32,10 @@ def abo_env(tmp_path, monkeypatch):
             kategorie TEXT, betrag_monatlich REAL,
             zahlungsintervall TEXT DEFAULT 'monatlich',
             kuendigungslink TEXT, erkannt_am TEXT,
+            beginn_datum TEXT, ablauf_datum TEXT,
+            kuendigungsfrist_monate INTEGER DEFAULT 1,
+            verlaengerung_monate INTEGER DEFAULT 12,
+            naechste_kuendigung TEXT,
             bestaetigt INTEGER DEFAULT 0, aktiv INTEGER DEFAULT 1,
             created_at TEXT, updated_at TEXT
         )
@@ -151,7 +155,7 @@ class TestAboTrackerImport:
                         {
                             "name": "Premium",
                             "price_per_month": 12.5,
-                            "billing_cycle": "monthly",
+                            "billing_cycle": "yearly",
                             "status_level": 2,
                             "status_label": "confirmed",
                             "is_currently_paid": True,
@@ -173,11 +177,13 @@ class TestAboTrackerImport:
         assert "1 neu" in msg1
         assert "1 aktualisiert" in msg2
         conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM abo_subscriptions").fetchone()
         assert conn.execute("SELECT COUNT(*) FROM abo_subscriptions").fetchone()[0] == 1
-        assert row[4] == 12.5
-        assert row[8] == 1
-        assert row[9] == 1
+        assert row["betrag_monatlich"] == 12.5
+        assert row["zahlungsintervall"] == "jährlich"
+        assert row["bestaetigt"] == 1
+        assert row["aktiv"] == 1
         conn.close()
 
     def test_dry_run_does_not_write(self, abo_env, tmp_path):
@@ -273,14 +279,18 @@ class TestAboList:
         handler, _, db_path = abo_env
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO abo_subscriptions (name, anbieter, kategorie, betrag_monatlich, aktiv) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("Netflix Standard", "Netflix", "Streaming", 12.99, 1),
+            "INSERT INTO abo_subscriptions ("
+            "name, anbieter, kategorie, betrag_monatlich, aktiv, "
+            "kuendigungsfrist_monate, naechste_kuendigung"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("Netflix Standard", "Netflix", "Streaming", 12.99, 1, 1, "2025-12-31"),
         )
         conn.execute(
-            "INSERT INTO abo_subscriptions (name, anbieter, kategorie, betrag_monatlich, aktiv) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("Spotify Family", "Spotify", "Musik", 14.99, 1),
+            "INSERT INTO abo_subscriptions ("
+            "name, anbieter, kategorie, betrag_monatlich, aktiv, "
+            "kuendigungsfrist_monate, naechste_kuendigung"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("Spotify Family", "Spotify", "Musik", 14.99, 1, 3, "2026-03-15"),
         )
         conn.commit()
         conn.close()
@@ -289,6 +299,10 @@ class TestAboList:
         assert ok is True
         assert "Netflix" in msg
         assert "Spotify" in msg
+        assert "Frist" in msg
+        assert "Naechste K." in msg
+        assert "2025-12-31" in msg
+        assert "2026-03-15" in msg
 
 
 class TestAboCosts:
@@ -351,3 +365,62 @@ class TestAboPatterns:
         handler, _, _ = abo_env
         ok, msg = handler.handle("patterns", [])
         assert ok is True
+
+
+class TestAboExport:
+    def test_export_empty(self, abo_env):
+        handler, _, _ = abo_env
+        ok, msg = handler.handle("export", [])
+        assert ok is True
+        assert "Keine Abos zum Exportieren" in msg
+
+    def test_export_creates_csv(self, abo_env):
+        handler, _, db_path = abo_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO abo_subscriptions ("
+            "name, anbieter, kategorie, betrag_monatlich, zahlungsintervall, "
+            "beginn_datum, ablauf_datum, kuendigungsfrist_monate, "
+            "verlaengerung_monate, naechste_kuendigung, kuendigungslink, "
+            "bestaetigt, aktiv"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "Test Abo", "TestProvider", "Software", 29.99, "monatlich",
+                "2025-01-01", "2025-12-31", 1, 12, "2025-11-30",
+                "https://cancel.example", 1, 1,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("export", [])
+        assert ok is True
+        csv_path = handler.data_dir / "abo_export.csv"
+        assert csv_path.exists()
+        content = csv_path.read_text(encoding="utf-8")
+        assert "Betrag_Monatlich;Intervall;Beginn;Ablauf;Kuendigungsfrist_Monate" in content
+        assert "Verlaengerung_Monate;Naechste_Kuendigung;Kuendigungslink;Bestaetigt" in content
+        assert "TestProvider;Software;29.99;monatlich;2025-01-01;2025-12-31;1;12;2025-11-30;https://cancel.example;Ja" in content
+
+    def test_export_null_dates(self, abo_env):
+        handler, _, db_path = abo_env
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO abo_subscriptions ("
+            "name, anbieter, kategorie, betrag_monatlich, aktiv"
+            ") VALUES (?, ?, ?, ?, ?)",
+            ("Minimal Abo", "MinimalProvider", "Sonstige", 9.99, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        ok, msg = handler.handle("export", [])
+        assert ok is True
+        csv_path = handler.data_dir / "abo_export.csv"
+        content = csv_path.read_text(encoding="utf-8")
+        lines = content.strip().split("\n")
+        assert len(lines) == 2
+        assert lines[1].startswith("MinimalProvider;Sonstige;9.99;monatlich;;")
+        # Null date/number fields should be empty, but default ints remain 1 and 12.
+        assert ";;1;12;;" in lines[1]
+        assert lines[1].endswith(";Nein")

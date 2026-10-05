@@ -158,29 +158,29 @@
 
   编码和格式化
   ----------------------
-  “编码问题”-> bach c_encoding_fixer <文件>
-  “元音变音损坏”-> bach c_encoding_fixer <文件>
-  “utf-8”-> bach c_encoding_fixer <文件>
-  “表情符号” -> 巴赫 c_emoji_scanner <文件>
-  “缩进”-> bach c_indent_checker <文件>
+  “编码问题”-> bach encoding_fixer <文件>
+  “元音变音损坏”-> bach encoding_fixer <文件>
+  “utf-8”-> bach encoding_fixer <文件>
+  “表情符号” -> 巴赫 emoji_scanner <文件>
+  “缩进”-> bach indent_checker <文件>
 
   进口处理
   ----------------
-  “对导入进行排序”-> bach c_import_organizer <文件>
-  “导入问题”-> bach c_import_diagnose <文件>
-  “导入丢失”-> bach c_import_diagnose <文件>
+  “对导入进行排序”-> bach import_organizer <文件>
+  “导入问题”-> bach import_diagnose <文件>
+  “导入丢失”-> bach import_diagnose <文件>
 
   文件操作
   -----------------
-  “分割文件”-> bach c_pycutter <文件>
-  “太大”-> bach c_pycutter <文件>
-  “查看 sqlite”-> 巴赫 c_sqlite_viewer <db>
-  “json 问题”-> 巴赫 c_json_repair <文件>
+  “分割文件”-> bach pycutter <文件>
+  “太大”-> bach pycutter <文件>
+  “查看 sqlite”-> 巴赫 sqlite_viewer <db>
+  “json 问题”-> 巴赫 json_repair <文件>
 
   转换
   -------------
-  “markdown 到 pdf”-> bach c_md_to_pdf <文件>
-  “转换格式”-> bach c_universal_converter <文件>
+  “markdown 到 pdf”-> bach md_to_pdf <文件>
+  “转换格式”-> bach universal_converter <文件>
 
 工具搜索
   ----------
@@ -207,7 +207,7 @@
 
 当 Claude 读到“编码问题”时：
 
-  [上下文] 编码修复：bach c_encoding_fixer <文件>
+  [上下文] 编码修复：bach encoding_fixer <文件>
 
 连接器路由集成（新 v1.1.75）
 -------------------------------------------
@@ -235,7 +235,7 @@ ContextInjector 现已集成到连接器消息流中：
 示例：
   用户写道：“文件 X 的编码问题”
   -> ContextInjector 检测到“编码问题”
-  -> 元数据：{"context_hints": "bach c_encoding_fixer <文件>"}
+  -> 元数据：{"context_hints": "bach encoding_fixer <文件>"}
   -> LLM 将提示作为系统信息，而不是用户文本
 
 数据库触发：

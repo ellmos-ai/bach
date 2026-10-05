@@ -47,17 +47,17 @@
 ИНТЕГРАЦИЯ:
   - Автоматически в Hub/startup.py (DirectoryScanner при запуске)
   - Автоматически в Hub/shutdown.py (сохранение состояния во время выключения)
-  - Нет собственного обработчика, на основе инструментов (tools/c_dirscan.py)
+  - Нет собственного обработчика, на основе инструментов (tools/dirscan.py)
 
 CLI (MANUAL):
-  python c_dirscan.py # Показать статус
-  python c_dirscan.py --scan # Сканировать текущее состояние
-  python c_dirscan.py --compare # Сравнение ЕСТЬ и СЛЕДУЕТ
-  python c_dirscan.py --update # Состояние СЛЕДУЕТ обновить
-  python c_dirscan.py --path /path # Другой каталог
-  python c_dirscan.py --json # Вывод JSON
+  python dirscan.py # Показать статус
+  python dirscan.py --scan # Сканировать текущее состояние
+  python dirscan.py --compare # Сравнение ЕСТЬ и СЛЕДУЕТ
+  python dirscan.py --update # Состояние СЛЕДУЕТ обновить
+  python dirscan.py --path /path # Другой каталог
+  python dirscan.py --json # Вывод JSON
 
 ФАЙЛЫ:
-  - Инструмент: system/tools/c_dirscan.py (класс DirectoryScanner)
+  - Инструмент: system/tools/dirscan.py (класс DirectoryScanner)
   - Данные: system/data/directory_truth.json (сгенерированы при первом сканировании)
   - Структура: {метка времени, каталоги[], файлы{путь: {хеш, размер}}}

@@ -158,29 +158,29 @@ El inyector de contexto reconoce palabras clave y recomienda herramientas:
 
   CODIFICACIÓN Y FORMATO
   ----------------------
-  "problema de codificación" -> bach c_encoding_fixer <archivo>
-  "diéresis rota" -> bach c_encoding_fixer <archivo>
-  "utf-8" -> bach c_encoding_fixer <archivo>
-  "emoji" -> bach c_emoji_scanner <archivo>
-  "sangría" -> bach c_indent_checker <archivo>
+  "problema de codificación" -> bach encoding_fixer <archivo>
+  "diéresis rota" -> bach encoding_fixer <archivo>
+  "utf-8" -> bach encoding_fixer <archivo>
+  "emoji" -> bach emoji_scanner <archivo>
+  "sangría" -> bach indent_checker <archivo>
 
   MANEJO DE IMPORTACIONES
   ---------------
-  "Ordenar importaciones" -> bach c_import_organizer <archivo>
-  "problema de importación" -> bach c_import_diagnose <archivo>
-  "Falta la importación" -> bach c_import_diagnose <archivo>
+  "Ordenar importaciones" -> bach import_organizer <archivo>
+  "problema de importación" -> bach import_diagnose <archivo>
+  "Falta la importación" -> bach import_diagnose <archivo>
 
   OPERACIONES DE ARCHIVO
   -----------------
-  "archivo dividido" -> bach c_pycutter <archivo>
-  "demasiado grande" -> bach c_pycutter <archivo>
-  "ver sqlite" -> bach c_sqlite_viewer <db>
-  "problema json" -> bach c_json_repair <archivo>
+  "archivo dividido" -> bach pycutter <archivo>
+  "demasiado grande" -> bach pycutter <archivo>
+  "ver sqlite" -> bach sqlite_viewer <db>
+  "problema json" -> bach json_repair <archivo>
 
   CONVERSIÓN
   -------------
-  "rebaja a pdf" -> bach c_md_to_pdf <archivo>
-  "convertir formato" -> bach c_universal_converter <archivo>
+  "rebaja a pdf" -> bach md_to_pdf <archivo>
+  "convertir formato" -> bach universal_converter <archivo>
 
 BÚSQUEDA DE HERRAMIENTAS
   ----------
@@ -207,7 +207,7 @@ Cuando Claude lee "editar python":
 
 Cuando Claude lee "problema de codificación":
 
-  [CONTEXTO] Corrección de codificación: bach c_encoding_fixer <archivo>
+  [CONTEXTO] Corrección de codificación: bach encoding_fixer <archivo>
 
 INTEGRACIÓN DE ENRUTAMIENTO DEL CONECTOR (NUEVA v1.1.75)
 -------------------------------------------
@@ -235,7 +235,7 @@ VENTAJA:
 EJEMPLO:
   El usuario escribe: "problema de codificación con el archivo X"
   -> ContextInjector detecta "problema de codificación"
-  -> Metadatos: {"context_hints": "bach c_encoding_fixer <archivo>"}
+  -> Metadatos: {"context_hints": "bach encoding_fixer <archivo>"}
   -> LLM recibe pistas como información del sistema, no como texto del usuario
 
 DATABASE TRIGGER:

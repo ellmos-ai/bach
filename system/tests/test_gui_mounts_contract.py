@@ -24,7 +24,8 @@ from hub.mount import MountHandler
 def client(tmp_path, monkeypatch):
     (tmp_path / "user").mkdir()
     monkeypatch.setattr(server, "BACH_DIR", tmp_path)
-    return TestClient(server.app, raise_server_exceptions=False)
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
+    return TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-control-token"})
 
 
 @pytest.mark.skipif(TestClient is None, reason="FastAPI not installed")

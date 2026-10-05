@@ -24,12 +24,19 @@ from hub._services.routinika_projection import (
     read_legacy_unauthenticated_routinika_projection,
     read_routinika_projection,
 )
-from sqlite_transit_sync import (
-    HMACKeyReference,
-    SyncConfig,
-    TransitSync,
-    load_hmac_authenticator,
-)
+
+try:
+    from sqlite_transit_sync import (
+        HMACKeyReference,
+        SyncConfig,
+        TransitSync,
+        load_hmac_authenticator,
+    )
+except ImportError as exc:  # pragma: no cover - optional external dependency
+    pytest.skip(
+        f"requires optional sqlite_transit_sync package: {exc}",
+        allow_module_level=True,
+    )
 
 
 class _ProjectionSecretResolver:

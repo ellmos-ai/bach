@@ -35,10 +35,10 @@ code_analyzer.py
   Python コードの品質と構造を分析します。
   呼び出し: python tools/code_analyzer.py <ファイル>
 
-c_method_analyzer.py
+method_analyzer.py
   Python ファイル内のメソッドと関数を分析します。
   長いメソッドや複雑な関数を検索します。
-  呼び出し: python tools/c_method_analyzer.py <ファイル>
+  呼び出し: python tools/method_analyzer.py <ファイル>
 
 統計とレポート
 -------------------
@@ -74,9 +74,9 @@ duplicate_detector.py
 システム検査
 -----------------
 
-c_sqlite_viewer.py
+sqlite_viewer.py
   SQLite データベース (bach.db、bach.db) を検査します。
-  呼び出し: python tools/c_sqlite_viewer.py <db>
+  呼び出し: python tools/sqlite_viewer.py <db>
 
 inspect_db_tables.py
   テーブルのスキーマと統計を表示します。

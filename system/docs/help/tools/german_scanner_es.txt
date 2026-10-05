@@ -1,0 +1,38 @@
+Herramienta BACH: german_scanner
+--------------------------------------------------
+Generado: 2026-01-23 10:36
+Fuente: tools/german_scanner.py
+
+DESCRIPCIÓN
+----------------------------------------
+german_scanner.py - Encuentra cadenas alemanas en proyectos Python
+
+Escanea archivos Python para:
+  - Cadenas con diéresis (ae, oe, ue, ss)
+  - Textos GUI (setText, setWindowTitle, QLabel, etc.)
+  - Palabras clave alemanas (archivar, editar, guardar, etc.)
+
+Útil para:
+  - Prepararse para la internacionalización (i18n).
+  - Encuentra cadenas codificadas
+  - Crear listas de traducción
+
+Extraído de: bucle de desarrollo A3 Advanced/TranslationSystem.py
+
+Uso:
+    python german_scanner.py <carpeta>
+    python german_scanner.py <carpeta> --json
+    python german_scanner.py <carpeta> --export Translations.json
+
+Autor: Claude (adaptado)
+Dependencias: ninguna (solo stdlib)
+
+USE
+----------------------------------------
+python bach.py herramientas ejecutan german_scanner [args]
+o directamente: python tools/german_scanner.py [args]
+
+NOTAS
+----------------------------------------
+- Generado automáticamente desde Docstring
+- Si tiene alguna pregunta: las herramientas de Bach muestran german_scanner

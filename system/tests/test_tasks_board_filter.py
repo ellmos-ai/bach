@@ -61,6 +61,8 @@ def client():
 
     original_db = os.environ.get("BACH_DB")
     os.environ["BACH_DB"] = db_path
+    original_control_token = os.environ.get("BACH_CONTROL_API_TOKEN")
+    os.environ["BACH_CONTROL_API_TOKEN"] = "test-control-token"
     # Falls Modul schon importiert wurde, muss es neu geladen werden können
     # Wir löschen ggf. vorhandene server-Module aus dem Cache
     for name in list(sys.modules.keys()):
@@ -87,7 +89,9 @@ def client():
     conn.close()
 
     # Import via 'system.gui.server' erzwingen, nicht 'hub.gui'
-    sys.path.insert(0, str(Path(__file__).parent.parent))
+    # -> bach-Root (.../services/bach) in sys.path, damit Namespace-Package
+    #    'system' (kein __init__.py, PEP420) auffindbar ist.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     # Eventuelle Import-Caches für 'gui' leeren
     for name in list(sys.modules.keys()):
         if name == "gui" or name.startswith("gui."):
@@ -95,13 +99,17 @@ def client():
     from system.gui.server import app
     from fastapi.testclient import TestClient
 
-    yield TestClient(app)
+    yield TestClient(app, headers={"Authorization": "Bearer test-control-token"})
 
     # Cleanup
     if original_db is None:
         os.environ.pop("BACH_DB", None)
     else:
         os.environ["BACH_DB"] = original_db
+    if original_control_token is None:
+        os.environ.pop("BACH_CONTROL_API_TOKEN", None)
+    else:
+        os.environ["BACH_CONTROL_API_TOKEN"] = original_control_token
     sys.modules.pop("hub.bach_paths", None)
     try:
         os.unlink(db_path)

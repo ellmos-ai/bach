@@ -1,5 +1,7 @@
 # System-Anschlussanalyse: Integration & Konsistenz
 
+> Prüft BACH auf unverbundene Systembereiche, Inkonsistenzen und Integrationslücken.
+
 **Version:** 2.0  
 **Stand:** 2026-09-16  
 **Kategorie:** Wartung, Qualitätssicherung

@@ -202,7 +202,7 @@ PROBLEMAS CONOCIDOS
    - Solución alternativa: importar el servicio directamente
 
 3. INCONSISTENCIA DEL CAMINO
-   - Archivo de ayuda al que se hace referencia skills/_services/ (antiguo)
+   - Archivo de ayuda al que se hace referencia hub/_services/ (antiguo)
    - Actualmente en hub/_services/ (correcto)
 
 MIGRACIÓN REQUERIDA:

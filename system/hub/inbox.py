@@ -30,17 +30,48 @@ INBOX_WATCHER = TOOLS_DIR / "inbox_watcher.py"
 INBOX_PID_FILE = DATA_DIR / "inbox_watcher.pid"
 
 
-class InboxHandler:
+try:
+    from .base import BaseHandler
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from base import BaseHandler
+
+
+class InboxHandler(BaseHandler):
     """Handler fuer Inbox-Watcher Steuerung."""
 
-    def __init__(self, base_path: Path = None):
-        """Initialisiert den InboxHandler.
+    def __init__(self, base_path_or_app=None):
+        """Initialisiert den InboxHandler (BaseHandler-kompatibel).
+
+        Akzeptiert eine App-Instanz (New-Style-Registry) oder einen
+        Legacy-Basis-Pfad (bach.py / Direktaufruf). BaseHandler.__init__
+        hat keinen Default-Wert, daher wird None hier abgefangen.
 
         Args:
-            base_path: Basis-Pfad des BACH-Systems (fuer Kompatibilitaet mit bach.py)
+            base_path_or_app: App-Instanz oder Basis-Pfad des BACH-Systems
         """
-        self.base_path = base_path or HANDLER_DIR.parent
+        super().__init__(base_path_or_app if base_path_or_app is not None else HANDLER_DIR.parent)
     
+    @property
+    def profile_name(self) -> str:
+        """Registry-Profilname (BaseHandler-Interface)."""
+        return "inbox"
+
+    @property
+    def target_file(self) -> Path:
+        """Ziel-Skript (BaseHandler-Interface)."""
+        return INBOX_WATCHER
+
+    def get_operations(self) -> dict:
+        """Verfuegbare Operationen (BaseHandler-Interface)."""
+        return {
+            "start": "Inbox-Watcher starten",
+            "stop": "Inbox-Watcher stoppen",
+            "status": "Status anzeigen",
+            "scan": "Einmaliger Dry-Run Scan",
+            "config": "Konfiguration anzeigen",
+        }
+
     def _is_running(self) -> tuple:
         """Prueft ob inbox_watcher laeuft."""
         if not INBOX_PID_FILE.exists():
@@ -184,8 +215,8 @@ class InboxHandler:
         )
         return True, result.stdout + result.stderr
     
-    def handle(self, operation: str, args: list) -> tuple:
-        """Handler-Einstiegspunkt (BaseHandler-kompatibel)."""
+    def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        """Handler-Einstiegspunkt (BaseHandler-kompatibel, dry_run optional/ignoriert)."""
         
         if not operation or operation == 'status':
             return self._status()

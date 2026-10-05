@@ -30,6 +30,7 @@ bach plugins list              Alle geladenen Plugins anzeigen
 bach plugins inspect <pfad>    Manifest-Metadaten ohne Runtime-Load pruefen
 bach plugins load <pfad>       Plugin aus plugin.json laden
 bach plugins unload <name>     Plugin entladen
+bach plugins reset <name>      Plugin neu laden (before/after hook)
 bach plugins tools             Alle Plugin-Tools anzeigen
 bach plugins info <name>       Details zu einem Plugin
 bach plugins create <name>     Plugin-Manifest erstellen (Scaffolding)
@@ -61,6 +62,7 @@ class PluginsHandler(BaseHandler):
             "inspect": "Manifest-Metadaten ohne Runtime-Load pruefen",
             "load": "Plugin aus plugin.json laden",
             "unload": "Plugin entladen",
+            "reset": "Plugin neu laden (before/after hook)",
             "tools": "Alle Plugin-Tools anzeigen",
             "info": "Details zu einem Plugin",
             "create": "Plugin-Manifest erstellen (Scaffolding)",
@@ -93,6 +95,9 @@ class PluginsHandler(BaseHandler):
         elif operation == "unload" and args:
             return plugins.unload_plugin(args[0])
 
+        elif operation == "reset" and args:
+            return plugins.reset_plugin(args[0])
+
         elif operation == "tools":
             return self._list_tools(plugins)
 
@@ -115,8 +120,9 @@ class PluginsHandler(BaseHandler):
 
         else:
             return False, (
-                "Usage: bach plugins [list|inspect|load|unload|tools|info|create|caps|trust|audit]\n"
+                "Usage: bach plugins [list|inspect|load|unload|reset|tools|info|create|caps|trust|audit]\n"
                 "  bach plugins inspect <pfad>    Manifest ohne Runtime-Load pruefen\n"
+                "  bach plugins reset <name>      Plugin neu laden (before/after hook)\n"
                 "  bach plugins caps              Capability-Profile anzeigen\n"
                 "  bach plugins trust <name> <l>  Trust-Level aendern\n"
                 "  bach plugins audit [limit]     Audit-Log anzeigen"

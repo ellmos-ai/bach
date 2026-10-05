@@ -1,5 +1,7 @@
 # Agent/Skill Finder Workflow
 
+**Version:** 1.0.0
+
 ## Zweck
 Finde den passenden Agenten, Experten oder Skill für eine Benutzeranfrage.
 

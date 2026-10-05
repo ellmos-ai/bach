@@ -28,17 +28,17 @@
 
 4.絵文字
    - ファイル内で使用できますが、登録されているもののみです。
-   - レジストリ: system/tools/c_emoji_scanner.py (ASCII_OVERRIDES)
-   - スキャナ: bach c_emoji_scanner <ファイル>
+   - レジストリ: system/tools/emoji_scanner.py (ASCII_OVERRIDES)
+   - スキャナ: bach emoji_scanner <ファイル>
 
 5。 JSON編集
    - 最初の選択: bach.py または Python スクリプト
    - JSON には fc_str_replace を使用しないでください
    - JSON 用の PowerShell は決して使用しないでください
-   - 問題が発生した場合: bach c_json_repair <ファイル>
+   - 問題が発生した場合: bach json_repair <ファイル>
 
 6。輸入
    - 最初に標準ライブラリ
    - 次にサードパーティ
    - 次にローカルモジュール
-   - ツール: bach c_import_organizer <ファイル>
+   - ツール: bach import_organizer <ファイル>

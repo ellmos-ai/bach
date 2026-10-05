@@ -296,10 +296,15 @@ def pull_tasks_from_rheingold(
     """
     conn.row_factory = sqlite3.Row
     endpoint = f"{base_url.rstrip('/')}/api/tasks?limit=10000"
-    req = urllib.request.Request(
-        endpoint,
-        headers={"User-Agent": "BACH-RheingoldClient/1.0"},
-    )
+    headers = {"User-Agent": "BACH-RheingoldClient/1.0"}
+    try:
+        from hub._services.chat.control_auth import get_control_api_auth_header
+        auth_header = get_control_api_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
+    except Exception:
+        pass
+    req = urllib.request.Request(endpoint, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.loads(resp.read().decode("utf-8"))
 
@@ -381,3 +386,63 @@ def pull_tasks_from_rheingold(
         conn.commit()
 
     return inserted, updated
+
+
+# ---------------------------------------------------------------------------
+# PATCH-Client für Task-Mutationen (edit/done/claim/assign/priority)
+# ---------------------------------------------------------------------------
+
+def patch_task_to_rheingold(
+    base_url: str,
+    task_id: int,
+    changes: dict,
+    provenance: str,
+    timeout: float = 5.0,
+) -> tuple:
+    """PUT /api/tasks/{id} auf dem Lead-Server ausführen + kollisionssicherer Readback.
+
+    Returns (ok: bool, body: dict|None). Bei 4xx/5xx/Timeout/ConnectionError
+    wird (False, None) zurückgegeben, Exception wird geloggt NICHT geschluckt.
+    Bei Readback-Mismatch wird RheingoldTaskCollision raised.
+    """
+    url = f"{base_url.rstrip('/')}/api/tasks/{task_id}"
+    payload = {**changes, "_provenance": provenance}
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status >= 400:
+                log.warning("Rheingold PATCH %s → HTTP %d", task_id, resp.status)
+                return False, None
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        log.warning("Rheingold PATCH %s HTTP-Fehler: %s", task_id, e)
+        return False, None
+    except Exception as e:
+        log.warning("Rheingold PATCH %s fehlgeschlagen: %s", task_id, e)
+        return False, None
+
+    # Kollisionssicherer Readback
+    try:
+        with urllib.request.urlopen(
+            f"{url}", timeout=min(timeout, 3.0)
+        ) as resp:
+            current = json.loads(resp.read().decode("utf-8", errors="replace"))
+        for key in ("title", "status"):
+            if key in changes and current.get(key) != changes[key]:
+                raise RheingoldTaskCollision(
+                    f"Readback-Mismatch Task {task_id}: "
+                    f"erwartet {key}={changes[key]!r}, "
+                    f"aktuell {current.get(key)!r}"
+                )
+    except RheingoldTaskCollision:
+        raise
+    except Exception as e:
+        log.warning("Rheingold Readback %s fehlgeschlagen: %s", task_id, e)
+        return False, None
+
+    return True, body

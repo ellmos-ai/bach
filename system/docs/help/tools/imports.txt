@@ -17,7 +17,7 @@ Haeufige Probleme die diese Tools loesen:
   - Doppelte Imports
   - Imports mitten im Code statt am Anfang
 
-IMPORT DIAGNOSE: c_import_diagnose
+IMPORT DIAGNOSE: import_diagnose
 ==================================
 Systematische Analyse von Import-Problemen.
 
@@ -32,13 +32,13 @@ FUNKTIONEN:
 GRUNDBEFEHLE:
 
   # Projekt analysieren
-  bach c_import_diagnose projekt/src/
+  bach import_diagnose projekt/src/
 
   # Mit JSON-Ausgabe
-  bach c_import_diagnose projekt/src/ --json
+  bach import_diagnose projekt/src/ --json
 
   # Bestimmte Module testen
-  bach c_import_diagnose . --modules core.app:App,gui.main:MainWindow
+  bach import_diagnose . --modules core.app:App,gui.main:MainWindow
 
 OPTIONEN:
   --json                 JSON-Output (maschinenlesbar)
@@ -63,7 +63,7 @@ AUSGABE-BEISPIEL:
   2. Zirkulaeren Import core.utils <-> core.app aufloesen
   3. gui/__init__.py erstellen
 
-IMPORT ORGANIZER: c_import_organizer
+IMPORT ORGANIZER: import_organizer
 ====================================
 Sortiert und bereinigt Python-Imports nach PEP8.
 
@@ -76,16 +76,16 @@ FUNKTIONEN:
 GRUNDBEFEHLE:
 
   # Datei organisieren
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
   # Nur prüfen ohne Änderung
-  bach c_import_organizer script.py --dry-run
+  bach import_organizer script.py --dry-run
 
   # JSON-Ausgabe
-  bach c_import_organizer script.py --json
+  bach import_organizer script.py --json
 
   # Von stdin lesen
-  cat script.py | bach c_import_organizer --stdin
+  cat script.py | bach import_organizer --stdin
 
 OPTIONEN:
   --dry-run   Nur anzeigen, nicht ändern
@@ -124,14 +124,14 @@ TYPISCHE WORKFLOWS
 1. "ImportError" DEBUGGEN
    Projekt analysieren um Crash-Punkt zu finden:
    
-   bach c_import_diagnose projekt/src/ --json
+   bach import_diagnose projekt/src/ --json
    
    Dann Empfehlungen befolgen.
 
 2. ZIRKULAERE IMPORTS FINDEN
    Wenn sich Module gegenseitig importieren:
    
-   bach c_import_diagnose projekt/src/
+   bach import_diagnose projekt/src/
    
    Ausgabe zeigt: A -> B -> A (Zirkel!)
    
@@ -140,30 +140,30 @@ TYPISCHE WORKFLOWS
 3. VOR CODE-REVIEW
    Imports aufraumen bevor Code reviewt wird:
    
-   bach c_import_organizer script.py
+   bach import_organizer script.py
    
    Oder für ganzes Projekt:
-   for f in *.py; do bach c_import_organizer "$f"; done
+   for f in *.py; do bach import_organizer "$f"; done
 
 4. NACH REFACTORING
    Nach grossem Umbau Imports prüfen:
    
    # Erst diagnostizieren
-   bach c_import_diagnose src/
+   bach import_diagnose src/
    
    # Dann aufraumen
-   for f in src/*.py; do bach c_import_organizer "$f"; done
+   for f in src/*.py; do bach import_organizer "$f"; done
 
 5. NEUES PROJEKT EINRICHTEN
    __init__.py Dateien prüfen:
    
-   bach c_import_diagnose mein_paket/
+   bach import_diagnose mein_paket/
    
    Zeigt fehlende __init__.py Dateien an.
 
 PEP8 IMPORT-REIHENFOLGE
 =======================
-Der c_import_organizer sortiert nach PEP8-Standard:
+Der import_organizer sortiert nach PEP8-Standard:
 
   1. Standard-Library (import os, import sys)
   2. Third-Party (import requests, import numpy)
@@ -175,9 +175,9 @@ CONTEXT-INJEKTOR
 ----------------
 Der ContextInjector erkennt Stichwörter und empfiehlt diese Tools:
 
-  "imports sortieren"  -> bach c_import_organizer <datei>
-  "import problem"     -> bach c_import_diagnose <projekt>
-  "import fehlt"       -> bach c_import_diagnose <projekt>
+  "imports sortieren"  -> bach import_organizer <datei>
+  "import problem"     -> bach import_diagnose <projekt>
+  "import fehlt"       -> bach import_diagnose <projekt>
 
 INTEGRATION MIT ANDEREN TOOLS
 =============================
@@ -187,7 +187,7 @@ Kombiniere mit python_cli_editor für vollständiges Bild:
   bach python_cli_editor script.py --imports
   
   # Dann organisieren
-  bach c_import_organizer script.py
+  bach import_organizer script.py
 
 SIEHE AUCH
 ----------

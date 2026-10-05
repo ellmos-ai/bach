@@ -35,10 +35,10 @@ code_analyzer.py
   分析 Python 代码的质量和结构。
   调用：python tools/code_analyzer.py <文件>
 
-c_method_analyzer.py
+method_analyzer.py
   分析 Python 文件中的方法和函数。
   查找长方法、复杂函数。
-  调用：python tools/c_method_analyzer.py <文件>
+  调用：python tools/method_analyzer.py <文件>
 
 统计和报告
 -------------------
@@ -74,9 +74,9 @@ duplicate_detector.py
 系统检查
 -----------------
 
-c_sqlite_viewer.py
+sqlite_viewer.py
   检查 SQLite 数据库（bach.db、bach.db）。
-  调用： python tools/c_sqlite_viewer.py <db>
+  调用： python tools/sqlite_viewer.py <db>
 
 inspect_db_tables.py
   显示表架构和统计信息。

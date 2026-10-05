@@ -9,16 +9,16 @@ BUGFIX PROTOKOLL - SCHNELLREFERENZ
 Bei Fehlern IMMER diese Reihenfolge:
 
 1. STANDARD-FIXER ZUERST
-   python system/tools/c_standard_fixer.py <datei>
+   python system/tools/standard_fixer.py <datei>
    Behebt: BOM, Encoding, Umlaute, JSON-Probleme
    -> Problem geloest? Arbeit gespart!
 
 2. IMPORT-DIAGNOSE
-   python system/tools/c_import_diagnose.py <ordner>
+   python system/tools/import_diagnose.py <ordner>
    Prüft: Circular Imports, fehlende Module
 
 3. CODE-ANALYSE
-   python system/tools/c_method_analyzer.py <datei>
+   python system/tools/method_analyzer.py <datei>
    Prüft: Attribut vor Definition, Signal-Callbacks
 
 4. ISOLIERTES TESTEN
@@ -33,10 +33,10 @@ SCHNELL-CHECK:
 
 | Fehlertyp           | Erste Aktion              |
 |---------------------|---------------------------|
-| Import-Fehler       | c_import_diagnose.py      |
-| AttributeError      | c_method_analyzer.py      |
-| Silent Crash        | c_method_analyzer.py      |
-| Encoding/BOM        | c_standard_fixer.py       |
+| Import-Fehler       | import_diagnose.py      |
+| AttributeError      | method_analyzer.py      |
+| Silent Crash        | method_analyzer.py      |
+| Encoding/BOM        | standard_fixer.py       |
 
 HINWEIS: Diese Datei dokumentiert standalone Tools, keinen Handler.
          Detaillierte Bugfix-Workflows: skills/workflows/bugfix-protokoll.md

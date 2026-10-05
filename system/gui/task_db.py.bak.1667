@@ -1,0 +1,220 @@
+import hashlib
+import json
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+try:
+    from hub.bach_paths import BACH_DB
+except ImportError:  # pragma: no cover - fallback wenn BACH_ROOT nicht im sys.path
+    BACH_DB = Path(__file__).parent.parent / "data" / "bach.db"
+
+
+def row_to_dict(row: sqlite3.Row) -> dict:
+    """Wandelt eine sqlite3-Row in ein Dictionary um."""
+    if row is None:
+        return {}
+    return {key: row[key] for key in row.keys()}
+
+
+def rows_to_list(rows: list) -> list:
+    """Wandelt eine Liste von sqlite3-Rows in eine Liste von Dictionaries um."""
+    return [row_to_dict(row) for row in rows]
+
+
+# ═══════════════════════════════════════════════════════════════
+# bach_agents (Avatar-Agenten & Animus Matrix)
+# ═══════════════════════════════════════════════════════════════
+
+_BACH_AGENTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS bach_agents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    type TEXT,
+    category TEXT,
+    description TEXT,
+    skill_path TEXT,
+    user_data_folder TEXT,
+    parent_agent_id INTEGER,
+    is_active INTEGER DEFAULT 1,
+    priority INTEGER DEFAULT 0,
+    requires_setup INTEGER DEFAULT 0,
+    setup_completed INTEGER DEFAULT 0,
+    usage_count INTEGER DEFAULT 0,
+    last_used TEXT,
+    version TEXT DEFAULT '1.0.0',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    dashboard TEXT,
+    language TEXT,
+    persona TEXT,
+    dist_type TEXT,
+    animus TEXT,
+    session_hook TEXT,
+    taskboard_id TEXT,
+    taskboard_default INTEGER DEFAULT 0
+);
+"""
+
+# Minimaler Kanon der Avatar-Agenten (ehemals hartcodiert in gui/server.py).
+DEFAULT_AVATAR_AGENTS = [
+    {
+        "name": "claude",
+        "display_name": "Claude Code (Subscription / CLI)",
+        "type": "avatar",
+        "category": "subscription",
+        "animus": "subscription",
+        "session_hook": "claude://session",
+        "taskboard_id": "claude-board",
+        "taskboard_default": 1,
+        "is_active": 1,
+        "priority": 10,
+    },
+    {
+        "name": "gemini",
+        "display_name": "Gemini (Subscription / API)",
+        "type": "avatar",
+        "category": "subscription",
+        "animus": "subscription",
+        "session_hook": "gemini://session",
+        "taskboard_id": "gemini-board",
+        "taskboard_default": 1,
+        "is_active": 1,
+        "priority": 10,
+    },
+    {
+        "name": "codex",
+        "display_name": "OpenAI Codex CLI",
+        "type": "avatar",
+        "category": "cli",
+        "animus": "cli",
+        "session_hook": "codex://session",
+        "taskboard_id": "codex-board",
+        "taskboard_default": 1,
+        "is_active": 1,
+        "priority": 10,
+    },
+    {
+        "name": "kimi",
+        "display_name": "Kimi (Moonshot)",
+        "type": "avatar",
+        "category": "subscription",
+        "animus": "subscription",
+        "session_hook": "kimi://session",
+        "taskboard_id": "kimi-board",
+        "taskboard_default": 1,
+        "is_active": 1,
+        "priority": 10,
+    },
+]
+
+# Idle-Worker, die als Fallback-Assignees dienen (z.B. Ollama/Buddha im Hintergrund).
+DEFAULT_IDLE_WORKERS = ["OLLAMA", "BUDDHA"]
+
+# Fallback-Assignee fuer neue Tasks (identisch zu gui/server.py & headless).
+DEFAULT_TASK_ASSIGNEE = DEFAULT_IDLE_WORKERS[0]
+
+
+def _migrate_bach_agents(conn: sqlite3.Connection) -> None:
+    """Ergänzt fehlende Spalten in bach_agents robust nach dem aktuellen Zielschema.
+
+    Die Tabelle kann in verschiedenen DBs unterschiedlich aussehen (z.B. fehlt
+    `dist_type` in aelteren Versionen). Wir ergänzen daher nur Spalten, die nach
+    PRAGMA table_info wirklich fehlen.
+    """
+    existing_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(bach_agents)").fetchall()
+    }
+    target_cols = [
+        ("dist_type", "TEXT"),
+        ("animus", "TEXT"),
+        ("session_hook", "TEXT"),
+        ("taskboard_id", "TEXT"),
+        ("taskboard_default", "INTEGER DEFAULT 0"),
+    ]
+    for col_name, col_def in target_cols:
+        if col_name not in existing_cols:
+            conn.execute(f"ALTER TABLE bach_agents ADD COLUMN {col_name} {col_def}")
+            conn.commit()
+
+
+def _init_bach_agents(conn: sqlite3.Connection) -> None:
+    """Erstellt bach_agents falls noetig und migriert fehlende Spalten."""
+    conn.executescript(_BACH_AGENTS_SCHEMA)
+    conn.commit()
+    _migrate_bach_agents(conn)
+
+
+def get_bach_db() -> sqlite3.Connection:
+    """Verbindung zur zentralen bach.db."""
+    conn = sqlite3.connect(str(BACH_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def upsert_bach_agent(conn: sqlite3.Connection, agent: dict) -> dict:
+    """Erstellt oder aktualisiert einen Agenten anhand seines eindeutigen Namens.
+
+    Gibt {"success": True, "agent": {...}} oder
+    {"success": False, "error": str, "status_code": int} zurueck.
+    """
+    _init_bach_agents(conn)
+    name = agent.get("name")
+    if not name:
+        return {"success": False, "error": "Agent-Name fehlt", "status_code": 400}
+
+    now = datetime.now().isoformat()
+    defaults = {
+        "display_name": name,
+        "type": "agent",
+        "category": None,
+        "description": None,
+        "skill_path": None,
+        "user_data_folder": None,
+        "parent_agent_id": None,
+        "is_active": 1,
+        "priority": 0,
+        "requires_setup": 0,
+        "setup_completed": 0,
+        "usage_count": 0,
+        "last_used": None,
+        "version": "1.0.0",
+        "dashboard": None,
+        "language": None,
+        "persona": None,
+        "dist_type": None,
+        "animus": None,
+        "session_hook": None,
+        "taskboard_id": None,
+        "taskboard_default": 0,
+    }
+    merged = {**defaults, **agent, "updated_at": now}
+    # created_at nur beim Insert setzen
+    existing = conn.execute(
+        "SELECT id FROM bach_agents WHERE name = ?", (name,)
+    ).fetchone()
+    if existing:
+        allowed = {k: v for k, v in merged.items() if k in defaults or k == "updated_at"}
+        if not allowed:
+            return {"success": False, "error": "Keine gueltigen Felder", "status_code": 400}
+        set_clause = ", ".join(f"{k} = ?" for k in allowed)
+        values = list(allowed.values()) + [name]
+        conn.execute(f"UPDATE bach_agents SET {set_clause} WHERE name = ?", values)
+        conn.commit()
+        agent_id = existing["id"]
+    else:
+        merged["created_at"] = now
+        cols = [k for k in defaults if k not in {"updated_at"}] + ["created_at", "updated_at"]
+        placeholders = ", ".join(["?"] * len(cols))
+        values = [merged.get(c) for c in cols]
+        cur = conn.execute(
+            f"INSERT INTO bach_agents ({', '.join(cols)}) VALUES ({placeholders})",
+            values,
+        )
+        conn.commit()
+        agent_id = cur.lastrowid
+
+    row = conn.execute("SELECT * FROM bach_agents WHERE id = ?", (agent_id,)).fetchone()
+    return {"success": True, "agent": row_to_dict(row)}

@@ -50,7 +50,7 @@ echo   [3]  Codex Konsole
 echo   [4]  Agent beauftragen
 echo.
 echo   --- DIENSTE -------------------------------------
-echo   [B]  Chat Service (Telegram Bot + Tray)
+echo   [B]  Chat Service (Telegram Bot + Tray + Bridge)
 echo   [W]  Buddha Connect (Server-Modus)
 echo   [G]  Web-GUI starten (Port 8000)
 echo   [S]  Status anzeigen
@@ -259,10 +259,10 @@ cls
 echo.
 echo  ============================================
 echo   BACH CHAT SERVICE - Start
-echo   Telegram Bot + Control API + System Tray
+echo   Telegram Bot + Control API + System Tray + Bridge
 echo  ============================================
 echo.
-python "!STARTSPINE!" start --chat --tray
+python "!STARTSPINE!" start --chat --tray --bridge
 if errorlevel 1 echo [FEHLER] Chat/Control ist nicht bereit. Details stehen im Startspine-Log.
 pause
 goto menu
@@ -421,7 +421,7 @@ if "!BACH_CLIENT_MODE!"=="remote" (
     pause
     goto menu
 )
-python "!STARTSPINE!" stop --services chat,tray
+python "!STARTSPINE!" stop --services chat,tray,bridge
 pause
 goto menu
 

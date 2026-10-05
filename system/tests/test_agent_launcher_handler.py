@@ -822,3 +822,68 @@ class TestBatGeneration:
             stripped = line.strip()
             if stripped == "pause":
                 pytest.fail("Found hard 'pause' without BACH_AUTO guard")
+
+
+# ================================================================
+# MODELLIDENTITAET — Runner-abhaengiger Prompt-Block (Task #1406)
+# ================================================================
+
+class TestModelIdentityPrompt:
+    """Tests fuer _get_model_identity_prompt: modellabhaengiger Hinweisblock."""
+
+    @pytest.fixture(autouse=True)
+    def no_user_runner_config(self, monkeypatch, tmp_path):
+        """Echte User-Config (~/.config/bach/agent_runners.json) ausblenden,
+        damit Muster/Defaults allein aus BUILTIN kommen."""
+        import hub.agent_runners as ar
+        monkeypatch.setattr(ar, "CONFIG_PATH", tmp_path / "keine-runner-config.json")
+
+    def test_claude_model(self, handler):
+        block = handler._get_model_identity_prompt("sonnet")
+        assert "## Modellidentitaet" in block
+        assert '"claude"' in block
+        assert "sonnet" in block
+        assert "Claude-Code-CLI" in block
+
+    def test_gemini_model_maps_to_agy(self, handler):
+        block = handler._get_model_identity_prompt("gemini-2.0")
+        assert '"agy"' in block
+        assert "Gemini-CLI" in block
+
+    def test_gpt_model_maps_to_codex(self, handler):
+        block = handler._get_model_identity_prompt("gpt-4")
+        assert '"codex"' in block
+        assert "OpenAI-Codex-CLI" in block
+
+    def test_local_model_maps_to_local(self, handler):
+        block = handler._get_model_identity_prompt("qwen2.5")
+        assert '"local"' in block
+        assert "lokale BACH-Chat-Runtime" in block
+
+    def test_empty_model_falls_back_to_claude_default(self, handler):
+        block = handler._get_model_identity_prompt("")
+        assert "## Modellidentitaet" in block
+        assert '"claude"' in block
+
+    def test_unknown_model_falls_back_to_default(self, handler):
+        block = handler._get_model_identity_prompt("unbekanntes-modell-4711")
+        assert '"claude"' in block
+
+    def test_explicit_runner_arg_beats_pattern(self, handler):
+        block = handler._get_model_identity_prompt("sonnet", "codex")
+        assert '"codex"' in block
+        assert "OpenAI-Codex-CLI" in block
+
+    def test_unmapped_runner_yields_empty(self, handler, monkeypatch):
+        """Runner ohne Eintrag in MODEL_IDENTITY_PROMPTS -> kein Block."""
+        import hub.agent_runners as ar
+        monkeypatch.setattr(ar, "resolve", lambda *a, **k: ("exotic-runner", {}))
+        assert handler._get_model_identity_prompt("sonnet") == ""
+
+    def test_resolve_error_is_failsoft(self, handler, monkeypatch):
+        """Jede Exception (Import/resolve/...) -> "" statt Abbruch."""
+        import hub.agent_runners as ar
+        def boom(*args, **kwargs):
+            raise RuntimeError("kaputt")
+        monkeypatch.setattr(ar, "resolve", boom)
+        assert handler._get_model_identity_prompt("sonnet") == ""

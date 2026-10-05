@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Tool: c_pdf_ocr_batch
+Tool: pdf_ocr_batch
 Version: 1.0.0
 Author: BACH Team (basiert auf PDFtoPDFocr)
 

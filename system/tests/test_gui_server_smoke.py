@@ -219,7 +219,15 @@ def client(test_db, monkeypatch):
     tools_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(srv, "TOOLS_DIR", tools_dir)
 
-    return TestClient(srv.app, raise_server_exceptions=False)
+    # Control-API-Auth fuer DeviceAuthMiddleware: /api/* verlangt Bearer-Token;
+    # control_auth.py liest ENV BACH_CONTROL_API_TOKEN pro Request live (lazy import),
+    # daher greift setenv + Default-Header fuer alle Requests dieses TestClient.
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "smoke-test-control-token")
+    return TestClient(
+        srv.app,
+        raise_server_exceptions=False,
+        headers={"Authorization": "Bearer smoke-test-control-token"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -601,7 +609,8 @@ class TestGUIServerNoDB:
         import gui.server as srv
         monkeypatch.setattr(srv, "BACH_DB", missing)
         monkeypatch.setattr(srv, "USER_DB", missing)
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "smoke-test-control-token")
 
-        test_client = TestClient(srv.app, raise_server_exceptions=False)
+        test_client = TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer smoke-test-control-token"})
         resp = test_client.get("/api/status")
         assert resp.status_code == 503

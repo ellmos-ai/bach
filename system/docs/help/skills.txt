@@ -70,7 +70,7 @@ TOOL-DUPLIZIERUNG
 -----------------
 REGEL: Im Zweifel doppelt halten!
 
-  system/tools/c_ocr_engine.py             # Allgemeine Version
+  system/tools/ocr/engine.py             # Allgemeine Version
   agents/_experts/steuer/steuer_ocr.py     # Skill-spezifische Version
 
 Vorteile:
@@ -184,7 +184,7 @@ SELBSTERWEITERUNG (NEU v2.5)
                        BaseHandler-Subklasse mit get_operations()
                        Nach 'reload' über bach <name> erreichbar
 
-    --type service    Erstellt: system/skills/_services/<name>/
+    --type service    Erstellt: system/hub/_services/<name>/
                        Ordner mit __init__.py und service.py
                        Handler-nah, allgemein nutzbar
 

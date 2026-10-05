@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_universal_converter
+Tool: universal_converter
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_universal_converter
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version universal_converter
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_universal_converter.py [args]
+    python universal_converter.py [args]
 """
 
 __version__ = "1.0.0"
@@ -48,8 +48,8 @@ Universal Data Converter
 Konvertiert zwischen JSON, YAML, TOML, XML und TOON Formaten.
 
 Nutzung:
-  GUI:  python c_universal_converter.py
-  CLI:  python c_universal_converter.py file1.json file2.yaml --to yaml
+  GUI:  python universal_converter.py
+  CLI:  python universal_converter.py file1.json file2.yaml --to yaml
 
 Unterstützte Formate:
   - JSON (.json)
@@ -353,7 +353,7 @@ if __name__ == "__main__":
         # CLI Mode
         parser = argparse.ArgumentParser(
             description="Universal Converter v2.0 - JSON/YAML/TOML/XML/TOON",
-            epilog="Beispiel: python c_universal_converter.py data.json --to yaml"
+            epilog="Beispiel: python universal_converter.py data.json --to yaml"
         )
         parser.add_argument("files", nargs='+', help="Eingabedateien")
         parser.add_argument("--to", required=True, 

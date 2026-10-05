@@ -158,29 +158,29 @@ The context injector recognizes keywords and recommends tools:
 
   ENCODING & FORMATTING
   ----------------------
-  "encoding problem" -> bach c_encoding_fixer <file>
-  "umlaute broken" -> bach c_encoding_fixer <file>
-  "utf-8" -> bach c_encoding_fixer <file>
-  "emoji" -> bach c_emoji_scanner <file>
-  "indentation" -> bach c_indent_checker <file>
+  "encoding problem" -> bach encoding_fixer <file>
+  "umlaute broken" -> bach encoding_fixer <file>
+  "utf-8" -> bach encoding_fixer <file>
+  "emoji" -> bach emoji_scanner <file>
+  "indentation" -> bach indent_checker <file>
 
   IMPORT HANDLING
   ---------------
-  "Sort imports" -> bach c_import_organizer <file>
-  "import problem" -> bach c_import_diagnose <file>
-  "import is missing" -> bach c_import_diagnose <file>
+  "Sort imports" -> bach import_organizer <file>
+  "import problem" -> bach import_diagnose <file>
+  "import is missing" -> bach import_diagnose <file>
 
   FILE OPERATIONS
   -----------------
-  "split file" -> bach c_pycutter <file>
-  "too big" -> bach c_pycutter <file>
-  "view sqlite" -> bach c_sqlite_viewer <db>
-  "json problem" -> bach c_json_repair <file>
+  "split file" -> bach pycutter <file>
+  "too big" -> bach pycutter <file>
+  "view sqlite" -> bach sqlite_viewer <db>
+  "json problem" -> bach json_repair <file>
 
   CONVERSION
   -------------
-  "markdown to pdf" -> bach c_md_to_pdf <file>
-  "convert format" -> bach c_universal_converter <file>
+  "markdown to pdf" -> bach md_to_pdf <file>
+  "convert format" -> bach universal_converter <file>
 
 TOOL SEARCH
   ----------
@@ -207,7 +207,7 @@ When Claude reads "edit python":
 
 When Claude reads "encoding problem":
 
-  [CONTEXT] Encoding fix: bach c_encoding_fixer <file>
+  [CONTEXT] Encoding fix: bach encoding_fixer <file>
 
 CONNECTOR ROUTING INTEGRATION (NEW v1.1.75)
 -------------------------------------------
@@ -235,7 +235,7 @@ ADVANTAGE:
 EXAMPLE:
   User writes: "encoding problem with file X"
   -> ContextInjector detects “encoding problem”
-  -> Metadata: {"context_hints": "bach c_encoding_fixer <file>"}
+  -> Metadata: {"context_hints": "bach encoding_fixer <file>"}
   -> LLM gets hint as system info, not as user text
 
 DATABASE TRIGGER:

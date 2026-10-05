@@ -29,7 +29,7 @@ Ein Synthese-Prozess ist teuer (Zeit/Tokens). Deshalb gibt es ein hartes **Quali
 
 WARUM GENERATOREN?
 ------------------
-Synthese nutzt Generatoren (`skills/_services/builder.md`). Wir kopieren Dateien nicht manuell, sondern lassen Skripte die neue Struktur aufbauen. Das garantiert Sauberkeit und Reproduzierbarkeit.
+Synthese nutzt Generatoren (`hub/_services/builder.md`). Wir kopieren Dateien nicht manuell, sondern lassen Skripte die neue Struktur aufbauen. Das garantiert Sauberkeit und Reproduzierbarkeit.
 
 PHASEN
 ------
@@ -41,4 +41,4 @@ PHASEN
 SIEHE AUCH
 ----------
 skills/_protocols/synthese.md           Prozess-Beschreibung
-skills/_services/builder.md             Builder-Tool
+hub/_services/builder.md             Builder-Tool

@@ -19,7 +19,7 @@ PHASEN
    - Bewertung von Status (Alpha/Beta/Production), UI/UX und Stabilitaet.
 
 2. **Qualitaetspruefung:**
-   - Technische Analyse mit `DEV_TOOLS` (`c_method_analyzer.py`, `c_encoding_fixer.py`).
+   - Technische Analyse mit `DEV_TOOLS` (`method_analyzer.py`, `encoding_fixer.py`).
    - Pruefung auf Encoding, Einrueckung und Imports.
 
 3. **Aufgaben-Erfassung:**

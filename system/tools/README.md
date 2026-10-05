@@ -48,17 +48,18 @@ Agent-Framework und Implementierungen.
 - `production_agent.py` - Produktions-Agent
 - `research_agent.py` - Research-Agent
 
-### code_quality/ (29 Tools mit `c_` Prefix)
+### coding/ (8 Tools)
 Tools für Code-Qualität, Analyse und Transformationen.
 
-**⚠️ Wird reorganisiert:** Prefix `c_` wird entfernt, Tools werden in Unterkategorien gruppiert.
-
 **Wichtigste:**
-- `c_code_analyzer.py` - Code-Analyse
-- `c_encoding_fixer.py` - Encoding-Fixes
-- `c_file_cleaner.py` - Datei-Bereinigung
-- `c_duplicate_detector.py` - Duplikat-Erkennung
-- `c_json_fixer.py` - JSON-Reparatur
+- `code_analyzer.py` - Code-Analyse
+- `code_generator.py` - Code-Generierung
+- `method_analyzer.py` - Methoden-Analyse
+- `import_organizer.py` - Import-Organisation
+- `indent_checker.py` - Einrückungs-Prüfung
+- `pycutter.py` - Python-Datei-Splitter
+- `python_cli_editor.py` - CLI-Code-Editor
+- `import_diagnose.py` - Import-Diagnose
 
 ### testing/ (29 Tools)
 Test-Framework und Test-Suites.
@@ -170,9 +171,9 @@ Tools ohne erkennbare Nutzung. Kandidaten für Archivierung:
 - `_policies/encoding_header.py`
 - `_policies/json_safe.py`
 - `agents/entwickler_agent.py` ⚠️ **Warum ungenutzt?**
-- `c_skill_init.py`
-- `c_skill_package.py`
-- `c_skill_validate.py`
+- `skill_init.py`
+- `skill_package.py`
+- `skill_validate.py`
 - Weitere in `docs/TOOLS_ANALYSIS_SUMMARY.md`
 
 ### Unkategorisiert (37)
@@ -209,7 +210,7 @@ python tools/dependency_analysis.py
 Eine vollständige Reorganisation ist in Planung mit folgenden Zielen:
 
 1. **Klare Kategorien** - 12 Hauptkategorien mit Unterverzeichnissen
-2. **Bessere Namen** - `c_*` Prefix entfernen
+2. **Bessere Namen** - konsistente Kategorie-Pfade statt abgekürzter Präfixe
 3. **Duplikate weg** - Konsolidierung identischer Tools
 4. **Dokumentiert** - README in jeder Kategorie
 5. **Getestet** - Alle Imports aktualisiert
@@ -223,8 +224,14 @@ Eine vollständige Reorganisation ist in Planung mit folgenden Zielen:
 
 ### Nach Kategorie
 ```bash
-# Code-Quality
-ls tools/c_*.py
+# Coding / Code-Quality
+ls tools/coding/
+
+# CLI helpers
+ls tools/cli/
+
+# Claude-specific helpers
+ls tools/claude/
 
 # Testing
 ls tools/testing/
@@ -234,6 +241,9 @@ ls tools/ocr/
 
 # Maintenance
 ls tools/maintenance/
+
+# Skills (prefixed with `skill_`)
+ls tools/skill_*.py
 ```
 
 ### Nach Nutzung

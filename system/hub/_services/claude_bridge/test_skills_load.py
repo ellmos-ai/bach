@@ -33,7 +33,8 @@ from pathlib import Path
 BRIDGE_DIR = Path(__file__).parent.resolve()
 SERVICES_DIR = BRIDGE_DIR.parent
 HUB_DIR = SERVICES_DIR.parent
-BACH_DIR = HUB_DIR.parent
+SYSTEM_DIR = HUB_DIR.parent
+BACH_DIR = SYSTEM_DIR.parent  # wie skill_loader.py: 5x parent -> /Users/lukas/services/bach
 
 # Log-Funktion (vereinfacht)
 def log(msg: str, level: str = "INFO"):

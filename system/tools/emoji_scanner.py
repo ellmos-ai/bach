@@ -23,20 +23,20 @@ SOFTWARE.
 """
 
 """
-Tool: c_emoji_scanner
+Tool: emoji_scanner
 Version: 1.0.0
 Author: BACH Team
 Created: 2026-02-04
 Updated: 2026-02-04
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version c_emoji_scanner
+VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version emoji_scanner
 
 Description:
     [Beschreibung hinzufügen]
 
 Usage:
-    python c_emoji_scanner.py [args]
+    python emoji_scanner.py [args]
 """
 
 __version__ = "1.0.0"
@@ -72,7 +72,7 @@ EMOJI_PATTERN = re.compile(
     "]+"
 )
 
-# Custom Overrides (gleich wie in c_json_repair.py)
+# Custom Overrides (gleich wie in json_repair.py)
 ASCII_OVERRIDES = {
     '\u2192': '->', '\u2190': '<-', '\u2194': '<->',
     '\U0001F7E2': '[GRUEN]', '\U0001F7E1': '[GELB]', '\U0001F534': '[ROT]',

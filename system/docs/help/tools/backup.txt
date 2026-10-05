@@ -142,7 +142,7 @@ TYPISCHE ANWENDUNGSFAELLE
 
 VERWANDTE SKILLS
 ================
-  skills/_services/builder.md   CREATE, EXPORT, DISTRIBUTE, BACKUP
+  hub/_services/builder.md   CREATE, EXPORT, DISTRIBUTE, BACKUP
   docs/BACKUP_SYSTEM.md         Urspruengliches Konzept
 
 SIEHE AUCH

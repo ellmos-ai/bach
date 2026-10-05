@@ -114,7 +114,6 @@ Python CLI 的标准策略：
 ---------------------------
 工具文件的计划命名约定：
 
-  c_ -> 针对 AI 优化的 CLI (c_encoding_fixer.py)
   b_ -> BACH 核心 (b_backup.py)
   a_ -> 代理运行程序 (a_developer.py)
   t_ -> 测试工具 (t_runner.py)
@@ -145,7 +144,7 @@ Python CLI 的标准策略：
    -> emoji_safe 用于 Windows 兼容性
 
 4。标准化现有代码
-   -> c_standard_fixer 在内部使用策略
+   -> standard_fixer 在内部使用策略
 
 另请参见
 ----------

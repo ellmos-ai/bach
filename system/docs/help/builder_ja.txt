@@ -14,8 +14,8 @@ bach skills version <name>              バージョン チェック
 
 system/tools/
 ---------------------------
-c_struct_generator.py 内のツール <n> <profile> スキル/エージェントの作成
-c_struct_generator.py <n> --embedded BACH の場合 (軽量)
+structure_generator.py 内のツール <n> <profile> スキル/エージェントの作成
+structure_generator.py <n> --embedded BACH の場合 (軽量)
 
 generators/os_generator.py <n> [ターゲット] 新しい OS を作成する
 generateders/exporter.py スキル <n> エクスポート スキル

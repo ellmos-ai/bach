@@ -1,0 +1,87 @@
+=== connector_messages id 1428..1455 ===
+id=1428 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Lies START.md in .UMBRUCH
+id=1429 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Das ist das vollständige Onboarding-Protokoll für UMBRUCH-Sessions. Es umfasst:
+
+- **Preload:** CLAUDE.md, Mail-Guides und Mail-Policies lesen
+- **Phase 1:** Konzeption, Policies, Content, Root-Dokume
+id=1430 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Ja führe es durch
+id=1431 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=---
+
+## UMBRUCH Onboarding — Ergebnisbericht
+
+### Phase 1: Wissensload
+Alle Root-Dokumente, 3 Session-Berichte, Mail-Guides und Policies gelesen. Aktueller Stand voll erfasst.
+
+### Phase 2: Health-Che
+id=1432 conn=telegram_main dir=in sender=595767047 recip= status=pending content=toggle
+id=1433 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Vollzugriff AKTIVIERT
+Auto-Lock in 60 Min.
+Naechster Claude startet mit vollen Rechten.
+id=1434 conn=telegram_main dir=in sender=595767047 recip= status=pending content=voice on
+id=1435 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Voice-Modus AKTIVIERT
+Antworten werden als Sprachnachricht gesendet.
+Deaktivieren mit: voice off
+id=1436 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Vollzugriff automatisch deaktiviert (Timeout).
+id=1437 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Gibt es neue Mails in .UMBRUCH ?
+id=1438 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=voice off
+id=1439 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Voice-Modus DEAKTIVIERT
+Antworten wieder als Text.
+id=1440 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Sehr gut die Stimme war auf Englisch glaube. Also gibt es neue Mails die ankamen in Umbruch?
+id=1441 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Nein, keine neuen externen Mails in UMBRUCH. Seit gestern Mittag kamen nur 4 weitere eigene Testmails von hallo@um-bruch.org an dich selbst (heute Nacht 03:33-05:52, TEST 3-6: Webhost-Routen + Cloud-M
+id=1442 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Ah du meinst in Gmail. Es gibt ein eigenes .UMBRUCh Verzeichnis lese dort CLAUDE.md und START.md dann weißt was ich meine. Ja fixe auch das audio Problem soll ja in deutsch und Englisch gehen.
+id=1443 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Alles erledigt. Hier die Antwort:
+
+**Neue UMBRUCH-Mails seit gestern (4 echte, Rest Auto/Reports):**
+
+UID 119 — **Niko Gerdau, Aerztekammer Niedersachsen** (16.04. 12:53): Bittet um Klaerung, ob du du
+id=1444 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Starte die förderberichtpipeline
+id=1445 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Foerderberichtpipeline gestartet.
+
+Kette: foerderbericht
+Status: RUNNING (0/1 Runde, max 1h Laufzeit)
+Worker: claude-sonnet-4-6
+Modus: once (End-to-End Pipeline)
+
+Status-Check spaeter mit: python llma
+id=1446 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=model opus
+id=1447 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Aktuelles Modell: opus
+Aendern:
+  model up - Opus (teurer, besser)
+  model down - Haiku (guenstiger, schneller)
+  change model <name> - Beliebiges Modell
+id=1448 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Ist förderbericht fertig ?
+id=1449 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Ja, fertig.
+
+Status: COMPLETED (1.5h Laufzeit)
+Ausgabedatei: output_berichte/Foerderbericht_Simon Meier_20260417.docx
+
+Tarnname waehrend LLM-Verarbeitung: Leon Fischer, im finalen Bericht de-anonymisi
+id=1450 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Ja und du hast auch einen Bug weil du keine Umlaute nimmst das auch beheben und beheben, zukünftig immer Opus nehmen für förderberichte. Und förderbericht kopieren nach Laufwerk G meine Ablage danke
+id=1451 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Alles erledigt:
+
+Pipeline-Bug gefixt: `system/hub/_services/document/pipeline_runner.py` Zeile 24 — `/ "system"` entfernt. Pipeline laeuft jetzt per Direktaufruf.
+
+Chain auf Opus umgestellt: `foerderb
+id=1452 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Ja bitte mach das
+id=1453 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Erledigt. System-Prompt gefixt:
+
+Neue Regel eingefügt: "Nutze IMMER echte deutsche Umlaute (ä, ö, ü, Ä, Ö, Ü, ß). NIEMALS ae, oe, ue, ss schreiben."
+
+Zusätzlich den kompletten System-Prompt selbst auf
+id=1454 conn=telegram_main dir=in sender=Lukas recip=595767047 status=pending content=Danke. Bitte gehe ins Verzeichnis .TOPICS und dort in .UMBRUCH dort lies START.md zur Orientierung und ggbfs die Anleitung für das Umbruch Mail system. Danach rufe Mails ab und checke ob es neue Mails
+id=1455 conn=telegram_main dir=out sender=bach-claude recip=595767047 status=sent content=Orientierung erledigt — Anleitung und Mail-Regeln gelesen. Sync durchgeführt.
+
+Neue Mails (3 ungelesen):
+
+UID 122 — 17.04. 10:40 — Niko Gerdau, Ärztekammer Niedersachsen (INHALTLICH WICHTIG)
+Antwort a
+
+=== connector_messages content search ===
+
+=== messages body/metadata search ===
+
+=== comm_messages search ===
+
+=== connector_messages counts by connector_name ===
+<sqlite3.Row object at 0x109bab130>
+<sqlite3.Row object at 0x109baa020>

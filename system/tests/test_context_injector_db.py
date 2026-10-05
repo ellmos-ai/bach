@@ -82,8 +82,8 @@ def test_sichtung_045_idempotent(tmp_path):
             ("gibt", "[LEKTION] junk", "lesson"),
             ("oder", "[THEMA-PAKET] x", "theme"),
             ("shutdown", "[THEMA-PAKET] Shutdown", "theme"),
-            ("quiz", "Wiki-Quizzer: skills/_experts/wikiquizzer", "manual"),
-            ("bug", "Bugfix-Workflow: skills/_workflows/bugfix-protokoll.md", "manual"),
+            ("quiz", "Wiki-Quizzer: agents/_experts/wikiquizzer", "manual"),
+            ("bug", "Bugfix-Workflow: skills/workflows/bugfix-protokoll.md", "manual"),
             ("utf-8", "Encoding-Fix: bach c_encoding_fixer <datei>", "manual"),
         ])
     sql = (SCHEMA_DIR / "migrations" / "045_context_triggers_sichtung.sql").read_text(encoding="utf-8")

@@ -1,5 +1,7 @@
 # Service/Agent Validator Workflow
 
+**Version:** 1.0.0
+
 ## Zweck
 Qualitätsprüfung für neue Services, Agents und Experts im BACH-System.
 

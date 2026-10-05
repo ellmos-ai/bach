@@ -51,8 +51,9 @@ def client(test_db, monkeypatch):
     monkeypatch.setattr(srv, "GUI_DIR", gui_dir)
     monkeypatch.setattr(srv, "TEMPLATES_DIR", templates_dir)
     monkeypatch.setattr(srv, "STATIC_DIR", static_dir)
+    monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "smoke-test-control-token")
 
-    return TestClient(srv.app, raise_server_exceptions=False)
+    return TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer smoke-test-control-token"})
 
 
 @pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="FastAPI not installed")

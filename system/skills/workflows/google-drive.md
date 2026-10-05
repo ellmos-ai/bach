@@ -1,5 +1,7 @@
 # Google Drive Delegation Workflow - SKILL v1.0
 
+**Version:** 1.0.0
+
 ## Zweck
 
 Multi-AI Kollaboration via Google Drive als Shared Workspace.

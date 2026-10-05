@@ -33,7 +33,7 @@ BACH_ROOT = Path(__file__).parent.parent
 if str(BACH_ROOT) not in sys.path:
     sys.path.insert(0, str(BACH_ROOT))
 
-from gui import server
+from gui import device_auth, server
 from hub.steuer import SteuerHandler
 
 SCHEMA_SQL = (BACH_ROOT / "data" / "schema" / "schema.sql").read_text(encoding="utf-8")
@@ -58,14 +58,30 @@ def client():
     return TestClient(server.app, raise_server_exceptions=False)
 
 
+@pytest.fixture
+def auth_client(client, bach_db, monkeypatch):
+    """TestClient mit gültigem Device-Bearer-Token für /api/*-Routen."""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(
+        device_auth, "GET_CONNECTION", lambda: sqlite3.connect(str(bach_db))
+    )
+    _, token = device_auth.create_device("test-device")
+    return TestClient(
+        server.app,
+        headers={"Authorization": f"Bearer {token}"},
+        raise_server_exceptions=False,
+    )
+
+
 # ═══════════════════════════════════════════════════════════════
 # gui/server.py: /api/financial/bank-accounts via AccountStore
 # ═══════════════════════════════════════════════════════════════
 
 
 class TestBankAccountsEndpoints:
-    def test_create_list_update_delete_roundtrip(self, client, bach_db):
-        resp = client.post("/api/financial/bank-accounts", json={
+    def test_create_list_update_delete_roundtrip(self, auth_client, bach_db):
+        resp = auth_client.post("/api/financial/bank-accounts", json={
             "name": "Girokonto", "bank_name": "Sparkasse", "iban": "DE89370400440532013000",
             "bic": "COBADEFFXXX", "account_type": "girokonto", "notes": "Test",
         })
@@ -75,29 +91,29 @@ class TestBankAccountsEndpoints:
         account_id = body["id"]
         assert account_id
 
-        resp = client.get("/api/financial/bank-accounts")
+        resp = auth_client.get("/api/financial/bank-accounts")
         assert resp.json()["success"] is True
         accounts = resp.json()["accounts"]
         assert len(accounts) == 1
         assert accounts[0]["name"] == "Girokonto"
         assert accounts[0]["iban"] == "DE89370400440532013000"
 
-        resp = client.put(f"/api/financial/bank-accounts/{account_id}", json={
+        resp = auth_client.put(f"/api/financial/bank-accounts/{account_id}", json={
             "name": "Girokonto neu", "bank_name": "Sparkasse", "iban": "DE89370400440532013000",
             "bic": "COBADEFFXXX", "account_type": "girokonto", "notes": None,
         })
         assert resp.json() == {"success": True}
-        accounts = client.get("/api/financial/bank-accounts").json()["accounts"]
+        accounts = auth_client.get("/api/financial/bank-accounts").json()["accounts"]
         assert accounts[0]["name"] == "Girokonto neu"
 
-        resp = client.delete(f"/api/financial/bank-accounts/{account_id}")
+        resp = auth_client.delete(f"/api/financial/bank-accounts/{account_id}")
         assert resp.json() == {"success": True}
-        assert client.get("/api/financial/bank-accounts").json()["accounts"] == []
+        assert auth_client.get("/api/financial/bank-accounts").json()["accounts"] == []
 
-    def test_list_error_shape_on_missing_db(self, client, tmp_path, monkeypatch):
+    def test_list_error_shape_on_missing_db(self, auth_client, tmp_path, monkeypatch):
         """Fehlerform bleibt erhalten: success False + leere accounts-Liste."""
         monkeypatch.setattr(server, "BACH_DB", tmp_path / "does-not-exist.db")
-        resp = client.get("/api/financial/bank-accounts")
+        resp = auth_client.get("/api/financial/bank-accounts")
         body = resp.json()
         assert body["success"] is False
         assert body["accounts"] == []

@@ -395,8 +395,10 @@ class LangHandler(BaseHandler):
         return "\n".join(lines)
 
     def _release_export_dir(self) -> Path:
-        """Zielordner fuer releasefaehige Sprach-Artefakte."""
-        return self.base_path / "exports" / "translations"
+        """Zielordner fuer releasefaehige Sprach-Artefakte (kanonisch: <system>/exports/translations)."""
+        base = Path(self.base_path)
+        system = base / "system" if (base / "system" / "hub" / "lang.py").is_file() else base
+        return system / "exports" / "translations"
 
     def _release_manifest_source(self) -> str:
         """Neutraler DB-Hinweis fuer releasefaehige Artefakte."""

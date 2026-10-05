@@ -268,11 +268,10 @@ def _handle_llm(sub_cmd, args):
 
 def _handle_file(sub_cmd, args):
     """Filesystem-Manager (tools-basiert)."""
-    sys.path.insert(0, str(TOOLS_DIR))
     try:
-        import c_file_manager
+        from tools.file_ops import file_manager
     except ImportError:
-        print("[ERROR] c_file_manager.py not found in tools/")
+        print("[ERROR] tools.file_ops.file_manager not found")
         return 1
 
     if not sub_cmd:
@@ -284,21 +283,21 @@ def _handle_file(sub_cmd, args):
     error = None
     try:
         if sub_cmd == "read" and len(args) >= 1:
-            result = c_file_manager.read_file(args[0])
+            result = file_manager.read_file(args[0])
         elif sub_cmd == "write" and len(args) >= 2:
-            result = c_file_manager.write_file(args[0], args[1], overwrite="--overwrite" in args)
+            result = file_manager.write_file(args[0], args[1], overwrite="--overwrite" in args)
         elif sub_cmd == "append" and len(args) >= 2:
-            result = c_file_manager.append_file(args[0], args[1])
+            result = file_manager.append_file(args[0], args[1])
         elif sub_cmd == "delete" and len(args) >= 1:
-            result = c_file_manager.delete_file(args[0])
+            result = file_manager.delete_file(args[0])
         elif sub_cmd == "copy" and len(args) >= 2:
-            result = c_file_manager.copy_file(args[0], args[1])
+            result = file_manager.copy_file(args[0], args[1])
         elif sub_cmd == "move" and len(args) >= 2:
-            result = c_file_manager.move_file(args[0], args[1])
+            result = file_manager.move_file(args[0], args[1])
         elif sub_cmd == "info" and len(args) >= 1:
-            result = c_file_manager.get_file_info(args[0])
+            result = file_manager.get_file_info(args[0])
         elif sub_cmd == "list" and len(args) >= 1:
-            result = c_file_manager.list_dir(args[0])
+            result = file_manager.list_dir(args[0])
         else:
             error = f"Invalid arguments or unknown command: {sub_cmd}"
     except Exception as e:
@@ -313,27 +312,19 @@ def _handle_file(sub_cmd, args):
 
 def _handle_ocr(sub_cmd, args):
     """OCR-Tool (tools-basiert)."""
-    sys.path.insert(0, str(TOOLS_DIR))
-    from c_ocr_engine import OCREngine, find_beleg_pdf
+    from tools.ocr.engine import OCREngine
 
     if not sub_cmd:
-        print("Usage: bach ocr <beleg_id|pdf_path>")
+        print("Usage: bach ocr <pdf_path|image_path>")
         return 1
 
-    if sub_cmd.lower().startswith("b") or sub_cmd.isdigit():
-        pdf_path = find_beleg_pdf(sub_cmd)
-        if not pdf_path:
-            print(f"[ERROR] Beleg {sub_cmd} nicht gefunden")
-            return 1
-        print(f"[INFO] Gefunden: {pdf_path.name}")
-    else:
-        pdf_path = Path(sub_cmd)
-        if not pdf_path.exists():
-            print(f"[ERROR] Datei nicht gefunden: {sub_cmd}")
-            return 1
+    pdf_path = Path(sub_cmd)
+    if not pdf_path.exists():
+        print(f"[ERROR] Datei nicht gefunden: {sub_cmd}")
+        return 1
 
     engine = OCREngine()
-    if not engine.is_available:
+    if not engine.available:
         print("[ERROR] Tesseract nicht verfuegbar!")
         return 1
 

@@ -14,8 +14,8 @@ bach skills version <name>              版本检查
 
 system/tools/中的工具
 ---------------------------
-c_struction_generator.py <n> <profile> 创建技能/代理
-c_struct_generator.py <n> --embedded 对于 BACH（轻量级）
+structure_generator.py <n> <profile> 创建技能/代理
+structure_generator.py <n> --embedded 对于 BACH（轻量级）
 
 generators/os_generator.py <n> [目标] 创建新操作系统
 Generators/exporter.py Skill <n> 导出技能

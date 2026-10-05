@@ -35,7 +35,7 @@ LAYER MODEL
 
 4. EXECUTION LAYER (tools/)
    290+ specialized Python scripts for filesystem, tax, analysis etc.
-   Standardized interface (c_ prefix) for AI compatibility.
+   Standardized interface for AI compatibility.
 
 5. DATA & PERSISTENCE (bach.db, data/logs/)
    SQLite foundation with 210+ tables (centralized data storage).
@@ -112,7 +112,7 @@ ARCHITECTURE DIAGRAM (Registry v2.0)
                               |
 +------------------------------------------------------------------+
 | EXECUTION LAYER (tools/)                                          |
-| 290+ Python scripts with standardized c_ interface                |
+| 290+ Python scripts with standardized interface                |
 +------------------------------------------------------------------+
                               |
 +------------------------------------------------------------------+

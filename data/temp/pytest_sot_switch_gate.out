@@ -1,0 +1,56 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /Users/lukas/.venvs/bach/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/lukas/services/bach
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 45 items
+
+tests/test_sot_switch_gate.py::test_kanon_defaultpfade_zeigen_auf_zentrales_state_verzeichnis PASSED [  2%]
+tests/test_sot_switch_gate.py::test_kanon_stufen_und_module PASSED       [  4%]
+tests/test_sot_switch_gate.py::test_validate_lehnt_unbekannte_werte_ab[schedulerx-P0] PASSED [  6%]
+tests/test_sot_switch_gate.py::test_validate_lehnt_unbekannte_werte_ab[scheduler-P1] PASSED [  8%]
+tests/test_sot_switch_gate.py::test_validate_lehnt_unbekannte_werte_ab[scheduler-p0] PASSED [ 11%]
+tests/test_sot_switch_gate.py::test_probe_ohne_kwargs_nutzt_reale_umgebung_fail_closed PASSED [ 13%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[0] PASSED [ 15%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[false] PASSED [ 17%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[no] PASSED [ 20%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[off] PASSED [ 22%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[OFF] PASSED [ 24%]
+tests/test_sot_switch_gate.py::test_rollback_aus_blockiert_jeden_wechsel[ 0 ] PASSED [ 26%]
+tests/test_sot_switch_gate.py::test_rollback_an_erlaubt_wechsel[1] PASSED [ 28%]
+tests/test_sot_switch_gate.py::test_rollback_an_erlaubt_wechsel[true] PASSED [ 31%]
+tests/test_sot_switch_gate.py::test_rollback_an_erlaubt_wechsel[on] PASSED [ 33%]
+tests/test_sot_switch_gate.py::test_rollback_an_erlaubt_wechsel[ 1 ] PASSED [ 35%]
+tests/test_sot_switch_gate.py::test_rollback_schalter_abwesend_blockiert PASSED [ 37%]
+tests/test_sot_switch_gate.py::test_rollback_schalter_leer_blockiert_fail_closed[] PASSED [ 40%]
+tests/test_sot_switch_gate.py::test_rollback_schalter_leer_blockiert_fail_closed[   ] PASSED [ 42%]
+tests/test_sot_switch_gate.py::test_nachweis_datei_fehlt_blockiert PASSED [ 44%]
+tests/test_sot_switch_gate.py::test_nachweis_ungueltiges_json_blockiert PASSED [ 46%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_dokumentebene_blockieren[overrides0-gates enthaelt] PASSED [ 48%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_dokumentebene_blockieren[overrides1-nicht leer] PASSED [ 51%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_dokumentebene_blockieren[overrides2-offene_hostlaeufe fehlt] PASSED [ 53%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_dokumentebene_blockieren[overrides3-modul ist 'explorer', erwartet 'scheduler'] PASSED [ 55%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_dokumentebene_blockieren[overrides4-stufe ist 'P2', erwartet 'P0'] PASSED [ 57%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_gateebene_blockieren[_del_gate_4-gate_4 fehlt] PASSED [ 60%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_gateebene_blockieren[_gate_3_status_gelb-'gelb', erwartet 'gruen'] PASSED [ 62%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_gateebene_blockieren[_gate_2_exit_bool-Boolean] PASSED [ 64%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_gateebene_blockieren[_gate_2_exit_eins-1 statt 0] PASSED [ 66%]
+tests/test_sot_switch_gate.py::test_nachweisdefekte_gateebene_blockieren[_gate_1_host_leer-keine nicht-leere Zeichenkette] PASSED [ 68%]
+tests/test_sot_switch_gate.py::test_journal_fehlt_p0_ist_erlaubt PASSED  [ 71%]
+tests/test_sot_switch_gate.py::test_journal_fehlt_nur_erste_stufe_p0 PASSED [ 73%]
+tests/test_sot_switch_gate.py::test_vorgaenger_stufe_muss_gruen_sein PASSED [ 75%]
+tests/test_sot_switch_gate.py::test_offener_wechsel_blockiert_alle_module PASSED [ 77%]
+tests/test_sot_switch_gate.py::test_journal_ungueltiger_status_blockiert PASSED [ 80%]
+tests/test_sot_switch_gate.py::test_journal_last_wins_offen_dann_gruen PASSED [ 82%]
+tests/test_sot_switch_gate.py::test_record_switch_schreibt_offen_eintrag PASSED [ 84%]
+tests/test_sot_switch_gate.py::test_record_switch_not_allowed_schreibt_nichts PASSED [ 86%]
+tests/test_sot_switch_gate.py::test_record_switch_zweiter_versuch_blockiert PASSED [ 88%]
+tests/test_sot_switch_gate.py::test_confirm_green_ohne_journal_lehnt_ab PASSED [ 91%]
+tests/test_sot_switch_gate.py::test_confirm_green_prueft_nachweis_nach_record PASSED [ 93%]
+tests/test_sot_switch_gate.py::test_confirm_green_bestaetigt_offen_eintrag PASSED [ 95%]
+tests/test_sot_switch_gate.py::test_full_cycle_von_record_bis_gruen PASSED [ 97%]
+tests/test_sot_switch_gate.py::test_helper_erzeugen_gueltigen_nachweis PASSED [100%]
+
+============================== 45 passed in 0.24s ==============================

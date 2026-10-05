@@ -1,0 +1,276 @@
+---
+// src/pages/artefakte.astro - Artefakte & Exporte Übersicht
+import BachLayout from "../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Artefakte & Exporte" currentPath="/artefakte">
+  <div class="artefakte-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">🎨</span> Artefakte & Exporte</h1>
+        <p class="subtitle">Dateien im BACH-Exportverzeichnis. Die Herkunft einzelner Dateien ist ungeprüft.</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="loadArtefakte()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Quick Filter -->
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">Alle Formate</button>
+      <button class="filter-btn" data-filter="MD">Markdown (MD)</button>
+      <button class="filter-btn" data-filter="PDF">PDF-Dokumente</button>
+      <button class="filter-btn" data-filter="JSON">JSON-Daten</button>
+    </div>
+
+    <!-- Artefakte Grid -->
+    <p id="artefakte-status" role="status" aria-live="polite">Quelle noch nicht geprüft</p>
+    <div class="artefakte-grid" id="artefakte-grid">
+      <p class="loading-state">Lade Artefakte...</p>
+    </div>
+    <section id="artefakt-detail" class="card" hidden aria-live="polite">
+      <h2 id="artefakt-detail-title">Artefakt</h2>
+      <pre id="artefakt-preview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:32rem;overflow:auto;"></pre>
+      <button id="artefakt-download" class="btn btn-primary" type="button">Herunterladen</button>
+    </section>
+  </div>
+</BachLayout>
+
+<style>
+  #artefakt-detail[hidden] { display: none !important; }
+  .artefakte-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .filter-bar {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .filter-btn {
+    padding: 0.4rem 0.85rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.825rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .filter-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .filter-btn.active {
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .artefakte-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+  }
+  .artefakt-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+  }
+  .artefakt-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .artefakt-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .artefakt-icon {
+    font-size: 1.75rem;
+  }
+  .artefakt-title h3 {
+    margin: 0;
+    font-size: 1rem;
+    word-break: break-word;
+  }
+  .artefakt-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.2rem 0 0 0;
+  }
+  .artefakt-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+  }
+</style>
+
+<script is:inline>
+  let allArtefakte = [];
+  let activeFilter = 'all';
+
+  function artifactToken() {
+    const token = localStorage.getItem('bach_device_token');
+    if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
+    return token;
+  }
+
+  async function artifactFetch(url) {
+    const response = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + artifactToken() },
+      cache: 'no-store'
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+    }
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response;
+  }
+
+  async function loadArtefakte() {
+    const grid = document.getElementById('artefakte-grid');
+    const status = document.getElementById('artefakte-status');
+    status.textContent = 'Lade Exportverzeichnis…';
+    try {
+      const data = await (await artifactFetch('/api/artefakte')).json();
+      if (!Array.isArray(data.artefakte)) throw new Error('Ungültige Katalogantwort');
+      allArtefakte = data.artefakte;
+      status.textContent = data.availability === 'available'
+        ? allArtefakte.length + ' Dateien gefunden · Herkunft nicht geprüft'
+        : 'Exportverzeichnis nicht verfügbar';
+      renderArtefakte();
+    } catch (error) {
+      allArtefakte = [];
+      grid.replaceChildren();
+      status.textContent = error.message;
+      document.getElementById('artefakt-detail').hidden = true;
+    }
+  }
+
+  function renderArtefakte() {
+    const grid = document.getElementById('artefakte-grid');
+    grid.replaceChildren();
+    const items = activeFilter === 'all' ? allArtefakte
+      : allArtefakte.filter(item => item.type === activeFilter);
+    if (!items.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'Keine Dateien für diesen Filter gefunden.';
+      grid.append(empty);
+      return;
+    }
+    for (const item of items) {
+      const card = document.createElement('article');
+      card.className = 'artefakt-card';
+      const header = document.createElement('div');
+      header.className = 'artefakt-header';
+      const icon = document.createElement('span');
+      icon.className = 'artefakt-icon';
+      icon.textContent = ['JSON', 'CSV'].includes(item.type) ? '💾' : '📄';
+      const title = document.createElement('div');
+      title.className = 'artefakt-title';
+      const heading = document.createElement('h3');
+      heading.textContent = item.title || item.filename;
+      const meta = document.createElement('p');
+      meta.className = 'artefakt-meta';
+      meta.textContent = 'Exportverzeichnis · ' + (Number(item.size_bytes) / 1024).toFixed(1) + ' KB · Herkunft ungeprüft';
+      title.append(heading, meta);
+      header.append(icon, title);
+      const filename = document.createElement('code');
+      filename.style.cssText = 'font-size:0.75rem;color:var(--text-muted);word-break:break-all';
+      filename.textContent = item.filename;
+      const footer = document.createElement('div');
+      footer.className = 'artefakt-footer';
+      const type = document.createElement('span');
+      type.className = 'badge badge-accent';
+      type.textContent = item.type;
+      const details = document.createElement('button');
+      details.className = 'btn btn-sm btn-secondary';
+      details.type = 'button';
+      details.textContent = 'Details';
+      details.addEventListener('click', () => showArtifact(item));
+      footer.append(type, details);
+      card.append(header, filename, footer);
+      grid.append(card);
+    }
+  }
+
+  async function showArtifact(item) {
+    const panel = document.getElementById('artefakt-detail');
+    const preview = document.getElementById('artefakt-preview');
+    panel.hidden = false;
+    document.getElementById('artefakt-detail-title').textContent = item.filename;
+    preview.textContent = 'Lade Vorschau…';
+    document.getElementById('artefakt-download').onclick = () => downloadArtifact(item);
+    if (!['MD', 'TXT', 'JSON', 'CSV'].includes(item.type)) {
+      preview.textContent = 'Für dieses Format gibt es keine Textvorschau. Die Datei kann heruntergeladen werden.';
+      return;
+    }
+    try {
+      const data = await (await artifactFetch('/api/artifacts/content?artifact_id=' + encodeURIComponent(item.id))).json();
+      preview.textContent = data.content || '(Leere Datei)';
+      if (data.truncated) preview.textContent += '\n\n[Vorschau gekürzt]';
+    } catch (error) {
+      preview.textContent = 'Vorschau nicht verfügbar: ' + error.message;
+    }
+  }
+
+  async function downloadArtifact(item) {
+    try {
+      const response = await artifactFetch('/api/artifacts/download?artifact_id=' + encodeURIComponent(item.id));
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = item.filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      document.getElementById('artefakt-preview').textContent = 'Download fehlgeschlagen: ' + error.message;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadArtefakte();
+    document.querySelectorAll('.filter-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(other => other.classList.remove('active'));
+        button.classList.add('active');
+        activeFilter = button.getAttribute('data-filter');
+        renderArtefakte();
+      });
+    });
+  });
+</script>

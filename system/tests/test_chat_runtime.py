@@ -1376,7 +1376,7 @@ def test_glm_cloud_summarize_failure_does_not_silently_drop_history(failure):
 
 
 @pytest.mark.parametrize("failure", ["exception", "empty", "partial_error"])
-def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
+def test_strict_cloud_context_handoff_failure_continues_with_tail_fallback(failure):
     import asyncio
     from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
 
@@ -1402,7 +1402,7 @@ def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
                 if failure == "partial_error":
                     return {"content": "RESUME: incomplete", "error": "stream aborted"}
                 return {"content": ""}
-            raise AssertionError("repeated cloud call after failed handoff")
+            return {"content": "recovered", "prompt_tokens": 10}
 
     backend = _FailingHandoffBackend()
     runtime = ChatRuntime(backend)
@@ -1413,14 +1413,49 @@ def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
         [{"role": "system", "content": "Auftrag"}], session, tools=[],
         context_limit=100,
     ))
-    assert isinstance(answer, FailedAnswer)
-    expected = {
-        "exception": "handoff backend unavailable",
-        "empty": "ist leer",
-        "partial_error": "stream aborted",
-    }[failure]
-    assert expected in answer
-    assert backend.calls == 2
+    assert answer == "recovered"
+    assert backend.calls == 3
+
+
+@pytest.mark.parametrize("failure", ["exception", "empty", "partial_error"])
+def test_handoff_strict_cloud_failure_returns_tail_fallback(failure):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, HANDOFF_PROMPT
+
+    class _FailingHandoffBackend:
+        manages_own_tools = False
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        def get_context_limit(self):
+            return 100
+
+        async def chat(self, messages, **kwargs):
+            if messages[-1].get("content") == HANDOFF_PROMPT:
+                if failure == "exception":
+                    raise RuntimeError("handoff backend unavailable")
+                if failure == "partial_error":
+                    return {"content": "RESUME: incomplete", "error": "stream aborted"}
+                return {"content": ""}
+            return {"content": "ok", "prompt_tokens": 10}
+
+    backend = _FailingHandoffBackend()
+    runtime = ChatRuntime(backend)
+    session = ChatSession()
+    session.model = "glm-5.3:cloud"
+    msgs = [
+        {"role": "system", "content": "Auftrag"},
+        {"role": "user", "content": "a"},
+        {"role": "assistant", "content": "b"},
+        {"role": "user", "content": "c"},
+        {"role": "assistant", "content": "d"},
+        {"role": "user", "content": "e"},
+    ]
+    result = asyncio.run(runtime._handoff(
+        msgs, session, backend=backend, model="glm-5.3:cloud", strict=True,
+    ))
+    assert result == msgs[:1] + msgs[-4:]
 
 
 def test_successful_but_still_full_context_handoffs_are_bounded():

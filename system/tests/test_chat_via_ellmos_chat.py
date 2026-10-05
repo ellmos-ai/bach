@@ -70,8 +70,8 @@ class TestSeamIsThin:
         assert "BachToolProvider(bach_app" in CHAT_RUNTIME_SRC
 
     def test_runtime_comes_from_the_module(self):
-        assert issubclass(ChatRuntime, ellmos_chat.ChatRuntime)
-        assert ChatRuntime is not ellmos_chat.ChatRuntime
+        assert issubclass(ChatRuntime, ellmos_chat.runtime.ChatRuntime)
+        assert ChatRuntime is not ellmos_chat.runtime.ChatRuntime
 
     def test_import_path_and_db_constant_stay_stable(self):
         """telegram_chat.py imports both names from here (lines 77 and 1427)."""

@@ -34,7 +34,15 @@ _bridge_daemon = None
 def _get_bridge():
     global _bridge_daemon
     if _bridge_daemon is None:
-        from . import bridge_daemon as bd
+        try:
+            from . import bridge_daemon as bd
+        except ImportError:
+            # Daemon laeuft als Skript (__main__): kein Package-Kontext fuer relative
+            # Imports. __main__ wiederverwenden, damit Modul-State geteilt wird.
+            import sys
+            bd = sys.modules.get("__main__")
+            if bd is None or not hasattr(bd, "load_config"):
+                import bridge_daemon as bd
         _bridge_daemon = bd
     return _bridge_daemon
 

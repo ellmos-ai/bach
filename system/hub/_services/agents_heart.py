@@ -6,21 +6,75 @@ Vertrag des ausführenden Pfads und schreibt die korrelierbaren Start-/Ende-
 Ereignisse einer Besetzung. Dadurch kann der produktive Worker später aus
 BACH herausgelöst werden, ohne die Fachlogik der Aufgabenbearbeitung
 mitzunehmen.
+
+Produktneutral (v1.0):
+    * Kein direkter Import aus hub._services.chat.slots_config.
+    * Event-Sink über injizierbares Protocol AssignmentEventSink entkoppelt.
+    * Default-Sink ist ein dünner BACH-Adapter (lazy-import), der
+      record_activity() aufruft und die bestehenden flachen
+      activity_history-Felder beibehält.
+    * Alternative Sinks (Trithon-Transport, Noop, JSON-Lines) können
+      injiziert werden, ohne BACH zu berühren.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import uuid
-from typing import Any, Dict
-
-from hub._services.chat.slots_config import record_activity
+from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 
+# ── Neutrales Event-Sink-Interface (v1) ───────────────────────────────────
+@runtime_checkable
+class AssignmentEventSink(Protocol):
+    """Produktneutrale Schnittstelle für das Ablegen von
+    Besetzungsereignissen. Implementierungen können in BACH (record_activity),
+    Trithon (LedgerEntry/ExecutionReceipt), Noop oder JSON-Lines-Zeile lauten.
+    """
+
+    def record(
+        self,
+        slot_id: str,
+        activity: str,
+        status: str,
+        details: Dict[str, Any],
+        path: Optional[str] = None,
+    ) -> None:
+        """Schreibt ein Besetzungsereignis in den hinterlegten Speicher."""
+        ...
+
+
+# ── BACH-Adapter (dünne Wrapper, lazy Import) ─────────────────────────────
+class _BachActivitySink:
+    """Default-Sink für BACH: ruft record_activity() aus slots_config auf,
+    damit die bestehenden activity_history-Einträge und /api/activity-Reader
+    unverändert funktionieren.
+    """
+
+    def record(
+        self,
+        slot_id: str,
+        activity: str,
+        status: str,
+        details: Optional[Dict[str, Any]] = None,
+        path: Optional[str] = None,
+    ) -> None:
+        from hub._services.chat.slots_config import record_activity  # lazy
+        record_activity(
+            source=slot_id,
+            activity=activity,
+            status=status,
+            details=details,
+            path=path,
+        )
+
+
+# ── Ausnahmen ─────────────────────────────────────────────────────────────
 class AssignmentDenied(RuntimeError):
     """Die Rolle besitzt den angeforderten Ausführungszugriff nicht."""
 
 
+# ── Versionierte Rechteverträge ───────────────────────────────────────────
 @dataclass(frozen=True)
 class RoleContract:
     """Minimaler, versionierter Rechtevertrag für einen produktiven Pfad."""
@@ -56,6 +110,7 @@ ROLE_CONTRACTS: Dict[str, RoleContract] = {
 _REQUIRED_RIGHTS = frozenset({"task.claim", "task.execute"})
 
 
+# ── Assignment-Datensatz ──────────────────────────────────────────────────
 @dataclass(frozen=True)
 class Assignment:
     """Unveränderliche Identität einer einzelnen Task-Besetzung."""
@@ -73,6 +128,7 @@ class Assignment:
     started_at: str
 
 
+# ── Autorisierung ─────────────────────────────────────────────────────────
 def authorize_role(role_id: str, mode: str) -> RoleContract:
     """Prüft den Rechtevertrag fail-closed, bevor der Executor startet."""
     normalized = str(role_id or "").strip()
@@ -88,6 +144,7 @@ def authorize_role(role_id: str, mode: str) -> RoleContract:
     return contract
 
 
+# ── Hilfsfunktionen ───────────────────────────────────────────────────────
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -132,6 +189,7 @@ def _event_details(
     return details
 
 
+# ── Besetzungslebenszyklus mit injizierbarem Sink ────────────────────────
 def begin_assignment(
     *,
     role_id: str,
@@ -144,11 +202,20 @@ def begin_assignment(
     session_id: str,
     initiated_by: str,
     path: str | None = None,
+    sink: AssignmentEventSink | None = None,
 ) -> Assignment:
-    """Prüft die Rolle, erzeugt die ID und schreibt den Startnachweis."""
+    """Prüft die Rolle, erzeugt die ID und schreibt den Startnachweis.
+
+    sink: Optionaler Event-Sink. Default = _BachActivitySink (lazy-import
+    record_activity aus BACH slots_config). Für produktneutrale Nutzung
+    einen eigenen Sink injizieren (Trithon, Noop, JSON-Lines).
+    """
     contract = authorize_role(role_id, mode)
     if task_id is None:
         raise ValueError("Besetzungsfeld task_id fehlt")
+
+    if sink is None:
+        sink = _BachActivitySink()
 
     assignment = Assignment(
         assignment_id=f"asgn-{uuid.uuid4().hex}",
@@ -168,9 +235,9 @@ def begin_assignment(
         event="assignment_started",
         status="running",
     )
-    record_activity(
-        assignment.slot_id,
-        f"Task #{assignment.task_id} Besetzung gestartet",
+    sink.record(
+        slot_id=assignment.slot_id,
+        activity=f"Task #{assignment.task_id} Besetzung gestartet",
         status="running",
         details=details,
         path=path,
@@ -185,10 +252,18 @@ def finish_assignment(
     result: str = "",
     reason: str = "",
     path: str | None = None,
+    sink: AssignmentEventSink | None = None,
 ) -> None:
-    """Schreibt genau den korrelierten Endnachweis einer Besetzung."""
+    """Schreibt genau den korrelierten Endnachweis einer Besetzung.
+
+    sink: Optionaler Event-Sink. Default = _BachActivitySink.
+    """
     if status not in {"completed", "released", "error", "interrupted"}:
         raise ValueError(f"ungültiger Besetzungsstatus: {status!r}")
+
+    if sink is None:
+        sink = _BachActivitySink()
+
     details = _event_details(
         assignment,
         event="assignment_ended",
@@ -197,9 +272,9 @@ def finish_assignment(
         result=result,
         reason=reason,
     )
-    record_activity(
-        assignment.slot_id,
-        f"Task #{assignment.task_id} Besetzung beendet",
+    sink.record(
+        slot_id=assignment.slot_id,
+        activity=f"Task #{assignment.task_id} Besetzung beendet",
         status=status,
         details=details,
         path=path,

@@ -15,13 +15,13 @@ MÓDULOS DISPONIBLES:
    - emoji_to_safe(texto): Emoji → Etiquetas ASCII mediante emoji.demojize()
    - emoji_to_display(texto): etiquetas ASCII → emoji a través de emoji.emojize()
 
-2. Herramienta de escáner (system/tools/c_emoji_scanner.py)
-   - CLI: python c_emoji_scanner.py --status
-   - CLI: python c_emoji_scanner.py --scan-batch
-   - CLI: python c_emoji_scanner.py <archivo/carpeta>
+2. Herramienta de escáner (system/tools/emoji_scanner.py)
+   - CLI: python emoji_scanner.py --status
+   - CLI: python emoji_scanner.py --scan-batch
+   - CLI: python emoji_scanner.py <archivo/carpeta>
    - No integrado como comando BACH
 
-3. Reparación JSON (sistema/herramientas/c_json_repair.py)
+3. Reparación JSON (sistema/herramientas/json_repair.py)
    - Utiliza conversión de emoji en el proceso de reparación
 
 EJEMPLOS DE CONVERSIÓN:

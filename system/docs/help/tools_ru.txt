@@ -33,15 +33,15 @@ bach --tools migrate           Начать миграцию соединени�
 
 Примеры:
   bach python_cli_editor script.py --show-all     Показать структуру
-  bach c_encoding_fixer datei.py                  Исправить кодировку
-  bach c_import_organizer datei.py --save         Сортировать импорт
-  bach c_json_repair kaputt.json                  Восстановить JSON
-  bach c_pycutter grosse_datei.py                 Разделить файл
-  bach c_sqlite_viewer data/bach.db               Показать БД
+  bach encoding_fixer datei.py                  Исправить кодировку
+  bach import_organizer datei.py --save         Сортировать импорт
+  bach json_repair kaputt.json                  Восстановить JSON
+  bach pycutter grosse_datei.py                 Разделить файл
+  bach sqlite_viewer data/bach.db               Показать БД
   bach code_analyzer projekt/                     Анализ кода
 
 Преимущества:
-  - Короче: bach --tools запускает c_encoding_fixer file.py
+  - Короче: bach --tools запускает encoding_fixer file.py
   - Возможно завершение вкладки
   - Тот же синтаксис, что и при прямом вызове Python
 
@@ -85,8 +85,6 @@ PYTHON-TOOLS (tools/)
 ---------------------
 Соглашение о префиксах (см.: bach --help именование):
 
-  c_* CLI, оптимизированный для искусственного интеллекта (Claude/recludOS)
-             - Четкие выходные данные, безопасные для кодирования, безопасные для JSON.
   b_* Ядро BACH (критическое для системы)
   a_* Агент Бегун
   t_* Инструменты тестирования
@@ -121,7 +119,7 @@ PYTHON-TOOLS (tools/)
   autolog_analyzer.py Анализ AutoLog
   backup_manager.py Управление резервным копированием
   injectors.py Система инжекторов
-  c_dirscan.py Сканирование каталога
+  dirscan.py Сканирование каталога
   session_analyzer.py Анализ сеанса
   time_system.py Система времени
   token_monitor.py Мониторинг токенов
@@ -133,13 +131,13 @@ PYTHON-TOOLS (tools/)
   Функция командной строки инструмента CLI
   ----------------------- ------------------------- ----------------------------
   doc_update_checker.py bach --поддерживать проверку документации документации
-  c_duulate_detector.py bach --поддерживать дубликаты Обнаружение дубликатов
-  c_pattern_tool.py bach --поддерживать шаблон Шаблоны имен файлов
-  c_tool_scanner.py bach --maintain сканирование Обнаружение инструментов CLI
-  c_file_cleaner.py bach --maintain clean Удалить старые файлы
-  c_json_fixer.py bach --maintain json Исправить JSON
-  c_sync_registry.py Синхронизировать реестр
-  c_json_registry_cleaner.py Очистка реестра
+  duplicate_detector.py bach --поддерживать дубликаты Обнаружение дубликатов
+  pattern_tool.py bach --поддерживать шаблон Шаблоны имен файлов
+  tool_scanner.py bach --maintain сканирование Обнаружение инструментов CLI
+  file_cleaner.py bach --maintain clean Удалить старые файлы
+  json_fixer.py bach --maintain json Исправить JSON
+  sync_registry.py Синхронизировать реестр
+  json_registry_cleaner.py Очистка реестра
   backup_manager.py Управление резервным копированием
   nulcleaner.py Удалить символ NUL
 
@@ -170,29 +168,29 @@ PYTHON-TOOLS (tools/)
 
   Функция инструмента
   ---------------------- ----------------------------
-  c_encoding_fixer.py Исправить кодировку
-  c_emoji_scanner.py Найти/заменить эмодзи
-  c_standard_fixer.py Применить стандарты кода
-  c_json_repair.py Восстановить JSON
-  c_json_fixer.py Исправить JSON (старый)
-  c_import_organizer.py Сортировка импорта
-  c_import_diagnose.py Найдите проблемы с импортом
-  c_indent_checker.py Проверить отступ
-  c_umlaut_fixer.py Исправить умлауты
-  c_german_scanner.py Найдите немецкие слова
-  c_method_analyzer.py Методы анализа
-  c_pycutter.py Разделить файлы Python
-  c_sqlite_viewer.py Просмотр баз данных SQLite
-  c_license_generator.py Создание файлов лицензий
-  c_md_to_pdf.py Уценка в PDF
-  Преобразование формата c_universal_converter.py
-  c_universal_compiler.py Универсальный компилятор
-  c_youtube_extractor.py Извлечение YouTube
-  c_code_analyzer.py Анализ кода
-  c_code_generator.py Генерация кода
-  c_python_cli_editor.py Структурированное редактирование Python
-  c_structure_generator.py Генератор структуры
-  c_header_migrate.py Миграция заголовка
+  encoding_fixer.py Исправить кодировку
+  emoji_scanner.py Найти/заменить эмодзи
+  standard_fixer.py Применить стандарты кода
+  json_repair.py Восстановить JSON
+  json_fixer.py Исправить JSON (старый)
+  import_organizer.py Сортировка импорта
+  import_diagnose.py Найдите проблемы с импортом
+  indent_checker.py Проверить отступ
+  umlaut_fixer.py Исправить умлауты
+  german_scanner.py Найдите немецкие слова
+  method_analyzer.py Методы анализа
+  pycutter.py Разделить файлы Python
+  sqlite_viewer.py Просмотр баз данных SQLite
+  license_generator.py Создание файлов лицензий
+  md_to_pdf.py Уценка в PDF
+  Преобразование формата universal_converter.py
+  universal_compiler.py Универсальный компилятор
+  youtube_extractor.py Извлечение YouTube
+  code_analyzer.py Анализ кода
+  code_generator.py Генерация кода
+  python_cli_editor.py Структурированное редактирование Python
+  structure_generator.py Генератор структуры
+  header_migrate.py Миграция заголовка
   call_graph.py Анализ графа вызовов
 
 ### Инструменты управления
@@ -262,9 +260,9 @@ PYTHON-TOOLS (tools/)
 
 Функция инструмента
   ---------------------- ----------------------------
-  c_skill_init.py Инициализировать структуру навыков
-  c_skill_package.py Пакет навыков
-  c_skill_validate.py Проверка навыков
+  skill_init.py Инициализировать структуру навыков
+  skill_package.py Пакет навыков
+  skill_validate.py Проверка навыков
   навык_export.py Экспорт навыков
   kill_header_gen.py Создать заголовок навыка
   kill_help_gen.py Создать справку по навыкам
@@ -273,9 +271,9 @@ PYTHON-TOOLS (tools/)
 
   Функция инструмента
   ---------------------- ----------------------------
-  c_project_bundler.py Сборщик проектов
-  c_audit_bundler.py Создать пакет аудита
-  c_path_healer.py Восстановление пути
+  project_bundler.py Сборщик проектов
+  audit_bundler.py Создать пакет аудита
+  path_healer.py Восстановление пути
   Batch_file_ops.py Пакетные операции с файлами
 
 ### Анализ и мониторинг
@@ -295,7 +293,7 @@ PYTHON-TOOLS (tools/)
 
   Функция инструмента
   ---------------------- ----------------------------
-  c_dictionary_builder.py Конструктор словарей
+  dictionary_builder.py Конструктор словарей
   урок_trigger_generator.py Генератор триггеров урока
   theme_packet_generator.py Генератор тематических пакетов
   workflow_trigger_generator.py Генератор триггеров рабочего процесса
@@ -318,7 +316,7 @@ PYTHON-TOOLS (tools/)
 
   Функция инструмента
   ---------------------- ----------------------------
-  c_headless_agent.py Безголовый агент
+  headless_agent.py Безголовый агент
   bach_auto_discovery.py Система автоматического обнаружения
   Tool_auto_discovery.py Автоматическое обнаружение инструмента
 
@@ -397,12 +395,12 @@ bach --tools show ffmpeg
 bach --tools show chatgpt
 
 # Инструмент запуска
-bach --tools run c_encoding_fixer datei.py
+bach --tools run encoding_fixer datei.py
 
 # Прямой вызов (рекомендуется)
-bach c_encoding_fixer datei.py
-bach c_skill_init neuer_skill
-bach c_project_bundler ./projekt
+bach encoding_fixer datei.py
+bach skill_init neuer_skill
+bach project_bundler ./projekt
 
 # Поиск
 bach --tools search video
@@ -438,7 +436,6 @@ bach --test run QUICK
 
 Соглашение об именах (префиксы):
 
-  c_* CLI, оптимизированный для ИИ (более 40 инструментов)
   b_* Ядро BACH (критическое для системы)
   a_* Инструменты запуска агентов
   t_* Инструменты тестирования
@@ -452,8 +449,8 @@ bach --test run QUICK
   ---------------------- ----------------------------
   Налоговый/Финансовый пакет (Бюджет, Расходы)
   ocr_engine.py DokuZentrum Pro
-  c_md_to_pdf.py Экспорт обсидиана
-  c_youtube_extractor.py Media Suite
+  md_to_pdf.py Экспорт обсидиана
+  youtube_extractor.py Media Suite
 
 Источник: Архивировано в user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
 
@@ -493,15 +490,15 @@ ContextInjector распознает ключевые слова и рекоме
 
   Рекомендации по инструменту подсказки ключевых слов
   ------------------------------------------
-  «проблема с кодировкой» bach c_encoding_fixer <файл>
-  «сортировка импорта» bach c_import_organizer <файл>
-  «редактировать Python» Бах c_python_cli_editor <файл> --show-all
-  «разделить файл» bach c_pycutter <файл>
-  "просмотр sqlite" бах c_sqlite_viewer <db>
+  «проблема с кодировкой» bach encoding_fixer <файл>
+  «сортировка импорта» bach import_organizer <файл>
+  «редактировать Python» Бах python_cli_editor <файл> --show-all
+  «разделить файл» bach pycutter <файл>
+  "просмотр sqlite" бах sqlite_viewer <db>
   «Инструмент поиска» Инструмент Баха предлагает «описание»
-  «создать навык» bach c_skill_init <имя>
-  «Пакет проектов» bach c_project_bundler <путь>
-  «путь восстановления» bach c_path_healer <файл>
+  «создать навык» bach skill_init <имя>
+  «Пакет проектов» bach project_bundler <путь>
+  «путь восстановления» bach path_healer <файл>
   «start mcp» инструменты Python/mcp_server.py
 
 См.: bach --help инжекторы (полный список триггеров)

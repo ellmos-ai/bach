@@ -46,6 +46,7 @@ Nutzung:
     # Verwaltung
     plugins.list_plugins()
     plugins.unload_plugin("mein-plugin")
+    plugins.reset_plugin("mein-plugin")
 
 Version: 1.0.0
 """
@@ -726,6 +727,84 @@ description: >
         return True, (
             f"Plugin '{name}' entladen: "
             f"{removed_hooks} Hooks, {removed_tools} Tools entfernt"
+        )
+
+    def reset_plugin(self, name: str) -> tuple:
+        """Setzt ein Plugin zurueck: entladen und falls bekannt neu laden.
+
+        Emittiert Lifecycle-Hooks `before_plugin_reset` und
+        `after_plugin_reset`. Der before-Hook erhaelt den Payload
+        `{"name": name}`; der after-Hook fuegt das Ergebnis als `status`
+        (`"ok"` oder `"error"`) hinzu.
+
+        Wenn das Manifest aus der alten Plugin-Info bekannt ist, wird das
+        Plugin direkt neu geladen; andernfalls bleibt es entladen.
+
+        Args:
+            name: Plugin-Name
+
+        Returns:
+            (success: bool, message: str)
+        """
+        if name not in self._plugins:
+            return False, f"Plugin '{name}' nicht gefunden"
+
+        info = self._plugins[name]
+        manifest_path = info.get('manifest_path')
+
+        # Hook: before_plugin_reset -> {"name": name}
+        try:
+            from .hooks import hooks
+            hooks.emit('before_plugin_reset', {'name': name})
+        except Exception:
+            pass
+
+        success_unload, unload_msg = self.unload_plugin(name)
+        if not success_unload:
+            status = 'error'
+            try:
+                from .hooks import hooks
+                # Hook: after_plugin_reset -> {"name": name, "status": "error"}
+                hooks.emit('after_plugin_reset', {'name': name, 'status': status})
+            except Exception:
+                pass
+            return False, f"Reset fehlgeschlagen beim Entladen: {unload_msg}"
+
+        if not manifest_path:
+            status = 'ok'
+            try:
+                from .hooks import hooks
+                # Hook: after_plugin_reset -> {"name": name, "status": "ok"}
+                hooks.emit('after_plugin_reset', {
+                    'name': name,
+                    'status': status,
+                })
+            except Exception:
+                pass
+            return True, (
+                f"Plugin '{name}' entladen (kein Manifest-Pfad bekannt, "
+                f"kein Reload). {unload_msg}"
+            )
+
+        success_load, load_msg = self.load_plugin(manifest_path)
+        status = 'ok' if success_load else 'error'
+
+        # Hook: after_plugin_reset -> {"name": name, "status": "ok"|"error"}
+        try:
+            from .hooks import hooks
+            hooks.emit('after_plugin_reset', {
+                'name': name,
+                'status': status,
+            })
+        except Exception:
+            pass
+
+        if success_load:
+            return True, (
+                f"Plugin '{name}' zurueckgesetzt. {unload_msg} -> {load_msg}"
+            )
+        return False, (
+            f"Plugin '{name}' entladen, aber Reload fehlgeschlagen: {load_msg}"
         )
 
     def list_plugins(self) -> str:

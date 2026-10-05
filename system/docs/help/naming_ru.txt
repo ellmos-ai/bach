@@ -31,8 +31,8 @@ TOOL-PRAEFIXES (tools/*.py)
 
   ПРЕФИКС ЗНАЧЕНИЕ ПРИМЕРЫ
   ------- ---------------------- ------------------------
-  c_ CLI оптимизирован для ИИ c_encoding_fixer.py
-            (Клод/recludOS) c_json_repair.py
+  (без) CLI оптимизирован для ИИ encoding_fixer.py
+            (Клод/recludOS) json_repair.py
             - Четкие, анализируемые результаты
             - Безопасное кодирование (UTF-8)
 
@@ -62,7 +62,7 @@ TOOL-PRAEFIXES (tools/*.py)
     Task_scanner.py # Для конкретного агента ATI (в агентах/ati/scanner/)
 
   Местоположение:
-    - Общие: инструменты/c_ocr_engine.py.
+    - Общие: инструменты/ocr/engine.py.
     - Конкретно: агенты/_experts/steuer/steuer_scanner.py.
     - Инструмент агента: агенты/ati/scanner/task_scanner.py
 

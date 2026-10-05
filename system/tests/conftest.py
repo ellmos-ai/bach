@@ -34,32 +34,58 @@ from pathlib import Path
 
 import pytest
 
-_TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
-sys.dont_write_bytecode = True
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
-os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
-os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
-os.environ["BACH_SECRETS_FILE"] = str(_TEST_DB_DIR / "bach_secrets.json")
-os.environ["BACH_PLANS_DIR"] = str(_TEST_DB_DIR / "plans")
-os.environ["BACH_RESEARCH_DIR"] = str(_TEST_DB_DIR / "research")
-# Sicherheitsgrenzen werden von der Suite erzwungen. Geerbte Shell-/CI-Werte
-# dürfen Testisolation und Host-Prozessschutz nicht abschalten.
-os.environ["BACH_RUNTIME_DIR"] = str(_TEST_DB_DIR / "runtime")
-os.environ["BACH_TEST_MODE"] = "1"
-os.environ["PYTHONPATH"] = os.pathsep.join(
-    part
-    for part in (
-        str(_TEST_PROCESS_GUARD_DIR),
-        os.environ.get("PYTHONPATH", ""),
+_SYSTEM_ROOT = Path(__file__).resolve().parent.parent
+if str(_SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_ROOT))
+
+# Idempotenz-Guard: pytest lädt diese Datei als ``tests.conftest``. Wird sie
+# zusätzlich unter einem anderen Modulnamen importiert (z.B. früher via
+# ``from system.tests import conftest`` im isolation guard), würde ein zweiter
+# Durchlauf ein ZWEITES mkdtemp-Verzeichnis anlegen und die BACH_*-Env-Vars
+# auf divergente Pfade umbiegen (z.B. BACH_SLOTS_CONFIG_PATH zeigt dann auf
+# ein Verzeichnis ohne slots_config.json, während slots_config.DEFAULT_SLOTS_FILE
+# noch den ersten Pfad gebacken hat). Dann die bestehende Konfiguration reüssen.
+_EXISTING_SLOTS_CONFIG = os.environ.get("BACH_SLOTS_CONFIG_PATH", "")
+if (
+    os.environ.get("BACH_TEST_MODE") == "1"
+    and _EXISTING_SLOTS_CONFIG
+    and Path(_EXISTING_SLOTS_CONFIG).is_file()
+):
+    _TEST_DB_DIR = Path(_EXISTING_SLOTS_CONFIG).resolve().parent
+else:
+    _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
+    sys.dont_write_bytecode = True
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
+    os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
+    os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
+    os.environ["BACH_SECRETS_FILE"] = str(_TEST_DB_DIR / "bach_secrets.json")
+    os.environ["BACH_PLANS_DIR"] = str(_TEST_DB_DIR / "plans")
+    os.environ["BACH_RESEARCH_DIR"] = str(_TEST_DB_DIR / "research")
+    # Sicherheitsgrenzen werden von der Suite erzwungen. Geerbte Shell-/CI-Werte
+    # dürfen Testisolation und Host-Prozessschutz nicht abschalten.
+    os.environ["BACH_RUNTIME_DIR"] = str(_TEST_DB_DIR / "runtime")
+    os.environ["BACH_TEST_MODE"] = "1"
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        part
+        for part in (
+            str(_TEST_PROCESS_GUARD_DIR),
+            os.environ.get("PYTHONPATH", ""),
+        )
+        if part
     )
-    if part
-)
-os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
-    _TEST_DB_DIR / "fackel_preference.json"
-)
-os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
+    os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
+        _TEST_DB_DIR / "fackel_preference.json"
+    )
+    os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
+
+    # Bootstrap slots_config.json eagerly on the module level.  Some test modules
+    # import hub._services.chat.telegram_chat during collection, which calls
+    # load_slots_config() before session-scoped fixtures run.  Ensuring the file
+    # exists here prevents "Slots-Konfiguration fehlt" failures in full-suite runs.
+    from hub._services.chat.slots_config import initialize_slots_config
+    initialize_slots_config(os.environ["BACH_SLOTS_CONFIG_PATH"])
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -109,19 +135,41 @@ def pytest_configure(config):
     """Redirect pytest's basetemp out of the protected source checkout.
 
     Pytest registers an atexit cleanup for ``--basetemp`` that removes the
-    directory. When the user points that into ``system/data`` or similar
-    protected source-runtime roots, the audit hook blocks the cleanup writes
-    (``RuntimeError: source runtime write blocked: os.mkdir``) and the
-    ``_guard_source_runtime_dirs`` fixture fails its final assertion. We
-    therefore force basetemp into the per-test ``BACH_RUNTIME_DIR`` unless the
-    caller explicitly chose a location outside the protected checkout roots.
+    directory. When the default or user-provided basetemp points into
+    ``system/data`` or similar protected source-runtime roots, the audit hook
+    blocks the cleanup writes (``RuntimeError: source runtime write blocked``)
+    and the ``_guard_source_runtime_dirs`` fixture fails its final assertion.
+
+    To avoid any path resolution through the source tree, we always force an
+    absolute basetemp under the per-test runtime directory, regardless of
+    whether pytest was invoked with or without ``--basetemp``.
     """
-    basetemp = config.getoption("basetemp")
-    if basetemp is not None and not _source_runtime_path(basetemp):
-        return
-    target = Path(os.environ["BACH_RUNTIME_DIR"])
+    target = Path(os.environ["BACH_RUNTIME_DIR"]) / "pytest_basetemp"
     target.mkdir(parents=True, exist_ok=True)
-    config.option.basetemp = str(target)
+    config.option.basetemp = str(target.resolve())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _redirect_tmp_path_factory(request):
+    """Force pytest's tmp_path_factory to use BACH_RUNTIME_DIR.
+
+    ``pytest_configure`` runs after pytest has already created the internal
+    ``_tmp_path_factory`` from the CLI/default basetemp.  Merely setting
+    ``config.option.basetemp`` at that point leaves existing session-scoped
+    temporary directories inside the protected source tree (e.g.
+    ``system/data``).  This fixture runs once per session and rewires the
+    factory to the per-test runtime directory before any test uses
+    ``tmp_path``/``tmp_path_factory``.
+    """
+    target = Path(os.environ["BACH_RUNTIME_DIR"]) / "pytest_basetemp"
+    target.mkdir(parents=True, exist_ok=True)
+    factory = request.config._tmp_path_factory
+    if factory is not None:
+        factory.basetemp = target
+        # pytest >= 8 keeps an explicit `basetemp` attribute on the factory;
+        # older versions store it on the underlying `rm` (TempPathFactory).
+        if hasattr(factory, "_rm"):
+            factory._rm.basetemp = target
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -146,20 +194,76 @@ _SOURCE_RUNTIME_WRITE_ATTEMPTS = set()
 
 
 def _source_runtime_path(path_like):
-    """Return a protected source-runtime path, if *path_like* resolves there."""
+    """Return a protected source-runtime path, if *path_like* resolves there.
+
+    Roots may contain symlinks (``system/data`` points at ``~/.bach``), so
+    both the candidate AND the roots are checked in literal and resolved
+    spelling. The return value keeps the *unresolved* candidate so callers
+    can compare against the original path.
+    """
     try:
-        candidate = Path(path_like).resolve(strict=False)
+        source_candidate = Path(path_like)
+        candidate = source_candidate.resolve(strict=False)
     except (OSError, RuntimeError, TypeError, ValueError):
         return None
-    if candidate.name.endswith(".pyc") or "__pycache__" in candidate.parts:
+    candidates = {source_candidate, candidate}
+    if any(
+        probe.name.endswith(".pyc") or "__pycache__" in probe.parts
+        for probe in candidates
+    ):
         return None
     for root in _PROTECTED_SOURCE_RUNTIME_ROOTS:
         try:
-            candidate.relative_to(root)
-        except ValueError:
-            continue
-        return candidate
+            root_resolved = root.resolve(strict=False)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            root_resolved = root
+        for root_variant in {root, root_resolved}:
+            for probe in candidates:
+                try:
+                    probe.relative_to(root_variant)
+                except ValueError:
+                    continue
+                return source_candidate
     return None
+
+
+# CPython-Audit-Layout der dir_fd tragenden Schreib-Events (gemessen mit
+# audit_probe.py auf Python 3.12.13/macOS):
+#   os.remove(path, dir_fd), os.rmdir(path, dir_fd), os.mkdir(path, mode, dir_fd),
+#   os.rename/os.replace/os.link(src, dst, src_dir_fd, dst_dir_fd), os.symlink(src, dst, dir_fd)
+# Ohne dir_fd emittiert CPython -1 (nicht None). Map: {(path_index, fd_index), ...}
+_EVENT_DIR_FD = {
+    "os.remove": ((0, 1),),
+    "os.rmdir": ((0, 1),),
+    "os.mkdir": ((0, 2),),
+    "os.rename": ((0, 2), (1, 3)),
+    "os.replace": ((0, 2), (1, 3)),
+    "os.link": ((0, 2),),
+    "os.symlink": ((0, 2),),
+}
+
+
+def _fd_target(event, args, path_index, fd_index):
+    """Fd-basierte Aufloesung eines Pfadarguments aus einem Audit-Event."""
+    if path_index >= len(args):
+        return None
+    if fd_index >= len(args):
+        return args[path_index]
+    dir_fd = args[fd_index]
+    if dir_fd is None or not isinstance(dir_fd, int) or dir_fd < 0:
+        return args[path_index]
+    for fd_link in (f"/dev/fd/{dir_fd}", f"/proc/self/fd/{dir_fd}"):
+        try:
+            base = os.readlink(fd_link)
+            break
+        except (OSError, ValueError):
+            continue
+    else:
+        return None  # Basis unbekannt: bewusst NICHT blocken
+    try:
+        return os.path.join(base, os.fsdecode(os.fspath(args[path_index])))
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return None
 
 
 def _audit_source_runtime_writes(event, args):
@@ -173,9 +277,20 @@ def _audit_source_runtime_writes(event, args):
         targets = args[:1]
     elif event in _WRITE_EVENTS:
         targets = args[:2] if event in {"os.rename", "os.replace", "shutil.move"} else args[:1]
+        fd_pairs = _EVENT_DIR_FD.get(event)
+        if fd_pairs is not None:
+            # dir_fd-Layout: Pfadargumente fd-basiert aufloesen (_fd_target)
+            # -- CWD-Aufloesung waere hier ein False Positive.
+            targets = [
+                _fd_target(event, args, path_index, fd_index)
+                for path_index, fd_index in fd_pairs
+                if path_index < len(targets)
+            ]
     else:
         return
     for target in targets:
+        if target is None:
+            continue
         protected = _source_runtime_path(target)
         if protected is not None:
             message = f"source runtime write blocked: {event}: {protected}"
@@ -305,10 +420,18 @@ _WRITE_EVENTS = frozenset({
     "shutil.copymode", "shutil.copystat", "shutil.move",
 })
 
+#: Audit-Events mit ZWEI Pfadargumenten (src, dst): Der Schreibzugriff zielt
+#: auf dst (args[1]); src (args[0]) ist die gelesene Quelle (Teilmenge von
+#: _WRITE_EVENTS, damit _audit_home_writes sie danach klassifizieren kann).
+_TWO_PATH_EVENTS = frozenset({
+    "os.rename", "os.replace", "os.link", "os.symlink", "shutil.copyfile",
+    "shutil.copymode", "shutil.copystat", "shutil.move",
+})
+
 #: Woran ein residenter BACH-Dienst in der Prozessliste erkennbar ist.
 _BACH_SERVICE_HINTS = (
     "chat_tray.py", "session_daemon.py", "bridge_daemon.py",
-    "daemon_service.py", "bach.py",
+    "daemon_service.py", "bach.py", "telegram_chat.py", "server.py",
 )
 
 # Source-runtime writes must be blocked independently of resident BACH services.
@@ -364,7 +487,20 @@ def _audit_home_writes(event, args):
                 return
         elif event not in _WRITE_EVENTS:
             return
-        if args:
+        # 2026-09-29: 2-Pfad-Events (src, dst) zaehlen NUR dst -- src ist die
+        # gelesene Quelle, kein Schreibzugriff. Bisher pruefte der Hook
+        # pauschal args[0] und meldete dadurch shutil.copyfile VON der
+        # produktiven DB (test_skills_projection.py Z.103/113, _copy_prod_db)
+        # als Schreiben IN ~/.bach (Fehlalarm T-20260902-646684582).
+        # Umgekehrt wurden dst-Schreibvorgaenge INS ~/.bach bei diesen Events
+        # VERPASST (Guard zu schwach): rename/replace/link/symlink/copy
+        # hinein nach ~/.bach wird jetzt korrekt erfasst -- der Guard ist
+        # damit STAERKER, nicht schwaecher. 1-Pfad-Events (mkdir, rmdir,
+        # remove, truncate) und open bleiben unverändert bei args[0].
+        if event in _TWO_PATH_EVENTS:
+            if len(args) > 1:
+                _note_write_if_under(args[1], _HOME_BACH_DIR, _OWN_HOME_WRITES)
+        elif args:
             _note_write_if_under(args[0], _HOME_BACH_DIR, _OWN_HOME_WRITES)
     except Exception:  # ein Waechter darf den Lauf nie zum Absturz bringen
         return

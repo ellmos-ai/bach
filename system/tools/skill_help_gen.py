@@ -466,12 +466,15 @@ class WorkflowValidator:
         except Exception as e:
             return [f"Lesefehler: {e}"]
 
-        lines_list = content.strip().split('\n')
+        # Frontmatter entfernen, damit Position von Titel/Beschreibung im Body
+        # geprueft wird (konsistent mit test_skills_integrity.py).
+        body = re.sub(r"^---.*?---\s*", "", content, flags=re.DOTALL)
+        lines_list = body.strip().split('\n')
 
         if not lines_list:
             return ["Datei ist leer"]
 
-        # 1. Titel pruefen (# H1 in erster Zeile)
+        # 1. Titel pruefen (# H1 in erster Zeile des Body)
         has_title = False
         for line in lines_list[:5]:
             if line.strip().startswith('# ') and not line.strip().startswith('## '):

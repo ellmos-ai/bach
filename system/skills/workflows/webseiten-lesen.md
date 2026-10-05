@@ -19,6 +19,8 @@ description: >
 
 # Webseiten lesen -- Verfahren
 
+> Verfahren zum Lesen und Extrahieren von Webseiten-Inhalten ueber BACH; Entscheidungsbaum fuer die Wahl des richtigen Handlers (web_parse vs web_scrape).
+
 ## Entscheidungsbaum
 
 ```

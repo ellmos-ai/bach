@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "schema": "bach.gui.composition.rules",
+    "version": 1,
+    "source": "QUEUED 387788448",
+    "task": "#1416",
+    "chain": [
+      {"task": "#1410 GUI-Schale", "queued": "QUEUED 652455601"},
+      {"task": "#1414 Tray", "queued": "QUEUED 112086128"},
+      {"task": "#1416 composition.rules.json", "queued": "QUEUED 387788448"}
+    ],
+    "authoritative_code": "system/gui/shell.py",
+    "description": "Deklarative Kompositionsregeln der BACH-GUI: Rollen, Ausfuehrungsmodi, Server-Start und Verbindungsaufbau. Autoritative Quelle ist system/gui/shell.py (Kette auch im Modul-Docstring dokumentiert); diese Datei beschreibt denselben Vertrag maschinenlesbar. Bei Abweichung gilt shell.py."
+  },
+  "roles": {
+    "default_role_id": "expert_role",
+    "known_roles": ["expert_role"],
+    "fail_closed": true
+  },
+  "modes": {
+    "default_mode": "safe",
+    "allowed_modes": ["safe", "full"],
+    "validated_in_constructor": false,
+    "enforced_by": "authorize_role/AssignmentDenied"
+  },
+  "connection": {
+    "default_host": "127.0.0.1",
+    "default_port": 8000,
+    "base_url_format": "http://{host}:{port}",
+    "connect_before_start": true,
+    "health_check": {
+      "method": "GET",
+      "path": "/api/status",
+      "success_status_code": 200,
+      "timeout_seconds": 2.0
+    }
+  },
+  "server": {
+    "default_command_template": ["<python>", "gui/server.py", "--host", "<host>", "--port", "<port>"],
+    "server_script": "gui/server.py",
+    "start_timeout_seconds": 30.0,
+    "poll_interval_seconds": 0.5,
+    "log_file": "gui_shell.log",
+    "default_log_dir": "system/data/logs"
+  },
+  "assignment": {
+    "slot_id": "gui_shell",
+    "backend_id": "bach-gui",
+    "model_id": "web-gui",
+    "agent_instance_id_format": "gui-shell-{pid}",
+    "session_id": "uuid4",
+    "initiated_by": "user"
+  },
+  "outcomes": {
+    "gui_ready": {"status": "completed", "ok": true},
+    "gui_connect_failed": {"status": "error", "ok": false},
+    "window_open_failed": {"status": "released", "ok": false},
+    "denied": {"status": "denied", "ok": false}
+  },
+  "cli": {
+    "prog": "gui-shell",
+    "mode_choices": ["safe", "full"],
+    "start_timeout_default_seconds": 30.0,
+    "exit_codes": {
+      "healthy": 0,
+      "down": 1
+    }
+  },
+  "env": {
+    "variables": {
+      "BACH_GUI_URL": "vollstaendige Basis-URL der GUI; ueberschreibt BACH_GUI_HOST und BACH_GUI_PORT",
+      "BACH_GUI_HOST": "Host-Anteil der Basis-URL",
+      "BACH_GUI_PORT": "Port-Anteil der Basis-URL"
+    },
+    "precedence": ["BACH_GUI_URL", "BACH_GUI_HOST/BACH_GUI_PORT", "defaults"]
+  }
+}

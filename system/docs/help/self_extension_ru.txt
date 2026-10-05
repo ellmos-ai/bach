@@ -49,7 +49,7 @@ BACH является саморасширяющейся системой. Па�
     → Подкласс BaseHandler с get_operations()
 
   bach skills create data-sync --type service
-    → Создано: system/skills/_services/data-sync/
+    → Создано: system/hub/_services/data-sync/
     → Сервис с помощью __init__.py и service.py.
     → Рядом с обработчиком, общее использование
 

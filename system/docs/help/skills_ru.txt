@@ -69,7 +69,7 @@
 -----------------
 ПРАВИЛО: Если сомневаетесь, оставляйте его вдвое!
 
-  system/tools/c_ocr_engine.py # Общая версия
+  system/tools/ocr/engine.py # Общая версия
   агенты/_experts/steuer/steuer_ocr.py # Версия для конкретных навыков
 
 Преимущества:
@@ -183,7 +183,7 @@ _connectors/ содержит адаптеры для внешних серви�
                        Подкласс BaseHandler с get_operations()
                        Доступно через bach <name> после «перезагрузки»
 
-    --type Созданная служба: system/skills/_services/<имя>/
+    --type Созданная служба: system/hub/_services/<имя>/
                        Папка с __init__.py и service.py
                        Закрытие обработчика, обычно можно использовать
 

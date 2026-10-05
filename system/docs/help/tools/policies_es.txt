@@ -114,7 +114,6 @@ CONVENCIÓN DE NOMBRE (concepto)
 ---------------------------
 Convención de nomenclatura planificada para archivos de herramientas:
 
-  c_ -> CLI optimizado para IA (c_encoding_fixer.py)
   b_ -> Núcleo BACH (b_backup.py)
   a_ -> Agente Runner (a_developer.py)
   t_ -> Herramientas de prueba (t_runner.py)
@@ -145,7 +144,7 @@ USOS TÍPICOS
    -> emoji_safe para compatibilidad con Windows
 
 4. ESTANDARIZAR EL CÓDIGO EXISTENTE
-   -> c_standard_fixer usa políticas internamente
+   -> standard_fixer usa políticas internamente
 
 VER TAMBIÉN
 ----------

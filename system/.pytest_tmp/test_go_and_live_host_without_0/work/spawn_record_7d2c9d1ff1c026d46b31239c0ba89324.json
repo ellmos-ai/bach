@@ -1,0 +1,8 @@
+{
+  "name": "no-child",
+  "pid": 48213,
+  "process_create_time": 1790671058.085073,
+  "gate_path": "/Users/lukas/services/bach/system/.pytest_tmp/test_go_and_live_host_without_0/work/.spawn-gate-7d2c9d1ff1c026d46b31239c0ba89324",
+  "fence": null,
+  "stage": "pending"
+}

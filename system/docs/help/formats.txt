@@ -40,7 +40,7 @@ MIGRATION JSON -> DB (Erfolgreich durchgeführt)
 
 KONVERTIERUNG
 -------------
-  python system/tools/c_universal_converter.py <file> --to [json|yaml|toml|xml|toon]
+  python system/tools/universal_converter.py <file> --to [json|yaml|toml|xml|toon]
 
 SIEHE AUCH
 ----------

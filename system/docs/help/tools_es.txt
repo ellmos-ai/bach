@@ -33,15 +33,15 @@ Las herramientas se pueden llamar directamente a través de bach.py - sin ejecut
 
 Ejemplos:
   bach python_cli_editor script.py --show-all     Mostrar estructura
-  bach c_encoding_fixer datei.py                  Reparar codificación
-  bach c_import_organizer datei.py --save         Ordenar importaciones
-  bach c_json_repair kaputt.json                  Reparar JSON
-  bach c_pycutter grosse_datei.py                 Dividir archivo
-  bach c_sqlite_viewer data/bach.db               Mostrar DB
+  bach encoding_fixer datei.py                  Reparar codificación
+  bach import_organizer datei.py --save         Ordenar importaciones
+  bach json_repair kaputt.json                  Reparar JSON
+  bach pycutter grosse_datei.py                 Dividir archivo
+  bach sqlite_viewer data/bach.db               Mostrar DB
   bach code_analyzer projekt/                     Analizar código
 
 Ventajas:
-  - Más corto que: bach --tools ejecuta c_encoding_fixer file.py
+  - Más corto que: bach --tools ejecuta encoding_fixer file.py
   - Es posible completar la pestaña
   - Misma sintaxis que la llamada directa de Python
 
@@ -85,8 +85,6 @@ PYTHON-TOOLS (tools/)
 ---------------------
 Convención de prefijo (ver: bach --help naming):
 
-  c_* CLI optimizada para IA (Claude/recludOS)
-             - Salidas claras, codificación segura, JSON seguro
   b_* Núcleo BACH (sistema crítico)
   a_* Agente corredor
   t_* Herramientas de prueba
@@ -121,7 +119,7 @@ HERRAMIENTAS DE PYTHON POR FUNCIÓN
   autolog_analyzer.py Análisis de registro automático
   backup_manager.py Gestión de copias de seguridad
   injectors.py Sistema de inyectores
-  c_dirscan.py Escaneo de directorio
+  dirscan.py Escaneo de directorio
   session_analyzer.py Análisis de sesión
   time_system.py Sistema de tiempo
   token_monitor.py Monitoreo de tokens
@@ -133,13 +131,13 @@ HERRAMIENTAS DE PYTHON POR FUNCIÓN
   Función de comando CLI de herramienta
   ----------------------- ------------------------- ----------------------
   doc_update_checker.py bach --mantener verificación de documentación de documentos
-  c_duplicate_detector.py bach --mantener duplicados Detección de duplicados
-  c_pattern_tool.py bach --mantener patrón Patrones de nombre de archivo
-  c_tool_scanner.py bach --mantener escaneo Descubrimiento de herramientas CLI
-  c_file_cleaner.py bach --mantener limpio Eliminar archivos antiguos
-  c_json_fixer.py bach --mantener json Reparar JSON
-  c_sync_registry.py Sincronizar registro
-  c_json_registry_cleaner.py Limpieza del registro
+  duplicate_detector.py bach --mantener duplicados Detección de duplicados
+  pattern_tool.py bach --mantener patrón Patrones de nombre de archivo
+  tool_scanner.py bach --mantener escaneo Descubrimiento de herramientas CLI
+  file_cleaner.py bach --mantener limpio Eliminar archivos antiguos
+  json_fixer.py bach --mantener json Reparar JSON
+  sync_registry.py Sincronizar registro
+  json_registry_cleaner.py Limpieza del registro
   backup_manager.py Gestión de copias de seguridad
   nulcleaner.py Eliminar carácter NUL
 
@@ -170,29 +168,29 @@ Función de comando CLI de herramienta
 
   Función de herramienta
   -------------------------------------- ----------------------------
-  c_encoding_fixer.py Corregir codificación
-  c_emoji_scanner.py Buscar/reemplazar emoji
-  c_standard_fixer.py Aplicar estándares de código
-  c_json_repair.py Reparar JSON
-  c_json_fixer.py Reparar JSON (antiguo)
-  c_import_organizer.py Ordenar importaciones
-  c_import_diagnose.py Encuentra problemas de importación
-  c_indent_checker.py Comprobar sangría
-  c_umlaut_fixer.py Corregir diéresis
-  c_german_scanner.py Buscar palabras en alemán
-  c_method_analyzer.py Analizar métodos
-  c_pycutter.py Dividir archivos Python
-  c_sqlite_viewer.py Ver bases de datos SQLite
-  c_license_generator.py Crear archivos de licencia
-  c_md_to_pdf.py Rebaja a PDF
-  Conversión de formato c_universal_converter.py
-  c_universal_compiler.py Compilador universal
-  c_youtube_extractor.py Extracción de YouTube
-  c_code_analyzer.py Análisis de código
-  c_code_generator.py Generación de código
-  c_python_cli_editor.py Editar Python de forma estructurada
-  c_structure_generator.py Generador de estructuras
-  c_header_migrate.py Migración de encabezado
+  encoding_fixer.py Corregir codificación
+  emoji_scanner.py Buscar/reemplazar emoji
+  standard_fixer.py Aplicar estándares de código
+  json_repair.py Reparar JSON
+  json_fixer.py Reparar JSON (antiguo)
+  import_organizer.py Ordenar importaciones
+  import_diagnose.py Encuentra problemas de importación
+  indent_checker.py Comprobar sangría
+  umlaut_fixer.py Corregir diéresis
+  german_scanner.py Buscar palabras en alemán
+  method_analyzer.py Analizar métodos
+  pycutter.py Dividir archivos Python
+  sqlite_viewer.py Ver bases de datos SQLite
+  license_generator.py Crear archivos de licencia
+  md_to_pdf.py Rebaja a PDF
+  Conversión de formato universal_converter.py
+  universal_compiler.py Compilador universal
+  youtube_extractor.py Extracción de YouTube
+  code_analyzer.py Análisis de código
+  code_generator.py Generación de código
+  python_cli_editor.py Editar Python de forma estructurada
+  structure_generator.py Generador de estructuras
+  header_migrate.py Migración de encabezado
   call_graph.py Análisis de gráficos de llamadas
 
 ### Herramientas de control
@@ -262,9 +260,9 @@ Función de comando CLI de herramienta
 
 Función de herramienta
   -------------------------------------- ----------------------------
-  c_skill_init.py Inicializar estructura de habilidades
-  c_skill_package.py Paquete de habilidades
-  c_skill_validate.py Validación de habilidades
+  skill_init.py Inicializar estructura de habilidades
+  skill_package.py Paquete de habilidades
+  skill_validate.py Validación de habilidades
   Skill_export.py Exportar habilidades
   Skill_header_gen.py Generar encabezado de habilidad
   Skill_help_gen.py Generar ayuda sobre habilidades
@@ -273,9 +271,9 @@ Función de herramienta
 
   Función de herramienta
   -------------------------------------- ----------------------------
-  c_project_bundler.py Paquete de proyectos
-  c_audit_bundler.py Crear paquete de auditoría
-  c_path_healer.py Reparación de ruta
+  project_bundler.py Paquete de proyectos
+  audit_bundler.py Crear paquete de auditoría
+  path_healer.py Reparación de ruta
   batch_file_ops.py Operaciones de archivos por lotes
 
 ### Análisis y monitoreo
@@ -295,7 +293,7 @@ Función de herramienta
 
   Función de herramienta
   -------------------------------------- ----------------------------
-  c_dictionary_builder.py Generador de diccionarios
+  dictionary_builder.py Generador de diccionarios
   lección_trigger_generator.py Generador de activación de lecciones
   theme_packet_generator.py Generador de paquetes de temas
   flujo de trabajo_trigger_generator.py Generador de desencadenadores de flujo de trabajo
@@ -318,7 +316,7 @@ Función de herramienta
 
   Función de herramienta
   -------------------------------------- ----------------------------
-  c_headless_agent.py Agente sin cabeza
+  headless_agent.py Agente sin cabeza
   bach_auto_discovery.py Sistema de descubrimiento automático
   tool_auto_discovery.py Herramienta de descubrimiento automático
 
@@ -397,12 +395,12 @@ bach --tools show ffmpeg
 bach --tools show chatgpt
 
 # Ejecutar herramienta
-bach --tools run c_encoding_fixer datei.py
+bach --tools run encoding_fixer datei.py
 
 # Llamada directa (recomendado)
-bach c_encoding_fixer datei.py
-bach c_skill_init neuer_skill
-bach c_project_bundler ./projekt
+bach encoding_fixer datei.py
+bach skill_init neuer_skill
+bach project_bundler ./projekt
 
 # Buscar
 bach --tools search video
@@ -438,7 +436,6 @@ Número de categoría Descripción
 
 Convención de nomenclatura (prefijos):
 
-  c_* CLI optimizado para IA (más de 40 herramientas)
   b_* Núcleo BACH (sistema crítico)
   a_* Herramientas del corredor de agentes
   t_* Herramientas de prueba
@@ -452,8 +449,8 @@ Potencial de sinergia con suites externas:
   ---------------------- ----------------------------
   Impuestos/Suite Finanzas Suite (Presupuesto, Gastos)
   ocr_engine.py DokuZentrum Pro
-  c_md_to_pdf.py Exportación de obsidiana
-  c_youtube_extractor.py Media Suite
+  md_to_pdf.py Exportación de obsidiana
+  youtube_extractor.py Media Suite
 
 Fuente: Archivado en user/_archive/BACH_NATIVE_TOOLS_MAPPING.md
 
@@ -493,15 +490,15 @@ Ejemplos:
 
   Recomendación de herramienta para palabras clave
   --------------------- ------------------------------------------
-  "problema de codificación" bach c_encoding_fixer <archivo>
-  "ordenar importaciones" bach c_import_organizer <archivo>
-  "editar python" bach c_python_cli_editor <archivo> --mostrar todo
-  "archivo dividido" bach c_pycutter <archivo>
-  "ver sqlite" bach c_sqlite_viewer <db>
+  "problema de codificación" bach encoding_fixer <archivo>
+  "ordenar importaciones" bach import_organizer <archivo>
+  "editar python" bach python_cli_editor <archivo> --mostrar todo
+  "archivo dividido" bach pycutter <archivo>
+  "ver sqlite" bach sqlite_viewer <db>
   La herramienta Bach "buscar herramienta" sugiere 'descripción'
-  "crear habilidad" bach c_skill_init <nombre>
-  "paquete de proyecto" bach c_project_bundler <ruta>
-  "ruta de reparación" bach c_path_healer <archivo>
+  "crear habilidad" bach skill_init <nombre>
+  "paquete de proyecto" bach project_bundler <ruta>
+  "ruta de reparación" bach path_healer <archivo>
   "start mcp" python tools/mcp_server.py
 
 Ver: bach --help injectors (lista completa de activadores)

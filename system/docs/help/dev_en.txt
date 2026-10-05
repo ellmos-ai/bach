@@ -47,8 +47,8 @@ LEVEL OF PLANNING (Phase 3)
   Coordinate workflow WHEN/HOW?       skills/workflows/*.md
   Agent WHO executes?              agents/*.txt
   Expert WHO has specialist knowledge?          agents/_experts/*/
-  Skill WHAT is being done?              skills/_services/*.md
-  Service HOW technical?               skills/_services/*/
+  Skill WHAT is being done?              hub/_services/*.md
+  Service HOW technical?               hub/_services/*/
   Tool WHAT is being worked on?       tools/*.py
 
 CHECKLIST NEW SERVICE (Phase 6)

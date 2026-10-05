@@ -4,7 +4,7 @@ BACH OCR Engine
 ===============
 
 Core logic for extracting text from images and PDFs using Tesseract and PyMuPDF.
-Based on tools/c_ocr_engine.py but refactored into a reusable package.
+Based on tools/ocr_engine.py but refactored into a reusable package.
 """
 
 from __future__ import annotations

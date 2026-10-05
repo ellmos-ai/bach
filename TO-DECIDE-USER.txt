@@ -1,0 +1,63 @@
+# Vorentscheidung des Agenten – revidierbar bei Nutzereinwand
+
+Ticket:        #1368 (Nutzerwahl open-ocean T3)
+Auftrag:       #1460 (BACH open-ocean T3 – neutrale öffentliche Vertragsfassung)
+Abhängig von:  #1378 (T1 – fail-closed default sources / private schema loader)
+
+## Offene Nutzerfrage
+Soll für den open-ocean T3-Vertrag (routing_contract) das öffentliche Repository
+(A) projektspezifische BACH-/Trithon-Kennungen verschieben / auslagern oder
+(B) die öffentliche Fassung neutralisieren (generische Namen, private Kennungen
+    injizierbar) und rückwärtskompatibel via Aliase/Facade belassen?
+
+## Autonome Vorentscheidung des Agenten
+Option B – NEUTRALISIEREN statt VERSCHIEBEN.
+
+Begründung:
+- T1 (#1378) liefert bereits fail-closed default sources und einen private schema
+  loader; das erleichtert die Injektion privater Kennungen.
+- Routing-Interface ist system/hub-intern verwoben; Verschieben würde #1460
+  blockieren und bestehende Tests/Schnittstellen brechen.
+- Neutralisierung via Aliase/Facade erlaubt öffentliche Defaults, behält aber
+  rückwärtige Kompatibilität bei.
+
+## Revidierbarkeit
+Diese Vorentscheidung ist eine Agenten-Annahme. Der Nutzer kann sie jederzeit
+revidieren (Einspruch → dann Option A umsetzen). Solange kein Einspruch
+vorliegt, wird mit Option B weitergearbeitet.
+
+Nächster Schritt: Inventarisierung projektspezifischer Kennungen in
+routing_contract.py und Erstellung einer neutralen öffentlichen Vertragsfassung.
+
+---
+
+# Nutzerentscheid erforderlich – 2026-09-28
+
+Ticket:        #1416 (composition.rules.json 387788448)
+Quelle:        QUEUED 387788448
+Abhängig von:  #1414
+Status:        blocked (bis Nutzerentscheid)
+
+## Problem
+Der Ticketinhalt zu QUEUED 387788448 ist nirgends auffindbar:
+- Repo (/Users/lukas/services/bach): nur Verweise in shell.py:9 und
+  bach.db-Uebergaben, kein Ticketbody
+- ~/.bach: kein Ticket-Verzeichnis
+- INBOX: kein Treffer zu 387788448
+- bach mem context: nur fruehere Uebergabezettel, alle ohne Vertrag
+
+Damit existiert kein belastbarer Vertrag, was composition.rules.json
+enthalten/vereinbaren soll. Eine Umsetzung waere reine Vermutung und wurde
+bewusst nicht begonnen (fail-closed).
+
+## Offene Nutzerfrage
+(A) Den Inhalt/Ablageort des Tickets 387788448 nennen (Datei, Inbox-Eintrag,
+    Nachrichtenverlauf), damit die Umsetzung vertragsbasiert erfolgen kann,
+oder
+(B) den Task #1416 schliessen/streichen, falls das Ticket obsolet ist.
+
+## Keine Vorentscheidung
+Anders als beim Eintrag oben trifft der Agent hier bewusst KEINE
+Vorentscheidung: Ohne Ticketinhalt fehlt jede fachliche Grundlage.
+Sobald (A) beantwortet ist, wird #1416 reaktiviert (status=pending/open)
+und umgesetzt.

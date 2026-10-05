@@ -31,12 +31,18 @@ from hub._services.projection_transport_auth import (  # noqa: E402
 )
 from hub.daily_agent import DailyAgentHandler  # noqa: E402
 
-from sqlite_transit_sync import (  # noqa: E402
-    HMACKeyReference,
-    SyncConfig,
-    TransitSync,
-    load_hmac_authenticator,
-)
+try:
+    from sqlite_transit_sync import (  # noqa: E402
+        HMACKeyReference,
+        SyncConfig,
+        TransitSync,
+        load_hmac_authenticator,
+    )
+except ImportError as exc:  # pragma: no cover - optional external dependency
+    pytest.skip(
+        f"requires optional sqlite_transit_sync package: {exc}",
+        allow_module_level=True,
+    )
 
 
 class _MappingResolver:

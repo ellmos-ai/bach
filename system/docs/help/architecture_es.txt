@@ -35,7 +35,7 @@ MODELO DE CAPA
 
 4. CAPA DE EJECUCIÓN (herramientas/)
    Más de 290 scripts Python especializados para sistemas de archivos, control, análisis, etc.
-   Interfaz estandarizada (prefijo c_) para compatibilidad con IA.
+   Interfaz estandarizada para compatibilidad con IA.
 
 5. DATOS Y PERSISTENCIA (bach.db, data/logs/)
    Base SQLite con más de 210 tablas (almacenamiento de datos centralizado).
@@ -112,7 +112,7 @@ DIAGRAMA DE ARQUITECTURA (Registro v2.0)
                               ↓
 ┌──────────────────────────────── ─────────────────────────────────┐
 │ CAPA DE EJECUCIÓN (herramientas/) │
-│ Más de 290 scripts de Python con interfaz c_ estandarizada │
+│ Más de 290 scripts de Python con interfaz estandarizada │
 └──────────────────────────────── ─────────────────────────────────┘
                               ↓
 ┌──────────────────────────────── ─────────────────────────────────┐

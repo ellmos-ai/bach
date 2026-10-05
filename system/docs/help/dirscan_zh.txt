@@ -47,17 +47,17 @@
 集成：
   - 自动在 hub/startup.py 中（启动时的 DirectoryScanner）
   - 自动在 hub/shutdown.py 中（关闭期间保存状态）
-  - 没有自己的处理程序，基于工具（tools/c_dirscan.py）
+  - 没有自己的处理程序，基于工具（tools/dirscan.py）
 
 CLI（手动）：
-  python c_dirscan.py # 显示状态
-  python c_dirscan.py --scan # 扫描当前状态
-  python c_dirscan.py --compare # 比较 IS 与 SHOULD
-  python c_dirscan.py --update # 更新应该状态
-  python c_dirscan.py --path /path # 其他目录
-  python c_dirscan.py --json # JSON 输出
+  python dirscan.py # 显示状态
+  python dirscan.py --scan # 扫描当前状态
+  python dirscan.py --compare # 比较 IS 与 SHOULD
+  python dirscan.py --update # 更新应该状态
+  python dirscan.py --path /path # 其他目录
+  python dirscan.py --json # JSON 输出
 
 文件:
-  - 工具：system/tools/c_dirscan.py（DirectoryScanner 类）
+  - 工具：system/tools/dirscan.py（DirectoryScanner 类）
   - 数据：system/data/directory_truth.json（首次扫描期间生成）
   - 结构：{时间戳，目录[]，文件{路径：{散列，大小}}}

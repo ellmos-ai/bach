@@ -307,7 +307,7 @@ Claude kann nach Reconnect automatisch prüfen:
 import json
 from pathlib import Path
 
-scripts_dir = Path("{BACH_INSTALL_PATH}/skills/_services/claude_self_backup/scripts")
+scripts_dir = Path("{BACH_INSTALL_PATH}/hub/_services/claude_self_backup/scripts")
 
 # 1. Session-Snapshot prüfen (existiert = unterbrochen)
 snapshot = scripts_dir / "claude_session_snapshot.md"

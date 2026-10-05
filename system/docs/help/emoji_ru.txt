@@ -15,13 +15,13 @@
    - emoji_to_safe(text): Emoji → теги ASCII с помощью emoji.demojize().
    - emoji_to_display(text): теги ASCII → emoji через emoji.emojize()
 
-2. Инструмент сканера (system/tools/c_emoji_scanner.py)
-   - CLI: python c_emoji_scanner.py --status
-   - CLI: python c_emoji_scanner.py --scan-batch
-   - CLI: python c_emoji_scanner.py <файл/папка>
+2. Инструмент сканера (system/tools/emoji_scanner.py)
+   - CLI: python emoji_scanner.py --status
+   - CLI: python emoji_scanner.py --scan-batch
+   - CLI: python emoji_scanner.py <файл/папка>
    - Не интегрировано как команда BACH
 
-3. Восстановление JSON (system/tools/c_json_repair.py)
+3. Восстановление JSON (system/tools/json_repair.py)
    - В процессе ремонта используется преобразование смайлов 
 
  ПРИМЕРЫ ПРЕОБРАЗОВАНИЯ:
