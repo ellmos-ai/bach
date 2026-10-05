@@ -37,7 +37,7 @@ Nicht Teil dieses Vertrags sind Ressourcen-Locks (lock-salt, `LOCK.*`-Dateien, l
 | **Trithon-JSONL-`claim_contract`** | `system/hub/_services/trithon/routing_contract.py` | Ledger-Einträge pending/claimed/done/blocked | TTL, Heartbeat, Dateisperre |
 | **Rheingold-Worker** | `system/hub/rheingold.py` `pull_tasks_from_rheingold` L287 | Spiegelt Lead-Tasks in die lokale Datenbank | Claim-Spalten werden nicht gespiegelt. Claims und Status gehen nicht zum Lead zurück (siehe #1694). |
 
-Live-Readback vom 2026-10-05: Die Lead-API (Version 1.1.85, erreicht per SSH-Tunnel `127.0.0.1:8000 → 100.119.69.90:8000`) liefert in Task-Zeilen `claimed_by` und `claimed_at`, aber kein `claim_id`, kein `claim_expires_at` und kein Fencing.
+Live-Readback vom 2026-10-05: Die Lead-API (Version 1.1.85, erreicht per SSH-Tunnel von einem lokalen Port auf den Lead-Kandidaten aus `system/hub/rheingold.py`) liefert in Task-Zeilen `claimed_by` und `claimed_at`, aber kein `claim_id`, kein `claim_expires_at` und kein Fencing.
 
 ## 3. Entscheidung: Wie passt Roshambo?
 
