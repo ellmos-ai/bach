@@ -110,6 +110,29 @@ def check_compute_active(
         return False, {}
 
 
+def _pid_is_manageable(pid: int) -> bool:
+    """Probe process existence/access without sending a signal on Windows.
+
+    Windows does not provide the POSIX signal-zero existence probe.
+    Use psutil, already required by BACH, without a signal or mutation.
+    """
+    if type(pid) is not int or pid <= 0:
+        return False
+    if os.name == "nt":
+        import psutil
+
+        try:
+            process = psutil.Process(pid)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
 def _filter_stopped_jobs(status: dict) -> Tuple[bool, dict]:
     """Filter out PIDs that are already stopped (state T), gone, or unmanageable.
 
@@ -129,10 +152,8 @@ def _filter_stopped_jobs(status: dict) -> Tuple[bool, dict]:
             running.append(job)
             continue
         # If process cannot be signaled by current user or is gone, skip
-        try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, PermissionError) as e:
-            log.debug("Skipping PID %d (%s): cannot signal (%s)", pid, job.get("name", "?"), e)
+        if not _pid_is_manageable(pid):
+            log.debug("Skipping PID %s (%s): gone or inaccessible", pid, job.get("name", "?"))
             continue
 
         # Check live state if lock file reports a state
@@ -216,6 +237,8 @@ def _cleanup_paused_pids() -> None:
 
 def _pid_is_stopped(pid: int) -> bool:
     """Check if a PID exists and is in stopped state (T)."""
+    if os.name == "nt":
+        return False  # POSIX stopped state does not exist on Windows.
     try:
         result = subprocess.run(
             ["ps", "-o", "state=", "-p", str(pid)],

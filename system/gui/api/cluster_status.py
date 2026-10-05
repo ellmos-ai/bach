@@ -96,6 +96,59 @@ def _task_counts(db_path: Path) -> tuple[int | None, int | None]:
         return None, None
 
 
+def _runtime_compute_turn() -> dict[str, Any]:
+    """Read the Control API's live local-inference gate, never infer from settings."""
+    result: dict[str, Any] = {
+        "state": "unknown", "source": "local_control_api",
+        "observed_at": None, "reason_code": "control_status_unavailable",
+        "active": None, "priority": None, "foreground_waiters": None,
+    }
+    try:
+        from gui import server as gui_server
+        base = gui_server._chat_control_base_url()
+        if not isinstance(base, str):
+            return result
+        from urllib.parse import urlsplit
+        parsed = urlsplit(base)
+        if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+                or parsed.path.rstrip("/") != "/api" or parsed.username or parsed.password):
+            result["reason_code"] = "control_target_not_local"
+            return result
+
+        import httpx
+        from hub._services.chat.control_auth import get_control_api_auth_header
+
+        auth = get_control_api_auth_header()
+        headers = {"Accept": "application/json"}
+        if auth:
+            headers["Authorization"] = auth
+        with httpx.Client(timeout=2.0, trust_env=False, follow_redirects=False) as client:
+            response = client.get(base.rstrip("/") + "/status", headers=headers)
+        if response.status_code != 200 or len(response.content) > 256_000:
+            result["reason_code"] = "control_status_unavailable"
+            return result
+        payload = response.json()
+        turn = payload.get("compute_turn") if isinstance(payload, dict) else None
+        if not isinstance(turn, dict) or type(turn.get("active")) is not bool:
+            result["reason_code"] = "compute_turn_evidence_missing"
+            return result
+        active = turn["active"]
+        waiters = turn.get("foreground_waiters")
+        result.update(
+            state="owned_by_this_system" if active else "idle",
+            observed_at=_now(),
+            reason_code="local_inference_gate_active" if active else "no_local_inference_active",
+            active=active,
+            priority=turn.get("priority"),
+            foreground_waiters=waiters if isinstance(waiters, int) and not isinstance(waiters, bool) else None,
+            chat_id=turn.get("chat_id") if isinstance(turn.get("chat_id"), str) else None,
+        )
+        return result
+    except Exception:
+        result["reason_code"] = "control_status_read_failed"
+        return result
+
+
 def build_cluster_cockpit(db_path: Path) -> dict[str, Any]:
     """Separate settings, lock reports, loaded-model capacity and actual ownership."""
     from hub.compute_lock import get_fackel_preference
@@ -108,11 +161,37 @@ def build_cluster_cockpit(db_path: Path) -> dict[str, Any]:
     compute_lock = _compute_lock()
     capacity = _capacity()
     total_tasks, user_tasks = _task_counts(Path(db_path))
+    compute_turn = _runtime_compute_turn()
+    local_inference_active = compute_turn.get("active") is True
+    lock_state = compute_lock.get("state")
+    lock_is_clear = lock_state == "none_reported" and compute_lock.get("reported_jobs") == 0
+    is_active = local_inference_active and lock_is_clear
+    if is_active:
+        ownership_state = "owned_by_this_system"
+        ownership_reason = "local_inference_active_and_compute_lock_clear"
+    elif local_inference_active and lock_state == "reported_unverified":
+        ownership_state = "competing_compute_reported"
+        ownership_reason = "compute_lock_reports_competing_jobs"
+    elif local_inference_active and lock_state == "stale":
+        ownership_state = "unknown"
+        ownership_reason = "compute_lock_stale_during_local_inference"
+    elif local_inference_active:
+        ownership_state = "unknown"
+        ownership_reason = "compute_lock_clearance_not_confirmed"
+    elif compute_turn.get("active") is False:
+        ownership_state = "idle"
+        ownership_reason = "no_local_inference_active"
+    else:
+        ownership_state = "unknown"
+        ownership_reason = compute_turn.get("reason_code", "control_status_unavailable")
     ownership = {
-        "scope": "hardware_compute", "state": "unknown",
-        "holder": None, "holder_is_this_system": None,
-        "flame": False, "observed_at": None,
-        "reason_code": "authoritative_holder_adapter_unavailable",
+        "scope": "local_bach_inference_without_competing_compute_jobs",
+        "state": ownership_state,
+        "holder": "BACH" if is_active else None,
+        "holder_is_this_system": True if is_active else None,
+        "flame": is_active,
+        "observed_at": checked_at if local_inference_active or compute_turn.get("active") is False else None,
+        "reason_code": ownership_reason,
     }
     return {
         "observed_at": checked_at,
@@ -134,14 +213,20 @@ def build_cluster_cockpit(db_path: Path) -> dict[str, Any]:
         },
         "fackel": {
             "ownership": ownership,
+            "compute_turn": compute_turn,
             "priority": {"value": preference, "source": "configured_or_default"},
             "compute_lock": compute_lock,
             "capacity": capacity,
             # Safe values for clients on the previous response schema.
             "preference": preference,
-            "flame_animated": False,
-            "compute_active": None,
-            "current_holder": "Nicht geprüft",
+            "flame_animated": is_active,
+            "compute_active": is_active,
+            "current_holder": (
+                "BACH" if is_active else
+                "Rechenjobs melden Konkurrenz" if ownership_state == "competing_compute_reported" else
+                "Derzeit kein lokaler BACH-Lauf" if compute_turn.get("active") is False else
+                "Nicht geprüft"
+            ),
             "competitors": [],
             "models_loaded": capacity["loaded_models"],
             "messbar": False,

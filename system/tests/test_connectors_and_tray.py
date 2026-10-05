@@ -737,6 +737,34 @@ class TestBACHTray:
         # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
         assert not hasattr(tray, "webchat_url")
 
+    def test_always_on_starts_immediately_while_foreground_session_is_active(self, tray, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        tray.state = {"active_sessions": 1}
+        tray.idle_enabled = True
+        tray.idle_processing = False
+        tray.idle_consecutive = 0
+        tray._recurring_tick = 0
+        tray.icon = None
+        starts = []
+
+        class FakeThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+
+            def start(self):
+                starts.append(self.target)
+
+        monkeypatch.setattr(chat_tray, "get_slot", lambda _slot_id: {"enabled": True})
+        monkeypatch.setattr(chat_tray, "is_slot_paused", lambda _slot: False)
+        monkeypatch.setattr(chat_tray.threading, "Thread", FakeThread)
+
+        tray._idle_tick()
+
+        assert tray.IDLE_THRESHOLD == 1
+        assert starts == [tray._process_idle_task]
+
     def test_branding_support(self):
         with patch.dict('sys.modules', {
             'pystray': MagicMock(),
@@ -1059,6 +1087,82 @@ class TestBACHTray:
             # _build_menu creates items including Fackel
             assert menu is not None
 
+    def test_remote_tray_menu_reports_server_target_and_server_worker_config(self, tray):
+        from hub._services.chat import chat_tray
+
+        tray.remote = True
+        tray.state["connected"] = True
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        pystray_mock = MagicMock()
+        with patch.object(chat_tray, "pystray", pystray_mock):
+            menu = tray._build_menu()
+
+        labels = [call.args[0] for call in pystray_mock.MenuItem.call_args_list if call.args]
+        assert menu is not None
+        assert "Ziel: Server (Tunnel)" in labels
+        assert "Buddha Always-On: Living · aktiviert; Laufstatus nicht geprüft" in labels
+        assert "Buddha Always-On aktiviert" in labels
+        assert labels.count("Buddha Always-On aktiviert") == 1
+
+    def test_disconnected_menu_reports_unverified_always_on_status(self, tray):
+        from hub._services.chat import chat_tray
+
+        tray.state["connected"] = False
+        tray.state["compute_turn"] = {
+            "active": True, "chat_id": "idle-worker", "priority": "background",
+        }
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        pystray_mock = MagicMock()
+        with patch.object(chat_tray, "pystray", pystray_mock):
+            menu = tray._build_menu()
+
+        menu_calls = [call for call in pystray_mock.MenuItem.call_args_list if call.args]
+        labels = [call.args[0] for call in menu_calls]
+        assert menu is not None
+        assert "Buddha Always-On: Nicht verbunden · Status nicht geprüft" in labels
+        toggle = next(call for call in menu_calls if call.args[0] == "Buddha Always-On aktiviert")
+        assert toggle.kwargs["enabled"] is False
+
+    def test_always_on_toggle_updates_persistent_server_slot(self, tray):
+        tray.remote = True
+        tray.state["connected"] = True
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        with patch.object(tray, "_api", return_value={"ok": True}) as api, \
+             patch.object(tray, "_refresh") as refresh, \
+             patch.object(tray, "_update_icon") as update_icon:
+            tray._toggle_idle()
+
+        api.assert_called_once_with(
+            "POST", "/api/slots",
+            {"slot_id": "buddha_always_on", "updates": {"enabled": False}},
+        )
+        refresh.assert_called_once()
+        update_icon.assert_called_once()
+
+    def test_always_on_toggle_fails_closed_when_disconnected(self, tray):
+        tray.remote = True
+        tray.state["connected"] = False
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        with patch.object(tray, "_api") as api, \
+             patch.object(tray, "_notify_error") as notify:
+            tray._toggle_idle()
+
+        api.assert_not_called()
+        notify.assert_called_once()
+
+    def test_always_on_runtime_label_uses_compute_turn_evidence(self, tray):
+        slot = {"enabled": True}
+        tray.state["connected"] = True
+        tray.state["compute_turn"] = {
+            "active": True, "chat_id": "idle-worker", "priority": "background",
+        }
+        assert tray._always_on_runtime_label(slot) == "Running · bearbeitet eine Aufgabe"
+
+        tray.state["compute_turn"] = {
+            "active": False, "chat_id": None, "priority": None,
+        }
+        assert tray._always_on_runtime_label(slot) == "Living · aktiviert, wartet"
+
 
 
 class TestTraySingleInstance:
@@ -1177,7 +1281,7 @@ class TestTrayIdleWorker:
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "0"}).idle_enabled is False
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "off"}).idle_enabled is False
 
-    def test_idle_worker_picks_open_ollama_task_and_writes_canonical_status(self, monkeypatch):
+    def test_idle_worker_picks_open_ollama_task_and_accepts_tool_receipt(self, monkeypatch):
         tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
         calls = []
 
@@ -1188,7 +1292,7 @@ class TestTrayIdleWorker:
                     return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
                 return {"success": True, "tasks": []}
             if method == "POST":
-                return {"ok": True, "answer": "done"}
+                return {"ok": True, "answer": "done", "completed_task_ids": [42]}
             return {"success": True}
 
         with patch.object(tray, "_api", side_effect=fake_api):
@@ -1197,7 +1301,7 @@ class TestTrayIdleWorker:
         gets = [p for m, p, _ in calls if m == "GET"]
         assert gets[:2] == ["/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
         puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "completed")]
+        assert puts == [("/api/tasks/42", "in_progress")]
         assert tray.idle_processing is False
 
     def test_idle_worker_keeps_task_in_progress_when_chat_outcome_is_unknown(self, monkeypatch):
@@ -1262,6 +1366,13 @@ class TestTrayIdleWorker:
         assert tray.idle_pending[0] == task_id
         return tray
 
+    def test_repeated_task_runs_use_different_timeout_sessions(self, monkeypatch):
+        first = self._tray_with_pending(monkeypatch).idle_pending[3]
+        second = self._tray_with_pending(monkeypatch).idle_pending[3]
+        assert first.startswith("idle-bach-42-")
+        assert second.startswith("idle-bach-42-")
+        assert first != second, "A new run must never consume an old run's completion"
+
     @staticmethod
     def _history(*answers):
         messages = [{"role": "user", "content": "Idle-Modus. Task #42: T"}]
@@ -1276,13 +1387,15 @@ class TestTrayIdleWorker:
         def fake_api(method, path, data=None, **kw):
             calls.append((method, path, data))
             if path.startswith("/api/history"):
-                return self._history(("Wartungscheck erledigt.", True))
+                history = self._history(("Wartungscheck erledigt.", True))
+                history["messages"][-1]["completed_task_ids"] = [42]
+                return history
             return {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):
             tray._process_idle_task()
 
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "completed")]
+        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == []
         assert tray.idle_pending is None
 
     def test_idle_worker_reopens_a_late_failure_instead_of_completing_it(self, monkeypatch):
@@ -1294,6 +1407,8 @@ class TestTrayIdleWorker:
             calls.append((method, path, data))
             if path.startswith("/api/history"):
                 return self._history(("Backend-Fehler: Ollama weg", False))
+            if path == "/api/tasks/42":
+                return {"status": "in_progress"}
             return {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):
@@ -1381,6 +1496,8 @@ class TestTrayIdleWorker:
 
         def fake_api(method, path, data=None, **kw):
             calls.append((method, path, data))
+            if path == "/api/tasks/42":
+                return {"status": "in_progress"}
             return self._history() if path.startswith("/api/history") else {"success": True, "tasks": []}
 
         with patch.object(tray, "_api", side_effect=fake_api):

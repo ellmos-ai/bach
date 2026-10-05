@@ -80,6 +80,14 @@ class SQLiteChatSessionStore:
             answer_status = item.get("answer_status")
             if role == "assistant" and answer_status in _ALLOWED_ANSWER_STATUSES:
                 normalised_item["answer_status"] = answer_status
+            completed_ids = item.get("completed_task_ids")
+            if (
+                role == "assistant" and answer_status == "success"
+                and isinstance(completed_ids, list) and completed_ids
+                and all(type(task_id) is int and task_id > 0 for task_id in completed_ids)
+                and len(set(completed_ids)) == len(completed_ids)
+            ):
+                normalised_item["completed_task_ids"] = list(completed_ids)
             normalised.append(normalised_item)
 
         if len(normalised) <= self.max_messages:

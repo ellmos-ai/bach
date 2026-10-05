@@ -118,6 +118,84 @@ import BachLayout from "../../layouts/BachLayout.astro";
     <div id="core-agent-cards" class="core-grid"><p class="loading-state">System-Agenten werden geprüft…</p></div>
   </section>
 
+  <section class="card" aria-labelledby="openrouter-title" style="margin-top:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title" id="openrouter-title">OpenRouter · kostenlose Modelle</h2>
+      <span class="badge" id="openrouter-credential-state">Wird geprüft</span>
+    </div>
+    <p class="core-explanation">
+      <code>openrouter/free</code> wird unverändert an OpenRouter gesendet. Die Liste zeigt nur den kostenlosen Router
+      und Modelle, deren veröffentlichte Ein- und Ausgabepreise null sind. Ein konfigurierter Schlüssel gilt hier nicht
+      als live geprüft.
+    </p>
+    <datalist id="openrouter-free-models"></datalist>
+    <p id="openrouter-catalog-state" role="status" aria-live="polite">Modellkatalog wird geladen…</p>
+    <div id="openrouter-model-list" class="openrouter-model-list" role="list"></div>
+  </section>
+
+  <section class="card" aria-labelledby="worker-status-title" style="margin-top:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title" id="worker-status-title">Hintergrundworker · Living & Running</h2>
+      <button class="btn btn-sm" type="button" onclick="loadBackgroundWorkers()">Status aktualisieren</button>
+    </div>
+    <p class="core-explanation">Live-Auszug aus den gespeicherten BACH-Workern und der Control API. Ein Worker zählt als Running, wenn die Laufzeit ihn als aktiv meldet.</p>
+    <div class="worker-blueprint-panel">
+      <h3>Hintergrundworker-Blaupause</h3>
+      <p id="worker-blueprint-description" class="worker-control-note">Vorlage wird aus der BACH-Rollendefinition geladen…</p>
+      <form id="worker-blueprint-form" class="worker-blueprint-form">
+        <label>Anzeigename<input id="worker-blueprint-name" type="text" maxlength="120" value="BACH Hintergrundworker" required></label>
+        <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
+        <label>Ausführung<select id="worker-blueprint-run-mode"><option value="continuous">Fortlaufend bis Stopp</option><option value="once">Einzellauf</option></select></label>
+        <label>Task-ID (optional)<input id="worker-blueprint-task-id" type="number" min="1" max="2147483647" inputmode="numeric" placeholder="Für einen gezielten Auftrag"></label>
+        <label>Backend
+          <select id="worker-blueprint-backend">
+            <option value="ollama-cloud">Ollama Cloud</option>
+            <option value="openrouter">OpenRouter · kostenlos</option>
+            <option value="ollama">Ollama lokal</option>
+          </select>
+        </label>
+        <label>Modell<select id="worker-blueprint-model" required disabled><option value="">Modellkatalog wird geladen…</option></select></label>
+        <label>Arbeitsmodus
+          <select id="worker-blueprint-mode">
+            <option value="safe">Sicher</option>
+            <option value="full">Voller Modus</option>
+          </select>
+        </label>
+        <label>Think
+          <select id="worker-blueprint-think">
+            <option value="true">Aktiv</option>
+            <option value="false">Aus</option>
+          </select>
+        </label>
+        <label>Maximale Tool-Runden (0 = unbegrenzt)<input id="worker-blueprint-turns" type="number" min="0" max="100" value="25" required></label>
+        <label>Pausenauslöser<select id="worker-blueprint-pause-basis"><option value="runs">Abgeschlossene Läufe</option><option value="tasks">Abgeschlossene Aufgaben</option></select></label>
+        <label>Pause nach Anzahl Auslöser<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
+        <label>Pausendauer (Minuten)<input id="worker-blueprint-pause-minutes" type="number" min="0" max="1440" value="1" required></label>
+        <label>Automatischer Stopp nach (Minuten, 0 = unbegrenzt)<input id="worker-blueprint-ttl" type="number" min="0" max="1440" value="0"></label>
+        <div id="worker-blueprint-expert-fields" class="worker-blueprint-extra" hidden>
+          <label>Fachrolle<select id="worker-blueprint-role" disabled><option value="">Rollen werden geladen…</option></select></label>
+          <label class="worker-blueprint-check"><input id="worker-blueprint-multi-role" type="checkbox"> Flexibler Expertenrollen-Pool</label>
+        </div>
+        <div id="worker-blueprint-boss-fields" class="worker-blueprint-extra" hidden>
+          <label>Maximale Unter-Experten<input id="worker-blueprint-max-experts" type="number" min="1" max="10" value="3" required></label>
+          <label>Modellzuordnung je Experte (JSON, optional)<textarea id="worker-blueprint-expert-models" rows="2" maxlength="2000" placeholder='{"entwickler":"Modell-ID aus dem Katalog"}'></textarea></label>
+        </div>
+        <label class="worker-blueprint-prompt">Zusatzauftrag (optional)<textarea id="worker-blueprint-task-prompt" rows="3" maxlength="20000" placeholder="Leer lassen: Der Worker sucht nach dem Start eine offene BACH-Aufgabe."></textarea></label>
+        <label class="worker-blueprint-check"><input id="worker-blueprint-system-prompt" type="checkbox" checked> BACH-Systemprompt einbinden</label>
+        <label class="worker-blueprint-check"><input id="worker-blueprint-allow-tools" type="checkbox" checked> Werkzeuge erlauben</label>
+        <div class="worker-blueprint-submit">
+          <small id="worker-blueprint-model-status" role="status" aria-live="polite">Modellquelle wird geprüft…</small>
+          <button class="btn btn-primary" id="worker-blueprint-create" type="submit" disabled>Blueprint als Living-Profil anlegen</button>
+          <button class="btn" id="worker-blueprint-cancel-edit" type="button" hidden>Bearbeitung beenden</button>
+        </div>
+      </form>
+      <p class="worker-control-note">Anlegen erstellt nur ein idle-Profil. Erst „Start“ löst einen Modellaufruf aus. Fortlaufende Worker laufen bis zum Stopp; ein positiver Wert setzt zusätzlich ein Zeitlimit. Taskworker benötigen eine Task-ID oder einen Zusatzauftrag.</p>
+    </div>
+    <p id="worker-status-summary" role="status" aria-live="polite">Workerstatus wird geprüft…</p>
+    <div id="background-worker-list" class="background-worker-list" role="list"></div>
+    <p class="worker-control-note">Aktionen laufen geräteauthentifiziert über den lokalen Control-Dienst. Always-On des festen System-Agenten bleibt davon getrennt.</p>
+  </section>
+
   <!-- 4. LIVE-AKTIVITÄT & WORKER TIMELINE -->
   <div class="card">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -164,6 +242,26 @@ import BachLayout from "../../layouts/BachLayout.astro";
     .core-agent-card .core-check input { width: auto; }
     .core-agent-card .core-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
     .core-agent-card .core-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: auto; }
+    .openrouter-model-list { display: flex; flex-wrap: wrap; gap: .45rem; }
+    .openrouter-model-list code { border: 1px solid var(--border); border-radius: 4px; padding: .25rem .45rem; overflow-wrap: anywhere; }
+    .background-worker-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .75rem; }
+    .background-worker-card { border: 1px solid var(--border); border-radius: 8px; padding: .85rem; min-width: 0; }
+    .background-worker-card h3 { margin: 0 0 .45rem; font-size: 1rem; }
+    .background-worker-card p, .background-worker-card small { overflow-wrap: anywhere; }
+    .worker-state { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: .12rem .5rem; margin-bottom: .45rem; font-size: .78rem; }
+    .worker-turn-warning { margin: .45rem 0; padding: .5rem .65rem; border-left: .2rem solid var(--accent-warning, #f59e0b); border-radius: 4px; background: color-mix(in srgb, var(--accent-warning, #f59e0b) 12%, transparent); }
+    .worker-control-note { color: var(--text-muted); font-size: .84rem; margin-top: .8rem; }
+    .worker-blueprint-panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: .75rem 0 1rem; }
+    .worker-blueprint-panel h3 { margin: 0 0 .35rem; font-size: 1rem; }
+    .worker-blueprint-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: .75rem; align-items: end; }
+    .worker-blueprint-form label { display: grid; gap: .35rem; color: var(--text-muted); font-size: .82rem; }
+    .worker-blueprint-form input, .worker-blueprint-form select, .worker-blueprint-form textarea { width: 100%; min-width: 0; padding: .5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input, var(--bg-card)); color: var(--text); }
+    .worker-blueprint-extra { display: contents; }
+    .worker-blueprint-extra[hidden] { display: none !important; }
+    .worker-blueprint-check { display: flex !important; flex-direction: row; align-items: center; gap: .5rem !important; min-height: 2.4rem; }
+    .worker-blueprint-check input { width: auto !important; }
+    .worker-blueprint-prompt, .worker-blueprint-extra > label:last-child { grid-column: 1 / -1; }
+    .worker-blueprint-submit { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; grid-column: 1 / -1; }
     @media (max-width: 520px) { .core-agent-card .core-fields { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: no-preference) {
       .torch-svg.is-owned { animation: torch-glow 1.8s ease-in-out infinite alternate; }
@@ -189,6 +287,11 @@ import BachLayout from "../../layouts/BachLayout.astro";
     let currentPriority = null;
     let coreConfigVersion = null;
     let coreAgents = [];
+    let openRouterModels = [];
+    let backgroundWorkerBlueprint = null;
+    let editingWorker = null;
+    let workerModelRequest = 0;
+    let workerEditRequest = 0;
 
     function setTorchUnknown(message) {
       currentPriority = null;
@@ -217,12 +320,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const owned = owner.state === 'owned_by_this_system' && owner.holder_is_this_system === true && owner.flame === true && freshOwner;
         const flame = document.getElementById('hardware-flame');
         flame.classList.toggle('is-owned', owned);
-        document.getElementById('torch-svg-title').textContent = owned ? 'Hardware-Fackel: eigenes System hält sie' : 'Hardware-Fackel ohne bestätigten eigenen Besitz';
+        document.getElementById('torch-svg-title').textContent = owned ? 'Hardware-Fackel: BACH rechnet ohne gemeldete Compute-Konkurrenz' : 'Hardware-Fackel ohne bestätigten eigenen Besitz';
         document.getElementById('fackel-holder').textContent = owned ? String(owner.holder || 'Eigenes System') :
           owner.state === 'foreign' && freshOwner ? String(owner.holder || 'Fremdes System') :
+          owner.state === 'competing_compute_reported' && freshOwner ? 'Rechenjobs melden Konkurrenz' :
+          owner.state === 'idle' && freshOwner ? 'Derzeit kein lokaler BACH-Lauf' :
           owner.state === 'stale' ? 'Status veraltet' : 'Nicht geprüft';
         document.getElementById('fackel-owner-reason').textContent = owned ? 'Frischer Halternachweis für dieses System.' :
           owner.state === 'foreign' && freshOwner ? 'Ein anderes System hält die Fackel.' :
+          owner.state === 'competing_compute_reported' && freshOwner ? 'Ein lokaler Compute-Lock meldet konkurrierende Rechenjobs; BACH-Besitz wird deshalb nicht behauptet.' :
+          owner.state === 'idle' && freshOwner ? 'Der lokale Control-Dienst bestätigt, dass BACH gerade keine Inferenz ausführt.' :
           owner.state === 'stale' ? 'Der letzte Halternachweis ist zu alt.' : 'Der Hardware-Halteradapter fehlt oder liefert keinen Beleg.';
         currentPriority = ['compute', 'ollama'].includes(f.priority?.value) ? f.priority.value : null;
         document.getElementById('fackel-priority').textContent = currentPriority === 'compute' ? 'Compute' :
@@ -280,19 +387,25 @@ import BachLayout from "../../layouts/BachLayout.astro";
       return node;
     }
 
-    function coreField(card, field, labelText, value, type = 'text', options = []) {
+    function coreField(card, field, labelText, value, type = 'text', options = [], backend = '') {
       const label = coreElement('label', labelText);
       let input;
       if (type === 'select') {
         input = document.createElement('select');
-        const values = options.includes(String(value)) ? options : [String(value), ...options];
+        const choices = options.map(choice => typeof choice === 'string'
+          ? {value: choice, label: choice}
+          : {value: String(choice.value), label: String(choice.label ?? choice.value)});
+        const currentValue = String(value ?? '');
+        const values = choices.some(choice => choice.value === currentValue)
+          ? choices
+          : [{value: currentValue, label: currentValue + ' · bestehend, nicht geprüft'}, ...choices];
         for (const choice of values) {
           const option = document.createElement('option');
-          option.value = choice;
-          option.textContent = choice + (options.includes(choice) ? '' : ' · bestehend, nicht geprüft');
+          option.value = choice.value;
+          option.textContent = choice.label;
           input.append(option);
         }
-        input.value = String(value);
+        input.value = currentValue;
       } else {
         input = document.createElement('input');
         input.type = type;
@@ -300,6 +413,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         else input.value = value == null ? '' : String(value);
         if (type === 'number') { input.min = field === 'max_tool_rounds' ? '0' : '1'; input.max = field === 'max_tool_rounds' ? '100' : '1440'; }
         if (type === 'text') input.maxLength = field === 'icon' ? 8 : 120;
+        if (field === 'model' && backend === 'openrouter') input.setAttribute('list', 'openrouter-free-models');
       }
       input.dataset.coreField = field;
       label.append(input);
@@ -320,7 +434,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         if (changedId && agent.id !== changedId && existing) {
           const before = previousAgents.get(agent.id);
           const keys = ['name', 'icon', 'backend', 'model', 'mode', 'think',
-            'max_tool_rounds', 'pause_after', 'pause_minutes'];
+            'max_tool_rounds', 'pause_after', 'pause_minutes', 'pause_basis'];
           if (before && keys.some(key => before[key] !== agent[key])) existing.dataset.coreStale = 'true';
           continue;
         }
@@ -335,12 +449,22 @@ import BachLayout from "../../layouts/BachLayout.astro";
         coreField(fields, 'name', 'Anzeigename', agent.name);
         coreField(fields, 'icon', 'Icon', agent.icon);
         coreField(fields, 'backend', 'Backend-ID', agent.backend, 'select', data.supported_backend_ids || []);
-        coreField(fields, 'model', 'Modell-ID', agent.model);
+        coreField(fields, 'model', 'Modell-ID', agent.model, 'text', [], agent.backend);
         coreField(fields, 'mode', 'Modus', agent.mode, 'select', ['safe', 'full']);
         coreField(fields, 'think', 'Think', agent.think, 'checkbox');
         coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
         coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
         coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
+        coreField(fields, 'pause_basis', 'Pause auslösen nach', agent.pause_basis, 'select', [
+          {value: 'runs', label: 'abgeschlossenen Läufen'},
+          {value: 'tasks', label: 'abgeschlossenen Aufgaben'}
+        ]);
+        const backendInput = fields.querySelector('[data-core-field="backend"]');
+        const modelInput = fields.querySelector('[data-core-field="model"]');
+        backendInput?.addEventListener('change', () => {
+          if (backendInput.value === 'openrouter') modelInput?.setAttribute('list', 'openrouter-free-models');
+          else modelInput?.removeAttribute('list');
+        });
         card.append(fields);
         const actions = coreElement('div', undefined, 'core-actions');
         const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
@@ -371,6 +495,425 @@ import BachLayout from "../../layouts/BachLayout.astro";
         target.replaceChildren(coreElement('p', error.message.includes('401') ?
           'Geräteanmeldung erforderlich. Einstellungen sind derzeit nicht verfügbar.' :
           'System-Agentenkonfiguration nicht verfügbar. Die vorhandenen Profile bleiben erhalten.'));
+      }
+    }
+
+    async function loadOpenRouterCatalog() {
+      const credentialState = document.getElementById('openrouter-credential-state');
+      const catalogState = document.getElementById('openrouter-catalog-state');
+      const list = document.getElementById('openrouter-model-list');
+      const datalist = document.getElementById('openrouter-free-models');
+      try {
+        const [statusResponse, modelsResponse] = await Promise.all([
+          fetch('/api/system/openrouter/status'),
+          fetch('/api/system/openrouter/models')
+        ]);
+        if (!statusResponse.ok || !modelsResponse.ok) throw new Error('Geräteanmeldung oder Dienst fehlt');
+        const [status, catalog] = await Promise.all([statusResponse.json(), modelsResponse.json()]);
+        if (status.provider !== 'openrouter' || catalog.provider !== 'openrouter' || !Array.isArray(catalog.models)) {
+          throw new Error('OpenRouter-Antwort ungültig');
+        }
+        credentialState.textContent = status.credential?.configured === true
+          ? 'Schlüssel konfiguriert · nicht live geprüft' : 'Schlüssel fehlt';
+        credentialState.className = 'badge ' + (status.credential?.configured === true ? 'badge-accent' : '');
+        openRouterModels = catalog.models.filter(item => item && item.free === true && typeof item.id === 'string');
+        datalist.replaceChildren(...openRouterModels.map(item => {
+          const option = document.createElement('option');
+          option.value = item.id;
+          return option;
+        }));
+        list.replaceChildren(...openRouterModels.map(item => {
+          const code = document.createElement('code');
+          code.textContent = item.id;
+          code.setAttribute('role', 'listitem');
+          code.title = item.name || item.id;
+          return code;
+        }));
+        const staleNote = catalog.stale === true ? ' · Katalog gerade nicht erreichbar; nur sichere Auswahl angezeigt' : '';
+        catalogState.textContent = `${openRouterModels.length} kostenlose Auswahl(en) · Quelle: ${catalog.source || 'unbekannt'}${staleNote}`;
+      } catch (_error) {
+        credentialState.textContent = 'Status nicht verfügbar';
+        credentialState.className = 'badge';
+        catalogState.textContent = 'OpenRouter-Katalog ist nicht verfügbar. Es wird kein Modell als verbunden oder kostenfrei bestätigt.';
+        list.replaceChildren();
+        datalist.replaceChildren();
+        openRouterModels = [];
+      }
+    }
+
+    async function loadBackgroundWorkerBlueprint() {
+      const description = document.getElementById('worker-blueprint-description');
+      const create = document.getElementById('worker-blueprint-create');
+      try {
+        const response = await fetch('/api/system/workers/blueprint');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.schema !== 'bach.worker-blueprint.v1' || data.blueprint_id !== 'system:hintergrundworker' ||
+            data.requires_explicit_start !== true || data.creation_state !== 'idle' || !data.defaults) {
+          throw new Error('Vorlagenantwort nicht bestätigt');
+        }
+        backgroundWorkerBlueprint = data;
+        const modeSelect = document.getElementById('worker-blueprint-sub-mode');
+        if (!Array.isArray(data.sub_modes) || !data.sub_modes.length ||
+            !Array.isArray(data.expert_roles) || !data.expert_roles.length) {
+          throw new Error('Modus- oder Rollenliste fehlt');
+        }
+        modeSelect.replaceChildren(...data.sub_modes.map(item => new Option(item.label, item.id)));
+        modeSelect.value = data.sub_mode || 'hintergrund_worker';
+        modeSelect.disabled = false;
+        const roleSelect = document.getElementById('worker-blueprint-role');
+        roleSelect.replaceChildren(...data.expert_roles.map(item => new Option(item.label, item.id)));
+        roleSelect.disabled = false;
+        document.getElementById('worker-blueprint-name').value = data.name || 'BACH Hintergrundworker';
+        document.getElementById('worker-blueprint-turns').value = data.defaults.max_tool_rounds ?? 25;
+        document.getElementById('worker-blueprint-mode').value = data.defaults.mode === 'safe' ? 'safe' : 'full';
+        document.getElementById('worker-blueprint-think').value = data.defaults.think === true ? 'true' : 'false';
+        document.getElementById('worker-blueprint-pause-after').value = data.defaults.pause_after ?? 5;
+        document.getElementById('worker-blueprint-pause-basis').value =
+          data.defaults.pause_basis === 'tasks' ? 'tasks' : 'runs';
+        document.getElementById('worker-blueprint-pause-minutes').value = data.defaults.pause_minutes ?? 1;
+        document.getElementById('worker-blueprint-run-mode').value = data.defaults.type === 'once' ? 'once' : 'continuous';
+        document.getElementById('worker-blueprint-ttl').value = data.defaults.ttl_minutes ?? 0;
+        document.getElementById('worker-blueprint-backend').value = data.defaults.backend || 'ollama-cloud';
+        document.getElementById('worker-blueprint-system-prompt').checked = data.defaults.include_system_prompt === true;
+        document.getElementById('worker-blueprint-allow-tools').checked = data.defaults.allow_tools === true;
+        updateWorkerRunModeFields();
+        updateWorkerCreationModeFields();
+        description.textContent = `${data.description} Konfigurationsquelle: ${data.defaults_source}. Profil wird idle angelegt; die Vorlage startet keinen Worker.`;
+        create.disabled = false;
+        await loadWorkerBlueprintModels();
+      } catch (_error) {
+        backgroundWorkerBlueprint = null;
+        description.textContent = 'Die echte BACH-Rollenvorlage konnte nicht gelesen werden. Ohne bestätigte Vorlage ist das Anlegen gesperrt.';
+        create.disabled = true;
+        document.getElementById('worker-blueprint-model-status').textContent = 'Vorlage nicht verfügbar';
+      }
+    }
+
+    async function loadWorkerBlueprintModels(selectedModel) {
+      const requestId = ++workerModelRequest;
+      const backend = document.getElementById('worker-blueprint-backend').value;
+      const modelSelect = document.getElementById('worker-blueprint-model');
+      const status = document.getElementById('worker-blueprint-model-status');
+      const create = document.getElementById('worker-blueprint-create');
+      modelSelect.replaceChildren(new Option('Modellkatalog wird geladen…', ''));
+      modelSelect.disabled = true;
+      create.disabled = true;
+      status.textContent = 'Aktueller Modellkatalog wird geprüft…';
+      try {
+        const response = await fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend));
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (requestId !== workerModelRequest) return;
+        if (data.provider !== backend || !Array.isArray(data.models)) throw new Error('Modellantwort ungültig');
+        const models = [...new Set(data.models.filter(model => typeof model === 'string' && model.trim()))];
+        modelSelect.replaceChildren(...models.map(model => new Option(model, model)));
+        if (typeof selectedModel === 'string' && models.includes(selectedModel)) modelSelect.value = selectedModel;
+        else if (typeof selectedModel === 'string') {
+          const missing = new Option('Gespeichertes Modell fehlt im aktuellen Katalog – neu auswählen', '');
+          missing.disabled = true;
+          modelSelect.prepend(missing);
+          modelSelect.value = '';
+        }
+        modelSelect.disabled = models.length === 0;
+        if (!models.length) modelSelect.replaceChildren(new Option('Keine Modelle gemeldet', ''));
+        const credential = backend === 'openrouter'
+          ? (data.credential_configured === true ? ' · Schlüssel konfiguriert, Verbindung nicht live geprüft' : ' · Schlüssel fehlt')
+          : '';
+        const stale = data.stale === true ? ' · Katalog veraltet; nur openrouter/free bleibt verfügbar' : '';
+        status.textContent = `${models.length} Modell(e) aus ${data.source || 'unbekannter Quelle'}${credential}${stale}`;
+        create.disabled = !backgroundWorkerBlueprint || models.length === 0;
+      } catch (_error) {
+        if (requestId !== workerModelRequest) return;
+        modelSelect.replaceChildren(new Option('Modellkatalog nicht verfügbar', ''));
+        modelSelect.disabled = true;
+        status.textContent = 'Keine aktuelle Modellliste; Workerprofil kann nicht angelegt werden.';
+        create.disabled = true;
+      }
+    }
+
+    async function createWorkerFromBlueprint(event) {
+      event.preventDefault();
+      if (!backgroundWorkerBlueprint) return;
+      const button = document.getElementById('worker-blueprint-create');
+      const status = document.getElementById('worker-blueprint-model-status');
+      const ttlMinutes = Number(document.getElementById('worker-blueprint-ttl').value);
+      const runMode = document.getElementById('worker-blueprint-run-mode').value;
+      const backend = document.getElementById('worker-blueprint-backend').value;
+      const model = document.getElementById('worker-blueprint-model').value;
+      const defaults = backgroundWorkerBlueprint.defaults;
+      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
+      const taskIdValue = document.getElementById('worker-blueprint-task-id').value.trim();
+      const taskId = taskIdValue ? Number(taskIdValue) : null;
+      const taskPrompt = document.getElementById('worker-blueprint-task-prompt').value.trim();
+      const multiRole = document.getElementById('worker-blueprint-multi-role').checked;
+      let expertModels = {};
+      const expertModelsText = document.getElementById('worker-blueprint-expert-models').value.trim();
+      if (expertModelsText) {
+        try {
+          expertModels = JSON.parse(expertModelsText);
+          if (!expertModels || Array.isArray(expertModels) || typeof expertModels !== 'object') throw new Error();
+        } catch (_error) {
+          status.textContent = 'Experten-Modellzuordnung muss ein gültiges JSON-Objekt sein.';
+          return;
+        }
+      }
+      if (subMode === 'task_worker' && !taskId && !taskPrompt) {
+        status.textContent = 'Taskworker benötigen eine Task-ID oder einen Zusatzauftrag.';
+        return;
+      }
+      const payload = {
+        name: document.getElementById('worker-blueprint-name').value.trim(),
+        backend,
+        model,
+        sub_mode: subMode,
+        role_id: subMode === 'expert_role' && !multiRole ? document.getElementById('worker-blueprint-role').value : '',
+        multi_role: subMode === 'expert_role' && multiRole,
+        max_experts: subMode === 'boss_routing' ? Number(document.getElementById('worker-blueprint-max-experts').value) : 3,
+        expert_models: subMode === 'boss_routing' ? expertModels : {},
+        task_id: taskId,
+        max_tool_rounds: Number(document.getElementById('worker-blueprint-turns').value),
+        mode: document.getElementById('worker-blueprint-mode').value,
+        think: document.getElementById('worker-blueprint-think').value === 'true',
+        pause_after: Number(document.getElementById('worker-blueprint-pause-after').value),
+        pause_minutes: Number(document.getElementById('worker-blueprint-pause-minutes').value),
+        pause_basis: document.getElementById('worker-blueprint-pause-basis').value,
+        type: runMode,
+        ttl_minutes: runMode === 'continuous' ? ttlMinutes : 0,
+        task_prompt: taskPrompt,
+        include_system_prompt: document.getElementById('worker-blueprint-system-prompt').checked,
+        allow_tools: document.getElementById('worker-blueprint-allow-tools').checked
+      };
+      button.disabled = true;
+      status.textContent = 'Workerprofil wird angelegt…';
+      try {
+        const editing = editingWorker;
+        const response = await fetch(editing
+          ? `/api/system/workers/${encodeURIComponent(editing.id)}/configuration` : '/api/system/workers', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(editing
+            ? {configuration_version: editing.version, configuration: payload} : payload)
+        });
+        const data = await response.json();
+        if (!response.ok || data.ok !== true || (editing ? data.id !== editing.id || !data.configuration_version
+                                                        : data.worker?.status !== 'idle')) {
+          throw new Error(data.detail || 'Idle-Readback des neuen Profils fehlt');
+        }
+        if (editing) {
+          editingWorker = {id: editing.id, version: data.configuration_version};
+          status.textContent = 'Worker-Einstellungen gespeichert und zurückgelesen. „Start“ übernimmt sie im nächsten Lauf.';
+        } else {
+          status.textContent = `Profil ${data.worker.name} als Living/idle bestätigt. Es wurde kein Modellaufruf gestartet.`;
+          document.getElementById('worker-blueprint-task-prompt').value = '';
+          document.getElementById('worker-blueprint-task-id').value = '';
+        }
+        await loadBackgroundWorkers();
+      } catch (error) {
+        status.textContent = error.message || 'Profil konnte nicht bestätigt werden.';
+      } finally {
+        button.disabled = !backgroundWorkerBlueprint || document.getElementById('worker-blueprint-model').disabled;
+      }
+    }
+
+    async function editWorkerConfiguration(workerId) {
+      const requestId = ++workerEditRequest;
+      const status = document.getElementById('worker-blueprint-model-status');
+      try {
+        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/configuration`);
+        const data = await response.json();
+        if (requestId !== workerEditRequest) return;
+        if (!response.ok || data.ok !== true || data.id !== workerId || !data.configuration_version) {
+          throw new Error(data.detail || 'Worker-Konfiguration nicht bestätigt');
+        }
+        const config = data.configuration;
+        const fields = {name: 'name', backend: 'backend', sub_mode: 'sub-mode', role_id: 'role',
+          max_tool_rounds: 'turns', mode: 'mode', pause_after: 'pause-after', pause_minutes: 'pause-minutes',
+          pause_basis: 'pause-basis', max_experts: 'max-experts', task_id: 'task-id', task_prompt: 'task-prompt'};
+        for (const [key, field] of Object.entries(fields)) {
+          document.getElementById('worker-blueprint-' + field).value = config[key] ?? '';
+        }
+        document.getElementById('worker-blueprint-think').value = String(config.think === true);
+        for (const [key, field] of Object.entries({multi_role: 'multi-role', allow_tools: 'allow-tools', include_system_prompt: 'system-prompt'})) {
+          document.getElementById('worker-blueprint-' + field).checked = config[key] === true;
+        }
+        document.getElementById('worker-blueprint-expert-models').value = JSON.stringify(config.expert_models || {});
+        editingWorker = {id: workerId, version: data.configuration_version};
+        document.getElementById('worker-blueprint-create').textContent = 'Worker-Einstellungen speichern';
+        document.getElementById('worker-blueprint-cancel-edit').hidden = false;
+        document.getElementById('worker-blueprint-run-mode').disabled = true;
+        document.getElementById('worker-blueprint-ttl').disabled = true;
+        updateWorkerCreationModeFields();
+        await loadWorkerBlueprintModels(config.model);
+        if (requestId !== workerEditRequest) return;
+        status.textContent = 'Workerprofil zur Bearbeitung geladen. Zum Übernehmen Einstellungen speichern, danach ausdrücklich starten.';
+        document.getElementById('worker-blueprint-form').scrollIntoView({block: 'start'});
+      } catch (error) {
+        if (requestId !== workerEditRequest) return;
+        status.textContent = error.message || 'Workerprofil konnte nicht geladen werden.';
+      }
+    }
+
+    function updateWorkerCreationModeFields() {
+      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
+      const expertFields = document.getElementById('worker-blueprint-expert-fields');
+      const bossFields = document.getElementById('worker-blueprint-boss-fields');
+      const roleSelect = document.getElementById('worker-blueprint-role');
+      const multiRole = document.getElementById('worker-blueprint-multi-role');
+      expertFields.hidden = subMode !== 'expert_role';
+      bossFields.hidden = subMode !== 'boss_routing';
+      roleSelect.required = subMode === 'expert_role' && !multiRole.checked;
+      roleSelect.disabled = subMode !== 'expert_role' || multiRole.checked;
+    }
+
+    function updateWorkerRunModeFields() {
+      const once = document.getElementById('worker-blueprint-run-mode').value === 'once';
+      const ttl = document.getElementById('worker-blueprint-ttl');
+      ttl.disabled = once;
+      if (once) ttl.value = '0';
+    }
+
+    async function runWorkerAction(workerId, action, generation) {
+      const summary = document.getElementById('worker-status-summary');
+      const safeActions = new Set(['start', 'pause', 'stop', 'handoff']);
+      if (!safeActions.has(action)) return;
+      summary.textContent = action === 'start' ? 'Start wird angefordert…' :
+        action === 'pause' ? 'Kooperative Pause wird angefordert…' :
+        action === 'handoff' ? 'Kontextübergabe wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
+      try {
+        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(action === 'handoff' ? {generation} : {})
+        });
+        const data = await response.json();
+        if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Aktion nicht bestätigt');
+        if (action === 'start') {
+          summary.textContent = `Start angenommen · Laufzeit-Readback: ${data.runtime_state || 'unbekannt'}`;
+        } else if (action === 'handoff') {
+          summary.textContent = data.receipt?.state === 'confirmed'
+            ? 'Kontextübergabe durch die Laufzeit bestätigt.'
+            : 'Kontextübergabe angefordert · Bestätigung folgt im Workerstatus.';
+        } else {
+          summary.textContent = action === 'pause' ? 'Pause durch Control API bestätigt.' : 'Stopp durch Control API bestätigt.';
+        }
+        await loadBackgroundWorkers();
+      } catch (error) {
+        summary.textContent = error.message || 'Workeraktion konnte nicht bestätigt werden.';
+        await loadBackgroundWorkers();
+      }
+    }
+
+    async function loadBackgroundWorkers() {
+      const summary = document.getElementById('worker-status-summary');
+      const container = document.getElementById('background-worker-list');
+      try {
+        const response = await fetch('/api/system/workers');
+        if (!response.ok) throw new Error(response.status === 401
+          ? 'Geräteanmeldung für den Workerstatus erforderlich.'
+          : response.status === 503 ? 'Control API nicht erreichbar; Workerstatus derzeit unbekannt.'
+          : 'Workerstatus konnte nicht geprüft werden (HTTP ' + response.status + ').');
+        const data = await response.json();
+        if (data.schema !== 'bach.workers.status.v1' || data.availability !== 'available' ||
+            !Array.isArray(data.workers) || data.count !== data.workers.length) {
+          throw new Error('Control API lieferte keinen gültigen Workerstatus.');
+        }
+        const labels = {
+          running: 'Running · arbeitet', idle: 'Living · bereit', paused: 'Living · pausiert',
+          stopping: 'Beendigung läuft', expired: 'Abgelaufen', stopped: 'Beendet', error: 'Fehler'
+        };
+        const counts = data.workers.reduce((result, worker) => {
+          const state = typeof worker.status === 'string' ? worker.status : 'unknown';
+          result[state] = (result[state] || 0) + 1;
+          return result;
+        }, {});
+        summary.textContent = `${data.count} echte Workerprofile · ${counts.running || 0} Running · ${counts.idle || 0} Living/bereit · ${counts.paused || 0} pausiert · geprüft ${new Date(data.observed_at).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})}`;
+        container.replaceChildren(...data.workers.map(worker => {
+          const state = String(worker.status || '').toLowerCase();
+          const card = coreElement('article', undefined, 'background-worker-card');
+          card.setAttribute('role', 'listitem');
+          card.append(coreElement('h3', worker.name || worker.id));
+          const stateLabel = state === 'paused' && worker.auto_paused === true
+            ? 'Living · automatische Pause'
+            : (labels[worker.status] || `Status: ${worker.status || 'unbekannt'}`);
+          card.append(coreElement('span', stateLabel, 'worker-state'));
+          card.append(coreElement('p', `${worker.backend || 'Backend unbekannt'} · ${worker.model || 'Modell unbekannt'}`));
+          const detail = [];
+          const modeLabels = {
+            hintergrund_worker: 'Hintergrundworker',
+            task_worker: 'Taskworker',
+            boss_routing: 'Bossrouting',
+            expert_role: 'Expertenrolle'
+          };
+          if (worker.sub_mode) detail.push(modeLabels[worker.sub_mode] || worker.sub_mode);
+          if (worker.role_id) detail.push('Rolle: ' + worker.role_id);
+          if (worker.task_id !== undefined) detail.push(`Task #${worker.task_id}`);
+          if (worker.max_tool_rounds !== undefined) detail.push(`Limit: ${worker.max_tool_rounds} Toolrunden`);
+          if (worker.pause_after !== undefined && worker.pause_basis) {
+            const basisLabel = worker.pause_basis === 'tasks' ? 'Aufgaben' : 'Läufe';
+            detail.push(`Pause nach ${worker.pause_after} ${basisLabel} · ${worker.pause_minutes ?? 0} Min`);
+          }
+          if (worker.expires_at) detail.push(`Lease bis ${worker.expires_at}`);
+          if (detail.length) card.append(coreElement('small', detail.join(' · ')));
+          const maxToolRounds = Number(worker.max_tool_rounds);
+          const toolRound = Number(worker.tool_round);
+          if (state === 'running' && Number.isInteger(toolRound) && toolRound >= 0 &&
+              Number.isInteger(maxToolRounds) && maxToolRounds > 0) {
+            card.append(coreElement('small', `Toolrunden: ${toolRound}/${maxToolRounds} · letzter Laufzeitbeleg`));
+            const remaining = maxToolRounds - toolRound;
+            if (remaining <= 2) {
+              const warning = coreElement('p', remaining > 0
+                ? `⚠️ Tool-Rundenlimit naht: noch ${remaining} Runde${remaining === 1 ? '' : 'n'}.`
+                : '⚠️ Tool-Rundenlimit erreicht; die Fortsetzung wird vom Workerprozess verwaltet.',
+              'worker-turn-warning');
+              warning.setAttribute('role', 'status');
+              warning.setAttribute('aria-live', 'polite');
+              card.append(warning);
+            }
+          }
+          if (worker.current_activity) card.append(coreElement('p', worker.current_activity));
+          if (worker.handoff_receipt) {
+            const handoffLabels = {pending: 'angefordert', running: 'wird verarbeitet',
+              confirmed: 'bestätigt', error: 'fehlgeschlagen', cancelled: 'abgebrochen'};
+            card.append(coreElement('p', 'Kontextübergabe: ' +
+              (handoffLabels[worker.handoff_receipt.state] || 'unbekannt')));
+          }
+          const actions = coreElement('div', undefined, 'core-actions');
+          if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
+            const edit = coreElement('button', 'Einstellungen bearbeiten', 'btn btn-sm');
+            edit.type = 'button';
+            edit.addEventListener('click', () => editWorkerConfiguration(worker.id));
+            actions.append(edit);
+          }
+          if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
+            const start = coreElement('button', state === 'paused' ? '▶ Fortsetzen' : '▶ Start', 'btn btn-sm btn-primary');
+            start.type = 'button';
+            start.addEventListener('click', () => runWorkerAction(worker.id, 'start'));
+            actions.append(start);
+          }
+          if (state === 'running' || (state === 'paused' && worker.auto_paused === true)) {
+            if (state === 'running') {
+              if (typeof worker.generation === 'string' &&
+                  !['pending', 'running'].includes(worker.handoff_receipt?.state)) {
+                const handoff = coreElement('button', 'Kontext übergeben', 'btn btn-sm');
+                handoff.type = 'button';
+                handoff.addEventListener('click', () => runWorkerAction(worker.id, 'handoff', worker.generation));
+                actions.append(handoff);
+              }
+              const pause = coreElement('button', '⏸ Pause', 'btn btn-sm');
+              pause.type = 'button';
+              pause.addEventListener('click', () => runWorkerAction(worker.id, 'pause'));
+              actions.append(pause);
+            }
+            const stop = coreElement('button', '⏹ Stop', 'btn btn-sm');
+            stop.type = 'button';
+            stop.addEventListener('click', () => runWorkerAction(worker.id, 'stop'));
+            actions.append(stop);
+          }
+          if (actions.childElementCount) card.append(actions);
+          return card;
+        }));
+        if (!data.workers.length) container.append(coreElement('p', 'Die Control API meldet derzeit keine Workerprofile.'));
+      } catch (error) {
+        summary.textContent = error.message || 'Workerstatus nicht verfügbar.';
+        container.replaceChildren();
       }
     }
 
@@ -683,7 +1226,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
         loadTeamsBeseelen(),
         loadStaffelnBeseelen(),
         refreshActivity(),
-        loadCoreSlots()
+        loadCoreSlots(),
+        loadOpenRouterCatalog(),
+        loadBackgroundWorkers()
       ]);
       if (interactive) {
         // Subtle confirmation
@@ -692,10 +1237,30 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('worker-blueprint-backend')?.addEventListener('change', loadWorkerBlueprintModels);
+      document.getElementById('worker-blueprint-sub-mode')?.addEventListener('change', updateWorkerCreationModeFields);
+      document.getElementById('worker-blueprint-run-mode')?.addEventListener('change', updateWorkerRunModeFields);
+      document.getElementById('worker-blueprint-multi-role')?.addEventListener('change', updateWorkerCreationModeFields);
+      document.getElementById('worker-blueprint-form')?.addEventListener('submit', createWorkerFromBlueprint);
+      document.getElementById('worker-blueprint-cancel-edit')?.addEventListener('click', async () => {
+        workerEditRequest++;
+        editingWorker = null;
+        document.getElementById('worker-blueprint-create').textContent = 'Blueprint als Living-Profil anlegen';
+        document.getElementById('worker-blueprint-cancel-edit').hidden = true;
+        document.getElementById('worker-blueprint-run-mode').disabled = false;
+        document.getElementById('worker-blueprint-task-id').value = '';
+        document.getElementById('worker-blueprint-task-prompt').value = '';
+        document.getElementById('worker-blueprint-multi-role').checked = false;
+        document.getElementById('worker-blueprint-max-experts').value = '3';
+        document.getElementById('worker-blueprint-expert-models').value = '';
+        await loadBackgroundWorkerBlueprint();
+      });
+      loadBackgroundWorkerBlueprint();
       refreshAll();
       // Observe hardware and task activity without resetting editable forms.
       setInterval(loadClusterCockpit, 15000);
       setInterval(refreshActivity, 4000);
+      setInterval(loadBackgroundWorkers, 5000);
     });
   </script>
 </BachLayout>

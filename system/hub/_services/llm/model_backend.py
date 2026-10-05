@@ -739,6 +739,64 @@ class HermesBackend(OpenAIBackend):
         )
 
 
+class OpenRouterBackend(HermesBackend):
+    """OpenRouter provider with explicit model IDs and a safe free router default.
+
+    ``openrouter/free`` is sent to OpenRouter unchanged. The provider, rather
+    than this client, chooses a free model for each request. In particular,
+    this class never substitutes a locally selected model for that router ID.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "https://openrouter.ai/api/v1",
+        api_key: str = "",
+        default_model: str = "openrouter/free",
+        site_url: str = "https://github.com/ellmos-ai/bach",
+        app_name: str = "BACH Agent",
+    ):
+        if not api_key:
+            from hub._services.llm.openrouter_catalog import read_openrouter_api_key
+
+            api_key = read_openrouter_api_key()
+        super().__init__(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key,
+            default_model=default_model or "openrouter/free",
+            site_url=site_url,
+            app_name=app_name,
+        )
+
+    def list_models(self) -> list[str]:
+        from hub._services.llm.openrouter_catalog import get_openrouter_catalog
+
+        catalog = get_openrouter_catalog()
+        return [item["id"] for item in catalog.get("models", []) if item.get("id")]
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        target_model = str(model or self.default_model).strip()
+        if target_model != "openrouter/free" and target_model not in self.list_models():
+            raise ValueError("OpenRouter-Modell ist nicht aktuell als kostenlos bestätigt")
+        return await super().chat(
+            messages=messages,
+            tools=tools,
+            think=think,
+            model=target_model,
+        )
+
+    def availability(
+        self,
+        model: str | None = None,
+        timeout: float = 1.5,
+    ) -> tuple[bool, str]:
+        if not str(self.api_key or "").strip():
+            return False, "Key fehlt"
+        target_model = str(model or self.default_model).strip()
+        if target_model != "openrouter/free" and target_model not in self.list_models():
+            return False, "Kostenlosigkeit nicht bestätigt"
+        return super().availability(model=target_model, timeout=timeout)
+
+
 class AnthropicBackend(ModelBackend):
     """Anthropic Claude API Backend."""
 
@@ -1349,6 +1407,8 @@ def backend_identifier(backend: ModelBackend) -> str:
     """Stable Control-API key for a concrete backend instance."""
     if isinstance(backend, LMStudioBackend):
         return "lmstudio"
+    if isinstance(backend, OpenRouterBackend):
+        return "openrouter"
     if isinstance(backend, HermesBackend):
         return "hermes"
     if isinstance(backend, OllamaBackend):
@@ -1366,12 +1426,13 @@ def create_backend(config: dict) -> ModelBackend:
     """Factory: Backend aus Config-Dict erzeugen.
 
     config = {
-        'type': 'ollama' | 'lmstudio' | 'hermes' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
+        'type': 'ollama' | 'lmstudio' | 'hermes' | 'openrouter' | 'openai' | 'anthropic' | 'claude-cli' | 'codex-cli',
         'base_url': '...',       # optional (API backends)
         'api_key': '...',        # optional (API backends)
         'cli_path': '...',       # optional (CLI backends)
         'default_model': '...',  # optional
         'permission_mode': '...',  # optional (CLI backends: restricted/full)
+        'free_only': True,         # optional OpenRouter free-catalog guard
     }
     """
     backend_type = config.get("type", "ollama").lower()
@@ -1389,7 +1450,32 @@ def create_backend(config: dict) -> ModelBackend:
             api_key=config.get("api_key", "lm-studio"),
             default_model=config.get("default_model", "auto"),
         )
-    elif backend_type in ("hermes", "hermes-agent", "nous-hermes", "openrouter"):
+    elif backend_type in ("openrouter", "openrouter-api", "open-router"):
+        # Older direct configs used "openrouter" as a Hermes alias. Preserve
+        # that behavior unless the profile selects a free router/variant or
+        # the provider preset explicitly enables free-only mode.
+        default_model = config.get("default_model")
+        # Dynamic worker slots persist their selected model, not the provider
+        # preset's private ``free_only`` flag. Treat OpenRouter's explicit
+        # ``:free`` variant as the safe backend too, while retaining the legacy
+        # Hermes alias for existing model IDs and configurations.
+        free_variant = (
+            isinstance(default_model, str)
+            and (default_model.strip() == "openrouter/free" or default_model.strip().endswith(":free"))
+        )
+        backend_class = (
+            OpenRouterBackend
+            if config.get("free_only") is True or free_variant
+            else HermesBackend
+        )
+        if not default_model and backend_class is OpenRouterBackend:
+            default_model = "openrouter/free"
+        return backend_class(
+            base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
+            api_key=config.get("api_key", ""),
+            default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",
+        )
+    elif backend_type in ("hermes", "hermes-agent", "nous-hermes"):
         return HermesBackend(
             base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
             api_key=config.get("api_key", ""),

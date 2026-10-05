@@ -137,6 +137,7 @@ tr:hover td{background:#24334d}
           <option value="ollama">💻 Ollama (lokal)</option>
           <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
+          <option value="openrouter">OpenRouter (kostenloser Router)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
           <option value="codex">Codex CLI</option>
@@ -225,6 +226,7 @@ tr:hover td{background:#24334d}
           <option value="ollama">💻 Ollama (lokal)</option>
           <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
+          <option value="openrouter">OpenRouter (kostenloser Router)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
           <option value="codex">Codex CLI</option>
@@ -324,6 +326,7 @@ tr:hover td{background:#24334d}
           <option value="ollama">💻 Ollama (lokal)</option>
           <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
+          <option value="openrouter">OpenRouter (kostenloser Router)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
           <option value="codex">Codex CLI</option>
@@ -567,6 +570,7 @@ tr:hover td{background:#24334d}
           <option value="ollama">💻 Ollama (lokal)</option>
           <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
           <option value="hermes">Hermes (API)</option>
+          <option value="openrouter">OpenRouter (kostenloser Router)</option>
           <option value="claude">Claude CLI</option>
           <option value="claude-api">Claude API</option>
           <option value="codex">Codex CLI</option>
@@ -601,7 +605,7 @@ tr:hover td{background:#24334d}
     <div class="form-group">
       <label>Modellbezeichnung (exakt)</label>
       <input type="text" id="nw-model" list="model-presets-list" placeholder="z. B. kimi-k3:cloud oder qwen3.8:27b-mlx">
-      <div style="font-size:0.75rem;color:#94a3b8;margin-top:3px">
+      <div id="nw-model-hint" style="font-size:0.75rem;color:#94a3b8;margin-top:3px">
         💡 <strong>Ollama Cloud:</strong> Modellname muss wie im CLI mit <code>:cloud</code> enden (z. B. <code>kimi-k3:cloud</code>). Lokale Modelle laufen direkt auf deiner Hardware.
       </div>
     </div>
@@ -699,6 +703,8 @@ const TOKEN_STORAGE_KEY = SHELL_CONFIG.tokenStorageKey;
 const ALWAYS_ON_TITLE = SHELL_CONFIG.alwaysOnTitle;
 let writeAuthorized = false;
 let _isEditing = false;
+let openRouterModelIds = new Set(['openrouter/free']);
+let ollamaCloudModelIds = new Set();
 
 function setWriteAccess(allowed, note) {
   writeAuthorized = allowed === true && !SHELL_CONFIG.readOnly;
@@ -1134,7 +1140,8 @@ async function createWorker() {
   const subMode = document.getElementById('nw-sub-mode').value;
   const workerType = document.getElementById('nw-type').value;
   const backend = document.getElementById('nw-backend').value;
-  const model = document.getElementById('nw-model').value.trim() || 'qwen3.8:27b-mlx';
+  const model = document.getElementById('nw-model').value.trim() ||
+    (backend === 'openrouter' ? 'openrouter/free' : 'qwen3.8:27b-mlx');
   const turns = parseInt(document.getElementById('nw-turns').value) || 25;
   const mode = document.getElementById('nw-mode').value;
   const taskId = document.getElementById('nw-task-id').value.trim() ? parseInt(document.getElementById('nw-task-id').value) : null;
@@ -1323,7 +1330,9 @@ function applyModelPreset(prefix, modelValue) {
   if (!bSelect) return;
 
   const m = modelValue.toLowerCase();
-  if (m.includes(':cloud')) {
+  if (m === 'openrouter/free' || m.endsWith(':free') || openRouterModelIds.has(modelValue)) {
+    bSelect.value = 'openrouter';
+  } else if (m.includes(':cloud') || ollamaCloudModelIds.has(modelValue)) {
     bSelect.value = 'ollama-cloud';
   } else if (m.includes('mlx') || m.includes('qwen') || m.includes('gemma') || m.includes('ocr') || m.includes('llama-guard')) {
     bSelect.value = 'ollama';
@@ -1359,25 +1368,57 @@ function onBackendChange(prefix) {
     if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) {
       mInput.value = 'nousresearch/hermes-3-llama-3.1-8b';
     }
+  } else if (val === 'openrouter') {
+    if (!mInput.value || (mInput.value !== 'openrouter/free' && !mInput.value.endsWith(':free'))) {
+      mInput.value = 'openrouter/free';
+    }
   }
 }
 
 async function loadModelsIntoPresets() {
-  const data = await api('GET', '/models');
-  if (!data || !data.models || !Array.isArray(data.models)) return;
   const dl = document.getElementById('model-presets-list');
   if (!dl) return;
+  const [data, cloud, openrouter] = await Promise.all([
+    api('GET', '/models'),
+    api('GET', '/models?provider=ollama-cloud'),
+    api('GET', '/models?provider=openrouter')
+  ]);
   let opts = '';
-  for (const m of data.models) {
+  const added = new Set();
+  const addModel = (model, label) => {
+    if (typeof model !== 'string' || !model || added.has(model)) return;
+    added.add(model);
+    opts += `<option value="${escapeHtml(model)}" label="${escapeHtml(label)}"></option>`;
+  };
+  for (const m of (Array.isArray(data?.models) ? data.models : [])) {
     const isCloud = m.includes(':cloud');
     const label = isCloud ? '☁️ Ollama Cloud' : '💻 Ollama Lokal';
-    opts += `<option value="${escapeHtml(m)}">${label} (${escapeHtml(m)})</option>`;
+    addModel(m, `${label} · ${m}`);
   }
-  opts += '<option value="claude-3-7-sonnet">🌐 Claude 3.7 Sonnet (Anthropic)</option>';
-  opts += '<option value="sonnet">🌐 Claude CLI (sonnet)</option>';
-  opts += '<option value="gpt-4o">🌐 OpenAI API (gpt-4o)</option>';
-  opts += '<option value="o4-mini">🌐 Codex CLI (o4-mini)</option>';
-  opts += '<option value="nousresearch/hermes-3-llama-3.1-8b">🌐 Hermes 3</option>';
+  ollamaCloudModelIds = new Set(
+    (Array.isArray(cloud?.models) ? cloud.models : [])
+      .filter(model => typeof model === 'string' && model.includes(':cloud'))
+  );
+  for (const model of ollamaCloudModelIds) addModel(model, `☁️ Ollama Cloud · ${model}`);
+  addModel('claude-3-7-sonnet', '🌐 Claude API · claude-3-7-sonnet');
+  addModel('sonnet', '🌐 Claude CLI · sonnet');
+  addModel('gpt-4o', '🌐 OpenAI API · gpt-4o');
+  addModel('o4-mini', '🌐 Codex CLI · o4-mini');
+  addModel('nousresearch/hermes-3-llama-3.1-8b', '🌐 Hermes · Hermes 3');
+  addModel('openrouter/free', '🆓 OpenRouter · Free Models Router');
+  openRouterModelIds = new Set(['openrouter/free']);
+  if (openrouter && Array.isArray(openrouter.models)) {
+    for (const model of openrouter.models) {
+      if (model === 'openrouter/free') continue;
+      if (typeof model !== 'string' || !model) continue;
+      openRouterModelIds.add(model);
+      addModel(model, `🆓 OpenRouter kostenlos · ${model}`);
+    }
+    const credentialNote = openrouter.credential_configured === true
+      ? 'Schlüssel konfiguriert' : 'Schlüssel fehlt';
+    const help = document.getElementById('nw-model-hint');
+    if (help) help.insertAdjacentHTML('beforeend', ` · OpenRouter: ${escapeHtml(credentialNote)}. Modellaufruf erfolgt erst nach manuellem Start.`);
+  }
   dl.innerHTML = opts;
 }
 

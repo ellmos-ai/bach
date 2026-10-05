@@ -49,6 +49,18 @@ from hub._services.chat.telegram_chat import (
 )
 
 
+def test_control_chat_response_carries_receipts_bound_to_this_answer():
+    from hub._services.chat.chat_runtime import SuccessfulAnswer
+    from hub._services.chat.telegram_chat import _control_chat_response
+
+    answer = SuccessfulAnswer("FERTIG")
+    answer.completed_task_ids = (42,)
+    response, status = _control_chat_response(answer)
+    assert status == 200
+    assert response == {"ok": True, "answer": "FERTIG", "completed_task_ids": [42]}
+    assert _control_chat_response("FERTIG")[0] == {"ok": True, "answer": "FERTIG"}
+
+
 class TestSlotsConfigCRUD:
     def test_worker_ids_cannot_shadow_core_or_existing_worker(self, tmp_path):
         cfg_file = tmp_path / "id-uniqueness.json"
@@ -429,6 +441,83 @@ class TestSlotsConfigCRUD:
         assert info["is_paused"] is True
         assert info["remaining_minutes"] > 0
         assert info["pause_basis"] == "tasks"
+
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
+    def test_dynamic_worker_cooldown_passes_task_event_type(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-task-cooldown-test")
+        received = []
+        monkeypatch.setattr(
+            telegram_chat,
+            "bump_pause_counter",
+            lambda _worker_id, event_type="runs": received.append(event_type) or False,
+        )
+
+        assert telegram_chat._wait_worker_cooldown(control, event_type="tasks") is True
+        assert received == ["tasks"]
+
+    def test_dynamic_worker_pause_counts_tasks_only_after_turn_handoff_finishes(self):
+        from hub._services.chat.telegram_chat import (
+            _worker_pause_event_type,
+            _worker_task_completed,
+        )
+
+        task_based = {"pause_basis": "tasks"}
+        run_based = {"pause_basis": "runs"}
+        assert _worker_pause_event_type(task_based, task_completed=False) == "runs"
+        assert _worker_pause_event_type(task_based, task_completed=True) == "tasks"
+        assert _worker_pause_event_type(run_based, task_completed=True) == "runs"
+        assert _worker_task_completed({"task_id": 42}, (42,)) is True
+        assert _worker_task_completed({"task_id": 42}, (43,)) is False
+        assert _worker_task_completed({}, ()) is False
+        assert _worker_task_completed({}, (43,)) is True
+
 
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
@@ -1459,6 +1548,9 @@ class TestControlHandlerEndpoints:
                 self.started = threading.Event()
                 self.release = threading.Event()
                 self.calls = 0
+
+            def get_session(self, _worker_id):
+                return ChatSession()
 
             async def process(self, *args, **kwargs):
                 self.calls += 1

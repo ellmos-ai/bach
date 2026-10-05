@@ -104,6 +104,7 @@ from hub._services.chat.chat_runtime import (
     SuccessfulAnswer,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
+from hub._services.chat.worker_handoff import WorkerHandoff
 from hub._services.chat.control_auth import (
     get_control_api_token,
     is_control_api_authorized,
@@ -114,6 +115,7 @@ from hub._services.agents_heart import (
     finish_assignment,
 )
 from hub._services.chat.slots_config import (
+    bump_pause_counter,
     get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
     add_worker,
@@ -131,6 +133,9 @@ from hub._services.chat.slots_config import (
     reset_prompt_template,
     update_prompt_template,
     update_slot,
+    worker_configuration_snapshot,
+    change_worker_configuration,
+    _worker_configuration,
 )
 
 # Compute Lock (optional — graceful if not available)
@@ -176,6 +181,10 @@ class _WorkerControl:
     stop_activity: str = "Manuell gestoppt"
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
+    handoff: WorkerHandoff = field(init=False)
+
+    def __post_init__(self):
+        self.handoff = WorkerHandoff(self.worker_id, self.generation)
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -183,6 +192,40 @@ class _WorkerControl:
 # reports a pending revocation instead of claiming success.
 _WORKER_STOP_WAIT_SECONDS = 2.0
 _WORKER_CONTROLS: Dict[str, _WorkerControl] = {}
+
+
+def _request_worker_handoff(worker_id: str, generation: str) -> Dict[str, Any]:
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        slot = get_worker_slot(worker_id)
+        if (control is None or not _thread_is_alive(control.thread) or control.stop_event.is_set()
+                or not slot or slot.get("status") != "running"):
+            raise ValueError("Worker ist nicht in einem aktiven Lauf")
+        if slot.get("expires_at"):
+            expiry = datetime.fromisoformat(slot["expires_at"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise ValueError("Worker-Lease ist abgelaufen")
+        return control.handoff.request(generation)
+
+
+def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
+    worker = dict(worker)
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker.get("id"))
+        if control and _thread_is_alive(control.thread) and not control.stop_event.is_set():
+            worker["generation"] = control.generation
+            worker["handoff_receipt"] = control.handoff.snapshot()
+    return worker
+
+
+def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if control is not None and not control.done_event.is_set():
+            raise RuntimeError("worker_not_editable")
+        return change_worker_configuration(worker_id, version, changes)
 
 
 def _thread_is_alive(thread: Optional[threading.Thread]) -> bool:
@@ -240,6 +283,72 @@ def _record_worker_activity(
             return False
         record_activity(control.worker_id, activity, status, details)
         return True
+
+
+def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
+    """Apply a configured run/task-count pause while keeping stop responsive."""
+    worker_id = control.worker_id
+    if not bump_pause_counter(worker_id, event_type=event_type):
+        return not control.stop_event.is_set()
+
+    slot = get_worker_slot(worker_id)
+    pause = get_slot_pause_info(slot)
+    if not pause.get("is_paused") or pause.get("remaining_seconds", 0) <= 0:
+        raise RuntimeError("Automatische Pause konnte nicht bestätigt werden")
+
+    minutes = pause.get("pause_minutes", 0)
+    if _update_worker_slot(control, {
+        "status": "paused",
+        "auto_paused": True,
+        "current_activity": f"Automatische Pause ({minutes:g} min)",
+    }) is None:
+        return False
+    _record_worker_activity(control, f"Automatische Pause gestartet ({minutes:g} min)", "ok")
+
+    deadline = time.monotonic() + float(pause["remaining_seconds"])
+    while not control.stop_event.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        control.stop_event.wait(min(1.0, remaining))
+    if control.stop_event.is_set():
+        return False
+
+    updated = _update_worker_slot(control, {
+        "status": "running",
+        "auto_paused": False,
+        "pause_started_at": "",
+        "current_activity": "Automatische Pause beendet; nächster Lauf startet",
+    })
+    if updated is None:
+        return False
+    _record_worker_activity(control, "Automatische Pause beendet", "ok")
+    return True
+
+
+def _worker_pause_event_type(slot: Dict[str, Any], *, task_completed: bool) -> str:
+    """Select a pause counter event without counting an unfinished handoff as a task."""
+    basis = str(slot.get("pause_basis") or "runs").lower()
+    if task_completed and basis == "tasks":
+        return "tasks"
+    return "runs"
+
+
+def _worker_task_completed(slot: Dict[str, Any], completed_task_ids: Any) -> bool:
+    """Match task-completion receipts to an explicitly assigned task, if any."""
+    try:
+        completed = {int(task_id) for task_id in completed_task_ids if int(task_id) > 0}
+    except (TypeError, ValueError):
+        return False
+    if not completed:
+        return False
+    assigned_task_id = slot.get("task_id")
+    if assigned_task_id in (None, "", 0, "0"):
+        return True
+    try:
+        return int(assigned_task_id) in completed
+    except (TypeError, ValueError):
+        return False
 
 
 def _update_worker_slot(
@@ -364,6 +473,7 @@ def _request_worker_revocation(
             control.stop_activity = activity
             control.requested_at = datetime.now(timezone.utc).isoformat()
             control.stop_event.set()
+            control.handoff.cancel()
         elif control.stop_status is None:
             control.stop_status = final_status
 
@@ -793,6 +903,14 @@ BACKEND_PRESETS = {
         "method": "api",
         "description": "Nous Hermes Agent (OpenRouter / Lokal)",
     },
+    "openrouter": {
+        "type": "openrouter",
+        "base_url": os.environ.get("OPENROUTER_URL", "https://openrouter.ai/api/v1"),
+        "default_model": os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
+        "free_only": True,
+        "method": "api",
+        "description": "OpenRouter (kostenloser Router und kostenlose Modelle)",
+    },
     "claude": {
         "type": "claude-cli",
         "default_model": "sonnet",
@@ -833,6 +951,7 @@ _API_KEY_SOURCES = {
     "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
     "hermes": ("OPENROUTER_API_KEY", "openrouter_api_key"),
+    "openrouter": ("OPENROUTER_API_KEY", "openrouter_api_key"),
 }
 
 
@@ -877,7 +996,7 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
             preset = BACKEND_PRESETS[backend_key].copy()
             if model:
                 preset["default_model"] = model
-            if preset["method"] == "api" and backend_key in ("claude-api", "openai"):
+            if preset["method"] == "api" and backend_key in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(backend_key)
                 if api_key:
                     preset["api_key"] = api_key
@@ -991,7 +1110,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if preset["method"] == "cli":
                 cli_name = preset["type"].replace("-cli", "")
                 status = _check_cli_available(cli_name)
-            elif preset["method"] == "api" and name in ("claude-api", "openai"):
+            elif preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 status = _check_api_key(name)
             status_str = f" [{status}]" if status else ""
             lines.append(f"  {name} — {preset['description']}{status_str}")
@@ -1018,7 +1137,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(args) > 1:
         preset["default_model"] = args[1]
 
-    if preset["method"] == "api" and name in ("claude-api", "openai"):
+    if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
         env_var, file_name = _API_KEY_SOURCES[name]
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
         api_key = _load_api_key(name)
@@ -2297,7 +2416,7 @@ def _probe_backend_inventory_entry(
             cli_name = preset["type"].replace("-cli", "")
             if _check_cli_available(cli_name) != "vorhanden":
                 raise FileNotFoundError(cli_name)
-        elif name in ("claude-api", "openai", "hermes"):
+        elif name in ("claude-api", "openai", "hermes", "openrouter"):
             api_key = _load_api_key(name)
             if not api_key:
                 return False, "Key fehlt"
@@ -2419,7 +2538,10 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
     if isinstance(answer, SuccessfulAnswer):
-        return {"ok": True, "answer": text}, 200
+        response = {"ok": True, "answer": text}
+        if getattr(answer, "completed_task_ids", ()):
+            response["completed_task_ids"] = list(answer.completed_task_ids)
+        return response, 200
     if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
@@ -2687,6 +2809,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": active_user,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": current_tool,
                     "tool_round": tool_round,
                     "last_tools": active_tools,
@@ -2708,6 +2831,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": 0,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": "",
                     "tool_round": 0,
                     "last_tools": [],
@@ -2762,10 +2886,32 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/models":
             try:
-                with _runtime_state_lock:
-                    selected_backend = runtime.backend
-                models = selected_backend.list_models()
-                self._json({"models": models})
+                requested_provider = parse_qs(parsed_url.query).get("provider", [""])[0].strip().lower()
+                if requested_provider:
+                    preset = BACKEND_PRESETS.get(requested_provider)
+                    if not preset:
+                        self._json({"error": "Unbekannter Provider"}, 400)
+                        return
+                    config = {key: value for key, value in preset.items()
+                              if key not in ("method", "description")}
+                    configured = True
+                    if requested_provider in {"claude-api", "openai", "hermes", "openrouter"}:
+                        api_key = _load_api_key(requested_provider)
+                        configured = bool(api_key)
+                        if api_key:
+                            config["api_key"] = api_key
+                    selected_backend = create_backend(config)
+                    models = selected_backend.list_models()
+                    self._json({
+                        "provider": requested_provider,
+                        "models": models,
+                        "credential_configured": configured,
+                    })
+                else:
+                    with _runtime_state_lock:
+                        selected_backend = runtime.backend
+                    models = selected_backend.list_models()
+                    self._json({"models": models, "provider": backend_identifier(selected_backend)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
@@ -2864,11 +3010,21 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            worker_id = parse_qs(parsed_url.query).get("id", [""])[0]
+            try:
+                self._json({"ok": True, **worker_configuration_snapshot(worker_id)})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration nicht verfügbar"}, 503)
+
         elif path == "/api/workers":
             try:
                 self._json({
                     "ok": True,
-                    "workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
+                    "workers": [_worker_handoff_snapshot(worker) for worker in
+                                list_workers(include_expired=True, active_worker_ids=_active_worker_ids())],
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
@@ -2979,7 +3135,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 current_m = _global_defaults.get("model") or getattr(runtime.backend, "default_model", None)
                 if current_m:
                     preset["default_model"] = current_m
-            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes"):
+            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
@@ -3272,6 +3428,35 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            try:
+                result = _change_worker_configuration(body.get("id"), body.get("configuration_version"), body.get("changes"))
+                self._json({"ok": True, **result})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except RuntimeError:
+                self._json({"error": "Worker läuft oder Konfiguration inzwischen geändert"}, 409)
+            except (TypeError, ValueError):
+                self._json({"error": "Ungültige Worker-Konfiguration"}, 400)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration konnte nicht bestätigt werden"}, 503)
+
+        elif path == "/api/workers/handoff":
+            worker_id = body.get("id")
+            generation = body.get("generation")
+            if (not isinstance(worker_id, str) or not worker_id or len(worker_id) > 80
+                    or not isinstance(generation, str) or len(generation) != 32
+                    or any(c not in "0123456789abcdef" for c in generation)):
+                self._json({"error": "Worker-ID und aktuelle Generation erforderlich"}, 400)
+                return
+            try:
+                receipt = _request_worker_handoff(worker_id, generation)
+                self._json({"ok": True, "receipt": receipt}, 202)
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 409)
+            except Exception:
+                self._json({"error": "Workerlauf nicht verifizierbar"}, 503)
+
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
@@ -3317,11 +3502,12 @@ class ControlHandler(BaseHTTPRequestHandler):
             # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
             # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
             sub_mode = (w.get("sub_mode") or "").strip().lower()
+            worker_instance_id = f"worker-{uuid.uuid4().hex}"
             try:
                 board_assignment = begin_assignment(
                     role_id=(sub_mode or "task_worker"),
                     mode=(w.get("mode") or "full"),
-                    agent_instance_id=f"worker-{uuid.uuid4().hex}",
+                    agent_instance_id=worker_instance_id,
                     backend_id=w.get("backend") or "ollama",
                     model_id=w.get("model") or "qwen3.8:27b-mlx",
                     slot_id=worker_id,
@@ -3338,10 +3524,13 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             def _run_worker_job():
                 worker_error = None
+                worker_session = None
+                current_assignment = board_assignment
+                assignment_open = True
                 try:
                     if control.stop_event.is_set():
                         return
-                    _update_worker_slot(control, {"status": "running", "current_activity": "Starte Routine..."})
+                    _update_worker_slot(control, {"status": "running", "auto_paused": False, "current_activity": "Starte Routine..."})
                     _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
                     if control.stop_event.is_set():
                         return
@@ -3351,21 +3540,43 @@ class ControlHandler(BaseHTTPRequestHandler):
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
-                        initial_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
+                        initial_prompt = (
+                            f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
+                            f"Erledigung mit task_manage(action='done', task_id={w.get('task_id')}). "
+                            "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "hintergrund_worker":
-                        initial_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
+                        initial_prompt = (
+                            "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
+                            "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                            "task_manage(action='done', task_id=<ID>). Bei Hindernissen bleibt die Task offen; "
+                            "nenne den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "boss_routing":
-                        initial_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
+                        initial_prompt = (
+                            "Analysiere die offenen Aufgaben in der TaskDB, zerlege komplexe Aufgaben mit "
+                            "task_manage(action='decompose') und nenne passende Fachrollen als Empfehlung. "
+                            "Behaupte keine Zuweisung oder Übernahme, solange die TaskDB keinen Claim/Lease bestätigt."
+                        )
                     elif w.get("sub_mode") == "expert_role":
                         role = w.get("role_id") or "Experte"
                         if role == "task-divider":
                             initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
                         elif role == "ticket-master":
-                            initial_prompt = "Sichte unzugewiesene oder heimatlose Tickets und ordne sie den passenden Fachrollen zu via task_manage action='assign'."
+                            initial_prompt = (
+                                "Triagiere Aufgaben anhand der TaskDB. Nutze nur task_manage-Aktionen "
+                                "list, detail, add, update und decompose; action='assign' ist nicht verfügbar. "
+                                "Erstelle bei Bedarf konkrete Tasks und halte Tickets als Dokumentationsverweise. "
+                                "Eine Task wird über den vorgesehenen Claim/Lease-Prozess übernommen; behaupte keine "
+                                "Zuweisung, die die TaskDB nicht bestätigt."
+                            )
                         else:
                             initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
                     else:
-                        initial_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
+                        initial_prompt = w.get("task_prompt") or (
+                            "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
+                            "tatsächlicher Erledigung mit task_manage(action='done', task_id=<ID>)."
+                        )
 
                     prompt_to_run = initial_prompt
                     run_count = 0
@@ -3402,13 +3613,35 @@ class ControlHandler(BaseHTTPRequestHandler):
                             worker_id, worker_slot=current_slot
                         )
 
+                        if not assignment_open:
+                            current_assignment = begin_assignment(
+                                role_id=(current_slot.get("sub_mode") or "task_worker"),
+                                mode=(current_slot.get("mode") or "full"),
+                                agent_instance_id=worker_instance_id,
+                                backend_id=current_slot.get("backend") or "ollama",
+                                model_id=model,
+                                slot_id=worker_id,
+                                task_id=current_slot.get("task_id") or 0,
+                                session_id=worker_id,
+                                initiated_by=f"board:{worker_id}",
+                            )
+                            assignment_open = True
+
                         if control.stop_event.is_set():
                             break
                         loop = asyncio.new_event_loop()
                         ans = ""
                         try:
+                            worker_session = runtime.get_session(worker_id)
+                            worker_session.worker_handoff = control.handoff
                             ans = loop.run_until_complete(
-                                runtime.process(prompt_to_run, worker_id, backend=target_backend, model=model)
+                                runtime.process(
+                                    prompt_to_run,
+                                    worker_id,
+                                    backend=target_backend,
+                                    model=model,
+                                    work_priority="background",
+                                )
                             )
                         finally:
                             loop.close()
@@ -3433,19 +3666,63 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
                             break
 
-                        # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen
-                        if current_slot.get("type") == "once" and not exp_str:
+                        completion_reader = getattr(runtime, "consume_task_completion_receipts", None)
+                        try:
+                            completion_receipts = completion_reader(worker_id) if callable(completion_reader) else ()
+                        except Exception:
+                            log.warning("Worker %s: Task-Abschlussbelege konnten nicht gelesen werden", worker_id)
+                            completion_receipts = ()
+                        task_completed = _worker_task_completed(current_slot, completion_receipts)
+
+                        # Einzellauf endet nach einem abgeschlossenen Block.
+                        if current_slot.get("type") == "once":
+                            assigned_task_id = current_slot.get("task_id")
+                            if assigned_task_id not in (None, "", 0, "0") and not task_completed:
+                                _update_worker_slot(control, {
+                                    "status": "idle",
+                                    "current_activity": (
+                                        f"Task #{assigned_task_id} bleibt offen; Zwischenergebnis gespeichert"
+                                    ),
+                                })
+                                _record_worker_activity(
+                                    control,
+                                    f"Task #{assigned_task_id} ohne Abschlussbeleg beendet",
+                                    "pending",
+                                )
+                                break
                             _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
                             break
 
-                        # Wenn keine TTL gesetzt ist (unbegrenzt) und Task abgeschlossen wurde:
-                        if not exp_str:
+                        # Fortlaufende Profile dürfen ohne TTL bis zum manuellen
+                        # Stopp laufen; 0 bedeutet kein Ablaufdatum.
+                        if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
-                        # TTL ist aktiv (noch in der Zukunft):
-                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff
+                        if task_completed:
+                            finish_assignment(
+                                current_assignment, status="completed", result="task_done",
+                                reason="verified_tool_receipt",
+                            )
+                            assignment_open = False
+                            # Die konfigurierte Task ist nur der erste Auftrag.
+                            # Folgeaufträge dürfen nicht an ihre alte ID gebunden
+                            # bleiben; der nächste Block erhält eine neue Besetzung.
+                            if current_slot.get("task_id") not in (None, "", 0, "0"):
+                                if _update_worker_slot(control, {"task_id": None}) is None:
+                                    break
+
+                        # Count a task only when task_manage returned a successful
+                        # completion receipt for this worker's assigned task.
                         is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
+                        pause_event = _worker_pause_event_type(
+                            current_slot,
+                            task_completed=task_completed,
+                        )
+                        if not _wait_worker_cooldown(control, event_type=pause_event):
+                            break
+
+                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff.
                         if is_max_turns:
                             if _update_worker_slot(control, {
                                 "status": "running",
@@ -3458,8 +3735,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                             )
                             if control.stop_event.wait(2):
                                 break
-                        else:
-                            # Task abgeschlossen, aber TTL läuft noch -> Warte kurz und ziehe nächsten Task
+                        elif task_completed:
+                            # A verified completion lets a continuous worker pick the next task.
                             if _update_worker_slot(control, {
                                 "status": "running",
                                 "current_activity": f"Aufgabe fertig. Suche nächste Aufgabe (Lauf {run_count + 1})..."
@@ -3467,7 +3744,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 break
                             if control.stop_event.wait(12):
                                 break
-                            prompt_to_run = "Prüfe offene Tasks in BACH und bearbeite die nächste wichtige offene Aufgabe autonom."
+                            prompt_to_run = (
+                                "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
+                                "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                                "task_manage(action='done', task_id=<ID>)."
+                            )
+                        else:
+                            # Do not abandon or mark an unverified task complete.
+                            if _update_worker_slot(control, {
+                                "status": "running",
+                                "current_activity": f"Task noch offen. Setze sie fort (Lauf {run_count + 1})..."
+                            }) is None:
+                                break
+                            if control.stop_event.wait(2):
+                                break
+                            prompt_to_run = (
+                                "Setze die zuletzt bearbeitete Task fort. Es liegt noch kein erfolgreicher "
+                                "task_manage(action='done')-Beleg vor. Prüfe den aktuellen Taskstatus und arbeite "
+                                "weiter; nur nach tatsächlicher Erledigung mit der konkreten Task-ID als done markieren."
+                            )
 
                     if control.stop_event.is_set():
                         return
@@ -3499,8 +3794,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 _as_status, _as_result, _as_reason = "released", "ttl_expired", ""
                             else:
                                 _as_status, _as_result, _as_reason = "released", "not_finished", ""
-                        finish_assignment(board_assignment, status=_as_status,
-                                          result=_as_result, reason=_as_reason)
+                        if assignment_open:
+                            finish_assignment(current_assignment, status=_as_status,
+                                              result=_as_result, reason=_as_reason)
                     except Exception:
                         log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
                                     exc_info=True)
@@ -3515,6 +3811,16 @@ class ControlHandler(BaseHTTPRequestHandler):
                             ),
                         )
                     with _WORKER_CONTROL_LOCK:
+                        control.handoff.cancel()
+                        if _WORKER_CONTROLS.get(worker_id) is control:
+                            handoff_receipt = control.handoff.snapshot()
+                            if handoff_receipt:
+                                try:
+                                    update_slot(worker_id, {"handoff_receipt": handoff_receipt})
+                                except Exception:
+                                    log.warning("Worker-Übergabebeleg konnte nicht gespeichert werden", exc_info=True)
+                        if worker_session is not None and getattr(worker_session, "worker_handoff", None) is control.handoff:
+                            worker_session.worker_handoff = None
                         registered_thread = _ACTIVE_WORKER_THREADS.get(worker_id)
                         if registered_thread is threading.current_thread() or registered_thread is control.thread:
                             _ACTIVE_WORKER_THREADS.pop(worker_id, None)
@@ -3524,6 +3830,14 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
             with _WORKER_CONTROL_LOCK:
+                current_control = _WORKER_CONTROLS.get(worker_id)
+                current_slot = get_worker_slot(worker_id)
+                if (current_control is not None and _thread_is_alive(current_control.thread)
+                        or not current_slot
+                        or _worker_configuration(current_slot) != _worker_configuration(w)):
+                    finish_assignment(board_assignment, status="interrupted", result="start_conflict", reason="configuration_changed")
+                    self._json({"error": "Worker oder Konfiguration inzwischen geändert"}, 409)
+                    return
                 control.thread = th
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = th
