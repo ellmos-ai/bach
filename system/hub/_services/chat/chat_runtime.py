@@ -73,6 +73,25 @@ def tool_round_warning_threshold(max_rounds: int) -> int:
     """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
     return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
 
+
+def _resume_handoff_context(original, summary, *, background_task, has_tools,
+                            round_num, max_rounds):
+    """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
+    history = [
+        message for message in summary
+        if message.get("role") != "system"
+        and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not re.fullmatch(
+            r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
+            str(message.get("content", "")),
+        )
+    ]
+    messages = [message for message in original if message.get("role") == "system"] + history
+    if background_task and has_tools:
+        messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+    messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+    return messages, history
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -1529,13 +1548,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     summary = await self._handoff(
                         msgs, session, backend=selected_backend, model=selected_model, strict=True,
                     )
-                    msgs = [m for m in msgs if m.get("role") == "system"] + summary
-                    if background_task and session.allow_tools is True and offered_tools:
-                        msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
-                    msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+                    resumed, history = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
+                    )
                     if not handoff_control.finish(request_id, succeeded=True):
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
-                    session.messages = list(summary)
+                    msgs = resumed
+                    session.messages = history
                     capability_error = self._refresh_worker_tools(session)
                     if capability_error is not None:
                         return capability_error
@@ -1576,12 +1597,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
                 try:
-                    msgs = await self._handoff(
+                    summary = await self._handoff(
                         msgs,
                         session,
                         backend=selected_backend,
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
+                    )
+                    msgs, session.messages = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
                     )
                 except Exception as e:
                     session.current_tool = ""

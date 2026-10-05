@@ -1718,6 +1718,67 @@ def test_successful_but_still_full_context_handoffs_are_bounded():
     assert backend.calls <= 5
 
 
+@pytest.mark.parametrize("summary_fails", [False, True])
+@pytest.mark.parametrize("completed_rounds", [0, 1])
+def test_automatic_handoff_keeps_worker_role_policy_budget_and_history(summary_fails, completed_rounds, monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import (
+        ChatRuntime, ChatSession, HANDOFF_PROMPT, SELF_DECOMPOSE_INSTRUCTION,
+        tool_round_counter,
+    )
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool", lambda *a, **kw: "synthetic result")
+
+    class Backend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "test-model"
+
+        def tool_response_message(self, content, tool_call_id):
+            return {"role": "tool", "content": content, "tool_call_id": tool_call_id}
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append([dict(m) for m in messages])
+            if messages[-1]["content"] == HANDOFF_PROMPT:
+                if summary_fails:
+                    raise TimeoutError("synthetic summary failure")
+                return {"content": "RESUME: continue exact work"}
+            if completed_rounds and len(self.calls) == 1:
+                return {"content": "", "prompt_tokens": 10, "tool_calls": [{
+                    "id": "synthetic-call", "function": {"name": "read_file", "arguments": '{"path":"test"}'},
+                }]}
+            if len(self.calls) == completed_rounds + 1:
+                return {"content": "", "prompt_tokens": 90}
+            return {"content": "continued", "prompt_tokens": 10}
+
+    backend = Backend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    session = ChatSession()
+    session.allow_tools = True
+    session.max_tool_rounds = 5
+    session.messages = [{"role": "user", "content": "old full conversation"}]
+    original = [{"role": "system", "content": "Specific worker role"}, *session.messages]
+    token = runtime._compute_turn_context.set(("worker-test", "background"))
+    try:
+        answer = asyncio.run(runtime._tool_loop(original, session, tools=[{"name": "read"}], context_limit=100))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert answer == "continued"
+    resumed = backend.calls[-1]
+    assert [m for m in resumed if m["role"] == "system"] == [{"role": "system", "content": "Specific worker role"}]
+    assert sum(m["content"] == SELF_DECOMPOSE_INSTRUCTION for m in resumed) == 1
+    assert sum(m["content"] == tool_round_counter(completed_rounds, 5) for m in resumed) == 1
+    assert sum(str(m["content"]).startswith("[Werkzeugrunde ") for m in resumed) == 1
+    assert all(m["role"] != "system" for m in session.messages)
+    if not summary_fails:
+        assert "old full conversation" not in str(session.messages)
+        assert "RESUME: continue exact work" in str(session.messages)
+
+
 def test_non_glm_transient_handoff_failure_keeps_tail_fallback():
     import asyncio
     from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
