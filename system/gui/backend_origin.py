@@ -1,14 +1,14 @@
 """Read-only, non-secret observation of the GUI's active BACH data source."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from contextlib import closing
 import hashlib
 import json
-from pathlib import Path
 import platform
 import re
 import sqlite3
+from contextlib import closing
+from datetime import datetime, timezone
+from pathlib import Path
 
 SCHEMA = "ellmos-system-gui.backend-origin.v1"
 DEFAULT_MANIFEST = Path.home() / ".bach" / "gui_backend_origin.json"
@@ -25,6 +25,7 @@ def observe_backend_origin(database: Path, api_database: Path,
     or database integrity. No private path, hostname, or hash enters the reply.
     """
     result = {
+        "schema": SCHEMA,
         "mode": "unknown",
         "declared_mode": "unknown",
         "backend_kind": None,
@@ -33,6 +34,8 @@ def observe_backend_origin(database: Path, api_database: Path,
         "schema_verified": False,
         "instance_verified": False,
         "adapter_binding_verified": False,
+        "has_claim_authority": False,
+        "cache_active": False,
         "source": "not_verified",
         "reason_code": "manifest_unavailable_or_invalid",
         "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -78,6 +81,9 @@ def observe_backend_origin(database: Path, api_database: Path,
         result["instance_label"] = label
         result["source"] = "deployment_manifest_and_live_sqlite"
         result["reason_code"] = "verified"
+        # GUX-003: Pure read status must not claim Lead TaskDB claim functionality without an active lease
+        result["has_claim_authority"] = (declared == "server" and not declaration.get("read_only_observation", False))
+        result["cache_active"] = bool(declaration.get("offline_cache_active", False))
     elif not result["schema_verified"]:
         result["reason_code"] = "schema_unavailable"
     else:

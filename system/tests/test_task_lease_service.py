@@ -506,6 +506,80 @@ class TestRelease:
 # ---------------------------------------------------------------------------
 
 class TestLegacyPathsRespectLease:
+    @pytest.mark.parametrize("expires", ["2000-01-01T00:00:00.000000Z", None])
+    @pytest.mark.parametrize("status", ["done", "pending"])
+    def test_generic_status_change_rejects_retained_capability(self, conn, expires, status):
+        tid = _insert(conn)
+        _acq(conn, tid)
+        conn.execute("UPDATE tasks SET claim_expires_at = ? WHERE id = ?", (expires, tid))
+        conn.commit()
+        before = _get(conn, tid)
+        with pytest.raises(LeaseRequired):
+            apply_task_field_changes(conn, tid, before, {"status": status})
+        conn.rollback()
+        assert _get(conn, tid) == before
+
+    def test_generic_status_change_rejects_stale_unleased_snapshot(self, conn):
+        tid = _insert(conn)
+        stale = _get(conn, tid)
+        _acq(conn, tid, now=datetime.now(timezone.utc))
+        before = _get(conn, tid)
+        with pytest.raises(LeaseRequired):
+            apply_task_field_changes(conn, tid, stale, {"status": "done"})
+        conn.rollback()
+        assert _get(conn, tid) == before
+
+    def test_generic_status_update_fences_acquire_after_preflight(self, db_path):
+        other = _connect(db_path)
+        ensure_task_lease_schema(other)
+        tid = _insert(other)
+
+        class AcquireBeforeUpdate(sqlite3.Connection):
+            def execute(self, sql, parameters=(), /):
+                if sql.startswith("UPDATE tasks SET"):
+                    _acq(other, tid, now=datetime.now(timezone.utc))
+                return super().execute(sql, parameters)
+
+        conn = sqlite3.connect(str(db_path), factory=AcquireBeforeUpdate)
+        conn.row_factory = sqlite3.Row
+        try:
+            stale = _get(conn, tid)
+            with pytest.raises(LeaseRequired):
+                apply_task_field_changes(conn, tid, stale, {"status": "done"})
+            conn.rollback()
+            assert _get(other, tid)["status"] == "in_progress"
+            assert not other.execute("SELECT 1 FROM task_history WHERE action = 'status_change'").fetchone()
+        finally:
+            conn.close()
+            other.close()
+
+    def test_legacy_schema_update_serializes_first_lease_migration(self, db_path):
+        other = _connect(db_path)
+        other.execute("PRAGMA busy_timeout = 0")
+        tid = _insert(other)
+        migration_blocked = []
+
+        class MigrateBeforeUpdate(sqlite3.Connection):
+            def execute(self, sql, parameters=(), /):
+                if sql.startswith("UPDATE tasks SET"):
+                    try:
+                        _acq(other, tid, now=datetime.now(timezone.utc))
+                    except sqlite3.OperationalError as exc:
+                        assert "locked" in str(exc)
+                        migration_blocked.append(True)
+                return super().execute(sql, parameters)
+
+        conn = sqlite3.connect(str(db_path), factory=MigrateBeforeUpdate)
+        conn.row_factory = sqlite3.Row
+        try:
+            assert apply_task_field_changes(conn, tid, _get(conn, tid), {"status": "done"})
+            assert migration_blocked == [True]
+            conn.rollback()
+            assert _acq(other, tid, now=datetime.now(timezone.utc)).payload["granted"]
+        finally:
+            conn.close()
+            other.close()
+
     def test_generic_status_change_blocked_while_live(self, conn):
         tid = _insert(conn)
         _acq(conn, tid, now=datetime.now(timezone.utc))
