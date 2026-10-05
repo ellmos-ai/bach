@@ -2345,6 +2345,105 @@ async def get_hermes_stats():
 
 
 # ═══════════════════════════════════════════════════════════════
+# 6.6. NEMOFOLD: WORKFLOW-LERNEN & STEP-KETTEN SYNTHESE (/api/learning/nemofold/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_nemofold_service_instance():
+    try:
+        from hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+    except ImportError:
+        from system.hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+
+
+@router.post("/learning/nemofold/synthesize")
+async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
+    """
+    Führt die NemoFold Heuristik-Detektion und Step-Ketten Synthese aus.
+    Nimmt Session-Logs, Transkripte oder Snapshot-IDs entgegen und erzeugt
+    strukturierte, TÜV-geprüfte Step-Ketten für MarbleRun.
+    """
+    service = _get_nemofold_service_instance()
+    source_type = payload.get("source_type", "transcript")
+    source_ref = payload.get("source_ref")
+    raw_text = payload.get("raw_text") or payload.get("transcript")
+
+    try:
+        res = service.run_synthesis(
+            source_type=source_type,
+            source_ref=source_ref,
+            raw_text=raw_text
+        )
+        return res
+    except Exception as e:
+        logger.error(f"NemoFold Synthesis Fehler: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"NemoFold Synthesis Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/candidates")
+async def get_nemofold_candidates(
+    status: str = Query("pending", description="pending|approved|rejected|all"),
+    limit: int = Query(50, ge=1, le=200)
+):
+    """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
+    service = _get_nemofold_service_instance()
+    candidates = service.list_candidates(status=status)
+    return {"candidates": candidates[:limit], "count": len(candidates)}
+
+
+@router.get("/learning/nemofold/candidates/{candidate_id}")
+async def get_nemofold_candidate_detail(candidate_id: int):
+    """Liefert die vollständige Spezifikation und TÜV-Bewertung eines Kandidaten."""
+    service = _get_nemofold_service_instance()
+    candidate = service.get_candidate(candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Kandidat nicht gefunden")
+    return candidate
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/approve")
+async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe: Überführt die Kette direkt in `marblerun_chains`."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("approved_by", "operator")
+    notes = payload.get("notes", "")
+    try:
+        res = service.approve_candidate(candidate_id, operator=operator, notes=notes)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Freigabe-Fehler: {str(e)}")
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/reject")
+async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen gelernten Workflow-Kandidaten mit Begründung ab."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("rejected_by", "operator")
+    reason = payload.get("reason", "")
+    try:
+        res = service.reject_candidate(candidate_id, reason=reason, operator=operator)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ablehnungs-Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/stats")
+async def get_nemofold_stats():
+    """Liefert aggregierte Live-Metriken der NemoFold Workflow-Engine."""
+    service = _get_nemofold_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+
+# ═══════════════════════════════════════════════════════════════
 # 7. DOMAENEN, ARTEFAKTE, TEAMBUILDING & OCEAN MODULSCHALTPLAN
 # ═══════════════════════════════════════════════════════════════
 
@@ -2478,7 +2577,13 @@ async def get_ocean_module_map():
             {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "unknown", "icon": "💻", "role": "Codeanalyse-Anbindung: Prüfung ausstehend"}
         ],
         "subsystems": [
-            {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
+            {
+                "name": "NemoFold",
+                "category": "Workflow-Lernen",
+                "status": "active",
+                "description": "Synthese geprüfter Step-Ketten aus autonomen Session-Logs mit Workflow-TÜV & Rollback-Schutz",
+                "metrics": _get_nemofold_service_instance().get_stats()
+            },
             {
                 "name": "Hermes",
                 "category": "Skill-Destillation",

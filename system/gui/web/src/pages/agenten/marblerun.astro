@@ -84,7 +84,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
   <div class="card">
     <div class="card-header">
       <h2 class="card-title">📚 Ketten-Bibliothek</h2>
-      <span class="badge badge-accent" id="chains-count-badge">Lade...</span>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <a href="/settings" class="badge badge-secondary" style="text-decoration:none;" title="NemoFold gelernte Ketten in Settings prüfen">🧬 NemoFold Lernen</a>
+        <span class="badge badge-accent" id="chains-count-badge">Lade...</span>
+      </div>
     </div>
 
     <div class="grid grid-cols-3" id="chains-grid" style="gap:1.5rem;">

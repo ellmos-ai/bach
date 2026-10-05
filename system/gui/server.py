@@ -1586,6 +1586,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/capabilities/mcp/cookbooks",
         "/api/learning/hermes/stats",
         "/api/learning/hermes/candidates",
+        "/api/learning/nemofold/stats",
+        "/api/learning/nemofold/candidates",
     }
 
     async def _require_device(self, request: Request, call_next):
