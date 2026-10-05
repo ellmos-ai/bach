@@ -5543,6 +5543,9 @@ async def skills_page():
     p = ASTRO_DIST_DIR / "skills.html"
     if p.exists():
         return FileResponse(p)
+    tpl = TEMPLATES_DIR / "skills.html"
+    if tpl.exists():
+        return FileResponse(tpl)
     return RedirectResponse("/agents-board")
 
 @app.get("/finanzen")

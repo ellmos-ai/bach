@@ -112,7 +112,6 @@ import BachLayout from "../layouts/BachLayout.astro";
   <!-- Modal: MCP Cookbook Fachbuch-Blaetteransicht -->
   <div id="mcp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(8px);">
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);max-width:850px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;position:relative;">
-      
       <!-- Book Header -->
       <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);">
         <div style="display:flex;align-items:center;gap:0.75rem;">
@@ -147,7 +146,6 @@ import BachLayout from "../layouts/BachLayout.astro";
 
       <!-- Book Pages Container -->
       <div style="padding:1.5rem;flex:1;">
-        
         <!-- PAGE 1: Buchdeckel & Identitaet -->
         <div id="mcp-page-1" class="book-page" style="display:flex;flex-direction:column;gap:1.25rem;">
           <div id="mcp-cover-banner" style="padding:2rem;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,0.15);box-shadow:inset 0 0 30px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:0.75rem;">
@@ -696,7 +694,20 @@ import BachLayout from "../layouts/BachLayout.astro";
             setTimeout(() => { copyBtn.textContent = '📋 Kopieren'; }, 1800);
           });
 
-          topRow.append(titleBox, copyBtn);
+          const convBtn = document.createElement('button');
+          convBtn.type = 'button';
+          convBtn.className = 'btn btn-primary';
+          convBtn.style.padding = '0.2rem 0.5rem';
+          convBtn.style.fontSize = '0.72rem';
+          convBtn.textContent = '⚡ In Skill umwandeln';
+          convBtn.onclick = () => convertPromptToSkill(String(rec.title || 'MCP Prompt'), String(rec.prompt || ''), 'mcp');
+
+          const btnRow = document.createElement('div');
+          btnRow.style.display = 'flex';
+          btnRow.style.gap = '0.4rem';
+          btnRow.append(copyBtn, convBtn);
+
+          topRow.append(titleBox, btnRow);
 
           const codeBlock = document.createElement('pre');
           codeBlock.style.margin = '0';
@@ -931,17 +942,74 @@ import BachLayout from "../layouts/BachLayout.astro";
       }
     }
 
+    // GUX-063: Verifizierte Clipboard-Kopierfunktion ohne Read-Berechtigung
+    async function copyToClipboard(text, btnElement) {
+      const originalText = btnElement.textContent;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        btnElement.textContent = "✓ Kopiert!";
+        btnElement.style.background = "var(--success)";
+        btnElement.style.color = "white";
+        setTimeout(() => {
+          btnElement.textContent = originalText;
+          btnElement.style.background = "";
+          btnElement.style.color = "";
+        }, 2000);
+      } catch (err) {
+        console.error("Clipboard-Fehler:", err);
+        btnElement.textContent = "Fehler!";
+        setTimeout(() => { btnElement.textContent = originalText; }, 2000);
+      }
+    }
+
+    // GUX-064: Prompt -> Skill Konvertierung
+    async function convertPromptToSkill(title, promptText, category = "utilities") {
+      if (!confirm(`Soll der Prompt "${title}" über den Creator-Vertrag in einen echten Skill überführt werden?`)) return;
+      try {
+        const res = await fetch('/api/capabilities/prompts/convert-to-skill', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ title, prompt_text: promptText, category })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Erfolg: Skill "${data.skill_name}" (${data.version}) angelegt!`);
+          closeMcpModal();
+          loadCapabilitiesData();
+        } else {
+          alert("Fehler bei der Konvertierung: " + (data.detail || "Unbekannt"));
+        }
+      } catch (e) {
+        alert("Netzwerkfehler: " + e);
+      }
+    }
+
+    // GUX-065: Reversibles Append-Only Restore
     async function rollbackSkill(skill_name, target_version) {
-      if (!confirm(`Soll Skill "${skill_name}" auf Version ${target_version} zurückgesetzt werden?`)) return;
+      if (!confirm(`Soll Skill "${skill_name}" auf Version "${target_version}" wiederhergestellt werden (Append-Only neue Version)?`)) return;
       try {
         const res = await fetch('/api/capabilities/skills/rollback', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({skill_name, target_version})
         });
-        if (res.ok) {
-          alert(`Rollback für ${skill_name} auf ${target_version} durchgeführt.`);
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+          alert(data.message || `Version wiederhergestellt als ${data.active_version}`);
           loadCapabilitiesData();
+        } else {
+          alert("Fehler beim Rollback: " + (data.detail || data.message || "Unbekannt"));
         }
       } catch (e) {
         alert("Fehler beim Rollback: " + e);

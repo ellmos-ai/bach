@@ -71,6 +71,18 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
             </li>
           </ul>
         </div>
+
+        <!-- GUX-066: Externe Artefakte & Prompt-Suiten -->
+        <div class="glass-card" style="grid-column: 1 / -1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+            <h3><span class="icon">📦</span> Belegte Externe Prompt-Suiten & Artefakte (GUX-066)</h3>
+            <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="loadExternalArtifacts()">🔄 Neu prüfen</button>
+          </div>
+          <p class="card-desc">Forensische Erkennung und verifizierter Import von ProfiPrompt, PromptBoard und Explorer Pro Suiten.</p>
+          <div id="settings-artifacts-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;margin-top:1rem;">
+            <p style="color:var(--text-muted);font-size:0.85rem;">Prüfe Artefakt-Bestand...</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -545,11 +557,69 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
     }
   }
 
+  async function loadExternalArtifacts() {
+    const grid = document.getElementById('settings-artifacts-grid');
+    if (!grid) return;
+    grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Prüfe Artefakt-Bestand...</p>';
+    try {
+      const res = await fetch('/api/system/external-artifacts');
+      const data = await res.json();
+      grid.innerHTML = Object.values(data).map(art => `
+        <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;display:flex;flex-direction:column;justify-content:space-between;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+              <strong style="font-size:0.95rem;">${art.title}</strong>
+              <span class="badge ${art.present ? 'badge-success' : ''}" style="${!art.present ? 'opacity:0.6;' : ''}">
+                ${art.present ? 'Gefunden' : 'Nicht gefunden'}
+              </span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.5rem 0;">${art.description}</p>
+            ${art.path ? `<code style="font-size:0.7rem;display:block;background:rgba(0,0,0,0.3);padding:0.25rem 0.4rem;border-radius:4px;word-break:break-all;margin-bottom:0.6rem;">${art.path}</code>` : ''}
+            ${art.preview_items && art.preview_items.length ? `
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;">
+                <strong>Vorschau:</strong>
+                <ul style="margin:0.2rem 0 0 0;padding-left:1rem;">
+                  ${art.preview_items.map(p => `<li>${p.title || p.name} (${p.category})</li>`).join('')}
+                </ul>
+              </div>
+            ` : ''}
+          </div>
+          <button class="btn btn-primary" style="width:100%;font-size:0.8rem;padding:0.35rem 0.6rem;" ${!art.can_import ? 'disabled' : ''} onclick="importExternalArtifact('${art.id}')">
+            📥 ${art.present ? 'In Prompt-DB importieren' : 'Nicht verfügbar'}
+          </button>
+        </div>
+      `).join('');
+    } catch (e) {
+      grid.innerHTML = `<p style="color:var(--accent-red);font-size:0.85rem;">Fehler beim Laden: ${e.message}</p>`;
+    }
+  }
+
+  async function importExternalArtifact(artId) {
+    if (!confirm(`Soll das Artefakt "${artId}" in die Prompt-DB importiert werden?`)) return;
+    try {
+      const res = await fetch('/api/system/external-artifacts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact: artId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`Import erfolgreich: ${data.imported} Einträge importiert (${data.skipped} übersprungen).`);
+        loadExternalArtifacts();
+      } else {
+        alert("Import fehlgeschlagen: " + (data.detail || "Fehler"));
+      }
+    } catch (e) {
+      alert("Netzwerkfehler: " + e.message);
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
     loadOceanMap();
     loadTheme();
     loadBackendOrigin();
+    loadExternalArtifacts();
     document.getElementById('theme-save').addEventListener('click', saveTheme);
     document.getElementById('backend-origin-refresh').addEventListener('click', loadBackendOrigin);
   });

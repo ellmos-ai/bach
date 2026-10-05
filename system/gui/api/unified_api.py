@@ -68,6 +68,22 @@ from hub._services.cognitive_service import (
 router = APIRouter(prefix="/api", tags=["unified"])
 _COMPARE_RACE_LOCK = asyncio.Lock()
 
+try:
+    from hub._services.skill_capabilities_service import (
+        get_plugin_sockets as svc_get_plugin_sockets,
+        toggle_plugin_socket as svc_toggle_plugin_socket,
+        get_mcp_cookbooks as svc_get_mcp_cookbooks,
+        get_capabilities_tiers as svc_get_capabilities_tiers,
+        save_skill_version as svc_save_skill_version,
+        restore_skill_version as svc_restore_skill_version,
+        convert_prompt_to_skill as svc_convert_prompt_to_skill,
+        validate_blueprint_skills as svc_validate_blueprint_skills,
+        detect_external_artifacts as svc_detect_external_artifacts,
+        import_external_artifact as svc_import_external_artifact,
+    )
+except ImportError:
+    pass
+
 
 def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
     conn = sqlite3.connect(str(BACH_DB), timeout=timeout)
@@ -310,6 +326,7 @@ async def list_agent_blueprints(
                 item["skills"] = json.loads(item.get("skills_json") or "[]")
             except Exception:
                 item["skills"] = []
+            item["skills_validation"] = svc_validate_blueprint_skills(item["skills"])
             try:
                 item["contractus"] = json.loads(item.get("contractus_json") or "{}")
             except Exception:
@@ -383,6 +400,9 @@ async def save_agent_blueprint(payload: Dict[str, Any]):
     try:
         _ensure_agent_studio_tables(conn)
         res = svc_save_blueprint(conn, payload)
+        skills = payload.get("skills", [])
+        if skills:
+            res["skills_validation"] = svc_validate_blueprint_skills(skills)
         return res
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -1268,73 +1288,28 @@ def _ensure_capabilities_db(conn):
 
 @router.get("/capabilities/steckdosen")
 async def get_plugin_steckdosen():
-    """Liefert die Steckdosenleiste fuer Plugins (eingesteckt vs. Kabel aufgerollt)."""
+    """Liefert die Steckdosenleiste fuer Plugins (CAP-02)."""
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-
-    # Bekannte Standard-Plugins
-    default_plugins = [
-        {"name": "science", "title": "Science & Bio-Informatik", "description": "AlphaFold, UniProt, ChEMBL & Gene-Tools", "skills": 18},
-        {"name": "open-compute-plugin", "title": "Open-Compute Desktop Engine", "description": "Win32 Fenstermanagement, Screen-Capture & UIA", "skills": 14},
-        {"name": "android-cli-plugin", "title": "Android CLI Suite", "description": "AVD Management, UI Inspection & SDK Tools", "skills": 6},
-        {"name": "modern-web-guidance", "title": "Modern Web Guidance", "description": "Astro, Tailwind & Modern Frontend Patterns", "skills": 8},
-        {"name": "context7", "title": "Context7 Live Docs", "description": "Echtzeit Dokumentations-Resolver für APIs", "skills": 4},
-        {"name": "hyperframes-media", "title": "HyperFrames Media OS", "description": "Video-Rendering, Kinetic Motion & Waveform Synthesis", "skills": 16},
-    ]
-
-    # Status aus DB laden
-    rows = cursor.execute("SELECT name, is_plugged, slot FROM plugin_sockets").fetchall()
-    status_map = {r[0]: (bool(r[1]), r[2]) for r in rows}
-
-    sockets = []
-    for i, p in enumerate(default_plugins, 1):
-        plugged, slot = status_map.get(p["name"], (True, i))
-        sockets.append({
-            "slot": slot or i,
-            "name": p["name"],
-            "title": p["title"],
-            "description": p["description"],
-            "skills_count": p["skills"],
-            "is_plugged": plugged,
-            "cable_status": "connected" if plugged else "coiled",
-            "led_color": "var(--success)" if plugged else "var(--text-muted)"
-        })
-
-    conn.close()
-    return {"sockets": sockets, "active_count": sum(1 for s in sockets if s["is_plugged"])}
+    try:
+        return svc_get_plugin_sockets(conn)
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/plugins/toggle")
 async def toggle_plugin_socket(payload: Dict[str, Any] = Body(...)):
-    """Schaltet ein Plugin an der Steckdosenleiste ein oder aus."""
+    """Schaltet ein Plugin an der Steckdosenleiste ein oder aus (CAP-02)."""
     plugin_name = payload.get("name")
     if not plugin_name:
         raise HTTPException(status_code=400, detail="name erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-
-    row = cursor.execute("SELECT is_plugged FROM plugin_sockets WHERE name = ?", (plugin_name,)).fetchone()
-    current_state = bool(row[0]) if row else True
-    new_state = 0 if current_state else 1
-    now = datetime.now().isoformat()
-
-    cursor.execute("""
-        INSERT INTO plugin_sockets (name, is_plugged, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET is_plugged = excluded.is_plugged, updated_at = excluded.updated_at
-    """, (plugin_name, new_state, now))
-    conn.commit()
-    conn.close()
-
-    return {
-        "name": plugin_name,
-        "is_plugged": bool(new_state),
-        "cable_status": "connected" if new_state else "coiled",
-        "message": f"Plugin {plugin_name} {'eingesteckt (aktiv)' if new_state else 'ausgesteckt (Kabel eingerollt)'}"
-    }
+    try:
+        return svc_toggle_plugin_socket(plugin_name, conn)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
 
 @router.get("/capabilities/mcp/cookbooks")
@@ -1394,123 +1369,106 @@ async def get_disconnect_status_endpoint(server_id: str = Query(..., description
 
 @router.get("/capabilities/tiers")
 async def get_capabilities_tiers():
-    """Liefert die 4 harmonisierten Wissens-Ebenen (AgentBoard-Evolution)."""
-    return {
-        "tiers": [
-            {
-                "id": "executive",
-                "name": "1. Selbststeuerungs- & Metaskills (Zentrale Exekutive)",
-                "description": "Persona-Skills (Haltung/Charakter), Rollen-Skills (Auftrag & Skill-Dispatching), Semantisches Framing ('Stell dir vor...')",
-                "icon": "👑",
-                "color": "var(--accent-red)",
-                "skills": [
-                    {"name": "persona-researcher", "role": "Strenger empirischer Forscher", "version": "v1.2.0", "type": "Persona"},
-                    {"name": "persona-developer", "role": "Senior Software Architect (PEP-621 / TS)", "version": "v2.0.1", "type": "Persona"},
-                    {"name": "role-triage-operator", "role": "Task-Triage & Intent-Routing", "version": "v1.1.0", "type": "Rolle"},
-                    {"name": "frame-counterfactual", "role": "Pre-Mortem & Kognitives Framing", "version": "v1.0.0", "type": "Framing"}
-                ]
-            },
-            {
-                "id": "process",
-                "name": "2. Prozess-Skills (Handlung & Koordination)",
-                "description": "Adaptive Workflow-Skills (mit Subagenten) & Deterministische MarbleRun-Ketten",
-                "icon": "🔄",
-                "color": "var(--accent)",
-                "skills": [
-                    {"name": "workflow-pipeline-optimizer", "role": "6-Schritte Refactoring & Sanierung", "version": "v1.4.0", "type": "Workflow"},
-                    {"name": "workflow-paper-design-check", "role": "LaTeX / PDF Gestaltungs-Audit", "version": "v1.0.2", "type": "Workflow"},
-                    {"name": "chain-ci-lint-test-build", "role": "Deterministische CI Pipeline (MarbleRun)", "version": "v2.1.0", "type": "Kette"}
-                ]
-            },
-            {
-                "id": "service",
-                "name": "3. Service-Skills (System-Wissen & OS-Bedienung)",
-                "description": "Host- & OS-Bedienung (Windows/Mac/Shell), Systemprompts (CLAUDE.md, GEMINI.md) & Cluster-Topologie",
-                "icon": "🖥️",
-                "color": "var(--accent-blue)",
-                "skills": [
-                    {"name": "service-win32-window-ops", "role": "Desktop-Isolation & Focus-Management", "version": "v1.3.0", "type": "Service"},
-                    {"name": "service-cluster-sync", "role": "Tailscale & Mac Studio DB-Sync", "version": "v1.0.5", "type": "Service"},
-                    {"name": "service-agents-bridge", "role": "Regelwerk-Spiegelung & AGENTS.md Redirect", "version": "v2.0.0", "type": "Service"}
-                ]
-            },
-            {
-                "id": "capabilities",
-                "name": "4. Fähigkeiten-Skills (Atomare Werkzeuge)",
-                "description": "Konkrete Handwerkszeuge und How-Tos (git-hygiene, doc-chunker, lock-master)",
-                "icon": "🛠️",
-                "color": "var(--success)",
-                "skills": [
-                    {"name": "git-hygiene", "role": "Fail-Closed Git & Branch Management", "version": "v1.2.0", "type": "Fähigkeit"},
-                    {"name": "document-chunker", "role": "Token-Überlappendes Chunking für RAG", "version": "v1.0.0", "type": "Fähigkeit"},
-                    {"name": "lock-master", "role": "Verzeichnis- & Dateisperren-Auditor", "version": "v2.0.1", "type": "Fähigkeit"}
-                ]
-            }
-        ]
-    }
+    """Liefert die 4 harmonisierten Wissens-Ebenen mit echten Daten und Versionen."""
+    conn = _get_conn()
+    try:
+        return svc_get_capabilities_tiers(conn)
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/skills/version")
 async def save_skill_version(payload: Dict[str, Any] = Body(...)):
     """Speichert eine neue Version eines Skills (SentinelFleet-Muster)."""
     skill_name = payload.get("skill_name")
-    new_version = payload.get("version", "v1.1.0")
-    changelog = payload.get("changelog", "Update via Skills-Zentrale")
-    author = payload.get("author", "operator")
-    content = payload.get("content", "")
-
     if not skill_name:
         raise HTTPException(status_code=400, detail="skill_name erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-    now = datetime.now().isoformat()
-
-    cursor.execute("""
-        INSERT INTO skill_versions (skill_name, version, changelog, author, content, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (skill_name, new_version, changelog, author, content, now))
-    conn.commit()
-    conn.close()
-
-    return {
-        "status": "success",
-        "skill_name": skill_name,
-        "version": new_version,
-        "changelog": changelog,
-        "created_at": now
-    }
+    try:
+        return svc_save_skill_version(
+            conn,
+            skill_name=skill_name,
+            version=payload.get("version", "v1.1.0"),
+            changelog=payload.get("changelog", "Update via Skills-Zentrale"),
+            author=payload.get("author", "operator"),
+            content=payload.get("content", "")
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/skills/rollback")
 async def rollback_skill_version(payload: Dict[str, Any] = Body(...)):
-    """Setzt einen Skill auf eine fruehere Version zurueck."""
+    """Reversibles Append-Only Restore einer früheren Version (GUX-065)."""
     skill_name = payload.get("skill_name")
     target_version = payload.get("target_version")
     if not skill_name or not target_version:
         raise HTTPException(status_code=400, detail="skill_name und target_version erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
+    try:
+        return svc_restore_skill_version(conn, skill_name, target_version)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
-    row = cursor.execute("""
-        SELECT content FROM skill_versions
-        WHERE skill_name = ? AND version = ?
-        ORDER BY id DESC LIMIT 1
-    """, (skill_name, target_version)).fetchone()
 
-    conn.close()
-    if not row:
-        return {"status": "simulated_rollback", "message": f"Rollback auf {target_version} vorgemerkt"}
+@router.post("/capabilities/prompts/convert-to-skill")
+async def convert_prompt_to_skill_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Überführt einen Prompt in einen Skill nach Creator-Vertrag mit Provenienz (GUX-064)."""
+    prompt_id = payload.get("prompt_id")
+    prompt_text = payload.get("prompt_text")
+    title = payload.get("title")
+    category = payload.get("category", "utilities")
+    author = payload.get("author", "prompt-converter")
 
-    return {
-        "status": "success",
-        "skill_name": skill_name,
-        "active_version": target_version,
-        "message": f"Skill {skill_name} erfolgreich auf {target_version} zurueckgesetzt"
-    }
+    conn = _get_conn()
+    try:
+        return svc_convert_prompt_to_skill(
+            conn,
+            prompt_id=prompt_id,
+            prompt_text=prompt_text,
+            title=title,
+            category=category,
+            author=author
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
+
+
+@router.post("/capabilities/blueprints/validate-skills")
+async def validate_blueprint_skills_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Validiert Blueprint-Skills gegen die kanonische Registry (GUX-031)."""
+    skills = payload.get("skills", [])
+    return svc_validate_blueprint_skills(skills)
+
+
+@router.get("/system/external-artifacts")
+async def get_external_artifacts():
+    """Scannt belegte externe Artefakte (ProfiPrompt, PromptBoard, ExplorerPro; GUX-066)."""
+    return svc_detect_external_artifacts()
+
+
+@router.post("/system/external-artifacts/import")
+async def import_external_artifact_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Importiert belegte Artefakte in die System-Prompt-DB (GUX-066)."""
+    artifact = payload.get("artifact")
+    if not artifact:
+        raise HTTPException(status_code=400, detail="artifact erforderlich (profiprompt, promptboard, explorerpro)")
+    conn = _get_conn()
+    try:
+        return svc_import_external_artifact(artifact, conn)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    finally:
+        conn.close()
+
 
 
 @router.get("/memory/cognitive-state")

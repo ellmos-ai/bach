@@ -579,6 +579,7 @@ def get_mcp_cookbooks() -> dict[str, Any]:
             "page_4": "Absicherung & Hard-Disconnect",
         },
         "checked_at": datetime.now(timezone.utc).isoformat(),
+        "live_discovery": True,
     }
 
 
