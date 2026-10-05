@@ -196,6 +196,155 @@ def test_ack_keeps_own_transaction_after_concurrent_reassignment(db_path, monkey
         second.close()
 
 
+@pytest.mark.parametrize("operation", ["renew", "release"])
+def test_lease_rejects_task_content_changed_after_acquire(conn, operation):
+    tid = _insert(conn)
+    ack = _acq(conn, tid).payload
+    apply_task_field_changes(conn, tid, _get(conn, tid), {"description": "changed by operator"})
+    conn.commit()
+    before = _get(conn, tid)
+    kwargs = dict(lease_id=ack["lease_id"], fence=ack["fence"], config=CFG, now=T0 + timedelta(seconds=1))
+    result = renew_lease(conn, tid, **kwargs) if operation == "renew" else release_lease(conn, tid, outcome="done", **kwargs)
+    assert result.http_status == 409 and result.payload["reason"] == "stale_task_version"
+    assert _get(conn, tid) == before
+
+
+def test_task_version_is_stable_across_heartbeat(conn):
+    tid = _insert(conn)
+    ack = _acq(conn, tid).payload
+    assert len(ack["task_version"]) == 64
+    renewed = renew_lease(conn, tid, lease_id=ack["lease_id"], fence=1, config=CFG, now=T0 + timedelta(seconds=10))
+    assert renewed.payload["task_version"] == ack["task_version"]
+
+
+@pytest.mark.parametrize("close_parent", [False, True])
+def test_fenced_decomposition_is_atomic_and_versioned(conn, close_parent):
+    from hub._services import task_lease as service
+    tid = _insert(conn, description="Original")
+    ack = _acq(conn, tid).payload
+    result = service.decompose_lease(
+        conn, tid, lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+        subtasks=[{"title": "first", "description": "äöü"}, {"title": "second"}],
+        close_parent=close_parent, sequential=True, config=CFG, now=T0 + timedelta(seconds=1),
+    )
+    assert result.http_status == 200
+    payload = result.payload
+    assert payload["decomposed"] and payload["parent_closed"] is close_parent
+    assert len(payload["created_ids"]) == 2
+    assert _get(conn, payload["created_ids"][1])["depends_on"] == str(payload["created_ids"][0])
+    parent = _get(conn, tid)
+    assert parent["status"] == ("done" if close_parent else "in_progress")
+    assert bool(parent["claim_id"]) is (not close_parent)
+    assert payload["task_version"] != ack["task_version"]
+    repeated = service.decompose_lease(
+        conn, tid, lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+        subtasks=[{"title": "duplicate"}], config=CFG, now=T0 + timedelta(seconds=2),
+    )
+    assert repeated.http_status == 409
+    assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize("problem", ["expired", "foreign_fence", "old_version", "invalid_subtask"])
+def test_fenced_decomposition_denial_creates_nothing(conn, problem):
+    from hub._services import task_lease as service
+    tid = _insert(conn)
+    ack = _acq(conn, tid).payload
+    before = _get(conn, tid)
+    kwargs = dict(lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+                  subtasks=[{"title": "valid"}], config=CFG, now=T0 + timedelta(seconds=1))
+    if problem == "expired":
+        kwargs["now"] = T0 + timedelta(hours=1)
+    elif problem == "foreign_fence":
+        kwargs["fence"] = 2
+    elif problem == "old_version":
+        kwargs["task_version"] = "0" * 64
+    else:
+        kwargs["subtasks"] = [{"title": "valid"}, {"title": " "}]
+    if problem == "invalid_subtask":
+        with pytest.raises(LeaseValidationError):
+            service.decompose_lease(conn, tid, **kwargs)
+    else:
+        assert service.decompose_lease(conn, tid, **kwargs).http_status == 409
+    assert _get(conn, tid) == before
+    assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+
+
+def test_fenced_decomposition_rolls_back_partial_child_insert(conn):
+    from hub._services.task_lease import decompose_lease
+    tid = _insert(conn)
+    ack = _acq(conn, tid).payload
+    conn.execute("CREATE TRIGGER reject_second BEFORE INSERT ON tasks WHEN NEW.title = 'second' "
+                 "BEGIN SELECT RAISE(ABORT, 'synthetic insert failure'); END")
+    conn.commit()
+    before = _get(conn, tid)
+    with pytest.raises(sqlite3.IntegrityError, match="synthetic"):
+        decompose_lease(conn, tid, lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+                        subtasks=[{"title": "first"}, {"title": "second"}], config=CFG, now=T0)
+    assert not conn.in_transaction
+    assert _get(conn, tid) == before
+    assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+
+
+def test_fenced_decomposition_never_acks_failed_commit(db_path):
+    from hub._services.task_lease import decompose_lease
+
+    class RefuseCommit(sqlite3.Connection):
+        def commit(self):
+            last = self.execute("SELECT action FROM task_history ORDER BY id DESC LIMIT 1").fetchone()
+            if last and last[0] == "lease_decompose":
+                raise sqlite3.OperationalError("synthetic commit failure")
+            return super().commit()
+    c = sqlite3.connect(str(db_path), factory=RefuseCommit)
+    c.row_factory = sqlite3.Row
+    try:
+        tid = _insert(c)
+        ack = _acq(c, tid).payload
+        before = _get(c, tid)
+        with pytest.raises(sqlite3.OperationalError, match="synthetic"):
+            decompose_lease(c, tid, lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+                            subtasks=[{"title": "child"}], config=CFG, now=T0)
+        assert not c.in_transaction and _get(c, tid) == before
+        assert c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+    finally:
+        c.close()
+
+
+def test_parallel_fenced_decomposition_has_only_one_child_batch(db_path):
+    from hub._services.task_lease import decompose_lease
+    c = _connect(db_path)
+    tid = _insert(c)
+    ack = _acq(c, tid).payload
+    c.close()
+    barrier = threading.Barrier(2)
+    results, errors = [], []
+
+    def run():
+        connection = _connect(db_path)
+        try:
+            barrier.wait(timeout=5)
+            results.append(decompose_lease(
+                connection, tid, lease_id=ack["lease_id"], fence=1, task_version=ack["task_version"],
+                subtasks=[{"title": "child"}], close_parent=False, config=CFG, now=T0,
+            ))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            connection.close()
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+        assert not thread.is_alive()
+    assert not errors
+    assert sorted(result.http_status for result in results) == [200, 409]
+    c = _connect(db_path)
+    try:
+        assert c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 2
+    finally:
+        c.close()
+
+
 @pytest.mark.parametrize("operation", ["acquire", "renew", "release"])
 def test_failed_commit_never_returns_ack_and_rolls_back(db_path, operation):
     class RefuseCommit(sqlite3.Connection):
@@ -667,6 +816,44 @@ def test_config_from_env():
 
 @pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="fastapi nicht installiert")
 class TestLeaseAPI:
+    def test_fenced_decomposition_endpoint_and_safe_snapshot(self, client, db_path):
+        with _connect(db_path) as c:
+            tid = _insert(c, description="Auftrag äöü")
+        snapshot = client.get(f"/api/tasks/{tid}").json()
+        acquired = client.post(f"/api/tasks/{tid}/lease", json={**self._body(), "task_version": snapshot["task_version"]})
+        assert acquired.status_code == 200, acquired.text
+        ack = acquired.json()
+        assert ack["task_version"] == snapshot["task_version"]
+        for response in (client.get(f"/api/tasks/{tid}"), client.get("/api/tasks?status=all")):
+            assert response.status_code == 200
+            assert ack["lease_id"] not in response.text
+            assert "claim_request_id" not in response.text
+        body = {"lease_id": ack["lease_id"], "fence": ack["fence"], "task_version": ack["task_version"],
+                "subtasks": [{"title": "erste"}, {"title": "zweite"}], "sequential": True}
+        bad = client.post(f"/api/tasks/{tid}/lease/decompose", json={**body, "fence": True})
+        assert bad.status_code == 422
+        bad = client.post(f"/api/tasks/{tid}/lease/decompose", json={**body, "close_parent_typo": False})
+        assert bad.status_code == 422
+        bad = client.post(f"/api/tasks/{tid}/lease/decompose", json=body,
+                          headers={"Authorization": "Bearer revoked-device"})
+        assert bad.status_code in (401, 403)
+        response = client.post(f"/api/tasks/{tid}/lease/decompose", json=body)
+        assert response.status_code == 200, response.text
+        receipt = response.json()
+        assert receipt["created_count"] == 2 and receipt["parent_closed"]
+        assert client.get(f"/api/tasks/{tid}").json()["status"] == "done"
+        for child in receipt["created_ids"]:
+            assert client.get(f"/api/tasks/{child}").status_code == 200
+        assert client.post(f"/api/tasks/{tid}/lease/decompose", json=body).status_code == 409
+
+    def test_acquire_rejects_stale_observed_task_version(self, client, db_path):
+        with _connect(db_path) as c:
+            tid = _insert(c)
+        version = client.get(f"/api/tasks/{tid}").json()["task_version"]
+        assert client.put(f"/api/tasks/{tid}", json={"description": "changed"}).status_code == 200
+        response = client.post(f"/api/tasks/{tid}/lease", json={**self._body(), "task_version": version})
+        assert response.status_code == 409 and response.json()["reason"] == "stale_task_version"
+
     @pytest.fixture
     def client(self, db_path, tmp_path, monkeypatch):
         import gui.server as srv
