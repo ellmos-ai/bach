@@ -2529,11 +2529,50 @@ async def get_nemofold_stats():
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/domains/installed")
-async def get_installed_domains():
-    """Public manifest inventory; installed/runtime state needs separate evidence."""
+async def get_installed_domains(scope: str = Query("all"), probe: bool = Query(True)):
+    """Public and installed domain manifests with distinct states (GUX-068..071)."""
     from gui.api.domain_catalog import discover_domains
 
-    return discover_domains()
+    return discover_domains(scope=scope, probe=probe, include_repos=True)
+
+
+@router.get("/domains/pins")
+async def get_domain_pins_endpoint():
+    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
+    from gui.api.domain_catalog import get_domain_pins
+
+    pins = get_domain_pins()
+    return {"pins": pins, "total": len(pins)}
+
+
+@router.post("/domains/pins")
+async def save_domain_pins_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Aktualisiert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
+    from gui.api.domain_catalog import save_domain_pins
+
+    pinned_ids = payload.get("pinned_ids", [])
+    pins = save_domain_pins(pinned_ids)
+    return {"pins": pins, "total": len(pins), "status": "saved"}
+
+
+@router.post("/domains/{domain_id}/pin")
+async def toggle_domain_pin_endpoint(domain_id: str, payload: Optional[Dict[str, Any]] = Body(None)):
+    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
+    from gui.api.domain_catalog import toggle_domain_pin
+
+    pinned = payload.get("pinned") if payload else None
+    return toggle_domain_pin(domain_id, pinned=pinned)
+
+
+@router.get("/domains/{domain_id}")
+async def get_domain_detail_endpoint(domain_id: str):
+    """Liefert Detail-Manifest, Zustände und Konfiguration einer Domäne."""
+    from gui.api.domain_catalog import get_domain_detail
+
+    detail = get_domain_detail(domain_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Domäne '{domain_id}' nicht gefunden")
+    return {"domain": detail, "id": domain_id}
 
 @router.get("/artefakte")
 async def get_artefakte(request: Request):

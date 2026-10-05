@@ -19,19 +19,24 @@ import BachLayout from "../layouts/BachLayout.astro";
     <!-- Quick Stats -->
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-label">Gefundene Fachmodule</div>
+        <div class="stat-label">Fachmodule im Katalog</div>
         <div class="stat-value" id="stat-count-modules">...</div>
-        <div class="stat-sub">Öffentliche .DOMAINS-Manifeste</div>
+        <div class="stat-sub">Deklarierte Manifeste (.DOMAINS)</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Installationsnachweis</div>
-        <div class="stat-value">?</div>
-        <div class="stat-sub">Installationsregister noch nicht angebunden</div>
+        <div class="stat-value" id="stat-count-installed">...</div>
+        <div class="stat-sub">Code auf Host vorhanden</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Laufende Arbeiten</div>
-        <div class="stat-value">?</div>
-        <div class="stat-sub">Kein Arbeitsstatus-Provider angebunden</div>
+        <div class="stat-label">Laufende / Bereite Dienste</div>
+        <div class="stat-value" id="stat-count-running">...</div>
+        <div class="stat-sub">Betriebsbereit (Probe OK)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Gepinnte Menü-Slots</div>
+        <div class="stat-value" id="stat-count-pins">...</div>
+        <div class="stat-sub">Stabile IDs mit Fallback</div>
       </div>
     </div>
 
@@ -178,12 +183,33 @@ import BachLayout from "../layouts/BachLayout.astro";
     margin: 0 0 1rem 0;
     line-height: 1.4;
   }
+  .domain-states {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+  .domain-state-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+  }
+  .domain-state-badge.healthy { color: #22c55e; border-color: rgba(34, 197, 94, 0.3); }
+  .domain-state-badge.installed { color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
+  .domain-state-badge.gated { color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); }
+  .domain-state-badge.private { color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
   .domain-footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-top: 1px solid rgba(255,255,255,0.05);
     padding-top: 0.75rem;
+  }
+  .btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
   }
   .glass-card {
     background: var(--bg-card);
@@ -208,6 +234,40 @@ import BachLayout from "../layouts/BachLayout.astro";
 </style>
 
 <script is:inline>
+  let pinnedIds = new Set();
+
+  async function loadPins() {
+    try {
+      const res = await fetch('/api/domains/pins');
+      if (res.ok) {
+        const data = await res.json();
+        const pins = data.pins || [];
+        pinnedIds = new Set(pins.map(p => p.id));
+        const pinCountEl = document.getElementById('stat-count-pins');
+        if (pinCountEl) pinCountEl.textContent = String(pins.length);
+      }
+    } catch (e) {
+      console.error("Fehler beim Laden der Pins:", e);
+    }
+  }
+
+  async function togglePin(domainId) {
+    try {
+      const isPinned = pinnedIds.has(domainId);
+      const res = await fetch(`/api/domains/${encodeURIComponent(domainId)}/pin`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pinned: !isPinned})
+      });
+      if (res.ok) {
+        await loadPins();
+        loadDomains();
+      }
+    } catch (e) {
+      alert("Pin-Fehler: " + e.message);
+    }
+  }
+
   function domainElement(tag, className, value) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -218,40 +278,88 @@ import BachLayout from "../layouts/BachLayout.astro";
   async function loadDomains() {
     const grid = document.getElementById('domains-grid');
     const statModules = document.getElementById('stat-count-modules');
+    const statInstalled = document.getElementById('stat-count-installed');
+    const statRunning = document.getElementById('stat-count-running');
+
     if (!grid) return;
     grid.replaceChildren(domainElement('p', 'loading-state', 'Lade Fachmodule...'));
+
+    await loadPins();
+
     try {
-      const res = await fetch('/api/domains/installed');
+      const res = await fetch('/api/domains/installed?scope=all&probe=true');
       if (!res.ok) throw new Error('domain_inventory_unavailable');
       const data = await res.json();
       const domains = Array.isArray(data.domains) ? data.domains : [];
+
       if (statModules) statModules.textContent = data.source_available ? String(domains.length) : '?';
+      if (statInstalled) statInstalled.textContent = data.installed_count != null ? String(data.installed_count) : '?';
+      if (statRunning) statRunning.textContent = data.running_count != null ? String(data.running_count) : '?';
+
       grid.replaceChildren();
       if (!data.source_available) {
-        grid.append(domainElement('p', 'text-muted', 'Manifestquelle nicht erreichbar. Modulregister am Host anbinden; Installations- und Arbeitsstatus bleiben ungeprüft.'));
+        grid.append(domainElement('p', 'text-muted', 'Manifestquelle nicht erreichbar. Modulregister am Host anbinden.'));
         return;
       }
       if (!domains.length) {
-        grid.append(domainElement('p', 'text-muted', 'Keine öffentlichen Fachmodul-Manifeste gefunden. Modulregister prüfen.'));
+        grid.append(domainElement('p', 'text-muted', 'Keine Fachmodule gefunden. Modulregister prüfen.'));
         return;
       }
+
       for (const domain of domains) {
         const card = domainElement('div', 'domain-card', '');
         const body = document.createElement('div');
         const header = domainElement('div', 'domain-header', '');
-        header.append(domainElement('span', 'domain-icon', '🧩'));
+        header.append(domainElement('span', 'domain-icon', domain.icon || '🧩'));
         const title = domainElement('div', 'domain-title-wrap', '');
         title.append(domainElement('h3', '', domain.name || domain.id));
-        title.append(domainElement('span', 'domain-type-badge', domain.kind || 'Fachmodul'));
+        title.append(domainElement('span', 'domain-type-badge', (domain.kind || 'Fachmodul') + ' · ' + (domain.category || 'domain')));
         header.append(title);
         body.append(header);
+
         const capabilities = Array.isArray(domain.capabilities) ? domain.capabilities : [];
-        body.append(domainElement('p', 'domain-desc', capabilities.length
+        body.append(domainElement('p', 'domain-desc', domain.description || (capabilities.length
           ? 'Manifest-Funktionen: ' + capabilities.join(', ')
-          : 'Keine Funktionen im öffentlichen Manifest angegeben.'));
+          : 'Fachmodul für domänenspezifische Aufgaben.')));
+
+        // 4 separate states: Defined, Installed, Probe, Runtime (GUX-069)
+        const states = domain.states || {};
+        const statesWrap = domainElement('div', 'domain-states', '');
+        
+        const badgeDefined = domainElement('span', 'domain-state-badge', '📜 Manifest');
+        statesWrap.append(badgeDefined);
+
+        const badgeInstalled = domainElement('span', 'domain-state-badge' + (states.installed ? ' installed' : ''), states.installed ? '📦 Installiert' : '⚪ Nicht installiert');
+        statesWrap.append(badgeInstalled);
+
+        const probeOk = states.probe === 'healthy' || states.probe === 'available';
+        const badgeProbe = domainElement('span', 'domain-state-badge' + (probeOk ? ' healthy' : ' gated'), probeOk ? '🟢 Probe OK' : '🟡 ' + (states.probe || 'Probe'));
+        statesWrap.append(badgeProbe);
+
+        const runtimeReady = states.runtime === 'ready' || states.runtime === 'running' || states.runtime === 'active';
+        const badgeRuntime = domainElement('span', 'domain-state-badge' + (runtimeReady ? ' healthy' : ' gated'), runtimeReady ? '⚡ Bereit' : '⏸️ ' + (states.runtime || 'Inert'));
+        statesWrap.append(badgeRuntime);
+
+        if (domain.visibility === 'private' || domain.is_private) {
+          statesWrap.append(domainElement('span', 'domain-state-badge private', '🔒 Privat'));
+        }
+        body.append(statesWrap);
+
         const footer = domainElement('div', 'domain-footer', '');
-        footer.append(domainElement('span', 'badge', 'Manifest vorhanden'));
-        footer.append(domainElement('span', 'text-muted', 'Installation und Arbeit ungeprüft'));
+        const isPinned = pinnedIds.has(domain.id);
+        const pinBtn = domainElement('button', 'btn btn-secondary btn-sm', isPinned ? '📍 Gepinnt' : '📌 Pinnen');
+        pinBtn.onclick = () => togglePin(domain.id);
+        footer.append(pinBtn);
+
+        const workbench = domain.workbench_url || domain.fachseite_url;
+        if (workbench) {
+          const link = domainElement('a', 'btn btn-primary btn-sm', 'Fachseite ↗');
+          link.href = workbench;
+          footer.append(link);
+        } else {
+          footer.append(domainElement('span', 'text-muted', 'Keine Route'));
+        }
+
         card.append(body, footer);
         grid.append(card);
       }
