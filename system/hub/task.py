@@ -55,6 +55,7 @@ from .rheingold import (
     set_lead_url,
     clear_lead_config,
     post_task_to_rheingold,
+    patch_task_to_rheingold,
     generate_draft_hash,
     sync_drafts_to_rheingold,
     pull_tasks_from_rheingold,
@@ -557,6 +558,21 @@ class TaskHandler(BaseHandler):
                                       changed_by="cli-task", now=now)
             conn.commit()
 
+             # Rheingold-Propagation (Worker → Lead)
+            try:
+                from .rheingold import get_lead_config, get_rheingold_url, patch_task_to_rheingold
+                _is_iso = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+                _lc = get_lead_config()
+                if not _is_iso and _lc.get("mode") == "worker":
+                    _url = get_rheingold_url(timeout=2.0)
+                    if _url:
+                        _prov = f"{socket.gethostname().split('.')[0].lower()}:{int(datetime.now().timestamp())}"
+                        _ok, _ = patch_task_to_rheingold(_url, task_id, field_values, _prov)
+                        if not _ok:
+                            print(f"[WARN] Rheingold-Propagation fehlgeschlagen für Task {task_id} (Offline-Fail-Closed: lokal steht)")
+            except Exception as _e:
+                print(f"[WARN] Rheingold-Propagation Fehler: {_e}")
+
         return True, f"[OK] Task {task_id} bearbeitet: {', '.join(changes)}"
     
     def _reap(self, args: List[str]) -> Tuple[bool, str]:
@@ -851,6 +867,22 @@ class TaskHandler(BaseHandler):
 
             conn.commit()
 
+            # Rheingold-Propagation (Worker → Lead)
+            try:
+                from .rheingold import get_lead_config, get_rheingold_url, patch_task_to_rheingold
+                _is_iso = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+                _lc = get_lead_config()
+                if not _is_iso and _lc.get("mode") == "worker":
+                    _url = get_rheingold_url(timeout=2.0)
+                    if _url:
+                        _prov = f"{socket.gethostname().split('.')[0].lower()}:{int(datetime.now().timestamp())}"
+                        for _tid in all_ids:
+                            _ok, _ = patch_task_to_rheingold(_url, _tid, {"status": "done"}, _prov)
+                            if not _ok:
+                                results.append(f"[WARN] Rheingold-Propagation fehlgeschlagen für Task {_tid} (Offline-Fail-Closed: lokal steht)")
+            except Exception as _e:
+                results.append(f"[WARN] Rheingold-Propagation Fehler: {_e}")
+
         return True, "\n".join(results)
 
     def _claim(self, args: List[str]) -> Tuple[bool, str]:
@@ -894,6 +926,22 @@ class TaskHandler(BaseHandler):
             ok = claim_task_atomic(conn, task_id, by, lease_seconds=lease_seconds)
             if ok:
                 conn.commit()
+
+                 # Rheingold-Propagation (Worker → Lead)
+                try:
+                    from .rheingold import get_lead_config, get_rheingold_url, patch_task_to_rheingold
+                    _is_iso = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+                    _lc = get_lead_config()
+                    if not _is_iso and _lc.get("mode") == "worker":
+                        _url = get_rheingold_url(timeout=2.0)
+                        if _url:
+                            _prov = f"{socket.gethostname().split('.')[0].lower()}:{int(datetime.now().timestamp())}"
+                            _ok, _ = patch_task_to_rheingold(_url, task_id, {"assigned_to": by, "status": "in_progress", "claimed_by": by, "claim_lease_seconds": lease_seconds}, _prov)
+                            if not _ok:
+                                print(f"[WARN] Rheingold-Propagation fehlgeschlagen für Task {task_id} (Offline-Fail-Closed: lokal steht)")
+                except Exception as _e:
+                    print(f"[WARN] Rheingold-Propagation Fehler: {_e}")
+
                 return True, f"[OK] Task {task_id} beansprucht von {by}"
             else:
                 return False, f"[CONFLICT] Task {task_id} bereits beansprucht oder nicht mehr offen"
@@ -1123,7 +1171,22 @@ class TaskHandler(BaseHandler):
             
             conn.execute("UPDATE tasks SET priority = ? WHERE id = ?", (priority, task_id))
             conn.commit()
-        
+
+             # Rheingold-Propagation (Worker → Lead)
+            try:
+                from .rheingold import get_lead_config, get_rheingold_url, patch_task_to_rheingold
+                _is_iso = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+                _lc = get_lead_config()
+                if not _is_iso and _lc.get("mode") == "worker":
+                    _url = get_rheingold_url(timeout=2.0)
+                    if _url:
+                        _prov = f"{socket.gethostname().split('.')[0].lower()}:{int(datetime.now().timestamp())}"
+                        _ok, _ = patch_task_to_rheingold(_url, task_id, {"priority": priority}, _prov)
+                        if not _ok:
+                            print(f"[WARN] Rheingold-Propagation fehlgeschlagen für Task {task_id} (Offline-Fail-Closed: lokal steht)")
+            except Exception as _e:
+                print(f"[WARN] Rheingold-Propagation Fehler: {_e}")
+
         return True, f"[OK] Task {task_id} Prioritaet: {priority}"
     
     def _assign(self, args: List[str]) -> Tuple[bool, str]:
@@ -1168,7 +1231,23 @@ class TaskHandler(BaseHandler):
                 results.append(f"[OK] Task {task_id} -> {partner}")
             
             conn.commit()
-        
+
+             # Rheingold-Propagation (Worker → Lead)
+            try:
+                from .rheingold import get_lead_config, get_rheingold_url, patch_task_to_rheingold
+                _is_iso = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
+                _lc = get_lead_config()
+                if not _is_iso and _lc.get("mode") == "worker":
+                    _url = get_rheingold_url(timeout=2.0)
+                    if _url:
+                        _prov = f"{socket.gethostname().split('.')[0].lower()}:{int(datetime.now().timestamp())}"
+                        for _tid in ids:
+                            _ok, _ = patch_task_to_rheingold(_url, _tid, {"assigned_to": partner, "delegated_to": partner}, _prov)
+                            if not _ok:
+                                results.append(f"[WARN] Rheingold-Propagation fehlgeschlagen für Task {_tid} (Offline-Fail-Closed: lokal steht)")
+            except Exception as _e:
+                results.append(f"[WARN] Rheingold-Propagation Fehler: {_e}")
+
         if warning:
             results.insert(0, warning)
         
