@@ -424,19 +424,55 @@
       document.getElementById('modal-book-subtitle').textContent = b.subtitle;
       
       const ingList = document.getElementById('modal-ingredients');
-      ingList.innerHTML = b.ingredients.map(ing => `<li><code>${ing}</code></li>`).join('');
+      ingList.innerHTML = '';
+      (b.ingredients || []).forEach(ing => {
+        const li = document.createElement('li');
+        const code = document.createElement('code');
+        code.textContent = ing;
+        li.appendChild(code);
+        ingList.appendChild(li);
+      });
 
       const recList = document.getElementById('modal-recipes');
-      recList.innerHTML = b.recipes.map(r => `
-        <div style="background:var(--bg-card);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-          <strong style="font-size:0.85rem;display:block;margin-bottom:0.25rem;">${r.title}</strong>
-          <code style="font-size:0.78rem;display:block;margin-bottom:0.5rem;color:var(--accent-blue);white-space:pre-wrap;background:rgba(0,0,0,0.3);padding:0.4rem;border-radius:4px;">${r.prompt}</code>
-          <div style="display:flex;gap:0.4rem;">
-            <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="copyToClipboard('${r.prompt.replace(/'/g, "\\'")}', this)">📋 Kopieren</button>
-            <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="convertPromptToSkill('${r.title.replace(/'/g, "\\'")}', '${r.prompt.replace(/'/g, "\\'")}', 'mcp')">⚡ In Skill umwandeln</button>
-          </div>
-        </div>
-      `).join('');
+      recList.innerHTML = '';
+      (b.recipes || []).forEach(r => {
+        const item = document.createElement('div');
+        item.style.cssText = 'background:var(--bg-card);padding:0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);';
+
+        const titleEl = document.createElement('strong');
+        titleEl.style.cssText = 'font-size:0.85rem;display:block;margin-bottom:0.25rem;';
+        titleEl.textContent = r.title || '';
+
+        const codeEl = document.createElement('code');
+        codeEl.style.cssText = 'font-size:0.78rem;display:block;margin-bottom:0.5rem;color:var(--accent-blue);white-space:pre-wrap;background:rgba(0,0,0,0.3);padding:0.4rem;border-radius:4px;';
+        codeEl.textContent = r.prompt || '';
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:0.4rem;';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn';
+        copyBtn.style.cssText = 'padding:0.25rem 0.5rem;font-size:0.75rem;';
+        copyBtn.textContent = '📋 Kopieren';
+        copyBtn.addEventListener('click', function() {
+          copyToClipboard(r.prompt || '', this);
+        });
+
+        const convertBtn = document.createElement('button');
+        convertBtn.className = 'btn btn-primary';
+        convertBtn.style.cssText = 'padding:0.25rem 0.5rem;font-size:0.75rem;';
+        convertBtn.textContent = '⚡ In Skill umwandeln';
+        convertBtn.addEventListener('click', function() {
+          convertPromptToSkill(r.title || '', r.prompt || '', 'mcp');
+        });
+
+        btnRow.appendChild(copyBtn);
+        btnRow.appendChild(convertBtn);
+        item.appendChild(titleEl);
+        item.appendChild(codeEl);
+        item.appendChild(btnRow);
+        recList.appendChild(item);
+      });
 
       document.getElementById('mcp-modal').style.display = 'flex';
     }

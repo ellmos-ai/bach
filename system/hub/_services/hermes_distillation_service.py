@@ -115,10 +115,9 @@ _DIVIDER_RE = re.compile(r"^[-=_*]{4,}$", re.MULTILINE)
 
 # Rausch-Muster in Tool- und Systemlogs (z.B. Stacktrace-Wüsten, Endlos-Status)
 _PYTHON_TRACEBACK_RE = re.compile(
-    r"Traceback \(most recent call last\):.*?(?=\n\S|\Z)",
-    re.DOTALL
+    r"Traceback \(most recent call last\):\r?\n(?:[ \t]+[^\r\n]*\r?\n)*(?:[^\s\r\n][^\r\n]*)?"
 )
-_PROGRESS_BURST_RE = re.compile(r"(?:Updating files:\s+\d+%.*?\n)+", re.DOTALL)
+_PROGRESS_BURST_RE = re.compile(r"(?:Updating files:\s+\d+%[^\r\n]*\r?\n)+")
 
 
 # ═══════════════════════════════════════════════════════════════

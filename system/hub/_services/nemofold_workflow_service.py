@@ -158,7 +158,10 @@ class NemoFoldWorkflowService:
     def _extract_embedded_commands(self, text: str, events: list[dict[str, Any]]) -> None:
         """Erkennt Tool-Befehle und Shell-Invocations aus Fließtexten."""
         # Pattern für Tools: tool_name(args) oder [tool_name]
-        tool_pattern = re.compile(r'(?:call|invoking|running|use)?\s*`?([a-zA-Z0-9_\-\.]+)\((.*?)\)`?', re.IGNORECASE)
+        tool_pattern = re.compile(
+            r"(?:\b(?:call|invoking|running|use)\s+)?`?([a-zA-Z0-9_\-\.]+)\(([^()\r\n]{0,500})\)`?",
+            re.IGNORECASE,
+        )
         for m in tool_pattern.finditer(text):
             t_name = m.group(1).lower()
             if t_name in TOOL_ACTION_MAP or any(k in t_name for k in ["file", "search", "test", "lint", "git", "diff", "analyze"]):

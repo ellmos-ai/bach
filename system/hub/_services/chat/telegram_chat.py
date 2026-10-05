@@ -2687,11 +2687,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             pass
 
     def _cors(self):
-        origin = str(self.headers.get("Origin") or "").strip()
+        raw_origin = str(self.headers.get("Origin") or "").strip()
         host = str(self.headers.get("Host") or "").strip()
-        if not _is_allowed_origin(origin, host):
+        if not raw_origin or "\r" in raw_origin or "\n" in raw_origin:
             return
-        self.send_header("Access-Control-Allow-Origin", origin)
+        if not _is_allowed_origin(raw_origin, host):
+            return
+        parsed = urlparse(raw_origin)
+        if not parsed.scheme or not parsed.netloc:
+            return
+        safe_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if "\r" in safe_origin or "\n" in safe_origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", safe_origin)
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")

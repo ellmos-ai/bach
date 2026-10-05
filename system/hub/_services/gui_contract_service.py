@@ -49,11 +49,11 @@ def get_pinned_kit_manifest(manifest_path: Path = KIT_MANIFEST_PATH) -> dict[str
             }
         data["verified"] = True
         return data
-    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return {
             "schema": KIT_SCHEMA,
             "verified": False,
-            "error": f"read_error: {exc}",
+            "error": "manifest_read_error",
         }
 
 
@@ -133,11 +133,11 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
             "page_count": len(html_pages),
             "files_count": len(files_map),
         }
-    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return {
             "installed": True,
             "verified": False,
-            "reason_code": f"inspection_error: {exc}",
+            "reason_code": "dist_inspection_error",
             "page_count": 0,
         }
 

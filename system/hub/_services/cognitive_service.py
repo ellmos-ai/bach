@@ -495,10 +495,11 @@ def read_usmc_lessons_safe(
             "error": None
         }
     except (sqlite3.Error, OSError, ValueError, KeyError) as exc:
+        logger.warning("Fehler beim Lesen der USMC Lessons: %s", exc)
         return {
             "success": False,
             "availability": "unavailable",
-            "error": str(exc),
+            "error": "read_error",
             "lessons": [],
             "count": 0
         }
