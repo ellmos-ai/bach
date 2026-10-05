@@ -1575,6 +1575,9 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/kontakte",
         "/routinen",
         "/anonymization",
+        "/anonymizer",
+        "/foerderplaner",
+        "/steuer-assistent",
         "/workflow-tuev",
     })
     # Static assets (JS/CSS/images) without data.
@@ -1588,6 +1591,18 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/gui/kit-manifest",
         "/api/gui/architecture/concepts",
         "/api/capabilities/mcp/cookbooks",
+        "/api/learning/hermes/stats",
+        "/api/learning/hermes/candidates",
+        "/api/learning/nemofold/stats",
+        "/api/learning/nemofold/candidates",
+        "/api/chat/compare-race/lanes",
+        "/api/chat/buddha/compare-race/lanes",
+        "/api/chat/compare-race/history",
+        "/api/chat/buddha/compare-race/history",
+        "/api/chat/buddha/compare-race",
+        "/api/chat/compare-race/buddha",
+        "/api/domains/installed",
+        "/api/domains/pins",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1624,7 +1639,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/gui/capabilities"} and request.method == "GET"):
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET"):
             return await call_next(request)
 
         # The browser authenticates as a registered device. The proxy supplies
@@ -5141,10 +5156,43 @@ async def domains_page():
     p = ASTRO_DIST_DIR / "domains.html"
     if p.exists():
         return FileResponse(p)
+    dom_file = TEMPLATES_DIR / "domains.html"
+    if dom_file.exists():
+        return FileResponse(dom_file)
     ati_file = TEMPLATES_DIR / "ati.html"
     if ati_file.exists():
         return FileResponse(ati_file)
     raise HTTPException(status_code=404, detail="Domains-Seite nicht gefunden")
+
+
+@app.get("/foerderplaner", response_class=HTMLResponse)
+async def foerderplaner_fachseite_page():
+    """Förderplaner Fachseite (GUX-070: Domänen sind Fachbereiche, keine Agenten)."""
+    p = ASTRO_DIST_DIR / "foerderplaner.html"
+    if p.exists():
+        return FileResponse(p)
+    template_file = TEMPLATES_DIR / "anonymization.html"
+    if template_file.exists():
+        return FileResponse(template_file)
+    return RedirectResponse("/agents/foerderplaner")
+
+
+@app.get("/steuer-assistent")
+async def steuer_assistent_redirect():
+    """Steuer-Assistent Fachseite (GUX-070)."""
+    return RedirectResponse("/steuer")
+
+
+@app.get("/anonymizer", response_class=HTMLResponse)
+async def anonymizer_fachseite_page():
+    """Anonymizer Fachseite (GUX-070)."""
+    p = ASTRO_DIST_DIR / "anonymizer.html"
+    if p.exists():
+        return FileResponse(p)
+    template_file = TEMPLATES_DIR / "anonymization.html"
+    if template_file.exists():
+        return FileResponse(template_file)
+    return RedirectResponse("/domains")
 
 
 @app.get("/artefakte", response_class=HTMLResponse)

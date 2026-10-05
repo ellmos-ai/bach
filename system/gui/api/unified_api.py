@@ -1091,9 +1091,90 @@ async def compare_race_status(request: Request):
     return readiness()
 
 
+@router.get("/chat/compare-race/lanes")
+@router.get("/chat/buddha/compare-race/lanes")
+async def get_compare_race_lanes(request: Request):
+    """List available candidate model lanes and their SpendAuthority/auth readiness."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    auth_header = request.headers.get("Authorization", "")
+    spend_token = (
+        auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+    )
+    spend_auth = (
+        SpendAuthority(approved=True, max_budget_cents=50.0, auth_token=spend_token)
+        if spend_token
+        else None
+    )
+    svc = get_compare_race_service()
+    return {
+        "lanes": svc.list_lanes(spend_auth),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/chat/compare-race/history")
+@router.get("/chat/buddha/compare-race/history")
+async def get_compare_race_history(
+    request: Request, limit: int = Query(25, ge=1, le=100)
+):
+    """Retrieve historical compare-race evaluations and receipts."""
+    from hub._services.chat.compare_race_service import get_compare_race_service
+
+    svc = get_compare_race_service()
+    runs = svc.get_history(limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@router.post("/chat/buddha/compare-race")
+@router.post("/chat/compare-race/buddha")
+async def execute_buddha_compare_race(
+    request: Request, payload: Dict[str, Any] = Body(...)
+):
+    """Execute parallel Buddha-Chat multi-model comparison with SpendAuthority & Inter-Rater metrics."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt fehlt oder ist leer.")
+
+    lane_ids = payload.get("models") or payload.get("lanes")
+    spend_dict = payload.get("spend_authority")
+    spend_auth = SpendAuthority.from_dict(spend_dict) if spend_dict else None
+    synthetic_fixtures = bool(payload.get("synthetic_fixtures", False))
+    timeout = float(payload.get("timeout_seconds", 30.0))
+
+    svc = get_compare_race_service()
+    try:
+        result = await svc.execute_race(
+            prompt=prompt,
+            lane_ids=lane_ids,
+            spend_auth=spend_auth,
+            synthetic_fixtures=synthetic_fixtures,
+            timeout_seconds=timeout,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Fehler im Compare-Race: {exc}"
+        )
+
+
 @router.post("/chat/compare-race")
 async def compare_race(request: Request, payload: Dict[str, Any] = Body(...)):
     """Run configured SDK lanes only after device, cost, and call-budget gates."""
+    # If explicitly requested to use the Buddha-Chat runner or synthetic fixtures:
+    if payload.get("runner") == "buddha" or payload.get("engine") == "buddha" or payload.get("synthetic_fixtures"):
+        return await execute_buddha_compare_race(request, payload)
+
     from .compare_race_adapter import RaceUnavailable, execute_isolated
     device_id = _require_memory_device(request)
     if _COMPARE_RACE_LOCK.locked():
@@ -2164,15 +2245,291 @@ async def toggle_memory_lesson(lesson_id: int):
 
 
 # ═══════════════════════════════════════════════════════════════
+# 6.5. HERMES: SKILL-DESTILLATION & LERN-PIPELINE (/api/learning/hermes/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_hermes_service_instance():
+    try:
+        from hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+    except ImportError:
+        from system.hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+
+
+@router.post("/learning/hermes/distill")
+async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
+    """Führt die Hermes Rauschreduktions- und Skill-Destillations-Pipeline aus.
+    
+    Akzeptiert entweder direktes `transcript` (Liste von Turns), `raw_text`
+    oder eine `session_id`, die aus den gespeicherten Transkripten geladen wird.
+    """
+    service = _get_hermes_service_instance()
+    session_id = payload.get("session_id")
+    transcript = payload.get("transcript")
+    raw_text = payload.get("raw_text")
+    skill_name_hint = payload.get("skill_name_hint")
+
+    messages_input = transcript or raw_text
+
+    # Falls weder transcript noch raw_text vorhanden sind, versuche aus session_snapshots zu laden
+    if not messages_input and session_id:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT snapshot_data FROM session_snapshots "
+                "WHERE (session_id = ? OR session_id LIKE ?) "
+                "AND snapshot_type = 'chat-transcript.v1' "
+                "ORDER BY id DESC LIMIT 1",
+                (session_id, f"%{session_id}%")
+            ).fetchone()
+            if row and row[0]:
+                try:
+                    data = json.loads(row[0])
+                    messages_input = data.get("messages", [])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if not messages_input:
+                # Fallback: memory_sessions pruefen
+                mrow = conn.execute(
+                    "SELECT summary, continuation_context, handoff_notes FROM memory_sessions "
+                    "WHERE session_id = ? OR id = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (session_id, session_id)
+                ).fetchone()
+                if mrow:
+                    parts = [mrow[0] or "", mrow[1] or "", mrow[2] or ""]
+                    messages_input = "\n\n".join(p for p in parts if p)
+        finally:
+            conn.close()
+
+    if not messages_input:
+        raise HTTPException(
+            status_code=400,
+            detail="Weder transcript, raw_text noch gültige session_id übergeben"
+        )
+
+    try:
+        result = service.run_pipeline(
+            messages_or_text=messages_input,
+            session_id=session_id,
+            skill_name_hint=skill_name_hint,
+            persist=True
+        )
+        return {
+            "status": "success",
+            "run_id": result.run_id,
+            "session_id": result.session_id,
+            "raw_char_count": result.raw_char_count,
+            "cleaned_char_count": result.cleaned_char_count,
+            "noise_reduction_percent": result.noise_reduction_percent,
+            "lessons_extracted": result.lessons,
+            "skill_candidate": result.candidate,
+            "created_at": result.created_at
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hermes Distillation Fehler: {str(e)}")
+
+
+@router.get("/learning/hermes/candidates")
+async def get_hermes_candidates(status: str = Query("pending", description="pending|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+    """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
+    service = _get_hermes_service_instance()
+    try:
+        candidates = service.list_candidates(status=status, limit=limit)
+        return {"candidates": candidates, "count": len(candidates), "status_filter": status}
+    except Exception as e:
+        return {"candidates": [], "count": 0, "error": str(e)}
+
+
+@router.get("/learning/hermes/candidates/{candidate_id}")
+async def get_hermes_candidate_detail(candidate_id: int):
+    """Liefert vollständige Details und SKILL.md-Inhalt eines Kandidaten."""
+    service = _get_hermes_service_instance()
+    cand = service.get_candidate(candidate_id)
+    if not cand:
+        raise HTTPException(status_code=404, detail=f"Kandidat #{candidate_id} nicht gefunden")
+    return cand
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/approve")
+async def approve_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe (Human-in-the-Loop): Überführt Kandidat in skill_versions."""
+    service = _get_hermes_service_instance()
+    approved_by = payload.get("approved_by", "operator")
+    res = service.approve_candidate(candidate_id, approved_by=approved_by)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "Freigabe fehlgeschlagen"))
+    return res
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/reject")
+async def reject_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen Skill-Kandidaten ab."""
+    service = _get_hermes_service_instance()
+    reason = payload.get("reason", "")
+    res = service.reject_candidate(candidate_id, reason=reason)
+    return res
+
+
+@router.get("/learning/hermes/stats")
+async def get_hermes_stats():
+    """Liefert aggregierte Metriken der Hermes Skill-Destillations-Engine."""
+    service = _get_hermes_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6.6. NEMOFOLD: WORKFLOW-LERNEN & STEP-KETTEN SYNTHESE (/api/learning/nemofold/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_nemofold_service_instance():
+    try:
+        from hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+    except ImportError:
+        from system.hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+
+
+@router.post("/learning/nemofold/synthesize")
+async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
+    """
+    Führt die NemoFold Heuristik-Detektion und Step-Ketten Synthese aus.
+    Nimmt Session-Logs, Transkripte oder Snapshot-IDs entgegen und erzeugt
+    strukturierte, TÜV-geprüfte Step-Ketten für MarbleRun.
+    """
+    service = _get_nemofold_service_instance()
+    source_type = payload.get("source_type", "transcript")
+    source_ref = payload.get("source_ref")
+    raw_text = payload.get("raw_text") or payload.get("transcript")
+
+    try:
+        res = service.run_synthesis(
+            source_type=source_type,
+            source_ref=source_ref,
+            raw_text=raw_text
+        )
+        return res
+    except Exception as e:
+        logger.error(f"NemoFold Synthesis Fehler: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"NemoFold Synthesis Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/candidates")
+async def get_nemofold_candidates(
+    status: str = Query("pending", description="pending|approved|rejected|all"),
+    limit: int = Query(50, ge=1, le=200)
+):
+    """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
+    service = _get_nemofold_service_instance()
+    candidates = service.list_candidates(status=status)
+    return {"candidates": candidates[:limit], "count": len(candidates)}
+
+
+@router.get("/learning/nemofold/candidates/{candidate_id}")
+async def get_nemofold_candidate_detail(candidate_id: int):
+    """Liefert die vollständige Spezifikation und TÜV-Bewertung eines Kandidaten."""
+    service = _get_nemofold_service_instance()
+    candidate = service.get_candidate(candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Kandidat nicht gefunden")
+    return candidate
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/approve")
+async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe: Überführt die Kette direkt in `marblerun_chains`."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("approved_by", "operator")
+    notes = payload.get("notes", "")
+    try:
+        res = service.approve_candidate(candidate_id, operator=operator, notes=notes)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Freigabe-Fehler: {str(e)}")
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/reject")
+async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen gelernten Workflow-Kandidaten mit Begründung ab."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("rejected_by", "operator")
+    reason = payload.get("reason", "")
+    try:
+        res = service.reject_candidate(candidate_id, reason=reason, operator=operator)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ablehnungs-Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/stats")
+async def get_nemofold_stats():
+    """Liefert aggregierte Live-Metriken der NemoFold Workflow-Engine."""
+    service = _get_nemofold_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+
+# ═══════════════════════════════════════════════════════════════
 # 7. DOMAENEN, ARTEFAKTE, TEAMBUILDING & OCEAN MODULSCHALTPLAN
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/domains/installed")
-async def get_installed_domains():
-    """Public manifest inventory; installed/runtime state needs separate evidence."""
+async def get_installed_domains(scope: str = Query("all"), probe: bool = Query(True)):
+    """Public and installed domain manifests with distinct states (GUX-068..071)."""
     from gui.api.domain_catalog import discover_domains
 
-    return discover_domains()
+    return discover_domains(scope=scope, probe=probe, include_repos=True)
+
+
+@router.get("/domains/pins")
+async def get_domain_pins_endpoint():
+    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
+    from gui.api.domain_catalog import get_domain_pins
+
+    pins = get_domain_pins()
+    return {"pins": pins, "total": len(pins)}
+
+
+@router.post("/domains/pins")
+async def save_domain_pins_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Aktualisiert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
+    from gui.api.domain_catalog import save_domain_pins
+
+    pinned_ids = payload.get("pinned_ids", [])
+    pins = save_domain_pins(pinned_ids)
+    return {"pins": pins, "total": len(pins), "status": "saved"}
+
+
+@router.post("/domains/{domain_id}/pin")
+async def toggle_domain_pin_endpoint(domain_id: str, payload: Optional[Dict[str, Any]] = Body(None)):
+    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
+    from gui.api.domain_catalog import toggle_domain_pin
+
+    pinned = payload.get("pinned") if payload else None
+    return toggle_domain_pin(domain_id, pinned=pinned)
+
+
+@router.get("/domains/{domain_id}")
+async def get_domain_detail_endpoint(domain_id: str):
+    """Liefert Detail-Manifest, Zustände und Konfiguration einer Domäne."""
+    from gui.api.domain_catalog import get_domain_detail
+
+    detail = get_domain_detail(domain_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Domäne '{domain_id}' nicht gefunden")
+    return {"domain": detail, "id": domain_id}
 
 @router.get("/artefakte")
 async def get_artefakte(request: Request):
@@ -2297,8 +2654,20 @@ async def get_ocean_module_map():
             {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "unknown", "icon": "💻", "role": "Codeanalyse-Anbindung: Prüfung ausstehend"}
         ],
         "subsystems": [
-            {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
-            {"name": "Hermes", "category": "Skill-Destillation", "status": "unknown", "description": "Konzept: freigegebene Skills aus Dialogen"}
+            {
+                "name": "NemoFold",
+                "category": "Workflow-Lernen",
+                "status": "active",
+                "description": "Synthese geprüfter Step-Ketten aus autonomen Session-Logs mit Workflow-TÜV & Rollback-Schutz",
+                "metrics": _get_nemofold_service_instance().get_stats()
+            },
+            {
+                "name": "Hermes",
+                "category": "Skill-Destillation",
+                "status": "active",
+                "description": "Autonome Skill-Destillation aus Dialogen mit Rauschfilterung & Human-in-the-Loop Freigabe",
+                "metrics": _get_hermes_service_instance().get_stats()
+            }
         ]
     }
 
