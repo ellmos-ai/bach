@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-24 | **Version:** 4.3.65 | **Review:** 2026-09-24 (Daily Care & Dev Check)
+**Stand:** 2026-09-29 | **Version:** 4.3.65 | **Review:** 2026-09-29 (Task #1686 recurring)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -18,6 +18,23 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-09-29 (Autonomous Worker — Task-Status-Sync)
+
+Autonomer Status-Abgleich (additiv, keine Änderung an bestehenden Zeilen — ältere „pending"-Erwähnungen bleiben als Historie stehen). Quelle: Task-DB-Auszug vom 2026-09-29.
+
+- **Status-Korrektur (in DB längst erledigt, ROADMAP-Einträge vom 2026-09-21/22/24 noch als offen/pending geführt):**
+  - #1061 (Installer E2E): **done** seit 2026-09-13 (completed 00:37:53 inkl. Detail-Nachweis).
+  - #1062 (GUI Regression): **done** seit 2026-09-13 (00:41:14).
+  - #1044 (Mail-Service): **done** seit 2026-09-12 (07:45:49).
+  - #1118 (Supervisor/Runner): **done** seit 2026-09-13 (00:49:23).
+  - #1071 (Sandbox Stufe 2): **done** seit 2026-09-12.
+  - #1424 (E06 Altpfad): **done** seit 2026-09-29 10:38.
+- **Unverändert offen / nicht angefasst:**
+  - #1340 (TRANSFER-09) — Haltefrist bis mindestens 2026-10-12, idle-worker.
+- **Sandbox-Stufen:** Stufe 7 laut Bestandseintrag (s.u. Abschnitt „Aktuelle Fokus-Bereiche") nachgewiesen; Status Stufe 8 nicht DB-verifiziert — keine Aussage.
+- **Aktuelle Arbeitsqueue (2026-09-29):** 3 offene P2-Tasks (#1463 E04-Dateien, #1462 E07 CAMT, #1250 Gate2-B Windows) — alle USER- bzw. OPERATOR-gated, Entscheidungsanfrage #1570 ausstehend.
+- **Fortsetzung 2026-09-29 (Task #1686 recurring):** DB-Abgleich bestätigt 8 pending (#530, #1250, #1462, #1463, #1681, #1682, #1668, #1672) + P1-T793-Strang (#1376, #1570, #1640, #1697, #1710–#1732). #1224 (Sandbox Stufe 8) = OFFEN (nicht DB-verifiziert). TASKPLAN-Cutover (#299, #300–#304) = OFFEN (Nutzerentscheidung ausstehend). P1-Security im Fokus-Segment bereits DONE (SANDBOX-002 Zeile 1086, OPS-TELEM-001 Zeile 1088) — keine Änderung nötig. Changelog-Drift: Top = 4.3.63 (2026-09-10), ARCHIV-Notiz erwähnt 4.3.64 aktiv, Standzeile Version 4.3.65 — Docs-Drift, kein Handlungsbedarf, keine Versionserhöhung erzwungen. Prio-Check: P1-T793-Strang korrekt priorisiert. Archiv-Index (4 Blöcke) aktuell, nichts neu zu archivieren.
 
 ## Review 2026-09-24 (Daily Care & Dev Check)
 
@@ -1067,7 +1084,7 @@ Backend-Fallback-Semantik zu BACHs Multi-Partner-Architektur passt.
 | SEC-PLUGIN-001 | Skill-/Plugin-/MCP-Install-Scanner | DONE (Stufe 1) | `skills install`, `plugins load` und lokale MCP-Config-Pfade scannen statisch, blockieren Code-Injection-Muster fail-closed und legen Quarantäne-Kopien mit `report.json` an |
 | SEC-PLUGIN-002 | Manifest-first Plugin-Metadaten | TEILWEISE | `bach plugins inspect` liest Aktivierung, Capabilities, Provider-/Model-Catalogs und Setup-Metadaten ohne Runtime-Import; `plugins load` speichert diese Metadaten und blockiert fehlende Manifest-Dateireferenzen fail-closed |
 | SEC-PLUGIN-003 | Fail-closed Tool-Setup-Checks | DONE | Plugin-Manifeste mit `shell`-/`desktop`-/`mcp`-Setupflächen brauchen jetzt `setup.fail_closed=true` plus passende `setup.checks`; `plugins inspect/load` blockieren unsichere Verträge vor Runtime-Code, und bestehende Claude Hook-/MCP-Config-JSONs werden vor Setup-Schreibzugriffen fail-closed validiert |
-| SANDBOX-002 | Subprocess-Isolation | TEILWEISE | Capabilities/Allowlist (DONE): fail-closed Shell-Allowlist, DB-Persistenz, policy/allow/deny Ops, 72 Tests. Ressourcenlimit (offen, OS-spezifisch) |
+| SANDBOX-002 | Subprocess-Isolation | DONE (Stufe 3, 2026-09-29) | Stufe 2 (Task 1071): Timeout/Memory-Limit/Prozessgruppen-Kill, 72 Tests. Stufe 3 (Task 1385): backend docker/local/auto fail-closed, --network none/--read-only/--cap-drop ALL, Rollback docker rm -f, KEIN Auto-Pull, Docker-Tests skippen bis Image gepullt |
 | API-SURFACE-001 | Agent-/Prompt-API-Parität | DONE | `bach_api` exportiert jetzt die dokumentierten Module `agent`, `agents` und `prompt`; Agenten-Usecase per Regressionstest abgesichert |
 | OPS-TELEM-001 | Low-cardinality Telemetrie | DONE | Implementiert 2026-09-16 (Task #1315): `core/telemetry.py` + Migration 041 + Handler `bach telemetry report/status/reset`. Counter: agent_starts/model_calls/tool_calls mit Label-Allowlist + Regex-Validierung (Fallback "other"), outcome ok/error/dummy/timeout, Tages-Aggregation, Serien-Cap 200/Tag, fail-silent, Opt-Out BACH_TELEMETRY_DISABLED=1. Hooks: AgentRuntime (_instantiate), Launcher (route), CLI Direct Execute (bach.py), Ollama (_ask). Keine Payloads/Prompts/Nutzerdaten |
 | OPS-I18N-001 | i18n-Drift-Report & Layout-aware Scan | DONE | `bach lang report` prüft Manifest/Locale-Artefakte, liefert Fundstellen mit Datei/Zeile/Typ und scannt das aktuelle Layout inklusive HTML/JS/Markdown auf harte DE-Copy; `bach lang scan --namespace gui` nutzt jetzt dieselben gefilterten GUI-Fundstellen wie der Report, aktueller GUI-Live-Befund: 166 eindeutige Strings bei 253 Fundstellen und 0 offenen Einträgen (2026-06-12) |
@@ -1180,7 +1197,7 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
 - marble_run -> `_archive/marble_run/`
 - ATI SessionDaemon -> Ersetzt durch SchedulerService
 
-### 0. Adaptionsfaehigkeit & Self-Extension (Phase 1-3 KOMPLETT, Phase 4 Stufe 2+3 GEPLANT)
+### 0. Adaptionsfaehigkeit & Self-Extension (Phase 1-3 KOMPLETT, Phase 4 Stufe 2+3 KOMPLETT)
 
 **Phase 1: Quick Wins (KOMPLETT)**
 - Registry Hot-Reload (`core/registry.py` reload-Methode)
@@ -1212,9 +1229,11 @@ Grosse BUTTERNUT-Release mit Scheduler-Refactoring, Prompt-System, neuen Handler
   (shlex frass Backslashes; Test war auf POSIX pre-existing rot)
 - Tests: `tests/test_core_sandbox.py` (21 Tests), 97/97 gruen
 
-**Phase 4: Sandbox - Stufe 3 (OFFEN)**
-- Stufe 3: Container-Isolation (Docker/chroot) — nicht begonnen
-- Rollback bei fehlerhaften Erweiterungen
+**Phase 4: Sandbox - Stufe 3 (KOMPLETT, 2026-09-29, Task #1385)**
+- core/sandbox.py - docker_run_isolated + docker_available (Cache, KEIN Auto-Pull), backend-Parameter docker/local/auto fail-closed (kein stiller Fallback), SandboxResult.backend; Container-Haertung --network none, --read-only, --cap-drop ALL, no-new-privileges, --user 1000:1000, --tmpfs /tmp, memory/pids/ulimits
+- hub/sandbox.py - Operation backend [docker|local|auto] mit DB-Persistenz (system_config 'sandbox.backend', Default local), _isolated reicht backend durch, Policy-Anzeige backend + Docker-Verfuegbarkeit
+- Rollback: docker rm -f (Timeout 15s) bei Timeout/Fehlern, keine verwaisten Container
+- Tests: 9 Fake-Tests + 5 echte @DOCKER-Tests (skippen bis docker pull python:3.12-slim), Datei 34 passed/5 skipped, Suite 6403/5324 passed/127 failed/921 errors/31 skipped in 12 Teilaeufen (120s-Deckel + Bisektion wegen Haenger-Dateien/junitxml), praexistente Collection-Errors + Setup-Errors, nicht SANDBOX-bedingt; 1 Datei haengt >120s solo (praexistent), nicht in Summe (test_smoke.py)
 
 ### Weitere abgeschlossene Phasen
 
