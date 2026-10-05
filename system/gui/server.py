@@ -46,7 +46,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked, LeaseRequired
 from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
@@ -2225,6 +2225,83 @@ async def get_task(task_id: int):
     
     return row_to_dict(row)
 
+
+# --- BACH #1721: Lead-seitiger Task-Lease-Dienst (TASKDB-SALT-LEASE-VERTRAG-v1 §5) ---
+# Auth: /api/ liegt hinter DeviceAuthMiddleware (fail-closed, Device-Token).
+
+class LeaseAcquireRequest(BaseModel):
+    worker_id: str
+    host: str
+    request_id: str
+    ttl_profile: Optional[str] = None
+    intent: Optional[str] = None
+
+
+class LeaseRefRequest(BaseModel):
+    lease_id: str
+    fence: int
+
+
+class LeaseReleaseRequest(LeaseRefRequest):
+    outcome: str
+    result_ref: Optional[str] = None
+    note: Optional[str] = None
+
+
+def _lease_device_label(request: Request) -> Optional[str]:
+    device = getattr(request.state, "device", None)
+    if isinstance(device, dict):
+        label = device.get("name") or device.get("device_name") or device.get("id")
+        return str(label) if label is not None else None
+    return str(device) if device else None
+
+
+def _run_lease_op(op, *args, **kwargs):
+    from hub._services.task_lease import LeaseValidationError, TaskNotFound
+    conn = get_bach_db()
+    try:
+        result = op(conn, *args, **kwargs)
+    except TaskNotFound:
+        raise HTTPException(status_code=404, detail="Task nicht gefunden")
+    except LeaseValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        conn.close()
+    return JSONResponse(status_code=result.http_status, content=result.payload)
+
+
+@app.post("/api/tasks/{task_id}/lease")
+async def acquire_task_lease(task_id: int, body: LeaseAcquireRequest, request: Request):
+    """Lease anfordern (Vertrag §5.1). 200 = ACK mit lease_id/fence, 409 = Ablehnung mit reason."""
+    from hub._services.task_lease import acquire_lease
+    return _run_lease_op(acquire_lease, task_id, worker_id=body.worker_id, host=body.host,
+                         request_id=body.request_id, ttl_profile=body.ttl_profile,
+                         intent=body.intent or "", device=_lease_device_label(request))
+
+
+@app.get("/api/tasks/{task_id}/lease")
+async def read_task_lease(task_id: int, request: Request):
+    """Wer hält die Task? (Vertrag §5.2). Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
+    from hub._services.task_lease import read_lease
+    return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.post("/api/tasks/{task_id}/lease/renew")
+async def renew_task_lease(task_id: int, body: LeaseRefRequest):
+    """Heartbeat/Verlängerung (Vertrag §5.3)."""
+    from hub._services.task_lease import renew_lease
+    return _run_lease_op(renew_lease, task_id, lease_id=body.lease_id, fence=body.fence)
+
+
+@app.post("/api/tasks/{task_id}/lease/release")
+async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
+    """Rückgabe/Abschluss (Vertrag §5.4): outcome return|done|blocked."""
+    from hub._services.task_lease import release_lease
+    return _run_lease_op(release_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         outcome=body.outcome, result_ref=body.result_ref or "",
+                         note=body.note or "")
+
+
 @app.put("/api/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
     """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
@@ -2301,6 +2378,9 @@ async def update_task(task_id: int, update: TaskUpdate):
                                         changed_by=changed_by,
                                         allow_reopen=bool(update.allow_reopen)):
                 did_update = True
+        except LeaseRequired as exc:
+            # BACH #1721: lebender Lease -> nur /lease/release darf den Status aendern.
+            raise HTTPException(status_code=409, detail={"reason": exc.reason, "message": str(exc)})
         except (GateReopenBlocked, ValueError) as exc:
             # Business-rule conflicts (for example the missing-PR completion guard)
             # are client-resolvable conflicts, not internal server errors.

@@ -77,6 +77,11 @@ Technisch ist der Ausgangspunkt `adapter_bach.py`. #1721 erweitert ihn um Fencin
 | `salt_ref` | `claim_salt_ref` **(neu)** | Text, optional | Lead | Claim-Salt-Bezug (Abschnitt 7) |
 | `claimed_at` | `claimed_at` | Text | Lead | **Kompatibilitätsfeld.** Wird bei Acquire auf `issued_at` gesetzt. |
 
+> **NACHTRAG 2026-10-05 (#1721, agy-opus@ASUS-GEI) – Umsetzung präzisiert drei Punkte:**
+> 1. Zwei weitere additive Spalten: `claim_intent` (Freitext ≤ 500 Zeichen, erscheint in der Holder-Ansicht) und `claim_request_id` (idempotente Wiederholung von Acquire, §5.1). Beide werden bei Release, Alt-Claim und Reap geleert.
+> 2. `ticket_hash` in §7 ist die Ticket-ID aus `source` (`ticket:T-JJJJMMTT-…`), also `claim_salt_ref = sha256("claim-salt:v1:" + "T-…")`.
+> 3. Zeitformate: Lease-Spalten (`claim_issued_at`, `claim_expires_at`, `claim_heartbeat_at`) stehen als UTC mit fester Länge `JJJJ-MM-TTThh:mm:ss.ffffffZ` und sind damit lexikografisch vergleichbar. `claimed_at` bleibt im bisherigen Format (naive Ortszeit des Leads mit `T`, wie `_iso_now`), damit `claim_task_atomic` und der Reaper einen Lease nicht für abgelaufen halten; Renew frischt `claimed_at` mit auf. Unabhängig davon prüfen `claim_task_atomic`, `release_claim`, `apply_task_field_changes` und der Reaper einen lebenden Lease direkt über `claim_expires_at` (Code: `system/hub/task_audit.py`, `system/hub/_services/task_lease.py`).
+
 Fencing-Regel: Jede schreibende Taskoperation eines Workers (Statuswechsel, Abschluss, Ergebnis, Receipt) muss `lease_id` **und** `fence` mitschicken. Der Lead akzeptiert sie nur, wenn beide Werte zum aktuellen Lease passen und `now() < expires_at` gilt. Andernfalls antwortet er mit `409 stale_fence`. Ein monotoner Integer ist nötig, weil die UUID `claim_id` nicht geordnet ist und Downstream-Systeme (Trithon-Receipts, Ergebnispuffer) „älter als“ prüfen können müssen.
 
 ## 5. Operationen (vorgeschlagene Lead-HTTP-API)
