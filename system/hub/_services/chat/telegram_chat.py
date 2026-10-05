@@ -292,6 +292,23 @@ def _worker_pause_event_type(slot: Dict[str, Any], *, task_completed: bool) -> s
     return "runs"
 
 
+def _worker_task_completed(slot: Dict[str, Any], completed_task_ids: Any) -> bool:
+    """Match task-completion receipts to an explicitly assigned task, if any."""
+    try:
+        completed = {int(task_id) for task_id in completed_task_ids if int(task_id) > 0}
+    except (TypeError, ValueError):
+        return False
+    if not completed:
+        return False
+    assigned_task_id = slot.get("task_id")
+    if assigned_task_id in (None, "", 0, "0"):
+        return True
+    try:
+        return int(assigned_task_id) in completed
+    except (TypeError, ValueError):
+        return False
+
+
 def _update_worker_slot(
     control: _WorkerControl,
     updates: Dict[str, Any],
@@ -3434,21 +3451,43 @@ class ControlHandler(BaseHTTPRequestHandler):
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
-                        initial_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
+                        initial_prompt = (
+                            f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
+                            f"Erledigung mit task_manage(action='done', task_id={w.get('task_id')}). "
+                            "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "hintergrund_worker":
-                        initial_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
+                        initial_prompt = (
+                            "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
+                            "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                            "task_manage(action='done', task_id=<ID>). Bei Hindernissen bleibt die Task offen; "
+                            "nenne den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "boss_routing":
-                        initial_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
+                        initial_prompt = (
+                            "Analysiere die offenen Aufgaben in der TaskDB, zerlege komplexe Aufgaben mit "
+                            "task_manage(action='decompose') und nenne passende Fachrollen als Empfehlung. "
+                            "Behaupte keine Zuweisung oder Übernahme, solange die TaskDB keinen Claim/Lease bestätigt."
+                        )
                     elif w.get("sub_mode") == "expert_role":
                         role = w.get("role_id") or "Experte"
                         if role == "task-divider":
                             initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
                         elif role == "ticket-master":
-                            initial_prompt = "Sichte unzugewiesene oder heimatlose Tickets und ordne sie den passenden Fachrollen zu via task_manage action='assign'."
+                            initial_prompt = (
+                                "Triagiere Aufgaben anhand der TaskDB. Nutze nur task_manage-Aktionen "
+                                "list, detail, add, update und decompose; action='assign' ist nicht verfügbar. "
+                                "Erstelle bei Bedarf konkrete Tasks und halte Tickets als Dokumentationsverweise. "
+                                "Eine Task wird über den vorgesehenen Claim/Lease-Prozess übernommen; behaupte keine "
+                                "Zuweisung, die die TaskDB nicht bestätigt."
+                            )
                         else:
                             initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
                     else:
-                        initial_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
+                        initial_prompt = w.get("task_prompt") or (
+                            "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
+                            "tatsächlicher Erledigung mit task_manage(action='done', task_id=<ID>)."
+                        )
 
                     prompt_to_run = initial_prompt
                     run_count = 0
@@ -3522,8 +3561,30 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
                             break
 
+                        completion_reader = getattr(runtime, "consume_task_completion_receipts", None)
+                        try:
+                            completion_receipts = completion_reader(worker_id) if callable(completion_reader) else ()
+                        except Exception:
+                            log.warning("Worker %s: Task-Abschlussbelege konnten nicht gelesen werden", worker_id)
+                            completion_receipts = ()
+                        task_completed = _worker_task_completed(current_slot, completion_receipts)
+
                         # Einzellauf endet nach einem abgeschlossenen Block.
                         if current_slot.get("type") == "once":
+                            assigned_task_id = current_slot.get("task_id")
+                            if assigned_task_id not in (None, "", 0, "0") and not task_completed:
+                                _update_worker_slot(control, {
+                                    "status": "idle",
+                                    "current_activity": (
+                                        f"Task #{assigned_task_id} bleibt offen; Zwischenergebnis gespeichert"
+                                    ),
+                                })
+                                _record_worker_activity(
+                                    control,
+                                    f"Task #{assigned_task_id} ohne Abschlussbeleg beendet",
+                                    "pending",
+                                )
+                                break
                             _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
                             break
 
@@ -3533,13 +3594,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
-                        # A max-turn block is an inference run, but the task is
-                        # still unfinished. A completed task can count either
-                        # as a run or as a task, according to the profile.
+                        # Count a task only when task_manage returned a successful
+                        # completion receipt for this worker's assigned task.
                         is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
                         pause_event = _worker_pause_event_type(
                             current_slot,
-                            task_completed=not is_max_turns,
+                            task_completed=task_completed,
                         )
                         if not _wait_worker_cooldown(control, event_type=pause_event):
                             break
@@ -3557,8 +3617,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                             )
                             if control.stop_event.wait(2):
                                 break
-                        else:
-                            # Task abgeschlossen, aber TTL läuft noch -> Warte kurz und ziehe nächsten Task
+                        elif task_completed:
+                            # A verified completion lets a continuous worker pick the next task.
                             if _update_worker_slot(control, {
                                 "status": "running",
                                 "current_activity": f"Aufgabe fertig. Suche nächste Aufgabe (Lauf {run_count + 1})..."
@@ -3566,7 +3626,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 break
                             if control.stop_event.wait(12):
                                 break
-                            prompt_to_run = "Prüfe offene Tasks in BACH und bearbeite die nächste wichtige offene Aufgabe autonom."
+                            prompt_to_run = (
+                                "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
+                                "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                                "task_manage(action='done', task_id=<ID>)."
+                            )
+                        else:
+                            # Do not abandon or mark an unverified task complete.
+                            if _update_worker_slot(control, {
+                                "status": "running",
+                                "current_activity": f"Task noch offen. Setze sie fort (Lauf {run_count + 1})..."
+                            }) is None:
+                                break
+                            if control.stop_event.wait(2):
+                                break
+                            prompt_to_run = (
+                                "Setze die zuletzt bearbeitete Task fort. Es liegt noch kein erfolgreicher "
+                                "task_manage(action='done')-Beleg vor. Prüfe den aktuellen Taskstatus und arbeite "
+                                "weiter; nur nach tatsächlicher Erledigung mit der konkreten Task-ID als done markieren."
+                            )
 
                     if control.stop_event.is_set():
                         return

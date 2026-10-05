@@ -491,13 +491,20 @@ class TestSlotsConfigCRUD:
         assert received == ["tasks"]
 
     def test_dynamic_worker_pause_counts_tasks_only_after_turn_handoff_finishes(self):
-        from hub._services.chat.telegram_chat import _worker_pause_event_type
+        from hub._services.chat.telegram_chat import (
+            _worker_pause_event_type,
+            _worker_task_completed,
+        )
 
         task_based = {"pause_basis": "tasks"}
         run_based = {"pause_basis": "runs"}
         assert _worker_pause_event_type(task_based, task_completed=False) == "runs"
         assert _worker_pause_event_type(task_based, task_completed=True) == "tasks"
         assert _worker_pause_event_type(run_based, task_completed=True) == "runs"
+        assert _worker_task_completed({"task_id": 42}, (42,)) is True
+        assert _worker_task_completed({"task_id": 42}, (43,)) is False
+        assert _worker_task_completed({}, ()) is False
+        assert _worker_task_completed({}, (43,)) is True
 
 
 class TestTelegramSlotMapping:

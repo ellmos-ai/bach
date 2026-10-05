@@ -1350,7 +1350,7 @@ def test_glm_cloud_summarize_preserves_older_context():
     assert backend.calls[0]["think"] is True
 
 
-def test_local_compute_gate_finishes_background_turn_then_serves_foreground_first():
+def test_local_compute_gate_serves_foreground_between_background_model_calls():
     import asyncio
     import threading
     import time
@@ -1364,15 +1364,23 @@ def test_local_compute_gate_finishes_background_turn_then_serves_foreground_firs
     release_background = threading.Event()
     calls = []
 
-    async def fake_process_turn(text, chat_id, **_kwargs):
+    async def fake_chat(_messages, **_kwargs):
+        chat_id = runtime.compute_turn_status()["chat_id"]
         calls.append(chat_id)
-        if chat_id == "worker-unit-test":
+        if chat_id == "worker-unit-test" and calls.count(chat_id) == 1:
             background_started.set()
             await asyncio.to_thread(release_background.wait)
-        else:
+        elif chat_id == "gui-web":
             foreground_started.set()
+        return {"content": "ok"}
+
+    async def fake_process_turn(text, chat_id, **_kwargs):
+        await runtime._chat_with_compute_turn(runtime.backend, [{"role": "user", "content": text}])
+        if chat_id == "worker-unit-test":
+            await runtime._chat_with_compute_turn(runtime.backend, [{"role": "user", "content": "Fortsetzung"}])
         return "ok"
 
+    runtime.backend.chat = fake_chat
     runtime._process_turn = fake_process_turn
     outcomes = {}
 
@@ -1399,9 +1407,38 @@ def test_local_compute_gate_finishes_background_turn_then_serves_foreground_firs
 
     assert not background.is_alive()
     assert not foreground.is_alive()
-    assert calls == ["worker-unit-test", "gui-web"]
+    assert calls == ["worker-unit-test", "gui-web", "worker-unit-test"]
     assert outcomes == {"worker-unit-test": "ok", "gui-web": "ok"}
     assert runtime.compute_turn_status()["active"] is False
+
+
+def test_task_completion_receipts_require_successful_done_tool_response():
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _Backend:
+        def get_default_model(self):
+            return "test-model"
+
+    runtime = ChatRuntime(_Backend())
+    runtime._reset_task_completion_receipts("worker-receipt-test")
+    context_token = runtime._compute_turn_context.set(("worker-receipt-test", "background"))
+
+    assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 nicht gefunden",
+    )
+    assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "update", "task_id": 42},
+        "Task #42 aktualisiert: status",
+    )
+    assert runtime.get_last_task_completion_receipts("worker-receipt-test") == ()
+
+    assert runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 erledigt.",
+    )
+    assert runtime.get_last_task_completion_receipts("worker-receipt-test") == (42,)
+    runtime._compute_turn_context.reset(context_token)
 
 
 @pytest.mark.parametrize("failure", ["exception", "partial_error"])

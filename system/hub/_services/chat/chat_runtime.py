@@ -25,6 +25,7 @@ Only telegram_chat.py imports this module directly; the tray and the GUI
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -468,6 +469,11 @@ class ChatRuntime(_ModuleChatRuntime):
         self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
         self._chat_turn_gates_lock = threading.Lock()
         self._compute_turn_gate = _ComputeTurnGate()
+        self._compute_turn_context = ContextVar(
+            f"bach_compute_turn_context_{id(self)}", default=None
+        )
+        self._task_completion_receipts: dict[str, list[int]] = {}
+        self._task_completion_receipts_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
         self.auto_continue: int = limit("BACH_AUTO_CONTINUE")
@@ -923,6 +929,60 @@ class ChatRuntime(_ModuleChatRuntime):
             gate.started_at = None
             gate.condition.notify_all()
 
+    async def _chat_with_compute_turn(self, backend, *args, **kwargs):
+        """Hold the local-compute gate for one model call, then yield to waiters."""
+        turn_context = self._compute_turn_context.get()
+        if turn_context is None or not self._uses_local_compute(backend):
+            return await backend.chat(*args, **kwargs)
+
+        chat_id, priority = turn_context
+        await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
+        try:
+            return await backend.chat(*args, **kwargs)
+        finally:
+            self._leave_compute_turn(self._compute_turn_gate)
+
+    def _reset_task_completion_receipts(self, chat_id: str) -> None:
+        with self._task_completion_receipts_lock:
+            self._task_completion_receipts[str(chat_id)] = []
+
+    def _record_task_completion_receipt(
+        self, chat_id: str, tool_name: str, tool_args: Any, tool_result: str
+    ) -> bool:
+        """Record only a successful `task_manage(done)` tool receipt."""
+        turn_context = self._compute_turn_context.get()
+        if (
+            turn_context is None
+            or turn_context[0] != str(chat_id)
+            or turn_context[1] != "background"
+        ):
+            return False
+        if tool_name != "task_manage" or not isinstance(tool_args, dict):
+            return False
+        if tool_args.get("action") != "done":
+            return False
+        try:
+            task_id = int(tool_args.get("task_id"))
+        except (TypeError, ValueError):
+            return False
+        if task_id <= 0 or str(tool_result).strip() != f"Task #{task_id} erledigt.":
+            return False
+        with self._task_completion_receipts_lock:
+            receipts = self._task_completion_receipts.setdefault(str(chat_id), [])
+            if task_id not in receipts:
+                receipts.append(task_id)
+        return True
+
+    def get_last_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
+        """Return task IDs confirmed by successful task-management tool calls."""
+        with self._task_completion_receipts_lock:
+            return tuple(self._task_completion_receipts.get(str(chat_id), ()))
+
+    def consume_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
+        """Return and discard receipts after a worker block has consumed them."""
+        with self._task_completion_receipts_lock:
+            return tuple(self._task_completion_receipts.pop(str(chat_id), ()))
+
     def compute_turn_status(self) -> dict[str, Any]:
         """Return live evidence about which BACH run currently owns local inference."""
         with self._compute_turn_gate.condition:
@@ -1198,25 +1258,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         if agent_context is not None and profile_id is None:
             return FailedAnswer("Profilkontext benötigt eine Profil-Chat-ID")
         gate = self._chat_turn_gate(chat_id)
-        compute_backend = (
-            backend
-            or getattr(self.sessions.get(chat_id), "backend", None)
-            or self.backend
-        )
-        uses_local_compute = self._uses_local_compute(compute_backend)
-        compute_acquired = False
         if agent_context is not None:
             await self._enter_profile_turn(gate)
         else:
             await self._enter_chat_turn(gate)
+        compute_context_token = self._compute_turn_context.set((
+            str(chat_id), self._process_priority(chat_id, work_priority)
+        ))
         try:
-            if uses_local_compute:
-                await self._enter_compute_turn(
-                    self._compute_turn_gate,
-                    chat_id,
-                    self._process_priority(chat_id, work_priority),
-                )
-                compute_acquired = True
+            if self._process_priority(chat_id, work_priority) == "background":
+                self._reset_task_completion_receipts(chat_id)
             if agent_context is not None:
                 self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
@@ -1224,16 +1275,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 skip_compute_gate=skip_compute_gate, **kwargs,
             )
         finally:
-            if compute_acquired:
-                self._leave_compute_turn(self._compute_turn_gate)
+            self._compute_turn_context.reset(compute_context_token)
             self._leave_chat_turn(gate)
 
     async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,
                             skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
-        # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
-        # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
-        # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
+        # Jeder lokale Modellaufruf nutzt _chat_with_compute_turn. Das Gate
+        # wird nach jeder Inferenz freigegeben, damit ein wartender Vordergrund-
+        # Chat vor der nächsten Hintergrund-Toolrunde rechnen kann.
         known_session = self.sessions.get(chat_id)
         selected_backend = (
             backend
@@ -1311,7 +1361,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 self._persist_session(chat_id, session)
                 return capability_error
             try:
-                result = await selected_backend.chat(
+                result = await self._chat_with_compute_turn(
+                    selected_backend,
                     msgs, think=session.think, model=selected_model
                 )
                 answer = _managed_backend_answer(result)
@@ -1393,7 +1444,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
 
             try:
-                result = await selected_backend.chat(
+                result = await self._chat_with_compute_turn(
+                    selected_backend,
                     msgs, tools=tools, think=session.think, model=selected_model
                 )
             except Exception as e:
@@ -1507,6 +1559,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     bach_app=self.bach_app,
                     default_model=selected_model,
                 )
+                self._record_task_completion_receipt(
+                    getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
+                )
                 tool_call_id = ""
                 if hasattr(selected_backend, "_last_tool_call_ids"):
                     ids = selected_backend._last_tool_call_ids
@@ -1548,7 +1603,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.think if selected_model == "glm-5.3:cloud"
                         else False
                     )
-                    final_res = await selected_backend.chat(
+                    final_res = await self._chat_with_compute_turn(
+                        selected_backend,
                         msgs, tools=None, think=final_think, model=selected_model
                     )
                     if final_res.get("error"):
@@ -1639,7 +1695,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_model = model or session.model or selected_backend.get_default_model()
         handoff_error = None
         try:
-            res = await selected_backend.chat(
+            res = await self._chat_with_compute_turn(
+                selected_backend,
                 frage, tools=None,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
                 model=selected_model,
@@ -1710,7 +1767,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            result = await selected_backend.chat(
+            result = await self._chat_with_compute_turn(
+                selected_backend,
                 prompt,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
                 model=selected_model,
