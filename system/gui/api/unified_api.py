@@ -2755,6 +2755,25 @@ async def start_system_worker(worker_id: str, request: Request):
         raise HTTPException(status_code=503, detail="Workerstatus oder Start nicht verfügbar") from exc
 
 
+@router.post("/system/workers/{worker_id}/handoff")
+async def handoff_system_worker(worker_id: str, request: Request):
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, request_worker_handoff
+
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"generation"}:
+            raise HTTPException(status_code=400, detail="Aktuelle Laufgeneration erforderlich")
+        return await asyncio.to_thread(request_worker_handoff, worker_id, body["generation"],
+                                       device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Kontextübergabe nicht verfügbar") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Ungültige Übergabeanfrage") from exc
+
+
 @router.post("/system/workers/{worker_id}/pause")
 async def pause_system_worker(worker_id: str, request: Request):
     """Request a confirmed cooperative pause for one live worker."""

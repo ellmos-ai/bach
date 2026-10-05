@@ -710,20 +710,26 @@ import BachLayout from "../../layouts/BachLayout.astro";
       if (once) ttl.value = '0';
     }
 
-    async function runWorkerAction(workerId, action) {
+    async function runWorkerAction(workerId, action, generation) {
       const summary = document.getElementById('worker-status-summary');
-      const safeActions = new Set(['start', 'pause', 'stop']);
+      const safeActions = new Set(['start', 'pause', 'stop', 'handoff']);
       if (!safeActions.has(action)) return;
       summary.textContent = action === 'start' ? 'Start wird angefordert…' :
-        action === 'pause' ? 'Kooperative Pause wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
+        action === 'pause' ? 'Kooperative Pause wird angefordert…' :
+        action === 'handoff' ? 'Kontextübergabe wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
       try {
         const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(action === 'handoff' ? {generation} : {})
         });
         const data = await response.json();
         if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Aktion nicht bestätigt');
         if (action === 'start') {
           summary.textContent = `Start angenommen · Laufzeit-Readback: ${data.runtime_state || 'unbekannt'}`;
+        } else if (action === 'handoff') {
+          summary.textContent = data.receipt?.state === 'confirmed'
+            ? 'Kontextübergabe durch die Laufzeit bestätigt.'
+            : 'Kontextübergabe angefordert · Bestätigung folgt im Workerstatus.';
         } else {
           summary.textContent = action === 'pause' ? 'Pause durch Control API bestätigt.' : 'Stopp durch Control API bestätigt.';
         }
@@ -802,6 +808,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
             }
           }
           if (worker.current_activity) card.append(coreElement('p', worker.current_activity));
+          if (worker.handoff_receipt) {
+            const handoffLabels = {pending: 'angefordert', running: 'wird verarbeitet',
+              confirmed: 'bestätigt', error: 'fehlgeschlagen', cancelled: 'abgebrochen'};
+            card.append(coreElement('p', 'Kontextübergabe: ' +
+              (handoffLabels[worker.handoff_receipt.state] || 'unbekannt')));
+          }
           const actions = coreElement('div', undefined, 'core-actions');
           if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
             const start = coreElement('button', state === 'paused' ? '▶ Fortsetzen' : '▶ Start', 'btn btn-sm btn-primary');
@@ -811,6 +823,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
           }
           if (state === 'running' || (state === 'paused' && worker.auto_paused === true)) {
             if (state === 'running') {
+              if (typeof worker.generation === 'string' &&
+                  !['pending', 'running'].includes(worker.handoff_receipt?.state)) {
+                const handoff = coreElement('button', 'Kontext übergeben', 'btn btn-sm');
+                handoff.type = 'button';
+                handoff.addEventListener('click', () => runWorkerAction(worker.id, 'handoff', worker.generation));
+                actions.append(handoff);
+              }
               const pause = coreElement('button', '⏸ Pause', 'btn btn-sm');
               pause.type = 'button';
               pause.addEventListener('click', () => runWorkerAction(worker.id, 'pause'));

@@ -26,6 +26,7 @@ class WorkerActionRejected(RuntimeError):
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
+_RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 _TOOL_ROUND_ACTIVITY = re.compile(r"^Tool \[(\d+)\]:")
 _MAX_RESPONSE_BYTES = 2_000_000
 _SAFE_TEXT_FIELDS = (
@@ -40,6 +41,7 @@ _ALLOWED_CONTROL = {
     ("POST", "workers"), ("POST", "workers/run"),
     ("POST", "workers/toggle"), ("POST", "workers/stop"),
     ("POST", "workers/delete"),
+    ("POST", "workers/handoff"),
 }
 _ACTIONS = {
     "create": ("POST", "workers"),
@@ -110,7 +112,56 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     task_id = raw.get("task_id")
     if isinstance(task_id, int) and not isinstance(task_id, bool):
         item["task_id"] = task_id
+    generation = raw.get("generation")
+    if isinstance(generation, str) and _RUN_ID.fullmatch(generation):
+        item["generation"] = generation
+    receipt = _project_handoff_receipt(raw.get("handoff_receipt"), worker_id)
+    if receipt is not None:
+        item["handoff_receipt"] = receipt
     return item
+
+
+def _project_handoff_receipt(raw: Any, worker_id: str) -> dict[str, Any] | None:
+    if (not isinstance(raw, dict) or raw.get("kind") != "worker-handoff"
+            or raw.get("worker_id") != worker_id
+            or raw.get("state") not in {"pending", "running", "confirmed", "error", "cancelled"}):
+        return None
+    for field in ("generation", "request_id"):
+        if not isinstance(raw.get(field), str) or not _RUN_ID.fullmatch(raw[field]):
+            return None
+    if raw["state"] == "confirmed" and not _text(raw.get("confirmed_at"), limit=80):
+        return None
+    return {key: raw[key] for key in ("kind", "worker_id", "generation", "request_id", "state")} | {
+        key: _text(raw.get(key), limit=80) for key in ("requested_at", "confirmed_at")
+    }
+
+
+def request_worker_handoff(worker_id: str, generation: str, *, device_token: str,
+                           timeout: float = 8.0) -> dict[str, Any]:
+    if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
+            or not isinstance(generation, str) or not _RUN_ID.fullmatch(generation)):
+        raise WorkerActionRejected("Worker-ID oder Laufgeneration ist ungültig", 400)
+    current = read_worker_status(device_token=device_token, timeout=timeout)
+    worker = next((w for w in current["workers"] if w["id"] == worker_id), None)
+    if not worker or worker.get("status") != "running" or worker.get("generation") != generation:
+        raise WorkerActionRejected("Workerlauf ist nicht mehr aktuell", 409)
+    result = _request_control_api("POST", "workers/handoff", device_token=device_token,
+                                  body={"id": worker_id, "generation": generation}, timeout=timeout)
+    receipt = _project_handoff_receipt(result.get("receipt"), worker_id)
+    if result.get("ok") is not True or receipt is None or receipt["generation"] != generation:
+        raise WorkerActionRejected("Kontextübergabe wurde nicht für diesen Lauf bestätigt", 503)
+    observed = None
+    try:
+        snapshot = read_worker_status(device_token=device_token, timeout=timeout)
+        latest = next((w for w in snapshot["workers"] if w["id"] == worker_id), {})
+        candidate = _project_handoff_receipt(latest.get("handoff_receipt"), worker_id)
+        if (candidate and candidate["generation"] == generation
+                and candidate["request_id"] == receipt["request_id"]):
+            observed = candidate
+    except WorkerStatusUnavailable:
+        pass
+    return {"ok": True, "action": "handoff", "receipt": observed or receipt,
+            "runtime_readback": "available" if observed else "unavailable"}
 
 
 def _control_context(device_token: str):

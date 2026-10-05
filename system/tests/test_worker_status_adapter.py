@@ -7,6 +7,73 @@ import pytest
 from gui.api import worker_status_adapter as adapter
 
 
+def test_handoff_projection_discards_secrets_and_keeps_receipt():
+    receipt = {"kind": "worker-handoff", "worker_id": "worker-1", "generation": "a" * 32,
+               "request_id": "b" * 32, "state": "pending", "requested_at": "now",
+               "confirmed_at": None, "api_key": "secret"}
+    worker = adapter._project_worker({"id": "worker-1", "generation": "a" * 32,
+                                      "handoff_receipt": receipt})
+    assert worker["generation"] == "a" * 32
+    assert worker["handoff_receipt"]["state"] == "pending"
+    assert "api_key" not in worker["handoff_receipt"]
+
+
+@pytest.mark.parametrize("generation,state", [("old", "running"), ("a" * 32, "idle")])
+def test_handoff_rejects_stale_or_inactive_worker(monkeypatch, generation, state):
+    monkeypatch.setattr(adapter, "read_worker_status", lambda **kw: {"workers": [
+        {"id": "worker-1", "status": state, "generation": "a" * 32}]} )
+    with pytest.raises(adapter.WorkerActionRejected):
+        adapter.request_worker_handoff("worker-1", generation, device_token="token")
+
+
+def test_handoff_requires_bound_ack_and_reads_receipt_back(monkeypatch):
+    receipt = {"kind": "worker-handoff", "worker_id": "worker-1", "generation": "a" * 32,
+               "request_id": "b" * 32, "state": "pending", "requested_at": "now", "confirmed_at": None}
+    snapshot = {"workers": [{"id": "worker-1", "status": "running", "generation": "a" * 32,
+                              "handoff_receipt": receipt}]}
+    monkeypatch.setattr(adapter, "read_worker_status", lambda **kw: snapshot)
+    calls = []
+    def request(method, endpoint, **kwargs):
+        calls.append((method, endpoint, kwargs))
+        return {"ok": True, "receipt": receipt}
+    monkeypatch.setattr(adapter, "_request_control_api", request)
+    result = adapter.request_worker_handoff("worker-1", "a" * 32, device_token="token")
+    assert result["receipt"]["state"] == "pending"
+    assert result["runtime_readback"] == "available"
+    assert calls[0][0:2] == ("POST", "workers/handoff")
+    receipt["worker_id"] = "foreign-worker"
+    with pytest.raises(adapter.WorkerActionRejected):
+        adapter.request_worker_handoff("worker-1", "a" * 32, device_token="token")
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_gui_handoff_route_requires_device_and_forwards_generation(monkeypatch, authenticated):
+    from fastapi import HTTPException
+    from gui.api import unified_api
+
+    def authorize(request):
+        if not authenticated:
+            raise HTTPException(401, "Geräteanmeldung erforderlich")
+        return "device-token"
+
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", authorize)
+    calls = []
+    monkeypatch.setattr(adapter, "request_worker_handoff",
+                        lambda worker_id, generation, **kw: calls.append((worker_id, generation, kw)) or {"ok": True})
+    class Request:
+        async def json(self):
+            return {"generation": "a" * 32}
+
+    if authenticated:
+        assert asyncio.run(unified_api.handoff_system_worker("worker-1", Request()))["ok"] is True
+        assert calls == [("worker-1", "a" * 32, {"device_token": "device-token"})]
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(unified_api.handoff_system_worker("worker-1", Request()))
+        assert error.value.status_code == 401
+        assert calls == []
+
+
 class FakeResponse:
     def __init__(self, payload, status_code=200):
         self.payload = payload

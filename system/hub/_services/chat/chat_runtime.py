@@ -420,6 +420,7 @@ class ChatSession(_ModuleChatSession):
         self.profile_context_text: str = ""
         self.chat_id: str = ""
         self.operator_control: Any = None
+        self.worker_handoff: Any = None
 
     @property
     def mode(self) -> str:
@@ -1518,6 +1519,30 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception as e:
                     # Steuerung darf den Lauf nie gefährden.
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
+
+            handoff_control = getattr(session, "worker_handoff", None)
+            if handoff_control is not None and handoff_control.closed:
+                return FailedAnswer.from_exception(RuntimeError("Workerlauf beendet"))
+            request_id = handoff_control.consume() if handoff_control is not None else None
+            if request_id is not None:
+                try:
+                    summary = await self._handoff(
+                        msgs, session, backend=selected_backend, model=selected_model, strict=True,
+                    )
+                    msgs = [m for m in msgs if m.get("role") == "system"] + summary
+                    if background_task and session.allow_tools is True and offered_tools:
+                        msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+                    msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+                    if not handoff_control.finish(request_id, succeeded=True):
+                        return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
+                    session.messages = list(summary)
+                    capability_error = self._refresh_worker_tools(session)
+                    if capability_error is not None:
+                        return capability_error
+                    tools = offered_tools if session.allow_tools is True else []
+                except Exception as exc:
+                    handoff_control.finish(request_id, succeeded=False)
+                    return FailedAnswer.from_exception(exc)
 
             try:
                 result = await self._chat_with_compute_turn(

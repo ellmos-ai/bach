@@ -1549,6 +1549,9 @@ class TestControlHandlerEndpoints:
                 self.release = threading.Event()
                 self.calls = 0
 
+            def get_session(self, _worker_id):
+                return ChatSession()
+
             async def process(self, *args, **kwargs):
                 self.calls += 1
                 self.started.set()
