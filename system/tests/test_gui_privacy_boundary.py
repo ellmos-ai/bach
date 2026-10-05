@@ -235,11 +235,17 @@ def test_public_allowlist_is_explicit_and_unauthenticated_shells_load(client):
 def test_every_registered_non_api_route_is_classified():
     """Fails when a route is added without deciding whether it may be public."""
     public = server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
-    protected = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/ws", "/control", "/static"}
+    protected = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/ws", "/control", "/static", "/_astro"}
     for route in server.app.routes:
         path = getattr(route, "path", None)
         if path and not path.startswith("/api/") and "_perimeter_dummy" not in path:
             assert path in public or path in protected, f"unclassified route {path}"
+
+
+def test_static_and_astro_assets_pass_publicly():
+    assert "/_astro/" in server.DeviceAuthMiddleware.PUBLIC_STATIC_PREFIXES
+    assert "/static/" in server.DeviceAuthMiddleware.PUBLIC_STATIC_PREFIXES
+    assert "/favicon.ico" in server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
 
 
 # ── Host allowlist (DNS rebinding) ───────────────────────────────────────
