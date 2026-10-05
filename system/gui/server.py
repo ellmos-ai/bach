@@ -46,7 +46,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked
+from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked, LeaseRequired
 from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
@@ -155,6 +155,13 @@ def _account_store():
 TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
+
+_CANDIDATE_DIST_DIRS = [
+    GUI_DIR / "web" / "dist",
+    Path(os.environ.get("ELLMOS_SYSTEM_GUI_DIST", "")) if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") else None,
+    Path("C:/_Local_DEV/repos/ellmos-system-gui/dist"),
+]
+ASTRO_DIST_DIR = next((p for p in _CANDIDATE_DIST_DIRS if p and p.is_dir()), GUI_DIR / "web" / "dist")
 
 HELP_DIR = BACH_DIR / "docs" / "help"
 WIKI_DIR = BACH_DIR / "wiki"
@@ -1574,6 +1581,9 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/devices/verify",
         "/api/gui/backend-origin",
         "/api/gui/brand",
+        "/api/gui/kit-manifest",
+        "/api/gui/architecture/concepts",
+        "/api/capabilities/mcp/cookbooks",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1778,6 +1788,7 @@ async def get_gui_capabilities():
     """Describe registered GUI adapters without inventing runtime availability."""
     from datetime import datetime, timezone
     from gui.branding import read_gui_brand
+    from hub._services.gui_contract_service import get_pinned_kit_manifest, verify_installed_dist
 
     observed = datetime.now(timezone.utc).isoformat()
     registered_paths = {getattr(route, "path", None) for route in app.routes}
@@ -1801,20 +1812,53 @@ async def get_gui_capabilities():
             "reason_code": "route_registered_runtime_not_probed" if present else "adapter_not_registered",
             "observed_at": observed if present else None,
         }
+
+    kit_manifest = get_pinned_kit_manifest()
+    dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit_manifest.get("pinned_source_commit"))
+    is_kit_verified = bool(kit_manifest.get("verified") and dist_info.get("verified"))
+
+    kit_status = {
+        "revision": kit_manifest.get("pinned_source_commit"),
+        "version": kit_manifest.get("version"),
+        "archive_sha256": kit_manifest.get("release_archive_sha256"),
+        "verified": is_kit_verified,
+        "installed": dist_info.get("installed", False),
+        "installed_files_verified": dist_info.get("verified", False),
+        "served": dist_info.get("installed", False),
+        "reason_code": "verified_pinned_release" if is_kit_verified else dist_info.get("reason_code", "release_identity_not_probed"),
+        "dist_page_count": dist_info.get("page_count", 0),
+    }
+
     return {
         "schema": "ellmos-system-gui.capabilities.v1",
         "schema_version": 1,
-        "kit": {
-            "revision": None, "version": None, "archive_sha256": None,
-            "verified": None, "installed": None,
-            "installed_files_verified": None, "served": None,
-            "reason_code": "release_identity_not_probed",
-        },
+        "kit": kit_status,
         "brand": read_gui_brand(),
         "modules": modules,
         "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
         "observed_at": observed,
     }
+
+
+@app.get("/api/gui/kit-manifest")
+async def get_gui_kit_manifest():
+    """Return pinned kit manifest and verification status for ellmos-system-gui (GUX-001)."""
+    from hub._services.gui_contract_service import get_pinned_kit_manifest, verify_installed_dist
+
+    manifest = get_pinned_kit_manifest()
+    dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=manifest.get("pinned_source_commit"))
+    return {
+        **manifest,
+        "installed_dist": dist_info,
+    }
+
+
+@app.get("/api/gui/architecture/concepts")
+async def get_gui_architecture_concepts():
+    """Return canonical definitions for SALT, Trithon, and Muschelgrund (GUX-004)."""
+    from hub._services.gui_contract_service import get_architectural_concepts
+
+    return get_architectural_concepts()
 
 
 @app.get("/api/status")
@@ -2225,6 +2269,83 @@ async def get_task(task_id: int):
     
     return row_to_dict(row)
 
+
+# --- BACH #1721: Lead-seitiger Task-Lease-Dienst (TASKDB-SALT-LEASE-VERTRAG-v1 §5) ---
+# Auth: /api/ liegt hinter DeviceAuthMiddleware (fail-closed, Device-Token).
+
+class LeaseAcquireRequest(BaseModel):
+    worker_id: str
+    host: str
+    request_id: str
+    ttl_profile: Optional[str] = None
+    intent: Optional[str] = None
+
+
+class LeaseRefRequest(BaseModel):
+    lease_id: str
+    fence: int
+
+
+class LeaseReleaseRequest(LeaseRefRequest):
+    outcome: str
+    result_ref: Optional[str] = None
+    note: Optional[str] = None
+
+
+def _lease_device_label(request: Request) -> Optional[str]:
+    device = getattr(request.state, "device", None)
+    if isinstance(device, dict):
+        label = device.get("name") or device.get("device_name") or device.get("id")
+        return str(label) if label is not None else None
+    return str(device) if device else None
+
+
+def _run_lease_op(op, *args, **kwargs):
+    from hub._services.task_lease import LeaseValidationError, TaskNotFound
+    conn = get_bach_db()
+    try:
+        result = op(conn, *args, **kwargs)
+    except TaskNotFound:
+        raise HTTPException(status_code=404, detail="Task nicht gefunden")
+    except LeaseValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        conn.close()
+    return JSONResponse(status_code=result.http_status, content=result.payload)
+
+
+@app.post("/api/tasks/{task_id}/lease")
+async def acquire_task_lease(task_id: int, body: LeaseAcquireRequest, request: Request):
+    """Lease anfordern (Vertrag §5.1). 200 = ACK mit lease_id/fence, 409 = Ablehnung mit reason."""
+    from hub._services.task_lease import acquire_lease
+    return _run_lease_op(acquire_lease, task_id, worker_id=body.worker_id, host=body.host,
+                         request_id=body.request_id, ttl_profile=body.ttl_profile,
+                         intent=body.intent or "", device=_lease_device_label(request))
+
+
+@app.get("/api/tasks/{task_id}/lease")
+async def read_task_lease(task_id: int, request: Request):
+    """Wer hält die Task? (Vertrag §5.2). Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
+    from hub._services.task_lease import read_lease
+    return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.post("/api/tasks/{task_id}/lease/renew")
+async def renew_task_lease(task_id: int, body: LeaseRefRequest):
+    """Heartbeat/Verlängerung (Vertrag §5.3)."""
+    from hub._services.task_lease import renew_lease
+    return _run_lease_op(renew_lease, task_id, lease_id=body.lease_id, fence=body.fence)
+
+
+@app.post("/api/tasks/{task_id}/lease/release")
+async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
+    """Rückgabe/Abschluss (Vertrag §5.4): outcome return|done|blocked."""
+    from hub._services.task_lease import release_lease
+    return _run_lease_op(release_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         outcome=body.outcome, result_ref=body.result_ref or "",
+                         note=body.note or "")
+
+
 @app.put("/api/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
     """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
@@ -2301,6 +2422,9 @@ async def update_task(task_id: int, update: TaskUpdate):
                                         changed_by=changed_by,
                                         allow_reopen=bool(update.allow_reopen)):
                 did_update = True
+        except LeaseRequired as exc:
+            # BACH #1721: lebender Lease -> nur /lease/release darf den Status aendern.
+            raise HTTPException(status_code=409, detail={"reason": exc.reason, "message": str(exc)})
         except (GateReopenBlocked, ValueError) as exc:
             # Business-rule conflicts (for example the missing-PR completion guard)
             # are client-resolvable conflicts, not internal server errors.
@@ -4809,7 +4933,6 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-ASTRO_DIST_DIR = GUI_DIR / "web" / "dist"
 if (ASTRO_DIST_DIR / "_astro").exists():
     app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
 
