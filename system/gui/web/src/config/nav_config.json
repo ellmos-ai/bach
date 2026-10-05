@@ -147,22 +147,29 @@
         "description": "Direktnachrichten von Agenten an dich"
       },
       {
-        "href": "/agents-board",
-        "label": "Agents-Board (Skill-Katalog)",
-        "icon": "📊",
-        "description": "Aufgabenzuweisung & Gesamtübersicht aller 388+ Skills"
-      },
-      {
-        "href": "/skills",
-        "label": "Skill- & Tool-Center",
-        "icon": "🔌",
-        "description": "Steckdosenleiste, MCP Cookbooks & Rollback"
-      },
-      {
         "href": "/memory",
         "label": "Memory",
         "icon": "🧠",
         "description": "Kognitiver Schaltplan, Arbeitsgedächtnis & Wissens-Inspektor"
+      }
+    ]
+  },
+  {
+    "id": "skills",
+    "label": "Skills & Software",
+    "icon": "🔌",
+    "children": [
+      {
+        "href": "/skills",
+        "label": "Skills-Zentrale",
+        "icon": "🔌",
+        "description": "Steckdosenleiste, MCP Cookbooks, Versionierung & Rollback"
+      },
+      {
+        "href": "/agents-board",
+        "label": "Agents-Board",
+        "icon": "📊",
+        "description": "Skill-Katalog, 388+ Skills & Aufgabenzuweisung"
       }
     ]
   },

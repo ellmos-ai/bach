@@ -391,11 +391,43 @@ import BachLayout from "../layouts/BachLayout.astro";
       const recDiv = document.getElementById('mcp-modal-recipes');
       recDiv.replaceChildren(...book.recipes.map(rec => {
         const item = document.createElement('div');
+        item.style.marginBottom = "0.75rem";
+        item.style.background = "var(--bg-dark)";
+        item.style.padding = "0.6rem";
+        item.style.borderRadius = "var(--radius-sm)";
+        item.style.border = "1px solid var(--border)";
+
         const title = document.createElement('strong');
         title.textContent = String(rec.title || 'Rezept');
+        title.style.display = "block";
+        title.style.marginBottom = "0.25rem";
+
         const prompt = document.createElement('code');
         prompt.textContent = String(rec.prompt || '');
-        item.append(title, prompt);
+        prompt.style.display = "block";
+        prompt.style.marginBottom = "0.5rem";
+        prompt.style.whiteSpace = "pre-wrap";
+
+        const btnRow = document.createElement('div');
+        btnRow.style.display = "flex";
+        btnRow.style.gap = "0.4rem";
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = "btn";
+        copyBtn.style.padding = "0.2rem 0.5rem";
+        copyBtn.style.fontSize = "0.72rem";
+        copyBtn.textContent = "📋 Kopieren";
+        copyBtn.onclick = () => copyToClipboard(String(rec.prompt || ''), copyBtn);
+
+        const convBtn = document.createElement('button');
+        convBtn.className = "btn btn-primary";
+        convBtn.style.padding = "0.2rem 0.5rem";
+        convBtn.style.fontSize = "0.72rem";
+        convBtn.textContent = "⚡ In Skill umwandeln";
+        convBtn.onclick = () => convertPromptToSkill(String(rec.title || 'MCP Prompt'), String(rec.prompt || ''), 'mcp');
+
+        btnRow.append(copyBtn, convBtn);
+        item.append(title, prompt, btnRow);
         return item;
       }));
 
@@ -491,17 +523,74 @@ import BachLayout from "../layouts/BachLayout.astro";
       }
     }
 
+    // GUX-063: Verifizierte Clipboard-Kopierfunktion ohne Read-Berechtigung
+    async function copyToClipboard(text, btnElement) {
+      const originalText = btnElement.textContent;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        btnElement.textContent = "✓ Kopiert!";
+        btnElement.style.background = "var(--success)";
+        btnElement.style.color = "white";
+        setTimeout(() => {
+          btnElement.textContent = originalText;
+          btnElement.style.background = "";
+          btnElement.style.color = "";
+        }, 2000);
+      } catch (err) {
+        console.error("Clipboard-Fehler:", err);
+        btnElement.textContent = "Fehler!";
+        setTimeout(() => { btnElement.textContent = originalText; }, 2000);
+      }
+    }
+
+    // GUX-064: Prompt -> Skill Konvertierung
+    async function convertPromptToSkill(title, promptText, category = "utilities") {
+      if (!confirm(`Soll der Prompt "${title}" über den Creator-Vertrag in einen echten Skill überführt werden?`)) return;
+      try {
+        const res = await fetch('/api/capabilities/prompts/convert-to-skill', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ title, prompt_text: promptText, category })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Erfolg: Skill "${data.skill_name}" (${data.version}) angelegt!`);
+          closeMcpModal();
+          loadCapabilitiesData();
+        } else {
+          alert("Fehler bei der Konvertierung: " + (data.detail || "Unbekannt"));
+        }
+      } catch (e) {
+        alert("Netzwerkfehler: " + e);
+      }
+    }
+
+    // GUX-065: Reversibles Append-Only Restore
     async function rollbackSkill(skill_name, target_version) {
-      if (!confirm(`Soll Skill "${skill_name}" auf Version ${target_version} zurückgesetzt werden?`)) return;
+      if (!confirm(`Soll Skill "${skill_name}" auf Version "${target_version}" wiederhergestellt werden (Append-Only neue Version)?`)) return;
       try {
         const res = await fetch('/api/capabilities/skills/rollback', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({skill_name, target_version})
         });
-        if (res.ok) {
-          alert(`Rollback für ${skill_name} auf ${target_version} durchgeführt.`);
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+          alert(data.message || `Version wiederhergestellt als ${data.active_version}`);
           loadCapabilitiesData();
+        } else {
+          alert("Fehler beim Rollback: " + (data.detail || data.message || "Unbekannt"));
         }
       } catch (e) {
         alert("Fehler beim Rollback: " + e);
