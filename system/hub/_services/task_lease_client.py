@@ -26,22 +26,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import urllib.error
 import urllib.request
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 try:
     from hub._services.task_lease import (
-        DEFAULT_PROFILE,
         LeaseConfig,
         LeaseResult,
+        LeaseValidationError,
+        TaskNotFound,
         acquire_lease,
-        ensure_task_lease_schema,
+        decompose_lease,
         parse_ts,
         read_lease,
         release_lease,
@@ -51,7 +53,10 @@ except ImportError:  # pragma: no cover
     from .task_lease import (  # type: ignore
         LeaseConfig,
         LeaseResult,
+        LeaseValidationError,
+        TaskNotFound,
         acquire_lease,
+        decompose_lease,
         parse_ts,
         read_lease,
         release_lease,
@@ -73,6 +78,10 @@ except ImportError:  # pragma: no cover
 
 class LeaseError(Exception):
     """Basisklasse für alle Client-Lease-Fehler."""
+
+
+class LeaseProtocolError(LeaseError):
+    """Invalid authority configuration or uncorrelated/malformed ACK."""
 
 
 class LeaseDeniedError(LeaseError):
@@ -119,17 +128,45 @@ def _calc_local_deadline(
     """Berechnet local_deadline gemäss Vertrag §8.1:
     local_deadline = local_receive_time + (expires_at - server_now) - 60s
     """
-    exp = parse_ts(expires_at_str)
-    s_now = parse_ts(server_now_str)
-    if exp and s_now:
-        ttl_left = max(timedelta(0), exp - s_now)
-        safety_margin = timedelta(seconds=60)
-        # Wenn Frist kürzer als Sicherheitsmarge, nimm verbleibende Zeit ohne Marge
-        if ttl_left > safety_margin:
-            return local_receive_time + (ttl_left - safety_margin)
-        return local_receive_time + ttl_left
-    # Fallback: 29 Minuten ab Empfang
-    return local_receive_time + timedelta(seconds=1740)
+    issued = _wire_time(issued_at_str)
+    exp = _wire_time(expires_at_str)
+    server_now = _wire_time(server_now_str)
+    if not issued <= server_now < exp or local_receive_time.tzinfo is None:
+        raise LeaseProtocolError("Ungültige Lease-Fristen im ACK")
+    return local_receive_time + (exp - server_now) - timedelta(seconds=60)
+
+
+def _wire_time(value: str | None) -> datetime:
+    if not isinstance(value, str):
+        raise LeaseProtocolError("Lease-ACK braucht UTC-Zeitstempel")
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise LeaseProtocolError("Ungültiger Lease-Zeitstempel") from None
+    if stamp.tzinfo is None:
+        raise LeaseProtocolError("Lease-Zeitstempel ohne Zeitzone")
+    return stamp.astimezone(timezone.utc)
+
+
+def _version(value, *, required=False):
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or re.fullmatch(r"[a-f0-9]{64}", value) is None:
+        raise LeaseProtocolError("Ungültige Auftragsversion")
+    return value
+
+
+def _identity(task_id, lease_id=None, fence=None):
+    if type(task_id) is not int or task_id <= 0:
+        raise LeaseProtocolError("Task-ID muss eine positive Ganzzahl sein")
+    if lease_id is not None:
+        try:
+            if not isinstance(lease_id, str) or str(uuid.UUID(lease_id)) != lease_id:
+                raise ValueError
+        except (ValueError, AttributeError):
+            raise LeaseProtocolError("Ungültige Lease-ID") from None
+    if fence is not None and (type(fence) is not int or fence <= 0):
+        raise LeaseProtocolError("Fence muss eine positive Ganzzahl sein")
 
 
 @dataclass(frozen=True)
@@ -150,8 +187,16 @@ class LeaseAck:
     )
     local_deadline: datetime = field(init=False)
     replayed: bool = False
+    task_version: str | None = None
 
     def __post_init__(self) -> None:
+        if (not isinstance(self.lease_id, str) or type(self.fence) is not int or self.fence <= 0
+                or not isinstance(self.ttl_profile, str) or not self.ttl_profile):
+            raise LeaseProtocolError("Ungültige Lease-Capability oder Profil")
+        _identity(self.task_id, self.lease_id, self.fence)
+        _version(self.task_version)
+        if not isinstance(self.worker_id, str) or self.worker_id.rsplit("@", 1)[-1] != self.host:
+            raise LeaseProtocolError("Ungültiger Lease-Halter")
         deadline = _calc_local_deadline(
             self.issued_at,
             self.expires_at,
@@ -205,6 +250,7 @@ class LeaseHolderView:
     expires_at: str | None = None
     ttl_profile: str | None = None
     own: bool = False
+    task_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -224,398 +270,223 @@ class LeaseReleaseAck:
 # ---------------------------------------------------------------------------
 
 
-class TaskLeaseClient:
-    """Einheitlicher Client für Lease-Operationen."""
+@dataclass(frozen=True)
+class LeaseDecomposeAck:
+    task_id: int
+    created_ids: tuple[int, ...]
+    created_count: int
+    parent_closed: bool
+    fence: int
+    task_version: str
+    server_now: str
 
-    def __init__(
-        self,
-        *,
-        conn: sqlite3.Connection | None = None,
-        db_path: str | Path | None = None,
-        lead_url: str | None = None,
-        device_token: str | None = None,
-        timeout: float = 8.0,
-    ) -> None:
+
+class TaskLeaseClient:
+    """Role-bound authority adapter; never fall back from a worker to its projection."""
+
+    def __init__(self, *, conn=None, db_path=None, lead_url=None, device_token=None, timeout=8.0):
         self._conn = conn
         self._db_path = Path(db_path) if db_path else None
+        self._owns_conn = False
         self._device_token = device_token or os.environ.get("BACH_DEVICE_TOKEN")
         self._timeout = timeout
-
-        # Modus ermitteln
-        if lead_url:
-            self._lead_url = lead_url.rstrip("/")
+        self._held = {}
+        cfg = get_lead_config()
+        if lead_url or cfg.get("mode") == "worker":
+            candidate = lead_url or cfg.get("lead_url")
+            from urllib.parse import urlsplit
+            parts = urlsplit(str(candidate or ""))
+            if (parts.scheme not in {"http", "https"} or not parts.hostname
+                    or parts.username or parts.password or parts.query or parts.fragment):
+                raise LeaseProtocolError("Fester Lead fehlt oder ist ungültig")
+            self._lead_url = str(candidate).rstrip("/")
             self._mode = "remote"
-        elif conn is not None or db_path is not None:
+        elif cfg.get("mode") in {"lead", "isolated"}:
             self._lead_url = None
             self._mode = "local"
         else:
-            cfg = get_lead_config()
-            if cfg.get("mode") == "worker" and cfg.get("lead_url"):
-                self._lead_url = str(cfg["lead_url"]).rstrip("/")
-                self._mode = "remote"
-            else:
-                self._lead_url = None
-                self._mode = "local"
+            raise LeaseProtocolError("Unbekannte Lead-Rolle")
+
+    @classmethod
+    def for_task_db(cls, connection_factory, **kwargs):
+        client = cls(**kwargs)
+        if client.mode == "local":
+            client._conn = connection_factory()
+            client._owns_conn = True
+        return client
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        if self._owns_conn and self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     @property
-    def mode(self) -> str:
+    def mode(self):
         return self._mode
 
     @property
-    def lead_url(self) -> str | None:
+    def lead_url(self):
         return self._lead_url
 
-    # -----------------------------------------------------------------------
-    # Lokale Verbindungshilfe
-    # -----------------------------------------------------------------------
-
-    def _get_local_connection(self) -> sqlite3.Connection:
+    def _get_local_connection(self):
         if self._conn is not None:
             return self._conn
-        if self._db_path is not None:
-            conn = sqlite3.connect(str(self._db_path), timeout=10.0)
-            conn.row_factory = sqlite3.Row
-            return conn
-        # Standard: ~/.bach/bach.db
-        default_db = Path.home() / ".bach" / "bach.db"
-        conn = sqlite3.connect(str(default_db), timeout=10.0)
+        path = self._db_path or Path.home() / ".bach" / "bach.db"
+        conn = sqlite3.connect(str(path), timeout=10.0)
         conn.row_factory = sqlite3.Row
         return conn
 
-    # -----------------------------------------------------------------------
-    # HTTP-Hilfen
-    # -----------------------------------------------------------------------
-
-    def _http_request(
-        self,
-        method: str,
-        path: str,
-        payload: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> tuple[int, dict[str, Any]]:
-        assert self._lead_url is not None
-        url = f"{self._lead_url}{path}"
-        req_headers = {"Accept": "application/json"}
-        if self._device_token:
-            req_headers["X-Device-Token"] = self._device_token
+    def _http_request(self, method, path, payload=None, headers=None):
+        if not self._device_token:
+            raise LeaseDeniedError(0, "device_auth_required", {})
+        req_headers = {"Accept": "application/json", "Authorization": f"Bearer {self._device_token}"}
         if headers:
             req_headers.update(headers)
-
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
             req_headers["Content-Type"] = "application/json"
-
-        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+        req = urllib.request.Request(f"{self._lead_url}{path}", data=data, headers=req_headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 status = resp.status
                 body = resp.read().decode("utf-8")
-                return status, json.loads(body) if body else {}
         except urllib.error.HTTPError as err:
             status = err.code
             body = err.read().decode("utf-8")
-            try:
-                parsed = json.loads(body) if body else {}
-            except Exception:
-                parsed = {"detail": body}
-            return status, parsed
-        except urllib.error.URLError as err:
-            raise LeaseConnectionError(
-                f"Verbindung zu {url} fehlgeschlagen: {err.reason}"
-            ) from err
-        except Exception as err:
-            raise LeaseConnectionError(f"Netzwerkfehler bei {url}: {err}") from err
+        except (urllib.error.URLError, TimeoutError, OSError):
+            # Request may have committed at the Lead. Never retry a mutation here.
+            raise LeaseConnectionError("Lead nicht erreichbar; Bestätigung fehlt") from None
+        try:
+            parsed = json.loads(body) if body else {}
+        except (ValueError, TypeError):
+            raise LeaseProtocolError("Lead lieferte kein gültiges JSON-ACK") from None
+        if not isinstance(parsed, dict):
+            raise LeaseProtocolError("Lead-ACK muss ein Objekt sein")
+        if status in (401, 403):
+            raise LeaseDeniedError(0, "device_auth_rejected", {})
+        if status >= 500:
+            raise LeaseConnectionError("Lead verweigert die Operation")
+        return status, parsed
 
-    # -----------------------------------------------------------------------
-    # Operation: Acquire
-    # -----------------------------------------------------------------------
-
-    def acquire(
-        self,
-        task_id: int,
-        *,
-        worker_id: str,
-        host: str,
-        request_id: str | None = None,
-        ttl_profile: str = "M",
-        intent: str = "",
-        config: LeaseConfig | None = None,
-        now: datetime | None = None,
-    ) -> LeaseAck:
-        """Beansprucht eine Task als gefencten Lease (Vertrag §5.1)."""
-        req_id = request_id or str(uuid.uuid4())
-        receive_time = now or datetime.now(timezone.utc)
-
-        if self._mode == "local":
+    def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
+        _identity(task_id)
+        if self.mode == "remote":
+            suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose"}[name]
+            status, data = self._http_request("GET" if name == "read" else "POST",
+                                             f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
+        else:
             conn = self._get_local_connection()
             try:
-                res: LeaseResult = acquire_lease(
-                    conn,
-                    task_id,
-                    worker_id=worker_id,
-                    host=host,
-                    request_id=req_id,
-                    ttl_profile=ttl_profile,
-                    intent=intent,
-                    config=config,
-                    now=now,
-                )
-                if not res.granted:
-                    self._raise_denied(task_id, res.payload)
-                data = res.payload
-                return LeaseAck(
-                    task_id=data["task_id"],
-                    lease_id=data["lease_id"],
-                    fence=int(data["fence"]),
-                    worker_id=data["worker_id"],
-                    host=data["host"],
-                    issued_at=data["issued_at"],
-                    expires_at=data["expires_at"],
-                    ttl_profile=data["ttl_profile"],
-                    server_now=data["server_now"],
-                    local_receive_time=receive_time,
-                    replayed=bool(data.get("replayed")),
-                )
+                funcs = {"acquire": acquire_lease, "read": read_lease, "renew": renew_lease,
+                         "release": release_lease, "decompose": decompose_lease}
+                result = funcs[name](conn, task_id, **(payload or {}), config=config, now=now)
+                status, data = result.http_status, result.payload
+            except (LeaseValidationError, TaskNotFound):
+                raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:
                 if self._conn is None:
                     conn.close()
+        if status != 200:
+            self._raise_denied(task_id, data)
+        if not isinstance(data, dict) or type(data.get("task_id")) is not int or data["task_id"] != task_id:
+            raise LeaseProtocolError("ACK passt nicht zur angefragten Task")
+        _wire_time(data.get("server_now"))
+        return data
 
-        # Remote / HTTP
-        body = {
-            "worker_id": worker_id,
-            "host": host,
-            "request_id": req_id,
-            "ttl_profile": ttl_profile,
-            "intent": intent,
-        }
-        status, data = self._http_request(
-            "POST", f"/api/tasks/{task_id}/lease", payload=body
-        )
-        if status == 200 and data.get("granted"):
-            return LeaseAck(
-                task_id=data["task_id"],
-                lease_id=data["lease_id"],
-                fence=int(data["fence"]),
-                worker_id=data["worker_id"],
-                host=data["host"],
-                issued_at=data["issued_at"],
-                expires_at=data["expires_at"],
-                ttl_profile=data["ttl_profile"],
-                server_now=data["server_now"],
-                local_receive_time=receive_time,
-                replayed=bool(data.get("replayed")),
-            )
-        self._raise_denied(task_id, data)
+    def _grant(self, data, *, worker_id=None, host=None, lease_id=None, fence=None,
+               task_version=None, receive_time):
+        if data.get("granted") is not True:
+            raise LeaseProtocolError("ACK bestätigt keine Lease-Erteilung")
+        for key, expected in (("worker_id", worker_id), ("host", host), ("lease_id", lease_id),
+                              ("fence", fence), ("task_version", task_version)):
+            if expected is not None and data.get(key) != expected:
+                raise LeaseProtocolError("Lease-ACK stimmt nicht mit der Anfrage überein")
+        required = ("task_id", "lease_id", "fence", "worker_id", "host", "issued_at", "expires_at", "ttl_profile", "server_now")
+        if any(key not in data for key in required):
+            raise LeaseProtocolError("Lease-ACK ist unvollständig")
+        ack = LeaseAck(**{key: data[key] for key in required}, task_version=data.get("task_version"),
+                       replayed=data.get("replayed") is True, local_receive_time=receive_time)
+        self._held[ack.task_id] = ack
+        return ack
 
-    # -----------------------------------------------------------------------
-    # Operation: Read
-    # -----------------------------------------------------------------------
+    def acquire(self, task_id, *, worker_id, host, request_id=None, ttl_profile="M", intent="",
+                task_version=None, config=None, now=None):
+        _version(task_version)
+        sent_at = now or datetime.now(timezone.utc)
+        body = dict(worker_id=worker_id, host=host, request_id=request_id or str(uuid.uuid4()),
+                    ttl_profile=ttl_profile, intent=intent, task_version=task_version)
+        data = self._call("acquire", task_id, body, config=config, now=now)
+        # Sending time is conservative: response latency cannot extend the local deadline.
+        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
 
-    def read(
-        self,
-        task_id: int,
-        *,
-        lease_id: str | None = None,
-        config: LeaseConfig | None = None,
-        now: datetime | None = None,
-    ) -> LeaseHolderView:
-        """Liest die Holder-Ansicht einer Task (Vertrag §5.2)."""
-        if self._mode == "local":
-            conn = self._get_local_connection()
-            try:
-                res: LeaseResult = read_lease(
-                    conn,
-                    task_id,
-                    lease_id=lease_id,
-                    config=config,
-                    now=now,
-                )
-                data = res.payload
-                return LeaseHolderView(
-                    task_id=data["task_id"],
-                    status=data.get("status"),
-                    leased=bool(data.get("leased")),
-                    fence=int(data.get("fence") or 0),
-                    legacy=bool(data.get("legacy")),
-                    server_now=data.get("server_now", ""),
-                    holder=data.get("holder"),
-                    issued_at=data.get("issued_at"),
-                    expires_at=data.get("expires_at"),
-                    ttl_profile=data.get("ttl_profile"),
-                    own=bool(data.get("own")),
-                )
-            finally:
-                if self._conn is None:
-                    conn.close()
+    def read(self, task_id, *, lease_id=None, config=None, now=None):
+        headers = {"X-Lease-Id": lease_id} if lease_id else None
+        body = {"lease_id": lease_id} if self.mode == "local" else None
+        data = self._call("read", task_id, body, config=config, now=now, headers=headers)
+        if type(data.get("leased")) is not bool or type(data.get("fence")) is not int or data["fence"] < 0:
+            raise LeaseProtocolError("Ungültiger Lease-Readback")
+        _version(data.get("task_version"))
+        return LeaseHolderView(task_id=task_id, status=data.get("status"), leased=data["leased"],
+            fence=data["fence"], legacy=data.get("legacy") is True, server_now=data["server_now"],
+            holder=data.get("holder"), issued_at=data.get("issued_at"), expires_at=data.get("expires_at"),
+            ttl_profile=data.get("ttl_profile"), own=data.get("own") is True, task_version=data.get("task_version"))
 
-        # Remote / HTTP
-        headers = {}
-        if lease_id:
-            headers["X-Lease-Id"] = lease_id
-        status, data = self._http_request(
-            "GET", f"/api/tasks/{task_id}/lease", headers=headers
-        )
-        if status == 200:
-            return LeaseHolderView(
-                task_id=data["task_id"],
-                status=data.get("status"),
-                leased=bool(data.get("leased")),
-                fence=int(data.get("fence") or 0),
-                legacy=bool(data.get("legacy")),
-                server_now=data.get("server_now", ""),
-                holder=data.get("holder"),
-                issued_at=data.get("issued_at"),
-                expires_at=data.get("expires_at"),
-                ttl_profile=data.get("ttl_profile"),
-                own=bool(data.get("own")),
-            )
-        self._raise_denied(task_id, data)
+    def renew(self, task_id, *, lease_id, fence, task_version=None, config=None, now=None):
+        _identity(task_id, lease_id, fence)
+        _version(task_version)
+        sent_at = now or datetime.now(timezone.utc)
+        data = self._call("renew", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version), config=config, now=now)
+        previous = self._held.get(task_id)
+        return self._grant(data, lease_id=lease_id, fence=fence, task_version=task_version,
+                           worker_id=previous.worker_id if previous else None,
+                           host=previous.host if previous else None, receive_time=sent_at)
 
-    # -----------------------------------------------------------------------
-    # Operation: Renew
-    # -----------------------------------------------------------------------
+    def release(self, task_id, *, lease_id, fence, task_version=None, outcome="done", result_ref="", note="", config=None, now=None):
+        _identity(task_id, lease_id, fence)
+        _version(task_version)
+        data = self._call("release", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version,
+                         outcome=outcome, result_ref=result_ref, note=note), config=config, now=now)
+        statuses = {"done": "done", "return": "pending", "blocked": "blocked"}
+        if (data.get("released") is not True or type(data.get("fence")) is not int or data["fence"] != fence
+                or data.get("outcome") != outcome or data.get("status") != statuses.get(outcome)):
+            raise LeaseProtocolError("Release-ACK passt nicht zur Anfrage")
+        self._held.pop(task_id, None)
+        return LeaseReleaseAck(True, task_id, outcome, data["status"], fence, data["server_now"])
 
-    def renew(
-        self,
-        task_id: int,
-        *,
-        lease_id: str,
-        fence: int,
-        config: LeaseConfig | None = None,
-        now: datetime | None = None,
-    ) -> LeaseAck:
-        """Verlängert einen bestehenden Lease (Vertrag §5.3)."""
-        receive_time = now or datetime.now(timezone.utc)
+    def decompose(self, task_id, *, lease_id, fence, task_version, subtasks, close_parent=True, sequential=False, config=None, now=None):
+        _identity(task_id, lease_id, fence)
+        _version(task_version, required=True)
+        body = dict(lease_id=lease_id, fence=fence, task_version=task_version, subtasks=subtasks,
+                    close_parent=close_parent, sequential=sequential)
+        data = self._call("decompose", task_id, body, config=config, now=now)
+        ids = data.get("created_ids")
+        if (data.get("decomposed") is not True or type(data.get("parent_closed")) is not bool
+                or data["parent_closed"] != close_parent or type(data.get("fence")) is not int or data["fence"] != fence
+                or not isinstance(ids, list) or len(ids) != len(subtasks) or not ids
+                or any(type(i) is not int or i <= 0 or i == task_id for i in ids)
+                or len(set(ids)) != len(ids) or type(data.get("created_count")) is not int
+                or data["created_count"] != len(ids)):
+            raise LeaseProtocolError("Zerlegungs-ACK passt nicht zur Anfrage")
+        version = _version(data.get("task_version"), required=True)
+        if version == task_version:
+            raise LeaseProtocolError("Zerlegungs-ACK hat keine neue Inhaltsversion")
+        previous = self._held.get(task_id)
+        if close_parent:
+            self._held.pop(task_id, None)
+        elif previous:
+            self._held[task_id] = replace(previous, task_version=version)
+        return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"])
 
-        if self._mode == "local":
-            conn = self._get_local_connection()
-            try:
-                res: LeaseResult = renew_lease(
-                    conn,
-                    task_id,
-                    lease_id=lease_id,
-                    fence=fence,
-                    config=config,
-                    now=now,
-                )
-                if not res.granted:
-                    self._raise_denied(task_id, res.payload)
-                data = res.payload
-                return LeaseAck(
-                    task_id=data["task_id"],
-                    lease_id=data["lease_id"],
-                    fence=int(data["fence"]),
-                    worker_id=data["worker_id"],
-                    host=data["host"],
-                    issued_at=data["issued_at"],
-                    expires_at=data["expires_at"],
-                    ttl_profile=data["ttl_profile"],
-                    server_now=data["server_now"],
-                    local_receive_time=receive_time,
-                )
-            finally:
-                if self._conn is None:
-                    conn.close()
-
-        # Remote / HTTP
-        body = {"lease_id": lease_id, "fence": fence}
-        status, data = self._http_request(
-            "POST", f"/api/tasks/{task_id}/lease/renew", payload=body
-        )
-        if status == 200 and data.get("granted"):
-            return LeaseAck(
-                task_id=data["task_id"],
-                lease_id=data["lease_id"],
-                fence=int(data["fence"]),
-                worker_id=data["worker_id"],
-                host=data["host"],
-                issued_at=data["issued_at"],
-                expires_at=data["expires_at"],
-                ttl_profile=data["ttl_profile"],
-                server_now=data["server_now"],
-                local_receive_time=receive_time,
-            )
-        self._raise_denied(task_id, data)
-
-    # -----------------------------------------------------------------------
-    # Operation: Release
-    # -----------------------------------------------------------------------
-
-    def release(
-        self,
-        task_id: int,
-        *,
-        lease_id: str,
-        fence: int,
-        outcome: str = "done",
-        result_ref: str = "",
-        note: str = "",
-        config: LeaseConfig | None = None,
-        now: datetime | None = None,
-    ) -> LeaseReleaseAck:
-        """Gibt einen Lease frei oder schliesst die Task ab (Vertrag §5.4)."""
-        if self._mode == "local":
-            conn = self._get_local_connection()
-            try:
-                res: LeaseResult = release_lease(
-                    conn,
-                    task_id,
-                    lease_id=lease_id,
-                    fence=fence,
-                    outcome=outcome,
-                    result_ref=result_ref,
-                    note=note,
-                    config=config,
-                    now=now,
-                )
-                if res.http_status != 200 or not res.payload.get("released"):
-                    self._raise_denied(task_id, res.payload)
-                data = res.payload
-                return LeaseReleaseAck(
-                    released=bool(data.get("released")),
-                    task_id=data["task_id"],
-                    outcome=data["outcome"],
-                    status=data.get("status"),
-                    fence=int(data["fence"]),
-                    server_now=data["server_now"],
-                )
-            finally:
-                if self._conn is None:
-                    conn.close()
-
-        # Remote / HTTP
-        body = {
-            "lease_id": lease_id,
-            "fence": fence,
-            "outcome": outcome,
-            "result_ref": result_ref,
-            "note": note,
-        }
-        status, data = self._http_request(
-            "POST", f"/api/tasks/{task_id}/lease/release", payload=body
-        )
-        if status == 200 and data.get("released"):
-            return LeaseReleaseAck(
-                released=bool(data["released"]),
-                task_id=data["task_id"],
-                outcome=data["outcome"],
-                status=data.get("status"),
-                fence=int(data["fence"]),
-                server_now=data["server_now"],
-            )
-        self._raise_denied(task_id, data)
-
-    # -----------------------------------------------------------------------
-    # Fehlerabbildung
-    # -----------------------------------------------------------------------
-
-    def _raise_denied(self, task_id: int, payload: dict[str, Any]) -> None:
-        reason = str(payload.get("reason") or payload.get("detail") or "denied")
-        if reason == "stale_fence":
-            raise LeaseStaleFenceError(task_id, reason, payload)
-        if reason == "expired":
-            raise LeaseExpiredError(task_id, reason, payload)
-        if reason == "max_total_reached":
-            raise LeaseMaxTotalReachedError(task_id, reason, payload)
-        raise LeaseDeniedError(task_id, reason, payload)
+    def _raise_denied(self, task_id, payload):
+        known = {"stale_fence", "expired", "max_total_reached", "held", "already_held_by_caller",
+                 "stale_task_version", "not_claimable", "creator_priority", "completion_guard", "conflict"}
+        reason = payload.get("reason") if isinstance(payload, dict) else None
+        if reason not in known:
+            reason = "denied"
+        classes = {"stale_fence": LeaseStaleFenceError, "expired": LeaseExpiredError,
+                   "max_total_reached": LeaseMaxTotalReachedError}
+        raise classes.get(reason, LeaseDeniedError)(task_id, reason, {"task_id": task_id, "reason": reason})

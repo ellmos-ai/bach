@@ -961,6 +961,15 @@ class TaskHandler(BaseHandler):
             rest.append(arg)
         return task_id, rest
 
+    @staticmethod
+    def _lease_task_version(args):
+        for index, arg in enumerate(args):
+            if arg.startswith("--task-version="):
+                return arg.split("=", 1)[1]
+            if arg == "--task-version":
+                return args[index + 1] if index + 1 < len(args) else ""
+        return None
+
     def _lease(self, args: List[str]) -> Tuple[bool, str]:
         """Task per Salt-Lease beanspruchen (Vertrag §5.1 / BACH #1722).
         Usage: bach task lease <id> --by <worker_id> [--host <host>] [--ttl <S|M|L|XL>] [--intent <text>]
@@ -1017,18 +1026,19 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 ack = client.acquire(
                     task_id,
                     worker_id=by,
                     host=host,
                     ttl_profile=ttl,
                     intent=intent,
+                    task_version=self._lease_task_version(rest),
                 )
                 return True, (
                     f"[OK] Task {task_id} geleast an {ack.worker_id} (Fence {ack.fence}, "
                     f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at})\n"
+                    f"Auftragsversion: {ack.task_version}\n"
                     f"Lease-Capability: {ack.lease_id}"
                 )
         except LeaseDeniedError as e:
@@ -1059,8 +1069,7 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 view = client.read(task_id, lease_id=lease_id)
                 lines = [
                     f"Task {task_id}: Status={view.status}, Leased={view.leased}, Fence={view.fence}, Legacy={view.legacy}"
@@ -1072,7 +1081,7 @@ class TaskHandler(BaseHandler):
                     if view.expires_at:
                         lines.append(f"Ablaufzeit: {view.expires_at}")
                 if view.own:
-                    lines.append("[EIGENER LEASE BESTAETIGT]")
+                    lines.append("[EIGENER LEASE BESTÄTIGT]")
                 return True, "\n".join(lines)
         except LeaseError as e:
             return False, f"[ERROR] {e}"
@@ -1116,12 +1125,12 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
-                ack = client.renew(task_id, lease_id=lease_id, fence=fence)
-                return True, f"[OK] Task {task_id} Lease verlaengert bis {ack.expires_at} (Fence {ack.fence})"
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.renew(task_id, lease_id=lease_id, fence=fence,
+                                   task_version=self._lease_task_version(rest))
+                return True, f"[OK] Task {task_id} Lease verlängert bis {ack.expires_at} (Fence {ack.fence})"
         except LeaseDeniedError as e:
-            return False, f"[CONFLICT] Verlaengerung abgelehnt: {e.reason}"
+            return False, f"[CONFLICT] Verlängerung abgelehnt: {e.reason}"
         except LeaseError as e:
             return False, f"[ERROR] {e}"
 
@@ -1185,12 +1194,12 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 ack = client.release(
                     task_id,
                     lease_id=lease_id,
                     fence=fence,
+                    task_version=self._lease_task_version(rest),
                     outcome=outcome,
                     result_ref=result_ref,
                     note=note,

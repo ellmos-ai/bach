@@ -149,3 +149,6 @@ def test_trithon_lease_stale_fence_fails_closed(trithon_ticket: SyntheticTicket,
     row = conn.execute("SELECT * FROM tasks WHERE id = ?", (trithon_ticket.task_id,)).fetchone()
     conn.close()
     assert row["status"] != "done"
+
+    ledger = [json.loads(line) for line in trithon_ticket.ledger_path.read_text().splitlines() if line.strip()]
+    assert not any(entry.get("status") == "done" for entry in ledger)
