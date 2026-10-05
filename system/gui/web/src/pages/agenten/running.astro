@@ -168,7 +168,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
           </select>
         </label>
         <label>Maximale Tool-Runden<input id="worker-blueprint-turns" type="number" min="1" max="100" value="25" required></label>
-        <label>Pause nach abgeschlossenen Läufen<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
+        <label>Pausenauslöser<select id="worker-blueprint-pause-basis"><option value="runs">Abgeschlossene Läufe</option><option value="tasks">Abgeschlossene Aufgaben</option></select></label>
+        <label>Pause nach Anzahl Auslöser<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
         <label>Pausendauer (Minuten)<input id="worker-blueprint-pause-minutes" type="number" min="0" max="1440" value="1" required></label>
         <label>Automatischer Stopp nach (Minuten, 0 = unbegrenzt)<input id="worker-blueprint-ttl" type="number" min="0" max="1440" value="0"></label>
         <div id="worker-blueprint-expert-fields" class="worker-blueprint-extra" hidden>
@@ -564,6 +565,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
         document.getElementById('worker-blueprint-mode').value = data.defaults.mode === 'safe' ? 'safe' : 'full';
         document.getElementById('worker-blueprint-think').value = data.defaults.think === true ? 'true' : 'false';
         document.getElementById('worker-blueprint-pause-after').value = data.defaults.pause_after ?? 5;
+        document.getElementById('worker-blueprint-pause-basis').value =
+          data.defaults.pause_basis === 'tasks' ? 'tasks' : 'runs';
         document.getElementById('worker-blueprint-pause-minutes').value = data.defaults.pause_minutes ?? 1;
         document.getElementById('worker-blueprint-run-mode').value = data.defaults.type === 'once' ? 'once' : 'continuous';
         document.getElementById('worker-blueprint-ttl').value = data.defaults.ttl_minutes ?? 0;
@@ -660,6 +663,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         think: document.getElementById('worker-blueprint-think').value === 'true',
         pause_after: Number(document.getElementById('worker-blueprint-pause-after').value),
         pause_minutes: Number(document.getElementById('worker-blueprint-pause-minutes').value),
+        pause_basis: document.getElementById('worker-blueprint-pause-basis').value,
         type: runMode,
         ttl_minutes: runMode === 'continuous' ? ttlMinutes : 0,
         task_prompt: taskPrompt,
@@ -775,6 +779,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
           if (worker.role_id) detail.push('Rolle: ' + worker.role_id);
           if (worker.task_id !== undefined) detail.push(`Task #${worker.task_id}`);
           if (worker.max_tool_rounds !== undefined) detail.push(`Limit: ${worker.max_tool_rounds} Toolrunden`);
+          if (worker.pause_after !== undefined && worker.pause_basis) {
+            const basisLabel = worker.pause_basis === 'tasks' ? 'Aufgaben' : 'Läufe';
+            detail.push(`Pause nach ${worker.pause_after} ${basisLabel} · ${worker.pause_minutes ?? 0} Min`);
+          }
           if (worker.expires_at) detail.push(`Lease bis ${worker.expires_at}`);
           if (detail.length) card.append(coreElement('small', detail.join(' · ')));
           const maxToolRounds = Number(worker.max_tool_rounds);

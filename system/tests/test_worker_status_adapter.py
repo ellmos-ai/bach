@@ -332,7 +332,7 @@ def test_background_worker_blueprint_defaults_to_continuous_explicit_start(monke
     monkeypatch.setattr(slots_config, "core_system_agents_snapshot", lambda: {
         "agents": [{
             "id": "buddha_always_on", "max_tool_rounds": 25, "mode": "full",
-            "think": True, "pause_after": 5, "pause_minutes": 1,
+            "think": True, "pause_after": 5, "pause_minutes": 1, "pause_basis": "tasks",
         }],
     })
 
@@ -342,6 +342,7 @@ def test_background_worker_blueprint_defaults_to_continuous_explicit_start(monke
     assert blueprint["defaults"]["ttl_minutes"] == 0
     assert blueprint["creation_state"] == "idle"
     assert blueprint["requires_explicit_start"] is True
+    assert blueprint["defaults"]["pause_basis"] == "tasks"
 
 
 def test_system_worker_creation_persists_selected_mode_and_task(monkeypatch):
@@ -381,6 +382,7 @@ def test_system_worker_creation_persists_selected_mode_and_task(monkeypatch):
         "think": True,
         "pause_after": 5,
         "pause_minutes": 1,
+        "pause_basis": "tasks",
         "type": "once",
         "ttl_minutes": 0,
         "task_prompt": "",
@@ -394,6 +396,7 @@ def test_system_worker_creation_persists_selected_mode_and_task(monkeypatch):
     assert captured["config"]["role_id"] == "task-divider"
     assert captured["config"]["task_id"] == 42
     assert captured["config"]["max_tool_rounds"] == 12
+    assert captured["config"]["pause_basis"] == "tasks"
     assert result["worker"]["status"] == "idle"
 
 
@@ -447,4 +450,5 @@ def test_continuous_worker_can_run_without_a_time_limit(monkeypatch):
     assert captured["config"]["type"] == "continuous"
     assert "ttl_seconds" not in captured["config"]
     assert captured["config"]["pause_after"] == 5
+    assert captured["config"]["pause_basis"] == "runs"
     assert result["worker"]["status"] == "idle"

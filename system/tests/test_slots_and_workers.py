@@ -476,6 +476,30 @@ class TestSlotsConfigCRUD:
         assert writes[-1]["status"] == "running"
         assert writes[-1]["auto_paused"] is False
 
+    def test_dynamic_worker_cooldown_passes_task_event_type(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-task-cooldown-test")
+        received = []
+        monkeypatch.setattr(
+            telegram_chat,
+            "bump_pause_counter",
+            lambda _worker_id, event_type="runs": received.append(event_type) or False,
+        )
+
+        assert telegram_chat._wait_worker_cooldown(control, event_type="tasks") is True
+        assert received == ["tasks"]
+
+    def test_dynamic_worker_pause_counts_tasks_only_after_turn_handoff_finishes(self):
+        from hub._services.chat.telegram_chat import _worker_pause_event_type
+
+        task_based = {"pause_basis": "tasks"}
+        run_based = {"pause_basis": "runs"}
+        assert _worker_pause_event_type(task_based, task_completed=False) == "runs"
+        assert _worker_pause_event_type(task_based, task_completed=True) == "tasks"
+        assert _worker_pause_event_type(run_based, task_completed=True) == "runs"
+
+
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")

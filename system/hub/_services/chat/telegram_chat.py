@@ -243,10 +243,10 @@ def _record_worker_activity(
         return True
 
 
-def _wait_worker_cooldown(control: _WorkerControl) -> bool:
-    """Apply a configured run-count pause while keeping stop responsive."""
+def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
+    """Apply a configured run/task-count pause while keeping stop responsive."""
     worker_id = control.worker_id
-    if not bump_pause_counter(worker_id, event_type="runs"):
+    if not bump_pause_counter(worker_id, event_type=event_type):
         return not control.stop_event.is_set()
 
     slot = get_worker_slot(worker_id)
@@ -282,6 +282,14 @@ def _wait_worker_cooldown(control: _WorkerControl) -> bool:
         return False
     _record_worker_activity(control, "Automatische Pause beendet", "ok")
     return True
+
+
+def _worker_pause_event_type(slot: Dict[str, Any], *, task_completed: bool) -> str:
+    """Select a pause counter event without counting an unfinished handoff as a task."""
+    basis = str(slot.get("pause_basis") or "runs").lower()
+    if task_completed and basis == "tasks":
+        return "tasks"
+    return "runs"
 
 
 def _update_worker_slot(
@@ -3525,11 +3533,18 @@ class ControlHandler(BaseHTTPRequestHandler):
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
-                        if not _wait_worker_cooldown(control):
+                        # A max-turn block is an inference run, but the task is
+                        # still unfinished. A completed task can count either
+                        # as a run or as a task, according to the profile.
+                        is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
+                        pause_event = _worker_pause_event_type(
+                            current_slot,
+                            task_completed=not is_max_turns,
+                        )
+                        if not _wait_worker_cooldown(control, event_type=pause_event):
                             break
 
                         # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff.
-                        is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
                         if is_max_turns:
                             if _update_worker_slot(control, {
                                 "status": "running",

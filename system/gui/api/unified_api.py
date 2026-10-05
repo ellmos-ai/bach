@@ -2608,7 +2608,7 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
 
     allowed_fields = {
         "name", "backend", "model", "max_tool_rounds", "mode", "think",
-        "pause_after", "pause_minutes", "type", "ttl_minutes", "task_prompt",
+        "pause_after", "pause_minutes", "pause_basis", "type", "ttl_minutes", "task_prompt",
         "include_system_prompt", "allow_tools", "sub_mode", "role_id",
         "multi_role", "max_experts", "expert_models", "task_id",
     }
@@ -2686,6 +2686,10 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
     if not isinstance(mode, str) or mode not in {"safe", "full"}:
         raise HTTPException(status_code=400, detail="Modus muss safe oder full sein")
 
+    pause_basis = payload.get("pause_basis", "runs")
+    if not isinstance(pause_basis, str) or pause_basis not in {"runs", "tasks"}:
+        raise HTTPException(status_code=400, detail="pause_basis muss runs oder tasks sein")
+
     try:
         catalog = await asyncio.to_thread(worker_model_catalog, backend, device_token=device_token)
     except WorkerActionRejected as exc:
@@ -2718,7 +2722,7 @@ async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(
         "include_system_prompt": boolean("include_system_prompt", True),
         "pause_after": integer("pause_after", 5, 0, 100),
         "pause_minutes": integer("pause_minutes", 1, 0, 1440),
-        "pause_basis": "runs",
+        "pause_basis": pause_basis,
         "task_prompt": task_prompt,
     }
     if ttl_minutes:

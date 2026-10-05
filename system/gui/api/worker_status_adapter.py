@@ -284,6 +284,9 @@ def background_worker_blueprint() -> dict[str, Any]:
         return value if type(value) is int else fallback
 
     creation_options = worker_creation_options()
+    pause_basis = always_on.get("pause_basis")
+    if not isinstance(pause_basis, str) or pause_basis not in {"runs", "tasks"}:
+        pause_basis = "runs"
     return {
         "schema": "bach.worker-blueprint.v1",
         "blueprint_id": "system:hintergrundworker",
@@ -299,7 +302,7 @@ def background_worker_blueprint() -> dict[str, Any]:
             "think": bool(always_on.get("think", True)),
             "pause_after": configured_int("pause_after", 5),
             "pause_minutes": configured_int("pause_minutes", 1),
-            "pause_basis": "runs",
+            "pause_basis": pause_basis,
             "include_system_prompt": True,
             "allow_tools": True,
             "type": "continuous",
