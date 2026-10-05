@@ -1588,6 +1588,12 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/learning/hermes/candidates",
         "/api/learning/nemofold/stats",
         "/api/learning/nemofold/candidates",
+        "/api/chat/compare-race/lanes",
+        "/api/chat/buddha/compare-race/lanes",
+        "/api/chat/compare-race/history",
+        "/api/chat/buddha/compare-race/history",
+        "/api/chat/buddha/compare-race",
+        "/api/chat/compare-race/buddha",
     }
 
     async def _require_device(self, request: Request, call_next):

@@ -1145,9 +1145,90 @@ async def compare_race_status(request: Request):
     return readiness()
 
 
+@router.get("/chat/compare-race/lanes")
+@router.get("/chat/buddha/compare-race/lanes")
+async def get_compare_race_lanes(request: Request):
+    """List available candidate model lanes and their SpendAuthority/auth readiness."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    auth_header = request.headers.get("Authorization", "")
+    spend_token = (
+        auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+    )
+    spend_auth = (
+        SpendAuthority(approved=True, max_budget_cents=50.0, auth_token=spend_token)
+        if spend_token
+        else None
+    )
+    svc = get_compare_race_service()
+    return {
+        "lanes": svc.list_lanes(spend_auth),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/chat/compare-race/history")
+@router.get("/chat/buddha/compare-race/history")
+async def get_compare_race_history(
+    request: Request, limit: int = Query(25, ge=1, le=100)
+):
+    """Retrieve historical compare-race evaluations and receipts."""
+    from hub._services.chat.compare_race_service import get_compare_race_service
+
+    svc = get_compare_race_service()
+    runs = svc.get_history(limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@router.post("/chat/buddha/compare-race")
+@router.post("/chat/compare-race/buddha")
+async def execute_buddha_compare_race(
+    request: Request, payload: Dict[str, Any] = Body(...)
+):
+    """Execute parallel Buddha-Chat multi-model comparison with SpendAuthority & Inter-Rater metrics."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt fehlt oder ist leer.")
+
+    lane_ids = payload.get("models") or payload.get("lanes")
+    spend_dict = payload.get("spend_authority")
+    spend_auth = SpendAuthority.from_dict(spend_dict) if spend_dict else None
+    synthetic_fixtures = bool(payload.get("synthetic_fixtures", False))
+    timeout = float(payload.get("timeout_seconds", 30.0))
+
+    svc = get_compare_race_service()
+    try:
+        result = await svc.execute_race(
+            prompt=prompt,
+            lane_ids=lane_ids,
+            spend_auth=spend_auth,
+            synthetic_fixtures=synthetic_fixtures,
+            timeout_seconds=timeout,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Fehler im Compare-Race: {exc}"
+        )
+
+
 @router.post("/chat/compare-race")
 async def compare_race(request: Request, payload: Dict[str, Any] = Body(...)):
     """Run configured SDK lanes only after device, cost, and call-budget gates."""
+    # If explicitly requested to use the Buddha-Chat runner or synthetic fixtures:
+    if payload.get("runner") == "buddha" or payload.get("engine") == "buddha" or payload.get("synthetic_fixtures"):
+        return await execute_buddha_compare_race(request, payload)
+
     from .compare_race_adapter import RaceUnavailable, execute_isolated
     device_id = _require_memory_device(request)
     if _COMPARE_RACE_LOCK.locked():

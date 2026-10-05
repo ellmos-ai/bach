@@ -694,21 +694,29 @@
         const prompt = document.getElementById('compare-prompt').value.trim();
         if (!prompt) return;
         const resEl = document.getElementById('compare-results');
-        resEl.innerHTML = 'Race läuft parallel auf candidate models...';
+        resEl.innerHTML = 'Race läuft parallel auf candidate models (Buddha Runner)...';
         try {
-            const res = await fetch('/api/chat/compare-race', {
+            const res = await fetch('/api/chat/buddha/compare-race', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt: prompt, models: ['claude', 'gemini', 'codex', 'ollama']})
+                body: JSON.stringify({prompt: prompt, models: ['ollama', 'claude', 'gpt', 'gemini'], synthetic_fixtures: false})
             });
             const data = await res.json();
-            let html = `<div style="margin-bottom:8px;">🏆 <strong>Gewinner: ${escapeHtml(String(data.winner ?? '').toUpperCase())}</strong></div>`;
+            let html = `<div style="margin-bottom:8px;">🏆 <strong>Gewinner: ${escapeHtml(String(data.winner ?? 'Keiner').toUpperCase())}</strong></div>`;
             (data.candidates || []).forEach(c => {
-                html += `<div style="background:#0f172a; padding:10px; border-radius:6px; margin-bottom:6px; font-size:0.8rem;">
-                    <strong>${escapeHtml(String(c.model ?? '').toUpperCase())}</strong> (${escapeHtml(c.latency_ms)}ms | Score: ${escapeHtml(c.score)}):
-                    <p style="color:var(--text-muted); margin-top:4px;">${escapeHtml(c.response)}</p>
+                const ev = c.evidence_kind || 'unknown';
+                html += `<div style="background:#0f172a; padding:10px; border-radius:6px; margin-bottom:6px; font-size:0.8rem; border:1px solid var(--border);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                        <strong>${escapeHtml(String(c.name || c.model || '').toUpperCase())}</strong>
+                        <span style="font-size:0.7rem; font-weight:700; color:var(--accent);">${escapeHtml(ev.toUpperCase())}</span>
+                    </div>
+                    <div style="color:var(--text-muted); font-size:0.72rem; margin-bottom:4px;">Latenz: ${escapeHtml(c.latency_ms)}ms | Score: ${escapeHtml(c.score)}</div>
+                    <p style="color:var(--text); margin-top:4px;">${escapeHtml(c.response || c.receipt?.error || 'Keine Antwort')}</p>
                 </div>`;
             });
+            if (data.evaluation && data.evaluation.overall_agreement_percent !== undefined) {
+                html += `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">🧬 NemoFold Inter-Rater Reliabilität: ${data.evaluation.overall_agreement_percent}% Übereinstimmung (Cohen's &kappa;: ${data.evaluation.overall_kappa ?? 'N/A'})</div>`;
+            }
             resEl.innerHTML = html;
         } catch (e) {
             resEl.textContent = 'Fehler: ' + e.message;
