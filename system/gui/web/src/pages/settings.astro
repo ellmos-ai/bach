@@ -71,6 +71,18 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
             </li>
           </ul>
         </div>
+
+        <!-- GUX-066: Externe Artefakte & Prompt-Suiten -->
+        <div class="glass-card" style="grid-column: 1 / -1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+            <h3><span class="icon">📦</span> Belegte Externe Prompt-Suiten & Artefakte (GUX-066)</h3>
+            <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="loadExternalArtifacts()">🔄 Neu prüfen</button>
+          </div>
+          <p class="card-desc">Forensische Erkennung und verifizierter Import von ProfiPrompt, PromptBoard und Explorer Pro Suiten.</p>
+          <div id="settings-artifacts-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;margin-top:1rem;">
+            <p style="color:var(--text-muted);font-size:0.85rem;">Prüfe Artefakt-Bestand...</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -82,7 +94,7 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
             <span class="learning-icon">🧬</span>
             <div>
               <h3>NemoFold: Workflow-Lernen & Step-Ketten</h3>
-              <p class="card-desc">Geplant: wiederkehrende Abläufe analysieren und geprüfte Step-Ketten vorschlagen. Es fehlen Beobachtungsquelle, Validierung und Freigabe.</p>
+              <p class="card-desc">Autonomes Lernen: analysiert Werkzeugfolgen, synthetisiert geprüfte Step-Ketten für MarbleRun und sichert Rollbacks via Two-Phase Action Journal ab.</p>
             </div>
           </div>
           <div class="learning-content">
@@ -90,21 +102,21 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
               <span class="step-num">1</span>
               <div>
                 <strong>Ablaufbeobachtung & Heuristik-Detektor</strong>
-                <p>Vorgesehen: Werkzeugfolgen über mehrere Sitzungen beobachten.</p>
+                <p>Extrahiert und normalisiert Werkzeugfolgen und Shell-Aktionen aus autonomen Session-Logs.</p>
               </div>
             </div>
             <div class="pipeline-step">
               <span class="step-num">2</span>
               <div>
-                <strong>Ketten-Synthese & Skill-Generierung</strong>
-                <p>Vorgesehen: wiederkehrende Muster zu überprüfbaren Step-Ketten bündeln.</p>
+                <strong>Ketten-Synthese & Step-Ketten Generierung</strong>
+                <p>Erkennt wiederkehrende Muster (Dev, Research, Review) und erzeugt formale Step-Ketten.</p>
               </div>
             </div>
             <div class="pipeline-step">
               <span class="step-num">3</span>
               <div>
-                <strong>Validierung & Rollback-Schutz</strong>
-                <p>Offen: Workflow-TÜV und Freigabe vor einer Aufnahme in ein Register anbinden.</p>
+                <strong>Workflow-TÜV & Rollback-Schutz</strong>
+                <p>Prüft Sicherheitsregeln, Reversibilität (Two-Phase Action Journal) und übergibt an Operator-Queue.</p>
               </div>
             </div>
           </div>
@@ -115,7 +127,7 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
             <span class="learning-icon">📜</span>
             <div>
               <h3>Hermes: Skill-Lernen aus Chat-Sessions</h3>
-              <p class="card-desc">Geplant: Wissen aus freigegebenen Dialogen gewinnen. Es fehlen Quellenfreigabe, Extraktion, Prüfung und Speichervertrag.</p>
+              <p class="card-desc">Autonome Skill-Destillation aus Dialogen mit Rauschfilterung & Human-in-the-Loop Freigabe</p>
             </div>
           </div>
           <div class="learning-content">
@@ -123,24 +135,84 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
               <span class="step-num">1</span>
               <div>
                 <strong>Dialog-Mining & Transkript-Analyse</strong>
-                <p>Vorgesehen: freigegebene Dialoge auf gelöste Probleme und Korrekturen prüfen.</p>
+                <p>Filtert Floskeln und Tracebacks heraus (>50% Rauschreduktion) und erkennt Problemlösungsmuster.</p>
               </div>
             </div>
             <div class="pipeline-step">
               <span class="step-num">2</span>
               <div>
                 <strong>Automatische Lessons Learned & Best Practices</strong>
-                <p>Offen: Lösungswege validieren und an den autoritativen Lessons-Speicher anbinden.</p>
+                <p>Validierte Lösungswege werden direkt in <code>memory_lessons</code> gesichert.</p>
               </div>
             </div>
             <div class="pipeline-step">
               <span class="step-num">3</span>
               <div>
                 <strong>Prozedurales Gedächtnis</strong>
-                <p>Vorgesehen: nach Freigabe wiederverwendbare Skills vorschlagen.</p>
+                <p>Generiert standardisierte SKILL.md-Entwürfe zur Freigabe durch den Operator.</p>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- NEMOFOLD INTERACTIVE WORKBENCH -->
+      <div class="glass-card" style="margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+              <span>🧬</span> NemoFold Workbench: Gelernte Step-Ketten (MarbleRun)
+            </h3>
+            <p class="card-desc" style="margin: 0.25rem 0 0 0;">Human-in-the-Loop Freigabe: Geprüfte Ketten werden sofort im MarbleRun Designer aktivierbar.</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary" id="btn-nemofold-refresh" onclick="loadNemoFoldCandidates()">Aktualisieren</button>
+            <button class="btn btn-accent" id="btn-nemofold-synthesize" onclick="triggerNemoFoldSynthesis()">▶ Synthese ausführen</button>
+          </div>
+        </div>
+
+        <!-- Live KPI Bar -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <div class="repo-item" style="text-align: center;">
+            <span style="font-size: 1.25rem; font-weight: bold; color: var(--accent);" id="nf-kpi-runs">-</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Synthese-Läufe</span>
+          </div>
+          <div class="repo-item" style="text-align: center;">
+            <span style="font-size: 1.25rem; font-weight: bold; color: #ffb703;" id="nf-kpi-pending">-</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">In Prüfung</span>
+          </div>
+          <div class="repo-item" style="text-align: center;">
+            <span style="font-size: 1.25rem; font-weight: bold; color: var(--success);" id="nf-kpi-approved">-</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Freigegeben</span>
+          </div>
+          <div class="repo-item" style="text-align: center;">
+            <span style="font-size: 1.25rem; font-weight: bold; color: #3a86ff;" id="nf-kpi-tuv">-</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">TÜV-Zertifiziert</span>
+          </div>
+        </div>
+
+        <!-- Candidates Table -->
+        <div style="overflow-x: auto;">
+          <table class="data-table" id="nemofold-candidates-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Kette</th>
+                <th>Schritte</th>
+                <th>Konfidenz</th>
+                <th>TÜV-Status</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+              </tr>
+            </thead>
+            <tbody id="nemofold-candidates-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                  Lade NemoFold-Kandidaten...
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -545,11 +617,190 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
     }
   }
 
+  async function loadNemoFoldStats() {
+    try {
+      const res = await fetch('/api/learning/nemofold/stats');
+      if (!res.ok) return;
+      const data = await res.json();
+      const elRuns = document.getElementById('nf-kpi-runs');
+      const elPending = document.getElementById('nf-kpi-pending');
+      const elApproved = document.getElementById('nf-kpi-approved');
+      const elTuv = document.getElementById('nf-kpi-tuv');
+      if (elRuns) elRuns.textContent = data.total_runs || 0;
+      if (elPending) elPending.textContent = data.pending_candidates || 0;
+      if (elApproved) elApproved.textContent = data.approved_candidates || 0;
+      if (elTuv) elTuv.textContent = data.tuv_certified_count || 0;
+    } catch (e) {
+      console.warn('NemoFold Stats nicht geladen:', e);
+    }
+  }
+
+  async function loadNemoFoldCandidates() {
+    const tbody = document.getElementById('nemofold-candidates-tbody');
+    if (!tbody) return;
+    try {
+      const res = await fetch('/api/learning/nemofold/candidates?status=all');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const list = data.candidates || [];
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Keine Workflow-Kandidaten vorhanden. Klicke auf "Synthese ausführen".</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map(c => `
+        <tr>
+          <td><code style="font-size:0.75rem;">#${c.id}</code></td>
+          <td>
+            <strong>${c.title || c.chain_name}</strong>
+            <div style="font-size:0.75rem; color:var(--text-muted);">${c.chain_name}</div>
+          </td>
+          <td><span class="badge badge-secondary">${c.steps ? c.steps.length : 0} Schritte</span></td>
+          <td><span style="font-weight:600; color:var(--accent);">${Math.round((c.confidence_score || 0.8) * 100)}%</span></td>
+          <td>
+            <span class="badge ${c.tuv_status === 'certified' ? 'badge-success' : 'badge-warning'}">
+              ${c.tuv_status === 'certified' ? '🛡️ TÜV OK' : '⚠️ Prüfung'}
+            </span>
+          </td>
+          <td>
+            <span class="badge ${c.status === 'approved' ? 'badge-success' : c.status === 'rejected' ? 'badge-danger' : 'badge-accent'}">
+              ${c.status}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex; gap:0.25rem;">
+              ${c.status === 'pending' ? `
+                <button class="btn btn-primary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="approveNemoFoldCandidate(${c.id})">Freigeben</button>
+                <button class="btn" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--error);" onclick="rejectNemoFoldCandidate(${c.id})">Ablehnen</button>
+              ` : `
+                <span style="font-size:0.75rem; color:var(--text-muted);">${c.reviewed_by ? 'Geprüft (' + c.reviewed_by + ')' : '-'}</span>
+              `}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+      loadNemoFoldStats();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" style="color:var(--error); text-align:center; padding:1rem;">Fehler: ${e.message}</td></tr>`;
+    }
+  }
+
+  async function approveNemoFoldCandidate(id) {
+    if (!confirm('Diesen Workflow-Kandidaten freigeben und in MarbleRun als ausführbare Kette übernehmen?')) return;
+    try {
+      const res = await fetch(`/api/learning/nemofold/candidates/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved_by: 'operator', notes: 'Manuelle Freigabe via Settings GUI' })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      alert('Kette freigegeben und nach MarbleRun übertragen!');
+      loadNemoFoldCandidates();
+    } catch (e) {
+      alert('Fehler bei Freigabe: ' + e.message);
+    }
+  }
+
+  async function rejectNemoFoldCandidate(id) {
+    const reason = prompt('Begründung für die Ablehnung:');
+    if (reason === null) return;
+    try {
+      const res = await fetch(`/api/learning/nemofold/candidates/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rejected_by: 'operator', reason: reason || 'Operator-Ablehnung' })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      loadNemoFoldCandidates();
+    } catch (e) {
+      alert('Fehler bei Ablehnung: ' + e.message);
+    }
+  }
+
+  async function triggerNemoFoldSynthesis() {
+    const btn = document.getElementById('btn-nemofold-synthesize');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/api/learning/nemofold/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_type: 'database_sessions' })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      alert(`NemoFold Synthese abgeschlossen: ${data.chains_synthesized || 0} Ketten synthetisiert!`);
+      loadNemoFoldCandidates();
+    } catch (e) {
+      alert('Synthese-Fehler: ' + e.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function loadExternalArtifacts() {
+    const grid = document.getElementById('settings-artifacts-grid');
+    if (!grid) return;
+    grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Prüfe Artefakt-Bestand...</p>';
+    try {
+      const res = await fetch('/api/system/external-artifacts');
+      const data = await res.json();
+      grid.innerHTML = Object.values(data).map(art => `
+        <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;display:flex;flex-direction:column;justify-content:space-between;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+              <strong style="font-size:0.95rem;">${art.title}</strong>
+              <span class="badge ${art.present ? 'badge-success' : ''}" style="${!art.present ? 'opacity:0.6;' : ''}">
+                ${art.present ? 'Gefunden' : 'Nicht gefunden'}
+              </span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.5rem 0;">${art.description}</p>
+            ${art.path ? `<code style="font-size:0.7rem;display:block;background:rgba(0,0,0,0.3);padding:0.25rem 0.4rem;border-radius:4px;word-break:break-all;margin-bottom:0.6rem;">${art.path}</code>` : ''}
+            ${art.preview_items && art.preview_items.length ? `
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;">
+                <strong>Vorschau:</strong>
+                <ul style="margin:0.2rem 0 0 0;padding-left:1rem;">
+                  ${art.preview_items.map(p => `<li>${p.title || p.name} (${p.category})</li>`).join('')}
+                </ul>
+              </div>
+            ` : ''}
+          </div>
+          <button class="btn btn-primary" style="width:100%;font-size:0.8rem;padding:0.35rem 0.6rem;" ${!art.can_import ? 'disabled' : ''} onclick="importExternalArtifact('${art.id}')">
+            📥 ${art.present ? 'In Prompt-DB importieren' : 'Nicht verfügbar'}
+          </button>
+        </div>
+      `).join('');
+    } catch (e) {
+      grid.innerHTML = `<p style="color:var(--accent-red);font-size:0.85rem;">Fehler beim Laden: ${e.message}</p>`;
+    }
+  }
+
+  async function importExternalArtifact(artId) {
+    if (!confirm(`Soll das Artefakt "${artId}" in die Prompt-DB importiert werden?`)) return;
+    try {
+      const res = await fetch('/api/system/external-artifacts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact: artId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`Import erfolgreich: ${data.imported} Einträge importiert (${data.skipped} übersprungen).`);
+        loadExternalArtifacts();
+      } else {
+        alert("Import fehlgeschlagen: " + (data.detail || "Fehler"));
+      }
+    } catch (e) {
+      alert("Netzwerkfehler: " + e.message);
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
     loadOceanMap();
     loadTheme();
     loadBackendOrigin();
+    loadNemoFoldStats();
+    loadNemoFoldCandidates();
+    loadExternalArtifacts();
     document.getElementById('theme-save').addEventListener('click', saveTheme);
     document.getElementById('backend-origin-refresh').addEventListener('click', loadBackendOrigin);
   });

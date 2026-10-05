@@ -147,7 +147,7 @@ class TestUnifiedDashboardXss(unittest.TestCase):
             ("loadAgentsMap", "/api/marblerun/agents-map", {"stats": {"total_nodes": p, "total_links": p}, "nodes": [{"label": p, "animus": p}]}, ["agents-map-container"]),
             ("searchGardener", "/api/gardener/search?q=" + self.execute_query(p), {"results": [{"name": p, "type": p}]}, ["gardener-results"]),
             ("loadMemoryDigest", "/api/memory/knowledge-digest", {"knowledge_folders": [dict.fromkeys(["label", "path", "file_count"], p)]}, ["knowledge-folders"]),
-            ("runCompareRace", "/api/chat/compare-race", {"winner": p, "candidates": [dict.fromkeys(["model", "latency_ms", "score", "response"], p)]}, ["compare-results"]),
+            ("runCompareRace", "/api/chat/buddha/compare-race", {"winner": p, "candidates": [dict.fromkeys(["model", "latency_ms", "score", "response"], p)]}, ["compare-results"]),
         ]
         for function, endpoint, response, ids in cases:
             with self.subTest(function=function):

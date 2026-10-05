@@ -83,11 +83,11 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         <label>Zugewiesen an<select name="assigned_to"></select></label>
         <label>Erstellt von<input name="created_by" readonly /></label>
         <label>Abhängig von Task-IDs<input name="depends_on" inputmode="numeric" pattern="\s*\d+(\s*,\s*\d+)*\s*" /></label>
+        <label>Fällig am<input name="due_date" type="date" /></label>
         <label>Benötigtes Modell<input name="required_model" /></label>
         <label>Agenten-Slot<input name="assigned_slot" /></label>
         <label class="task-edit-wide">Beschreibung<textarea name="description" rows="5"></textarea></label>
       </div>
-      <p class="muted">Das Fälligkeitsdatum wird angezeigt; die bestehende Bearbeitungs-API unterstützt seine Änderung noch nicht.</p>
       <div class="task-detail-actions"><button type="button" class="btn" id="task-edit-cancel">Abbrechen</button><button type="submit" class="btn btn-primary">Änderungen speichern</button></div>
     </form>
   </section>
@@ -316,6 +316,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       const form = document.getElementById('task-edit-form');
       const task = selectedTask;
       for (const key of ['title','description','depends_on','created_by','required_model','assigned_slot']) form.elements[key].value = String(task[key] || '');
+      form.elements.due_date.value = String(task.due_date || '');
       form.elements.project.value = String(task.category || '');
       const priority = String(task.priority || 'P3');
       const prioritySelect = form.elements.priority;
@@ -353,10 +354,14 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       const id = Number(selectedTask.id);
       const values = new FormData(form);
       const payload = { changed_by:'gui' };
-      for (const key of ['title','priority','status','project','assigned_to','depends_on','description','required_model','assigned_slot']) {
-        const value = String(values.get(key) || '').trim();
+      for (const key of ['title','priority','status','project','assigned_to','due_date','depends_on','description','required_model','assigned_slot']) {
+        const rawVal = values.get(key);
+        const value = rawVal == null ? '' : String(rawVal).trim();
         const before = key === 'project' ? selectedTask.category : selectedTask[key];
-        if (value !== String(before || '').trim()) payload[key] = value;
+        const beforeStr = before == null ? '' : String(before).trim();
+        if (value !== beforeStr) {
+          payload[key] = (key === 'due_date' && !value) ? null : value;
+        }
       }
       try {
         if (Object.keys(payload).length === 1) { document.getElementById('task-edit-cancel').click(); return; }
@@ -370,7 +375,11 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         for (const [key, value] of Object.entries(payload)) {
           if (key === 'changed_by') continue;
           const actual = key === 'project' ? stored.category : stored[key];
-          if (String(actual ?? '').trim() !== String(value).trim()) {
+          if (key === 'due_date' && (value === null || value === '')) {
+            if (actual != null && String(actual).trim() !== '') {
+              throw new Error('Fälligkeitsdatum sollte gelöscht werden, ist aber noch gesetzt.');
+            }
+          } else if (String(actual ?? '').trim() !== String(value).trim()) {
             throw new Error('Änderung gemeldet, aber der Kontrollabruf weicht ab. Bitte Task prüfen.');
           }
         }
@@ -416,6 +425,8 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         button.setAttribute('aria-pressed', String(active));
       });
       loadTasks();
+      const openId = parseInt(new URLSearchParams(location.search).get('task') || new URLSearchParams(location.search).get('id') || '', 10);
+      if (Number.isSafeInteger(openId) && openId > 0) openTask(openId);
     });
   </script>
 </BachLayout>

@@ -42,8 +42,47 @@ if str(_SYSTEM_ROOT) not in sys.path:
 from hub.bach_paths import BACH_DB, BACH_ROOT
 BACH_DIR = BACH_ROOT
 
+from hub._services.blueprint_service import (
+    CONTRACTUS_PRESETS,
+    VALID_BLUEPRINT_KINDS,
+    ensure_blueprint_schema,
+    get_available_skills,
+    list_blueprints as svc_list_blueprints,
+    materialize_blueprint as svc_materialize_blueprint,
+    save_blueprint as svc_save_blueprint,
+    seed_default_blueprints,
+    start_blueprint_worker as svc_start_blueprint_worker,
+    synthesize_start_prompt,
+)
+from hub._services.cognitive_service import (
+    CANONICAL_MERMAID_DIAGRAM,
+    DIAGRAM_LEGEND,
+    get_cognitive_topology,
+    get_process_block,
+    read_usmc_lessons_safe,
+    archive_denkarium_entry,
+    unarchive_denkarium_entry,
+    list_denkarium_entries,
+)
+
 router = APIRouter(prefix="/api", tags=["unified"])
 _COMPARE_RACE_LOCK = asyncio.Lock()
+
+try:
+    from hub._services.skill_capabilities_service import (
+        get_plugin_sockets as svc_get_plugin_sockets,
+        toggle_plugin_socket as svc_toggle_plugin_socket,
+        get_mcp_cookbooks as svc_get_mcp_cookbooks,
+        get_capabilities_tiers as svc_get_capabilities_tiers,
+        save_skill_version as svc_save_skill_version,
+        restore_skill_version as svc_restore_skill_version,
+        convert_prompt_to_skill as svc_convert_prompt_to_skill,
+        validate_blueprint_skills as svc_validate_blueprint_skills,
+        detect_external_artifacts as svc_detect_external_artifacts,
+        import_external_artifact as svc_import_external_artifact,
+    )
+except ImportError:
+    pass
 
 
 def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
@@ -240,29 +279,7 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
     if _agent_studio_tables_ready:
         return
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_blueprints (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                title TEXT,
-                description TEXT,
-                persona_role TEXT,
-                persona_prompt TEXT,
-                skills_json TEXT DEFAULT '[]',
-                animus_type TEXT DEFAULT 'subscription',
-                contractus_json TEXT DEFAULT '{}',
-                modus TEXT DEFAULT 'casualis',
-                is_template INTEGER DEFAULT 0,
-                is_materialized INTEGER DEFAULT 0,
-                governance_json TEXT DEFAULT '{}',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        try:
-            conn.execute("ALTER TABLE agent_blueprints ADD COLUMN governance_json TEXT DEFAULT '{}'")
-        except Exception:
-            pass
+        ensure_blueprint_schema(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS partner_presence (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,133 +294,19 @@ def _ensure_agent_studio_tables(conn: sqlite3.Connection):
             )
         """)
         conn.commit()
+        seed_default_blueprints(conn)
         _agent_studio_tables_ready = True
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"Fehler bei Initialisierung der Agent-Studio Tabellen: {exc}")
         return
-
-    # Seed default templates if empty
-    count = conn.execute("SELECT COUNT(*) FROM agent_blueprints").fetchone()[0]
-    if count == 0:
-        now = datetime.now().isoformat()
-        seeds = [
-            (
-                "buddha",
-                "Buddha (Allrounder & Routing-Ticket-Master)",
-                "Zentrales Empfangs- und Routing-Modell fuer Aufgaben, Ticketaufnahme und Klientengespraeche.",
-                "Allrounder, Routing-Ticket-Master, Assistent",
-                "Du bist Buddha, der einfuehlsame, strukturierte Erstkontakt und Ticket-Master im System.",
-                json.dumps(["gespraechsfuehrung-basis", "selbstmanagement", "decide"]),
-                "subscription",
-                json.dumps({"max_turns": 30, "cooldown_seconds": 0, "task_types": ["chat", "routing", "triage"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "wartungsagent",
-                "Wartungs-Agent (Routinen & Hygiene)",
-                "Autonome periodische System-Wartung, Log-Rotation, Integritaets- und Hygiene-Checks.",
-                "System-Administrator, Hygiene- und Wartungsexperte",
-                "Du bist der Wartungsagent. Pruefe Logs, sichere Dateizustaende und melde Fehler praezise.",
-                json.dumps(["system-auditor", "backup", "sync"]),
-                "cli",
-                json.dumps({"max_turns": 10, "cooldown_seconds": 3600, "task_types": ["maintenance", "hygiene"]}),
-                "routine",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "rollenwechsler",
-                "Rollenwechsler (Dynamischer Kontext-Adapter)",
-                "Wechselt je nach Ausloeser (Trigger/Causa) dynamisch die Persona und das Fachgebiet.",
-                "Thematischer Router & Kontext-Transformator",
-                "Du passt deine Rolle sofort an den Input-Trigger an und delegierst an die passende Pipeline.",
-                json.dumps(["model-strategy", "schwarm-operationen", "orchestrator"]),
-                "api",
-                json.dumps({"max_turns": 15, "cooldown_seconds": 60, "task_types": ["routing", "delegation"]}),
-                "trigger",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "claude_avatar",
-                "Claude Code (Subscription / CLI Dummy)",
-                "Repraesentiert die lokale Claude Code CLI Session als steuerbaren Avatar im Taskboard.",
-                "Terminal Coding Agent",
-                "Verarbeitet komplexe Coding- und Architekturaufgaben im Terminal.",
-                json.dumps(["dev-zyklus", "bugfix-protokoll"]),
-                "subscription",
-                json.dumps({"max_turns": 50, "cooldown_seconds": 0, "task_types": ["dev", "refactor", "bugfix"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "gemini_avatar",
-                "Gemini Antigravity (Subscription / CLI Dummy)",
-                "Repraesentiert Antigravity als autonomen Multi-Agenten- und Automations-Operator.",
-                "Autonomous Multi-Agent Operator",
-                "Koordiniert Schwarm- und Teamaufgaben im Hintergrund.",
-                json.dumps(["headless", "orchestrator", "schwarm-operationen"]),
-                "subscription",
-                json.dumps({"max_turns": 100, "cooldown_seconds": 0, "task_types": ["automation", "research"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "codex_avatar",
-                "Codex / GPT (Subscription / CLI Dummy)",
-                "Repraesentiert Codex / GPT im lokalen Multi-Agenten-Verbund.",
-                "Code Review & Documentation Specialist",
-                "Fuehrt Code-Reviews, Ticket-Verarbeitung und Doku-Updates durch.",
-                json.dumps(["docs-analysis", "pipeline-optimizer"]),
-                "subscription",
-                json.dumps({"max_turns": 40, "cooldown_seconds": 0, "task_types": ["dev", "review"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-            (
-                "kimi_avatar",
-                "Kimi Code (CLI Dummy)",
-                "Repraesentiert Kimi Code CLI als offenes Modell fuer Text- und Codeanalysen.",
-                "Open Weights Code Explorer",
-                "Spezialisiert auf schnelle Code- und Textanalysen ohne Cloud-Lock.",
-                json.dumps(["code-skill-index"]),
-                "cli",
-                json.dumps({"max_turns": 25, "cooldown_seconds": 0, "task_types": ["dev", "search"]}),
-                "casualis",
-                1,
-                1,
-                now,
-                now
-            ),
-        ]
-        conn.executemany("""
-            INSERT INTO agent_blueprints (
-                name, title, description, persona_role, persona_prompt, skills_json,
-                animus_type, contractus_json, modus, is_template, is_materialized,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, seeds)
-        conn.commit()
 
 
 @router.get("/agent-studio/blueprints")
-async def list_agent_blueprints():
+async def list_agent_blueprints(
+    kind: Optional[str] = None,
+    search: Optional[str] = None,
+    is_template: Optional[int] = None,
+):
     """Listet alle Schablonen und individuellen Agenten-Blueprints aus der Fabrika."""
     conn = _get_agent_studio_ro_conn()
     try:
@@ -416,18 +319,40 @@ async def list_agent_blueprints():
         templates = []
         for r in rows:
             item = dict(r)
+            item["kind"] = item.get("kind") or "agent"
+            item["version"] = item.get("version") or "1.0.0"
+            item["start_prompt"] = item.get("start_prompt") or ""
             try:
-                item["skills"] = json.loads(item["skills_json"])
+                item["skills"] = json.loads(item.get("skills_json") or "[]")
             except Exception:
                 item["skills"] = []
+            item["skills_validation"] = svc_validate_blueprint_skills(item["skills"])
             try:
-                item["contractus"] = json.loads(item["contractus_json"])
+                item["contractus"] = json.loads(item.get("contractus_json") or "{}")
             except Exception:
                 item["contractus"] = {}
             try:
                 item["governance"] = json.loads(item.get("governance_json") or "{}")
             except Exception:
                 item["governance"] = {}
+
+            # Filter by kind
+            if isinstance(kind, str) and kind.strip() and item["kind"].lower() != kind.strip().lower():
+                continue
+            # Filter by is_template
+            if is_template is not None and not isinstance(is_template, type(Query)):
+                try:
+                    if int(item.get("is_template", 0)) != int(is_template):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            # Filter by search
+            if isinstance(search, str) and search.strip():
+                term = search.strip().lower()
+                target_str = f"{item.get('name', '')} {item.get('title', '')} {item.get('description', '')} {item.get('persona_role', '')}".lower()
+                if term not in target_str:
+                    continue
+
             if item["is_template"]:
                 templates.append(item)
             else:
@@ -437,69 +362,52 @@ async def list_agent_blueprints():
             "blueprints": blueprints,
             "total_templates": len(templates),
             "total_blueprints": len(blueprints),
-            "total": len(rows)
+            "total": len(templates) + len(blueprints),
         }
     finally:
         conn.close()
 
 
+@router.get("/agent-studio/contractus-presets")
+async def get_contractus_presets():
+    """Liefert Contractus-, Modus- und Trigger-Presets für Fabrika und Blueprints."""
+    return {
+        "presets": CONTRACTUS_PRESETS,
+        "count": len(CONTRACTUS_PRESETS),
+    }
+
+
+@router.post("/agent-studio/synthesize-prompt")
+async def synthesize_prompt_endpoint(payload: Dict[str, Any]):
+    """Synthetisiert und validiert einen authentischen Startprompt ([Boot:Agent], [Boot:System], [Boot:Aufgabe])."""
+    task_override = payload.get("task")
+    bp_data = payload.get("blueprint") or payload
+    try:
+        prompt = synthesize_start_prompt(bp_data, task_override=task_override)
+        return {
+            "success": True,
+            "start_prompt": prompt,
+            "character_count": len(prompt),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/agent-studio/blueprints")
 async def save_agent_blueprint(payload: Dict[str, Any]):
     """Erstellt oder aktualisiert einen Agenten-Blueprint in der Fabrika."""
-    name = (payload.get("name") or "").strip().lower()
-    if not name:
-        raise HTTPException(status_code=400, detail="Blueprint-Name fehlt")
-    title = payload.get("title") or name.title()
-    desc = payload.get("description", "")
-    persona_role = payload.get("persona_role", "")
-    persona_prompt = payload.get("persona_prompt", "")
-    skills = payload.get("skills", [])
-    animus = payload.get("animus_type", "subscription")
-    contractus = payload.get("contractus", {})
-    modus = payload.get("modus", "casualis")
-    governance = payload.get("governance", {})
-    if not isinstance(contractus, dict):
-        raise HTTPException(status_code=400, detail="Contractus muss ein Objekt sein")
-    if "model" in contractus or "fallback" in contractus:
-        if animus not in ("api", "mcp", "cli", "subscription"):
-            raise HTTPException(status_code=400, detail="Ungültiger Animus-Typ")
-        for field in ("model", "fallback"):
-            value = contractus.get(field)
-            if not isinstance(value, str) or not value.strip() or len(value) > 200 or any(ord(char) < 32 for char in value):
-                raise HTTPException(status_code=400, detail=f"Ungültige Modellkonfiguration: {field}")
-    is_template = int(payload.get("is_template", 0))
-    now = datetime.now().isoformat()
-
     conn = _get_conn()
     try:
         _ensure_agent_studio_tables(conn)
-        existing = conn.execute(
-            "SELECT is_template FROM agent_blueprints WHERE name = ?", (name,)
-        ).fetchone()
-        if existing and existing[0]:
-            raise HTTPException(status_code=409, detail="Vorlage ist schreibgeschützt; bitte eigenen Namen wählen")
-        conn.execute("""
-            INSERT INTO agent_blueprints (
-                name, title, description, persona_role, persona_prompt,
-                skills_json, animus_type, contractus_json, modus, is_template, governance_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                title = excluded.title,
-                description = excluded.description,
-                persona_role = excluded.persona_role,
-                persona_prompt = excluded.persona_prompt,
-                skills_json = excluded.skills_json,
-                animus_type = excluded.animus_type,
-                contractus_json = excluded.contractus_json,
-                modus = excluded.modus,
-                governance_json = excluded.governance_json,
-                updated_at = excluded.updated_at
-        """, (
-            name, title, desc, persona_role, persona_prompt,
-            json.dumps(skills), animus, json.dumps(contractus), modus, is_template, json.dumps(governance), now
-        ))
-        conn.commit()
-        return {"success": True, "name": name, "title": title}
+        res = svc_save_blueprint(conn, payload)
+        skills = payload.get("skills", [])
+        if skills:
+            res["skills_validation"] = svc_validate_blueprint_skills(skills)
+        return res
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
 
@@ -563,28 +471,48 @@ async def delete_agent_blueprint(blueprint_id: int):
 
 
 @router.post("/agent-studio/blueprints/{blueprint_id}/materialize")
-async def materialize_blueprint(blueprint_id: int):
-    """Materialisiert einen Blueprint in die Living & Running Welt."""
+async def materialize_blueprint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
+    """Materialisiert einen Blueprint in die Living & Running Welt als living (nicht running)."""
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
     try:
         _ensure_agent_studio_tables(conn)
-        row = conn.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Blueprint nicht gefunden")
-        bp = dict(row)
-        now = datetime.now().isoformat()
-
-        # Configuring a blueprint does not start a worker.
-        conn.execute("UPDATE agent_blueprints SET is_materialized = 1, updated_at = ? WHERE id = ?", (now, blueprint_id))
-        conn.commit()
+        model = payload.get("model") if payload else None
+        res = svc_materialize_blueprint(conn, blueprint_id, model=model)
         return {
             "success": True,
-            "message": f"Agent {bp['title']} ({bp['name']}) als Blueprint konfiguriert. Kein Worker gestartet.",
-            "name": bp["name"],
-            "animus": bp["animus_type"],
-            "status": "configured"
+            "message": f"Blueprint {res['title']} ({res['name']}) als Living aktiviert. Kein Worker gestartet.",
+            "name": res["name"],
+            "status": "living",
+            "is_living": True,
+            "is_running": False,
+            "blueprint": res,
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/start")
+async def start_blueprint_worker_endpoint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
+    """Startet einen Worker für den Blueprint und erzeugt authentische JobExecution/Heartbeat-Receipts."""
+    task = (payload.get("task") if payload else None) or "Standard-Worker Task"
+    conn = _get_conn()
+    try:
+        _ensure_agent_studio_tables(conn)
+        res = svc_start_blueprint_worker(conn, blueprint_id, task=task)
+        return {
+            "success": True,
+            "message": f"Worker für {res['title']} ({res['name']}) gestartet.",
+            "name": res["name"],
+            "status": "running",
+            "is_living": True,
+            "is_running": True,
+            "job_receipt": res["job_receipt"],
+            "heartbeat_receipt": res["heartbeat_receipt"],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     finally:
         conn.close()
 
@@ -748,6 +676,24 @@ async def get_capabilities():
             "total_skills": sum(len(v) for v in skills_by_category.values()),
             "categories_count": len(skills_by_category)
         }
+    }
+
+
+@router.get("/capabilities/skills")
+async def get_capabilities_skills(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """Dynamische Fähigkeiten/Skills aus dem zentralen Skills-Repository (GUX-022)."""
+    cat = category if isinstance(category, str) else None
+    query = search if isinstance(search, str) else None
+    skills = get_available_skills(skills_root=SKILLS_ROOT, category=cat, search=query)
+    categories = sorted(list({s["category"] for s in skills}))
+    return {
+        "skills": skills,
+        "total": len(skills),
+        "categories": categories,
+        "source": str(SKILLS_ROOT) if SKILLS_ROOT else "fallback_catalog",
     }
 
 
@@ -1145,9 +1091,90 @@ async def compare_race_status(request: Request):
     return readiness()
 
 
+@router.get("/chat/compare-race/lanes")
+@router.get("/chat/buddha/compare-race/lanes")
+async def get_compare_race_lanes(request: Request):
+    """List available candidate model lanes and their SpendAuthority/auth readiness."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    auth_header = request.headers.get("Authorization", "")
+    spend_token = (
+        auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+    )
+    spend_auth = (
+        SpendAuthority(approved=True, max_budget_cents=50.0, auth_token=spend_token)
+        if spend_token
+        else None
+    )
+    svc = get_compare_race_service()
+    return {
+        "lanes": svc.list_lanes(spend_auth),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/chat/compare-race/history")
+@router.get("/chat/buddha/compare-race/history")
+async def get_compare_race_history(
+    request: Request, limit: int = Query(25, ge=1, le=100)
+):
+    """Retrieve historical compare-race evaluations and receipts."""
+    from hub._services.chat.compare_race_service import get_compare_race_service
+
+    svc = get_compare_race_service()
+    runs = svc.get_history(limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@router.post("/chat/buddha/compare-race")
+@router.post("/chat/compare-race/buddha")
+async def execute_buddha_compare_race(
+    request: Request, payload: Dict[str, Any] = Body(...)
+):
+    """Execute parallel Buddha-Chat multi-model comparison with SpendAuthority & Inter-Rater metrics."""
+    from hub._services.chat.compare_race_service import (
+        SpendAuthority,
+        get_compare_race_service,
+    )
+
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt fehlt oder ist leer.")
+
+    lane_ids = payload.get("models") or payload.get("lanes")
+    spend_dict = payload.get("spend_authority")
+    spend_auth = SpendAuthority.from_dict(spend_dict) if spend_dict else None
+    synthetic_fixtures = bool(payload.get("synthetic_fixtures", False))
+    timeout = float(payload.get("timeout_seconds", 30.0))
+
+    svc = get_compare_race_service()
+    try:
+        result = await svc.execute_race(
+            prompt=prompt,
+            lane_ids=lane_ids,
+            spend_auth=spend_auth,
+            synthetic_fixtures=synthetic_fixtures,
+            timeout_seconds=timeout,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Fehler im Compare-Race: {exc}"
+        )
+
+
 @router.post("/chat/compare-race")
 async def compare_race(request: Request, payload: Dict[str, Any] = Body(...)):
     """Run configured SDK lanes only after device, cost, and call-budget gates."""
+    # If explicitly requested to use the Buddha-Chat runner or synthetic fixtures:
+    if payload.get("runner") == "buddha" or payload.get("engine") == "buddha" or payload.get("synthetic_fixtures"):
+        return await execute_buddha_compare_race(request, payload)
+
     from .compare_race_adapter import RaceUnavailable, execute_isolated
     device_id = _require_memory_device(request)
     if _COMPARE_RACE_LOCK.locked():
@@ -1342,73 +1369,28 @@ def _ensure_capabilities_db(conn):
 
 @router.get("/capabilities/steckdosen")
 async def get_plugin_steckdosen():
-    """Liefert die Steckdosenleiste fuer Plugins (eingesteckt vs. Kabel aufgerollt)."""
+    """Liefert die Steckdosenleiste fuer Plugins (CAP-02)."""
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-
-    # Bekannte Standard-Plugins
-    default_plugins = [
-        {"name": "science", "title": "Science & Bio-Informatik", "description": "AlphaFold, UniProt, ChEMBL & Gene-Tools", "skills": 18},
-        {"name": "open-compute-plugin", "title": "Open-Compute Desktop Engine", "description": "Win32 Fenstermanagement, Screen-Capture & UIA", "skills": 14},
-        {"name": "android-cli-plugin", "title": "Android CLI Suite", "description": "AVD Management, UI Inspection & SDK Tools", "skills": 6},
-        {"name": "modern-web-guidance", "title": "Modern Web Guidance", "description": "Astro, Tailwind & Modern Frontend Patterns", "skills": 8},
-        {"name": "context7", "title": "Context7 Live Docs", "description": "Echtzeit Dokumentations-Resolver für APIs", "skills": 4},
-        {"name": "hyperframes-media", "title": "HyperFrames Media OS", "description": "Video-Rendering, Kinetic Motion & Waveform Synthesis", "skills": 16},
-    ]
-
-    # Status aus DB laden
-    rows = cursor.execute("SELECT name, is_plugged, slot FROM plugin_sockets").fetchall()
-    status_map = {r[0]: (bool(r[1]), r[2]) for r in rows}
-
-    sockets = []
-    for i, p in enumerate(default_plugins, 1):
-        plugged, slot = status_map.get(p["name"], (True, i))
-        sockets.append({
-            "slot": slot or i,
-            "name": p["name"],
-            "title": p["title"],
-            "description": p["description"],
-            "skills_count": p["skills"],
-            "is_plugged": plugged,
-            "cable_status": "connected" if plugged else "coiled",
-            "led_color": "var(--success)" if plugged else "var(--text-muted)"
-        })
-
-    conn.close()
-    return {"sockets": sockets, "active_count": sum(1 for s in sockets if s["is_plugged"])}
+    try:
+        return svc_get_plugin_sockets(conn)
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/plugins/toggle")
 async def toggle_plugin_socket(payload: Dict[str, Any] = Body(...)):
-    """Schaltet ein Plugin an der Steckdosenleiste ein oder aus."""
+    """Schaltet ein Plugin an der Steckdosenleiste ein oder aus (CAP-02)."""
     plugin_name = payload.get("name")
     if not plugin_name:
         raise HTTPException(status_code=400, detail="name erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-
-    row = cursor.execute("SELECT is_plugged FROM plugin_sockets WHERE name = ?", (plugin_name,)).fetchone()
-    current_state = bool(row[0]) if row else True
-    new_state = 0 if current_state else 1
-    now = datetime.now().isoformat()
-
-    cursor.execute("""
-        INSERT INTO plugin_sockets (name, is_plugged, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET is_plugged = excluded.is_plugged, updated_at = excluded.updated_at
-    """, (plugin_name, new_state, now))
-    conn.commit()
-    conn.close()
-
-    return {
-        "name": plugin_name,
-        "is_plugged": bool(new_state),
-        "cable_status": "connected" if new_state else "coiled",
-        "message": f"Plugin {plugin_name} {'eingesteckt (aktiv)' if new_state else 'ausgesteckt (Kabel eingerollt)'}"
-    }
+    try:
+        return svc_toggle_plugin_socket(plugin_name, conn)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
 
 @router.get("/capabilities/mcp/cookbooks")
@@ -1468,123 +1450,106 @@ async def get_disconnect_status_endpoint(server_id: str = Query(..., description
 
 @router.get("/capabilities/tiers")
 async def get_capabilities_tiers():
-    """Liefert die 4 harmonisierten Wissens-Ebenen (AgentBoard-Evolution)."""
-    return {
-        "tiers": [
-            {
-                "id": "executive",
-                "name": "1. Selbststeuerungs- & Metaskills (Zentrale Exekutive)",
-                "description": "Persona-Skills (Haltung/Charakter), Rollen-Skills (Auftrag & Skill-Dispatching), Semantisches Framing ('Stell dir vor...')",
-                "icon": "👑",
-                "color": "var(--accent-red)",
-                "skills": [
-                    {"name": "persona-researcher", "role": "Strenger empirischer Forscher", "version": "v1.2.0", "type": "Persona"},
-                    {"name": "persona-developer", "role": "Senior Software Architect (PEP-621 / TS)", "version": "v2.0.1", "type": "Persona"},
-                    {"name": "role-triage-operator", "role": "Task-Triage & Intent-Routing", "version": "v1.1.0", "type": "Rolle"},
-                    {"name": "frame-counterfactual", "role": "Pre-Mortem & Kognitives Framing", "version": "v1.0.0", "type": "Framing"}
-                ]
-            },
-            {
-                "id": "process",
-                "name": "2. Prozess-Skills (Handlung & Koordination)",
-                "description": "Adaptive Workflow-Skills (mit Subagenten) & Deterministische MarbleRun-Ketten",
-                "icon": "🔄",
-                "color": "var(--accent)",
-                "skills": [
-                    {"name": "workflow-pipeline-optimizer", "role": "6-Schritte Refactoring & Sanierung", "version": "v1.4.0", "type": "Workflow"},
-                    {"name": "workflow-paper-design-check", "role": "LaTeX / PDF Gestaltungs-Audit", "version": "v1.0.2", "type": "Workflow"},
-                    {"name": "chain-ci-lint-test-build", "role": "Deterministische CI Pipeline (MarbleRun)", "version": "v2.1.0", "type": "Kette"}
-                ]
-            },
-            {
-                "id": "service",
-                "name": "3. Service-Skills (System-Wissen & OS-Bedienung)",
-                "description": "Host- & OS-Bedienung (Windows/Mac/Shell), Systemprompts (CLAUDE.md, GEMINI.md) & Cluster-Topologie",
-                "icon": "🖥️",
-                "color": "var(--accent-blue)",
-                "skills": [
-                    {"name": "service-win32-window-ops", "role": "Desktop-Isolation & Focus-Management", "version": "v1.3.0", "type": "Service"},
-                    {"name": "service-cluster-sync", "role": "Tailscale & Mac Studio DB-Sync", "version": "v1.0.5", "type": "Service"},
-                    {"name": "service-agents-bridge", "role": "Regelwerk-Spiegelung & AGENTS.md Redirect", "version": "v2.0.0", "type": "Service"}
-                ]
-            },
-            {
-                "id": "capabilities",
-                "name": "4. Fähigkeiten-Skills (Atomare Werkzeuge)",
-                "description": "Konkrete Handwerkszeuge und How-Tos (git-hygiene, doc-chunker, lock-master)",
-                "icon": "🛠️",
-                "color": "var(--success)",
-                "skills": [
-                    {"name": "git-hygiene", "role": "Fail-Closed Git & Branch Management", "version": "v1.2.0", "type": "Fähigkeit"},
-                    {"name": "document-chunker", "role": "Token-Überlappendes Chunking für RAG", "version": "v1.0.0", "type": "Fähigkeit"},
-                    {"name": "lock-master", "role": "Verzeichnis- & Dateisperren-Auditor", "version": "v2.0.1", "type": "Fähigkeit"}
-                ]
-            }
-        ]
-    }
+    """Liefert die 4 harmonisierten Wissens-Ebenen mit echten Daten und Versionen."""
+    conn = _get_conn()
+    try:
+        return svc_get_capabilities_tiers(conn)
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/skills/version")
 async def save_skill_version(payload: Dict[str, Any] = Body(...)):
     """Speichert eine neue Version eines Skills (SentinelFleet-Muster)."""
     skill_name = payload.get("skill_name")
-    new_version = payload.get("version", "v1.1.0")
-    changelog = payload.get("changelog", "Update via Skills-Zentrale")
-    author = payload.get("author", "operator")
-    content = payload.get("content", "")
-
     if not skill_name:
         raise HTTPException(status_code=400, detail="skill_name erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-    now = datetime.now().isoformat()
-
-    cursor.execute("""
-        INSERT INTO skill_versions (skill_name, version, changelog, author, content, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (skill_name, new_version, changelog, author, content, now))
-    conn.commit()
-    conn.close()
-
-    return {
-        "status": "success",
-        "skill_name": skill_name,
-        "version": new_version,
-        "changelog": changelog,
-        "created_at": now
-    }
+    try:
+        return svc_save_skill_version(
+            conn,
+            skill_name=skill_name,
+            version=payload.get("version", "v1.1.0"),
+            changelog=payload.get("changelog", "Update via Skills-Zentrale"),
+            author=payload.get("author", "operator"),
+            content=payload.get("content", "")
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
 
 @router.post("/capabilities/skills/rollback")
 async def rollback_skill_version(payload: Dict[str, Any] = Body(...)):
-    """Setzt einen Skill auf eine fruehere Version zurueck."""
+    """Reversibles Append-Only Restore einer früheren Version (GUX-065)."""
     skill_name = payload.get("skill_name")
     target_version = payload.get("target_version")
     if not skill_name or not target_version:
         raise HTTPException(status_code=400, detail="skill_name und target_version erforderlich")
 
     conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
+    try:
+        return svc_restore_skill_version(conn, skill_name, target_version)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
 
-    row = cursor.execute("""
-        SELECT content FROM skill_versions
-        WHERE skill_name = ? AND version = ?
-        ORDER BY id DESC LIMIT 1
-    """, (skill_name, target_version)).fetchone()
 
-    conn.close()
-    if not row:
-        return {"status": "simulated_rollback", "message": f"Rollback auf {target_version} vorgemerkt"}
+@router.post("/capabilities/prompts/convert-to-skill")
+async def convert_prompt_to_skill_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Überführt einen Prompt in einen Skill nach Creator-Vertrag mit Provenienz (GUX-064)."""
+    prompt_id = payload.get("prompt_id")
+    prompt_text = payload.get("prompt_text")
+    title = payload.get("title")
+    category = payload.get("category", "utilities")
+    author = payload.get("author", "prompt-converter")
 
-    return {
-        "status": "success",
-        "skill_name": skill_name,
-        "active_version": target_version,
-        "message": f"Skill {skill_name} erfolgreich auf {target_version} zurueckgesetzt"
-    }
+    conn = _get_conn()
+    try:
+        return svc_convert_prompt_to_skill(
+            conn,
+            prompt_id=prompt_id,
+            prompt_text=prompt_text,
+            title=title,
+            category=category,
+            author=author
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    finally:
+        conn.close()
+
+
+@router.post("/capabilities/blueprints/validate-skills")
+async def validate_blueprint_skills_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Validiert Blueprint-Skills gegen die kanonische Registry (GUX-031)."""
+    skills = payload.get("skills", [])
+    return svc_validate_blueprint_skills(skills)
+
+
+@router.get("/system/external-artifacts")
+async def get_external_artifacts():
+    """Scannt belegte externe Artefakte (ProfiPrompt, PromptBoard, ExplorerPro; GUX-066)."""
+    return svc_detect_external_artifacts()
+
+
+@router.post("/system/external-artifacts/import")
+async def import_external_artifact_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Importiert belegte Artefakte in die System-Prompt-DB (GUX-066)."""
+    artifact = payload.get("artifact")
+    if not artifact:
+        raise HTTPException(status_code=400, detail="artifact erforderlich (profiprompt, promptboard, explorerpro)")
+    conn = _get_conn()
+    try:
+        return svc_import_external_artifact(artifact, conn)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    finally:
+        conn.close()
+
 
 
 @router.get("/memory/cognitive-state")
@@ -1611,6 +1576,8 @@ async def get_cognitive_state():
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "availability": "available" if db_error is None else "unavailable",
         "error": db_error,
+        "mermaid_code": CANONICAL_MERMAID_DIAGRAM,
+        "legend": DIAGRAM_LEGEND,
         "zentrale_exekutive": {
             "title": "Zentrale Exekutive (Steuerung, Wille & Aufsicht)",
             "models": {
@@ -1964,6 +1931,77 @@ async def get_cognitive_state():
 
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# 5b. KOGNITIVER SCHALTPLAN & PROZESS-TOPOLOGIE (GUX-032..043)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/cognitive/topology")
+async def get_cognitive_topology_endpoint():
+    """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
+    try:
+        conn = _get_conn()
+        res = get_cognitive_topology(conn)
+        conn.close()
+        return res
+    except Exception as e:
+        logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
+        return {"success": False, "error": str(e), "blocks": {}}
+
+
+@router.get("/cognitive/blocks/{block_id}")
+async def get_cognitive_block_endpoint(block_id: str):
+    """Liefert detaillierte Inspektionsdaten zu einem der 8 kognitiven Prozessblöcke (GUX-034..041)."""
+    try:
+        conn = _get_conn()
+        res = get_process_block(block_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Abruf des Prozessblocks %s: %s", block_id, e)
+        return {"success": False, "error": str(e), "block": None}
+
+
+@router.get("/memory/usmc-lessons-safe")
+async def get_usmc_lessons_safe_endpoint(limit: int = 50, category: Optional[str] = None):
+    """Schema-agnostischer, robuster Reader für USMC Lessons Learned (GUX-041/042)."""
+    return read_usmc_lessons_safe(limit=limit, category=category)
+
+
+@router.post("/denkarium/{entry_id}/archive")
+async def archive_denkarium_endpoint(entry_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Reversible Archivierung von technischen Agent-Dumps im Denkarium (GUX-043)."""
+    reason = payload.get("reason", "wrong_agent_dump") if isinstance(payload, dict) else "wrong_agent_dump"
+    try:
+        conn = _get_conn()
+        res = archive_denkarium_entry(entry_id, reason=reason, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Archivieren des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/denkarium/{entry_id}/unarchive")
+async def unarchive_denkarium_endpoint(entry_id: int):
+    """Wiederherstellung eines archivierten Denkarium-Eintrags (GUX-043)."""
+    try:
+        conn = _get_conn()
+        res = unarchive_denkarium_entry(entry_id, conn=conn)
+        conn.close()
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Fehler beim Wiederherstellen des Denkarium-Eintrags #%d: %s", entry_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # ═══════════════════════════════════════════════════════════════
 # 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
 # ═══════════════════════════════════════════════════════════════
@@ -2107,7 +2145,7 @@ async def get_memory_sessions(limit: int = 20):
         _ensure_capabilities_db(conn)
         conn.row_factory = sqlite3.Row
         rows = conn.execute("""
-            SELECT id, session_id, started_at, ended_at, summary
+            SELECT *
             FROM memory_sessions
             ORDER BY id DESC LIMIT ?
         """, (limit,)).fetchall()
@@ -2207,15 +2245,291 @@ async def toggle_memory_lesson(lesson_id: int):
 
 
 # ═══════════════════════════════════════════════════════════════
+# 6.5. HERMES: SKILL-DESTILLATION & LERN-PIPELINE (/api/learning/hermes/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_hermes_service_instance():
+    try:
+        from hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+    except ImportError:
+        from system.hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+
+
+@router.post("/learning/hermes/distill")
+async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
+    """Führt die Hermes Rauschreduktions- und Skill-Destillations-Pipeline aus.
+    
+    Akzeptiert entweder direktes `transcript` (Liste von Turns), `raw_text`
+    oder eine `session_id`, die aus den gespeicherten Transkripten geladen wird.
+    """
+    service = _get_hermes_service_instance()
+    session_id = payload.get("session_id")
+    transcript = payload.get("transcript")
+    raw_text = payload.get("raw_text")
+    skill_name_hint = payload.get("skill_name_hint")
+
+    messages_input = transcript or raw_text
+
+    # Falls weder transcript noch raw_text vorhanden sind, versuche aus session_snapshots zu laden
+    if not messages_input and session_id:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT snapshot_data FROM session_snapshots "
+                "WHERE (session_id = ? OR session_id LIKE ?) "
+                "AND snapshot_type = 'chat-transcript.v1' "
+                "ORDER BY id DESC LIMIT 1",
+                (session_id, f"%{session_id}%")
+            ).fetchone()
+            if row and row[0]:
+                try:
+                    data = json.loads(row[0])
+                    messages_input = data.get("messages", [])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if not messages_input:
+                # Fallback: memory_sessions pruefen
+                mrow = conn.execute(
+                    "SELECT summary, continuation_context, handoff_notes FROM memory_sessions "
+                    "WHERE session_id = ? OR id = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (session_id, session_id)
+                ).fetchone()
+                if mrow:
+                    parts = [mrow[0] or "", mrow[1] or "", mrow[2] or ""]
+                    messages_input = "\n\n".join(p for p in parts if p)
+        finally:
+            conn.close()
+
+    if not messages_input:
+        raise HTTPException(
+            status_code=400,
+            detail="Weder transcript, raw_text noch gültige session_id übergeben"
+        )
+
+    try:
+        result = service.run_pipeline(
+            messages_or_text=messages_input,
+            session_id=session_id,
+            skill_name_hint=skill_name_hint,
+            persist=True
+        )
+        return {
+            "status": "success",
+            "run_id": result.run_id,
+            "session_id": result.session_id,
+            "raw_char_count": result.raw_char_count,
+            "cleaned_char_count": result.cleaned_char_count,
+            "noise_reduction_percent": result.noise_reduction_percent,
+            "lessons_extracted": result.lessons,
+            "skill_candidate": result.candidate,
+            "created_at": result.created_at
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hermes Distillation Fehler: {str(e)}")
+
+
+@router.get("/learning/hermes/candidates")
+async def get_hermes_candidates(status: str = Query("pending", description="pending|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+    """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
+    service = _get_hermes_service_instance()
+    try:
+        candidates = service.list_candidates(status=status, limit=limit)
+        return {"candidates": candidates, "count": len(candidates), "status_filter": status}
+    except Exception as e:
+        return {"candidates": [], "count": 0, "error": str(e)}
+
+
+@router.get("/learning/hermes/candidates/{candidate_id}")
+async def get_hermes_candidate_detail(candidate_id: int):
+    """Liefert vollständige Details und SKILL.md-Inhalt eines Kandidaten."""
+    service = _get_hermes_service_instance()
+    cand = service.get_candidate(candidate_id)
+    if not cand:
+        raise HTTPException(status_code=404, detail=f"Kandidat #{candidate_id} nicht gefunden")
+    return cand
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/approve")
+async def approve_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe (Human-in-the-Loop): Überführt Kandidat in skill_versions."""
+    service = _get_hermes_service_instance()
+    approved_by = payload.get("approved_by", "operator")
+    res = service.approve_candidate(candidate_id, approved_by=approved_by)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "Freigabe fehlgeschlagen"))
+    return res
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/reject")
+async def reject_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen Skill-Kandidaten ab."""
+    service = _get_hermes_service_instance()
+    reason = payload.get("reason", "")
+    res = service.reject_candidate(candidate_id, reason=reason)
+    return res
+
+
+@router.get("/learning/hermes/stats")
+async def get_hermes_stats():
+    """Liefert aggregierte Metriken der Hermes Skill-Destillations-Engine."""
+    service = _get_hermes_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6.6. NEMOFOLD: WORKFLOW-LERNEN & STEP-KETTEN SYNTHESE (/api/learning/nemofold/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_nemofold_service_instance():
+    try:
+        from hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+    except ImportError:
+        from system.hub._services.nemofold_workflow_service import NemoFoldWorkflowService
+        return NemoFoldWorkflowService()
+
+
+@router.post("/learning/nemofold/synthesize")
+async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
+    """
+    Führt die NemoFold Heuristik-Detektion und Step-Ketten Synthese aus.
+    Nimmt Session-Logs, Transkripte oder Snapshot-IDs entgegen und erzeugt
+    strukturierte, TÜV-geprüfte Step-Ketten für MarbleRun.
+    """
+    service = _get_nemofold_service_instance()
+    source_type = payload.get("source_type", "transcript")
+    source_ref = payload.get("source_ref")
+    raw_text = payload.get("raw_text") or payload.get("transcript")
+
+    try:
+        res = service.run_synthesis(
+            source_type=source_type,
+            source_ref=source_ref,
+            raw_text=raw_text
+        )
+        return res
+    except Exception as e:
+        logger.error(f"NemoFold Synthesis Fehler: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"NemoFold Synthesis Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/candidates")
+async def get_nemofold_candidates(
+    status: str = Query("pending", description="pending|approved|rejected|all"),
+    limit: int = Query(50, ge=1, le=200)
+):
+    """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
+    service = _get_nemofold_service_instance()
+    candidates = service.list_candidates(status=status)
+    return {"candidates": candidates[:limit], "count": len(candidates)}
+
+
+@router.get("/learning/nemofold/candidates/{candidate_id}")
+async def get_nemofold_candidate_detail(candidate_id: int):
+    """Liefert die vollständige Spezifikation und TÜV-Bewertung eines Kandidaten."""
+    service = _get_nemofold_service_instance()
+    candidate = service.get_candidate(candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Kandidat nicht gefunden")
+    return candidate
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/approve")
+async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe: Überführt die Kette direkt in `marblerun_chains`."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("approved_by", "operator")
+    notes = payload.get("notes", "")
+    try:
+        res = service.approve_candidate(candidate_id, operator=operator, notes=notes)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Freigabe-Fehler: {str(e)}")
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/reject")
+async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen gelernten Workflow-Kandidaten mit Begründung ab."""
+    service = _get_nemofold_service_instance()
+    operator = payload.get("rejected_by", "operator")
+    reason = payload.get("reason", "")
+    try:
+        res = service.reject_candidate(candidate_id, reason=reason, operator=operator)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ablehnungs-Fehler: {str(e)}")
+
+
+@router.get("/learning/nemofold/stats")
+async def get_nemofold_stats():
+    """Liefert aggregierte Live-Metriken der NemoFold Workflow-Engine."""
+    service = _get_nemofold_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+
+# ═══════════════════════════════════════════════════════════════
 # 7. DOMAENEN, ARTEFAKTE, TEAMBUILDING & OCEAN MODULSCHALTPLAN
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/domains/installed")
-async def get_installed_domains():
-    """Public manifest inventory; installed/runtime state needs separate evidence."""
+async def get_installed_domains(scope: str = Query("all"), probe: bool = Query(True)):
+    """Public and installed domain manifests with distinct states (GUX-068..071)."""
     from gui.api.domain_catalog import discover_domains
 
-    return discover_domains()
+    return discover_domains(scope=scope, probe=probe, include_repos=True)
+
+
+@router.get("/domains/pins")
+async def get_domain_pins_endpoint():
+    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
+    from gui.api.domain_catalog import get_domain_pins
+
+    pins = get_domain_pins()
+    return {"pins": pins, "total": len(pins)}
+
+
+@router.post("/domains/pins")
+async def save_domain_pins_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Aktualisiert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
+    from gui.api.domain_catalog import save_domain_pins
+
+    pinned_ids = payload.get("pinned_ids", [])
+    pins = save_domain_pins(pinned_ids)
+    return {"pins": pins, "total": len(pins), "status": "saved"}
+
+
+@router.post("/domains/{domain_id}/pin")
+async def toggle_domain_pin_endpoint(domain_id: str, payload: Optional[Dict[str, Any]] = Body(None)):
+    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
+    from gui.api.domain_catalog import toggle_domain_pin
+
+    pinned = payload.get("pinned") if payload else None
+    return toggle_domain_pin(domain_id, pinned=pinned)
+
+
+@router.get("/domains/{domain_id}")
+async def get_domain_detail_endpoint(domain_id: str):
+    """Liefert Detail-Manifest, Zustände und Konfiguration einer Domäne."""
+    from gui.api.domain_catalog import get_domain_detail
+
+    detail = get_domain_detail(domain_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Domäne '{domain_id}' nicht gefunden")
+    return {"domain": detail, "id": domain_id}
 
 @router.get("/artefakte")
 async def get_artefakte(request: Request):
@@ -2340,8 +2654,20 @@ async def get_ocean_module_map():
             {"id": "ellmos-codecommander", "name": "CodeCommander", "type": "code_analysis", "status": "unknown", "icon": "💻", "role": "Codeanalyse-Anbindung: Prüfung ausstehend"}
         ],
         "subsystems": [
-            {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
-            {"name": "Hermes", "category": "Skill-Destillation", "status": "unknown", "description": "Konzept: freigegebene Skills aus Dialogen"}
+            {
+                "name": "NemoFold",
+                "category": "Workflow-Lernen",
+                "status": "active",
+                "description": "Synthese geprüfter Step-Ketten aus autonomen Session-Logs mit Workflow-TÜV & Rollback-Schutz",
+                "metrics": _get_nemofold_service_instance().get_stats()
+            },
+            {
+                "name": "Hermes",
+                "category": "Skill-Destillation",
+                "status": "active",
+                "description": "Autonome Skill-Destillation aus Dialogen mit Rauschfilterung & Human-in-the-Loop Freigabe",
+                "metrics": _get_hermes_service_instance().get_stats()
+            }
         ]
     }
 
@@ -2389,7 +2715,8 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
 async def get_calendar_events(
     view: str = Query("month", description="day|week|month|year|list"),
     date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
-    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden")
+    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden"),
+    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown")
 ):
     """Liefert Termine aus assistant_calendar und optionale fällige Routinen."""
     conn = _get_conn()
@@ -2456,7 +2783,17 @@ async def get_calendar_events(
             except Exception:
                 pass
 
-        return {"events": events, "count": len(events), "view": view, "date": date}
+        if origin and origin != "all":
+            if origin == "system":
+                events = [e for e in events if e.get("origin") == "system"]
+            elif origin == "user":
+                events = [e for e in events if e.get("origin") == "user"]
+            elif origin in ("without_system", "ohne_system", "no_system"):
+                events = [e for e in events if e.get("origin") != "system"]
+            elif origin == "unknown":
+                events = [e for e in events if e.get("origin") == "unknown"]
+
+        return {"events": events, "count": len(events), "view": view, "date": date, "origin": origin}
     finally:
         conn.close()
 

@@ -153,12 +153,13 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
             <label>Alle X Einheiten <input id="routine-interval-value" type="number" min="1" value="1" required /></label>
             <label>Spezifischer Tag <input id="routine-specific-day" /></label>
             <label>Dauer in Minuten <input id="routine-duration" type="number" min="0" /></label>
+            <label>Gebundener Agent <select id="routine-agent"><option value="">Kein Agent (Manuell)</option></select></label>
           </div>
           <div class="routine-actions"><button type="submit" class="btn btn-primary btn-sm">Speichern</button><button id="routine-cancel" type="button" class="btn btn-secondary btn-sm">Abbrechen</button></div>
         </form>
         <div class="routine-adapters">
           <a href="/routinen?tab=bach">BACH/Ocean-Systemjobs getrennt öffnen ↗</a>
-          <button type="button" disabled title="Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen.">Routinika öffnen – Anbindung in Arbeit</button>
+          <button type="button" id="btn-routinika" disabled title="Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen.">Routinika öffnen – Anbindung in Arbeit</button>
         </div>
       </div>
     </div>
@@ -209,7 +210,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
             <strong>3. Begleitung bei Bedarf</strong>
             <p>Ein begleiteter Arbeitsmodus benötigt noch eine überprüfte Chat- und Datenschutzanbindung. Der Timer funktioniert bereits ohne Agentenaufruf.</p>
           </div>
-          <button type="button" disabled title="Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt.">UpToday öffnen – Anbindung in Arbeit</button>
+          <button type="button" id="btn-uptoday" disabled title="Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt.">UpToday öffnen – Anbindung in Arbeit</button>
         </div>
 
         <div class="glass-card">
@@ -772,8 +773,17 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       try {
         const dateStr = localDateKey(_currentDate);
         const status = document.getElementById('calendar-load-status');
-        status.textContent = 'Lade Termine …';
-        const res = await lifeApiFetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=false`);
+        if (status) status.textContent = 'Lade Termine …';
+        let originParam = 'all';
+        const userChecked = document.getElementById('cal-source-user')?.checked;
+        const sysChecked = document.getElementById('cal-source-system')?.checked;
+        const unkChecked = document.getElementById('cal-source-unknown')?.checked;
+        if (userChecked && !sysChecked && !unkChecked) originParam = 'user';
+        else if (!userChecked && sysChecked && !unkChecked) originParam = 'system';
+        else if (userChecked && !sysChecked && unkChecked) originParam = 'without_system';
+        else if (!userChecked && !sysChecked && unkChecked) originParam = 'unknown';
+
+        const res = await lifeApiFetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=false&origin=${originParam}`);
         if (res.ok) {
           const data = await res.json();
           _loadedEvents = Array.isArray(data.events) ? data.events : [];
@@ -1132,6 +1142,13 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         const info = document.createElement('div');
         const title = document.createElement('strong');
         title.textContent = String(routine.name ?? 'Unbenannte Routine');
+        if (routine.assigned_agent) {
+          const agentBadge = document.createElement('span');
+          agentBadge.className = 'badge badge-agent';
+          agentBadge.style.marginLeft = '0.5rem';
+          agentBadge.textContent = `🤖 ${routine.assigned_agent}`;
+          title.append(agentBadge);
+        }
         const meta = document.createElement('span');
         meta.className = 'routine-meta';
         meta.textContent = [routine.category, routine.interval_type, routine.next_due_at ? `Nächste Fälligkeit: ${routine.next_due_at}` : 'Keine Fälligkeit', routine.is_active ? 'Aktiv' : 'Inaktiv'].filter(Boolean).join(' · ');
@@ -1157,6 +1174,8 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         'interval-value': routine?.interval_value || 1, 'specific-day': routine?.specific_day || '',
         duration: routine?.duration_minutes ?? '',
       })) document.getElementById(`routine-${field}`).value = value;
+      const agentSel = document.getElementById('routine-agent');
+      if (agentSel) agentSel.value = routine?.assigned_agent || '';
       form.classList.remove('hidden');
       document.getElementById('routine-name').focus();
     }
@@ -1195,6 +1214,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         interval_type: document.getElementById('routine-interval').value, interval_value: intervalValue,
         specific_day: document.getElementById('routine-specific-day').value.trim() || null,
         duration_minutes: document.getElementById('routine-duration').value ? Number(document.getElementById('routine-duration').value) : null,
+        assigned_agent: document.getElementById('routine-agent')?.value || null,
       };
       changeRoutine(id ? `/api/routines/${id}` : '/api/routines', id ? 'PUT' : 'POST', id, 'Routine gespeichert.', body);
     }
@@ -1338,9 +1358,61 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       }
     }
 
+    async function loadAgentOptions() {
+      try {
+        const res = await lifeApiFetch('/api/agents');
+        if (!res.ok) return;
+        const data = await res.json();
+        const agents = data.agents || [];
+        const select = document.getElementById('routine-agent');
+        if (!select) return;
+        select.innerHTML = '<option value="">Kein Agent (Manuell)</option>';
+        for (const ag of agents) {
+          const opt = document.createElement('option');
+          opt.value = ag.name;
+          opt.textContent = ag.display_name ? `${ag.display_name} (${ag.name})` : ag.name;
+          select.appendChild(opt);
+        }
+      } catch (_) {}
+    }
+
+    async function checkLifeProviders() {
+      try {
+        const res = await lifeApiFetch('/api/life/providers');
+        if (!res.ok) return;
+        const data = await res.json();
+        const btnRoutinika = document.getElementById('btn-routinika');
+        if (btnRoutinika && data.routinika) {
+          if (data.routinika.available && data.routinika.url) {
+            btnRoutinika.disabled = false;
+            btnRoutinika.title = data.routinika.message;
+            btnRoutinika.textContent = 'Routinika öffnen ↗';
+            btnRoutinika.onclick = () => window.open(data.routinika.url, '_blank');
+          } else {
+            btnRoutinika.disabled = true;
+            btnRoutinika.title = data.routinika.message;
+          }
+        }
+        const btnUpToday = document.getElementById('btn-uptoday');
+        if (btnUpToday && data.uptoday) {
+          if (data.uptoday.available && data.uptoday.url) {
+            btnUpToday.disabled = false;
+            btnUpToday.title = data.uptoday.message;
+            btnUpToday.textContent = 'UpToday öffnen ↗';
+            btnUpToday.onclick = () => window.open(data.uptoday.url, '_blank');
+          } else {
+            btnUpToday.disabled = true;
+            btnUpToday.title = data.uptoday.message;
+          }
+        }
+      } catch (_) {}
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       setupTabs();
       loadCalendarEvents();
+      loadAgentOptions();
+      checkLifeProviders();
       document.getElementById('routine-add')?.addEventListener('click', () => openRoutineForm());
       document.getElementById('routine-refresh')?.addEventListener('click', loadPersonalRoutines);
       document.getElementById('routine-cancel')?.addEventListener('click', () => document.getElementById('life-routine-form').classList.add('hidden'));

@@ -79,6 +79,33 @@ class LifeCalendarTests(unittest.TestCase):
             finally:
                 client.close()
 
+    def test_calendar_origin_filter_user_and_without_system(self):
+        asyncio.run(unified_api.create_calendar_event({"title": "User-Termin", "start_datetime": "2026-10-03 09:00:00"}))
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("INSERT INTO assistant_calendar(title,start_datetime,event_origin) VALUES (?,?,?)", ("System-Termin", "2026-10-03 11:00:00", "system"))
+            conn.commit()
+
+        # All events
+        all_events = asyncio.run(unified_api.get_calendar_events(view="day", date="2026-10-03", include_routines=False, origin="all"))["events"]
+        self.assertEqual(len(all_events), 2)
+
+        # User only
+        user_events = asyncio.run(unified_api.get_calendar_events(view="day", date="2026-10-03", include_routines=False, origin="user"))["events"]
+        self.assertEqual(len(user_events), 1)
+        self.assertEqual(user_events[0]["origin"], "user")
+        self.assertEqual(user_events[0]["title"], "User-Termin")
+
+        # System only
+        sys_events = asyncio.run(unified_api.get_calendar_events(view="day", date="2026-10-03", include_routines=False, origin="system"))["events"]
+        self.assertEqual(len(sys_events), 1)
+        self.assertEqual(sys_events[0]["origin"], "system")
+        self.assertEqual(sys_events[0]["title"], "System-Termin")
+
+        # Without system
+        without_sys = asyncio.run(unified_api.get_calendar_events(view="day", date="2026-10-03", include_routines=False, origin="without_system"))["events"]
+        self.assertEqual(len(without_sys), 1)
+        self.assertEqual(without_sys[0]["title"], "User-Termin")
+
 
 if __name__ == "__main__":
     unittest.main()
