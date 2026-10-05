@@ -444,12 +444,13 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
             "requested_profile": (ttl_profile or cfg.default_profile).upper(),
             "took_over": state["kind"], "device": device,
         }, old_value=status)
+        ack = _ack(_row(conn, task_id) or {}, now)
         conn.commit()
     except BaseException:
         if conn.in_transaction:
             conn.rollback()
         raise
-    return LeaseResult(_ack(_row(conn, task_id) or {}, now))
+    return LeaseResult(ack)
 
 
 def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None = None,
@@ -529,12 +530,13 @@ def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence:
             return _deny(task_id, "stale_fence", now)
         _history(conn, task_id, "lease_renew", row.get("claimed_by") or "unknown", now,
                  {"fence": fence, "expires_at": new_expires})
+        ack = _ack(_row(conn, task_id) or {}, now)
         conn.commit()
     except BaseException:
         if conn.in_transaction:
             conn.rollback()
         raise
-    return LeaseResult(_ack(_row(conn, task_id) or {}, now))
+    return LeaseResult(ack)
 
 
 def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
@@ -598,16 +600,17 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         _history(conn, task_id, "lease_release", worker, now,
                  {"fence": fence, "outcome": outcome, "result_ref": result_ref, "note": note},
                  old_value="in_progress")
+        after = _row(conn, task_id) or {}
+        ack = {
+            "released": True, "task_id": task_id, "outcome": outcome, "status": after.get("status"),
+            "fence": int(after.get("claim_fence") or 0), "server_now": _fmt(now),
+        }
         conn.commit()
     except BaseException:
         if conn.in_transaction:
             conn.rollback()
         raise
-    after = _row(conn, task_id) or {}
-    return LeaseResult({
-        "released": True, "task_id": task_id, "outcome": outcome, "status": after.get("status"),
-        "fence": int(after.get("claim_fence") or 0), "server_now": _fmt(now),
-    })
+    return LeaseResult(ack)
 
 
 # ---------------------------------------------------------------------------
