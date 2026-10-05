@@ -109,37 +109,154 @@ import BachLayout from "../layouts/BachLayout.astro";
   <!-- MODALS: MCP-Buch aufschlagen & SentinelFleet Versionierung    -->
   <!-- ═══════════════════════════════════════════════════════════════ -->
 
-  <!-- Modal: MCP Cookbook aufgeschlagen -->
-  <div id="mcp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(6px);">
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);max-width:800px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;">
+  <!-- Modal: MCP Cookbook Fachbuch-Blaetteransicht -->
+  <div id="mcp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(8px);">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);max-width:850px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;position:relative;">
+      <!-- Book Header -->
       <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);">
         <div style="display:flex;align-items:center;gap:0.75rem;">
-          <span style="font-size:1.5rem;">📖</span>
+          <span style="font-size:1.6rem;">📖</span>
           <div>
-            <h3 id="mcp-modal-title" style="margin:0;font-size:1.2rem;font-weight:700;">Cookbook</h3>
+            <h3 id="mcp-modal-title" style="margin:0;font-size:1.25rem;font-weight:700;">Cookbook</h3>
             <span id="mcp-modal-subtitle" style="font-size:0.8rem;color:var(--text-muted);">Untertitel</span>
           </div>
         </div>
-        <button class="btn" onclick="closeMcpModal()" style="padding:0.25rem 0.5rem;font-size:1.1rem;">✕</button>
+        <button class="btn" onclick="closeMcpModal()" style="padding:0.25rem 0.5rem;font-size:1.1rem;" title="Schließen">✕</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;padding:1.5rem;flex:1;">
-        <!-- Left: Zutaten (Tools) -->
-        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-          <h4 style="margin:0 0 0.75rem 0;font-size:0.95rem;color:var(--accent);display:flex;align-items:center;gap:0.5rem;">
-            <span>🥕</span> Zutaten (Verfügbare Tools)
-          </h4>
-          <div id="mcp-modal-ingredients" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+      <!-- Book Toolbar & Blaetter-Steuerung -->
+      <div style="padding:0.6rem 1.25rem;background:rgba(0,0,0,0.3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+        <!-- Page Indicator & Prev/Next Buttons -->
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <button class="btn" id="btn-mcp-prev" onclick="turnMcpPage(-1)" style="padding:0.3rem 0.7rem;font-size:0.8rem;">◀ Zurück</button>
+          <span style="font-size:0.8rem;font-weight:700;color:var(--text);padding:0 0.4rem;">
+            Seite <span id="mcp-page-num" style="color:var(--accent);">1</span> von <span id="mcp-page-total">4</span>
+          </span>
+          <button class="btn btn-primary" id="btn-mcp-next" onclick="turnMcpPage(1)" style="padding:0.3rem 0.7rem;font-size:0.8rem;">Weiter ▶</button>
         </div>
 
-        <!-- Right: Rezepte (Prompts) -->
-        <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-          <h4 style="margin:0 0 0.75rem 0;font-size:0.95rem;color:var(--success);display:flex;align-items:center;gap:0.5rem;">
-            <span>📜</span> Rezepte (Aufrufmuster)
-          </h4>
-          <div id="mcp-modal-recipes" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+        <!-- Chapter Tabs (Direct Jump) -->
+        <div style="display:flex;gap:0.3rem;background:var(--bg-dark);padding:0.2rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <button class="book-tab-btn active" data-page="1" onclick="setMcpPage(1)">1. Deckel</button>
+          <button class="book-tab-btn" data-page="2" onclick="setMcpPage(2)">2. Zutaten</button>
+          <button class="book-tab-btn" data-page="3" onclick="setMcpPage(3)">3. Rezepte</button>
+          <button class="book-tab-btn" data-page="4" onclick="setMcpPage(4)">4. Absicherung</button>
         </div>
       </div>
+
+      <!-- Book Pages Container -->
+      <div style="padding:1.5rem;flex:1;">
+        <!-- PAGE 1: Buchdeckel & Identitaet -->
+        <div id="mcp-page-1" class="book-page" style="display:flex;flex-direction:column;gap:1.25rem;">
+          <div id="mcp-cover-banner" style="padding:2rem;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,0.15);box-shadow:inset 0 0 30px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:0.75rem;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <span class="badge" style="background:rgba(255,255,255,0.15);color:#fff;" id="mcp-cover-transport">stdio Transport</span>
+              <span class="badge badge-accent" id="mcp-cover-version">v1.0.0</span>
+            </div>
+            <h2 id="mcp-cover-title" style="margin:0;font-size:1.6rem;font-weight:800;color:#fff;">Buchdeckel</h2>
+            <p id="mcp-cover-desc" style="color:rgba(255,255,255,0.85);font-size:0.95rem;line-height:1.5;margin:0;"></p>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;">
+            <div style="background:var(--bg-dark);padding:0.85rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+              <span style="font-size:0.72rem;color:var(--text-muted);display:block;text-transform:uppercase;">Server-Kommando</span>
+              <code id="mcp-cover-cmd" style="font-size:0.85rem;color:var(--accent);">server_cmd</code>
+            </div>
+            <div style="background:var(--bg-dark);padding:0.85rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+              <span style="font-size:0.72rem;color:var(--text-muted);display:block;text-transform:uppercase;">Protokoll-Standard</span>
+              <span id="mcp-cover-protocol" style="font-size:0.85rem;font-weight:600;color:var(--text);">2024-11-05</span>
+            </div>
+            <div style="background:var(--bg-dark);padding:0.85rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+              <span style="font-size:0.72rem;color:var(--text-muted);display:block;text-transform:uppercase;">Status & Isolation</span>
+              <span id="mcp-cover-runtime" class="badge badge-success">cli_detected</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- PAGE 2: Zutaten / Werkzeuge -->
+        <div id="mcp-page-2" class="book-page" style="display:none;flex-direction:column;gap:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h4 style="margin:0;font-size:1.1rem;color:var(--accent);display:flex;align-items:center;gap:0.5rem;">
+              <span>🥕</span> Kapitel 2: Zutaten & Werkzeuge
+            </h4>
+            <span class="badge" id="mcp-ingredients-count">0 Tools</span>
+          </div>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0;">
+            Verfügbare MCP-Tools dieses Servers. 'safe' ist passiv/lesend; 'full' erfordert explizite Schreibberechtigung.
+          </p>
+          <div id="mcp-modal-ingredients-detailed" style="display:grid;grid-template-columns:1fr;gap:0.6rem;max-height:50vh;overflow-y:auto;padding-right:0.25rem;">
+            <!-- Detailed tool cards -->
+          </div>
+        </div>
+
+        <!-- PAGE 3: Rezepte / Prompts -->
+        <div id="mcp-page-3" class="book-page" style="display:none;flex-direction:column;gap:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h4 style="margin:0;font-size:1.1rem;color:var(--success);display:flex;align-items:center;gap:0.5rem;">
+              <span>📜</span> Kapitel 3: Rezepte & Aufrufmuster
+            </h4>
+            <span class="badge" id="mcp-recipes-count">0 Rezepte</span>
+          </div>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0;">
+            Praxis-Workflow-Rezepte für Agenten und Nutzer. Klick auf den Kopier-Button überträgt das Muster direkt in die Zwischenablage.
+          </p>
+          <div id="mcp-modal-recipes-detailed" style="display:flex;flex-direction:column;gap:0.85rem;max-height:50vh;overflow-y:auto;padding-right:0.25rem;">
+            <!-- Detailed recipe cards -->
+          </div>
+        </div>
+
+        <!-- PAGE 4: Absicherung & Hard-Disconnect -->
+        <div id="mcp-page-4" class="book-page" style="display:none;flex-direction:column;gap:1.25rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h4 style="margin:0;font-size:1.1rem;color:#ef4444;display:flex;align-items:center;gap:0.5rem;">
+              <span>🛡️</span> Kapitel 4: Absicherung & Hard-Disconnect
+            </h4>
+            <span class="badge badge-accent" id="mcp-gov-level">sandboxed</span>
+          </div>
+
+          <div style="background:var(--bg-dark);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border);display:flex;flex-direction:column;gap:0.75rem;">
+            <strong style="font-size:0.85rem;color:var(--text);">Pfad-Wächter (Gesperrte Pfadmuster):</strong>
+            <div id="mcp-gov-blocked-patterns" style="display:flex;flex-wrap:wrap;gap:0.4rem;"></div>
+            <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.4;" id="mcp-gov-mode-note"></div>
+          </div>
+
+          <!-- Hard Disconnect Action Panel -->
+          <div style="border:1px solid rgba(239, 68, 68, 0.3);background:rgba(239, 68, 68, 0.05);padding:1.25rem;border-radius:var(--radius-sm);display:flex;flex-direction:column;gap:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <strong style="font-size:0.95rem;color:#ef4444;display:block;">⚡ Autoritativer Hard-Disconnect</strong>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
+                  Beendet alle aktiven Prozesse dieses MCP-Servers physisch (SIGTERM/SIGKILL), prüft die Prozessliste auf Waisen und stellt einen manipulationssicheren Beleg aus.
+                </p>
+              </div>
+              <span id="mcp-live-proc-badge" class="badge" style="background:rgba(0,0,0,0.4);">Prozesse: Prüfe...</span>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+              <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;">
+                <input type="checkbox" id="chk-hard-disconnect-force" checked />
+                <span>Force-Kill (SIGKILL) bei Weigerung</span>
+              </label>
+
+              <button class="btn" id="btn-hard-disconnect" style="background:#ef4444;color:#fff;border:none;font-weight:700;padding:0.4rem 0.9rem;" onclick="triggerHardDisconnect()">
+                ⚡ Hard-Disconnect durchführen
+              </button>
+            </div>
+
+            <!-- Receipt Display -->
+            <div id="mcp-disconnect-receipt-box" style="display:none;background:var(--bg-dark);padding:0.85rem;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:monospace;font-size:0.75rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                <strong style="color:var(--success);">✓ HardDisconnectReceipt erhalten</strong>
+                <span id="receipt-timestamp" style="color:var(--text-muted);"></span>
+              </div>
+              <div id="receipt-details" style="color:var(--text);"></div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
     </div>
   </div>
 
@@ -201,6 +318,28 @@ import BachLayout from "../layouts/BachLayout.astro";
       color: var(--text);
       background: var(--bg-card);
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* MCP Cookbook Fachbuch-Blaetteransicht Tabs */
+    .book-tab-btn {
+      background: none;
+      border: none;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .book-tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.08);
+    }
+    .book-tab-btn.active {
+      color: var(--accent);
+      background: var(--bg-card);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
     }
 
     /* Steckdose & Stecker Styling */
@@ -352,6 +491,9 @@ import BachLayout from "../layouts/BachLayout.astro";
       }
     }
 
+    let currentMcpPage = 1;
+    let activeMcpBook = null;
+
     function renderBookshelf(cookbooks) {
       const shelf = document.getElementById('mcp-bookshelf');
       if (!shelf) return;
@@ -368,74 +510,351 @@ import BachLayout from "../layouts/BachLayout.astro";
         const subtitle = document.createElement('p');
         subtitle.textContent = String(book.subtitle || '');
         const count = document.createElement('span');
-        count.textContent = `${(book.ingredients || []).length} Zutaten • ${(book.recipes || []).length} Rezepte`;
+        const toolCount = book.ingredients ? book.ingredients.length : (book.pages?.page_2_tools?.tools?.length || 0);
+        const recipeCount = book.recipes ? book.recipes.length : (book.pages?.page_3_recipes?.recipes?.length || 0);
+        count.textContent = `${toolCount} Werkzeuge • ${recipeCount} Rezepte`;
         card.append(title, subtitle, count);
         card.addEventListener('click', () => openMcpCookbook(book.id));
         shelf.append(card);
       }
     }
 
-    function openMcpCookbook(bookId) {
-      const book = currentCookbooks.find(b => b.id === bookId);
+    function setMcpPage(pageNum) {
+      const p = Math.max(1, Math.min(4, pageNum));
+      currentMcpPage = p;
+
+      const pageNumEl = document.getElementById('mcp-page-num');
+      if (pageNumEl) pageNumEl.textContent = String(p);
+
+      const prevBtn = document.getElementById('btn-mcp-prev');
+      const nextBtn = document.getElementById('btn-mcp-next');
+      if (prevBtn) prevBtn.disabled = (p === 1);
+      if (nextBtn) nextBtn.disabled = (p === 4);
+
+      for (let i = 1; i <= 4; i++) {
+        const pageEl = document.getElementById(`mcp-page-${i}`);
+        if (pageEl) {
+          pageEl.style.display = (i === p) ? 'flex' : 'none';
+        }
+      }
+
+      document.querySelectorAll('.book-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.page, 10) === p);
+      });
+    }
+
+    function turnMcpPage(delta) {
+      setMcpPage(currentMcpPage + delta);
+    }
+
+    async function openMcpCookbook(bookId) {
+      let book = currentCookbooks.find(b => b.id === bookId);
+      if (!book) {
+        try {
+          const res = await fetch(`/api/capabilities/mcp/cookbooks/${encodeURIComponent(bookId)}`);
+          if (res.ok) {
+            book = await res.json();
+          }
+        } catch (e) {
+          console.error("Fehler beim Abrufen des Cookbooks:", e);
+        }
+      }
       if (!book) return;
-      document.getElementById('mcp-modal-title').textContent = book.title;
-      document.getElementById('mcp-modal-subtitle').textContent = book.subtitle;
+      activeMcpBook = book;
 
-      const ingDiv = document.getElementById('mcp-modal-ingredients');
-      ingDiv.replaceChildren(...book.ingredients.map(ing => {
-        const item = document.createElement('div');
-        item.textContent = `${ing}()`;
-        return item;
+      // Header
+      document.getElementById('mcp-modal-title').textContent = book.title || 'Cookbook';
+      document.getElementById('mcp-modal-subtitle').textContent = book.subtitle || '';
+
+      // Page 1: Cover
+      const coverBanner = document.getElementById('mcp-cover-banner');
+      if (coverBanner && book.cover_color) {
+        coverBanner.style.background = book.cover_color;
+      }
+      const transportEl = document.getElementById('mcp-cover-transport');
+      if (transportEl) transportEl.textContent = book.transport || 'stdio Transport';
+
+      const versionEl = document.getElementById('mcp-cover-version');
+      if (versionEl) versionEl.textContent = book.version || 'v1.0.0';
+
+      const coverTitleEl = document.getElementById('mcp-cover-title');
+      if (coverTitleEl) coverTitleEl.textContent = book.title || '';
+
+      const coverDescEl = document.getElementById('mcp-cover-desc');
+      if (coverDescEl) coverDescEl.textContent = book.pages?.page_1_cover?.description || book.subtitle || '';
+
+      const cmdEl = document.getElementById('mcp-cover-cmd');
+      if (cmdEl) cmdEl.textContent = book.server_command || book.pages?.page_1_cover?.server_command || 'mcp';
+
+      const protoEl = document.getElementById('mcp-cover-protocol');
+      if (protoEl) protoEl.textContent = book.protocol_version || book.pages?.page_1_cover?.protocol_version || '2024-11-05';
+
+      const runtimeEl = document.getElementById('mcp-cover-runtime');
+      if (runtimeEl) {
+        const rt = book.runtime_status || book.pages?.page_1_cover?.runtime_status || 'cli_detected';
+        runtimeEl.textContent = rt;
+        runtimeEl.className = 'badge ' + (rt === 'cli_detected' || rt === 'active' ? 'badge-success' : 'badge-accent');
+      }
+
+      // Page 2: Zutaten / Tools
+      const tools = book.pages?.page_2_tools?.tools || (book.ingredients || []).map(ing => ({
+        name: typeof ing === 'string' ? ing : ing.name,
+        signature: `${typeof ing === 'string' ? ing : ing.name}()`,
+        description: 'MCP Tool-Funktion',
+        mode: 'safe'
       }));
+      const ingCountEl = document.getElementById('mcp-ingredients-count');
+      if (ingCountEl) ingCountEl.textContent = `${tools.length} Tools`;
 
-      const recDiv = document.getElementById('mcp-modal-recipes');
-      recDiv.replaceChildren(...book.recipes.map(rec => {
-        const item = document.createElement('div');
-        item.style.marginBottom = "0.75rem";
-        item.style.background = "var(--bg-dark)";
-        item.style.padding = "0.6rem";
-        item.style.borderRadius = "var(--radius-sm)";
-        item.style.border = "1px solid var(--border)";
+      const ingDetailed = document.getElementById('mcp-modal-ingredients-detailed');
+      if (ingDetailed) {
+        ingDetailed.replaceChildren(...tools.map(tool => {
+          const item = document.createElement('div');
+          item.style.background = 'var(--bg-dark)';
+          item.style.padding = '0.75rem 1rem';
+          item.style.borderRadius = 'var(--radius-sm)';
+          item.style.border = '1px solid var(--border)';
+          item.style.display = 'flex';
+          item.style.flexDirection = 'column';
+          item.style.gap = '0.25rem';
 
-        const title = document.createElement('strong');
-        title.textContent = String(rec.title || 'Rezept');
-        title.style.display = "block";
-        title.style.marginBottom = "0.25rem";
+          const topRow = document.createElement('div');
+          topRow.style.display = 'flex';
+          topRow.style.justifyContent = 'space-between';
+          topRow.style.alignItems = 'center';
 
-        const prompt = document.createElement('code');
-        prompt.textContent = String(rec.prompt || '');
-        prompt.style.display = "block";
-        prompt.style.marginBottom = "0.5rem";
-        prompt.style.whiteSpace = "pre-wrap";
+          const nameTag = document.createElement('code');
+          nameTag.style.color = 'var(--accent)';
+          nameTag.style.fontWeight = '700';
+          nameTag.textContent = tool.signature || `${tool.name}()`;
 
-        const btnRow = document.createElement('div');
-        btnRow.style.display = "flex";
-        btnRow.style.gap = "0.4rem";
+          const modeBadge = document.createElement('span');
+          const isSafe = (tool.mode || 'safe').toLowerCase() === 'safe';
+          modeBadge.className = 'badge';
+          modeBadge.style.fontSize = '0.68rem';
+          modeBadge.style.background = isSafe ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
+          modeBadge.style.color = isSafe ? 'var(--success)' : '#ef4444';
+          modeBadge.textContent = tool.mode ? tool.mode.toUpperCase() : 'SAFE';
 
-        const copyBtn = document.createElement('button');
-        copyBtn.className = "btn";
-        copyBtn.style.padding = "0.2rem 0.5rem";
-        copyBtn.style.fontSize = "0.72rem";
-        copyBtn.textContent = "📋 Kopieren";
-        copyBtn.onclick = () => copyToClipboard(String(rec.prompt || ''), copyBtn);
+          topRow.append(nameTag, modeBadge);
 
-        const convBtn = document.createElement('button');
-        convBtn.className = "btn btn-primary";
-        convBtn.style.padding = "0.2rem 0.5rem";
-        convBtn.style.fontSize = "0.72rem";
-        convBtn.textContent = "⚡ In Skill umwandeln";
-        convBtn.onclick = () => convertPromptToSkill(String(rec.title || 'MCP Prompt'), String(rec.prompt || ''), 'mcp');
+          const desc = document.createElement('span');
+          desc.style.fontSize = '0.8rem';
+          desc.style.color = 'var(--text-muted)';
+          desc.textContent = tool.description || '';
 
-        btnRow.append(copyBtn, convBtn);
-        item.append(title, prompt, btnRow);
-        return item;
-      }));
+          item.append(topRow, desc);
+          return item;
+        }));
+      }
+
+      // Page 3: Rezepte / Prompts
+      const recipes = book.pages?.page_3_recipes?.recipes || book.recipes || [];
+      const recCountEl = document.getElementById('mcp-recipes-count');
+      if (recCountEl) recCountEl.textContent = `${recipes.length} Rezepte`;
+
+      const recDetailed = document.getElementById('mcp-modal-recipes-detailed');
+      if (recDetailed) {
+        recDetailed.replaceChildren(...recipes.map(rec => {
+          const card = document.createElement('div');
+          card.style.background = 'var(--bg-dark)';
+          card.style.padding = '0.85rem 1rem';
+          card.style.borderRadius = 'var(--radius-sm)';
+          card.style.border = '1px solid var(--border)';
+          card.style.display = 'flex';
+          card.style.flexDirection = 'column';
+          card.style.gap = '0.5rem';
+
+          const topRow = document.createElement('div');
+          topRow.style.display = 'flex';
+          topRow.style.justifyContent = 'space-between';
+          topRow.style.alignItems = 'flex-start';
+
+          const titleBox = document.createElement('div');
+          const titleEl = document.createElement('strong');
+          titleEl.style.fontSize = '0.9rem';
+          titleEl.style.color = 'var(--text)';
+          titleEl.textContent = rec.title || 'Rezept';
+
+          const intentEl = document.createElement('div');
+          intentEl.style.fontSize = '0.75rem';
+          intentEl.style.color = 'var(--text-muted)';
+          intentEl.textContent = rec.intent || '';
+          titleBox.append(titleEl, intentEl);
+
+          const copyBtn = document.createElement('button');
+          copyBtn.type = 'button';
+          copyBtn.className = 'btn';
+          copyBtn.style.padding = '0.2rem 0.5rem';
+          copyBtn.style.fontSize = '0.72rem';
+          copyBtn.textContent = '📋 Kopieren';
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(rec.prompt || '');
+            copyBtn.textContent = '✓ Kopiert!';
+            setTimeout(() => { copyBtn.textContent = '📋 Kopieren'; }, 1800);
+          });
+
+          const convBtn = document.createElement('button');
+          convBtn.type = 'button';
+          convBtn.className = 'btn btn-primary';
+          convBtn.style.padding = '0.2rem 0.5rem';
+          convBtn.style.fontSize = '0.72rem';
+          convBtn.textContent = '⚡ In Skill umwandeln';
+          convBtn.onclick = () => convertPromptToSkill(String(rec.title || 'MCP Prompt'), String(rec.prompt || ''), 'mcp');
+
+          const btnRow = document.createElement('div');
+          btnRow.style.display = 'flex';
+          btnRow.style.gap = '0.4rem';
+          btnRow.append(copyBtn, convBtn);
+
+          topRow.append(titleBox, btnRow);
+
+          const codeBlock = document.createElement('pre');
+          codeBlock.style.margin = '0';
+          codeBlock.style.padding = '0.5rem 0.75rem';
+          codeBlock.style.background = 'rgba(0,0,0,0.4)';
+          codeBlock.style.borderRadius = 'var(--radius-sm)';
+          codeBlock.style.fontSize = '0.78rem';
+          codeBlock.style.whiteSpace = 'pre-wrap';
+          codeBlock.style.wordBreak = 'break-word';
+          codeBlock.style.color = 'var(--accent)';
+          codeBlock.textContent = rec.prompt || '';
+
+          card.append(topRow, codeBlock);
+          return card;
+        }));
+      }
+
+      // Page 4: Absicherung & Hard-Disconnect
+      const govLevelEl = document.getElementById('mcp-gov-level');
+      if (govLevelEl) {
+        const lvl = book.pages?.page_4_governance?.governance_level || book.pages?.page_4_governance?.security_level || 'sandboxed';
+        govLevelEl.textContent = lvl;
+      }
+
+      const blockedContainer = document.getElementById('mcp-gov-blocked-patterns');
+      if (blockedContainer) {
+        const patterns = book.pages?.page_4_governance?.blocked_path_patterns || book.pages?.page_4_governance?.blocked_patterns || [];
+        blockedContainer.replaceChildren(...patterns.map(pat => {
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.style.background = 'rgba(239, 68, 68, 0.12)';
+          badge.style.color = '#ef4444';
+          badge.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+          badge.style.fontFamily = 'monospace';
+          badge.style.fontSize = '0.75rem';
+          badge.textContent = pat;
+          return badge;
+        }));
+      }
+
+      const modeNoteEl = document.getElementById('mcp-gov-mode-note');
+      if (modeNoteEl) {
+        modeNoteEl.textContent = book.pages?.page_4_governance?.mode_note || book.pages?.page_4_governance?.mode_restrictions || book.pages?.page_4_governance?.safety_note || 'Fail-Closed Absicherung aktiv.';
+      }
+
+      // Reset receipt box
+      const receiptBox = document.getElementById('mcp-disconnect-receipt-box');
+      if (receiptBox) receiptBox.style.display = 'none';
+
+      // Check live processes
+      checkMcpProcessStatus(book.id);
+
+      // Start on Page 1
+      setMcpPage(1);
 
       document.getElementById('mcp-modal').style.display = 'flex';
     }
 
+    async function checkMcpProcessStatus(serverId) {
+      const badge = document.getElementById('mcp-live-proc-badge');
+      if (!badge) return;
+      badge.textContent = 'Prozesse: Prüfe...';
+      badge.style.background = 'rgba(0,0,0,0.4)';
+      badge.style.color = 'var(--text-muted)';
+      try {
+        const res = await fetch(`/api/capabilities/mcp/disconnect/status?server_id=${encodeURIComponent(serverId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.process_count > 0) {
+            badge.textContent = `${data.process_count} Prozesse aktiv`;
+            badge.style.background = 'rgba(239, 68, 68, 0.2)';
+            badge.style.color = '#ef4444';
+          } else {
+            badge.textContent = '0 Prozesse (sauber)';
+            badge.style.background = 'rgba(34, 197, 94, 0.15)';
+            badge.style.color = 'var(--success)';
+          }
+        }
+      } catch (e) {
+        badge.textContent = 'Status unbekannt';
+      }
+    }
+
+    async function triggerHardDisconnect() {
+      if (!activeMcpBook) return;
+      const serverId = activeMcpBook.id;
+      const title = activeMcpBook.title;
+      if (!confirm(`Hard-Disconnect für "${title}" wirklich durchführen?\n\nAlle laufenden Prozesse dieses MCP-Servers werden unverzüglich physisch beendet und die zugehörige Steckdose deaktiviert.`)) {
+        return;
+      }
+
+      const btn = document.getElementById('btn-hard-disconnect');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Trenne...';
+      }
+
+      const force = document.getElementById('chk-hard-disconnect-force')?.checked ?? true;
+
+      try {
+        const res = await fetch('/api/capabilities/mcp/disconnect', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({server_id: serverId, force: force})
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const receipt = data.receipt;
+          const receiptBox = document.getElementById('mcp-disconnect-receipt-box');
+          const timeEl = document.getElementById('receipt-timestamp');
+          const detailsEl = document.getElementById('receipt-details');
+
+          if (receiptBox && detailsEl) {
+            receiptBox.style.display = 'block';
+            if (timeEl) timeEl.textContent = receipt.issued_at || new Date().toISOString();
+            detailsEl.innerHTML = `
+              <div><strong>Server ID:</strong> ${receipt.server_id}</div>
+              <div><strong>Terminierte Prozesse:</strong> ${receipt.processes_terminated.length} PIDs (${receipt.processes_terminated.map(p => p.pid).join(', ') || 'keine'})</div>
+              <div><strong>Verbleibend:</strong> ${receipt.remaining_processes_count} (Garantie: ${receipt.remaining_processes_count === 0 ? '✓ sauber' : '⚠ Rückstände'})</div>
+              <div><strong>Socket aktualisiert:</strong> ${receipt.socket_updated ? '✓ Buchse ausgeschaltet' : '–'}</div>
+              <div><strong>Signatur:</strong> <code>${receipt.signature.slice(0, 24)}...</code></div>
+            `;
+          }
+
+          // Refresh live process badge
+          checkMcpProcessStatus(serverId);
+
+          // Refresh socket board
+          loadCapabilitiesData();
+        } else {
+          const err = await res.json();
+          alert('Fehler beim Hard-Disconnect: ' + (err.error || res.statusText));
+        }
+      } catch (e) {
+        alert('Netzwerkfehler beim Hard-Disconnect: ' + e);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '⚡ Hard-Disconnect durchführen';
+        }
+      }
+    }
+
     function closeMcpModal() {
       document.getElementById('mcp-modal').style.display = 'none';
+      activeMcpBook = null;
     }
 
     function renderTiers(tiers) {
