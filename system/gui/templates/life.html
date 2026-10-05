@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <script src="/static/js/device-fetch.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Life-Zentrale</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .life-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .tab-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 1.1rem;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            border-color: var(--accent);
+        }
+        .tab-btn.active {
+            background: var(--accent);
+            color: #0b0d14;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        .tab-pane {
+            display: none;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+        .glass-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .card-header-action {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .life-task-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .life-task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+        .life-task-row {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .life-task-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 600px;
+            border: 1px solid var(--border);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2 {
+            margin: 0 0 1rem 0;
+            color: var(--accent);
+        }
+        .hidden { display: none !important; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.3rem;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        .form-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.85rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .btn-primary { background: var(--accent); color: #0b0d14; font-weight: 600; }
+        .btn-secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
+        .load-status { color: var(--error); margin-top: 0.5rem; font-size: 0.9rem; }
+        .loading-state { color: var(--text-muted); font-style: italic; }
+    </style>
+</head>
+<body>
+    <header class="main-header" id="main-header"></header>
+
+    <main class="life-container">
+        <div class="page-header">
+            <div>
+                <h1>🌱 Life-Zentrale</h1>
+                <p style="color:var(--text-muted);font-size:0.9rem;margin-top:0.25rem;">
+                    Selbstmanagement, Kalender, Routinen und persönliche Aufgaben
+                </p>
+            </div>
+            <div>
+                <span style="background:var(--accent);color:#0b0d14;font-size:0.75rem;font-weight:700;padding:0.25rem 0.5rem;border-radius:4px;">BACH Life OS</span>
+            </div>
+        </div>
+
+        <!-- Tab Bar -->
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="kalender">📅 Kalender</button>
+            <button class="tab-btn" data-tab="routinen">⏰ Deine Routinen</button>
+            <button class="tab-btn" data-tab="aufgaben">👤 Meine Aufgaben</button>
+            <button class="tab-btn" data-tab="selbstmanagement">🎯 Selbstmanagement & ADHS</button>
+        </div>
+
+        <!-- TAB 1: KALENDER -->
+        <div class="tab-pane active" id="pane-kalender">
+            <div class="glass-card">
+                <h3>📅 Kalender</h3>
+                <p style="color:var(--text-muted);margin-top:0.5rem;">Termine und Kalender-Übersicht.</p>
+                <div id="calendar-container" style="margin-top:1rem;">
+                    <p class="loading-state">Kalenderdaten werden geladen...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: ROUTINEN -->
+        <div class="tab-pane" id="pane-routinen">
+            <div class="glass-card">
+                <h3>⏰ Deine Routinen</h3>
+                <p style="color:var(--text-muted);margin-top:0.5rem;">Wiederkehrende Gewohnheiten und Rhythmen.</p>
+                <div id="routines-container" style="margin-top:1rem;">
+                    <p class="loading-state">Routinen werden geladen...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: MEINE AUFGABEN (GUX-047) -->
+        <div class="tab-pane" id="pane-aufgaben">
+            <div class="glass-card">
+                <div class="card-header-action">
+                    <div>
+                        <h3 style="margin:0;"><span class="icon">👤</span> Meine persönlichen Aufgaben</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin:0.25rem 0 0 0;">
+                            Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)
+                        </p>
+                    </div>
+                    <div class="life-task-actions">
+                        <label for="filter-user-tasks-status" style="font-size:0.85rem;">Status
+                            <select id="filter-user-tasks-status" style="padding:0.35rem 0.5rem;border-radius:4px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);">
+                                <option value="nonterminal" selected>Nur offene</option>
+                                <option value="">Alle Status</option>
+                                <option value="in_progress">In Bearbeitung</option>
+                                <option value="done">Erledigt (done)</option>
+                                <option value="completed">Erledigt (completed)</option>
+                            </select>
+                        </label>
+                        <button class="btn btn-primary" id="btn-open-life-task-create" onclick="openLifeTaskModal()">+ Neue Aufgabe für mich</button>
+                        <a href="/tasks?assigned_to=user" class="btn btn-secondary">Taskboard ↗</a>
+                    </div>
+                </div>
+                <div id="user-tasks-container">
+                    <p class="loading-state">Lade persönliche Aufgaben aus bach.db...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: SELBSTMANAGEMENT -->
+        <div class="tab-pane" id="pane-selbstmanagement">
+            <div class="glass-card">
+                <h3>🎯 Selbstmanagement & Fokus-Timer</h3>
+                <p style="color:var(--text-muted);margin-top:0.5rem;">Fokus-Intervalle und exekutive Entlastung.</p>
+                <div style="font-size:2.5rem;font-weight:700;font-family:monospace;margin:1.5rem 0;" id="timer-display">25:00</div>
+                <button class="btn btn-primary" id="btn-timer-start" onclick="toggleTimer()">Start</button>
+                <button class="btn btn-secondary" onclick="resetTimer()">Reset</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Neue Aufgabe für mich (Full Mask, GUX-046 & GUX-047) -->
+    <div class="modal-overlay hidden" id="life-task-modal" onclick="closeLifeTaskModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h2>➕ Neue Aufgabe für mich</h2>
+            <p id="life-task-error" class="load-status" hidden></p>
+            <form id="life-task-form" onsubmit="submitLifeTask(event)">
+                <div class="form-group">
+                    <label>Titel *</label>
+                    <input type="text" name="title" required placeholder="Aufgabe..." maxlength="200">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Priorität</label>
+                        <select name="priority">
+                            <option value="P3" selected>P3 · Normal</option>
+                            <option value="P1">P1 · Kritisch</option>
+                            <option value="P2">P2 · Wichtig</option>
+                            <option value="P4">P4 · Niedrig</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Kategorie / Projekt</label>
+                        <input type="text" name="category" placeholder="z.B. privat, fokus, dev">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Zugewiesen an</label>
+                        <input type="text" name="assigned_to" value="user" readonly style="opacity:0.8;">
+                    </div>
+                    <div class="form-group">
+                        <label>Erstellt von</label>
+                        <input type="text" name="created_by" value="user" readonly style="opacity:0.8;">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Fällig am</label>
+                        <input type="date" name="due_date">
+                    </div>
+                    <div class="form-group">
+                        <label>Abhängig von Task-IDs</label>
+                        <input type="text" name="depends_on" placeholder="z.B. 123, 456" pattern="\s*\d+(\s*,\s*\d+)*\s*">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Benötigtes Modell</label>
+                        <input type="text" name="required_model" placeholder="z.B. gpt-4o, claude-3-5-sonnet">
+                    </div>
+                    <div class="form-group">
+                        <label>Agenten-Slot</label>
+                        <input type="text" name="assigned_slot" placeholder="z.B. slot-1">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Beschreibung</label>
+                    <textarea name="description" rows="4" placeholder="Details zur Aufgabe..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" id="btn-life-task-submit">Aufgabe anlegen</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeLifeTaskModal()">Abbrechen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/nav.js?v=4"></script>
+    <script>
+        // ── Tab Management ──
+        function setupTabs() {
+            const buttons = document.querySelectorAll('.tab-btn');
+            const panes = document.querySelectorAll('.tab-pane');
+            buttons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tab = btn.dataset.tab;
+                    buttons.forEach(b => b.classList.remove('active'));
+                    panes.forEach(p => p.classList.remove('active'));
+                    btn.classList.add('active');
+                    const targetPane = document.getElementById('pane-' + tab);
+                    if (targetPane) targetPane.classList.add('active');
+
+                    const url = new URL(location.href);
+                    url.searchParams.set('tab', tab);
+                    history.replaceState(null, '', url);
+
+                    if (tab === 'aufgaben') loadUserTasks();
+                });
+            });
+
+            const initialTab = new URLSearchParams(location.search).get('tab');
+            if (initialTab) {
+                const matchBtn = document.querySelector(`.tab-btn[data-tab="${initialTab}"]`);
+                if (matchBtn) matchBtn.click();
+            }
+        }
+
+        // ── User Tasks (GUX-047) ──
+        async function loadUserTasks() {
+            const container = document.getElementById('user-tasks-container');
+            const filter = document.getElementById('filter-user-tasks-status');
+            if (!container) return;
+            container.innerHTML = '<p class="loading-state">Lade persönliche Aufgaben …</p>';
+
+            try {
+                const status = filter?.value || 'nonterminal';
+                const query = new URLSearchParams({ assigned_to: 'user', limit: '30', status });
+                const res = await fetch('/api/tasks?' + query);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                if (!Array.isArray(data.tasks)) throw new Error('Ungültiges Task-Format');
+
+                if (data.tasks.length === 0) {
+                    container.innerHTML = '<p class="loading-state">Für diese Auswahl sind keine persönlichen Aufgaben vorhanden.</p>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="life-task-list">
+                        ${data.tasks.map(t => `
+                            <article class="life-task-row">
+                                <strong>#${t.id} · ${escapeHtml(t.title || 'Unbenannt')}</strong>
+                                ${t.description ? `<p style="margin:0.2rem 0;font-size:0.85rem;color:var(--text-muted);">${escapeHtml(t.description.slice(0, 240))}</p>` : ''}
+                                <span class="life-task-meta">
+                                    Status: ${escapeHtml(t.status || 'open')} · Priorität: ${escapeHtml(t.priority || 'P3')} · Kategorie: ${escapeHtml(t.category || '-')}
+                                    ${t.due_date ? ` · Fällig: ${escapeHtml(t.due_date)}` : ''}
+                                </span>
+                            </article>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (err) {
+                container.innerHTML = `<p class="load-status">Aufgaben konnten nicht geladen werden: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        // ── Modal Handling ──
+        function openLifeTaskModal() {
+            document.getElementById('life-task-error').hidden = true;
+            document.getElementById('life-task-modal').classList.remove('hidden');
+        }
+        function closeLifeTaskModal(e) {
+            if (e && e.target !== e.currentTarget) return;
+            document.getElementById('life-task-modal').classList.add('hidden');
+        }
+
+        async function submitLifeTask(e) {
+            e.preventDefault();
+            const form = e.target;
+            const submitBtn = document.getElementById('btn-life-task-submit');
+            const errEl = document.getElementById('life-task-error');
+            errEl.hidden = true;
+            submitBtn.disabled = true;
+
+            const payload = {
+                title: form.title.value.trim(),
+                priority: form.priority.value,
+                category: form.category.value.trim() || 'general',
+                assigned_to: 'user',
+                created_by: 'user',
+                due_date: form.due_date.value ? form.due_date.value.trim() : null,
+                depends_on: form.depends_on.value.trim() || null,
+                required_model: form.required_model.value.trim() || null,
+                assigned_slot: form.assigned_slot.value.trim() || null,
+                description: form.description.value.trim() || ''
+            };
+
+            try {
+                const res = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json().catch(() => ({}));
+                if (!res.ok || !result.id) {
+                    throw new Error(result.detail || result.error || 'Erstellung fehlgeschlagen');
+                }
+
+                // GET Readback Check
+                const readbackRes = await fetch('/api/tasks/' + encodeURIComponent(result.id));
+                if (!readbackRes.ok) throw new Error('Kontrollabruf nach Erstellung fehlgeschlagen');
+                const stored = await readbackRes.json();
+                if (Number(stored.id) !== Number(result.id)) throw new Error('Task-ID-Abweichung im Kontrollabruf');
+
+                // Modal schliessen & Event emittieren
+                form.reset();
+                closeLifeTaskModal();
+                document.dispatchEvent(new CustomEvent('bach:task-created', {
+                    detail: { id: Number(result.id), assigned_to: 'user' }
+                }));
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.hidden = false;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        function escapeHtml(t) {
+            if (t == null) return '';
+            return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── Timer Demo ──
+        let timerSeconds = 1500;
+        let timerId = null;
+        function updateTimer() {
+            const m = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+            const s = String(timerSeconds % 60).padStart(2, '0');
+            document.getElementById('timer-display').textContent = `${m}:${s}`;
+        }
+        function toggleTimer() {
+            const btn = document.getElementById('btn-timer-start');
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+                btn.textContent = 'Weiter';
+            } else {
+                timerId = setInterval(() => {
+                    if (timerSeconds > 0) { timerSeconds--; updateTimer(); }
+                    else { clearInterval(timerId); timerId = null; btn.textContent = 'Start'; }
+                }, 1000);
+                btn.textContent = 'Pause';
+            }
+        }
+        function resetTimer() {
+            if (timerId) { clearInterval(timerId); timerId = null; }
+            timerSeconds = 1500;
+            updateTimer();
+            document.getElementById('btn-timer-start').textContent = 'Start';
+        }
+
+        // ── Init ──
+        document.addEventListener('DOMContentLoaded', () => {
+            setupTabs();
+            document.getElementById('filter-user-tasks-status')?.addEventListener('change', loadUserTasks);
+            document.addEventListener('bach:task-created', (event) => {
+                if (event.detail?.assigned_to === 'user') {
+                    loadUserTasks();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
