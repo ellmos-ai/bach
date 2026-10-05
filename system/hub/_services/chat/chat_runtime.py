@@ -311,13 +311,13 @@ class FailedAnswer(str):
 
 
 class SuccessfulAnswer(str):
-    """A successful text answer that happens to use the legacy error prefix.
+    """Successful text with explicit status or task completion metadata.
 
     BACH's older order-worker seams are text-only and call ``startswith`` on
     the callback result. This narrow ``str`` subtype keeps the visible answer
     unchanged while making that legacy probe agree with the explicit success
-    status. It is only created for colliding successful text; ordinary answers
-    remain ordinary strings.
+    status. Tool-confirmed task IDs can also travel on this immutable answer
+    instance, rather than a mutable per-chat buffer. Other answers stay strings.
     """
 
     answer_status = FailedAnswer.STATUS_SUCCESS
@@ -608,7 +608,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-             if key != FailedAnswer.STATUS_KEY}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids")}
             for message in messages
         ]
 
@@ -1144,7 +1144,9 @@ class ChatRuntime(_ModuleChatRuntime):
         messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
             {"role": m["role"], "content": m.get("content", ""),
-             "ok": not FailedAnswer.message_is_failed(m)}
+             "ok": not FailedAnswer.message_is_failed(m),
+             **({"completed_task_ids": list(m["completed_task_ids"])}
+                if m.get("completed_task_ids") else {})}
             for m in messages
             if m.get("role") in ("user", "assistant")
         ]
@@ -1441,6 +1443,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 context_limit=context_limit,
             )
         answer = _classify_successful_answer(answer)
+        completed_task_ids = ()
+        if self._compute_turn_context.get() == (str(chat_id), "background") and not isinstance(answer, FailedAnswer):
+            completed_task_ids = self.get_last_task_completion_receipts(chat_id)
+        if completed_task_ids:
+            answer = SuccessfulAnswer(answer)
+            answer.completed_task_ids = completed_task_ids
         session.messages.append({
             "role": "assistant",
             "content": answer,
@@ -1449,6 +1457,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if isinstance(answer, FailedAnswer)
                 else FailedAnswer.STATUS_SUCCESS
             ),
+            **({"completed_task_ids": list(completed_task_ids)} if completed_task_ids else {}),
         })
         self._persist_session(chat_id, session)
         return answer

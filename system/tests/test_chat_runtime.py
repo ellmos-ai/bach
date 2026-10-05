@@ -717,7 +717,7 @@ def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
             raise ProcessLookupError("[Errno 3] No such process")
         return None
 
-    monkeypatch.setattr("os.kill", mock_kill)
+    monkeypatch.setattr("hub.compute_lock.os", types.SimpleNamespace(name="posix", kill=mock_kill))
     monkeypatch.setattr("hub.compute_lock._pid_is_stopped", lambda pid: False)
 
     status = {
@@ -736,6 +736,33 @@ def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
     assert is_active
     assert len(filtered["active_compute_jobs"]) == 1
     assert filtered["active_compute_jobs"][0]["pid"] == 44252
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PID probe regression")
+def test_windows_compute_pid_probe_leaves_owned_child_alive():
+    import time
+    from hub.compute_lock import _filter_stopped_jobs
+
+    # Never probe an unrelated live PID; this child belongs to this test.
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(20)"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        assert child.stdout.readline().strip() == "ready"
+        active, status = _filter_stopped_jobs({"active_compute_jobs": [{"pid": child.pid}]})
+        time.sleep(0.05)
+        assert child.poll() is None, "Checking a PID must never terminate that process"
+        assert active is True
+        assert status["active_compute_jobs"] == [{"pid": child.pid}]
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=5)
+        child.stdout.close()
+        child.stderr.close()
+    assert _filter_stopped_jobs({"active_compute_jobs": [{"pid": child.pid}]}) == (False, {})
 
 
 class TestFailedAnswer:
@@ -1488,6 +1515,25 @@ def test_parallel_decomposition_receipt_is_recorded_once():
         results = list(pool.map(lambda _: record(), range(2)))
     assert results.count(True) == 1
     assert runtime.consume_task_completion_receipts("worker-parallel") == (42,)
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_failed_or_cancelled_inference_releases_compute_turn(cancelled):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class Backend:
+        async def chat(self, *_args, **_kwargs):
+            raise asyncio.CancelledError() if cancelled else RuntimeError("Modellzug fehlgeschlagen")
+
+    runtime = ChatRuntime(Backend())
+    token = runtime._compute_turn_context.set(("worker-error", "background"))
+    try:
+        with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+            asyncio.run(runtime._chat_with_compute_turn(runtime.backend, []))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert runtime.compute_turn_status()["active"] is False
 
 
 class _RoundBudgetBackend:

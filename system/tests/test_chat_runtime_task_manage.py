@@ -330,6 +330,8 @@ class TestTaskManageDecompose:
         runtime.hook_every = 999
         answer = asyncio.run(runtime.process("Task #1 bearbeiten", "worker-real-decompose"))
         assert answer == "FERTIG"
+        assert answer.completed_task_ids == (1,)
+        assert runtime.history("worker-real-decompose")[-1]["completed_task_ids"] == [1]
         assert runtime.consume_task_completion_receipts("worker-real-decompose") == (1,)
         assert _task_row(db_path)["status"] == "completed"
         assert _task_row(db_path, 2)["title"] == "Prüfung"

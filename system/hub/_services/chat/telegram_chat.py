@@ -2495,7 +2495,10 @@ def _control_chat_response(answer) -> tuple[dict, int]:
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
     if isinstance(answer, SuccessfulAnswer):
-        return {"ok": True, "answer": text}, 200
+        response = {"ok": True, "answer": text}
+        if getattr(answer, "completed_task_ids", ()):
+            response["completed_task_ids"] = list(answer.completed_task_ids)
+        return response, 200
     if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
