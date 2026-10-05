@@ -497,24 +497,110 @@ const mermaidCode = `flowchart TD
     <div class="insp-panel" id="panel-learn" style="display:none;">
       <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;color:var(--text);">🌙 Kognitives Lernen & Rauschreduktion</h3>
       <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem;">
-        <strong>Ohne Lernen kein Langzeitgedächtnis!</strong> Rohtext der Session wird analysiert, verdichtet und nach Rauschfilterung persisiert.
-      </p>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
-          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Duale Erfolgs-Achsen</h4>
-          <ul style="font-size:0.825rem;color:var(--text-muted);padding-left:1.2rem;margin:0;line-height:1.6;">
-            <li><strong style="color:var(--text);">Achse 1: Nutzer-Erfolg:</strong> Operator-Intent getroffen? Disambiguierung geglückt?</li>
-            <li><strong style="color:var(--text);">Achse 2: Aufgaben-Erfolg:</strong> Tests grün? Keine Lock-Verletzungen? Token-Effizienz?</li>
-          </ul>
-        </div>
-
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;">
-          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);">Filter & Destillation</h4>
-          <p style="font-size:0.825rem;color:var(--text-muted);line-height:1.5;">
-            Konzept: Rohtext ➔ Speicherung an Meilensteinen ➔ Lesson Learned ➔ Best Practice ➔ Eintrag in <code>bach.db</code>. Eine Rauschreduktionsquote ist nicht gemessen.
+    <!-- PANEL 7: KOGNITIVES LERNEN & HERMES SKILL-DESTILLATION -->
+    <div class="insp-panel" id="panel-learn" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+        <div>
+          <h3 style="margin:0 0 0.25rem 0;font-size:1.2rem;color:var(--text);">🌙 Ocean Subsystem Hermes: Skill-Lernen & Destillation</h3>
+          <p style="color:var(--text-muted);font-size:0.875rem;margin:0;">
+            Autonome Extraktion von Verhaltensweisen, Lessons Learned und neuen Skills aus Roh-Logs nach deterministischer Rauschreduzierung.
           </p>
         </div>
+        <span class="badge badge-success" id="hermes-status-badge">● Hermes: Aktiv</span>
+      </div>
+
+      <!-- Hermes Live Metrics Bar -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:0.75rem;margin-bottom:1.25rem;">
+        <div style="padding:0.75rem;background:var(--bg-panel);border-radius:var(--radius-sm);border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:var(--text);" id="hermes-stat-runs">-</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Destillations-Läufe</div>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-panel);border-radius:var(--radius-sm);border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:var(--accent);" id="hermes-stat-noise">-</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Ø Rauschfilterung</div>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-panel);border-radius:var(--radius-sm);border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:var(--warning);" id="hermes-stat-pending">-</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Kandidaten in Prüfung</div>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-panel);border-radius:var(--radius-sm);border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:var(--success);" id="hermes-stat-approved">-</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Freigegebene Skills</div>
+        </div>
+        <div style="padding:0.75rem;background:var(--bg-panel);border-radius:var(--radius-sm);border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:var(--accent-blue);" id="hermes-stat-lessons">-</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">memory_lessons</div>
+        </div>
+      </div>
+
+      <!-- Destillation Workbench & Candidate Queue -->
+      <div style="display:grid;grid-template-columns:1fr;gap:1.25rem;">
+        
+        <!-- WORKBENCH -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.25rem;">
+          <h4 style="margin:0 0 0.5rem 0;font-size:0.95rem;color:var(--text);display:flex;align-items:center;gap:0.4rem;">
+            <span>⚡</span> Interaktive Hermes-Destillation (Transkript oder Dialogtext)
+          </h4>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
+            Füge einen Rohtext, einen Transkript-Ausschnitt oder eine Session-ID ein. Hermes filtert das Rauschen (~76%), extrahiert Lessons Learned und synthetisiert einen normgerechten SKILL.md-Entwurf.
+          </p>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Optionale Session-ID</label>
+              <input type="text" id="hermes-input-session" placeholder="z. B. chat-runtime:v1:... oder leer lassen" style="width:100%;padding:0.4rem 0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+            </div>
+            <div>
+              <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Skill-Name Hinweis (optional)</label>
+              <input type="text" id="hermes-input-hint" placeholder="z. B. pytest-windows-ops oder leer lassen" style="width:100%;padding:0.4rem 0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.8rem;" />
+            </div>
+          </div>
+
+          <div style="margin-bottom:0.75rem;">
+            <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Rohtext / Chat-Transkript</label>
+            <textarea id="hermes-input-text" rows="4" placeholder="Füge hier den Dialogtext, Fehlermeldungen oder Befehlsabläufe ein..." style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:monospace;font-size:0.8rem;"></textarea>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <button class="btn btn-sm btn-primary" onclick="submitHermesDistill()" id="btn-hermes-distill">
+              ⚡ Destillation starten
+            </button>
+            <span id="hermes-distill-feedback" style="font-size:0.8rem;color:var(--text-muted);"></span>
+          </div>
+
+          <!-- Ergebnis-Vorschau -->
+          <div id="hermes-result-container" style="display:none;margin-top:1rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.75rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+              <strong style="font-size:0.85rem;color:var(--text);">🎉 Destillations-Ergebnis</strong>
+              <span class="badge badge-accent" id="hermes-result-noise-badge">-</span>
+            </div>
+            <div id="hermes-result-details" style="font-size:0.8rem;color:var(--text-muted);line-height:1.5;"></div>
+          </div>
+        </div>
+
+        <!-- CANDIDATES QUEUE -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.25rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+            <div>
+              <h4 style="margin:0;font-size:0.95rem;color:var(--text);display:flex;align-items:center;gap:0.4rem;">
+                <span>📋</span> Skill-Kandidaten Queue (Human-in-the-Loop)
+              </h4>
+              <span style="font-size:0.75rem;color:var(--text-muted);">
+                Von Hermes autonom generierte Skills erfordern eine Operator-Freigabe vor der Aktivierung.
+              </span>
+            </div>
+            <div style="display:flex;gap:0.35rem;">
+              <button class="btn btn-sm btn-secondary" onclick="loadHermesCandidates('pending')">Offen</button>
+              <button class="btn btn-sm btn-secondary" onclick="loadHermesCandidates('approved')">Freigegeben</button>
+              <button class="btn btn-sm btn-secondary" onclick="loadHermesCandidates('all')">Alle</button>
+            </div>
+          </div>
+
+          <div id="hermes-candidates-container">
+            <p class="loading-state">Lade Skill-Kandidaten...</p>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -663,7 +749,19 @@ const mermaidCode = `flowchart TD
       </div>
     </div>
 
+  <!-- Hermes Candidate Inspector Modal -->
+  <div id="hermes-candidate-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:9999;justify-content:center;align-items:center;padding:1.5rem;">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);width:100%;max-width:850px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,0.5);">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--border);background:var(--bg-panel);">
+        <strong id="hermes-modal-title" style="font-size:1rem;color:var(--text);">SKILL.md Entwurf</strong>
+        <button class="btn btn-sm btn-secondary" onclick="closeCandidateModal()">✕ Schließen</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;">
+        <pre id="hermes-modal-content" style="background:var(--bg-dark);color:var(--text);padding:1rem;border-radius:var(--radius-sm);font-family:monospace;font-size:0.8rem;white-space:pre-wrap;line-height:1.5;border:1px solid var(--border);margin:0;"></pre>
+      </div>
+    </div>
   </div>
+
 </BachLayout>
 
 <style>
@@ -875,6 +973,12 @@ const mermaidCode = `flowchart TD
         node.classList.add('active-node');
       }
     });
+
+    // 4. Tab-spezifische Daten nachladen
+    if (tabKey === 'learn') {
+      loadHermesStats();
+      loadHermesCandidates('pending');
+    }
   }
 
   function switchView(viewMode) {
@@ -1268,10 +1372,184 @@ const mermaidCode = `flowchart TD
       resultsEl.textContent = 'Suche fehlgeschlagen.';
     }
   }
+ 
+  // ═══════════════════════════════════════════════════════════════
+  // HERMES SKILL-DESTILLATION CLIENT LOGIC
+  // ═══════════════════════════════════════════════════════════════
+
+  async function loadHermesStats() {
+    try {
+      const res = await fetch('/api/learning/hermes/stats');
+      if (!res.ok) return;
+      const data = await res.json();
+      const setTxt = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+      };
+      setTxt('hermes-stat-runs', data.total_runs ?? 0);
+      setTxt('hermes-stat-noise', `${data.average_noise_reduction_percent ?? 0}%`);
+      setTxt('hermes-stat-pending', data.pending_candidates ?? 0);
+      setTxt('hermes-stat-approved', data.approved_candidates ?? 0);
+      setTxt('hermes-stat-lessons', data.total_lessons_learned ?? 0);
+    } catch (_) {}
+  }
+
+  async function loadHermesCandidates(status = 'pending') {
+    const container = document.getElementById('hermes-candidates-container');
+    if (!container) return;
+    try {
+      const res = await fetch(`/api/learning/hermes/candidates?status=${encodeURIComponent(status)}&limit=50`);
+      const data = await res.json();
+      const candidates = data.candidates || [];
+      if (!candidates.length) {
+        container.innerHTML = `<p class="text-muted" style="padding:1rem;">Keine Kandidaten mit Status '${escapeHtml(status)}' vorhanden.</p>`;
+        return;
+      }
+      container.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+          ${candidates.map(c => `
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.85rem;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+              <div style="flex:1;min-width:240px;">
+                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+                  <strong style="color:var(--text);font-size:0.9rem;">${escapeHtml(c.name)}</strong>
+                  <span class="badge ${c.status === 'approved' ? 'badge-success' : (c.status === 'rejected' ? 'badge-danger' : 'badge-warning')}">${escapeHtml(c.status)}</span>
+                  <span class="badge" style="background:var(--bg-panel);font-size:0.7rem;">v${escapeHtml(c.version || '1.0.0')}</span>
+                </div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">${escapeHtml(c.description || c.role || '')}</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);display:flex;gap:0.75rem;">
+                  <span>Reduktion: <strong>${Math.round((c.noise_reduction_ratio || 0) * 100)}%</strong></span>
+                  <span>Konfidenz: <strong>${Number(c.confidence || 0.85).toFixed(2)}</strong></span>
+                  <span>Quelle: <strong>${escapeHtml(c.source_session || 'Ad-hoc')}</strong></span>
+                </div>
+              </div>
+              <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+                <button class="btn btn-sm btn-secondary" onclick="viewCandidateModal(${safeId(c.id)})" title="SKILL.md Quellcode ansehen">📄 Anzeigen</button>
+                ${c.status === 'pending' ? `
+                  <button class="btn btn-sm btn-primary" onclick="approveCandidate(${safeId(c.id)})" style="background:var(--success);border-color:var(--success);">✅ Freigeben</button>
+                  <button class="btn btn-sm btn-secondary" onclick="rejectCandidate(${safeId(c.id)})" style="color:var(--danger);">❌ Ablehnen</button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } catch (_) {
+      container.textContent = 'Skill-Kandidaten konnten nicht geladen werden.';
+    }
+  }
+
+  async function submitHermesDistill() {
+    const rawText = document.getElementById('hermes-input-text')?.value.trim();
+    const sessionId = document.getElementById('hermes-input-session')?.value.trim();
+    const hint = document.getElementById('hermes-input-hint')?.value.trim();
+    const feedback = document.getElementById('hermes-distill-feedback');
+    const resultBox = document.getElementById('hermes-result-container');
+    const noiseBadge = document.getElementById('hermes-result-noise-badge');
+    const details = document.getElementById('hermes-result-details');
+    const btn = document.getElementById('btn-hermes-distill');
+
+    if (!rawText && !sessionId) {
+      if (feedback) feedback.textContent = 'Bitte Text oder Session-ID angeben.';
+      return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (feedback) feedback.textContent = '⏳ Hermes destilliert (Rauschfilterung & Lessons)...';
+
+    try {
+      const res = await fetch('/api/learning/hermes/distill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId || null,
+          raw_text: rawText || null,
+          skill_name_hint: hint || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Destillation fehlgeschlagen');
+
+      if (feedback) feedback.textContent = `✅ Abgeschlossen (Run #${data.run_id})`;
+      if (resultBox && noiseBadge && details) {
+        resultBox.style.display = 'block';
+        noiseBadge.textContent = `${data.noise_reduction_percent}% Rauschfilter`;
+        details.innerHTML = `
+          <div><strong>Kandidat erzeugt:</strong> <code>${escapeHtml(data.skill_candidate?.name || 'Skill')}</code> (${escapeHtml(data.skill_candidate?.category || 'utilities')})</div>
+          <div><strong>Lessons Learned extrahiert:</strong> ${data.lessons_extracted?.length || 0}</div>
+          <div style="margin-top:0.35rem;"><button class="btn btn-sm btn-secondary" onclick="viewCandidateModal(${safeId(data.skill_candidate?.id)})">📄 Erzeugten SKILL.md-Entwurf prüfen</button></div>
+        `;
+      }
+      loadHermesStats();
+      loadHermesCandidates('pending');
+    } catch (e) {
+      if (feedback) feedback.textContent = `❌ Fehler: ${e.message}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function approveCandidate(candidateId) {
+    if (!confirm(`Kandidat #${candidateId} wirklich freigeben und in skill_versions aufnehmen?`)) return;
+    try {
+      const res = await fetch(`/api/learning/hermes/candidates/${candidateId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved_by: 'operator' })
+      });
+      if (res.ok) {
+        loadHermesStats();
+        loadHermesCandidates('pending');
+      } else {
+        alert('Freigabe fehlgeschlagen');
+      }
+    } catch (_) {
+      alert('Netzwerkfehler');
+    }
+  }
+
+  async function rejectCandidate(candidateId) {
+    const reason = prompt('Begründung für die Ablehnung (optional):', '');
+    if (reason === null) return;
+    try {
+      const res = await fetch(`/api/learning/hermes/candidates/${candidateId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason || 'Vom Operator abgelehnt' })
+      });
+      if (res.ok) {
+        loadHermesStats();
+        loadHermesCandidates('pending');
+      }
+    } catch (_) {}
+  }
+
+  async function viewCandidateModal(candidateId) {
+    try {
+      const res = await fetch(`/api/learning/hermes/candidates/${candidateId}`);
+      if (!res.ok) return alert('Kandidat nicht gefunden');
+      const cand = await res.json();
+      const modal = document.getElementById('hermes-candidate-modal');
+      const title = document.getElementById('hermes-modal-title');
+      const content = document.getElementById('hermes-modal-content');
+      if (modal && title && content) {
+        title.textContent = `SKILL.md: ${cand.name} (v${cand.version})`;
+        content.textContent = cand.content || '';
+        modal.style.display = 'flex';
+      }
+    } catch (_) {
+      alert('Kandidat konnte nicht geladen werden');
+    }
+  }
+
+  function closeCandidateModal() {
+    const modal = document.getElementById('hermes-candidate-modal');
+    if (modal) modal.style.display = 'none';
+  }
 
   document.addEventListener('DOMContentLoaded', () => {
     loadCognitiveState();
     loadFactsTable();
+    loadHermesStats();
     document.getElementById('memory-search-form').addEventListener('submit', searchMemory);
   });
 </script>

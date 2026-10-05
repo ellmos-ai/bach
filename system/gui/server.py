@@ -1584,6 +1584,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/gui/kit-manifest",
         "/api/gui/architecture/concepts",
         "/api/capabilities/mcp/cookbooks",
+        "/api/learning/hermes/stats",
+        "/api/learning/hermes/candidates",
     }
 
     async def _require_device(self, request: Request, call_next):

@@ -2207,6 +2207,144 @@ async def toggle_memory_lesson(lesson_id: int):
 
 
 # ═══════════════════════════════════════════════════════════════
+# 6.5. HERMES: SKILL-DESTILLATION & LERN-PIPELINE (/api/learning/hermes/*)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_hermes_service_instance():
+    try:
+        from hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+    except ImportError:
+        from system.hub._services.hermes_distillation_service import get_hermes_service
+        return get_hermes_service()
+
+
+@router.post("/learning/hermes/distill")
+async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
+    """Führt die Hermes Rauschreduktions- und Skill-Destillations-Pipeline aus.
+    
+    Akzeptiert entweder direktes `transcript` (Liste von Turns), `raw_text`
+    oder eine `session_id`, die aus den gespeicherten Transkripten geladen wird.
+    """
+    service = _get_hermes_service_instance()
+    session_id = payload.get("session_id")
+    transcript = payload.get("transcript")
+    raw_text = payload.get("raw_text")
+    skill_name_hint = payload.get("skill_name_hint")
+
+    messages_input = transcript or raw_text
+
+    # Falls weder transcript noch raw_text vorhanden sind, versuche aus session_snapshots zu laden
+    if not messages_input and session_id:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT snapshot_data FROM session_snapshots "
+                "WHERE (session_id = ? OR session_id LIKE ?) "
+                "AND snapshot_type = 'chat-transcript.v1' "
+                "ORDER BY id DESC LIMIT 1",
+                (session_id, f"%{session_id}%")
+            ).fetchone()
+            if row and row[0]:
+                try:
+                    data = json.loads(row[0])
+                    messages_input = data.get("messages", [])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if not messages_input:
+                # Fallback: memory_sessions pruefen
+                mrow = conn.execute(
+                    "SELECT summary, continuation_context, handoff_notes FROM memory_sessions "
+                    "WHERE session_id = ? OR id = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (session_id, session_id)
+                ).fetchone()
+                if mrow:
+                    parts = [mrow[0] or "", mrow[1] or "", mrow[2] or ""]
+                    messages_input = "\n\n".join(p for p in parts if p)
+        finally:
+            conn.close()
+
+    if not messages_input:
+        raise HTTPException(
+            status_code=400,
+            detail="Weder transcript, raw_text noch gültige session_id übergeben"
+        )
+
+    try:
+        result = service.run_pipeline(
+            messages_or_text=messages_input,
+            session_id=session_id,
+            skill_name_hint=skill_name_hint,
+            persist=True
+        )
+        return {
+            "status": "success",
+            "run_id": result.run_id,
+            "session_id": result.session_id,
+            "raw_char_count": result.raw_char_count,
+            "cleaned_char_count": result.cleaned_char_count,
+            "noise_reduction_percent": result.noise_reduction_percent,
+            "lessons_extracted": result.lessons,
+            "skill_candidate": result.candidate,
+            "created_at": result.created_at
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hermes Distillation Fehler: {str(e)}")
+
+
+@router.get("/learning/hermes/candidates")
+async def get_hermes_candidates(status: str = Query("pending", description="pending|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+    """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
+    service = _get_hermes_service_instance()
+    try:
+        candidates = service.list_candidates(status=status, limit=limit)
+        return {"candidates": candidates, "count": len(candidates), "status_filter": status}
+    except Exception as e:
+        return {"candidates": [], "count": 0, "error": str(e)}
+
+
+@router.get("/learning/hermes/candidates/{candidate_id}")
+async def get_hermes_candidate_detail(candidate_id: int):
+    """Liefert vollständige Details und SKILL.md-Inhalt eines Kandidaten."""
+    service = _get_hermes_service_instance()
+    cand = service.get_candidate(candidate_id)
+    if not cand:
+        raise HTTPException(status_code=404, detail=f"Kandidat #{candidate_id} nicht gefunden")
+    return cand
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/approve")
+async def approve_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Operator-Freigabe (Human-in-the-Loop): Überführt Kandidat in skill_versions."""
+    service = _get_hermes_service_instance()
+    approved_by = payload.get("approved_by", "operator")
+    res = service.approve_candidate(candidate_id, approved_by=approved_by)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "Freigabe fehlgeschlagen"))
+    return res
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/reject")
+async def reject_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
+    """Lehnt einen Skill-Kandidaten ab."""
+    service = _get_hermes_service_instance()
+    reason = payload.get("reason", "")
+    res = service.reject_candidate(candidate_id, reason=reason)
+    return res
+
+
+@router.get("/learning/hermes/stats")
+async def get_hermes_stats():
+    """Liefert aggregierte Metriken der Hermes Skill-Destillations-Engine."""
+    service = _get_hermes_service_instance()
+    try:
+        return service.get_stats()
+    except Exception as e:
+        return {"status": "inactive", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════
 # 7. DOMAENEN, ARTEFAKTE, TEAMBUILDING & OCEAN MODULSCHALTPLAN
 # ═══════════════════════════════════════════════════════════════
 
@@ -2341,7 +2479,13 @@ async def get_ocean_module_map():
         ],
         "subsystems": [
             {"name": "NemoFold", "category": "Workflow-Lernen", "status": "unknown", "description": "Konzept: geprüfte Step-Ketten aus Workflows"},
-            {"name": "Hermes", "category": "Skill-Destillation", "status": "unknown", "description": "Konzept: freigegebene Skills aus Dialogen"}
+            {
+                "name": "Hermes",
+                "category": "Skill-Destillation",
+                "status": "active",
+                "description": "Autonome Skill-Destillation aus Dialogen mit Rauschfilterung & Human-in-the-Loop Freigabe",
+                "metrics": _get_hermes_service_instance().get_stats()
+            }
         ]
     }
 
