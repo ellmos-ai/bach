@@ -4850,7 +4850,7 @@ async def agenten_fabrika_page():
     p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
     if p.exists():
         return FileResponse(p)
-    template_file = TEMPLATES_DIR / "fabrika.html"
+    template_file = TEMPLATES_DIR / "agents.html"
     if template_file.exists():
         return FileResponse(template_file)
     raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
