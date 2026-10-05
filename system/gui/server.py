@@ -427,22 +427,16 @@ class ThemeUpdate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
-
     title: Optional[str] = None
-
     description: Optional[str] = None
-
     priority: Optional[str] = None
-
     status: Optional[str] = None
-
     project: Optional[str] = None
-
+    category: Optional[str] = None
     assigned_to: Optional[str] = None
-
     created_by: Optional[str] = None
-
     depends_on: Optional[str] = None
+    due_date: Optional[str] = None
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
     changed_by: Optional[str] = None
@@ -1529,6 +1523,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/ocean",
         "/",
         "/agenten/fabrika",
+        "/agenten/blueprints",
         "/agenten/running",
         "/agenten/marblerun",
         "/governance",
@@ -2134,25 +2129,31 @@ async def api_get_tasks(
         if status and status.lower() == "nonterminal":
             query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
         elif status and status.lower() != "all":
-            STATUS_ALIASES = {
-                "in_progress": ["in_progress", "progress"],
-                "pending": ["pending", "open"],
-                "done": ["done", "completed", "closed"],
-                "blocked": ["blocked"],
-                "cancelled": ["cancelled", "canceled"],
-                "duplicate": ["duplicate"],
-            }
             requested = [s.strip().lower() for s in status.split(",") if s.strip()]
             normalized = set()
-            for s in requested:
-                matched = False
-                for canonical, aliases in STATUS_ALIASES.items():
-                    if s in aliases:
-                        normalized.update(aliases)
-                        matched = True
-                        break
-                if not matched:
-                    normalized.add(s)
+            if requested == ["open"]:
+                normalized.update(["open", "pending", "todo", "in_progress", "progress"])
+            else:
+                STATUS_ALIASES = {
+                    "in_progress": ["in_progress", "progress"],
+                    "pending": ["pending", "open", "todo"],
+                    "done": ["done", "completed", "closed"],
+                    "blocked": ["blocked"],
+                    "cancelled": ["cancelled", "canceled"],
+                    "duplicate": ["duplicate"],
+                }
+                for s in requested:
+                    if s in STATUS_ALIASES:
+                        normalized.update(STATUS_ALIASES[s])
+                    else:
+                        matched = False
+                        for canonical, aliases in STATUS_ALIASES.items():
+                            if s in aliases:
+                                normalized.update(aliases)
+                                matched = True
+                                break
+                        if not matched:
+                            normalized.add(s)
             if normalized:
                 placeholders = ",".join(["?"] * len(normalized))
                 query += f" AND (LOWER(status) IN ({placeholders}))"
@@ -2238,6 +2239,23 @@ async def api_post_task(payload: dict = Body(...)):
                 conn.close()
                 return {"success": True, "id": existing[0], "status": "already_present"}
 
+        due_date = payload.get("due_date")
+        if due_date is not None:
+            if isinstance(due_date, str) and not due_date.strip():
+                due_date = None
+            else:
+                clean_due = str(due_date).strip()
+                try:
+                    from datetime import datetime as _dt
+                    if "T" in clean_due or " " in clean_due:
+                        _dt.fromisoformat(clean_due.replace(" ", "T"))
+                    else:
+                        _dt.strptime(clean_due, "%Y-%m-%d")
+                    due_date = clean_due
+                except ValueError:
+                    conn.close()
+                    raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
+
         now = datetime.now().isoformat()
         cursor = conn.execute("""
             INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot)
@@ -2246,14 +2264,14 @@ async def api_post_task(payload: dict = Body(...)):
             payload.get("title"),
             payload.get("description", ""),
             payload.get("priority", "P3"),
-            payload.get("category", "general"),
+            payload.get("category") or payload.get("project") or "general",
             payload.get("status", "pending"),
             now,
             payload.get("created_by", "user"),
-            payload.get("assigned_to") or DEFAULT_TASK_ASSIGNEE,
+            payload.get("assigned_to") or payload.get("assignee") or DEFAULT_TASK_ASSIGNEE,
             payload.get("depends_on"),
             payload.get("image"),
-            payload.get("due_date"),
+            due_date,
             draft_source,
             payload.get("required_model") or None,
             payload.get("assigned_slot") or None,
@@ -2263,6 +2281,8 @@ async def api_post_task(payload: dict = Body(...)):
         conn.commit()
         conn.close()
         return {"success": True, "id": task_id, "status": "created"}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -2413,12 +2433,29 @@ async def update_task(task_id: int, update: TaskUpdate):
             field_values["status"] = update.status
         if update.project is not None:
             field_values["category"] = update.project
+        if update.category is not None:
+            field_values["category"] = update.category
         if update.assigned_to is not None:
             field_values["assigned_to"] = update.assigned_to
         if update.created_by is not None:
             field_values["created_by"] = update.created_by
         if update.depends_on is not None:
             field_values["depends_on"] = update.depends_on
+        if "due_date" in update.model_fields_set:
+            raw_due = update.due_date
+            if raw_due is None or (isinstance(raw_due, str) and not raw_due.strip()):
+                field_values["due_date"] = None
+            else:
+                clean_due = str(raw_due).strip()
+                try:
+                    from datetime import datetime as _dt
+                    if "T" in clean_due or " " in clean_due:
+                        _dt.fromisoformat(clean_due.replace(" ", "T"))
+                    else:
+                        _dt.strptime(clean_due, "%Y-%m-%d")
+                    field_values["due_date"] = clean_due
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
         if "required_model" in update.model_fields_set:
             field_values["required_model"] = update.required_model or None
         if "assigned_slot" in update.model_fields_set:
@@ -4981,7 +5018,21 @@ async def agenten_fabrika_page():
     p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
     if p.exists():
         return FileResponse(p)
+    template_file = TEMPLATES_DIR / "agents.html"
+    if template_file.exists():
+        return FileResponse(template_file)
     raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
+
+
+@app.get("/agenten/blueprints", response_class=HTMLResponse)
+async def agenten_blueprints_page():
+    p = ASTRO_DIST_DIR / "agenten" / "blueprints.html"
+    if p.exists():
+        return FileResponse(p)
+    template_file = TEMPLATES_DIR / "blueprints.html"
+    if template_file.exists():
+        return FileResponse(template_file)
+    raise HTTPException(status_code=404, detail="Blueprints-Seite nicht gefunden")
 
 
 @app.get("/agenten/running", response_class=HTMLResponse)
@@ -5044,10 +5095,45 @@ async def life_page():
     p = ASTRO_DIST_DIR / "life.html"
     if p.exists():
         return FileResponse(p)
+    life_template = TEMPLATES_DIR / "life.html"
+    if life_template.exists():
+        return FileResponse(life_template)
     pers_file = TEMPLATES_DIR / "persoenlich.html"
     if pers_file.exists():
         return FileResponse(pers_file)
     raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
+
+
+@app.get("/api/life/providers")
+async def get_life_providers():
+    """Prüft die Verfügbarkeit von externen Life-Providern (Routinika, UpToDay, Health, Balance)."""
+    # Fail-closed: nur wenn ein tatsächlicher Startvertrag oder verifizierter Prozess existiert
+    routinika_installed = False
+    uptoday_installed = False
+    return {
+        "routinika": {
+            "available": routinika_installed,
+            "url": None,
+            "status": "available" if routinika_installed else "in_progress",
+            "message": "Routinika Desktop/Web verfügbar" if routinika_installed else "Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen."
+        },
+        "uptoday": {
+            "available": uptoday_installed,
+            "url": None,
+            "status": "available" if uptoday_installed else "in_progress",
+            "message": "UpToday Web verfügbar" if uptoday_installed else "Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt."
+        },
+        "health": {
+            "available": False,
+            "status": "in_progress",
+            "message": "Die bisherige Gesundheitsansicht enthält nur geplante Funktionen. Für Vitalwerte, Arzttermine und Medikamente fehlen ein geprüfter Fachadapter, ein Datenvertrag und ein Gerätezugriffsvertrag. Hier werden keine Gesundheitsdaten gelesen oder angezeigt."
+        },
+        "balance": {
+            "available": False,
+            "status": "in_progress",
+            "message": "In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt."
+        }
+    }
 
 
 @app.get("/domains", response_class=HTMLResponse)
@@ -13383,6 +13469,16 @@ async def get_routine(routine_id: int):
         return {"success": False, "error": public_error_message()}
 
 
+def _ensure_routine_assigned_agent_column(conn: sqlite3.Connection):
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(routines)").fetchall()}
+        if cols and "assigned_agent" not in cols:
+            conn.execute("ALTER TABLE routines ADD COLUMN assigned_agent TEXT")
+            conn.commit()
+    except (sqlite3.Error, OSError):
+        pass
+
+
 @app.post("/api/routines")
 async def add_routine(request: Request):
     """Neue Routine anlegen."""
@@ -13392,6 +13488,7 @@ async def add_routine(request: Request):
         data = await request.json()
         conn = get_user_db()
         cursor = conn.cursor()
+        _ensure_routine_assigned_agent_column(conn)
 
         # next_due_at berechnen
         today = date.today()
@@ -13399,8 +13496,8 @@ async def add_routine(request: Request):
 
         cursor.execute("""
             INSERT INTO routines (name, description, category, priority, interval_type,
-                                  interval_value, specific_day, duration_minutes, next_due_at, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                                  interval_value, specific_day, duration_minutes, next_due_at, is_active, assigned_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
         """, (
             data.get('name'),
             data.get('description'),
@@ -13410,7 +13507,8 @@ async def add_routine(request: Request):
             data.get('interval_value', 1),
             data.get('specific_day'),
             data.get('duration_minutes'),
-            next_due
+            next_due,
+            data.get('assigned_agent')
         ))
         conn.commit()
         conn.close()
@@ -13427,11 +13525,12 @@ async def update_routine(routine_id: int, request: Request):
         data = await request.json()
         conn = get_user_db()
         cursor = conn.cursor()
+        _ensure_routine_assigned_agent_column(conn)
         cursor.execute("""
             UPDATE routines SET
                 name = ?, description = ?, category = ?, priority = ?,
                 interval_type = ?, interval_value = ?, specific_day = ?,
-                duration_minutes = ?, updated_at = CURRENT_TIMESTAMP
+                duration_minutes = ?, assigned_agent = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
             data.get('name'),
@@ -13442,6 +13541,7 @@ async def update_routine(routine_id: int, request: Request):
             data.get('interval_value', 1),
             data.get('specific_day'),
             data.get('duration_minutes'),
+            data.get('assigned_agent'),
             routine_id
         ))
         conn.commit()
