@@ -5089,6 +5089,38 @@ async def life_page():
     raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
 
 
+@app.get("/api/life/providers")
+async def get_life_providers():
+    """Prüft die Verfügbarkeit von externen Life-Providern (Routinika, UpToDay, Health, Balance)."""
+    # Fail-closed: nur wenn ein tatsächlicher Startvertrag oder verifizierter Prozess existiert
+    routinika_installed = False
+    uptoday_installed = False
+    return {
+        "routinika": {
+            "available": routinika_installed,
+            "url": None,
+            "status": "available" if routinika_installed else "in_progress",
+            "message": "Routinika Desktop/Web verfügbar" if routinika_installed else "Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen."
+        },
+        "uptoday": {
+            "available": uptoday_installed,
+            "url": None,
+            "status": "available" if uptoday_installed else "in_progress",
+            "message": "UpToday Web verfügbar" if uptoday_installed else "Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt."
+        },
+        "health": {
+            "available": False,
+            "status": "in_progress",
+            "message": "Die bisherige Gesundheitsansicht enthält nur geplante Funktionen. Für Vitalwerte, Arzttermine und Medikamente fehlen ein geprüfter Fachadapter, ein Datenvertrag und ein Gerätezugriffsvertrag. Hier werden keine Gesundheitsdaten gelesen oder angezeigt."
+        },
+        "balance": {
+            "available": False,
+            "status": "in_progress",
+            "message": "In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt."
+        }
+    }
+
+
 @app.get("/domains", response_class=HTMLResponse)
 async def domains_page():
     p = ASTRO_DIST_DIR / "domains.html"
@@ -13419,6 +13451,16 @@ async def get_routine(routine_id: int):
         return {"success": False, "error": public_error_message()}
 
 
+def _ensure_routine_assigned_agent_column(conn: sqlite3.Connection):
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(routines)").fetchall()}
+        if cols and "assigned_agent" not in cols:
+            conn.execute("ALTER TABLE routines ADD COLUMN assigned_agent TEXT")
+            conn.commit()
+    except (sqlite3.Error, OSError):
+        pass
+
+
 @app.post("/api/routines")
 async def add_routine(request: Request):
     """Neue Routine anlegen."""
@@ -13428,6 +13470,7 @@ async def add_routine(request: Request):
         data = await request.json()
         conn = get_user_db()
         cursor = conn.cursor()
+        _ensure_routine_assigned_agent_column(conn)
 
         # next_due_at berechnen
         today = date.today()
@@ -13435,8 +13478,8 @@ async def add_routine(request: Request):
 
         cursor.execute("""
             INSERT INTO routines (name, description, category, priority, interval_type,
-                                  interval_value, specific_day, duration_minutes, next_due_at, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                                  interval_value, specific_day, duration_minutes, next_due_at, is_active, assigned_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
         """, (
             data.get('name'),
             data.get('description'),
@@ -13446,7 +13489,8 @@ async def add_routine(request: Request):
             data.get('interval_value', 1),
             data.get('specific_day'),
             data.get('duration_minutes'),
-            next_due
+            next_due,
+            data.get('assigned_agent')
         ))
         conn.commit()
         conn.close()
@@ -13463,11 +13507,12 @@ async def update_routine(routine_id: int, request: Request):
         data = await request.json()
         conn = get_user_db()
         cursor = conn.cursor()
+        _ensure_routine_assigned_agent_column(conn)
         cursor.execute("""
             UPDATE routines SET
                 name = ?, description = ?, category = ?, priority = ?,
                 interval_type = ?, interval_value = ?, specific_day = ?,
-                duration_minutes = ?, updated_at = CURRENT_TIMESTAMP
+                duration_minutes = ?, assigned_agent = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
             data.get('name'),
@@ -13478,6 +13523,7 @@ async def update_routine(routine_id: int, request: Request):
             data.get('interval_value', 1),
             data.get('specific_day'),
             data.get('duration_minutes'),
+            data.get('assigned_agent'),
             routine_id
         ))
         conn.commit()

@@ -21,33 +21,38 @@
             flex-wrap: wrap;
             gap: 1rem;
         }
+        .subtitle {
+            color: var(--text-muted, #888);
+            margin: 0.25rem 0 0 0;
+            font-size: 0.875rem;
+        }
         .tab-bar {
             display: flex;
-            gap: 0.5rem;
+            gap: 0.4rem;
+            border-bottom: 1px solid var(--border, #333);
             margin-bottom: 1.5rem;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.5rem;
             overflow-x: auto;
+            scrollbar-width: none;
         }
         .tab-btn {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 0.6rem 1.1rem;
-            color: var(--text);
+            padding: 0.65rem 1.15rem;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted, #888);
+            font-size: 0.88rem;
+            font-weight: 500;
             cursor: pointer;
-            font-size: 0.9rem;
             white-space: nowrap;
             transition: all 0.2s;
         }
         .tab-btn:hover {
-            border-color: var(--accent);
+            color: var(--text, #fff);
         }
         .tab-btn.active {
-            background: var(--accent);
-            color: #0b0d14;
-            border-color: var(--accent);
-            font-weight: 600;
+            color: var(--accent, #38bdf8);
+            border-bottom-color: var(--accent, #38bdf8);
+            font-weight: 700;
         }
         .tab-pane {
             display: none;
@@ -56,10 +61,11 @@
             display: block;
         }
         .glass-card {
-            background: var(--bg-panel);
-            border: 1px solid var(--border);
+            background: var(--bg-card, #1e1e1e);
+            border: 1px solid var(--border, #333);
             border-radius: 8px;
             padding: 1.5rem;
+            margin-bottom: 1.5rem;
         }
         .card-header-action {
             display: flex;
@@ -68,84 +74,6 @@
             flex-wrap: wrap;
             gap: 1rem;
             margin-bottom: 1rem;
-        }
-        .life-task-actions {
-            display: flex;
-            gap: 0.75rem;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .life-task-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-            margin-top: 1rem;
-        }
-        .life-task-row {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-        }
-        .life-task-meta {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-        }
-        /* Modal */
-        .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        .modal {
-            background: var(--bg-panel);
-            border-radius: 12px;
-            padding: 1.5rem;
-            width: 90%;
-            max-width: 600px;
-            border: 1px solid var(--border);
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        .modal h2 {
-            margin: 0 0 1rem 0;
-            color: var(--accent);
-        }
-        .hidden { display: none !important; }
-        .form-group { margin-bottom: 1rem; }
-        .form-group label {
-            display: block;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0.3rem;
-        }
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 0.6rem;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            background: var(--bg-card);
-            color: var(--text);
-            font-size: 0.9rem;
-            box-sizing: border-box;
-        }
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-        .form-actions {
-            display: flex;
-            gap: 0.5rem;
-            justify-content: flex-end;
-            margin-top: 1rem;
         }
         .btn {
             padding: 0.5rem 1rem;
@@ -157,11 +85,498 @@
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
+            font-family: inherit;
         }
-        .btn-primary { background: var(--accent); color: #0b0d14; font-weight: 600; }
-        .btn-secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
-        .load-status { color: var(--error); margin-top: 0.5rem; font-size: 0.9rem; }
-        .loading-state { color: var(--text-muted); font-style: italic; }
+        .btn-primary {
+            background: var(--accent, #38bdf8);
+            color: #0b0d14;
+            font-weight: 600;
+        }
+        .btn-secondary {
+            background: var(--bg-card, #262626);
+            border: 1px solid var(--border, #333);
+            color: var(--text, #fff);
+        }
+        .btn-success {
+            background: var(--success, #22c55e);
+            color: white;
+        }
+        .btn-danger {
+            background: var(--error, #ef4444);
+            color: white;
+        }
+        .btn-sm {
+            padding: 0.3rem 0.65rem;
+            font-size: 0.8rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-accent {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent, #38bdf8);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+        }
+        .badge-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted, #888);
+            border: 1px solid var(--border, #333);
+        }
+        .badge-agent {
+            background: rgba(168, 85, 247, 0.15);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+        }
+
+        /* ── Calendar Styles (4 Views) ── */
+        .calendar-controls-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .cal-views-segmented {
+            display: inline-flex;
+            background: var(--bg-dark, #121212);
+            border: 1px solid var(--border, #333);
+            border-radius: 24px;
+            padding: 3px;
+            gap: 3px;
+        }
+        .cal-view-btn {
+            padding: 0.4rem 0.9rem;
+            border: none;
+            background: transparent;
+            color: var(--text-muted, #888);
+            border-radius: 20px;
+            font-size: 0.825rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .cal-view-btn:hover {
+            color: var(--text, #fff);
+        }
+        .cal-view-btn.active {
+            background: var(--accent, #38bdf8);
+            color: #0b0d14;
+        }
+        .cal-nav-group {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .calendar-source-filters {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-muted, #888);
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .calendar-source-filters label {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            cursor: pointer;
+        }
+
+        /* 1. Day View */
+        .day-timeline-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background: var(--bg-dark, #141414);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            padding: 0.5rem;
+            max-height: 700px;
+            overflow-y: auto;
+        }
+        .day-slot {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            min-height: 48px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            align-items: start;
+            padding: 0.25rem 0.5rem;
+        }
+        .day-slot.current-hour {
+            background: rgba(56, 189, 248, 0.08);
+            border-left: 4px solid var(--accent, #38bdf8);
+        }
+        .day-slot-time {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--accent, #38bdf8);
+            font-family: monospace;
+            padding-top: 0.25rem;
+        }
+        .day-slot-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        /* 2. Week View */
+        .week-grid-container {
+            display: grid;
+            grid-template-columns: 50px repeat(7, 1fr);
+            gap: 1px;
+            background: var(--border, #333);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .week-time {
+            background: var(--bg-card, #1e1e1e);
+            color: var(--text-muted, #888);
+            font-size: 0.72rem;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem;
+        }
+        .week-day-heading {
+            background: var(--bg-card, #1e1e1e);
+            padding: 0.6rem 0.3rem;
+            text-align: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text, #fff);
+            border-bottom: 2px solid var(--border, #333);
+        }
+        .week-day-heading.today {
+            color: var(--accent, #38bdf8);
+            border-bottom-color: var(--accent, #38bdf8);
+        }
+        .week-hour-cell {
+            background: var(--bg-dark, #141414);
+            min-height: 42px;
+            padding: 2px 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 0.7rem;
+        }
+        .week-hour-cell.today {
+            background: rgba(56, 189, 248, 0.03);
+        }
+        .week-hour-cell.current-hour {
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        /* 3. Month View */
+        .month-weekdays-header {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            text-align: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-muted, #888);
+            margin-bottom: 0.5rem;
+        }
+        .month-days-matrix {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .month-day-cell {
+            background: var(--bg-dark, #141414);
+            border: 1px solid var(--border, #333);
+            border-radius: 4px;
+            min-height: 85px;
+            padding: 0.35rem;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            text-align: left;
+            transition: border-color 0.15s;
+        }
+        .month-day-cell:hover {
+            border-color: var(--accent, #38bdf8);
+        }
+        .month-day-cell.today {
+            border-color: var(--accent, #38bdf8);
+            background: rgba(56, 189, 248, 0.05);
+        }
+        .month-day-cell.other-month {
+            opacity: 0.3;
+        }
+        .month-day-num {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted, #888);
+            margin-bottom: 0.25rem;
+        }
+        .cal-event-chip {
+            font-size: 0.68rem;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            background: rgba(56, 189, 248, 0.2);
+            color: var(--accent, #38bdf8);
+            border-left: 2px solid var(--accent, #38bdf8);
+        }
+        .chip-routine {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            border-left-color: #22c55e;
+        }
+        .chip-fokus {
+            background: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border-left-color: #a855f7;
+        }
+
+        /* 4. Year View */
+        .year-quarters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1rem;
+        }
+        .mini-month-card {
+            background: var(--bg-dark, #141414);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            padding: 0.75rem;
+        }
+        .mini-month-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        .mini-month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            text-align: center;
+            font-size: 0.65rem;
+        }
+        .mini-day {
+            aspect-ratio: 1;
+            display: grid;
+            place-items: center;
+            border-radius: 2px;
+            color: var(--text-muted, #888);
+            border: 1px solid var(--border, #333);
+        }
+        .mini-day.empty {
+            border-color: transparent;
+        }
+        .mini-day.has-event {
+            background: var(--accent, #38bdf8);
+            color: #0b0d14;
+            font-weight: 700;
+        }
+
+        /* ── Routines Tab Styles ── */
+        .routine-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem 1.5rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-dark, #141414);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        .routine-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+        .routine-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            padding: 0.85rem 1rem;
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            background: var(--bg-dark, #141414);
+        }
+        .routine-meta {
+            display: block;
+            color: var(--text-muted, #888);
+            font-size: 0.82rem;
+            margin-top: 0.25rem;
+        }
+        .routine-actions {
+            display: flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+        .routine-adapters {
+            margin-top: 1.5rem;
+            border-top: 1px solid var(--border, #333);
+            padding-top: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+        }
+        .routine-adapters button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ── Tasks Tab Styles (GUX-047) ── */
+        .life-task-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .life-task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            margin-top: 1rem;
+        }
+        .life-task-row {
+            background: var(--bg-dark, #141414);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            padding: 0.85rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+        .life-task-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted, #888);
+        }
+
+        /* ── Timer Styles ── */
+        .timer-widget {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.5rem 0;
+            gap: 1rem;
+        }
+        .timer-display {
+            font-size: 3.5rem;
+            font-weight: 700;
+            font-family: monospace;
+            color: var(--accent, #38bdf8);
+        }
+        .timer-controls, .timer-modes {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .timer-tag {
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-card, #262626);
+            color: var(--text-muted, #888);
+            cursor: pointer;
+            border: 1px solid var(--border, #333);
+        }
+        .timer-tag.active {
+            background: var(--accent, #38bdf8);
+            color: #0b0d14;
+            font-weight: 600;
+        }
+
+        /* Standalone Focus Window */
+        .life-container.standalone-focus {
+            max-width: 500px;
+        }
+        .life-container.standalone-focus .page-header,
+        .life-container.standalone-focus .tab-bar,
+        .life-container.standalone-focus .tab-pane:not(#pane-selbstmanagement),
+        .life-container.standalone-focus #pane-selbstmanagement .feature-grid,
+        .life-container.standalone-focus #btn-focus-window {
+            display: none !important;
+        }
+        .life-container.standalone-focus #pane-selbstmanagement {
+            display: block;
+        }
+
+        /* ── Modals & Forms ── */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: var(--bg-card, #1e1e1e);
+            border-radius: 8px;
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 550px;
+            border: 1px solid var(--border, #333);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2, .modal h3 {
+            margin: 0 0 1rem 0;
+            color: var(--accent, #38bdf8);
+        }
+        .hidden { display: none !important; }
+        .form-group { margin-bottom: 0.85rem; }
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-muted, #888);
+            margin-bottom: 0.3rem;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.55rem;
+            border: 1px solid var(--border, #333);
+            border-radius: 4px;
+            background: var(--bg-dark, #141414);
+            color: var(--text, #fff);
+            font-size: 0.88rem;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.85rem;
+        }
+        .form-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+        .load-status {
+            color: var(--text-muted, #888);
+            font-size: 0.85rem;
+            margin: 0.5rem 0;
+        }
+        .loading-state {
+            color: var(--text-muted, #888);
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -170,59 +585,234 @@
     <main class="life-container">
         <div class="page-header">
             <div>
-                <h1>🌱 Life-Zentrale</h1>
-                <p style="color:var(--text-muted);font-size:0.9rem;margin-top:0.25rem;">
-                    Selbstmanagement, Kalender, Routinen und persönliche Aufgaben
-                </p>
+                <h1><span class="icon">🌱</span> Life-Zentrale</h1>
+                <p class="subtitle">Ganzheitliches Selbstmanagement, 4-Ansichten-Kalender, Deine Routinen und persönliche Aufgaben</p>
             </div>
-            <div>
-                <span style="background:var(--accent);color:#0b0d14;font-size:0.75rem;font-weight:700;padding:0.25rem 0.5rem;border-radius:4px;">BACH Life OS</span>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <span class="badge badge-accent">BACH Life OS</span>
+                <span class="badge badge-secondary">Persönlicher Bereich</span>
             </div>
         </div>
 
         <!-- Tab Bar -->
         <div class="tab-bar">
-            <button class="tab-btn active" data-tab="kalender">📅 Kalender</button>
+            <button class="tab-btn active" data-tab="kalender">📅 Kalender (4 Ansichten)</button>
             <button class="tab-btn" data-tab="routinen">⏰ Deine Routinen</button>
             <button class="tab-btn" data-tab="aufgaben">👤 Meine Aufgaben</button>
-            <button class="tab-btn" data-tab="selbstmanagement">🎯 Selbstmanagement & ADHS</button>
+            <button class="tab-btn" data-tab="selbstmanagement">🎯 Selbstmanagement &amp; ADHS</button>
+            <button class="tab-btn" data-tab="finanzen">💰 Finanzen</button>
+            <button class="tab-btn" data-tab="balance">☯️ Lebensbereiche</button>
+            <button class="tab-btn" data-tab="gesundheit">🩺 Gesundheit</button>
         </div>
 
-        <!-- TAB 1: KALENDER -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 1: KALENDER MIT 4 ANSICHTEN -->
+        <!-- ════════════════════════════════════════════════════ -->
         <div class="tab-pane active" id="pane-kalender">
-            <div class="glass-card">
-                <h3>📅 Kalender</h3>
-                <p style="color:var(--text-muted);margin-top:0.5rem;">Termine und Kalender-Übersicht.</p>
-                <div id="calendar-container" style="margin-top:1rem;">
-                    <p class="loading-state">Kalenderdaten werden geladen...</p>
+            <div class="calendar-controls-bar">
+                <!-- 4 Views Switcher -->
+                <div class="cal-views-segmented">
+                    <button class="cal-view-btn" data-view="day">📅 Tagesansicht</button>
+                    <button class="cal-view-btn" data-view="week">🗓️ Wochenansicht</button>
+                    <button class="cal-view-btn active" data-view="month">📆 Monatsansicht</button>
+                    <button class="cal-view-btn" data-view="year">🌐 Jahresüberblick</button>
+                </div>
+
+                <!-- Date Navigation Controls -->
+                <div class="cal-nav-group">
+                    <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(-1)">◀ Vorheriger</button>
+                    <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(0)">Heute</button>
+                    <button class="btn btn-secondary btn-sm" onclick="navigateCalendar(1)">Nächster ▶</button>
+                    <h2 id="cal-period-heading" style="margin:0 0.5rem;font-size:1.1rem;font-weight:700;color:var(--text, #fff);">Oktober 2026</h2>
+                </div>
+
+                <!-- Add Event Button -->
+                <button class="btn btn-primary btn-sm" onclick="openAddEventModal()">+ Neuer Termin</button>
+            </div>
+
+            <!-- Calendar Source Filters (GUX-060) -->
+            <div class="calendar-source-filters" role="group" aria-label="Terminquellen">
+                <span>Filter:</span>
+                <label><input id="cal-source-user" type="checkbox" checked onchange="renderActiveCalendarView()"> Nutzertermine</label>
+                <label><input id="cal-source-system" type="checkbox" checked onchange="renderActiveCalendarView()"> BACH/Ocean-Systemtermine</label>
+                <label><input id="cal-source-unknown" type="checkbox" checked onchange="renderActiveCalendarView()"> Ältere Termine ohne Herkunft</label>
+            </div>
+            <p id="calendar-load-status" class="load-status" role="status" aria-live="polite"></p>
+
+            <!-- VIEW 1: TAGESANSICHT (24h Timeline) (GUX-055) -->
+            <div class="cal-view-pane" id="view-day" style="display:none;">
+                <div class="glass-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--border, #333);padding-bottom:0.75rem;">
+                        <div>
+                            <h3 id="day-view-date-title" style="margin:0;font-size:1.1rem;">Heute</h3>
+                            <p style="font-size:0.8rem;color:var(--text-muted, #888);margin:0.2rem 0 0 0;">Stunden-Raster mit blau hervorgehobenen Zeitzeilen</p>
+                        </div>
+                        <span class="badge badge-accent" id="day-event-count">0 Termine</span>
+                    </div>
+                    <div class="day-timeline-container" id="day-timeline-slots">
+                        <!-- 24 hourly slots injected by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 2: WOCHENANSICHT (7 Spalten) (GUX-056) -->
+            <div class="cal-view-pane" id="view-week" style="display:none;">
+                <div class="glass-card" style="padding:1rem;">
+                    <div class="week-grid-container" id="week-columns-grid">
+                        <!-- 7 columns Mo-So injected by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 3: MONATSANSICHT (Matrix Raster) (GUX-057) -->
+            <div class="cal-view-pane active" id="view-month">
+                <div class="glass-card" style="padding:1rem;">
+                    <div class="month-weekdays-header">
+                        <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
+                    </div>
+                    <div class="month-days-matrix" id="month-days-grid">
+                        <!-- Uniform day tiles 1..31 injected by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 4: JAHRESÜBERBLICK (12 Mini-Monate) (GUX-058) -->
+            <div class="cal-view-pane" id="view-year" style="display:none;">
+                <div class="glass-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+                        <div>
+                            <h3 id="year-title" style="margin:0;font-size:1.2rem;">Jahresüberblick 2026</h3>
+                            <p style="font-size:0.8rem;color:var(--text-muted, #888);margin:0.25rem 0 0 0;">Jeder Kalendertag als separates Kästchen</p>
+                        </div>
+                        <span class="badge badge-secondary">12 Monate</span>
+                    </div>
+                    <div class="year-quarters-grid" id="year-quarters-container">
+                        <!-- 12 mini months injected by JS -->
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- TAB 2: ROUTINEN -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 2: DEINE ROUTINEN (Inline, GUX-049 & NAV-AUFG-02) -->
+        <!-- ════════════════════════════════════════════════════ -->
         <div class="tab-pane" id="pane-routinen">
             <div class="glass-card">
-                <h3>⏰ Deine Routinen</h3>
-                <p style="color:var(--text-muted);margin-top:0.5rem;">Wiederkehrende Gewohnheiten und Rhythmen.</p>
-                <div id="routines-container" style="margin-top:1rem;">
-                    <p class="loading-state">Routinen werden geladen...</p>
+                <div class="card-header-action">
+                    <div>
+                        <h3 style="margin:0;"><span class="icon">⏰</span> Deine persönlichen Routinen</h3>
+                        <p class="subtitle">Persönliche Routinen und Gewohnheiten inline verwalten. System-Automationen liegen getrennt in BACH/Ocean.</p>
+                    </div>
+                    <div class="routine-actions">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="openRoutineForm()">+ Neue Routine</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="loadPersonalRoutines()">Aktualisieren</button>
+                    </div>
+                </div>
+
+                <div class="routine-stats">
+                    <span>Gesamt: <strong id="routine-stat-total">–</strong></span>
+                    <span>Aktiv: <strong id="routine-stat-active">–</strong></span>
+                    <span>Heute fällig: <strong id="routine-stat-due">–</strong></span>
+                    <span>Überfällig: <strong id="routine-stat-overdue">–</strong></span>
+                </div>
+
+                <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:1rem;">
+                    <label style="font-size:0.85rem;color:var(--text-muted, #888);">Kategorie:
+                        <select id="filter-routine-cat" onchange="renderPersonalRoutines()" style="margin-left:0.35rem;padding:0.35rem 0.5rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+                            <option value="">Alle Kategorien</option>
+                        </select>
+                    </label>
+                </div>
+
+                <p id="routine-load-status" class="load-status" role="status" aria-live="polite"></p>
+                <div id="personal-routines-list" class="routine-list">
+                    <p class="loading-state">Lade Routinen …</p>
+                </div>
+
+                <!-- Routine Form (Inline Add/Edit) -->
+                <form id="life-routine-form" class="hidden" onsubmit="savePersonalRoutine(event)" style="margin-top:1.5rem;padding:1.25rem;border:1px solid var(--accent, #38bdf8);border-radius:6px;background:var(--bg-dark, #141414);">
+                    <h4 id="life-routine-form-title" style="margin:0 0 1rem 0;color:var(--accent, #38bdf8);">Neue Routine</h4>
+                    <input id="routine-edit-id" type="hidden">
+                    <div class="form-group">
+                        <label>Name *</label>
+                        <input id="routine-name" required maxlength="200" placeholder="z.B. Morgenspaziergang">
+                    </div>
+                    <div class="form-group">
+                        <label>Beschreibung</label>
+                        <textarea id="routine-description" rows="2" placeholder="Optionale Details"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Kategorie</label>
+                            <input id="routine-category" value="Haushalt">
+                        </div>
+                        <div class="form-group">
+                            <label>Priorität</label>
+                            <select id="routine-priority">
+                                <option value="1">Hoch</option>
+                                <option value="2" selected>Mittel</option>
+                                <option value="3">Niedrig</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Intervall</label>
+                            <select id="routine-interval">
+                                <option value="taeglich">Täglich</option>
+                                <option value="woechentlich" selected>Wöchentlich</option>
+                                <option value="monatlich">Monatlich</option>
+                                <option value="jaehrlich">Jährlich</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Alle X Einheiten</label>
+                            <input id="routine-interval-value" type="number" min="1" value="1" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Spezifischer Tag</label>
+                            <input id="routine-specific-day" placeholder="z.B. Montag">
+                        </div>
+                        <div class="form-group">
+                            <label>Dauer in Minuten</label>
+                            <input id="routine-duration" type="number" min="0" placeholder="z.B. 20">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Gebundener Agent (Agenten-Fabrik, NAV-AUFG-02)</label>
+                        <select id="routine-agent">
+                            <option value="">Kein Agent (Manuell)</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="closeRoutineForm()">Abbrechen</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
+                    </div>
+                </form>
+
+                <!-- Routinen-Adapter & Bridges (GUX-048, GUX-054, GUX-059) -->
+                <div class="routine-adapters">
+                    <a href="/routinen?tab=bach" class="btn btn-secondary btn-sm">⚡ BACH/Ocean-Systemjobs getrennt öffnen ↗</a>
+                    <button type="button" id="btn-routinika" class="btn btn-secondary btn-sm" disabled title="Routinika ist als Desktop-App belegt; ein verifizierter Web-Startvertrag und eine Installation auf diesem Gerät fehlen.">Routinika öffnen – Anbindung in Arbeit</button>
                 </div>
             </div>
         </div>
 
+        <!-- ════════════════════════════════════════════════════ -->
         <!-- TAB 3: MEINE AUFGABEN (GUX-047) -->
+        <!-- ════════════════════════════════════════════════════ -->
         <div class="tab-pane" id="pane-aufgaben">
             <div class="glass-card">
                 <div class="card-header-action">
                     <div>
                         <h3 style="margin:0;"><span class="icon">👤</span> Meine persönlichen Aufgaben</h3>
-                        <p style="color:var(--text-muted);font-size:0.85rem;margin:0.25rem 0 0 0;">
-                            Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)
-                        </p>
+                        <p class="subtitle">Gefiltert auf: <code>assigned_to = 'user'</code> (Aus dem zentralen Task-Repository)</p>
                     </div>
                     <div class="life-task-actions">
-                        <label for="filter-user-tasks-status" style="font-size:0.85rem;">Status
-                            <select id="filter-user-tasks-status" style="padding:0.35rem 0.5rem;border-radius:4px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);">
+                        <label for="filter-user-tasks-status" style="font-size:0.85rem;color:var(--text-muted, #888);">Status:
+                            <select id="filter-user-tasks-status" onchange="loadUserTasks()" style="padding:0.35rem 0.5rem;border-radius:4px;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);">
                                 <option value="nonterminal" selected>Nur offene</option>
                                 <option value="">Alle Status</option>
                                 <option value="in_progress">In Bearbeitung</option>
@@ -230,8 +820,8 @@
                                 <option value="completed">Erledigt (completed)</option>
                             </select>
                         </label>
-                        <button class="btn btn-primary" id="btn-open-life-task-create" onclick="openLifeTaskModal()">+ Neue Aufgabe für mich</button>
-                        <a href="/tasks?assigned_to=user" class="btn btn-secondary">Taskboard ↗</a>
+                        <button class="btn btn-primary btn-sm" onclick="openLifeTaskModal()">+ Neue Aufgabe für mich</button>
+                        <a href="/tasks?assigned_to=user" class="btn btn-secondary btn-sm">Taskboard ↗</a>
                     </div>
                 </div>
                 <div id="user-tasks-container">
@@ -240,23 +830,171 @@
             </div>
         </div>
 
-        <!-- TAB 4: SELBSTMANAGEMENT -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 4: SELBSTMANAGEMENT & ADHS (GUX-053 & GUX-054) -->
+        <!-- ════════════════════════════════════════════════════ -->
         <div class="tab-pane" id="pane-selbstmanagement">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1.5rem;">
+                <div class="glass-card">
+                    <h3><span class="icon">🧠</span> Neurodivergenz &amp; Exekutiv-Entlastung</h3>
+                    <p class="subtitle">Praktische Hilfen für selbst gewählte Arbeitsschritte</p>
+                    <div style="margin-top:1rem;display:flex;flex-direction:column;gap:0.75rem;font-size:0.88rem;">
+                        <div>
+                            <strong>1. Kurzes Fokusintervall</strong>
+                            <p style="color:var(--text-muted, #888);margin:0.2rem 0 0 0;">Wähle eine überschaubare Dauer und lege den nächsten Schritt fest. Der Timer läuft ausschließlich lokal im Browser.</p>
+                        </div>
+                        <div>
+                            <strong>2. Reize reduzieren</strong>
+                            <p style="color:var(--text-muted, #888);margin:0.2rem 0 0 0;">Schließe alle Tabs, die nicht zum aktuellen Schritt gehören. Nutze Notizen als Zwischenablage für spontane Impulse.</p>
+                        </div>
+                        <div>
+                            <strong>3. Begleitung bei Bedarf</strong>
+                            <p style="color:var(--text-muted, #888);margin:0.2rem 0 0 0;">Ein begleiteter Arbeitsmodus benötigt eine geprüfte Chat- und Datenschutzanbindung. Der Timer funktioniert ohne externen Call.</p>
+                        </div>
+                    </div>
+                    <div style="margin-top:1.5rem;">
+                        <button type="button" id="btn-uptoday" class="btn btn-secondary btn-sm" disabled title="Für UpToday ist keine installierte Web-Oberfläche mit verifiziertem Startvertrag belegt.">UpToday öffnen – Anbindung in Arbeit</button>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <h3><span class="icon">⏱️</span> Fokus-Timer &amp; Arbeits-Intervall</h3>
+                    <div class="timer-widget">
+                        <div class="timer-display" id="timer-display" role="timer" aria-live="off">25:00</div>
+                        <div class="timer-controls">
+                            <button class="btn btn-primary" id="btn-timer-start" onclick="toggleTimer()">Start</button>
+                            <button class="btn btn-secondary" id="btn-timer-reset" onclick="resetTimer()">Reset</button>
+                            <button class="btn btn-secondary" id="btn-focus-window" onclick="openFocusWindow()">Eigenes Fokusfenster öffnen</button>
+                        </div>
+                        <div class="timer-modes">
+                            <button type="button" class="timer-tag active" data-seconds="1500" onclick="setTimerMode(1500, this)">25 Min Fokus</button>
+                            <button type="button" class="timer-tag" data-seconds="300" onclick="setTimerMode(300, this)">5 Min Pause</button>
+                            <button type="button" class="timer-tag" data-seconds="900" onclick="setTimerMode(900, this)">15 Min Erholung</button>
+                        </div>
+                        <p id="focus-window-status" class="load-status" role="status" aria-live="polite">Timer bereit.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 5: FINANZEN -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-pane" id="pane-finanzen">
             <div class="glass-card">
-                <h3>🎯 Selbstmanagement & Fokus-Timer</h3>
-                <p style="color:var(--text-muted);margin-top:0.5rem;">Fokus-Intervalle und exekutive Entlastung.</p>
-                <div style="font-size:2.5rem;font-weight:700;font-family:monospace;margin:1.5rem 0;" id="timer-display">25:00</div>
-                <button class="btn btn-primary" id="btn-timer-start" onclick="toggleTimer()">Start</button>
-                <button class="btn btn-secondary" onclick="resetTimer()">Reset</button>
+                <div class="card-header-action">
+                    <div>
+                        <h3 style="margin:0;"><span class="icon">💰</span> Finanzen &amp; Budget-Dashboard</h3>
+                        <p class="subtitle">Finanzdaten und Auswertungen im vorhandenen Finanzbereich</p>
+                    </div>
+                    <a href="/financial" class="btn btn-secondary btn-sm">Vollständiges Finanzmodul ↗</a>
+                </div>
+                <p class="load-status">Für Monatsbudget, Belege und Rücklagen gibt es hier noch keinen gemeinsamen Auswertungsvertrag. Im Finanzbereich sind die vorhandenen Konten-, Abonnement- und Finanzmail-Funktionen erreichbar.</p>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 6: LEBENSBEREICHE / BALANCE (GUX-052) -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-pane" id="pane-balance">
+            <div class="glass-card">
+                <h3><span class="icon">☯️</span> Lebensbereiche &amp; Balance</h3>
+                <p class="load-status" style="margin-top:0.75rem;line-height:1.6;">
+                    In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt oder erfunden.
+                </p>
+                <div style="margin-top:1rem;padding:0.75rem 1rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                    <strong>Geplante Schritte vor Freigabe:</strong>
+                    <ul style="margin:0.5rem 0 0 1.25rem;padding:0;color:var(--text-muted);">
+                        <li>Freiwilliges Reflexionsmodell für Lebensbereiche festlegen</li>
+                        <li>Lokale SQLite-Speichertabelle ohne Cloud-Sync definieren</li>
+                        <li>Verbindlichen Datenschutzvertrag vor Aktivierung vorlegen</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- TAB 7: GESUNDHEIT (GUX-051) -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <div class="tab-pane" id="pane-gesundheit">
+            <div class="glass-card">
+                <div class="card-header-action">
+                    <div>
+                        <h3 style="margin:0;"><span class="icon">🩺</span> Gesundheit</h3>
+                        <p class="subtitle">Gesundheitsbereich im Life-Tab – Datenschutzgerechte Anbindung</p>
+                    </div>
+                </div>
+                <p class="load-status" style="line-height:1.6;">
+                    Die bisherige Gesundheitsansicht enthält nur geplante Funktionen. Für Vitalwerte, Arzttermine und Medikamente fehlen ein geprüfter Fachadapter, ein Datenvertrag und ein Gerätezugriffsvertrag. Hier werden keine Gesundheitsdaten ohne autorisierten Adapter gelesen oder angezeigt.
+                </p>
+                <div style="margin-top:1rem;padding:0.75rem 1rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                    <strong>Verbindliche Integrationskriterien (GUX-051):</strong>
+                    <ul style="margin:0.5rem 0 0 1.25rem;padding:0;color:var(--text-muted);">
+                        <li>Fachmodul und installierte Web-Oberfläche auf diesem Gerät verifizieren</li>
+                        <li>Autorisierte Gesundheits-API anbinden</li>
+                        <li>Erst danach Eingabe und Anzeige ergänzen</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </main>
 
-    <!-- Modal: Neue Aufgabe für mich (Full Mask, GUX-046 & GUX-047) -->
+    <!-- ════════════════════════════════════════════════════ -->
+    <!-- MODAL: NEUER TERMIN (assistant_calendar, GUX-060) -->
+    <!-- ════════════════════════════════════════════════════ -->
+    <div id="modal-add-event" class="modal-overlay hidden" onclick="closeAddEventModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h3>📅 Neuer Kalendertermin</h3>
+            <p class="subtitle" style="margin-bottom:1rem;">Wird in <code>assistant_calendar</code> mit verifizierter Herkunft (<code>user</code>) gespeichert.</p>
+            <form id="form-new-cal-event" onsubmit="submitNewEvent(event)">
+                <div class="form-group">
+                    <label>Titel des Termins *</label>
+                    <input type="text" id="ne-title" required placeholder="z.B. System-Review &amp; Testing">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Datum *</label>
+                        <input type="date" id="ne-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Start-Uhrzeit *</label>
+                        <input type="time" id="ne-time" value="10:00" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Kategorie</label>
+                        <select id="ne-type">
+                            <option value="termin">Termin / Meeting</option>
+                            <option value="fokusblock">Fokusblock (Deep Work)</option>
+                            <option value="privat">Privat / Erholung</option>
+                            <option value="gesundheit">Gesundheit / Sport</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Ort / Tool</label>
+                        <input type="text" id="ne-location" placeholder="z.B. Remote / Office">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Notiz / Agenda</label>
+                    <textarea id="ne-description" rows="2" placeholder="Optionale Details..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeAddEventModal()">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Termin speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <!-- MODAL: NEUE AUFGABE FÜR MICH (Full Mask, GUX-046 & GUX-047) -->
+    <!-- ════════════════════════════════════════════════════ -->
     <div class="modal-overlay hidden" id="life-task-modal" onclick="closeLifeTaskModal(event)">
         <div class="modal" onclick="event.stopPropagation()">
             <h2>➕ Neue Aufgabe für mich</h2>
-            <p id="life-task-error" class="load-status" hidden></p>
+            <p id="life-task-error" class="load-status" style="color:var(--error);" hidden></p>
             <form id="life-task-form" onsubmit="submitLifeTask(event)">
                 <div class="form-group">
                     <label>Titel *</label>
@@ -322,7 +1060,803 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
-        // ── Tab Management ──
+        function escapeHtml(t) {
+            if (t == null) return '';
+            return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function lifeApiFetch(path, options = {}) {
+            let token = '';
+            try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
+            const headers = new Headers(options.headers || {});
+            if (token) headers.set('Authorization', `Bearer ${token}`);
+            return fetch(path, { ...options, headers });
+        }
+
+        function localDateKey(date) {
+            return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+        }
+
+        // ── CALENDAR STATE & 4-VIEW RENDERER (GUX-055..058 & GUX-060) ──
+        let _calView = 'month';
+        let _currentDate = new Date();
+        let _loadedEvents = [];
+
+        const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+        const WEEKDAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+        function visibleCalendarEvents() {
+            const allowed = new Set();
+            for (const source of ['user', 'system', 'unknown']) {
+                if (document.getElementById(`cal-source-${source}`)?.checked) allowed.add(source);
+            }
+            return _loadedEvents.filter(event => allowed.has(['user','system'].includes(event.origin) ? event.origin : 'unknown'));
+        }
+
+        async function loadCalendarEvents() {
+            try {
+                const dateStr = localDateKey(_currentDate);
+                const status = document.getElementById('calendar-load-status');
+                if (status) status.textContent = 'Lade Termine …';
+                const res = await lifeApiFetch(`/api/calendar/events?view=${_calView}&date=${dateStr}&include_routines=false`);
+                if (res.ok) {
+                    const data = await res.json();
+                    _loadedEvents = Array.isArray(data.events) ? data.events : [];
+                    if (status) status.textContent = _loadedEvents.length ? '' : 'Für diesen Zeitraum sind keine Termine eingetragen.';
+                } else {
+                    _loadedEvents = [];
+                    if (status) {
+                        status.textContent = res.status === 401 || res.status === 403
+                            ? 'Termine konnten nicht geladen werden. Bitte über die Geräteanmeldung anmelden.'
+                            : `Termine konnten nicht geladen werden (HTTP ${res.status}).`;
+                    }
+                }
+            } catch (e) {
+                _loadedEvents = [];
+                const status = document.getElementById('calendar-load-status');
+                if (status) status.textContent = 'Termine konnten wegen eines Netzwerkfehlers nicht geladen werden.';
+            }
+            renderActiveCalendarView();
+        }
+
+        function renderActiveCalendarView() {
+            updatePeriodHeading();
+            if (_calView === 'day') renderDayView();
+            else if (_calView === 'week') renderWeekView();
+            else if (_calView === 'month') renderMonthView();
+            else if (_calView === 'year') renderYearView();
+        }
+
+        function updatePeriodHeading() {
+            const heading = document.getElementById('cal-period-heading');
+            if (!heading) return;
+            const y = _currentDate.getFullYear();
+            const m = MONTH_NAMES[_currentDate.getMonth()];
+            const d = _currentDate.getDate();
+
+            if (_calView === 'day') {
+                const wd = WEEKDAY_NAMES[(_currentDate.getDay() + 6) % 7];
+                heading.textContent = `${wd}, ${d}. ${m} ${y}`;
+            } else if (_calView === 'week') {
+                const monday = getMonday(_currentDate);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                heading.textContent = `KW ${getWeekNumber(_currentDate)} (${monday.getDate()}.${monday.getMonth()+1}. - ${sunday.getDate()}.${sunday.getMonth()+1}.${y})`;
+            } else if (_calView === 'month') {
+                heading.textContent = `${m} ${y}`;
+            } else if (_calView === 'year') {
+                heading.textContent = `Jahr ${y}`;
+            }
+        }
+
+        function navigateCalendar(delta) {
+            if (delta === 0) {
+                _currentDate = new Date();
+            } else {
+                if (_calView === 'day') {
+                    _currentDate.setDate(_currentDate.getDate() + delta);
+                } else if (_calView === 'week') {
+                    _currentDate.setDate(_currentDate.getDate() + (delta * 7));
+                } else if (_calView === 'month') {
+                    _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() + delta, 1);
+                } else if (_calView === 'year') {
+                    _currentDate = new Date(_currentDate.getFullYear() + delta, _currentDate.getMonth(), 1);
+                }
+            }
+            loadCalendarEvents();
+        }
+
+        // 1. Tagesansicht (GUX-055: markierte blaue Zeitzeilen)
+        function renderDayView() {
+            const container = document.getElementById('day-timeline-slots');
+            const title = document.getElementById('day-view-date-title');
+            const badge = document.getElementById('day-event-count');
+            if (!container) return;
+
+            const y = _currentDate.getFullYear();
+            const m = String(_currentDate.getMonth() + 1).padStart(2, '0');
+            const d = String(_currentDate.getDate()).padStart(2, '0');
+            const datePrefix = `${y}-${m}-${d}`;
+
+            const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(datePrefix));
+            if (badge) badge.textContent = `${dayEvents.length} Termine`;
+            if (title) title.textContent = `${d}. ${MONTH_NAMES[_currentDate.getMonth()]} ${y}`;
+
+            let html = '';
+            for (let hour = 0; hour <= 23; hour++) {
+                const hourStr = String(hour).padStart(2, '0') + ':00';
+                const slotEvents = dayEvents.filter(e => {
+                    const t = (e.start_datetime || '').slice(11, 16);
+                    const h = parseInt(t.split(':')[0] || '-1', 10);
+                    return h === hour;
+                });
+
+                const isCurrentHour = datePrefix === localDateKey(new Date()) && hour === new Date().getHours();
+                html += `
+                    <div class="day-slot ${isCurrentHour ? 'current-hour' : ''}">
+                        <div class="day-slot-time">${hourStr}</div>
+                        <div class="day-slot-content">
+                            ${slotEvents.map(e => `
+                                <div style="background:var(--bg-card);border:1px solid var(--accent);border-left:4px solid var(--accent);padding:0.4rem 0.75rem;border-radius:4px;font-size:0.8rem;">
+                                    <strong style="color:var(--text);">${escapeHtml(e.title)}</strong>
+                                    ${e.location ? `<span style="color:var(--text-muted);font-size:0.75rem;"> @ ${escapeHtml(e.location)}</span>` : ''}
+                                    <span class="badge badge-accent" style="margin-left:0.5rem;font-size:0.65rem;">${escapeHtml(e.origin === 'user' ? 'Nutzertermin' : e.origin === 'system' ? 'Systemtermin' : 'Herkunft unbekannt')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // 2. Wochenansicht (GUX-056: 7 Spalten, klare Stundenzeilen)
+        function renderWeekView() {
+            const grid = document.getElementById('week-columns-grid');
+            if (!grid) return;
+            const monday = getMonday(_currentDate);
+            const todayStr = localDateKey(new Date());
+            const days = [];
+            for (let i = 0; i < 7; i++) {
+                const cur = new Date(monday);
+                cur.setDate(monday.getDate() + i);
+                days.push({ date: localDateKey(cur), label: `${WEEKDAY_NAMES[i]} ${cur.getDate()}.${cur.getMonth()+1}.` });
+            }
+            let html = '<div class="week-time" aria-hidden="true"></div>';
+            html += days.map(d => `<div class="week-day-heading ${d.date === todayStr ? 'today' : ''}">${d.label}</div>`).join('');
+            for (let hour = 0; hour < 24; hour++) {
+                html += `<div class="week-time">${String(hour).padStart(2, '0')}:00</div>`;
+                for (const day of days) {
+                    const events = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(day.date)
+                        && Number.parseInt((e.start_datetime || '').slice(11,13),10) === hour);
+                    html += `<div class="week-hour-cell ${day.date === todayStr ? 'today' : ''} ${day.date === todayStr && hour === new Date().getHours() ? 'current-hour' : ''}">
+                        ${events.map(e => `<div class="cal-event-chip" title="${escapeHtml(e.title)}"><strong>${escapeHtml((e.start_datetime || '').slice(11,16))}</strong> ${escapeHtml(e.title)}</div>`).join('')}
+                    </div>`;
+                }
+            }
+            grid.innerHTML = html;
+        }
+
+        // 3. Monatsansicht (GUX-057: gleich große Kacheln)
+        function renderMonthView() {
+            const grid = document.getElementById('month-days-grid');
+            if (!grid) return;
+
+            const year = _currentDate.getFullYear();
+            const month = _currentDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+
+            const startOffset = (firstDay.getDay() + 6) % 7;
+            const totalDays = lastDay.getDate();
+            const todayStr = localDateKey(new Date());
+
+            let html = '';
+            for (let i = 0; i < startOffset; i++) {
+                html += `<div class="month-day-cell other-month"></div>`;
+            }
+
+            for (let day = 1; day <= totalDays; day++) {
+                const dStr = String(day).padStart(2, '0');
+                const mStr = String(month + 1).padStart(2, '0');
+                const iso = `${year}-${mStr}-${dStr}`;
+                const isToday = iso === todayStr;
+
+                const dayEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(iso));
+
+                html += `
+                    <div class="month-day-cell ${isToday ? 'today' : ''}" data-date="${iso}" onclick="selectDayFromMonth('${iso}')">
+                        <div class="month-day-num" style="${isToday ? 'color:var(--accent);font-weight:800;' : ''}">${day}</div>
+                        <div style="flex:1;overflow-y:auto;">
+                            ${dayEvents.slice(0, 3).map(e => {
+                                const chipClass = e.is_routine ? 'chip-routine' : (e.event_type === 'fokusblock' ? 'chip-fokus' : '');
+                                return `<div class="cal-event-chip ${chipClass}">${escapeHtml(e.title)}</div>`;
+                            }).join('')}
+                            ${dayEvents.length > 3 ? `<div style="font-size:0.65rem;color:var(--text-muted);text-align:right;">+${dayEvents.length - 3} weitere</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            for (let i = startOffset + totalDays; i < 42; i++) {
+                html += '<div class="month-day-cell other-month" aria-hidden="true"></div>';
+            }
+            grid.innerHTML = html;
+        }
+
+        function selectDayFromMonth(iso) {
+            const [year, month, day] = iso.split('-').map(Number);
+            _currentDate = new Date(year, month - 1, day);
+            switchCalendarView('day');
+        }
+
+        // 4. Jahresüberblick (GUX-058: jedes Datum als Kästchen)
+        function renderYearView() {
+            const container = document.getElementById('year-quarters-container');
+            const yearTitle = document.getElementById('year-title');
+            if (!container) return;
+            const year = _currentDate.getFullYear();
+            if (yearTitle) yearTitle.textContent = `Jahresüberblick ${year}`;
+
+            let html = '';
+            for (let m = 0; m < 12; m++) {
+                const mName = MONTH_NAMES[m];
+                const daysInMonth = new Date(year, m + 1, 0).getDate();
+                const mPrefix = `${year}-${String(m+1).padStart(2, '0')}`;
+                const mEvents = visibleCalendarEvents().filter(e => (e.start_datetime || '').startsWith(mPrefix));
+                const startOffset = (new Date(year, m, 1).getDay() + 6) % 7;
+
+                html += `
+                    <div class="mini-month-card">
+                        <div class="mini-month-title">
+                            <span>${mName}</span>
+                            <span class="badge ${mEvents.length ? 'badge-accent' : 'badge-secondary'}" style="font-size:0.65rem;">${mEvents.length} Termine</span>
+                        </div>
+                        <div class="mini-month-grid">
+                            ${Array.from({length: startOffset}, () => '<span class="mini-day empty"></span>').join('')}
+                            ${Array.from({length: daysInMonth}, (_, i) => {
+                                const day = i + 1;
+                                const dStr = String(day).padStart(2, '0');
+                                const iso = `${mPrefix}-${dStr}`;
+                                const hasEv = mEvents.some(e => (e.start_datetime || '').startsWith(iso));
+                                return `<div class="mini-day ${hasEv ? 'has-event' : ''}" title="${day}. ${mName}">${day}</div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function switchCalendarView(viewName) {
+            _calView = viewName;
+            document.querySelectorAll('.cal-view-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.querySelector(`.cal-view-btn[data-view="${viewName}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            document.querySelectorAll('.cal-view-pane').forEach(p => p.style.display = 'none');
+            const activePane = document.getElementById('view-' + viewName);
+            if (activePane) activePane.style.display = 'block';
+
+            loadCalendarEvents();
+        }
+
+        function getMonday(d) {
+            const date = new Date(d);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(date.setDate(diff));
+        }
+
+        function getWeekNumber(d) {
+            const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            const dayNum = date.getUTCDay() || 7;
+            date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+            return Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+        }
+
+        // ── MODAL ADD EVENT ──
+        function openAddEventModal() {
+            const todayStr = localDateKey(_currentDate);
+            document.getElementById('ne-date').value = todayStr;
+            document.getElementById('modal-add-event').classList.remove('hidden');
+        }
+
+        function closeAddEventModal(e) {
+            if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-overlay')) return;
+            document.getElementById('modal-add-event').classList.add('hidden');
+        }
+
+        async function submitNewEvent(event) {
+            event.preventDefault();
+            const title = document.getElementById('ne-title').value.trim();
+            const date = document.getElementById('ne-date').value;
+            const time = document.getElementById('ne-time').value;
+            const event_type = document.getElementById('ne-type').value;
+            const location = document.getElementById('ne-location').value.trim();
+            const description = document.getElementById('ne-description').value.trim();
+
+            const start_datetime = `${date} ${time}:00`;
+
+            try {
+                const res = await lifeApiFetch('/api/calendar/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, start_datetime, event_type, location, description })
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    if (!saved.ok) throw new Error('Speicherung wurde nicht bestätigt.');
+                    closeAddEventModal();
+                    await loadCalendarEvents();
+                } else {
+                    alert(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `Termin konnte nicht gespeichert werden (HTTP ${res.status}).`);
+                }
+            } catch (e) {
+                alert('Netzwerkfehler: ' + e.message);
+            }
+        }
+
+        // ── PERSÖNLICHE ROUTINEN: /api/routines (GUX-049 & NAV-AUFG-02) ──
+        let _allPersonalRoutines = [];
+        const routineStatus = () => document.getElementById('routine-load-status');
+
+        async function loadAgentOptions() {
+            try {
+                const res = await lifeApiFetch('/api/agents');
+                if (!res.ok) return;
+                const data = await res.json();
+                const agents = data.agents || [];
+                const select = document.getElementById('routine-agent');
+                if (!select) return;
+                select.innerHTML = '<option value="">Kein Agent (Manuell)</option>';
+                for (const ag of agents) {
+                    const opt = document.createElement('option');
+                    opt.value = ag.name;
+                    opt.textContent = ag.display_name ? `${ag.display_name} (${ag.name})` : ag.name;
+                    select.appendChild(opt);
+                }
+            } catch (_) {}
+        }
+
+        async function loadPersonalRoutines() {
+            if (routineStatus()) routineStatus().textContent = 'Lade Routinen …';
+            try {
+                const res = await lifeApiFetch('/api/routines');
+                if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
+                const data = await res.json();
+                if (data.success !== true || !Array.isArray(data.routines)) throw new Error('Routinen konnten nicht geladen werden.');
+                _allPersonalRoutines = data.routines;
+
+                for (const key of ['total', 'active', 'due_today', 'overdue']) {
+                    const label = key === 'due_today' ? 'due' : key;
+                    const el = document.getElementById(`routine-stat-${label}`);
+                    if (el) el.textContent = String(data.stats?.[key] ?? '–');
+                }
+
+                const filter = document.getElementById('filter-routine-cat');
+                if (filter) {
+                    const prior = filter.value;
+                    filter.replaceChildren(new Option('Alle Kategorien', ''));
+                    for (const category of [...new Set(data.routines.map(r => r.category).filter(Boolean))].sort()) {
+                        filter.add(new Option(String(category), String(category)));
+                    }
+                    filter.value = prior;
+                }
+
+                if (routineStatus()) routineStatus().textContent = '';
+                renderPersonalRoutines();
+                return data.routines;
+            } catch (error) {
+                _allPersonalRoutines = [];
+                const list = document.getElementById('personal-routines-list');
+                if (list) list.replaceChildren();
+                if (routineStatus()) routineStatus().textContent = error.message || 'Routinen konnten nicht geladen werden.';
+                return null;
+            }
+        }
+
+        function renderPersonalRoutines() {
+            const container = document.getElementById('personal-routines-list');
+            if (!container) return;
+            container.replaceChildren();
+            const catFilter = document.getElementById('filter-routine-cat')?.value;
+            const routines = _allPersonalRoutines.filter(r => !catFilter || r.category === catFilter);
+
+            if (!routines.length) {
+                const empty = document.createElement('p');
+                empty.className = 'loading-state';
+                empty.textContent = 'Keine Routinen für diese Auswahl vorhanden.';
+                container.append(empty);
+                return;
+            }
+
+            for (const routine of routines) {
+                const id = Number(routine.id);
+                if (!Number.isSafeInteger(id) || id < 1) continue;
+
+                const row = document.createElement('article');
+                row.className = 'routine-row';
+
+                const info = document.createElement('div');
+                const title = document.createElement('strong');
+                title.textContent = String(routine.name ?? 'Unbenannte Routine');
+
+                if (routine.assigned_agent) {
+                    const agentBadge = document.createElement('span');
+                    agentBadge.className = 'badge badge-agent';
+                    agentBadge.style.marginLeft = '0.5rem';
+                    agentBadge.textContent = `🤖 ${routine.assigned_agent}`;
+                    title.append(agentBadge);
+                }
+
+                const meta = document.createElement('span');
+                meta.className = 'routine-meta';
+                meta.textContent = [
+                    routine.category || 'Haushalt',
+                    routine.interval_type || 'woechentlich',
+                    routine.next_due_at ? `Nächste: ${routine.next_due_at}` : 'Keine Fälligkeit',
+                    routine.is_active ? 'Aktiv' : 'Inaktiv'
+                ].filter(Boolean).join(' · ');
+                info.append(title, meta);
+
+                const actions = document.createElement('div');
+                actions.className = 'routine-actions';
+
+                if (routine.is_active && (routine.is_due_today || routine.is_overdue)) {
+                    const completeBtn = document.createElement('button');
+                    completeBtn.className = 'btn btn-success btn-sm';
+                    completeBtn.textContent = 'Erledigt';
+                    completeBtn.addEventListener('click', () => changeRoutine(`/api/routines/${id}/complete`, 'POST', id, 'Routine erledigt.'));
+                    actions.append(completeBtn);
+                }
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'btn btn-secondary btn-sm';
+                editBtn.textContent = 'Bearbeiten';
+                editBtn.addEventListener('click', () => openRoutineForm(routine));
+                actions.append(editBtn);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'btn btn-danger btn-sm';
+                delBtn.textContent = 'Löschen';
+                delBtn.addEventListener('click', () => {
+                    if (confirm('Routine wirklich löschen?')) {
+                        changeRoutine(`/api/routines/${id}`, 'DELETE', id, 'Routine gelöscht.');
+                    }
+                });
+                actions.append(delBtn);
+
+                row.append(info, actions);
+                container.append(row);
+            }
+        }
+
+        function openRoutineForm(routine = null) {
+            const form = document.getElementById('life-routine-form');
+            if (!form) return;
+            form.reset();
+            document.getElementById('routine-edit-id').value = routine ? String(routine.id) : '';
+            document.getElementById('life-routine-form-title').textContent = routine ? 'Routine bearbeiten' : 'Neue Routine';
+
+            document.getElementById('routine-name').value = routine?.name || '';
+            document.getElementById('routine-description').value = routine?.description || '';
+            document.getElementById('routine-category').value = routine?.category || 'Haushalt';
+            document.getElementById('routine-priority').value = routine?.priority || 2;
+            document.getElementById('routine-interval').value = routine?.interval_type || 'woechentlich';
+            document.getElementById('routine-interval-value').value = routine?.interval_value || 1;
+            document.getElementById('routine-specific-day').value = routine?.specific_day || '';
+            document.getElementById('routine-duration').value = routine?.duration_minutes ?? '';
+            document.getElementById('routine-agent').value = routine?.assigned_agent || '';
+
+            form.classList.remove('hidden');
+            document.getElementById('routine-name').focus();
+        }
+
+        function closeRoutineForm() {
+            document.getElementById('life-routine-form')?.classList.add('hidden');
+        }
+
+        async function changeRoutine(path, method, id, successText, body = null) {
+            try {
+                const res = await lifeApiFetch(path, {
+                    method,
+                    headers: body ? { 'Content-Type': 'application/json' } : {},
+                    body: body ? JSON.stringify(body) : undefined
+                });
+                if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Bitte über die Geräteanmeldung anmelden.' : `HTTP ${res.status}`);
+                const ack = await res.json();
+                if (ack.success !== true) throw new Error('Die Änderung wurde nicht bestätigt.');
+                const readback = await loadPersonalRoutines();
+                if (!readback) throw new Error('Änderung bestätigt, aber die aktuelle Liste konnte nicht gelesen werden.');
+                if (routineStatus()) routineStatus().textContent = successText;
+                closeRoutineForm();
+            } catch (error) {
+                if (routineStatus()) routineStatus().textContent = error.message || 'Änderung fehlgeschlagen.';
+            }
+        }
+
+        function savePersonalRoutine(event) {
+            event.preventDefault();
+            const idText = document.getElementById('routine-edit-id').value;
+            const id = idText ? Number(idText) : null;
+            const title = document.getElementById('routine-name').value.trim();
+            const intervalValue = Number(document.getElementById('routine-interval-value').value);
+
+            if (!title || !Number.isSafeInteger(intervalValue) || intervalValue < 1) {
+                if (routineStatus()) routineStatus().textContent = 'Name und gültiges Intervall sind erforderlich.';
+                return;
+            }
+
+            const body = {
+                name: title,
+                description: document.getElementById('routine-description').value,
+                category: document.getElementById('routine-category').value.trim() || 'Haushalt',
+                priority: Number(document.getElementById('routine-priority').value),
+                interval_type: document.getElementById('routine-interval').value,
+                interval_value: intervalValue,
+                specific_day: document.getElementById('routine-specific-day').value.trim() || null,
+                duration_minutes: document.getElementById('routine-duration').value ? Number(document.getElementById('routine-duration').value) : null,
+                assigned_agent: document.getElementById('routine-agent').value || null
+            };
+
+            changeRoutine(id ? `/api/routines/${id}` : '/api/routines', id ? 'PUT' : 'POST', id, 'Routine gespeichert.', body);
+        }
+
+        // ── MEINE AUFGABEN (GUX-047) ──
+        async function loadUserTasks() {
+            const container = document.getElementById('user-tasks-container');
+            const filter = document.getElementById('filter-user-tasks-status');
+            if (!container || !filter) return;
+            container.replaceChildren();
+            const loading = document.createElement('p');
+            loading.className = 'loading-state';
+            loading.textContent = 'Lade persönliche Aufgaben …';
+            container.append(loading);
+
+            try {
+                const url = new URL('/api/tasks', location.origin);
+                url.searchParams.set('assigned_to', 'user');
+                url.searchParams.set('limit', '30');
+                if (filter.value) url.searchParams.set('status', filter.value);
+
+                const response = await lifeApiFetch(url.pathname + url.search);
+                if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+                    ? 'Bitte über die Geräteanmeldung anmelden.'
+                    : `Aufgaben konnten nicht geladen werden (HTTP ${response.status}).`);
+
+                const data = await response.json();
+                if (!Array.isArray(data.tasks)) throw new Error('Die Aufgabenantwort ist ungültig.');
+                container.replaceChildren();
+
+                if (!data.tasks.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'loading-state';
+                    empty.textContent = 'Für diese Auswahl sind keine persönlichen Aufgaben vorhanden.';
+                    container.append(empty);
+                    return;
+                }
+
+                const list = document.createElement('div');
+                list.className = 'life-task-list';
+                for (const task of data.tasks) {
+                    const id = Number(task.id);
+                    if (!Number.isSafeInteger(id) || id < 1) continue;
+                    const row = document.createElement('article');
+                    row.className = 'life-task-row';
+                    const title = document.createElement('strong');
+                    title.textContent = `#${id} · ${String(task.title || 'Ohne Titel')}`;
+                    const description = document.createElement('p');
+                    description.style.margin = '0.2rem 0';
+                    description.style.color = 'var(--text-muted)';
+                    description.textContent = String(task.description || '').slice(0, 240);
+                    const meta = document.createElement('span');
+                    meta.className = 'life-task-meta';
+                    meta.textContent = [
+                        task.status || 'Status unbekannt',
+                        task.priority || 'P3',
+                        task.category || 'Kategorie unbekannt',
+                        task.due_date ? `Fällig: ${task.due_date}` : null
+                    ].filter(Boolean).join(' · ');
+                    row.append(title, description, meta);
+                    list.append(row);
+                }
+                container.append(list);
+            } catch (error) {
+                container.replaceChildren();
+                const failed = document.createElement('p');
+                failed.className = 'load-status';
+                failed.style.color = 'var(--error)';
+                failed.textContent = error instanceof Error ? error.message : 'Aufgaben konnten nicht geladen werden.';
+                container.append(failed);
+            }
+        }
+
+        function openLifeTaskModal() {
+            const errEl = document.getElementById('life-task-error');
+            if (errEl) { errEl.textContent = ''; errEl.hidden = true; }
+            document.getElementById('life-task-form')?.reset();
+            document.getElementById('life-task-modal')?.classList.remove('hidden');
+        }
+
+        function closeLifeTaskModal(e) {
+            if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-overlay')) return;
+            document.getElementById('life-task-modal')?.classList.add('hidden');
+        }
+
+        async function submitLifeTask(e) {
+            e.preventDefault();
+            const errEl = document.getElementById('life-task-error');
+            const form = document.getElementById('life-task-form');
+            const submitBtn = document.getElementById('btn-life-task-submit');
+            errEl.hidden = true;
+            submitBtn.disabled = true;
+
+            const fd = new FormData(form);
+            const payload = {
+                title: fd.get('title'),
+                description: fd.get('description') || null,
+                priority: fd.get('priority') || 'P3',
+                category: fd.get('category') || null,
+                assigned_to: 'user',
+                created_by: 'user',
+                due_date: fd.get('due_date') || null,
+                depends_on: fd.get('depends_on') || null,
+                required_model: fd.get('required_model') || null,
+                assigned_slot: fd.get('assigned_slot') || null
+            };
+
+            try {
+                const res = await lifeApiFetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || `Fehler bei Aufgabenerstellung (HTTP ${res.status})`);
+                }
+                const created = await res.json();
+                const taskId = created.id || created.task_id;
+                if (!taskId) throw new Error('Aufgabe wurde nicht mit ID bestätigt');
+
+                // Readback check
+                const checkRes = await lifeApiFetch(`/api/tasks/${taskId}`);
+                if (!checkRes.ok) throw new Error('Aufgabe konnte nach Erstellung nicht verifiziert werden');
+
+                closeLifeTaskModal();
+                loadUserTasks();
+                document.dispatchEvent(new CustomEvent('bach:task-created', { detail: { id: taskId, assigned_to: 'user' } }));
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.hidden = false;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        // ── TIMER & COUNTDOWN (GUX-053) ──
+        let timerInterval = null;
+        let secondsLeft = 25 * 60;
+        let timerDeadline = null;
+        let focusPopup = null;
+
+        function updateTimerDisplay() {
+            const display = document.getElementById('timer-display');
+            if (!display) return;
+            const m = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+            const s = (secondsLeft % 60).toString().padStart(2, '0');
+            display.textContent = `${m}:${s}`;
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
+            timerDeadline = null;
+        }
+
+        function tickTimer() {
+            if (timerDeadline === null) return;
+            secondsLeft = Math.max(0, Math.ceil((timerDeadline - performance.now()) / 1000));
+            updateTimerDisplay();
+            if (secondsLeft === 0) {
+                stopTimer();
+                const btnStart = document.getElementById('btn-timer-start');
+                if (btnStart) btnStart.textContent = 'Start';
+                const status = document.getElementById('focus-window-status');
+                if (status) status.textContent = 'Intervall beendet.';
+            }
+        }
+
+        function toggleTimer() {
+            const btnStart = document.getElementById('btn-timer-start');
+            if (timerInterval) {
+                tickTimer();
+                stopTimer();
+                if (btnStart) btnStart.textContent = 'Weiter';
+            } else {
+                if (secondsLeft <= 0) secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+                timerDeadline = performance.now() + secondsLeft * 1000;
+                if (btnStart) btnStart.textContent = 'Pause';
+                tickTimer();
+                timerInterval = setInterval(tickTimer, 250);
+            }
+        }
+
+        function resetTimer() {
+            stopTimer();
+            secondsLeft = Number(document.querySelector('.timer-tag.active')?.dataset.seconds || 1500);
+            updateTimerDisplay();
+            const btnStart = document.getElementById('btn-timer-start');
+            if (btnStart) btnStart.textContent = 'Start';
+            const status = document.getElementById('focus-window-status');
+            if (status) status.textContent = 'Timer bereit.';
+        }
+
+        function setTimerMode(seconds, btn) {
+            stopTimer();
+            document.querySelectorAll('.timer-tag').forEach(tag => tag.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            secondsLeft = seconds;
+            updateTimerDisplay();
+            const btnStart = document.getElementById('btn-timer-start');
+            if (btnStart) btnStart.textContent = 'Start';
+        }
+
+        function openFocusWindow() {
+            const url = new URL('/life?tab=selbstmanagement&focus=1', location.origin);
+            if (url.origin !== location.origin) return;
+            focusPopup = window.open(url.href, 'life-focus-timer', 'width=500,height=580');
+            const status = document.getElementById('focus-window-status');
+            if (!focusPopup) {
+                if (status) status.textContent = 'Das Browserfenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben.';
+                return;
+            }
+            try {
+                focusPopup.focus();
+                if (status) status.textContent = 'Fokusfenster geöffnet. Beide Timer laufen unabhängig.';
+            } catch (_) {
+                focusPopup.close();
+                if (status) status.textContent = 'Fokusfenster konnte nicht sicher geöffnet werden.';
+            }
+        }
+
+        // ── PROVIDER CHECK (GUX-054 & GUX-059) ──
+        async function checkLifeProviders() {
+            try {
+                const res = await lifeApiFetch('/api/life/providers');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const btnRoutinika = document.getElementById('btn-routinika');
+                if (btnRoutinika && data.routinika) {
+                    if (data.routinika.available && data.routinika.url) {
+                        btnRoutinika.disabled = false;
+                        btnRoutinika.title = data.routinika.message;
+                        btnRoutinika.textContent = 'Routinika öffnen ↗';
+                        btnRoutinika.onclick = () => window.open(data.routinika.url, '_blank');
+                    } else {
+                        btnRoutinika.disabled = true;
+                        btnRoutinika.title = data.routinika.message;
+                    }
+                }
+
+                const btnUpToday = document.getElementById('btn-uptoday');
+                if (btnUpToday && data.uptoday) {
+                    if (data.uptoday.available && data.uptoday.url) {
+                        btnUpToday.disabled = false;
+                        btnUpToday.title = data.uptoday.message;
+                        btnUpToday.textContent = 'UpToday öffnen ↗';
+                        btnUpToday.onclick = () => window.open(data.uptoday.url, '_blank');
+                    } else {
+                        btnUpToday.disabled = true;
+                        btnUpToday.title = data.uptoday.message;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // ── TAB MANAGEMENT ──
         function setupTabs() {
             const buttons = document.querySelectorAll('.tab-btn');
             const panes = document.querySelectorAll('.tab-pane');
@@ -339,7 +1873,17 @@
                     url.searchParams.set('tab', tab);
                     history.replaceState(null, '', url);
 
+                    if (tab === 'kalender') loadCalendarEvents();
+                    if (tab === 'routinen') loadPersonalRoutines();
                     if (tab === 'aufgaben') loadUserTasks();
+                });
+            });
+
+            // View Switcher in Kalender
+            document.querySelectorAll('.cal-view-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const view = btn.getAttribute('data-view');
+                    switchCalendarView(view);
                 });
             });
 
@@ -350,149 +1894,20 @@
             }
         }
 
-        // ── User Tasks (GUX-047) ──
-        async function loadUserTasks() {
-            const container = document.getElementById('user-tasks-container');
-            const filter = document.getElementById('filter-user-tasks-status');
-            if (!container) return;
-            container.innerHTML = '<p class="loading-state">Lade persönliche Aufgaben …</p>';
-
-            try {
-                const status = filter?.value || 'nonterminal';
-                const query = new URLSearchParams({ assigned_to: 'user', limit: '30', status });
-                const res = await fetch('/api/tasks?' + query);
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                if (!Array.isArray(data.tasks)) throw new Error('Ungültiges Task-Format');
-
-                if (data.tasks.length === 0) {
-                    container.innerHTML = '<p class="loading-state">Für diese Auswahl sind keine persönlichen Aufgaben vorhanden.</p>';
-                    return;
-                }
-
-                container.innerHTML = `
-                    <div class="life-task-list">
-                        ${data.tasks.map(t => `
-                            <article class="life-task-row">
-                                <strong>#${t.id} · ${escapeHtml(t.title || 'Unbenannt')}</strong>
-                                ${t.description ? `<p style="margin:0.2rem 0;font-size:0.85rem;color:var(--text-muted);">${escapeHtml(t.description.slice(0, 240))}</p>` : ''}
-                                <span class="life-task-meta">
-                                    Status: ${escapeHtml(t.status || 'open')} · Priorität: ${escapeHtml(t.priority || 'P3')} · Kategorie: ${escapeHtml(t.category || '-')}
-                                    ${t.due_date ? ` · Fällig: ${escapeHtml(t.due_date)}` : ''}
-                                </span>
-                            </article>
-                        `).join('')}
-                    </div>
-                `;
-            } catch (err) {
-                container.innerHTML = `<p class="load-status">Aufgaben konnten nicht geladen werden: ${escapeHtml(err.message)}</p>`;
-            }
-        }
-
-        // ── Modal Handling ──
-        function openLifeTaskModal() {
-            document.getElementById('life-task-error').hidden = true;
-            document.getElementById('life-task-modal').classList.remove('hidden');
-        }
-        function closeLifeTaskModal(e) {
-            if (e && e.target !== e.currentTarget) return;
-            document.getElementById('life-task-modal').classList.add('hidden');
-        }
-
-        async function submitLifeTask(e) {
-            e.preventDefault();
-            const form = e.target;
-            const submitBtn = document.getElementById('btn-life-task-submit');
-            const errEl = document.getElementById('life-task-error');
-            errEl.hidden = true;
-            submitBtn.disabled = true;
-
-            const payload = {
-                title: form.title.value.trim(),
-                priority: form.priority.value,
-                category: form.category.value.trim() || 'general',
-                assigned_to: 'user',
-                created_by: 'user',
-                due_date: form.due_date.value ? form.due_date.value.trim() : null,
-                depends_on: form.depends_on.value.trim() || null,
-                required_model: form.required_model.value.trim() || null,
-                assigned_slot: form.assigned_slot.value.trim() || null,
-                description: form.description.value.trim() || ''
-            };
-
-            try {
-                const res = await fetch('/api/tasks', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await res.json().catch(() => ({}));
-                if (!res.ok || !result.id) {
-                    throw new Error(result.detail || result.error || 'Erstellung fehlgeschlagen');
-                }
-
-                // GET Readback Check
-                const readbackRes = await fetch('/api/tasks/' + encodeURIComponent(result.id));
-                if (!readbackRes.ok) throw new Error('Kontrollabruf nach Erstellung fehlgeschlagen');
-                const stored = await readbackRes.json();
-                if (Number(stored.id) !== Number(result.id)) throw new Error('Task-ID-Abweichung im Kontrollabruf');
-
-                // Modal schliessen & Event emittieren
-                form.reset();
-                closeLifeTaskModal();
-                document.dispatchEvent(new CustomEvent('bach:task-created', {
-                    detail: { id: Number(result.id), assigned_to: 'user' }
-                }));
-            } catch (err) {
-                errEl.textContent = err.message;
-                errEl.hidden = false;
-            } finally {
-                submitBtn.disabled = false;
-            }
-        }
-
-        function escapeHtml(t) {
-            if (t == null) return '';
-            return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-
-        // ── Timer Demo ──
-        let timerSeconds = 1500;
-        let timerId = null;
-        function updateTimer() {
-            const m = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
-            const s = String(timerSeconds % 60).padStart(2, '0');
-            document.getElementById('timer-display').textContent = `${m}:${s}`;
-        }
-        function toggleTimer() {
-            const btn = document.getElementById('btn-timer-start');
-            if (timerId) {
-                clearInterval(timerId);
-                timerId = null;
-                btn.textContent = 'Weiter';
-            } else {
-                timerId = setInterval(() => {
-                    if (timerSeconds > 0) { timerSeconds--; updateTimer(); }
-                    else { clearInterval(timerId); timerId = null; btn.textContent = 'Start'; }
-                }, 1000);
-                btn.textContent = 'Pause';
-            }
-        }
-        function resetTimer() {
-            if (timerId) { clearInterval(timerId); timerId = null; }
-            timerSeconds = 1500;
-            updateTimer();
-            document.getElementById('btn-timer-start').textContent = 'Start';
-        }
-
-        // ── Init ──
         document.addEventListener('DOMContentLoaded', () => {
             setupTabs();
-            document.getElementById('filter-user-tasks-status')?.addEventListener('change', loadUserTasks);
-            document.addEventListener('bach:task-created', (event) => {
-                if (event.detail?.assigned_to === 'user') {
-                    loadUserTasks();
-                }
+            loadCalendarEvents();
+            loadAgentOptions();
+            checkLifeProviders();
+
+            if (new URLSearchParams(location.search).get('focus') === '1') {
+                document.querySelector('.life-container')?.classList.add('standalone-focus');
+                const status = document.getElementById('focus-window-status');
+                if (status) status.textContent = 'Eigenständiger Browser-Timer. Er wird nicht mit dem Hauptfenster synchronisiert.';
+            }
+
+            document.addEventListener('bach:task-created', event => {
+                if (event.detail?.assigned_to === 'user') loadUserTasks();
             });
         });
     </script>

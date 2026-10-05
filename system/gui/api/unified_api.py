@@ -2473,7 +2473,8 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
 async def get_calendar_events(
     view: str = Query("month", description="day|week|month|year|list"),
     date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
-    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden")
+    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden"),
+    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown")
 ):
     """Liefert Termine aus assistant_calendar und optionale fällige Routinen."""
     conn = _get_conn()
@@ -2540,7 +2541,17 @@ async def get_calendar_events(
             except Exception:
                 pass
 
-        return {"events": events, "count": len(events), "view": view, "date": date}
+        if origin and origin != "all":
+            if origin == "system":
+                events = [e for e in events if e.get("origin") == "system"]
+            elif origin == "user":
+                events = [e for e in events if e.get("origin") == "user"]
+            elif origin in ("without_system", "ohne_system", "no_system"):
+                events = [e for e in events if e.get("origin") != "system"]
+            elif origin == "unknown":
+                events = [e for e in events if e.get("origin") == "unknown"]
+
+        return {"events": events, "count": len(events), "view": view, "date": date, "origin": origin}
     finally:
         conn.close()
 
