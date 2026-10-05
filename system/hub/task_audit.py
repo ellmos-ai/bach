@@ -45,6 +45,7 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
     "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
+    "due_date",
 })
 
 # Spalten, die NICHT ueber field_values gesetzt werden (sie sind Ergebnis der
@@ -57,6 +58,56 @@ CLEARABLE_COLUMNS = frozenset({"started_at", "completed_at", "claimed_by", "clai
 # (T-20260916-1330 / #1235 Resurrektion-Bypass). 'open'/'pending'/'in_progress'
 # sind die claimbaren Stati, auf die ein API-Reopen den Task wieder zuruecksetzt.
 CLAIMABLE_OPENING_STATUSES = frozenset({"open", "pending", "in_progress"})
+
+# BACH #1721 (TaskDB-Lease-Vertrag v1, §5.4/§11.3): Lease-Spalten, die bei
+# Alt-Claim, Alt-Release und Reap entwertet werden. claim_fence bleibt stehen
+# (Hochwassermarke), damit ein altes Fence nie wieder passt.
+LEASE_CAPABILITY_COLUMNS = (
+    "claim_id", "claim_host", "claim_issued_at", "claim_expires_at", "claim_heartbeat_at",
+    "claim_ttl_profile", "claim_salt_ref", "claim_intent", "claim_request_id",
+)
+
+
+class LeaseRequired(ValueError):
+    """Generischer Statuswechsel auf einer Task mit lebendem Lease (HTTP 409).
+
+    Unterklasse von ValueError, damit bestehende Aufrufer, die Geschaeftsregel-
+    Konflikte als ValueError abfangen, auch diesen Fall als Konflikt behandeln.
+    """
+
+    reason = "lease_required"
+
+
+def _utc_stamp(dt: datetime | None = None) -> str:
+    """UTC im Lease-Format von hub._services.task_lease (lexikografisch vergleichbar)."""
+    from datetime import timezone
+    base = dt or datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.astimezone()  # naiv = Ortszeit des Leads
+    return base.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _has_lease_columns(conn: sqlite3.Connection) -> bool:
+    return any(col[1] == "claim_id" for col in conn.execute("PRAGMA table_info(tasks)"))
+
+
+def row_has_live_lease(row: Mapping[str, Any], now_utc: str | None = None) -> bool:
+    """True, wenn ``row`` einen lebenden Lease traegt (claim_id + in_progress +
+    claim_expires_at in der Zukunft). Alt-Claims ohne claim_id: False."""
+    if not row.get("claim_id") or row.get("status") != "in_progress":
+        return False
+    expires = row.get("claim_expires_at")
+    if not expires:
+        return False
+    return str(expires) > (now_utc or _utc_stamp())
+
+
+def clear_lease_capability(conn: sqlite3.Connection, task_id: int) -> None:
+    """Entwertet verwaiste Lease-Spalten (committet nicht)."""
+    if not _has_lease_columns(conn):
+        return
+    assignments = ", ".join(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS)
+    conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", (task_id,))
 
 
 class GateReopenBlocked(Exception):
@@ -155,6 +206,7 @@ def apply_task_field_changes(
     now: Optional[str] = None,
     clear_fields: Iterable[str] = (),
     allow_reopen: bool = False,
+    lease_authorized: bool = False,
 ) -> bool:
     """Schreibt das UPDATE auf `tasks` plus die zugehoerigen `task_history`-
     Zeilen. Committet NICHT selbst -- der Aufrufer bleibt fuer Transaktions-
@@ -185,6 +237,27 @@ def apply_task_field_changes(
     # gate-geparkten Task per Status-Change wieder claimbar setzen, worauf der
     # Terminal-Waechter in chat_tray nicht mehr greift (claimed_by gecleart).
     new_status = field_values.get("status")
+    # BACH #1726: Auch eine abgelaufene Capability darf nicht durch einen
+    # generischen Statuswechsel umgangen werden. Nur Release/Reclaim/Reaper
+    # entwerten sie. Der aktuelle DB-Zustand ersetzt den Snapshot des Aufrufers.
+    check_lease_status = not lease_authorized and new_status is not None
+    has_lease_columns = _has_lease_columns(conn) if check_lease_status else False
+    if check_lease_status and not has_lease_columns and not conn.in_transaction:
+        # Legacy-Schema: Die erste Lease-Migration darf nicht zwischen Schema-
+        # Prüfung und UPDATE eintreten. Der Aufrufer behält Commit/Rollback.
+        conn.execute("BEGIN IMMEDIATE")
+        has_lease_columns = _has_lease_columns(conn)
+    guard_lease_status = check_lease_status and has_lease_columns
+    lease_error = (
+        f"Task #{task_id} hat eine Lease-Capability; Statuswechsel nur ueber "
+        f"POST /api/tasks/{task_id}/lease/release oder expliziten Reclaim."
+    )
+    if guard_lease_status:
+        current = conn.execute(
+            "SELECT status, claim_id FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if current and current[1] and current[0] != new_status:
+            raise LeaseRequired(lease_error)
     if (
         not allow_reopen
         and new_status in CLAIMABLE_OPENING_STATUSES
@@ -264,7 +337,16 @@ def apply_task_field_changes(
     updates.append("updated_at = ?")
     values.append(now)
     values.append(task_id)
-    conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
+    where = "id = ?"
+    if guard_lease_status:
+        # Atomarer Schutz gegen Acquire zwischen obigem Read und diesem UPDATE.
+        where += " AND (claim_id IS NULL OR claim_id = '' OR status = ?)"
+        values.append(new_status)
+    cursor = conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE {where}", values)
+    if guard_lease_status and cursor.rowcount == 0:
+        if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
+            raise LeaseRequired(lease_error)
+        return False
 
     for field_changed, old_value, new_value, action in history_entries:
         conn.execute(
@@ -309,16 +391,29 @@ def claim_task_atomic(
             cols = [desc[0] for desc in cur.description]
             existing_row = dict(zip(cols, row))
 
+    lease_guard = ""
+    params: list[Any] = [claimed_by, now, now, task_id, lease_cutoff]
+    has_lease = _has_lease_columns(conn)
+    if has_lease:
+        # BACH #1721: Ein lebender Lease (claim_id + claim_expires_at in der
+        # Zukunft) ist unabhaengig von claimed_at nicht uebernehmbar.
+        lease_guard = " AND (claim_id IS NULL OR claim_expires_at IS NULL OR claim_expires_at <= ?)"
+        params.append(_utc_stamp(datetime.fromisoformat(now)))
+
     cursor = conn.execute(
         """UPDATE tasks
            SET status = 'in_progress', claimed_by = ?, claimed_at = ?, updated_at = ?
            WHERE id = ?
              AND status NOT IN ('done', 'completed', 'cancelled', 'blocked')
-             AND (status != 'in_progress' OR claimed_by IS NULL OR claimed_at IS NULL OR claimed_at < ?)""",
-        (claimed_by, now, now, task_id, lease_cutoff),
+             AND (status != 'in_progress' OR claimed_by IS NULL OR claimed_at IS NULL OR claimed_at < ?)"""
+        + lease_guard,
+        params,
     )
     if cursor.rowcount != 1:
         return False
+
+    if has_lease:
+        clear_lease_capability(conn, task_id)
 
     # started_at einmalig setzen (falls noch NULL)
     if not existing_row.get("started_at"):
@@ -357,14 +452,24 @@ def release_claim(conn: sqlite3.Connection, task_id: int, claimed_by: str) -> bo
             cols = [desc[0] for desc in cur.description]
             existing_row = dict(zip(cols, row))
 
+    lease_guard = ""
+    params: list[Any] = [now, task_id, claimed_by]
+    has_lease = _has_lease_columns(conn)
+    if has_lease:
+        # BACH #1721: lebender Lease nur ueber /lease/release freigebbar.
+        lease_guard = " AND (claim_id IS NULL OR claim_expires_at IS NULL OR claim_expires_at <= ?)"
+        params.append(_utc_stamp())
+
     cursor = conn.execute(
         """UPDATE tasks
            SET status = 'open', claimed_by = NULL, claimed_at = NULL, updated_at = ?
-           WHERE id = ? AND status = 'in_progress' AND claimed_by = ?""",
-        (now, task_id, claimed_by),
+           WHERE id = ? AND status = 'in_progress' AND claimed_by = ?""" + lease_guard,
+        params,
     )
     if cursor.rowcount != 1:
         return False
+    if has_lease:
+        clear_lease_capability(conn, task_id)
 
     old_claimed_by = existing_row.get("claimed_by") or claimed_by
     conn.execute(
@@ -407,6 +512,7 @@ def reap_stale_in_progress_tasks(
     has_claimed_by = "claimed_by" in cols
     has_claimed_at = "claimed_at" in cols
     has_updated = "updated_at" in cols
+    has_lease = {"claim_id", "claim_expires_at"} <= cols
     has_history = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='task_history'").fetchone() is not None
 
     select_sql = f"""
@@ -415,12 +521,15 @@ def reap_stale_in_progress_tasks(
                {("claimed_at" if has_claimed_at else "NULL as claimed_at")},
                {("started_at" if has_started else "NULL as started_at")},
                {("due_date" if has_due else "NULL as due_date")},
-               {("updated_at" if has_updated else "NULL as updated_at")}
+               {("updated_at" if has_updated else "NULL as updated_at")},
+               {("claim_id" if has_lease else "NULL as claim_id")},
+               {("claim_expires_at" if has_lease else "NULL as claim_expires_at")}
         FROM tasks
         WHERE status = 'in_progress'
     """
     rows = cur.execute(select_sql).fetchall()
     reaped_ids = []
+    now_stamp = _utc_stamp(now_utc)
 
     def _parse_iso_utc(val: Optional[str]) -> Optional[datetime]:
         if not val:
@@ -451,41 +560,56 @@ def reap_stale_in_progress_tasks(
         sat = row[3]
         due = row[4]
         updated_at = row[5]
+        lease_id = row[6]
+        lease_expires = row[7]
 
         # 1. Skip future due_date (gate-haltefrist)
         due_utc = _parse_iso_utc(due)
         if due_utc and due_utc > now_utc:
             continue
 
-        # 2. Check if active within lease window
-        cat_utc = _parse_iso_utc(cat)
-        sat_utc = _parse_iso_utc(sat)
-        # Manually started tasks may have neither timestamp. Their last update
-        # still starts a lease; an unknown timestamp must never imply expiry.
-        fallback_utc = _parse_iso_utc(updated_at) if not cat_utc and not sat_utc else None
-        if not cat_utc and not sat_utc and (fallback_utc is None or fallback_utc > cutoff_utc):
-            continue
+        # BACH #1721 (Lease-Vertrag v1 §11.3): Fuer geleaste Tasks entscheidet
+        # allein claim_expires_at. Lebend -> nie reapen; abgelaufen -> reapen,
+        # auch wenn claimed_at juenger als lease_seconds ist (Profil S).
+        if lease_id:
+            if not lease_expires or str(lease_expires) > now_stamp:
+                continue
+        else:
+            # 2. Check if active within lease window
+            cat_utc = _parse_iso_utc(cat)
+            sat_utc = _parse_iso_utc(sat)
+            # Manually started tasks may have neither timestamp. Their last update
+            # still starts a lease; an unknown timestamp must never imply expiry.
+            fallback_utc = _parse_iso_utc(updated_at) if not cat_utc and not sat_utc else None
+            if not cat_utc and not sat_utc and (fallback_utc is None or fallback_utc > cutoff_utc):
+                continue
 
-        if cat_utc and cat_utc > cutoff_utc:
-            continue
-        if sat_utc and sat_utc > cutoff_utc:
-            continue
-
+            if cat_utc and cat_utc > cutoff_utc:
+                continue
+            if sat_utc and sat_utc > cutoff_utc:
+                continue
         update_clauses = ["status = 'pending'"]
         update_vals = []
         if has_claimed_by:
             update_clauses.append("claimed_by = NULL")
         if has_claimed_at:
             update_clauses.append("claimed_at = NULL")
+        if has_lease:
+            update_clauses.extend(f"{name} = NULL" for name in LEASE_CAPABILITY_COLUMNS)
         if has_updated:
             update_clauses.append("updated_at = ?")
             update_vals.append(now_iso)
         update_vals.append(tid)
+        where_lease = ""
+        if has_lease:
+            # Wurde zwischen SELECT und UPDATE ein Lease vergeben/verlaengert: nicht reapen.
+            where_lease = " AND (claim_id IS NULL OR (claim_expires_at IS NOT NULL AND claim_expires_at <= ?))"
+            update_vals.append(now_stamp)
 
         cursor = conn.execute(
             f"""UPDATE tasks
                SET {', '.join(update_clauses)}
-               WHERE id = ? AND status = 'in_progress'""",
+               WHERE id = ? AND status = 'in_progress'{where_lease}""",
             update_vals,
         )
         if cursor.rowcount > 0:

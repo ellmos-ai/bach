@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Regressionstest für Task-Board-Filter (Task #1201).
 
 Prüft:
@@ -9,14 +8,13 @@ Prüft:
 """
 import gc
 import os
-import sys
 import sqlite3
+import sys
 import tempfile
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-
 
 TASKS_SCHEMA = """
 CREATE TABLE tasks (
@@ -89,13 +87,15 @@ def client():
     conn.close()
 
     # Import via 'system.gui.server' erzwingen, nicht 'hub.gui'
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     sys.path.insert(0, str(Path(__file__).parent.parent))
     # Eventuelle Import-Caches für 'gui' leeren
     for name in list(sys.modules.keys()):
         if name == "gui" or name.startswith("gui."):
             sys.modules.pop(name, None)
-    from system.gui import server
     from fastapi.testclient import TestClient
+
+    from system.gui import server
 
     with patch.object(
         server,
