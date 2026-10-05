@@ -3502,11 +3502,12 @@ class ControlHandler(BaseHTTPRequestHandler):
             # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
             # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
             sub_mode = (w.get("sub_mode") or "").strip().lower()
+            worker_instance_id = f"worker-{uuid.uuid4().hex}"
             try:
                 board_assignment = begin_assignment(
                     role_id=(sub_mode or "task_worker"),
                     mode=(w.get("mode") or "full"),
-                    agent_instance_id=f"worker-{uuid.uuid4().hex}",
+                    agent_instance_id=worker_instance_id,
                     backend_id=w.get("backend") or "ollama",
                     model_id=w.get("model") or "qwen3.8:27b-mlx",
                     slot_id=worker_id,
@@ -3524,6 +3525,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             def _run_worker_job():
                 worker_error = None
                 worker_session = None
+                current_assignment = board_assignment
+                assignment_open = True
                 try:
                     if control.stop_event.is_set():
                         return
@@ -3610,6 +3613,20 @@ class ControlHandler(BaseHTTPRequestHandler):
                             worker_id, worker_slot=current_slot
                         )
 
+                        if not assignment_open:
+                            current_assignment = begin_assignment(
+                                role_id=(current_slot.get("sub_mode") or "task_worker"),
+                                mode=(current_slot.get("mode") or "full"),
+                                agent_instance_id=worker_instance_id,
+                                backend_id=current_slot.get("backend") or "ollama",
+                                model_id=model,
+                                slot_id=worker_id,
+                                task_id=current_slot.get("task_id") or 0,
+                                session_id=worker_id,
+                                initiated_by=f"board:{worker_id}",
+                            )
+                            assignment_open = True
+
                         if control.stop_event.is_set():
                             break
                         loop = asyncio.new_event_loop()
@@ -3681,6 +3698,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
+
+                        if task_completed:
+                            finish_assignment(
+                                current_assignment, status="completed", result="task_done",
+                                reason="verified_tool_receipt",
+                            )
+                            assignment_open = False
+                            # Die konfigurierte Task ist nur der erste Auftrag.
+                            # Folgeaufträge dürfen nicht an ihre alte ID gebunden
+                            # bleiben; der nächste Block erhält eine neue Besetzung.
+                            if current_slot.get("task_id") not in (None, "", 0, "0"):
+                                if _update_worker_slot(control, {"task_id": None}) is None:
+                                    break
 
                         # Count a task only when task_manage returned a successful
                         # completion receipt for this worker's assigned task.
@@ -3764,8 +3794,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 _as_status, _as_result, _as_reason = "released", "ttl_expired", ""
                             else:
                                 _as_status, _as_result, _as_reason = "released", "not_finished", ""
-                        finish_assignment(board_assignment, status=_as_status,
-                                          result=_as_result, reason=_as_reason)
+                        if assignment_open:
+                            finish_assignment(current_assignment, status=_as_status,
+                                              result=_as_result, reason=_as_reason)
                     except Exception:
                         log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
                                     exc_info=True)
