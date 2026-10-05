@@ -42,6 +42,7 @@ _ALLOWED_CONTROL = {
     ("POST", "workers/toggle"), ("POST", "workers/stop"),
     ("POST", "workers/delete"),
     ("POST", "workers/handoff"),
+    ("GET", "workers/configuration"), ("POST", "workers/configuration"),
 }
 _ACTIONS = {
     "create": ("POST", "workers"),
@@ -162,6 +163,72 @@ def request_worker_handoff(worker_id: str, generation: str, *, device_token: str
         pass
     return {"ok": True, "action": "handoff", "receipt": observed or receipt,
             "runtime_readback": "available" if observed else "unavailable"}
+
+
+def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS, DEFAULT_ROLE_PROMPTS
+    version = result.get("configuration_version")
+    configuration = result.get("configuration")
+    if (result.get("ok") is not True or result.get("id") != worker_id
+            or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)
+            or not isinstance(configuration, dict)):
+        raise WorkerStatusUnavailable("Worker-Konfigurationsbeleg ist ungültig")
+    projected = {}
+    for key, value in configuration.items():
+        if key not in WORKER_EDITABLE_FIELDS:
+            continue
+        if value is None:
+            if key == "task_id":
+                projected[key] = None
+            continue
+        if key == "expert_models":
+            if (not isinstance(value, dict) or len(value) > 10 or any(
+                    role not in {*DEFAULT_ROLE_PROMPTS, "default"} or not isinstance(model, str)
+                    or len(model) > 180 for role, model in value.items())):
+                raise WorkerStatusUnavailable("Experten-Modellzuordnung ist ungültig")
+            projected[key] = dict(value)
+        elif key in {"think", "allow_tools", "include_system_prompt", "multi_role"}:
+            if type(value) is not bool:
+                raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültige Flags")
+            projected[key] = value
+        elif key in {"task_id", "max_tool_rounds", "max_experts", "pause_after", "pause_minutes"}:
+            if type(value) is not int:
+                raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültige Zahlen")
+            projected[key] = value
+        else:
+            if not isinstance(value, str) or len(value) > (20000 if key == "task_prompt" else 180) or "\x00" in value:
+                raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
+            projected[key] = value
+    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected}
+
+
+def read_worker_configuration(worker_id: str, *, device_token: str, timeout: float = 8.0):
+    if not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id):
+        raise WorkerActionRejected("Worker-ID ist ungültig", 400)
+    result = _request_control_api("GET", "workers/configuration", device_token=device_token,
+                                  params={"id": worker_id}, timeout=timeout)
+    return _project_configuration(result, worker_id)
+
+
+def update_worker_configuration(worker_id: str, version: str, changes: dict[str, Any], *,
+                                 device_token: str, timeout: float = 8.0):
+    from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS
+    if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
+            or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)
+            or not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS):
+        raise WorkerActionRejected("Worker-Konfigurationsanfrage ist ungültig", 400)
+    current = read_worker_status(device_token=device_token, timeout=timeout)
+    worker = next((w for w in current["workers"] if w["id"] == worker_id), None)
+    if not worker or worker.get("status") not in {"idle", "paused", "completed", "error"}:
+        raise WorkerActionRejected("Worker muss vor einer Änderung pausiert oder gestoppt sein", 409)
+    accepted = _request_control_api("POST", "workers/configuration", device_token=device_token,
+        body={"id": worker_id, "configuration_version": version, "changes": changes}, timeout=timeout)
+    acknowledged = _project_configuration(accepted, worker_id)
+    observed = read_worker_configuration(worker_id, device_token=device_token, timeout=timeout)
+    if (observed != acknowledged
+            or any(observed["configuration"].get(key) != value for key, value in changes.items())):
+        raise WorkerActionRejected("Gespeicherte Worker-Konfiguration stimmt nicht mit der Anfrage überein", 409)
+    return observed
 
 
 def _control_context(device_token: str):

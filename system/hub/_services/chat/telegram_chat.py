@@ -133,6 +133,9 @@ from hub._services.chat.slots_config import (
     reset_prompt_template,
     update_prompt_template,
     update_slot,
+    worker_configuration_snapshot,
+    change_worker_configuration,
+    _worker_configuration,
 )
 
 # Compute Lock (optional — graceful if not available)
@@ -215,6 +218,14 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
             worker["generation"] = control.generation
             worker["handoff_receipt"] = control.handoff.snapshot()
     return worker
+
+
+def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if control is not None and not control.done_event.is_set():
+            raise RuntimeError("worker_not_editable")
+        return change_worker_configuration(worker_id, version, changes)
 
 
 def _thread_is_alive(thread: Optional[threading.Thread]) -> bool:
@@ -2999,6 +3010,15 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            worker_id = parse_qs(parsed_url.query).get("id", [""])[0]
+            try:
+                self._json({"ok": True, **worker_configuration_snapshot(worker_id)})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration nicht verfügbar"}, 503)
+
         elif path == "/api/workers":
             try:
                 self._json({
@@ -3408,6 +3428,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            try:
+                result = _change_worker_configuration(body.get("id"), body.get("configuration_version"), body.get("changes"))
+                self._json({"ok": True, **result})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except RuntimeError:
+                self._json({"error": "Worker läuft oder Konfiguration inzwischen geändert"}, 409)
+            except (TypeError, ValueError):
+                self._json({"error": "Ungültige Worker-Konfiguration"}, 400)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration konnte nicht bestätigt werden"}, 503)
+
         elif path == "/api/workers/handoff":
             worker_id = body.get("id")
             generation = body.get("generation")
@@ -3766,6 +3799,14 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
             with _WORKER_CONTROL_LOCK:
+                current_control = _WORKER_CONTROLS.get(worker_id)
+                current_slot = get_worker_slot(worker_id)
+                if (current_control is not None and _thread_is_alive(current_control.thread)
+                        or not current_slot
+                        or _worker_configuration(current_slot) != _worker_configuration(w)):
+                    finish_assignment(board_assignment, status="interrupted", result="start_conflict", reason="configuration_changed")
+                    self._json({"error": "Worker oder Konfiguration inzwischen geändert"}, 409)
+                    return
                 control.thread = th
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = th

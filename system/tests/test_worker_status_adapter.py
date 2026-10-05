@@ -74,6 +74,63 @@ def test_gui_handoff_route_requires_device_and_forwards_generation(monkeypatch, 
         assert calls == []
 
 
+def test_worker_edit_requires_ack_and_exact_configuration_readback(monkeypatch):
+    snapshot = {"id": "worker-1", "configuration_version": "a" * 64,
+                "configuration": {"name": "Edited", "model": "test", "max_tool_rounds": 0}}
+    monkeypatch.setattr(adapter, "read_worker_status", lambda **kw: {"workers": [{"id": "worker-1", "status": "idle"}]})
+    monkeypatch.setattr(adapter, "_request_control_api", lambda *args, **kw: {"ok": True, **snapshot})
+    result = adapter.update_worker_configuration("worker-1", "b" * 64, {"name": "Edited", "max_tool_rounds": 0}, device_token="token")
+    assert result["configuration"]["name"] == "Edited"
+    snapshot["configuration"]["name"] = "Foreign update"
+    with pytest.raises(adapter.WorkerActionRejected):
+        adapter.update_worker_configuration("worker-1", "b" * 64, {"name": "Edited"}, device_token="token")
+
+
+@pytest.mark.parametrize("model", ["openrouter/free", "unknown:free"])
+def test_gui_worker_edit_validates_model_and_zero_rounds(monkeypatch, model):
+    from fastapi import HTTPException
+    from gui.api import unified_api
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", lambda request: "device-token")
+    monkeypatch.setattr(adapter, "worker_model_catalog", lambda backend, **kw: {"models": ["openrouter/free"]})
+    calls = []
+    monkeypatch.setattr(adapter, "update_worker_configuration", lambda worker_id, version, changes, **kw:
+                        calls.append(changes) or {"ok": True, "id": worker_id, "configuration": changes})
+    payload = {"configuration_version": "a" * 64, "configuration": {
+        "name": "Edited", "backend": "openrouter", "model": model,
+        "sub_mode": "expert_role", "role_id": "entwickler", "max_tool_rounds": 0,
+        "pause_basis": "tasks", "pause_after": 3,
+    }}
+    if model == "openrouter/free":
+        result = asyncio.run(unified_api.update_system_worker_configuration("worker-1", None, payload))
+        assert result["configuration"]["max_tool_rounds"] == 0
+        assert result["configuration"]["role_id"] == "entwickler"
+        assert "type" not in calls[0]
+        assert "ttl_seconds" not in calls[0]
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(unified_api.update_system_worker_configuration("worker-1", None, payload))
+        assert error.value.status_code == 400
+        assert calls == []
+
+
+def test_worker_edit_without_device_never_reaches_controller(monkeypatch):
+    from fastapi import HTTPException
+    from gui.api import unified_api
+    def deny(request):
+        raise HTTPException(401, "Geräteanmeldung erforderlich")
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", deny)
+    monkeypatch.setattr(adapter, "update_worker_configuration", lambda *args, **kw: pytest.fail("No write"))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(unified_api.update_system_worker_configuration("worker-1", None, {}))
+    assert error.value.status_code == 401
+
+
+def test_configuration_projection_rejects_nested_secrets():
+    with pytest.raises(adapter.WorkerStatusUnavailable):
+        adapter._project_configuration({"ok": True, "id": "worker-1", "configuration_version": "a" * 64,
+                                        "configuration": {"model": {"api_key": "secret"}}}, "worker-1")
+
+
 class FakeResponse:
     def __init__(self, payload, status_code=200):
         self.payload = payload
