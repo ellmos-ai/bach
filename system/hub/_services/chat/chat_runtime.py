@@ -420,6 +420,18 @@ class _ChatTurnGate:
         self.clearing = False
 
 
+class _ComputeTurnGate:
+    """Serialize local inference runs and let foreground chats pass first."""
+
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.active = False
+        self.foreground_waiters = 0
+        self.chat_id = ""
+        self.priority = ""
+        self.started_at: float | None = None
+
+
 class ChatRuntime(_ModuleChatRuntime):
     _sessions: dict[str, Any] = {}
 
@@ -455,6 +467,7 @@ class ChatRuntime(_ModuleChatRuntime):
         self._session_locks = {}
         self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
         self._chat_turn_gates_lock = threading.Lock()
+        self._compute_turn_gate = _ComputeTurnGate()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
         self.auto_continue: int = limit("BACH_AUTO_CONTINUE")
@@ -846,6 +859,84 @@ class ChatRuntime(_ModuleChatRuntime):
             return self._chat_turn_gates.setdefault(key, _ChatTurnGate())
 
     @staticmethod
+    def _uses_local_compute(backend) -> bool:
+        """Only local Ollama/LM Studio inference competes for this host's torch."""
+        try:
+            from hub._services.llm.model_backend import backend_identifier
+
+            backend_id = backend_identifier(backend)
+        except Exception:
+            backend_id = str(getattr(backend, "backend_id", "") or "").lower()
+        if backend_id not in {"lmstudio", "ollama"}:
+            return False
+
+        base_url = getattr(backend, "base_url", None)
+        if not base_url:
+            return True
+        try:
+            hostname = urllib.parse.urlsplit(str(base_url)).hostname
+        except ValueError:
+            return False
+        return hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+    @staticmethod
+    def _process_priority(chat_id: str, requested: str | None) -> str:
+        if requested in {"foreground", "background"}:
+            return requested
+        if str(chat_id).startswith(("idle-", "worker-", "tray-worker-")):
+            return "background"
+        return "foreground"
+
+    @staticmethod
+    async def _enter_compute_turn(gate: _ComputeTurnGate, chat_id: str, priority: str) -> None:
+        waiting_foreground = priority == "foreground"
+        registered_waiter = False
+        try:
+            if waiting_foreground:
+                with gate.condition:
+                    gate.foreground_waiters += 1
+                    registered_waiter = True
+            while True:
+                with gate.condition:
+                    if not gate.active and (priority != "background" or gate.foreground_waiters == 0):
+                        gate.active = True
+                        gate.chat_id = str(chat_id)
+                        gate.priority = priority
+                        gate.started_at = time.time()
+                        if registered_waiter:
+                            gate.foreground_waiters -= 1
+                            registered_waiter = False
+                        return
+                await asyncio.sleep(0.025)
+        finally:
+            if registered_waiter:
+                with gate.condition:
+                    gate.foreground_waiters = max(0, gate.foreground_waiters - 1)
+                    gate.condition.notify_all()
+
+    @staticmethod
+    def _leave_compute_turn(gate: _ComputeTurnGate) -> None:
+        with gate.condition:
+            gate.active = False
+            gate.chat_id = ""
+            gate.priority = ""
+            gate.started_at = None
+            gate.condition.notify_all()
+
+    def compute_turn_status(self) -> dict[str, Any]:
+        """Return live evidence about which BACH run currently owns local inference."""
+        with self._compute_turn_gate.condition:
+            gate = self._compute_turn_gate
+            return {
+                "active": gate.active,
+                "holder": "BACH" if gate.active else None,
+                "chat_id": gate.chat_id or None,
+                "priority": gate.priority or None,
+                "started_at": gate.started_at,
+                "foreground_waiters": gate.foreground_waiters,
+            }
+
+    @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
         while True:
             with gate.condition:
@@ -1096,7 +1187,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return None
 
     async def process(self, text: str, chat_id: str, *, backend=None, model=None,
-                      skip_compute_gate: bool = False, agent_context=None, **kwargs) -> str:
+                      skip_compute_gate: bool = False, agent_context=None,
+                      work_priority: str | None = None, **kwargs) -> str:
         from .agent_profile_context import profile_chat_id_agent
         profile_id = profile_chat_id_agent(chat_id)
         if str(chat_id).startswith("agent:") and profile_id is None:
@@ -1106,11 +1198,25 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         if agent_context is not None and profile_id is None:
             return FailedAnswer("Profilkontext benötigt eine Profil-Chat-ID")
         gate = self._chat_turn_gate(chat_id)
+        compute_backend = (
+            backend
+            or getattr(self.sessions.get(chat_id), "backend", None)
+            or self.backend
+        )
+        uses_local_compute = self._uses_local_compute(compute_backend)
+        compute_acquired = False
         if agent_context is not None:
             await self._enter_profile_turn(gate)
         else:
             await self._enter_chat_turn(gate)
         try:
+            if uses_local_compute:
+                await self._enter_compute_turn(
+                    self._compute_turn_gate,
+                    chat_id,
+                    self._process_priority(chat_id, work_priority),
+                )
+                compute_acquired = True
             if agent_context is not None:
                 self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
@@ -1118,6 +1224,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 skip_compute_gate=skip_compute_gate, **kwargs,
             )
         finally:
+            if compute_acquired:
+                self._leave_compute_turn(self._compute_turn_gate)
             self._leave_chat_turn(gate)
 
     async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,

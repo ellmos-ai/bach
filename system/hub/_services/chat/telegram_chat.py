@@ -114,6 +114,7 @@ from hub._services.agents_heart import (
     finish_assignment,
 )
 from hub._services.chat.slots_config import (
+    bump_pause_counter,
     get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
     add_worker,
@@ -240,6 +241,47 @@ def _record_worker_activity(
             return False
         record_activity(control.worker_id, activity, status, details)
         return True
+
+
+def _wait_worker_cooldown(control: _WorkerControl) -> bool:
+    """Apply a configured run-count pause while keeping stop responsive."""
+    worker_id = control.worker_id
+    if not bump_pause_counter(worker_id, event_type="runs"):
+        return not control.stop_event.is_set()
+
+    slot = get_worker_slot(worker_id)
+    pause = get_slot_pause_info(slot)
+    if not pause.get("is_paused") or pause.get("remaining_seconds", 0) <= 0:
+        raise RuntimeError("Automatische Pause konnte nicht bestätigt werden")
+
+    minutes = pause.get("pause_minutes", 0)
+    if _update_worker_slot(control, {
+        "status": "paused",
+        "auto_paused": True,
+        "current_activity": f"Automatische Pause ({minutes:g} min)",
+    }) is None:
+        return False
+    _record_worker_activity(control, f"Automatische Pause gestartet ({minutes:g} min)", "ok")
+
+    deadline = time.monotonic() + float(pause["remaining_seconds"])
+    while not control.stop_event.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        control.stop_event.wait(min(1.0, remaining))
+    if control.stop_event.is_set():
+        return False
+
+    updated = _update_worker_slot(control, {
+        "status": "running",
+        "auto_paused": False,
+        "pause_started_at": "",
+        "current_activity": "Automatische Pause beendet; nächster Lauf startet",
+    })
+    if updated is None:
+        return False
+    _record_worker_activity(control, "Automatische Pause beendet", "ok")
+    return True
 
 
 def _update_worker_slot(
@@ -793,6 +835,14 @@ BACKEND_PRESETS = {
         "method": "api",
         "description": "Nous Hermes Agent (OpenRouter / Lokal)",
     },
+    "openrouter": {
+        "type": "openrouter",
+        "base_url": os.environ.get("OPENROUTER_URL", "https://openrouter.ai/api/v1"),
+        "default_model": os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
+        "free_only": True,
+        "method": "api",
+        "description": "OpenRouter (kostenloser Router und kostenlose Modelle)",
+    },
     "claude": {
         "type": "claude-cli",
         "default_model": "sonnet",
@@ -833,6 +883,7 @@ _API_KEY_SOURCES = {
     "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
     "hermes": ("OPENROUTER_API_KEY", "openrouter_api_key"),
+    "openrouter": ("OPENROUTER_API_KEY", "openrouter_api_key"),
 }
 
 
@@ -877,7 +928,7 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
             preset = BACKEND_PRESETS[backend_key].copy()
             if model:
                 preset["default_model"] = model
-            if preset["method"] == "api" and backend_key in ("claude-api", "openai"):
+            if preset["method"] == "api" and backend_key in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(backend_key)
                 if api_key:
                     preset["api_key"] = api_key
@@ -991,7 +1042,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if preset["method"] == "cli":
                 cli_name = preset["type"].replace("-cli", "")
                 status = _check_cli_available(cli_name)
-            elif preset["method"] == "api" and name in ("claude-api", "openai"):
+            elif preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 status = _check_api_key(name)
             status_str = f" [{status}]" if status else ""
             lines.append(f"  {name} — {preset['description']}{status_str}")
@@ -1018,7 +1069,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(args) > 1:
         preset["default_model"] = args[1]
 
-    if preset["method"] == "api" and name in ("claude-api", "openai"):
+    if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
         env_var, file_name = _API_KEY_SOURCES[name]
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
         api_key = _load_api_key(name)
@@ -2297,7 +2348,7 @@ def _probe_backend_inventory_entry(
             cli_name = preset["type"].replace("-cli", "")
             if _check_cli_available(cli_name) != "vorhanden":
                 raise FileNotFoundError(cli_name)
-        elif name in ("claude-api", "openai", "hermes"):
+        elif name in ("claude-api", "openai", "hermes", "openrouter"):
             api_key = _load_api_key(name)
             if not api_key:
                 return False, "Key fehlt"
@@ -2687,6 +2738,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": active_user,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": current_tool,
                     "tool_round": tool_round,
                     "last_tools": active_tools,
@@ -2708,6 +2760,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": 0,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": "",
                     "tool_round": 0,
                     "last_tools": [],
@@ -2762,10 +2815,32 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/models":
             try:
-                with _runtime_state_lock:
-                    selected_backend = runtime.backend
-                models = selected_backend.list_models()
-                self._json({"models": models})
+                requested_provider = parse_qs(parsed_url.query).get("provider", [""])[0].strip().lower()
+                if requested_provider:
+                    preset = BACKEND_PRESETS.get(requested_provider)
+                    if not preset:
+                        self._json({"error": "Unbekannter Provider"}, 400)
+                        return
+                    config = {key: value for key, value in preset.items()
+                              if key not in ("method", "description")}
+                    configured = True
+                    if requested_provider in {"claude-api", "openai", "hermes", "openrouter"}:
+                        api_key = _load_api_key(requested_provider)
+                        configured = bool(api_key)
+                        if api_key:
+                            config["api_key"] = api_key
+                    selected_backend = create_backend(config)
+                    models = selected_backend.list_models()
+                    self._json({
+                        "provider": requested_provider,
+                        "models": models,
+                        "credential_configured": configured,
+                    })
+                else:
+                    with _runtime_state_lock:
+                        selected_backend = runtime.backend
+                    models = selected_backend.list_models()
+                    self._json({"models": models, "provider": backend_identifier(selected_backend)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
@@ -2979,7 +3054,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 current_m = _global_defaults.get("model") or getattr(runtime.backend, "default_model", None)
                 if current_m:
                     preset["default_model"] = current_m
-            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes"):
+            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
@@ -3341,7 +3416,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 try:
                     if control.stop_event.is_set():
                         return
-                    _update_worker_slot(control, {"status": "running", "current_activity": "Starte Routine..."})
+                    _update_worker_slot(control, {"status": "running", "auto_paused": False, "current_activity": "Starte Routine..."})
                     _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
                     if control.stop_event.is_set():
                         return
@@ -3408,7 +3483,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                         ans = ""
                         try:
                             ans = loop.run_until_complete(
-                                runtime.process(prompt_to_run, worker_id, backend=target_backend, model=model)
+                                runtime.process(
+                                    prompt_to_run,
+                                    worker_id,
+                                    backend=target_backend,
+                                    model=model,
+                                    work_priority="background",
+                                )
                             )
                         finally:
                             loop.close()
@@ -3433,18 +3514,21 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
                             break
 
-                        # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen
-                        if current_slot.get("type") == "once" and not exp_str:
+                        # Einzellauf endet nach einem abgeschlossenen Block.
+                        if current_slot.get("type") == "once":
                             _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
                             break
 
-                        # Wenn keine TTL gesetzt ist (unbegrenzt) und Task abgeschlossen wurde:
-                        if not exp_str:
+                        # Fortlaufende Profile dürfen ohne TTL bis zum manuellen
+                        # Stopp laufen; 0 bedeutet kein Ablaufdatum.
+                        if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
-                        # TTL ist aktiv (noch in der Zukunft):
-                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff
+                        if not _wait_worker_cooldown(control):
+                            break
+
+                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff.
                         is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
                         if is_max_turns:
                             if _update_worker_slot(control, {

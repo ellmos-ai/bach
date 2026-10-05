@@ -430,6 +430,52 @@ class TestSlotsConfigCRUD:
         assert info["remaining_minutes"] > 0
         assert info["pause_basis"] == "tasks"
 
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")

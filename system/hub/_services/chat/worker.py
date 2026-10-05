@@ -102,14 +102,14 @@ def state_schreiben(bach_cli: str, category: str, text: str) -> bool:
 
 
 def _parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="Tasks abarbeiten, wenn der Chat ruht")
+    ap = argparse.ArgumentParser(description="Always-On-Taskworker mit Fackelvorrang und Vordergrund-Übergabe")
     ap.add_argument("--category", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--model", default="")
     ap.add_argument("--db", default="")
     ap.add_argument("--mode", default="full", choices=["safe", "full"])
-    ap.add_argument("--ruhe", type=int, default=600,
-                    help="Sekunden Chat-Stille, bevor gearbeitet wird")
+    ap.add_argument("--ruhe", type=int, default=0,
+                    help="Veraltet und ignoriert; Vordergrund erhält nach dem laufenden Modellzug Vorrang")
     ap.add_argument("--takt", type=int, default=60, help="Sekunden zwischen zwei Pruefungen")
     ap.add_argument("--max-tasks", type=int, default=0, help="0 = bis nichts mehr offen ist")
     ap.add_argument("--einmal", action="store_true", help="nur eine Runde, dann beenden")
@@ -169,15 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     modell = args.model or getattr(runtime.backend, "get_default_model",
                                    lambda: "")()
 
-    _log(workdir, f"Worker startet fuer {args.category!r}: arbeitet nach "
-                  f"{args.ruhe}s Chat-Stille, prueft alle {args.takt}s, "
+    _log(workdir, f"Always-On-Worker startet fuer {args.category!r}: prueft alle "
+                  f"{args.takt}s; Chats erhalten nach dem laufenden Modellzug Vorrang, "
                   f"Modell {modell or '(Vorgabe)'}")
 
     erledigt_gesamt = 0
     agent_instance_id = f"worker-{uuid.uuid4().hex}"
     while True:
-        still = chat_still_seit(db)
-
         slot = get_slot("buddha_always_on")
         if is_slot_paused(slot):
             p_info = get_slot_pause_info(slot)
@@ -189,28 +187,20 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(max(5, args.takt))
             continue
 
-        if bump_pause_counter("buddha_always_on", event_type="runs"):
-            _log(workdir, "Pause-Takt fuer buddha_always_on gestartet")
+        # Bind to the model that will actually run, including CLI overrides.
+        offen = offene_tasks(db, args.category, slot={**slot, "model": modell})
+
+        if not offen:
+            _log(workdir, "keine bereiten Tasks")
             if args.einmal:
                 return 0
             time.sleep(max(5, args.takt))
             continue
 
-        # Bind to the model that will actually run, including CLI overrides.
-        offen = offene_tasks(db, args.category, slot={**slot, "model": modell})
-
-        if not offen:
-            _log(workdir, "keine bereiten Tasks - Ende")
-            return 0
-
         compute_active, compute_status = (check_compute_active() if HAS_COMPUTE_LOCK else (False, {}))
         fackel_pref = get_fackel_preference() if HAS_COMPUTE_LOCK else "compute"
 
-        if still is None:
-            _log(workdir, "Chat-Aktivitaet nicht messbar - halte zurueck")
-        elif still < args.ruhe:
-            _log(workdir, f"Chat war vor {round(still)}s aktiv (Schwelle {args.ruhe}s) - warte")
-        elif compute_active and fackel_pref == "compute":
+        if compute_active and fackel_pref == "compute":
             _log(workdir, "Rechenjobs aktiv und Fackel steht auf 'compute' - warte")
         elif not fackel.passt(fuer_modell=modell):
             # Still heisst nicht frei: Haelt ein FREMDES Modell den Speicher,
@@ -251,8 +241,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
 
             t = gewaehlter_task
-            _log(workdir, f"Chat still seit {round(still/60)} min - nehme "
-                          f"#{t['id']} {t['title'][:52]}")
+            _log(workdir, f"Always-On nimmt Task #{t['id']} {t['title'][:52]}")
 
             chat_id = f"worker-{args.category}-{t['id']}"
             with tc.legacy_worker_binding(chat_id):
@@ -328,7 +317,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 with tc.legacy_worker_binding(chat_id):
                     antwort = asyncio.run(
-                        runtime.process("\n\n".join(auftrag), chat_id, skip_compute_gate=True)
+                        runtime.process(
+                            "\n\n".join(auftrag),
+                            chat_id,
+                            skip_compute_gate=True,
+                            work_priority="background",
+                        )
                     )
             except KeyboardInterrupt:
                 interrupted = True
@@ -391,6 +385,12 @@ def main(argv: list[str] | None = None) -> int:
                 if args.einmal:
                     return 0
                 continue
+
+            try:
+                if bump_pause_counter("buddha_always_on", event_type="runs"):
+                    _log(workdir, "Pause-Takt fuer buddha_always_on gestartet")
+            except Exception as se:
+                _log(workdir, f"Lauf-Pause-Counter-Update fehlgeschlagen: {se}")
 
             fertig = ist_fertig(antwort)
             _log(workdir, f"    {dauer}s, {'FERTIG' if fertig else 'offen'}")

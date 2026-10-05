@@ -1350,6 +1350,60 @@ def test_glm_cloud_summarize_preserves_older_context():
     assert backend.calls[0]["think"] is True
 
 
+def test_local_compute_gate_finishes_background_turn_then_serves_foreground_first():
+    import asyncio
+    import threading
+    import time
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+
+    runtime = ChatRuntime(OllamaBackend(base_url="http://127.0.0.1:11434"))
+    background_started = threading.Event()
+    foreground_started = threading.Event()
+    release_background = threading.Event()
+    calls = []
+
+    async def fake_process_turn(text, chat_id, **_kwargs):
+        calls.append(chat_id)
+        if chat_id == "worker-unit-test":
+            background_started.set()
+            await asyncio.to_thread(release_background.wait)
+        else:
+            foreground_started.set()
+        return "ok"
+
+    runtime._process_turn = fake_process_turn
+    outcomes = {}
+
+    def invoke(chat_id, priority):
+        outcomes[chat_id] = asyncio.run(
+            runtime.process("probe", chat_id, work_priority=priority)
+        )
+
+    background = threading.Thread(target=invoke, args=("worker-unit-test", "background"))
+    foreground = threading.Thread(target=invoke, args=("gui-web", "foreground"))
+    background.start()
+    assert background_started.wait(2)
+    foreground.start()
+
+    deadline = time.monotonic() + 2
+    while runtime.compute_turn_status()["foreground_waiters"] == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert runtime.compute_turn_status()["foreground_waiters"] == 1
+    assert not foreground_started.is_set()
+
+    release_background.set()
+    background.join(3)
+    foreground.join(3)
+
+    assert not background.is_alive()
+    assert not foreground.is_alive()
+    assert calls == ["worker-unit-test", "gui-web"]
+    assert outcomes == {"worker-unit-test": "ok", "gui-web": "ok"}
+    assert runtime.compute_turn_status()["active"] is False
+
+
 @pytest.mark.parametrize("failure", ["exception", "partial_error"])
 def test_glm_cloud_summarize_failure_does_not_silently_drop_history(failure):
     import asyncio

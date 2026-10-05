@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from gui.server import app
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://localhost")
 
 
 def test_astro_index_page():
@@ -40,7 +40,12 @@ def test_astro_agenten_running():
     response = client.get("/agenten/running")
     assert response.status_code == 200
     assert "Living & Running" in response.text
-    assert "Avatar-Agenten" in response.text
+    assert "System-Agenten" in response.text
+    assert "worker-blueprint-sub-mode" in response.text
+    assert "worker-blueprint-task-id" in response.text
+    assert "worker-blueprint-allow-tools" in response.text
+    assert "worker-blueprint-run-mode" in response.text
+    assert "Fortlaufend bis Stopp" in response.text
 
 
 def test_astro_agenten_marblerun():

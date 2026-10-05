@@ -130,6 +130,16 @@ def _require_memory_device(request: Request) -> int:
     return int(row[0])
 
 
+def _require_memory_device_token(request: Request) -> str:
+    """Validate device access and return its token only for a trusted loopback hop."""
+    _require_memory_device(request)
+    header = request.headers.get("Authorization", "")
+    token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Device token required")
+    return token
+
+
 @router.get("/nav/config")
 async def get_nav_config():
     """Return canonical navigation hierarchy for the 9 modular areas."""
@@ -2525,9 +2535,293 @@ async def get_cluster_cockpit():
     return build_cluster_cockpit(Path(BACH_DB))
 
 
+@router.get("/system/openrouter/status")
+async def get_openrouter_status(request: Request):
+    """Return credential configuration metadata, never the credential itself."""
+    _require_memory_device(request)
+    from hub._services.llm.openrouter_catalog import openrouter_credential_status
+
+    credential = openrouter_credential_status()
+    return {
+        "provider": "openrouter",
+        "credential": credential,
+        "readiness": "credential_configured" if credential["configured"] else "credential_missing",
+        "live_key_validation": "not_checked",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/system/workers")
+async def get_system_workers(request: Request):
+    """Return a device-authorized projection of real local worker slots."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerStatusUnavailable, read_worker_status
+
+    try:
+        return await asyncio.to_thread(read_worker_status, device_token=device_token)
+    except WorkerStatusUnavailable as exc:
+        logger.warning("BACH Control-API-Workerstatus nicht verfügbar: %s", exc)
+        raise HTTPException(status_code=503, detail="Workerstatus nicht verfügbar") from exc
+
+
+@router.get("/system/workers/blueprint")
+async def get_background_worker_blueprint(request: Request):
+    """Return the built-in background-worker recipe and current Core defaults."""
+    _require_memory_device(request)
+    from .worker_status_adapter import WorkerStatusUnavailable, background_worker_blueprint
+
+    try:
+        return await asyncio.to_thread(background_worker_blueprint)
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Hintergrundworker-Vorlage nicht verfügbar") from exc
+
+
+@router.get("/system/workers/models")
+async def get_worker_models(request: Request, backend: str = Query(..., min_length=1, max_length=32)):
+    """Return a current, provider-specific model list without exposing credentials."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import (
+        WorkerActionRejected,
+        WorkerStatusUnavailable,
+        worker_model_catalog,
+    )
+
+    try:
+        return await asyncio.to_thread(worker_model_catalog, backend, device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Modellliste nicht verfügbar") from exc
+
+
+@router.post("/system/workers")
+async def create_system_worker(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Create a configured worker profile. Creation always leaves it idle."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import (
+        WorkerActionRejected,
+        WorkerStatusUnavailable,
+        worker_action,
+        worker_creation_options,
+        worker_model_catalog,
+    )
+
+    allowed_fields = {
+        "name", "backend", "model", "max_tool_rounds", "mode", "think",
+        "pause_after", "pause_minutes", "type", "ttl_minutes", "task_prompt",
+        "include_system_prompt", "allow_tools", "sub_mode", "role_id",
+        "multi_role", "max_experts", "expert_models", "task_id",
+    }
+    if set(payload) - allowed_fields:
+        raise HTTPException(status_code=400, detail="Unbekannte Worker-Konfigurationsfelder")
+
+    try:
+        creation_options = worker_creation_options()
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="BACH-Rollenliste nicht verfügbar") from exc
+    allowed_sub_modes = {item["id"] for item in creation_options["sub_modes"]}
+    allowed_expert_roles = {item["id"] for item in creation_options["expert_roles"]}
+
+    name = payload.get("name")
+    backend = payload.get("backend")
+    model = payload.get("model")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
+        raise HTTPException(status_code=400, detail="Anzeigename fehlt oder ist zu lang")
+    if not isinstance(backend, str) or backend not in {"ollama", "ollama-cloud", "openrouter"}:
+        raise HTTPException(status_code=400, detail="Provider ist für diese Vorlage nicht freigegeben")
+    if not isinstance(model, str) or not model.strip() or len(model) > 180:
+        raise HTTPException(status_code=400, detail="Modell-ID fehlt oder ist ungültig")
+
+    def integer(field: str, default: int, minimum: int, maximum: int) -> int:
+        value = payload.get(field, default)
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise HTTPException(status_code=400, detail=f"{field} liegt außerhalb des erlaubten Bereichs")
+        return value
+
+    def boolean(field: str, default: bool) -> bool:
+        value = payload.get(field, default)
+        if not isinstance(value, bool):
+            raise HTTPException(status_code=400, detail=f"{field} muss wahr oder falsch sein")
+        return value
+
+    sub_mode = payload.get("sub_mode", "hintergrund_worker")
+    if not isinstance(sub_mode, str) or sub_mode not in allowed_sub_modes:
+        raise HTTPException(status_code=400, detail="Worker-Modus wird von BACH nicht unterstützt")
+    role_id = payload.get("role_id", "")
+    if not isinstance(role_id, str) or len(role_id) > 80:
+        raise HTTPException(status_code=400, detail="Fachrolle ist ungültig")
+    multi_role = boolean("multi_role", False)
+    if sub_mode == "expert_role":
+        if not multi_role and role_id not in allowed_expert_roles:
+            raise HTTPException(status_code=400, detail="Fachrolle ist nicht in BACH registriert")
+    elif role_id or multi_role:
+        raise HTTPException(status_code=400, detail="Fachrollenoptionen gelten nur für Expertenrollen")
+
+    max_experts = integer("max_experts", 3, 1, 10)
+    expert_models = payload.get("expert_models", {})
+    if (not isinstance(expert_models, dict) or len(expert_models) > 10
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   for key, value in expert_models.items())):
+        raise HTTPException(status_code=400, detail="Experten-Modellzuordnung ist ungültig")
+    if sub_mode != "boss_routing" and expert_models:
+        raise HTTPException(status_code=400, detail="Experten-Modellzuordnungen gelten nur für Bossrouting")
+
+    task_id = payload.get("task_id")
+    if task_id is not None and (type(task_id) is not int or not 1 <= task_id <= 2_147_483_647):
+        raise HTTPException(status_code=400, detail="Task-ID muss eine positive Ganzzahl sein")
+
+    worker_type = payload.get("type", "once")
+    if not isinstance(worker_type, str) or worker_type not in {"once", "continuous"}:
+        raise HTTPException(status_code=400, detail="Arbeitsmodus muss once oder continuous sein")
+    ttl_minutes = integer("ttl_minutes", 0, 0, 1440)
+    # Continuous workers may run until a user stops them. A positive TTL is optional.
+    task_prompt = payload.get("task_prompt", "")
+    if not isinstance(task_prompt, str) or len(task_prompt) > 20000 or "\x00" in task_prompt:
+        raise HTTPException(status_code=400, detail="Auftragstext ist ungültig oder zu lang")
+    task_prompt = task_prompt.strip()
+    if sub_mode == "task_worker" and task_id is None and not task_prompt:
+        raise HTTPException(status_code=400, detail="Taskworker benötigen eine Task-ID oder einen Auftragstext")
+
+    mode = payload.get("mode", "full")
+    if not isinstance(mode, str) or mode not in {"safe", "full"}:
+        raise HTTPException(status_code=400, detail="Modus muss safe oder full sein")
+
+    try:
+        catalog = await asyncio.to_thread(worker_model_catalog, backend, device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Modellliste nicht verfügbar") from exc
+    if model not in catalog["models"]:
+        raise HTTPException(status_code=400, detail="Modell ist im aktuellen Providerkatalog nicht bestätigt")
+    for expert_id, expert_model in expert_models.items():
+        if expert_id != "default" and expert_id not in allowed_expert_roles:
+            raise HTTPException(status_code=400, detail="Experten-Modellzuordnung enthält eine unbekannte Rolle")
+        if not expert_model.strip() or len(expert_model) > 180 or expert_model not in catalog["models"]:
+            raise HTTPException(status_code=400, detail="Experten-Modell ist im aktuellen Providerkatalog nicht bestätigt")
+
+    config: Dict[str, Any] = {
+        "name": name.strip(),
+        "sub_mode": sub_mode,
+        "role_id": role_id if sub_mode == "expert_role" and not multi_role else "",
+        "multi_role": multi_role,
+        "max_experts": max_experts,
+        "expert_models": expert_models,
+        "task_id": task_id,
+        "type": worker_type,
+        "backend": backend,
+        "model": model.strip(),
+        "max_tool_rounds": integer("max_tool_rounds", 25, 1, 100),
+        "mode": mode,
+        "think": boolean("think", True),
+        "allow_tools": boolean("allow_tools", True),
+        "include_system_prompt": boolean("include_system_prompt", True),
+        "pause_after": integer("pause_after", 5, 0, 100),
+        "pause_minutes": integer("pause_minutes", 1, 0, 1440),
+        "pause_basis": "runs",
+        "task_prompt": task_prompt,
+    }
+    if ttl_minutes:
+        config["ttl_seconds"] = ttl_minutes * 60
+
+    try:
+        result = await asyncio.to_thread(
+            worker_action, "create", config, device_token=device_token,
+        )
+        if not isinstance(result.get("worker"), dict):
+            raise WorkerStatusUnavailable("Workerprofil-Readback fehlt")
+        return result
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Workerprofil konnte nicht bestätigt werden") from exc
+
+
+@router.post("/system/workers/{worker_id}/start")
+async def start_system_worker(worker_id: str, request: Request):
+    """Start one profile only after explicit device-authenticated user action."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, start_worker
+
+    try:
+        return await asyncio.to_thread(start_worker, worker_id, device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Workerstatus oder Start nicht verfügbar") from exc
+
+
+@router.post("/system/workers/{worker_id}/pause")
+async def pause_system_worker(worker_id: str, request: Request):
+    """Request a confirmed cooperative pause for one live worker."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
+
+    try:
+        return await asyncio.to_thread(
+            worker_action, "pause", {"id": worker_id, "status": "paused"},
+            device_token=device_token, timeout=15.0,
+        )
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Workerpause nicht verfügbar") from exc
+
+
+@router.post("/system/workers/{worker_id}/stop")
+async def stop_system_worker(worker_id: str, request: Request):
+    """Request a confirmed cooperative stop for one live worker."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
+
+    try:
+        return await asyncio.to_thread(
+            worker_action, "stop", {"id": worker_id},
+            device_token=device_token, timeout=15.0,
+        )
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Workerstopp nicht verfügbar") from exc
+
+
+@router.post("/system/workers/{worker_id}/delete")
+async def delete_system_worker(worker_id: str, request: Request):
+    """Delete a dynamic profile through the existing Control API after user action."""
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
+
+    try:
+        return await asyncio.to_thread(
+            worker_action, "delete", {"id": worker_id}, device_token=device_token,
+        )
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Workerprofil konnte nicht entfernt werden") from exc
+
+
+@router.get("/system/openrouter/models")
+async def get_openrouter_models(request: Request):
+    """Return only the free router and models listed at zero price."""
+    _require_memory_device(request)
+    from hub._services.llm.openrouter_catalog import (
+        get_openrouter_catalog,
+        openrouter_credential_status,
+    )
+
+    catalog = await asyncio.to_thread(get_openrouter_catalog)
+    return {
+        **catalog,
+        "provider": "openrouter",
+        "credential_configured": openrouter_credential_status()["configured"],
+    }
+
+
 @router.post("/system/fackel")
-async def set_fackel_priority(payload: Dict[str, Any] = Body(default={})):
+async def set_fackel_priority(request: Request, payload: Dict[str, Any] = Body(default={})):
     """Set resource priority explicitly; this does not acquire the Fackel."""
+    _require_memory_device(request)
     requested = payload.get("preference")
     if requested not in ("compute", "ollama"):
         raise HTTPException(status_code=400, detail="Vorrang muss compute oder ollama sein")

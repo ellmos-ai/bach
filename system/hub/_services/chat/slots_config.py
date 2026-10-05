@@ -59,7 +59,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_always_on": {
         "id": "buddha_always_on",
         "name": "Buddha Always-On",
-        "description": "Hintergrundworker für offene Aufgaben im Leerlauf",
+        "description": "Hintergrundworker für offene Aufgaben; lokale Inferenz teilt die Fackel mit dem Vordergrund",
         "enabled": True,
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
@@ -535,10 +535,10 @@ CORE_SYSTEM_AGENT_ICONS = {
 }
 CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "backend", "model", "mode", "think",
-    "max_tool_rounds", "pause_after", "pause_minutes",
+    "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
 })
 CORE_KNOWN_BACKENDS = frozenset({
-    "ollama", "ollama-cloud", "lmstudio", "hermes",
+    "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
     "claude", "claude-api", "codex", "openai",
 })
 
@@ -568,6 +568,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "max_tool_rounds": slot.get("max_tool_rounds"),
             "pause_after": slot.get("pause_after"),
             "pause_minutes": slot.get("pause_minutes"),
+            "pause_basis": slot.get("pause_basis", defaults.get("pause_basis", "runs")),
             "configured_enabled": slot.get("enabled"),
             "living": None,
             "running": None,
@@ -606,6 +607,9 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
         elif field == "think":
             if not isinstance(value, bool):
                 raise ValueError("think muss wahr oder falsch sein")
+        elif field == "pause_basis":
+            if value not in {"runs", "tasks"}:
+                raise ValueError("pause_basis muss runs oder tasks sein")
         else:
             upper = 100 if field == "max_tool_rounds" else 1440
             lower = 0

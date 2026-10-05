@@ -30,6 +30,7 @@ for _p in (_system_dir, _root_dir):
 
 from hub._services.chat.control_auth import get_control_api_auth_header
 from hub._services.chat.slots_config import (
+    bump_pause_counter, get_slot, get_slot_pause_info, is_slot_paused,
     match_task_to_pickup_filter, task_matches_slot_binding,
 )
 
@@ -196,7 +197,7 @@ def mark_tray_ready(icon):
 class BACHTray:
 
     POLL_INTERVAL = 5
-    IDLE_THRESHOLD = 12  # 12 × 5s = 60s ohne Sessions → Idle-Arbeit starten
+    IDLE_THRESHOLD = 1  # Always-On prüft direkt; kein Leerlauf- oder Sitzungsfenster
     IDLE_CHAT_ID = "idle-worker"
     PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
 
@@ -532,9 +533,13 @@ class BACHTray:
         if not self.idle_enabled or not always_on.get("enabled", True) or self.idle_processing:
             return
 
-        active = self.state.get("active_sessions", self.state.get("sessions", 0))
-        if active > 0:
-            self.idle_consecutive = 0
+        # A logged-in or open chat session is not a reason to disarm Always-On.
+        # Respect the configured cooldown, then keep polling the shared TaskDB.
+        try:
+            if is_slot_paused(get_slot("buddha_always_on")):
+                return
+        except Exception as exc:
+            print(f"[Always-On] Pausenstatus nicht lesbar; TaskDB-Prüfung ausgesetzt: {exc}")
             return
 
         self.idle_consecutive += 1
@@ -548,6 +553,25 @@ class BACHTray:
 
         if self.idle_consecutive >= self.IDLE_THRESHOLD:
             threading.Thread(target=self._process_idle_task, daemon=True).start()
+
+    def _record_always_on_progress(self, *, task_completed: bool = False) -> bool:
+        """Count worker runs/tasks and persist the configured cooldown trigger."""
+        try:
+            paused = bump_pause_counter("buddha_always_on", event_type="runs")
+            if task_completed and not paused:
+                paused = bump_pause_counter("buddha_always_on", event_type="tasks")
+            if not paused:
+                return False
+
+            info = get_slot_pause_info(get_slot("buddha_always_on"))
+            minutes = info.get("pause_minutes", 0)
+            print(f"[Always-On] Automatische Pause gestartet ({minutes} min)")
+            if self.icon:
+                self.icon.notify(f"Automatische Pause: {minutes} Minuten", "BACH Always-On")
+            return True
+        except Exception as exc:
+            print(f"[Always-On] Pausentrigger konnte nicht gespeichert werden: {exc}")
+            return False
 
     @staticmethod
     def _resolve_role(assignee: str) -> tuple[str, str, str]:
@@ -675,6 +699,7 @@ class BACHTray:
             self._auto_commit_task(task_id, title)
         else:
             status = "open"
+        self._record_always_on_progress(task_completed=status == "completed")
         self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
         print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
         self.idle_pending = None
@@ -853,10 +878,12 @@ class BACHTray:
                     self._api("PUT", f"/api/tasks/{task_id}",
                                {"status": "completed", "changed_by": "idle-worker"},
                                base=self.gui_url)
+                    self._record_always_on_progress(task_completed=True)
                     self._auto_commit_task(task_id, title)
                     if self.icon:
                         self.icon.notify(f"Erledigt: {title}", "BACH Idle")
                 else:
+                    self._record_always_on_progress()
                     print(f"[Idle] Task #{task_id} unvollstaendig; bleibt open")
                     self._api("PUT", f"/api/tasks/{task_id}",
                                {"status": "open", "changed_by": "idle-worker"},
@@ -910,6 +937,11 @@ class BACHTray:
 
     def _build_menu(self):
         items = []
+        always_status_str = self._always_on_runtime_label(
+            self.slots.get("buddha_always_on", {})
+        )
+        target_label = "Ziel: Server (Tunnel)" if self.remote else "Ziel: Lokal"
+        items.append(pystray.MenuItem(target_label, None, enabled=False))
 
         # ── Status ──
         if self.state["connected"]:
@@ -934,8 +966,7 @@ class BACHTray:
             always_backend = always_slot.get("backend") or "ollama"
             always_rounds = always_slot.get("max_tool_rounds", 25)
             always_mode = always_slot.get("mode", "full")
-            always_enabled = always_slot.get("enabled", True) and self.idle_enabled
-            always_status_str = "Aktiv" if always_enabled else "Pausiert"
+            always_status_str = self._always_on_runtime_label(always_slot)
 
             conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
             conn_backend = conn_slot.get("backend") or "ollama"
@@ -976,11 +1007,6 @@ class BACHTray:
 
             # Slot 2: Buddha Always-On (Hintergrundworker)
             always_subitems = []
-            always_subitems.append(pystray.MenuItem(
-                "Always-On aktivieren",
-                lambda *_: self._toggle_slot_enabled("buddha_always_on"),
-                checked=lambda item, en=always_enabled: en
-            ))
             if self.models:
                 always_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_always_on", m),
@@ -1150,28 +1176,26 @@ class BACHTray:
 
         items.append(pystray.Menu.SEPARATOR)
 
-        # ── Idle Worker ──
-        idle_label = "Idle-Modus"
-        if self.idle_processing:
-            idle_label += f": {self.idle_task_name or 'Arbeitet...'}"
-        elif self.idle_enabled:
-            idle_label += ": Bereit"
-        else:
-            idle_label += ": AUS"
-
+        # ── Always-On Worker ──
+        idle_label = f"Buddha Always-On: {always_status_str}"
         idle_items = [
             pystray.MenuItem(
-                "Idle-Modus aktivieren",
-                self._toggle_idle,
-                checked=lambda item: self.idle_enabled,
+                "Buddha Always-On aktiviert",
+                lambda *_: self._toggle_slot_enabled("buddha_always_on"),
+                checked=lambda item: self.slots.get("buddha_always_on", {}).get("enabled", True) is True,
+                enabled=self.state.get("connected") is True,
             ),
         ]
+        if self.remote:
+            idle_items.append(pystray.MenuItem("Einstellung wird auf dem verbundenen Server gespeichert", None, enabled=False))
+        elif not self.idle_enabled:
+            idle_items.append(pystray.MenuItem("Host-Worker durch BACH_IDLE_WORKER deaktiviert", None, enabled=False))
         if self.idle_processing:
             idle_items.append(pystray.MenuItem(
                 f"Bearbeitet: {self.idle_task_name or '?'}", None, enabled=False,
             ))
         idle_items.append(pystray.MenuItem(
-            f"Schwelle: {self.IDLE_THRESHOLD * self.POLL_INTERVAL}s Leerlauf",
+            f"Aufgabenprüfung alle {self.POLL_INTERVAL}s · unabhängig von Chats",
             None, enabled=False,
         ))
         items.append(pystray.MenuItem(idle_label, pystray.Menu(*idle_items)))
@@ -1264,18 +1288,38 @@ class BACHTray:
             self.icon.notify(f"Fackel: {label} bevorzugt", "BACH")
 
     def _toggle_idle(self, *_):
-        if self.remote:
-            self._notify_error("Idle-Worker ist im Remote-Client deaktiviert")
-            return
-        self.idle_enabled = not self.idle_enabled
-        if not self.idle_enabled:
-            self.idle_consecutive = 0
-        else:
-            self._refresh()
-        self._update_icon()
-        status = "aktiviert" if self.idle_enabled else "deaktiviert"
-        if self.icon:
-            self.icon.notify(f"Idle-Modus {status}", "BACH")
+        # Compatibility callback: the tray and GUI both change the persistent
+        # Core-Agent setting; no process-local toggle can diverge from Running.
+        self._toggle_slot_enabled("buddha_always_on")
+
+    def _always_on_runtime_label(self, slot):
+        """Show configured Living state separately from live inference evidence."""
+        if self.state.get("connected") is not True:
+            if self.idle_processing and not self.remote:
+                return f"Running · {self.idle_task_name or 'Aufgabenbearbeitung'}"
+            return "Nicht verbunden · Status nicht geprüft"
+        if not isinstance(slot, dict) or not slot:
+            return "Status nicht geprüft"
+        if slot.get("enabled", True) is not True:
+            return "manuell pausiert"
+        if not self.remote and not self.idle_enabled:
+            return "Host-Worker deaktiviert"
+        turn = self.state.get("compute_turn")
+        if isinstance(turn, dict) and turn.get("active") is True:
+            chat_id = str(turn.get("chat_id") or "")
+            priority = turn.get("priority")
+            if priority == "background" and chat_id.startswith("idle-"):
+                return "Running · bearbeitet eine Aufgabe"
+            if priority == "foreground":
+                return "Living · Chat hat den Rechenvorrang"
+        if self.idle_processing:
+            return f"Running · {self.idle_task_name or 'Aufgabenbearbeitung'}"
+        pause = slot.get("pause_info")
+        if isinstance(pause, dict) and pause.get("is_paused"):
+            return f"automatische Pause · {pause.get('remaining_minutes', 0):g} min"
+        if isinstance(turn, dict) and type(turn.get("active")) is bool:
+            return "Living · aktiviert, wartet"
+        return "Living · aktiviert; Laufstatus nicht geprüft"
 
     def _open_activity(self, *_):
         import webbrowser
@@ -1327,6 +1371,9 @@ class BACHTray:
         self._update_icon()
 
     def _toggle_slot_enabled(self, slot_id):
+        if self.state.get("connected") is not True:
+            self._notify_error(f"{slot_id}: Control API nicht verbunden; Einstellung bleibt unverändert")
+            return
         slot = self.slots.get(slot_id, {})
         new_enabled = not slot.get("enabled", True)
         res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"enabled": new_enabled}})

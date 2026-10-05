@@ -737,6 +737,34 @@ class TestBACHTray:
         # Das :8080-Relikt des stillgelegten claude_bridge darf nicht zurückkehren.
         assert not hasattr(tray, "webchat_url")
 
+    def test_always_on_starts_immediately_while_foreground_session_is_active(self, tray, monkeypatch):
+        from hub._services.chat import chat_tray
+
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        tray.state = {"active_sessions": 1}
+        tray.idle_enabled = True
+        tray.idle_processing = False
+        tray.idle_consecutive = 0
+        tray._recurring_tick = 0
+        tray.icon = None
+        starts = []
+
+        class FakeThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+
+            def start(self):
+                starts.append(self.target)
+
+        monkeypatch.setattr(chat_tray, "get_slot", lambda _slot_id: {"enabled": True})
+        monkeypatch.setattr(chat_tray, "is_slot_paused", lambda _slot: False)
+        monkeypatch.setattr(chat_tray.threading, "Thread", FakeThread)
+
+        tray._idle_tick()
+
+        assert tray.IDLE_THRESHOLD == 1
+        assert starts == [tray._process_idle_task]
+
     def test_branding_support(self):
         with patch.dict('sys.modules', {
             'pystray': MagicMock(),
@@ -1058,6 +1086,82 @@ class TestBACHTray:
             menu = tray._build_menu()
             # _build_menu creates items including Fackel
             assert menu is not None
+
+    def test_remote_tray_menu_reports_server_target_and_server_worker_config(self, tray):
+        from hub._services.chat import chat_tray
+
+        tray.remote = True
+        tray.state["connected"] = True
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        pystray_mock = MagicMock()
+        with patch.object(chat_tray, "pystray", pystray_mock):
+            menu = tray._build_menu()
+
+        labels = [call.args[0] for call in pystray_mock.MenuItem.call_args_list if call.args]
+        assert menu is not None
+        assert "Ziel: Server (Tunnel)" in labels
+        assert "Buddha Always-On: Living · aktiviert; Laufstatus nicht geprüft" in labels
+        assert "Buddha Always-On aktiviert" in labels
+        assert labels.count("Buddha Always-On aktiviert") == 1
+
+    def test_disconnected_menu_reports_unverified_always_on_status(self, tray):
+        from hub._services.chat import chat_tray
+
+        tray.state["connected"] = False
+        tray.state["compute_turn"] = {
+            "active": True, "chat_id": "idle-worker", "priority": "background",
+        }
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        pystray_mock = MagicMock()
+        with patch.object(chat_tray, "pystray", pystray_mock):
+            menu = tray._build_menu()
+
+        menu_calls = [call for call in pystray_mock.MenuItem.call_args_list if call.args]
+        labels = [call.args[0] for call in menu_calls]
+        assert menu is not None
+        assert "Buddha Always-On: Nicht verbunden · Status nicht geprüft" in labels
+        toggle = next(call for call in menu_calls if call.args[0] == "Buddha Always-On aktiviert")
+        assert toggle.kwargs["enabled"] is False
+
+    def test_always_on_toggle_updates_persistent_server_slot(self, tray):
+        tray.remote = True
+        tray.state["connected"] = True
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        with patch.object(tray, "_api", return_value={"ok": True}) as api, \
+             patch.object(tray, "_refresh") as refresh, \
+             patch.object(tray, "_update_icon") as update_icon:
+            tray._toggle_idle()
+
+        api.assert_called_once_with(
+            "POST", "/api/slots",
+            {"slot_id": "buddha_always_on", "updates": {"enabled": False}},
+        )
+        refresh.assert_called_once()
+        update_icon.assert_called_once()
+
+    def test_always_on_toggle_fails_closed_when_disconnected(self, tray):
+        tray.remote = True
+        tray.state["connected"] = False
+        tray.slots = {"buddha_always_on": {"enabled": True}}
+        with patch.object(tray, "_api") as api, \
+             patch.object(tray, "_notify_error") as notify:
+            tray._toggle_idle()
+
+        api.assert_not_called()
+        notify.assert_called_once()
+
+    def test_always_on_runtime_label_uses_compute_turn_evidence(self, tray):
+        slot = {"enabled": True}
+        tray.state["connected"] = True
+        tray.state["compute_turn"] = {
+            "active": True, "chat_id": "idle-worker", "priority": "background",
+        }
+        assert tray._always_on_runtime_label(slot) == "Running · bearbeitet eine Aufgabe"
+
+        tray.state["compute_turn"] = {
+            "active": False, "chat_id": None, "priority": None,
+        }
+        assert tray._always_on_runtime_label(slot) == "Living · aktiviert, wartet"
 
 
 
