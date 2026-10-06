@@ -29,7 +29,7 @@ from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "system" / "data"
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 DEFAULT_SLOTS_FILE = os.environ.get(
     "BACH_SLOTS_CONFIG_PATH",
     str(_DEFAULT_DATA_DIR / "slots_config.json")
