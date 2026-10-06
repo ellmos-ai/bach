@@ -53,13 +53,16 @@ class MountHandler(BaseHandler):
         if not raw or "\x00" in raw:
             return False
         try:
-            cand = Path(raw).resolve(strict=False)
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            if not os.path.isabs(expanded):
+                return False
+            cand = os.path.realpath(os.path.abspath(expanded))
         except (ValueError, OSError):
             return False
         for root in self._allowed_source_roots:
             try:
-                base = Path(root).resolve(strict=False)
-                if cand == base or cand.is_relative_to(base):
+                base = os.path.realpath(os.path.abspath(os.fspath(root)))
+                if cand == base or os.path.commonpath([cand, base]) == base:
                     return True
             except (ValueError, TypeError, OSError):
                 continue
