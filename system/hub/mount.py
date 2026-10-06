@@ -88,21 +88,7 @@ class MountHandler(BaseHandler):
         raw = str(value or "")
         if not raw or "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
-
-        try:
-            expanded = os.path.expandvars(os.path.expanduser(raw))
-            candidate = Path(expanded).resolve()
-        except (ValueError, OSError) as exc:
-            raise ValueError(f"Ungueltiger Quellpfad: {exc}")
-
-        if not self._is_allowed_source(str(candidate)):
-            raise ValueError(
-                "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
-                f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
-            )
-        if candidate.exists() and not candidate.is_dir():
-            raise ValueError("Quellpfad ist kein Ordner")
-        return candidate
+        return self._normalize_and_validate_source_path(Path(raw))
     
     def get_operations(self) -> dict:
         return {
@@ -159,10 +145,18 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _normalize_and_validate_source_path(self, source: Path) -> Path:
+        raw = str(source or "")
+        if not raw or "\x00" in raw:
+            raise ValueError("Ungueltiger Quellpfad")
+
         try:
-            canonical = source.resolve()
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            canonical = Path(expanded).resolve(strict=True)
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
+
+        if not canonical.is_dir():
+            raise ValueError("Quellpfad ist kein Ordner")
 
         allowed_roots = self._allowed_source_roots
         for root in allowed_roots:
