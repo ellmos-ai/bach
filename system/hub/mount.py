@@ -164,7 +164,7 @@ class MountHandler(BaseHandler):
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        allowed_roots = self._allowed_source_roots()
+        allowed_roots = self._allowed_source_roots
         for root in allowed_roots:
             try:
                 canonical.relative_to(root)
