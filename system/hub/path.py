@@ -42,7 +42,7 @@ from . import bach_paths as bp
 from .base import BaseHandler
 
 
-def validate_host_path(path, base_dir=None):
+def validate_host_path(path: str | Path | None, base_dir: str | Path | None = None) -> Path | None:
     """Normalize and validate that *path* resolves under *base_dir*.
 
     Host-facing path hygiene guard: converts backslashes to forward slashes,
@@ -60,15 +60,25 @@ def validate_host_path(path, base_dir=None):
     """
     if path is None:
         return None
-    text = str(path).replace("\\", "/").strip()
-    if not text:
+    if not isinstance(path, (str, Path)):
         return None
+
+    text = str(path).replace("\\", "/").strip()
+    if not text or "\x00" in text:
+        return None
+
+    base_resolved = (
+        Path(base_dir).resolve(strict=False) if base_dir is not None else Path(".").resolve(strict=False)
+    )
+
     raw = Path(text)
-    base_resolved = Path(base_dir).resolve() if base_dir is not None else Path(".").resolve()
     if raw.is_absolute():
-        candidate = raw.resolve(strict=False)
-    else:
-        candidate = (base_resolved / raw).resolve(strict=False)
+        raw = Path(*raw.parts[1:])
+
+    if any(part in ("", ".") for part in raw.parts):
+        return None
+
+    candidate = (base_resolved / raw).resolve(strict=False)
     try:
         candidate.relative_to(base_resolved)
     except ValueError:
