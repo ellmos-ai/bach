@@ -75,13 +75,10 @@ def validate_host_path(path: str | Path | None, base_dir: Path | None = None) ->
         base_resolved = base_dir.resolve(strict=False)
 
     raw = Path(text)
-    if raw.is_absolute():
-        return None
-
     if any(part in ("", ".", "..") for part in raw.parts):
         return None
 
-    candidate = (base_resolved / raw).resolve(strict=False)
+    candidate = raw.resolve(strict=False) if raw.is_absolute() else (base_resolved / raw).resolve(strict=False)
     try:
         candidate.relative_to(base_resolved)
     except ValueError:
