@@ -1,0 +1,503 @@
+---
+// blueprints.astro - Vorlagen-Bibliothek & Blueprints (GUX-024, GUX-025, GUX-026, GUX-027)
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Blueprints (Vorlagen-Bibliothek)" currentPath="/agenten/blueprints">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+        📐 Blueprints & Vorlagen-Bibliothek
+      </h1>
+      <p style="color:var(--text-muted);font-size:0.875rem;">
+        Zentrale Vorlagen für Agenten, Rollen, Skills, Workflows, Services und Contractus • Ersetzt das alte Agents-Board (GUX-024)
+      </p>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <a href="/agenten/fabrika" class="btn btn-primary">
+        <span>🏭</span> Zur Agenten-Fabrik
+      </a>
+      <a href="/agenten/running" class="btn">
+        <span>⚡</span> Living & Running
+      </a>
+    </div>
+  </div>
+
+  <!-- Status- & Filter-Leiste -->
+  <div class="card" style="margin-bottom:1.5rem;padding:1rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <!-- Suchfeld -->
+      <div style="flex:1;min-width:240px;position:relative;">
+        <input
+          type="text"
+          id="bp-search"
+          placeholder="Blueprints nach Name, Rolle, Skills durchsuchen..."
+          oninput="filterBlueprints()"
+          style="width:100%;padding:0.6rem 2.2rem 0.6rem 0.8rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;"
+        />
+        <span id="search-clear" onclick="clearSearch()" style="position:absolute;right:0.6rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;">✕</span>
+      </div>
+
+      <!-- Vorlagen vs Eigene Filter -->
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
+          <input type="checkbox" id="filter-templates-only" onchange="filterBlueprints()" />
+          Nur System-Vorlagen
+        </label>
+        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
+          <input type="checkbox" id="filter-custom-only" onchange="filterBlueprints()" />
+          Nur eigene Blueprints
+        </label>
+      </div>
+    </div>
+
+    <!-- Kind-Filter Tabs -->
+    <div class="bp-tabs" style="display:flex;gap:0.4rem;margin-top:1rem;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:0.75rem;">
+      <button class="bp-tab active" data-kind="all" onclick="selectKind('all')">
+        Alle <span class="badge" id="count-all">0</span>
+      </button>
+      <button class="bp-tab" data-kind="agent" onclick="selectKind('agent')">
+        🤖 Agenten <span class="badge" id="count-agent">0</span>
+      </button>
+      <button class="bp-tab" data-kind="role" onclick="selectKind('role')">
+        🎭 Rollen <span class="badge" id="count-role">0</span>
+      </button>
+      <button class="bp-tab" data-kind="skill" onclick="selectKind('skill')">
+        🧩 Skills <span class="badge" id="count-skill">0</span>
+      </button>
+      <button class="bp-tab" data-kind="workflow" onclick="selectKind('workflow')">
+        ⛓️ Workflows <span class="badge" id="count-workflow">0</span>
+      </button>
+      <button class="bp-tab" data-kind="service" onclick="selectKind('service')">
+        ⚙️ Services <span class="badge" id="count-service">0</span>
+      </button>
+      <button class="bp-tab" data-kind="contractus" onclick="selectKind('contractus')">
+        📜 Contractus <span class="badge" id="count-contractus">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Blueprints Grid -->
+  <div id="blueprints-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
+    <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;">
+      Lade Blueprints...
+    </p>
+  </div>
+
+  <!-- Materialisieren Modal (Living Aktivierung) -->
+  <div id="modal-materialize" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:500px;width:90%;margin:auto;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="card-title">✨ Blueprint als Living aktivieren</h2>
+        <button class="btn btn-sm" onclick="closeMaterializeModal()">✕</button>
+      </div>
+      <div style="padding:1rem;">
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
+          Die Materialisierung bindet ein KI-Modell an den Blueprint. Der Status wechselt zu <strong>Living</strong> (konfiguriert). Es wird <em>kein</em> Worker gestartet (GUX-027).
+        </p>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Ziel-Blueprint</label>
+          <input type="text" id="mat-bp-name" readonly style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          <input type="hidden" id="mat-bp-id" />
+        </div>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Modell zuweisen</label>
+          <select id="mat-model-select" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+            <option value="buddha-local">buddha-local (Ollama Qwen 35B / Mac Studio)</option>
+            <option value="claude-3-5-sonnet">claude-3-5-sonnet (Subscription / Claude CLI)</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro (Subscription / Antigravity)</option>
+            <option value="gpt-4o">gpt-4o (Subscription / Codex CLI)</option>
+            <option value="qwen2.5-coder:32b">qwen2.5-coder:32b (Ollama Local)</option>
+          </select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem;">
+          <button class="btn" onclick="closeMaterializeModal()">Abbrechen</button>
+          <button class="btn btn-primary" onclick="confirmMaterialize()">Living aktivieren ✨</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worker Starten Modal (Running Aktivierung) -->
+  <div id="modal-start-worker" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:540px;width:90%;margin:auto;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="card-title">⚡ Worker starten (Running Aktivierung)</h2>
+        <button class="btn btn-sm" onclick="closeStartWorkerModal()">✕</button>
+      </div>
+      <div style="padding:1rem;">
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
+          Startet einen aktiven Ausführungs-Worker. Erzeugt einen authentischen <strong>JobExecutionReceipt</strong> und registriert die Präsenz via <strong>HeartbeatReceipt</strong> (GUX-027).
+        </p>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Blueprint</label>
+          <input type="text" id="start-bp-name" readonly style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+          <input type="hidden" id="start-bp-id" />
+        </div>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Arbeitsauftrag / Task Prompt</label>
+          <textarea id="start-task-prompt" rows="3" placeholder="Konkrete Aufgabe für diesen Worker-Lauf eingeben..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+        </div>
+        <div id="start-receipt-info" style="display:none;padding:0.75rem;background:#064e3b;border:1px solid #10b981;border-radius:6px;margin-bottom:1rem;color:#d1fae5;font-size:0.8rem;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem;">
+          <button class="btn" onclick="closeStartWorkerModal()">Abbrechen</button>
+          <button class="btn btn-primary" id="btn-confirm-start" onclick="confirmStartWorker()">▶ Worker starten</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Startprompt Vorschau Drawer / Modal -->
+  <div id="modal-prompt-preview" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:680px;width:92%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="card-title">🚀 Startprompt-Vorschau ([Boot:Agent], [Boot:System], [Boot:Aufgabe])</h2>
+        <button class="btn btn-sm" onclick="closePromptPreview()">✕</button>
+      </div>
+      <div style="padding:1rem;overflow-y:auto;flex:1;">
+        <pre id="prompt-preview-content" style="white-space:pre-wrap;font-family:monospace;font-size:0.78rem;background:var(--bg-dark);padding:1rem;border-radius:6px;border:1px solid var(--border);color:#a7f3d0;max-height:50vh;overflow-y:auto;"></pre>
+      </div>
+      <div style="padding:0.75rem 1rem;display:flex;justify-content:flex-end;border-top:1px solid var(--border);">
+        <button class="btn btn-sm" onclick="closePromptPreview()">Schließen</button>
+      </div>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .bp-tab {
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.15s ease;
+  }
+  .bp-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .bp-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .bp-tab .badge {
+    background: rgba(255,255,255,0.15);
+    color: inherit;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+  }
+  .bp-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  .bp-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .modal-backdrop {
+    display: flex;
+  }
+</style>
+
+<script is:inline>
+  let _allBlueprints = [];
+  let _currentKind = 'all';
+
+  const KIND_ICONS = {
+    agent: '🤖',
+    role: '🎭',
+    skill: '🧩',
+    workflow: '⛓️',
+    service: '⚙️',
+    contractus: '📜'
+  };
+
+  const KIND_LABELS = {
+    agent: 'Agent',
+    role: 'Rolle',
+    skill: 'Skill',
+    workflow: 'Workflow',
+    service: 'Service',
+    contractus: 'Contractus'
+  };
+
+  async function loadBlueprintsData() {
+    try {
+      const res = await fetch('/api/agent-studio/blueprints');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const templates = data.templates || [];
+      const custom = data.blueprints || [];
+      _allBlueprints = [...templates, ...custom];
+      updateCounts();
+      filterBlueprints();
+    } catch (e) {
+      document.getElementById('blueprints-grid').innerHTML = `
+        <p style="grid-column:1/-1;text-align:center;color:var(--error);padding:2rem;">
+          Fehler beim Laden der Blueprints: ${e.message}
+        </p>
+      `;
+    }
+  }
+
+  function updateCounts() {
+    const counts = { all: _allBlueprints.length, agent: 0, role: 0, skill: 0, workflow: 0, service: 0, contractus: 0 };
+    for (const b of _allBlueprints) {
+      const k = (b.kind || 'agent').toLowerCase();
+      if (counts[k] !== undefined) counts[k]++;
+    }
+    for (const [k, v] of Object.entries(counts)) {
+      const el = document.getElementById('count-' + k);
+      if (el) el.textContent = v;
+    }
+  }
+
+  function selectKind(kind) {
+    _currentKind = kind;
+    document.querySelectorAll('.bp-tab').forEach(t => {
+      t.classList.toggle('active', t.getAttribute('data-kind') === kind);
+    });
+    filterBlueprints();
+  }
+
+  function clearSearch() {
+    const input = document.getElementById('bp-search');
+    input.value = '';
+    document.getElementById('search-clear').style.display = 'none';
+    filterBlueprints();
+  }
+
+  function filterBlueprints() {
+    const search = (document.getElementById('bp-search').value || '').trim().toLowerCase();
+    document.getElementById('search-clear').style.display = search ? 'block' : 'none';
+    const templatesOnly = document.getElementById('filter-templates-only').checked;
+    const customOnly = document.getElementById('filter-custom-only').checked;
+
+    const filtered = _allBlueprints.filter(b => {
+      const k = (b.kind || 'agent').toLowerCase();
+      if (_currentKind !== 'all' && k !== _currentKind) return false;
+      if (templatesOnly && !b.is_template) return false;
+      if (customOnly && b.is_template) return false;
+      if (search) {
+        const text = `${b.name} ${b.title || ''} ${b.description || ''} ${b.persona_role || ''}`.toLowerCase();
+        if (!text.includes(search)) return false;
+      }
+      return true;
+    });
+
+    renderBlueprints(filtered);
+  }
+
+  function renderBlueprints(list) {
+    const grid = document.getElementById('blueprints-grid');
+    if (!list || list.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:3rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
+          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine passenden Blueprints gefunden.</p>
+          <a href="/agenten/fabrika" class="btn btn-sm btn-primary">+ Neuen Blueprint in Fabrika anlegen</a>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = list.map(b => {
+      const kind = (b.kind || 'agent').toLowerCase();
+      const icon = KIND_ICONS[kind] || '📐';
+      const kindLabel = KIND_LABELS[kind] || kind;
+      const skills = b.skills || [];
+      const isLiving = !!b.is_materialized;
+      const isTemplate = !!b.is_template;
+
+      return `
+        <div class="bp-card">
+          <div>
+            <!-- Header Badges -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+              <span class="badge" style="background:var(--bg-dark);border:1px solid var(--border);font-size:0.75rem;padding:0.2rem 0.5rem;">
+                ${icon} ${kindLabel}
+              </span>
+              <div style="display:flex;gap:0.35rem;align-items:center;">
+                ${isTemplate ? '<span class="badge badge-accent" style="font-size:0.7rem;">Vorlage</span>' : '<span class="badge" style="background:#3b82f6;color:#fff;font-size:0.7rem;">Eigen</span>'}
+                <span class="badge" style="background:${isLiving ? '#059669' : '#4b5563'};color:#fff;font-size:0.7rem;">
+                  ${isLiving ? '● Living' : '○ Schablone'}
+                </span>
+              </div>
+            </div>
+
+            <!-- Title & ID -->
+            <h3 style="font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">
+              ${escapeHtml(b.title || b.name)}
+            </h3>
+            <div style="font-size:0.75rem;color:var(--text-muted);font-family:monospace;margin-bottom:0.6rem;">
+              ID: ${escapeHtml(b.name)} • v${escapeHtml(b.version || '1.0.0')}
+            </div>
+
+            <!-- Description -->
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.85rem;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
+              ${escapeHtml(b.description || b.persona_role || 'Keine Beschreibung hinterlegt.')}
+            </p>
+
+            <!-- Skills Pills -->
+            ${skills.length > 0 ? `
+              <div style="margin-bottom:0.85rem;">
+                <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-bottom:0.25rem;">Skills (${skills.length}):</span>
+                <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+                  ${skills.slice(0, 4).map(s => `<span class="badge" style="font-size:0.68rem;padding:0.1rem 0.4rem;background:rgba(255,255,255,0.06);">${escapeHtml(s)}</span>`).join('')}
+                  ${skills.length > 4 ? `<span class="badge" style="font-size:0.68rem;padding:0.1rem 0.4rem;background:rgba(255,255,255,0.06);">+${skills.length - 4}</span>` : ''}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Actions Footer -->
+          <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn btn-sm" style="font-size:0.75rem;" onclick="previewStartPrompt('${escapeHtml(b.name)}')">
+              Vorschau 🚀
+            </button>
+            <div style="display:flex;gap:0.35rem;">
+              <a href="/agenten/fabrika?load=${encodeURIComponent(b.name)}" class="btn btn-sm" style="font-size:0.75rem;">
+                Fabrika 🏭
+              </a>
+              <button class="btn btn-sm" style="font-size:0.75rem;background:#1e3a8a;color:#93c5fd;border-color:#3b82f6;" onclick="openMaterializeModal(${Number(b.id)}, '${escapeHtml(b.name)}')">
+                Beseelen ✨
+              </button>
+              <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="openStartWorkerModal(${Number(b.id)}, '${escapeHtml(b.name)}')">
+                Start ▶
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, m => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    })[m]);
+  }
+
+  // Materialize Modal Actions
+  function openMaterializeModal(id, name) {
+    document.getElementById('mat-bp-id').value = id;
+    document.getElementById('mat-bp-name').value = name;
+    document.getElementById('modal-materialize').style.display = 'flex';
+  }
+
+  function closeMaterializeModal() {
+    document.getElementById('modal-materialize').style.display = 'none';
+  }
+
+  async function confirmMaterialize() {
+    const id = document.getElementById('mat-bp-id').value;
+    const model = document.getElementById('mat-model-select').value;
+    try {
+      const res = await fetch(`/api/agent-studio/blueprints/${id}/materialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fehler beim Materialisieren');
+      alert(`✨ ${data.message || 'Blueprint als Living aktiviert!'}`);
+      closeMaterializeModal();
+      loadBlueprintsData();
+    } catch (e) {
+      alert(`Fehler: ${e.message}`);
+    }
+  }
+
+  // Start Worker Modal Actions
+  function openStartWorkerModal(id, name) {
+    document.getElementById('start-bp-id').value = id;
+    document.getElementById('start-bp-name').value = name;
+    document.getElementById('start-task-prompt').value = `Standardauftrag für ${name}: System- und Aufgabenprüfung ausführen.`;
+    document.getElementById('start-receipt-info').style.display = 'none';
+    document.getElementById('btn-confirm-start').disabled = false;
+    document.getElementById('modal-start-worker').style.display = 'flex';
+  }
+
+  function closeStartWorkerModal() {
+    document.getElementById('modal-start-worker').style.display = 'none';
+  }
+
+  async function confirmStartWorker() {
+    const id = document.getElementById('start-bp-id').value;
+    const task = document.getElementById('start-task-prompt').value;
+    const btn = document.getElementById('btn-confirm-start');
+    const info = document.getElementById('start-receipt-info');
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/agent-studio/blueprints/${id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Worker-Start fehlgeschlagen');
+
+      info.style.display = 'block';
+      info.innerHTML = `
+        <strong>✅ Worker erfolgreich gestartet!</strong><br>
+        Receipt-ID: <code>${data.job_receipt?.receipt_id || 'N/A'}</code><br>
+        Status: <strong>${data.status}</strong> • Living: <code>${data.is_living}</code> • Running: <code>${data.is_running}</code>
+      `;
+      setTimeout(() => {
+        closeStartWorkerModal();
+        loadBlueprintsData();
+      }, 2500);
+    } catch (e) {
+      alert(`Fehler beim Starten: ${e.message}`);
+      btn.disabled = false;
+    }
+  }
+
+  // Startprompt Vorschau
+  async function previewStartPrompt(name) {
+    const bp = _allBlueprints.find(b => b.name === name);
+    if (!bp) return;
+
+    try {
+      const res = await fetch('/api/agent-studio/synthesize-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blueprint: bp })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fehler bei Prompt-Synthese');
+
+      document.getElementById('prompt-preview-content').textContent = data.start_prompt;
+      document.getElementById('modal-prompt-preview').style.display = 'flex';
+    } catch (e) {
+      alert(`Startprompt-Fehler: ${e.message}`);
+    }
+  }
+
+  function closePromptPreview() {
+    document.getElementById('modal-prompt-preview').style.display = 'none';
+  }
+
+  // Initialize
+  document.addEventListener('DOMContentLoaded', loadBlueprintsData);
+</script>

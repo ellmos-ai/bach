@@ -869,35 +869,47 @@
         </div>
     </div>
 
-    <!-- Compare-Race Modal -->
+    <!-- Compare-Race Modal (GUX-075 & Task #1690 / #1676) -->
     <div id="compare-race-modal" class="modal-backdrop" style="display: none;">
-        <div class="modal-card" style="max-width: 800px; height: auto; max-height: 85vh;">
+        <div class="modal-card" style="max-width: 900px; height: auto; max-height: 88vh;">
             <div class="modal-header">
                 <div>
                     <h3 style="margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
-                        <span>🏁</span> Chat Compare-Race (Multi-Modell Evaluation)
+                        <span>🏁</span> Buddha Chat Compare-Race (Multi-Modell Evaluation)
                     </h3>
                     <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
-                        Verfügbare Spuren werden aus der lokalen Compare-Race-Konfiguration geladen. Eine Bewertung erfordert eine gesonderte Prüfung.
+                        Parallele Ausführung mit SpendAuthority-Kostenreservierung, transparenten Receipts (<span style="font-family:monospace;font-size:0.75rem;">evidence_kind</span>) und NemoFold Inter-Rater-Reliabilität (Cohen's &kappa;).
                     </div>
                 </div>
                 <button class="modal-close-btn" onclick="closeCompareRaceModal()" title="Schließen">&times;</button>
             </div>
             <div class="modal-body" style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
                 <div>
-                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Test-Prompt für das Race:</label>
-                    <textarea id="race-prompt" rows="3" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem;" placeholder="Gib hier den Prompt ein, den die Modelle im Wettkampf beantworten sollen..."></textarea>
+                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Test-Prompt für das Multi-Modell Race:</label>
+                    <textarea id="race-prompt" rows="3" style="width:100%; padding:10px; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem;" placeholder="Gib hier den Prompt ein, den die Kandidaten-Lanes parallel beantworten und bewerten sollen..."></textarea>
                 </div>
                 <div>
-                    <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:4px;">Kandidaten-Modelle:</label>
-                    <div id="race-model-list" style="display:flex; gap:12px; flex-wrap:wrap;">Konfiguration wird geprüft.</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:0.8rem; font-weight:600; color:var(--text);">Kandidaten-Spuren (Lanes):</label>
+                        <span id="race-lanes-summary" style="font-size:0.75rem; color:var(--text-muted);">Lanes werden geladen...</span>
+                    </div>
+                    <div id="race-model-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:8px;">
+                        <div style="color:var(--text-muted); font-size:0.8rem;">Spuren werden geladen...</div>
+                    </div>
                 </div>
-                <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-muted);">
-                    <input type="checkbox" id="race-confirm-cost" onchange="updateRaceButton()" />
-                    Ich bestätige die Modellaufrufe innerhalb der angezeigten Aufrufgrenzen; eine separate Kostenfreigabe ist erforderlich.
-                </label>
-                <div>
-                    <button class="btn btn-sm btn-primary" id="btn-run-race" onclick="executeCompareRace()" disabled title="Laufzeit und Budget werden geprüft" style="padding:8px 16px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px;">🏁 Race derzeit nicht verfügbar</button>
+                <div style="display:flex; flex-direction:column; gap:6px; background:var(--bg-dark); padding:10px; border-radius:8px; border:1px solid var(--border);">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text);cursor:pointer;">
+                        <input type="checkbox" id="race-synthetic-fixtures" onchange="toggleSyntheticMode()" />
+                        <span><strong>Synthetischer Testmodus:</strong> Verwendet deterministische Offline-Fixtures (0.0 ct Kosten, kein API-Aufruf).</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-muted);cursor:pointer;">
+                        <input type="checkbox" id="race-confirm-cost" onchange="updateRaceButton()" />
+                        <span><strong>SpendAuthority Freigabe:</strong> Ich autorisiere max. 10.0 ct Budget für eventuelle kommerzielle Provider-Lanes.</span>
+                    </label>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <button class="btn btn-sm btn-primary" id="btn-run-race" onclick="executeCompareRace()" style="padding:9px 18px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">🏁 Race starten</button>
+                    <span id="race-status-hint" style="font-size:0.75rem; color:var(--text-muted);">Mindestens 2 Spuren auswählen</span>
                 </div>
                 <div id="race-results-container" style="margin-top: 8px;"></div>
             </div>
@@ -905,68 +917,100 @@
     </div>
 
     <script>
-    let raceStatus = null;
-    const raceBlockerText = {
-        spend_authority_unavailable: 'Die Kostenfreigabe ist noch nicht angebunden.',
-        operator_gate_disabled: 'Modellaufrufe sind noch nicht freigegeben.',
-        call_budget_unconfigured: 'Aufrufgrenzen sind noch nicht eingerichtet.',
-        model_registry_missing: 'Die Modellauswahl ist noch nicht eingerichtet.',
-        model_registry_invalid: 'Die Modellauswahl kann noch nicht geladen werden.',
-        sdk_or_config_unavailable: 'Die Modellverbindung ist noch nicht verfügbar.',
-        configured_lanes_insufficient: 'Es sind noch keine zwei Modelle verfügbar.'
-    };
+    let raceLanesData = [];
+
+    function toggleSyntheticMode() {
+        const isSyn = document.getElementById('race-synthetic-fixtures').checked;
+        const boxes = document.querySelectorAll('.race-model-cb');
+        if (isSyn) {
+            boxes.forEach(cb => {
+                cb.checked = cb.value.startsWith('synthetic');
+            });
+        }
+        updateRaceButton();
+    }
+
     function updateRaceButton() {
         const button = document.getElementById('btn-run-race');
-        const count = document.querySelectorAll('#race-model-list .race-model-cb:checked').length;
-        const ready = raceStatus?.availability === 'ready' && count >= 2 &&
-            count <= raceStatus.budget.max_lanes &&
-            document.getElementById('race-confirm-cost').checked;
-        button.disabled = !ready;
-        button.textContent = ready ? '🏁 Race starten' : '🏁 Race derzeit nicht verfügbar';
+        const hint = document.getElementById('race-status-hint');
+        const count = document.querySelectorAll('.race-model-cb:checked').length;
+        const isSyn = document.getElementById('race-synthetic-fixtures').checked;
+        const costAuth = document.getElementById('race-confirm-cost').checked;
+
+        if (count < 2) {
+            button.disabled = true;
+            button.style.opacity = '0.6';
+            hint.textContent = 'Mindestens 2 Spuren auswählen (' + count + ' gewählt)';
+            return;
+        }
+
+        button.disabled = false;
+        button.style.opacity = '1.0';
+        hint.textContent = isSyn 
+            ? 'Synthetischer Modus aktiv (0 ct)' 
+            : (costAuth ? 'SpendAuthority erteilt (' + count + ' Spuren aktiv)' : 'Bereit (' + count + ' Spuren gewählt; unautorisierte Paid-Lanes werden geblockt)');
     }
+
     async function loadCompareRaceStatus() {
         const list = document.getElementById('race-model-list');
-        const result = document.getElementById('race-results-container');
-        raceStatus = null;
-        list.textContent = 'Konfiguration wird geprüft.';
-        updateRaceButton();
+        const summary = document.getElementById('race-lanes-summary');
+        list.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;">Spuren werden geladen...</div>';
+
         try {
-            const response = await fetch('/api/chat/compare-race/status');
-            if (!response.ok) throw new Error('status_unavailable');
-            raceStatus = await response.json();
-            list.replaceChildren();
-            for (const model of raceStatus.models || []) {
-                const label = document.createElement('label');
-                label.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:0.8rem;color:var(--text-muted)';
-                const box = document.createElement('input');
-                box.type = 'checkbox';
-                box.className = 'race-model-cb';
-                box.value = String(model.id);
-                box.disabled = model.runtime !== 'cli_detected';
-                box.addEventListener('change', updateRaceButton);
-                label.append(box, document.createTextNode(`${model.id} (${model.backend}; ${box.disabled ? 'CLI fehlt' : 'CLI erkannt'})`));
-                list.append(label);
-            }
-            if (!list.childNodes.length) list.textContent = 'Keine konfigurierten Spuren gefunden.';
-            const blockers = (raceStatus.blockers || []).map(code => raceBlockerText[code] || 'Konfiguration nicht verfügbar.');
-            const budget = raceStatus.budget;
-            const note = budget ? `Aufrufgrenzen: höchstens ${budget.max_lanes} Spuren, ${budget.max_seconds} Sekunden je Spur. Providerzugang ungeprüft.` : 'Keine Aufrufgrenzen festgelegt.';
-            result.textContent = blockers.length ? `${blockers.join(' ')} ${note}` : note;
+            const res = await fetch('/api/chat/buddha/compare-race/lanes');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            raceLanesData = data.lanes || [];
+            list.innerHTML = '';
+
+            let readyCount = 0;
+            raceLanesData.forEach(lane => {
+                if (lane.available) readyCount++;
+                const item = document.createElement('div');
+                item.style.cssText = 'background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:4px;';
+
+                let badgeHtml = '';
+                if (lane.provider === 'synthetic') {
+                    badgeHtml = '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border:1px solid #3b82f6;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Fixture</span>';
+                } else if (!lane.is_paid) {
+                    badgeHtml = '<span style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid #10b981;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Lokal / 0 ct</span>';
+                } else {
+                    badgeHtml = '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;font-size:0.68rem;padding:1px 5px;border-radius:4px;font-weight:600;">Paid (Auth nötig)</span>';
+                }
+
+                item.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; font-weight:600; color:var(--text); cursor:pointer;">
+                            <input type="checkbox" class="race-model-cb" value="${lane.id}" ${(!lane.is_paid || lane.id === 'claude') ? 'checked' : ''} onchange="updateRaceButton()" />
+                            ${lane.name}
+                        </label>
+                        ${badgeHtml}
+                    </div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-left:20px;">
+                        ${lane.description}
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+
+            summary.textContent = `${raceLanesData.length} Spuren konfiguriert (${readyCount} sofort betriebsbereit)`;
             updateRaceButton();
-        } catch (_error) {
-            list.textContent = 'Status konnte nicht geladen werden.';
-            result.textContent = 'Compare-Race ist derzeit nicht verfügbar.';
+        } catch (err) {
+            list.innerHTML = `<div style="color:var(--error);font-size:0.8rem;">Fehler beim Laden der Spuren: ${err.message}</div>`;
         }
     }
+
     function openCompareRaceModal() {
         const m = document.getElementById('compare-race-modal');
         if (m) m.style.display = 'flex';
         loadCompareRaceStatus();
     }
+
     function closeCompareRaceModal() {
         const m = document.getElementById('compare-race-modal');
         if (m) m.style.display = 'none';
     }
+
     async function executeCompareRace() {
         const prompt = document.getElementById('race-prompt').value.trim();
         if (!prompt) {
@@ -974,46 +1018,120 @@
             return;
         }
         const models = Array.from(document.querySelectorAll('.race-model-cb:checked')).map(cb => cb.value);
-        if (!raceStatus || raceStatus.availability !== 'ready' || models.length < 2 ||
-            models.length > raceStatus.budget.max_lanes ||
-            !document.getElementById('race-confirm-cost').checked) {
-            alert('Bitte wähle mindestens zwei verfügbare Spuren und bestätige die Aufrufgrenzen.');
+        if (models.length < 2) {
+            alert('Bitte wähle mindestens zwei Kandidaten-Spuren aus.');
             return;
         }
+
+        const isSynthetic = document.getElementById('race-synthetic-fixtures').checked;
+        const costAuth = document.getElementById('race-confirm-cost').checked;
         const resEl = document.getElementById('race-results-container');
-        resEl.textContent = 'Compare-Race wird geprüft...';
+        resEl.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:0.85rem;">🏁 Compare-Race läuft parallel über Kandidaten-Lanes (asyncio.gather)...</div>';
+
+        const payload = {
+            prompt: prompt,
+            models: models,
+            runner: "buddha",
+            synthetic_fixtures: isSynthetic,
+            spend_authority: {
+                approved: costAuth,
+                max_budget_cents: costAuth ? 10.0 : 0.0
+            }
+        };
+
         try {
-            const res = await fetch('/api/chat/compare-race', {
+            const res = await fetch('/api/chat/buddha/compare-race', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, models, confirm_cost: true })
+                body: JSON.stringify(payload)
             });
-            if (res.ok) {
-                const data = await res.json();
-                const grid = document.createElement('div');
-                grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px';
-                for (const c of data.candidates || []) {
-                    const card = document.createElement('div');
-                    card.style.cssText = 'background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;padding:12px';
-                    const name = document.createElement('strong');
-                    name.textContent = String(c.model ?? 'Unbekannt');
-                    const evidence = document.createElement('div');
-                    evidence.textContent = `Beleg: ${c.evidence_kind || 'unbekannt'}${c.ok && c.evidence_kind === 'live' ? ` · Latenz: ${c.latency_ms} ms` : ''}`;
-                    const response = document.createElement('div');
-                    response.textContent = String(c.response ?? '');
-                    card.append(name, evidence, response);
-                    grid.append(card);
-                }
-                const verdict = document.createElement('div');
-                verdict.textContent = 'Keine automatische Siegerentscheidung. Ergebnisse benötigen eine manuelle Prüfung.';
-                resEl.replaceChildren(verdict, grid);
-            } else {
-                const error = await res.json().catch(() => ({}));
-                resEl.textContent = error.detail || 'Compare-Race ist derzeit nicht verfügbar.';
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                resEl.innerHTML = `<div style="color:var(--error); font-size:0.85rem; padding:12px; background:var(--bg-dark); border-radius:6px;">Fehler: ${errData.detail || 'Ausführung fehlgeschlagen'}</div>`;
+                return;
             }
+
+            const data = await res.json();
+            renderCompareRaceResults(data);
         } catch (e) {
-            resEl.textContent = `Netzwerkfehler: ${e.message}`;
+            resEl.innerHTML = `<div style="color:var(--error); font-size:0.85rem; padding:12px; background:var(--bg-dark); border-radius:6px;">Netzwerkfehler: ${e.message}</div>`;
         }
+    }
+
+    function renderCompareRaceResults(data) {
+        const resEl = document.getElementById('race-results-container');
+        let html = '<div style="display:flex; flex-direction:column; gap:16px;">';
+
+        // Candidates Grid
+        html += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">';
+        for (const c of data.candidates || []) {
+            const isWinner = data.winner && c.lane_id === data.winner;
+            const ev = c.evidence_kind || 'unknown';
+            let evColor = '#6b7280';
+            let evLabel = ev.toUpperCase();
+            if (ev === 'live') { evColor = '#10b981'; evLabel = '🟢 LIVE'; }
+            else if (ev === 'simulated') { evColor = '#3b82f6'; evLabel = '🟡 SIMULATED'; }
+            else if (ev === 'blocked') { evColor = '#f59e0b'; evLabel = '🟠 BLOCKED'; }
+            else if (ev === 'unavailable') { evColor = '#ef4444'; evLabel = '🔴 UNAVAILABLE'; }
+            else if (ev === 'failed') { evColor = '#dc2626'; evLabel = '❌ FAILED'; }
+
+            const rcpt = c.receipt || {};
+
+            html += `
+                <div style="background:var(--bg-dark); border:1px solid ${isWinner ? 'var(--accent)' : 'var(--border)'}; border-radius:8px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+                    ${isWinner ? '<div style="position:absolute; top:-9px; right:12px; background:var(--accent); color:#fff; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:10px;">🏆 SIEGER</div>' : ''}
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:var(--text); font-size:0.88rem;">${c.name}</strong>
+                            <span style="border:1px solid ${evColor}; color:${evColor}; font-size:0.68rem; font-weight:700; padding:1px 6px; border-radius:4px;">${evLabel}</span>
+                        </div>
+                        <div style="font-size:0.73rem; color:var(--text-muted); margin-bottom:8px;">
+                            Modell: <span style="font-family:monospace;">${c.model}</span> • Latenz: <strong>${c.latency_ms} ms</strong> • Score: <strong>${c.score}</strong>
+                        </div>
+                        <div style="font-size:0.8rem; color:var(--text); line-height:1.4; max-height:160px; overflow-y:auto; background:var(--bg-card); padding:8px; border-radius:6px; border:1px solid var(--border);">
+                            ${c.response ? marked.parse(c.response) : `<em style="color:var(--text-muted); font-size:0.75rem;">${rcpt.error || 'Keine Antwort erhalten.'}</em>`}
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; padding-top:8px; border-top:1px dashed var(--border); font-size:0.7rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+                        <span>Tokens: ${rcpt.tokens_input ?? 0} in / ${rcpt.tokens_output ?? 0} out</span>
+                        <span>Kosten: <strong>${(rcpt.actual_cost_cents ?? 0).toFixed(2)} ct</strong></span>
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+
+        // Inter-Rater Reliability Box (NemoFold v1)
+        const ev = data.evaluation || {};
+        if (ev.status === 'evaluated') {
+            html += `
+                <div style="background:var(--bg-dark); border:1px solid var(--accent); border-radius:8px; padding:12px; margin-top:4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <strong style="font-size:0.88rem; color:var(--text); display:flex; align-items:center; gap:6px;">
+                            <span>🧬</span> NemoFold Inter-Rater-Reliabilität (Cohen's &kappa;)
+                        </strong>
+                        <span style="font-size:0.72rem; color:var(--text-muted); font-family:monospace;">${ev.schema}</span>
+                    </div>
+                    <div style="display:flex; gap:16px; margin-bottom:8px; font-size:0.8rem;">
+                        <div>Übereinstimmung: <strong style="color:var(--accent);">${ev.overall_agreement_percent}%</strong></div>
+                        <div>Cohen's &kappa;: <strong style="color:var(--accent);">${ev.overall_kappa !== null ? ev.overall_kappa : 'N/A'}</strong></div>
+                        <div>Verglichene Paare: <strong>${ev.evaluated_pairs_count}</strong></div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:4px; font-size:0.75rem; color:var(--text-muted);">
+                        ${(ev.pairwise || []).map(p => `
+                            <div style="background:var(--bg-card); padding:6px 10px; border-radius:4px; display:flex; justify-content:space-between;">
+                                <span><strong>${p.rater_a}</strong> vs <strong>${p.rater_b}</strong>: ${p.agreement_percent}% Konkordanz (${p.agreed_items}/${p.items_compared} Merkmale)</span>
+                                <span>&kappa; = ${p.cohens_kappa !== null ? p.cohens_kappa : 'n/a'} (${p.kappa_note})</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        resEl.innerHTML = html;
     }
     </script>
 
