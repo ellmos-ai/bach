@@ -12,6 +12,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Fixed
 
+- **Anonymizer: Geburtsdatum blieb in 1 von 300 Profilen unverändert:** `_generate_fake_date_same_age` zog den Datumsversatz aus `-150..+149` Tagen; bei `0` stand das echte Geburtsdatum (und jedes mit demselben Versatz verschobene Datum) im anonymisierten Dokument. Der Versatz liegt jetzt in `±1..150` Tagen. Aufgefallen durch einen sporadisch roten `test_e2e_text_anonymization_spared_officials`.
 - **Idle-Worker übernimmt keine Tasks mit offenen Vorgängern mehr:** Der Chat-Tray überspringt im Leerlauf (Pickup-Filter, Standard-Assignees, Universal-Fallback) Tasks, deren `depends_on` noch nicht erfüllt ist. `/api/tasks` und `/api/tasks/{id}` setzen `is_blocked_by_dep` dafür jetzt auf jedem Task und fail-closed über `inspect_task_dependencies` (ungültige oder fehlende Vorgänger blockieren; vorher zählten Legacy-Labels wie `P1` als erfüllt). Fehlt das Feld (ältere API), fragt der Tray den Detail-Endpunkt und behandelt einen ungeklärten Status als blockiert. Aus dem Rescue-Stand #148 übernommen.
 - **GUI-Dashboard: offene Tasks und Zuständigkeit (Task #1693):** Die Startseite lädt fünf offene Tasks mit Statusaliasen und zeigt den Gesamtwert vor der Pagination, statt abgeschlossene Tasks mitzuzählen oder den Backlog auf die erste Seite zu begrenzen. Zuständigkeit und hohe Prioritäten verwenden die API-Felder; Ladefehler werden mit einem erneuten Versuch sichtbar. Ältere APIs ohne Gesamtwert zeigen eine unbekannte Anzahl statt eines falschen Zählers.
 
