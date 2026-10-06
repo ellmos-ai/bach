@@ -4,6 +4,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -140,7 +141,7 @@ class TestCreateLink:
         target = base / "dst"
         source.mkdir()
 
-        with patch("hub.mount.os.name", "nt"), \
+        with patch("hub.mount.os", SimpleNamespace(**{**vars(os), "name": "nt"})), \
              patch("hub.mount.subprocess.run") as mock_run:
             h._create_link(source, target)
             mock_run.assert_called_once()
