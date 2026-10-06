@@ -196,6 +196,12 @@ class MountHandler(BaseHandler):
         except ValueError as exc:
             return False, str(exc)
 
+        if not self._is_allowed_source(str(source.resolve(strict=False))):
+            return False, (
+                "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
+                f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
+            )
+
         if not source.exists():
             return False, "Quellpfad existiert nicht"
 
