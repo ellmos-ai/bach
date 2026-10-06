@@ -409,10 +409,11 @@ class TaskLeaseClient:
                               ("fence", fence), ("task_version", task_version)):
             if expected is not None and data.get(key) != expected:
                 raise LeaseProtocolError("Lease-ACK stimmt nicht mit der Anfrage überein")
-        required = ("task_id", "lease_id", "fence", "worker_id", "host", "issued_at", "expires_at", "ttl_profile", "server_now")
+        required = ("task_id", "lease_id", "fence", "worker_id", "host", "issued_at", "expires_at", "ttl_profile", "server_now", "task_version")
         if any(key not in data for key in required):
             raise LeaseProtocolError("Lease-ACK ist unvollständig")
-        ack = LeaseAck(**{key: data[key] for key in required}, task_version=data.get("task_version"),
+        _version(data["task_version"], required=True)
+        ack = LeaseAck(**{key: data[key] for key in required},
                        replayed=data.get("replayed") is True, local_receive_time=receive_time)
         self._held[ack.task_id] = ack
         return ack
