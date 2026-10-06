@@ -115,7 +115,7 @@ def test_client_decompose_requires_version_and_preserves_receipt(mem_db):
 
 @pytest.fixture
 def http_adapter(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
+    TestClient = pytest.importorskip("fastapi.testclient").TestClient
     import gui.server as srv
     from system.tests.test_task_client_integration import _create_db
     db=tmp_path/"lead.db"; tid=_create_db(db)
