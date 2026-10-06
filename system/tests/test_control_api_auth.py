@@ -148,3 +148,31 @@ def test_auth_check_without_server_token_fails_closed(monkeypatch):
     response.assert_called_once_with(
         {"error": "Control-API-Token erforderlich oder ungültig"}, 401
     )
+
+
+def test_active_device_token_authorizes_control_api(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "")
+    with patch("gui.device_auth.validate_token", return_value={"id": 1, "name": "browser", "status": "active"}):
+        assert control_auth.is_control_api_authorized(
+            {"Authorization": "Bearer active-device-token"}
+        ) is True
+
+
+def test_revoked_device_token_is_rejected(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "")
+    with patch("gui.device_auth.validate_token", return_value={"id": 1, "name": "browser", "status": "revoked"}):
+        assert control_auth.is_control_api_authorized(
+            {"Authorization": "Bearer revoked-device-token"}
+        ) is False
+
+
+def test_auth_check_accepts_valid_device_token(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "")
+    handler = _handler({"Authorization": "Bearer active-device-token"}, "/api/auth/check")
+    with patch("gui.device_auth.validate_token", return_value={"id": 1, "name": "browser", "status": "active"}), \
+         patch.object(handler, "_json") as response:
+        handler.do_GET()
+    response.assert_called_once_with(
+        {"service": "bach-chat-control", "authenticated": True}
+    )
+

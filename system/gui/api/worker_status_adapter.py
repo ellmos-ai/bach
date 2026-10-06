@@ -245,14 +245,23 @@ def _control_context(device_token: str):
     except (ImportError, AttributeError, OSError, ValueError) as exc:
         raise WorkerStatusUnavailable("Control-API-Verbindung nicht verfügbar") from exc
 
-    if not isinstance(base, str) or not isinstance(device_token, str) or not device_token.strip():
+    effective_token = (device_token or "").strip()
+    if not effective_token:
+        try:
+            from hub._services.chat.control_auth import get_control_api_token
+
+            effective_token = get_control_api_token()
+        except (ImportError, OSError, ValueError, RuntimeError, AttributeError):
+            effective_token = ""
+
+    if not isinstance(base, str) or not effective_token:
         raise WorkerStatusUnavailable("Control-API-Verbindung oder Geräteautorisierung fehlt")
     parsed = urlsplit(base)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
             or parsed.username or parsed.password or parsed.query or parsed.fragment
             or parsed.path.rstrip("/") != "/api"):
         raise WorkerStatusUnavailable("Control-API-Ziel ist nicht der erwartete Loopback-Dienst")
-    headers = {"Authorization": f"Bearer {device_token.strip()}", "Accept": "application/json"}
+    headers = {"Authorization": f"Bearer {effective_token}", "Accept": "application/json"}
     return base.rstrip("/"), headers, ready_check
 
 
