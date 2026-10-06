@@ -49,13 +49,23 @@ class MountHandler(BaseHandler):
         )
 
     def _is_allowed_source(self, source: str) -> bool:
-        try:
-            cand = Path(source).resolve()
-        except (ValueError, OSError):
+        raw = str(source or "")
+        if not raw or "\x00" in raw:
             return False
+
+        try:
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            if not os.path.isabs(expanded):
+                return False
+            cand_real = os.path.realpath(os.path.abspath(expanded))
+            cand = Path(cand_real)
+        except (ValueError, OSError, TypeError):
+            return False
+
         for root in self._allowed_source_roots:
             try:
-                base = Path(root).resolve()
+                base_real = os.path.realpath(os.path.abspath(os.fspath(root)))
+                base = Path(base_real)
                 if cand == base or cand.is_relative_to(base):
                     return True
                 if os.path.commonpath([str(base), str(cand)]) == str(base):
