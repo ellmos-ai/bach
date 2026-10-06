@@ -661,7 +661,10 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
                     sequential: bool = False, config: LeaseConfig | None = None,
                     now: datetime | None = None) -> LeaseResult:
     """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion."""
-    from hub.task_audit import apply_task_field_changes
+    try:
+        from hub.task_audit import apply_task_field_changes
+    except ImportError:  # pragma: no cover - package import from system/hub
+        from ..task_audit import apply_task_field_changes
 
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
