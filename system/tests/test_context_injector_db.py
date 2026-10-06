@@ -109,3 +109,30 @@ def test_broken_db_warns_once_and_falls_back(injector, monkeypatch, caplog):
         CI.check("ein fehler")
     warnings = [r for r in caplog.records if "context_triggers lesen" in r.getMessage()]
     assert len(warnings) == 1 and "DatabaseError" in warnings[0].getMessage()
+
+
+def test_substring_matching_and_word_boundaries():
+    """T-20260926-363436040 (5): Falsche Substring-Treffer werden verhindert.
+
+    'abo' darf 'labor' und 'about' nicht treffen.
+    'import' darf 'important' nicht treffen.
+    'bug' darf 'debug' nicht treffen.
+    Echte Treffer ('mein abo', 'import csv', 'ein bug') und deutsche Komposita
+    ('Steuererklärung', 'Arzttermin', 'Medikamenten') muessen weiterhin treffen.
+    """
+    CI._cache = None
+    CI.base_path = None
+
+    # 1. False positives verhindert
+    assert CI.check("Ich mache ein Experiment im Labor") is None
+    assert CI.check("What about the weather?") is None
+    assert CI.check("This is an important decision") is None
+    assert CI.check("Wir muessen das jetzt debuggen") is None
+
+    # 2. Echte Treffer schlagen an
+    assert CI.check("Mein Abo laeuft bald aus") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["abo"]
+    assert CI.check("Hier ist der Import der Datei") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["import"]
+    assert CI.check("Wir haben einen Bug gefunden") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["bug"]
+    assert CI.check("Hilf mir bei der Steuererklärung") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["steuer"]
+    assert CI.check("Ich habe einen Arzttermin") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["arzt"]
+    assert CI.check("Was steht an Medikamenten an?") == "[KONTEXT] " + CI.CONTEXT_TRIGGERS["medikament"]

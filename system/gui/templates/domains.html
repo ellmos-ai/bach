@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Domänen & Fachmodule</title>
+    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=2">
+    <style>
+        .domains-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1.25rem;
+        }
+        .header-content h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0 0 0.25rem 0;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin: 0;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        .stat-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0.25rem 0;
+            color: var(--primary, #6366f1);
+        }
+        .stat-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .section-title h2 {
+            font-size: 1.35rem;
+            margin: 0 0 0.2rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .section-desc {
+            font-size: 0.825rem;
+            color: var(--text-muted);
+            margin: 0 0 1rem 0;
+        }
+        .domains-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.25rem;
+        }
+        .domain-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+        }
+        .domain-card:hover {
+            border-color: var(--primary, #6366f1);
+            transform: translateY(-2px);
+        }
+        .domain-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .domain-icon {
+            font-size: 1.75rem;
+        }
+        .domain-title-wrap h3 {
+            margin: 0;
+            font-size: 1.05rem;
+        }
+        .domain-type-badge {
+            font-size: 0.7rem;
+            color: var(--primary, #6366f1);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .domain-desc {
+            font-size: 0.825rem;
+            color: var(--text-muted);
+            margin: 0 0 1rem 0;
+            line-height: 1.4;
+        }
+        .domain-states {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.75rem;
+        }
+        .domain-state-badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+        }
+        .domain-state-badge.healthy { color: #22c55e; border-color: rgba(34, 197, 94, 0.3); }
+        .domain-state-badge.installed { color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
+        .domain-state-badge.gated { color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); }
+        .domain-state-badge.private { color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
+        .domain-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--border);
+            padding-top: 0.75rem;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            border: 1px solid var(--border);
+            background: var(--bg-card, rgba(255,255,255,0.05));
+            color: inherit;
+        }
+        .btn:hover {
+            border-color: var(--primary, #6366f1);
+        }
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="domains-container">
+        <div class="page-header">
+            <div class="header-content">
+                <h1><span class="icon">🌐</span> Domänen & Fachmodule</h1>
+                <p class="subtitle">Echte Modulmanifeste, getrennte Zustände & autoritative Fachseiten (GUX-068..071)</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn" onclick="loadDomains()">🔄 Aktualisieren</button>
+                <a href="/tasks" class="btn">📋 Aufgabenboard</a>
+            </div>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-label">Fachmodule im Katalog</div>
+                <div class="stat-value" id="stat-count-modules">...</div>
+                <div class="stat-sub">Deklarierte Manifeste</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Installationsnachweis</div>
+                <div class="stat-value" id="stat-count-installed">...</div>
+                <div class="stat-sub">Code auf Host vorhanden</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Laufende / Bereite Dienste</div>
+                <div class="stat-value" id="stat-count-running">...</div>
+                <div class="stat-sub">Betriebsbereit (Probe OK)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Gepinnte Untermenü-Slots</div>
+                <div class="stat-value" id="stat-count-pins">...</div>
+                <div class="stat-sub">Stabile IDs mit Fallback</div>
+            </div>
+        </div>
+
+        <div class="section-title">
+            <h2><span class="icon">🧩</span> Installierte Fachmodule</h2>
+            <p class="section-desc">Definition, Installation, Probe und Runtime bleiben getrennte Zustände (GUX-069).</p>
+        </div>
+
+        <div class="domains-grid" id="domains-grid">
+            <p>Lade Fachmodule...</p>
+        </div>
+    </div>
+
+    <script>
+        let pinnedIds = new Set();
+
+        async function loadPins() {
+            try {
+                const res = await fetch('/api/domains/pins');
+                if (res.ok) {
+                    const data = await res.json();
+                    const pins = data.pins || [];
+                    pinnedIds = new Set(pins.map(p => p.id));
+                    const pinCountEl = document.getElementById('stat-count-pins');
+                    if (pinCountEl) pinCountEl.textContent = pins.length;
+                }
+            } catch (e) {
+                console.error("Fehler beim Laden der Pins:", e);
+            }
+        }
+
+        async function togglePin(domainId) {
+            try {
+                const isPinned = pinnedIds.has(domainId);
+                const res = await fetch(`/api/domains/${domainId}/pin`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pinned: !isPinned})
+                });
+                if (res.ok) {
+                    await loadPins();
+                    loadDomains();
+                }
+            } catch (e) {
+                alert("Pin-Fehler: " + e.message);
+            }
+        }
+
+        async function loadDomains() {
+            const grid = document.getElementById('domains-grid');
+            const statModules = document.getElementById('stat-count-modules');
+            const statInstalled = document.getElementById('stat-count-installed');
+            const statRunning = document.getElementById('stat-count-running');
+
+            await loadPins();
+
+            try {
+                const res = await fetch('/api/domains/installed?scope=all&probe=true');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const domains = data.domains || [];
+
+                if (statModules) statModules.textContent = domains.length;
+                if (statInstalled) statInstalled.textContent = data.installed_count ?? '?';
+                if (statRunning) statRunning.textContent = data.running_count ?? '?';
+
+                if (!domains.length) {
+                    grid.innerHTML = '<p class="text-muted">Keine Fachmodule gefunden.</p>';
+                    return;
+                }
+
+                grid.innerHTML = domains.map(d => {
+                    const states = d.states || {};
+                    const isPinned = pinnedIds.has(d.id);
+                    const workbench = d.workbench_url || d.fachseite_url;
+                    
+                    return `
+                    <div class="domain-card">
+                        <div>
+                            <div class="domain-header">
+                                <span class="domain-icon">${d.icon || '📦'}</span>
+                                <div class="domain-title-wrap">
+                                    <h3>${d.name || d.id}</h3>
+                                    <span class="domain-type-badge">${d.kind || 'Fachmodul'} · ${d.category || 'domain'}</span>
+                                </div>
+                            </div>
+                            <p class="domain-desc">${d.description || 'Fachmodul für domänenspezifische Aufgaben.'}</p>
+                            
+                            <div class="domain-states">
+                                <span class="domain-state-badge">📜 Manifest</span>
+                                <span class="domain-state-badge ${states.installed ? 'installed' : ''}">${states.installed ? '📦 Installiert' : '⚪ Nicht installiert'}</span>
+                                <span class="domain-state-badge ${states.probe === 'healthy' ? 'healthy' : 'gated'}">${states.probe === 'healthy' ? '🟢 Probe OK' : '🟡 ' + (states.probe || 'Probe')}</span>
+                                <span class="domain-state-badge ${states.runtime === 'ready' || states.runtime === 'running' ? 'healthy' : 'gated'}">${states.runtime === 'ready' || states.runtime === 'running' ? '⚡ Bereit' : '⏸️ ' + (states.runtime || 'Inert')}</span>
+                                ${d.visibility === 'private' ? '<span class="domain-state-badge private">🔒 Privat</span>' : ''}
+                            </div>
+                        </div>
+
+                        <div class="domain-footer">
+                            <button class="btn btn-sm" onclick="togglePin('${d.id}')">
+                                ${isPinned ? '📍 Gepinnt' : '📌 Pinnen'}
+                            </button>
+                            <div style="display:flex;gap:0.4rem;">
+                                ${workbench ? `<a href="${workbench}" class="btn btn-sm">Fachseite ↗</a>` : `<span class="text-muted" style="font-size:0.75rem;">Keine Route</span>`}
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                grid.innerHTML = `<p class="text-danger">Fehler beim Laden: ${e.message}</p>`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadDomains);
+    </script>
+</body>
+</html>

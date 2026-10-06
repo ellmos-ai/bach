@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Tasks</title>
@@ -337,9 +338,11 @@
                 </div>
                 
                 <div class="task-filters">
+                    <button class="filter-btn active" data-status="open" onclick="filterTasks('open')">⏳ Offen</button>
+                    <button class="filter-btn" data-status="user" onclick="filterTasks('user')">👤 Persönlich</button>
+                    <button class="filter-btn" data-status="auto" onclick="filterTasks('auto')">🤖 Auto</button>
                     <button class="filter-btn" data-status="all" onclick="filterTasks('all')">Alle</button>
-                    <button class="filter-btn active" data-status="pending" onclick="filterTasks('pending')">Offen</button>
-                    <button class="filter-btn" data-status="completed" onclick="filterTasks('completed')">Erledigt</button>
+                    <button class="filter-btn" data-status="completed" onclick="filterTasks('completed')">✅ Erledigt</button>
                 </div>
                 
                 <ul class="task-list" id="task-list">
@@ -393,6 +396,26 @@
                         <select name="created_by" id="new-created-by">
                             <option value="user">Benutzer</option>
                         </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Fällig am</label>
+                        <input type="date" name="due_date">
+                    </div>
+                    <div class="form-group">
+                        <label>Abhängig von (IDs)</label>
+                        <input type="text" name="depends_on" placeholder="z.B. 123, 456">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Benötigtes Modell</label>
+                        <input type="text" name="required_model" placeholder="z.B. gpt-4o, claude-3-5-sonnet">
+                    </div>
+                    <div class="form-group">
+                        <label>Agenten-Slot</label>
+                        <input type="text" name="assigned_slot" placeholder="z.B. slot-1">
                     </div>
                 </div>
                 <div class="form-group">
@@ -492,9 +515,21 @@
         
         // Task-Liste rendern
         function renderTaskList() {
+            const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
+            const normalizedStatus = status => String(status || '').trim().toLowerCase();
+            const isDoneStatus = status => ['done', 'completed', 'closed'].includes(normalizedStatus(status));
+            const isTerminalStatus = status => ['done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate'].includes(normalizedStatus(status));
+            const isOpenStatus = status => ['open', 'todo', 'in_progress', 'pending', 'progress'].includes(normalizedStatus(status)) || (!isTerminalStatus(status));
+
             let filtered = allTasks;
-            if (currentFilter !== 'all') {
-                filtered = allTasks.filter(t => t.status === currentFilter);
+            if (currentFilter === 'open' || currentFilter === 'pending') {
+                filtered = allTasks.filter(t => isOpenStatus(t.status));
+            } else if (currentFilter === 'user') {
+                filtered = allTasks.filter(t => getAssignee(t) === 'user');
+            } else if (currentFilter === 'auto') {
+                filtered = allTasks.filter(t => getAssignee(t) !== 'user');
+            } else if (currentFilter === 'completed' || currentFilter === 'done') {
+                filtered = allTasks.filter(t => isDoneStatus(t.status));
             }
             
             const list = document.getElementById('task-list');
@@ -586,6 +621,24 @@
                             <div class="meta-value">${escapeHtml(task.depends_on)}</div>
                         </div>
                         ` : ''}
+                        ${task.due_date ? `
+                        <div class="meta-item">
+                            <div class="meta-label">Faellig am</div>
+                            <div class="meta-value">${escapeHtml(task.due_date)}</div>
+                        </div>
+                        ` : ''}
+                        ${task.required_model ? `
+                        <div class="meta-item">
+                            <div class="meta-label">Benoetigtes Modell</div>
+                            <div class="meta-value">${escapeHtml(task.required_model)}</div>
+                        </div>
+                        ` : ''}
+                        ${task.assigned_slot ? `
+                        <div class="meta-item">
+                            <div class="meta-label">Agenten-Slot</div>
+                            <div class="meta-value">${escapeHtml(task.assigned_slot)}</div>
+                        </div>
+                        ` : ''}
                     </div>
 
                     ${task.description ? `
@@ -606,17 +659,17 @@
                             <div class="form-group">
                                 <label>Priorität</label>
                                 <select id="edit-priority">
-                                    <option value="P1" ${task.priority === 'P1' ? 'selected' : ''}>P1 - Kritisch</option>
-                                    <option value="P2" ${task.priority === 'P2' ? 'selected' : ''}>P2 - Wichtig</option>
-                                    <option value="P3" ${task.priority === 'P3' ? 'selected' : ''}>P3 - Normal</option>
-                                    <option value="P4" ${task.priority === 'P4' ? 'selected' : ''}>P4 - Niedrig</option>
+                                     <option value="P1" ${task.priority === 'P1' ? 'selected' : ''}>P1 - Kritisch</option>
+                                     <option value="P2" ${task.priority === 'P2' ? 'selected' : ''}>P2 - Wichtig</option>
+                                     <option value="P3" ${task.priority === 'P3' ? 'selected' : ''}>P3 - Normal</option>
+                                     <option value="P4" ${task.priority === 'P4' ? 'selected' : ''}>P4 - Niedrig</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label>Status</label>
                                 <select id="edit-status">
-                                    <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>Offen</option>
-                                    <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Erledigt</option>
+                                     <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>Offen</option>
+                                     <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Erledigt</option>
                                 </select>
                             </div>
                         </div>
@@ -628,19 +681,35 @@
                             <div class="form-group">
                                 <label>Zugewiesen an</label>
                                 <select id="edit-assigned-to">
-                                    ${renderAssigneeOptions(task.assigned_to)}
+                                     ${renderAssigneeOptions(task.assigned_to)}
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label>Erstellt von</label>
                                 <select id="edit-created-by">
-                                    ${renderAssigneeOptions(task.created_by)}
+                                     ${renderAssigneeOptions(task.created_by)}
                                 </select>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Abhaengig von (Task-IDs, kommagetrennt)</label>
-                            <input type="text" id="edit-depends-on" value="${escapeHtml(task.depends_on || '')}" placeholder="z.B. 123, 456">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Fällig am</label>
+                                <input type="date" id="edit-due-date" value="${task.due_date || ''}">
+                            </div>
+                            <div class="form-group">
+                                <label>Abhängig von (Task-IDs)</label>
+                                <input type="text" id="edit-depends-on" value="${escapeHtml(task.depends_on || '')}" placeholder="z.B. 123, 456">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Benötigtes Modell</label>
+                                <input type="text" id="edit-required-model" value="${escapeHtml(task.required_model || '')}" placeholder="z.B. gpt-4o">
+                            </div>
+                            <div class="form-group">
+                                <label>Agenten-Slot</label>
+                                <input type="text" id="edit-assigned-slot" value="${escapeHtml(task.assigned_slot || '')}" placeholder="z.B. slot-1">
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Beschreibung</label>
@@ -677,7 +746,11 @@
                 description: document.getElementById('edit-description').value || null,
                 assigned_to: document.getElementById('edit-assigned-to').value || 'user',
                 created_by: document.getElementById('edit-created-by').value || 'user',
-                depends_on: document.getElementById('edit-depends-on').value || null
+                depends_on: document.getElementById('edit-depends-on').value || null,
+                due_date: document.getElementById('edit-due-date').value || null,
+                required_model: document.getElementById('edit-required-model').value || null,
+                assigned_slot: document.getElementById('edit-assigned-slot').value || null,
+                changed_by: 'gui'
             };
             
             try {
@@ -685,6 +758,7 @@
                 await loadTasks();
                 loadStatus();
                 exitEditMode();
+                showTaskDetail(id);
             } catch (e) {
                 alert('Fehler: ' + e.message);
             }
@@ -734,6 +808,10 @@
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.status === status);
             });
+            const url = new URL(location.href);
+            if (status === 'user') url.searchParams.set('assigned_to', 'user');
+            else url.searchParams.delete('assigned_to');
+            history.replaceState(null, '', url);
             renderTaskList();
         }
         
@@ -756,15 +834,20 @@
                 project: form.category.value || null,
                 description: form.description.value || null,
                 assigned_to: form.assigned_to.value || 'OLLAMA',
-                created_by: form.created_by.value || 'user'
+                created_by: form.created_by.value || 'user',
+                due_date: form.due_date?.value || null,
+                depends_on: form.depends_on?.value || null,
+                required_model: form.required_model?.value || null,
+                assigned_slot: form.assigned_slot?.value || null
             };
             
             try {
-                await api.post('/api/tasks', data);
+                const res = await api.post('/api/tasks', data);
                 form.reset();
                 closeAddModal();
                 await loadTasks();
                 loadStatus();
+                if (res && res.id) showTaskDetail(res.id);
             } catch (e) {
                 alert('Fehler: ' + e.message);
             }
@@ -805,9 +888,22 @@
         
         // Init
         document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const assignedParam = urlParams.get('assigned_to')?.toLowerCase();
+            if (assignedParam === 'user') {
+                currentFilter = 'user';
+            } else {
+                currentFilter = 'open';
+            }
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.status === currentFilter);
+            });
             loadStatus();
             loadAssignees();
-            loadTasks();
+            loadTasks().then(() => {
+                const openId = parseInt(urlParams.get('task') || urlParams.get('id') || '', 10);
+                if (Number.isSafeInteger(openId) && openId > 0) showTaskDetail(openId);
+            });
         });
     </script>
 </body>

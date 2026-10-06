@@ -96,6 +96,11 @@ class ExecutionReceipt:
     run_id: Optional[str] = None
     ticket_id: Optional[str] = None
 
+# Neutral-API-Aliase (open-ocean / ticket-master Kompatibilität)
+TaskTransportContract = LedgerEntry
+WorkItem = LedgerEntry
+ExecutorReceipt = ExecutionReceipt
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()

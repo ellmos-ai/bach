@@ -71,10 +71,12 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           python -m pytest -q -rA -p no:cacheprovider --timeout=120 --timeout-method=thread \
+            system/tests/test_activity_dashboard.py \
             system/tests/test_activity_tracker.py \
             system/tests/test_agent_launcher_handler.py \
             system/tests/test_agent_pid_identity.py \
             system/tests/test_agent_process_provider.py \
+            system/tests/test_agent_profile_chat_binding.py \
             system/tests/test_agents_export.py \
             system/tests/test_agents_handler.py \
             system/tests/test_agents_heart.py \
@@ -109,6 +111,7 @@ jobs:
             system/tests/test_contact_handler.py \
             system/tests/test_context_handler.py \
             system/tests/test_context_injector_db.py \
+            system/tests/test_context_manual_hints.py \
             system/tests/test_control_api_auth.py \
             system/tests/test_cookbook_handler.py \
             system/tests/test_core.py \
@@ -143,11 +146,14 @@ jobs:
             system/tests/test_gui_console.py \
             system/tests/test_gui_mounts_contract.py \
             system/tests/test_gui_prompt_manager.py \
+            system/tests/test_gui_privacy_boundary.py \
             system/tests/test_gui_server_smoke.py \
             system/tests/test_gui_server.py \
+            system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
+            system/tests/test_unified_dashboard_xss.py \
             system/tests/test_haushalt_handler.py \
             system/tests/test_haushalt_inventory.py \
             system/tests/test_headless_task_history.py \
@@ -183,6 +189,7 @@ jobs:
             system/tests/test_messages_handler.py \
             system/tests/test_migration_backup.py \
             system/tests/test_migration_baseline_check.py \
+            system/tests/test_migrate_unify_distribution.py \
             system/tests/test_model_backend.py \
             system/tests/test_mount_handler.py \
             system/tests/test_n8n_handler.py \
@@ -190,6 +197,7 @@ jobs:
             system/tests/test_notify_local_service.py \
             system/tests/test_notify_via_assistant_core.py \
             system/tests/test_obsidian_handler.py \
+            system/tests/test_ocean_gui_shell.py \
             system/tests/test_ollama.py \
             system/tests/test_ollama_stream.py \
             system/tests/test_operator_control.py \
@@ -221,6 +229,7 @@ jobs:
             system/tests/test_schwarm_handler.py \
             system/tests/test_search_handler.py \
             system/tests/test_security_scan_handler.py \
+            system/tests/test_seal_release_sampling.py \
             system/tests/test_seed_fresh_db.py \
             system/tests/test_session_checkpoint_adapter.py \
             system/tests/test_session_checkpoint_provider.py \
@@ -265,6 +274,10 @@ jobs:
             system/tests/test_tools_handler.py \
             system/tests/test_transit_sync_provider_wiring.py \
             system/tests/test_trithon_dispatch.py \
+            system/tests/test_trithon_fencing_phase5.py \
+            system/tests/test_trithon_muschelgrund_phase4.py \
+            system/tests/test_trithon_open_ocean_t3.py \
+            system/tests/test_trithon_receipt_providers_phase5.py \
             system/tests/test_trigger_generators.py \
             system/tests/test_trash_handler.py \
             system/tests/test_tuev_handler.py \
@@ -280,3 +293,346 @@ jobs:
             system/tests/test_safe_shell_args.py \
             system/tests/test_chat_runtime_security.py \
             system/tests/test_telegram_owner_check.py
+
+  shared-dbsync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REQUIRE_SHARED_DBSYNC: "1"
+      SHARED_DBSYNC_OCEAN_ROOT: ${{ github.workspace }}/.ci-sources/ocean
+      TRANSIT_SYNC_ROOT: ${{ github.workspace }}/.ci-sources/carrier
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/open-ocean
+          ref: 7127a0f5beea7d3784121c89ca69a118af5ca32b
+          path: .ci-sources/ocean
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/sqlite-transit-sync
+          ref: 7648a20b11ca958e9622d2b5d8a13fd02613e92a
+          path: .ci-sources/carrier
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify immutable source commits and LF hashes
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import subprocess
+          from pathlib import Path
+
+          sources = (
+              ("SHARED_DBSYNC_OCEAN_ROOT", "7127a0f5beea7d3784121c89ca69a118af5ca32b", (
+                  ("tools/dbsync_adapter.py", "e0b46347849035d58d0464c3c0554a4d9594033a8617eeb7aaa34b290b0266a7"),
+              )),
+              ("TRANSIT_SYNC_ROOT", "7648a20b11ca958e9622d2b5d8a13fd02613e92a", (
+                  ("sqlite_transit_sync/core.py", "f90ac3134c64f68b4833650a44cb07fb4b020f664026b89d3820bd1b70dd2870"),
+                  ("sqlite_transit_sync/credential-triggers.json", "8bc931754dd43cddfcebbfa3e20260ebfca3d16d12a6bfd6dafe37ee9b412e22"),
+              )),
+          )
+          for variable, commit, files in sources:
+              root = Path(os.environ[variable])
+              if not root.is_absolute() or not root.is_dir():
+                  raise SystemExit(f"Required source checkout missing: {variable}")
+              actual = subprocess.check_output(
+                  ["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+              if actual != commit:
+                  raise SystemExit(f"Source commit mismatch: {variable}: {actual}")
+              print(f"{variable}: {actual}")
+              for relative, expected in files:
+                  content = (root / relative).read_bytes().replace(b"\r\n", b"\n")
+                  actual_hash = hashlib.sha256(content).hexdigest()
+                  if actual_hash != expected:
+                      raise SystemExit(f"Source LF hash mismatch: {relative}: {actual_hash}")
+                  print(f"{relative}: {actual_hash}")
+          PY
+      - name: Install hermetic test dependency
+        run: python -m pip install pytest
+      - name: Run every shared adapter contract case
+        run: |
+          python -B -m pytest system/tests/test_db_sync_shared_adapter.py \
+            -q -rA -p no:cacheprovider --basetemp="${RUNNER_TEMP}/shared-dbsync-tests" \
+            --junitxml="${RUNNER_TEMP}/shared-dbsync.xml"
+      - name: Require at least 55 successful cases without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "shared-dbsync.xml"
+          cases = ET.parse(report).getroot().findall(".//testcase")
+          if len(cases) < 55 or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required shared adapter suite incomplete or unsuccessful")
+          print(f"Required shared adapter cases: {len(cases)}, no skips/failures/errors")
+          PY
+
+  imported-capability-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install explicit fixture dependencies
+        run: python -m pip install pytest pydantic
+      - name: Require actual SQLite autocommit modes
+        run: |
+          python - <<'PY'
+          import sqlite3
+          import sys
+
+          if sys.version_info < (3, 12):
+              raise SystemExit("SQLite autocommit=True/False require Python 3.12 or newer")
+          for mode in (True, False):
+              connection = sqlite3.connect(":memory:", autocommit=mode)
+              try:
+                  if connection.autocommit is not mode:
+                      raise SystemExit("Requested sqlite3 autocommit mode unavailable")
+              finally:
+                  connection.close()
+          print("Actual sqlite3 autocommit=True and autocommit=False are available")
+          PY
+      - name: Run complete lease and journal safety scope
+        run: |
+          python -B -m pytest -q -rA -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP}/imported-capability-tests" \
+            --junitxml="${RUNNER_TEMP}/imported-capability.xml" \
+            system/tests/test_imported_capabilities.py \
+            system/tests/test_imported_lease_safety.py \
+            system/tests/test_imported_lease_countercases.py \
+            system/tests/test_imported_lease_transaction_modes.py \
+            system/tests/test_imported_lease_real_commit.py \
+            system/tests/test_imported_journal_safety.py \
+            system/tests/test_imported_journal_countercases.py \
+            system/tests/test_imported_journal_final_guards.py
+      - name: Require all 175 safety cases without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "imported-capability.xml"
+          cases = ET.parse(path).getroot().findall(".//testcase")
+          if len(cases) < 175 or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required lease/journal safety suite incomplete or unsuccessful")
+          print(f"Safety cases: {len(cases)}, no skips/failures/errors")
+          PY
+
+  seal-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      REQUIRE_SEAL_IDENTITY: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install explicit fixture dependency
+        run: python -m pip install pytest
+      - name: Require real SQLite modes and both complete source suites
+        run: |
+          python - <<'PY'
+          import os
+          import sqlite3
+          import sys
+          from pathlib import Path
+
+          if os.environ.get("REQUIRE_SEAL_IDENTITY") != "1" or sys.version_info < (3, 12):
+              raise SystemExit("Required seal identity contract needs Python 3.12 or newer")
+          for mode in (True, False):
+              connection = sqlite3.connect(":memory:", autocommit=mode)
+              try:
+                  if connection.autocommit is not mode:
+                      raise SystemExit("Actual SQLite autocommit mode unavailable")
+              finally:
+                  connection.close()
+          for suite in ("test_seal_identity_row_contract.py", "test_seal_identity_row_countercases.py"):
+              if not (Path("system/tests") / suite).is_file():
+                  raise SystemExit(f"Required seal identity suite missing: {suite}")
+          print("Required sources and real SQLite modes are available")
+          PY
+      - name: Run complete seal identity contract with project conftest
+        run: |
+          python -B -m pytest -q -rA -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP}/seal-identity-tests" \
+            --junitxml="${RUNNER_TEMP}/seal-identity.xml" \
+            system/tests/test_seal_identity_row_contract.py \
+            system/tests/test_seal_identity_row_countercases.py
+      - name: Require 34 contract and 11 countercases without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "seal-identity.xml"
+          cases = ET.parse(report).getroot().findall(".//testcase")
+          required = {"test_seal_identity_row_contract": 34,
+                      "test_seal_identity_row_countercases": 11}
+          counts = {name: sum(case.get("classname", "").split(".")[-1] == name
+                              for case in cases) for name in required}
+          if any(counts[name] < minimum for name, minimum in required.items()) or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required seal identity suites incomplete or unsuccessful")
+          print(f"Required seal identity cases: {counts}, no skips/failures/errors")
+          PY
+
+  native-dbsync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      REQUIRE_NATIVE_DBSYNC: "1"
+      NATIVE_DBSYNC_CARRIER_ROOT: ${{ github.workspace }}/.ci-sources/native-carrier
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: ${{ github.workspace }}/system:${{ github.workspace }}/.ci-sources/native-carrier
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/sqlite-transit-sync
+          ref: d1509e5f25bbd35e6658d2889b9bfb9f1ff9b573
+          path: .ci-sources/native-carrier
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install explicit fixture dependency
+        run: python -m pip install pytest
+      - name: Require pinned native sources and actual SQLite capabilities
+        run: |
+          python -B - <<'PY'
+          import hashlib
+          import os
+          import sqlite3
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          if os.environ.get("REQUIRE_NATIVE_DBSYNC") != "1" or sys.version_info < (3, 12):
+              raise SystemExit("Required native DB sync needs Python 3.12 or newer")
+          root = Path(os.environ.get("NATIVE_DBSYNC_CARRIER_ROOT", ""))
+          if not root.is_absolute() or not root.is_dir():
+              raise SystemExit("Required native carrier checkout missing")
+          commit = "d1509e5f25bbd35e6658d2889b9bfb9f1ff9b573"
+          actual = subprocess.check_output(
+              ["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+          if actual != commit:
+              raise SystemExit(f"Native carrier commit mismatch: {actual}")
+          print(f"Native carrier HEAD: {actual}")
+          for relative, expected in (
+              ("sqlite_transit_sync/core.py", "adc001c12ac69718778df6a56d8d59f0aa8d85466877f8b86c469543dc1bfce3"),
+              ("sqlite_transit_sync/credential-triggers.json", "8bc931754dd43cddfcebbfa3e20260ebfca3d16d12a6bfd6dafe37ee9b412e22"),
+              ("sqlite_transit_sync/__init__.py", "d3fc93b9ef78e99f4f108aa75a282c77c565a11ba78309cc6fa1f3e4f5b4b70a"),
+          ):
+              content = (root / relative).read_bytes().replace(b"\r\n", b"\n")
+              digest = hashlib.sha256(content).hexdigest()
+              if digest != expected:
+                  raise SystemExit(f"Native carrier LF hash mismatch: {relative}: {digest}")
+              print(f"{relative}: {digest}")
+          import sqlite_transit_sync
+          from sqlite_transit_sync import core
+
+          for module, relative in ((sqlite_transit_sync, "sqlite_transit_sync/__init__.py"),
+                                   (core, "sqlite_transit_sync/core.py")):
+              if Path(module.__file__).resolve() != (root / relative).resolve():
+                  raise SystemExit(f"Native carrier shadow import: {module.__file__}")
+              print(f"Native import: {module.__file__}")
+          if sqlite3.sqlite_version_info < (3, 37, 0):
+              raise SystemExit("Native schema inspection requires SQLite 3.37 or newer")
+          connection = sqlite3.connect(":memory:")
+          try:
+              connection.execute("CREATE VIRTUAL TABLE ci_fts USING fts5(body)")
+              connection.execute("INSERT INTO ci_fts(body) VALUES ('required native capability')")
+              if connection.execute("SELECT body FROM ci_fts WHERE ci_fts MATCH 'native'").fetchone() != (
+                  "required native capability",
+              ):
+                  raise SystemExit("Actual FTS5 query capability unavailable")
+              if not any(row[1] == "ci_fts" and row[2] == "virtual"
+                         for row in connection.execute("PRAGMA table_list")):
+                  raise SystemExit("Actual table_list capability unavailable")
+              columns = connection.execute("PRAGMA table_xinfo(ci_fts)").fetchall()
+              if not any(row[1] == "body" and row[6] == 0 for row in columns) or not any(
+                  row[1] == "rank" and row[6] == 1 for row in columns
+              ):
+                  raise SystemExit("Actual table_xinfo hidden-column capability unavailable")
+          finally:
+              connection.close()
+          for suite in ("test_db_sync_native_readiness.py", "test_db_sync_handler.py",
+                        "test_transit_sync_provider_wiring.py", "test_prosync_race.py"):
+              if not (Path("system/tests") / suite).is_file():
+                  raise SystemExit(f"Required native suite missing: {suite}")
+          print(f"Required native sources and SQLite {sqlite3.sqlite_version} capabilities verified")
+          PY
+      - name: Run complete native DB sync scope with project conftest
+        run: |
+          python -B -m pytest -q -rA -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP}/native-dbsync-tests" \
+            --junitxml="${RUNNER_TEMP}/native-dbsync.xml" \
+            system/tests/test_db_sync_native_readiness.py \
+            system/tests/test_db_sync_handler.py \
+            system/tests/test_transit_sync_provider_wiring.py \
+            system/tests/test_prosync_race.py
+      - name: Require all four native suites without skips
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "native-dbsync.xml"
+          cases = ET.parse(report).getroot().findall(".//testcase")
+          required = {"test_db_sync_native_readiness": 71, "test_db_sync_handler": 50,
+                      "test_transit_sync_provider_wiring": 26, "test_prosync_race": 3}
+          counts = {name: sum(name in case.get("classname", "").split(".")
+                              for case in cases) for name in required}
+          if any(counts[name] < minimum for name, minimum in required.items()) or any(
+              case.find(tag) is not None
+              for case in cases for tag in ("failure", "error", "skipped")
+          ):
+              raise SystemExit("Required native suites incomplete or unsuccessful")
+          print(f"Required native cases: {counts}, no skips/failures/errors")
+          PY

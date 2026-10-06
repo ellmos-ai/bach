@@ -49,19 +49,19 @@ class MountHandler(BaseHandler):
         )
 
     def _is_allowed_source(self, source: str) -> bool:
-        comparable_source = os.path.normcase(source)
+        try:
+            cand = Path(source).resolve()
+        except (ValueError, OSError):
+            return False
         for root in self._allowed_source_roots:
-            comparable_root = os.path.normcase(root)
-            root_prefix = (
-                comparable_root
-                if comparable_root.endswith(os.sep)
-                else comparable_root + os.sep
-            )
-            if (
-                comparable_source == comparable_root
-                or comparable_source.startswith(root_prefix)
-            ):
-                return True
+            try:
+                base = Path(root).resolve()
+                if cand == base or cand.is_relative_to(base):
+                    return True
+                if os.path.commonpath([str(base), str(cand)]) == str(base):
+                    return True
+            except (ValueError, TypeError, OSError):
+                continue
         return False
     
     @property
@@ -89,22 +89,20 @@ class MountHandler(BaseHandler):
         if not raw or "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
 
-        # Den String vollständig normalisieren (inklusive Links), danach gegen
-        # vertrauenswürdige Wurzelpräfixe prüfen und erst anschließend ein
-        # Path-Objekt für Dateisystemzugriffe erzeugen. Diese Reihenfolge hält
-        # die Sicherheitsgrenze auch für statische Datenflussanalyse sichtbar.
-        normalized = os.path.realpath(
-            os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
-        )
-        if not self._is_allowed_source(normalized):
+        try:
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            candidate = Path(expanded).resolve()
+        except (ValueError, OSError) as exc:
+            raise ValueError(f"Ungueltiger Quellpfad: {exc}")
+
+        if not self._is_allowed_source(str(candidate)):
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
-        source = Path(normalized)
-        if source.exists() and not source.is_dir():
+        if candidate.exists() and not candidate.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
-        return source
+        return candidate
     
     def get_operations(self) -> dict:
         return {
@@ -161,13 +159,17 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
+        src = source.resolve()
+        tgt = target.resolve(strict=False)
+        if not self._is_allowed_source(str(src)):
+            raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
         if os.name == "nt":
             subprocess.run(
-                ["cmd", "/c", "mklink", "/J", str(target), str(source)],
+                ["cmd", "/c", "mklink", "/J", str(tgt), str(src)],
                 check=True, capture_output=True,
             )
         else:
-            os.symlink(source, target)
+            os.symlink(src, tgt)
 
     def _remove_link(self, target: Path) -> bool:
         if os.name == "nt":

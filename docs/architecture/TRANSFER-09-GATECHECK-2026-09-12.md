@@ -35,7 +35,7 @@ Aktuell in `_archive/`: `DEPRECATED_hub.py`, `_archive_handlers/`, `delegation_l
 ## Re-Verifizierung Gate 1 (Task #1242) — 2026-09-12 11:13 — BACH qwen3.8:27b-mlx
 Automatischer Live-Check vor dem Operator-Handoff. Ergebnis: **weiterhin UNMET**, Blocker unverändert.
 
-- HEAD /Users/lukas/services/assistant-core = `ccadcf9` (v0.1.0) — pin-konform wäre `444a1ff` (v0.2.0).
+- HEAD <services>/assistant-core = `ccadcf9` (v0.1.0) — pin-konform wäre `444a1ff` (v0.2.0).
 - Pin bestätigt: requirements.txt:62 → `...@444a1fffd56236078988d088f6237f706c3e15a9`.
 - Commit `444a1ff` in den lokalen Klonen (assistant-core, accounts-core, ellmos-scheduler, ellmos-tests): **nicht vorhanden**.
 - Kein pip-Wheel/Tarball, kein Bundle lokal. Kein nicht-interaktives Credential:
@@ -109,7 +109,7 @@ Ergebnis: **Paritätsvoraussetzung grün, echter Windows-Host-Run weiterhin UNME
 
 ### Re-Verifizierung Gate 2 (3) — 2026-09-12 ~13:00 — BACH qwen3.8:27b-mlx (Task #1253)
 HEAD vorgerückt auf `5e64e07` (branch `main`). Paritätsvoraussetzung **lebensbestätigt**:
-  venv `/Users/lukas/.venvs/bach` (python3.12), 5 Dateien Stufen 2/3/5/7 → **110 passed in 2.59 s**.
+  venv `<venv>/bach` (python3.12), 5 Dateien Stufen 2/3/5/7 → **110 passed in 2.59 s**.
 Handoff-Artefakte (Runbook + Abschnitt „(2)") kopierfertig und konsistent bestätigt.
 Gate-Matrix-Zeile 2 `Windows-Gegenprobe` = ⬜ offen → bleibt ⬜ (kein fälschliches ✅, kein Windows-Pass simuliert).
 **BLOCKED auf Operator:** echter Windows-Lauf auf `WORKSTATION-LG` ist von BACH/mac-studio nicht ausführbar
@@ -166,7 +166,7 @@ Regression liegt in einem Zwischen-Commit an `system/gui/server.py` (+51 Zeilen:
 `assistant_core.MessageStore` / `accounts_core.AccountStore` / `_messages()` wiederhergestellt
 + `_account_store()` Helper; Parität 5 Dateien Stufen 2/3/5/7 → 110 passed). Der Defekt war die
 selbe Import-Löschung, die in (4) dokumentiert war; der Fix ist im Baum (HEAD `60d9888`).
-- **Live-Rerun am aktuellen HEAD `60d9888` (venv /Users/lukas/.venvs/bach, python3.12):**
+- **Live-Rerun am aktuellen HEAD `60d9888` (venv <venv>/bach, python3.12):**
    **110 passed** (test_scheduler_provider + _wiring + test_accounts_via_accounts_core
    + test_explorer_provider_wiring + test_transit_sync_provider_wiring), **stabil über 2 Läufe**
    (2.53s / 2.31s). Früherer Comb-Run „1 error" = transienter `~/.bach`-SHM-Artefakt (Rest eines
@@ -190,7 +190,7 @@ Watch-Refresh (keine neue Operator-Evidenz eingetroffen): Prämisse „grüner W
 - **macOS-Paritätsvoraussetzung (live, aktuell):** 5 Dateien Stufen 2/3/5/7
   (`test_scheduler_provider` + `_wiring` + `test_accounts_via_accounts_core` +
   `test_explorer_provider_wiring` + `test_transit_sync_provider_wiring`) am **aktuellen HEAD `18541f5`**
-  (venv `/Users/lukas/.venvs/bach`, python3.12) → **110 passed in 2.61 s**. Notwendige Voraussetzung lebt
+  (venv `<venv>/bach`, python3.12) → **110 passed in 2.61 s**. Notwendige Voraussetzung lebt
   weiter (nicht hinreichend). Der „grüne Pin" rückt vom (5)-Wert `60d9888` auf **`18541f5`** fort;
   Operator abgleicht per `git rev-parse --short HEAD` (kein fester Checkout).
 - **Blocker unverändert (4/4):**
@@ -222,7 +222,7 @@ Watch-Refresh 7 (keine neue Operator-Evidenz eingetroffen): Prämisse „grüner
 - **macOS-Paritätsvoraussetzung (live, aktuell):** 5 Dateien Stufen 2/3/5/7
   (`test_scheduler_provider` + `_wiring` + `test_accounts_via_accounts_core` +
   `test_explorer_provider_wiring` + `test_transit_sync_provider_wiring`) am **aktuellen HEAD `4a21210`**
-  (venv `/Users/lukas/.venvs/bach`, python3.12) → **110 passed in 2.50 s**. Notwendige Voraussetzung lebt
+  (venv `<venv>/bach`, python3.12) → **110 passed in 2.50 s**. Notwendige Voraussetzung lebt
   weiter (nicht hinreichend). Grüner Pin = `18541f5` (letzte Code-Änderung), Operator abgleicht per
   `git rev-parse --short HEAD` (kein fester Checkout nötig).
 - **Blocker unverändert (4/4):**

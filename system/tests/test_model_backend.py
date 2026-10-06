@@ -25,6 +25,7 @@ from hub._services.llm.model_backend import (  # noqa: E402
     CLIBackend,
     LMStudioBackend,
     HermesBackend,
+    OpenRouterBackend,
     OllamaBackend,
     OpenAIBackend,
     backend_identifier,
@@ -753,6 +754,60 @@ def test_hermes_factory_and_defaults():
     assert headers["Authorization"] == "Bearer sk-or-test"
     assert headers["HTTP-Referer"] == "https://github.com/ellmos-ai/bach"
     assert headers["X-Title"] == "BACH Agent"
+
+
+def test_openrouter_factory_keeps_hermes_compatibility_and_free_router_id(monkeypatch):
+    legacy = create_backend({"type": "openrouter", "api_key": "sk-or-test"})
+    assert isinstance(legacy, HermesBackend)
+    assert not isinstance(legacy, OpenRouterBackend)
+    assert legacy.default_model == "nousresearch/hermes-3-llama-3.1-8b"
+
+    # Non-preset callers can persist only backend + model. An explicit free
+    # selector must still choose the guarded adapter without the preset flag.
+    backend = create_backend({
+        "type": "openrouter", "default_model": "openrouter/free", "api_key": "sk-or-test"
+    })
+    assert isinstance(backend, OpenRouterBackend)
+    assert backend.default_model == "openrouter/free"
+    assert backend_identifier(backend) == "openrouter"
+
+    preset_backend = create_backend({
+        "type": "openrouter", "free_only": True, "api_key": "sk-or-test"
+    })
+    assert isinstance(preset_backend, OpenRouterBackend)
+
+    selected_free_variant = create_backend({
+        "type": "openrouter", "default_model": "vendor/model:free", "api_key": "sk-or-test"
+    })
+    assert isinstance(selected_free_variant, OpenRouterBackend)
+    assert selected_free_variant.default_model == "vendor/model:free"
+
+    hermes = create_backend({"type": "hermes", "api_key": "sk-or-test"})
+    assert isinstance(hermes, HermesBackend)
+    assert not isinstance(hermes, OpenRouterBackend)
+    assert hermes.default_model == "nousresearch/hermes-3-llama-3.1-8b"
+
+    captured = []
+    fake_client = _FakeClient(
+        _FakeResponse({"choices": [{"message": {"role": "assistant", "content": "ok"}}]}),
+        captured,
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+    result = asyncio.run(backend.chat([{"role": "user", "content": "test"}]))
+    assert result["content"] == "ok"
+    assert captured[0]["json"]["model"] == "openrouter/free"
+    assert captured[0]["headers"]["Authorization"] == "Bearer sk-or-test"
+
+    backend.list_models = lambda: ["openrouter/free", "vendor/free-model:free"]
+    asyncio.run(backend.chat(
+        [{"role": "user", "content": "test"}], model="vendor/free-model:free"
+    ))
+    assert captured[1]["json"]["model"] == "vendor/free-model:free"
+    with pytest.raises(ValueError, match="nicht aktuell als kostenlos bestätigt"):
+        asyncio.run(backend.chat(
+            [{"role": "user", "content": "test"}], model="vendor/paid-model"
+        ))
+    assert len(captured) == 2
 
 
 def test_hermes_xml_tool_call_fallback(monkeypatch):

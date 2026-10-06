@@ -16,6 +16,7 @@ Faelle:
 import importlib.util
 from datetime import datetime, timedelta
 import os
+import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _MOD_PATH = os.path.normpath(
@@ -162,7 +163,7 @@ def test_send_path_stores_send_chat_id_on_timeout():
     tray._process_idle_task()
     assert tray.idle_pending is not None, "Client-Timeout muss idle_pending setzen"
     assert len(tray.idle_pending) >= 4, f"Tupel muss chat_id tragen (#1303): {tray.idle_pending}"
-    assert tray.idle_pending[3] == "idle-bach-1241", \
+    assert tray.idle_pending[3].startswith("idle-bach-1241-"), \
         f"Send-chat_id muss idle-{{role}}-{{id}} sein, ist aber: {tray.idle_pending[3]}"
 
 
@@ -179,7 +180,8 @@ def test_settle_polls_send_chat_id_and_settles():
     def fake_api(method, path, body=None, base=None, timeout=8):
         if method == "GET" and "/api/history" in path:
             polled_history.append(path)
-            return {"messages": [{"role": "assistant", "content": "FERTIG. Erledigt.", "ok": True}]}
+            return {"messages": [{"role": "assistant", "content": "FERTIG. Erledigt.", "ok": True,
+                                  "completed_task_ids": [1241]}]}
         if method == "GET":
             return {"status": "in_progress"}     # task_now: nicht terminal
         assert method == "PUT", f"unerwarteter Call: {method} {path}"
@@ -194,9 +196,93 @@ def test_settle_polls_send_chat_id_and_settles():
         f"Settle muss die Send-chat_id pollen, pollte aber: {polled_history}"
     assert not polled_history or "idle-task-1241" not in polled_history[0], \
         "hartkodierter idle-task-Praefix darf nicht mehr gepollt werden"
-    assert puts and puts[-1].get("status") == "completed", \
-        f"verspaetete Antwort muss den Task abschliessen, PUTs: {puts}"
+    assert puts == [], "The tool already closed the task; tray must not write a second completion"
     assert tray.idle_pending is None, "Nach erfolgreichem Settle muss idle_pending geleert sein"
+
+
+@pytest.mark.parametrize("answer", ["FERTIG", "Task #1241 analysiert", "Teilaufgaben geplant", "Antwort"])
+@pytest.mark.parametrize("pending", [False, True])
+def test_tray_never_closes_task_from_model_words(answer, pending):
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_processing = False
+    tray.idle_pending = (1241, _time.time(), "T", "idle-bach-1241") if pending else None
+    tray.idle_task_name = None
+    tray.idle_consecutive = 0
+    tray.icon = None
+    tray._update_icon = lambda *_a: None
+    puts, progress, commits = [], [], []
+
+    def fake_api(method, path, body=None, **kwargs):
+        if path.startswith("/api/history"):
+            return {"ok": True, "messages": [{"role": "assistant", "content": answer, "ok": True}]}
+        if method == "GET" and "assigned_to=OLLAMA" in path:
+            return {"success": True, "tasks": [{"id": 1241, "title": "T", "status": "pending"}]}
+        if method == "GET":
+            return {"status": "in_progress"}
+        if method == "PUT":
+            puts.append(body)
+            return {"status": "updated"}
+        return {"ok": True, "answer": answer}
+
+    tray._api = fake_api
+    tray._record_always_on_progress = lambda **kwargs: progress.append(kwargs)
+    tray._auto_commit_task = lambda *_a: commits.append(True)
+    if pending:
+        tray._settle_pending_task()
+    else:
+        tray._process_idle_task()
+    assert not any(p.get("status") in ("done", "completed") for p in puts)
+    assert not any(p.get("task_completed") for p in progress)
+    assert commits == []
+
+
+@pytest.mark.parametrize("task_state", [None, {"status": "blocked"}, {"status": "completed"},
+                                        {"status": "in_progress", "claimed_by": "other-worker"}])
+def test_pending_result_cannot_reopen_unknown_or_terminal_task(task_state):
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_pending = (1241, _time.time(), "T", "idle-bach-1241")
+    puts = []
+
+    def fake_api(method, path, body=None, **kwargs):
+        if "/api/history" in path:
+            return {"ok": True, "messages": [{"role": "assistant", "content": "Antwort", "ok": True}]}
+        if method == "GET":
+            return task_state
+        puts.append(body)
+        return {"status": "updated"}
+
+    tray._api = fake_api
+    tray._record_always_on_progress = lambda **_k: None
+    tray._auto_commit_task = lambda *_a: pytest.fail("Unconfirmed task must not auto-commit")
+    tray._settle_pending_task()
+    assert puts == []
+    if task_state is None:
+        assert tray.idle_pending is not None
+
+
+@pytest.mark.parametrize("history", [None, {"ok": False, "error": "Dienst nicht verfügbar"}])
+def test_history_outage_does_not_reset_pending_task(history):
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_pending = (1241, _time.time(), "T", "idle-bach-1241")
+    writes = []
+
+    def api(method, path, body=None, **kwargs):
+        if "/api/history" in path:
+            return history
+        if method == "GET":
+            return {"status": "in_progress"}
+        writes.append(body)
+
+    tray._api = api
+    assert tray._settle_pending_task() is False
+    assert writes == []
+    assert tray.idle_pending is not None
 
 
 def test_settle_legacy_tuple_uses_old_prefix():
@@ -220,6 +306,45 @@ def test_settle_legacy_tuple_uses_old_prefix():
     tray._settle_pending_task()
     assert polled_history and "idle-task-1241" in polled_history[0], \
         "Legacy-Tupel pollt den alten Praefix (dokumentiert das Pre-#1303-Verhalten)"
+
+
+def test_idle_worker_skips_parked_task_and_picks_next_valid():
+    """Verifiziert, dass ein geparkter Task am Anfang der Liste nicht den ganzen Idle-Worker blockiert."""
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_processing = False
+    tray.idle_pending = None
+    tray.idle_task_name = None
+    tray.idle_consecutive = 0
+    tray.icon = None
+    tray.slots = {}
+    tray._update_icon = lambda *a, **k: None
+
+    claimed_ids = []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and "assigned_to=OLLAMA" in path:
+            return {
+                "success": True,
+                "tasks": [
+                    {"id": 1729, "title": "Parked Task", "status": "blocked", "assigned_to": "OLLAMA"},
+                    {"id": 1730, "title": "Valid Task", "status": "pending", "assigned_to": "OLLAMA"},
+                ],
+            }
+        if method == "GET" and "/api/tasks/1730" in path:
+            return {"status": "in_progress"}
+        if method == "PUT" and "/api/tasks/1730" in path:
+            claimed_ids.append(1730)
+            return {"success": True}
+        if method == "POST" and "/api/chat" in path:
+            return {"ok": True, "chat_id": "idle-foerderplaner-1730"}
+        return {"success": True}
+
+    tray._api = fake_api
+    tray._process_idle_task()
+    assert 1730 in claimed_ids, "Idle-Worker muss den geparkten Task 1729 überspringen und Task 1730 beanspruchen"
+    assert 1729 not in claimed_ids, "Geparkter Task 1729 darf nicht beansprucht werden"
 
 
 if __name__ == "__main__":

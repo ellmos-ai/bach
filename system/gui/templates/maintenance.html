@@ -2,6 +2,7 @@
 <html lang="de">
 
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wartung-Board | BACH</title>
@@ -140,11 +141,11 @@
             <div class="health-grid">
                 <div class="health-item">
                     <span class="health-label">FastAPI Server</span>
-                    <span class="health-val" id="health-api">Online</span>
+                    <span class="health-val" id="health-api">Nicht geprüft</span>
                 </div>
                 <div class="health-item">
                     <span class="health-label">Database (SQLite)</span>
-                    <span class="health-val" id="health-db">Connected</span>
+                    <span class="health-val" id="health-db">Nicht geprüft</span>
                 </div>
                 <div class="health-item">
                     <span class="health-label">Main Daemon</span>
@@ -155,7 +156,7 @@
                     <span class="health-val" id="health-storage">-</span>
                 </div>
                 <div class="health-item">
-                    <span class="health-label">Active Agents</span>
+                    <span class="health-label">Konfigurierte Agenten</span>
                     <span class="health-val" id="health-agents">-</span>
                 </div>
                 <div class="health-item">
@@ -182,10 +183,9 @@
                 <div class="maint-icon">📝</div>
                 <h2>System Logs</h2>
                 <p class="maint-desc">
-                    Echtzeit-Einsicht in System-Protokolle, Fehlerberichte und Prozess-Logs.
-                    Analysieren Sie das Verhalten von ATI, Daemon und Mail-Services.
+                    Aufgaben-Audit-Metadaten aus der Datenbank. Rohe Dienstlogs benötigen noch einen sicheren Redaktionsfilter.
                 </p>
-                <a href="/logs" class="btn btn-secondary">Logs durchsuchen</a>
+                <a href="/governance/logs" class="btn btn-secondary">Audit öffnen</a>
             </div>
 
             <!-- Database Clean-up -->
@@ -197,8 +197,8 @@
                     temporäre Verzeichnisse zurück. Optimieren Sie die Performance des Kernsystems.
                 </p>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-secondary" onclick="vacuumDb()">DB Vacuum</button>
-                    <button class="btn btn-secondary" onclick="clearTemp()">Clear Temp</button>
+                    <button class="btn btn-secondary" disabled title="Sicherer Wartungsauftrag und Backup-Gate fehlen">DB Vacuum · in Arbeit</button>
+                    <button class="btn btn-secondary" disabled title="Datei- und Löschvertrag fehlen">Temp bereinigen · in Arbeit</button>
                 </div>
             </div>
 
@@ -216,9 +216,9 @@
                         <span style="color: var(--text-muted); font-size: 0.85rem;"> Usecases</span>
                     </div>
                     <div style="font-size: 0.85rem;">
-                        <span style="color: var(--success);">✓ <span id="usecases-pass">0</span></span> |
-                        <span style="color: var(--error);">✗ <span id="usecases-fail">0</span></span> |
-                        <span style="color: var(--warning);">○ <span id="usecases-pending">0</span></span>
+                        <span style="color: var(--success);">✓ <span id="usecases-pass">–</span></span> |
+                        <span style="color: var(--error);">✗ <span id="usecases-fail">–</span></span> |
+                        <span style="color: var(--warning);">○ <span id="usecases-pending">–</span></span>
                     </div>
                 </div>
                 <a href="/usecases" class="btn btn-primary">Usecases verwalten</a>
@@ -238,13 +238,13 @@
 
         <h2>🚀 Schnellzugriff</h2>
         <div class="action-grid">
-            <div class="quick-action" onclick="window.location.href='/ati'">
+            <div class="quick-action" onclick="window.location.href='/tasks'">
                 <span class="quick-action-icon">🤖</span>
-                <span class="quick-action-label">ATI Dashboard</span>
+                <span class="quick-action-label">Aufgaben</span>
             </div>
-            <div class="quick-action" onclick="triggerMaintenance()">
+            <div class="quick-action" onclick="loadHealth()">
                 <span class="quick-action-icon">♻️</span>
-                <span class="quick-action-label">System Refresh</span>
+                <span class="quick-action-label">Status aktualisieren</span>
             </div>
             <div class="quick-action" onclick="window.location.href='/prompt-generator'">
                 <span class="quick-action-icon">🎭</span>
@@ -267,75 +267,39 @@
 
     <footer class="main-footer">
         <div>BACH v1.1 | Maintenance Control Panel</div>
-        <div id="status-text">Ready</div>
+        <div id="status-text">Status nicht geprüft</div>
     </footer>
 
     <script src="/static/js/api.js?v=2"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
         async function loadHealth() {
-            try {
-                const status = await api.status();
-                const daemon = await api.get('/api/daemon/status');
-                const agents = await api.agents.list();
-
-                document.getElementById('health-api').textContent = 'Online';
-                document.getElementById('health-daemon').textContent = daemon.running ? 'Running' : 'Stopped';
-                document.getElementById('health-daemon').className = daemon.running ? 'health-val' : 'health-val error';
-
-                document.getElementById('health-agents').textContent = agents.agents ? agents.agents.filter(a => a.is_active).length : 0;
-                document.getElementById('health-db').textContent = status.db_connected ? 'Connected' : 'Offline';
-                document.getElementById('health-db').className = status.db_connected ? 'health-val' : 'health-val error';
-
-                // System-Ressourcen aus API (NEU v1.1.85)
-                if (status.system && !status.system.error) {
-                    const sys = status.system;
-                    document.getElementById('health-mem').textContent =
-                        `${sys.ram_used_gb} GB / ${sys.ram_total_gb} GB (${sys.ram_percent}%)`;
-                    // Farbe je nach Auslastung
-                    const memEl = document.getElementById('health-mem');
-                    if (sys.ram_percent > 90) {
-                        memEl.className = 'health-val error';
-                    } else if (sys.ram_percent > 75) {
-                        memEl.className = 'health-val warning';
-                    } else {
-                        memEl.className = 'health-val';
-                    }
-
-                    // Storage
-                    if (sys.disk_percent !== null) {
-                        document.getElementById('health-storage').textContent =
-                            `${100 - sys.disk_percent}% frei`;
-                        const storEl = document.getElementById('health-storage');
-                        if (sys.disk_percent > 90) {
-                            storEl.className = 'health-val error';
-                        } else if (sys.disk_percent > 80) {
-                            storEl.className = 'health-val warning';
-                        }
-                    }
-                } else {
-                    document.getElementById('health-mem').textContent = 'N/A';
-                    document.getElementById('health-storage').textContent = 'N/A';
-                }
-
-            } catch (e) {
-                console.error('Health Check failed:', e);
-            }
-        }
-
-        async function vacuumDb() {
-            if (!confirm('Datenbank optimieren?')) return;
-            // API vorhanden? Fallback Alert
-            alert('DB Vacuum gestartet (Simuliert)');
-        }
-
-        async function clearTemp() {
-            if (!confirm('Temporäre Dateien löschen?')) return;
-            alert('Systempflege abgeschlossen.');
-        }
-
-        async function triggerMaintenance() {
-            alert('Wartungs-Routine wird im Hintergrund ausgeführt.');
+            const [apiResult, originResult, daemonResult, agentsResult] = await Promise.allSettled([
+                api.status(),
+                api.get('/api/gui/backend-origin'),
+                api.get('/api/daemon/status'),
+                api.agents.list()
+            ]);
+            document.getElementById('health-api').textContent =
+                apiResult.status === 'fulfilled' ? 'Antwortet' : 'Nicht verfügbar';
+            const origin = originResult.status === 'fulfilled' ? originResult.value : null;
+            document.getElementById('health-db').textContent = origin?.connection_verified && origin?.schema_verified
+                ? 'RO-Verbindung geprüft' : 'Nicht bestätigt';
+            const daemon = daemonResult.status === 'fulfilled' ? daemonResult.value : null;
+            document.getElementById('health-daemon').textContent = daemon?.identity === 'verified' && daemon.running
+                ? 'Prozess bestätigt' : daemon?.identity === 'stopped' ? 'Kein Prozessdatensatz' : 'Identität unbekannt';
+            const agents = agentsResult.status === 'fulfilled' ? agentsResult.value : null;
+            document.getElementById('health-agents').textContent = Array.isArray(agents?.agents)
+                ? String(agents.agents.filter(agent => agent.is_active).length) + ' konfiguriert'
+                : 'Nicht geprüft';
+            const system = apiResult.status === 'fulfilled' ? apiResult.value.system : null;
+            document.getElementById('health-mem').textContent =
+                Number.isFinite(system?.ram_used_gb) && Number.isFinite(system?.ram_total_gb)
+                    ? system.ram_used_gb + ' / ' + system.ram_total_gb + ' GB (Host)'
+                    : 'Nicht verfügbar';
+            document.getElementById('health-storage').textContent = Number.isFinite(system?.disk_percent)
+                ? (100 - system.disk_percent).toFixed(1) + '% frei (Host)' : 'Nicht verfügbar';
+            document.getElementById('status-text').textContent = 'Einzelne Quellen geprüft';
         }
 
         async function loadUsecasesStats() {

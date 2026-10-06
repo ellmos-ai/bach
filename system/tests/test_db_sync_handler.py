@@ -16,26 +16,8 @@ sys.path.insert(0, str(BACH_ROOT))
 from hub.db_sync import DBSyncManager, DBSyncHandler
 
 
-MINIMAL_SCHEMA = """
-CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-CREATE TABLE IF NOT EXISTS memory_facts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(category, key)
-);
-CREATE TABLE IF NOT EXISTS secrets (
-    id INTEGER PRIMARY KEY,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL
-);
-"""
+# T903: real source-bound schema0; mini-shapes are no readiness authority.
+MINIMAL_SCHEMA = (BACH_ROOT / "data/schema/schema.sql").read_text(encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +52,7 @@ def sync_env(tmp_path):
     manager.base_path = system_dir
 
     handler = DBSyncHandler(system_dir)
+    handler._canonical_db = db_path
     return manager, handler, db_path, transit_dir
 
 
@@ -252,10 +235,9 @@ class TestMerge:
         verwarf Fremdzeilen, sobald lokal eine juengere Zeile existierte.
         Fixture wie open-ocean k9_data_newer_local."""
         m, _, db, transit = sync_env
-        schema = "CREATE TABLE items (id TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);"
+        # Same text-PK/updated_at LWW counterexample on a canonical table.
         conn = sqlite3.connect(str(db))
-        conn.executescript(schema)
-        conn.executemany("INSERT INTO items VALUES (?, ?, ?)", [
+        conn.executemany("INSERT INTO system_config(key,value,updated_at) VALUES (?, ?, ?)", [
             ("shared", "target-older", "2026-08-07T08:00:00Z"),
             ("target-only", "target-value", "2026-08-09T07:59:00Z"),
         ])
@@ -264,8 +246,8 @@ class TestMerge:
 
         remote_db = transit / "bach_OTHER_2026-08-08T08-01-00.bachdb"
         conn = sqlite3.connect(str(remote_db))
-        conn.executescript(schema)
-        conn.executemany("INSERT INTO items VALUES (?, ?, ?)", [
+        conn.executescript(MINIMAL_SCHEMA)
+        conn.executemany("INSERT INTO system_config(key,value,updated_at) VALUES (?, ?, ?)", [
             ("shared", "source-newer", "2026-08-08T08:00:00Z"),
             ("source-only", "source-value", "2026-08-08T08:01:00Z"),
         ])
@@ -275,11 +257,11 @@ class TestMerge:
         stats = m.merge_backup(remote_db)
 
         conn = sqlite3.connect(str(db))
-        rows = conn.execute("SELECT id, value FROM items ORDER BY id").fetchall()
+        rows = conn.execute("SELECT key, value FROM system_config ORDER BY key").fetchall()
         conn.close()
         assert rows == [("shared", "source-newer"), ("source-only", "source-value"),
                         ("target-only", "target-value")]
-        assert stats["items"] == 2
+        assert stats["system_config"] == 2
 
     def test_merge_keeps_newer_local_row(self, sync_env):
         m, _, db, transit = sync_env
@@ -310,7 +292,7 @@ class TestMerge:
         with pytest.raises(RuntimeError, match="sqlite-transit-sync fehlt"):
             m.merge_backup(remote_db)
 
-    def test_merge_no_local_db_copies(self, sync_env):
+    def test_merge_no_local_db_refuses_first_copy(self, sync_env):
         m, _, db, transit = sync_env
         db.unlink()
 
@@ -320,9 +302,15 @@ class TestMerge:
         conn.commit()
         conn.close()
 
-        stats = m.merge_backup(remote_db)
-        assert "_initial_copy" in stats
-        assert db.exists()
+        before = remote_db.read_bytes()
+        from hub.db_sync_readiness import DBSyncReadinessError
+        with pytest.raises(DBSyncReadinessError):
+            m.merge_backup(remote_db)
+        assert not db.exists()
+        assert remote_db.read_bytes() == before
+        assert list(transit.iterdir()) == [remote_db]
+        assert not m.heartbeat_file.exists()
+        assert not m._sync_state_file.exists()
 
 
 # ================================================================

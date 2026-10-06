@@ -79,6 +79,38 @@ def test_transcript_survives_runtime_restart_without_creating_history_session(sn
     assert restored.messages[-1]["content"] == "Persistierte Antwort"
 
 
+def test_completion_receipts_survive_restart_without_entering_provider_payload(snapshot_db):
+    store = SQLiteChatSessionStore(snapshot_db)
+    store.save("idle-bach-42-run", [
+        {"role": "user", "content": "Task #42"},
+        {"role": "assistant", "content": "FERTIG", "answer_status": "success",
+         "completed_task_ids": [42]},
+    ])
+    calls = []
+
+    class Backend(_Backend):
+        async def chat(self, messages, **kwargs):
+            calls.append(messages)
+            return await super().chat(messages, **kwargs)
+
+    restarted = ChatRuntime(Backend(), session_store=SQLiteChatSessionStore(snapshot_db))
+    assert restarted.history("idle-bach-42-run")[-1] == {
+        "role": "assistant", "content": "FERTIG", "ok": True, "completed_task_ids": [42],
+    }
+    asyncio.run(restarted.process("Weiter", "idle-bach-42-run"))
+    assert all("completed_task_ids" not in message for message in calls[0])
+    assert restarted.consume_task_completion_receipts("idle-bach-42-run") == ()
+
+
+@pytest.mark.parametrize("ids,status", [([True], "success"), ([0], "success"),
+                                        ([42, 42], "success"), ([42], "failed"), ("42", "success")])
+def test_invalid_or_failed_message_receipts_cannot_survive_store(snapshot_db, ids, status):
+    store = SQLiteChatSessionStore(snapshot_db)
+    store.save("bad-receipt", [{"role": "assistant", "content": "Antwort", "answer_status": status,
+                                "completed_task_ids": ids}])
+    assert "completed_task_ids" not in store.load("bad-receipt")[0]
+
+
 def test_cli_failure_persists_as_non_success_history_entry(snapshot_db, monkeypatch):
     backend = CLIBackend(cli_name="claude", cli_path="claude", cwd=".")
 

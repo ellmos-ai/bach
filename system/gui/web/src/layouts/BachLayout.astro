@@ -1,0 +1,59 @@
+---
+// BachLayout.astro - Master Layout fuer die vereinigte BACH / OCEAN GUI
+import Header from "../components/Header.astro";
+import "../styles/main.css";
+
+interface Props {
+  title: string;
+  currentPath?: string;
+}
+
+const { title, currentPath = "/" } = Astro.props;
+const pageTitle = title ? `${title} | System GUI` : "System GUI";
+---
+
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{pageTitle}</title>
+
+    <!-- Pre-load Theme before body render to avoid FOUC -->
+    <script is:inline>
+      (function() {
+        const theme = localStorage.getItem("bach-theme") || "dark";
+        if (theme !== "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      })();
+    </script>
+
+    <script is:inline src="/static/js/device-fetch.js"></script>
+
+    <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <slot name="head" />
+  </head>
+
+  <body>
+    <Header currentPath={currentPath} />
+
+    <main class="container">
+      <slot />
+    </main>
+
+    <footer style="margin-top:auto;border-top:1px solid var(--border);padding:1.25rem 1rem;text-align:center;font-size:0.75rem;color:var(--text-muted);background:var(--bg-panel);">
+      <div style="display:flex;justify-content:space-between;align-items:center;max-width:1400px;margin:0 auto;">
+        <span><strong data-gui-brand-product>System GUI</strong> · <span data-gui-brand-label>unverbunden</span></span>
+        <span>Modulare Oberfläche · Backendstatus nach Live-Prüfung</span>
+      </div>
+    </footer>
+  </body>
+</html>

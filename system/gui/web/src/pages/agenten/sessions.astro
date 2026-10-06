@@ -1,0 +1,402 @@
+---
+// src/pages/agenten/sessions.astro - Sitzungsübersicht & Gedächtnisintegration (GUX-042)
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Sessions & Protokolle" currentPath="/agenten/sessions">
+  <div class="sessions-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><span class="icon">📜</span> Sessions, Protokolle & Gedächtnis</h1>
+        <p class="subtitle">Quellengetreue Einsicht in vergangene Dialog-Sessions, Lessons Learned und Arbeitsgedächtnis (GUX-042)</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="refreshCurrentTab()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="sessions">📜 Sitzungsübersicht</button>
+      <button class="tab-btn" data-tab="lessons">💡 Lessons Learned & Best Practices</button>
+      <button class="tab-btn" data-tab="working">🧠 Aktives Arbeitsgedächtnis</button>
+      <button class="tab-btn" data-tab="topology">📊 Kognitiver Schaltplan & Topologie</button>
+    </div>
+
+    <!-- TAB 1: SESSIONS -->
+    <div class="tab-pane active" id="pane-sessions">
+      <div class="glass-card">
+        <h3>Historische Dialog- und Agenten-Sitzungen</h3>
+        <p class="card-desc">Zeitpunkte und Zusammenfassungen aus <code>memory_sessions</code>; echte erfasste Dialoge ohne Konfabulation.</p>
+        <div id="sessions-list">
+          <p class="loading-state">Lade Sitzungen...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: LESSONS LEARNED -->
+    <div class="tab-pane" id="pane-lessons">
+      <div class="glass-card">
+        <h3>Lessons Learned & Best Practices</h3>
+        <p class="card-desc">Destilliertes Wissen aus NemoFold/Hermes und vergangenen Läufen (USMC/BACH safe reader).</p>
+        <div id="lessons-list">
+          <p class="loading-state">Lade Lessons...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: WORKING MEMORY -->
+    <div class="tab-pane" id="pane-working">
+      <div class="glass-card">
+        <h3>Aktives Arbeitsgedächtnis (Baddeley Working Memory)</h3>
+        <p class="card-desc">Flüchtige Notizen, Scratchpads und CoT-Zwischenspeicher aus <code>memory_working</code>.</p>
+        <div id="working-list">
+          <p class="loading-state">Lade Arbeitsgedächtnis...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: TOPOLOGY -->
+    <div class="tab-pane" id="pane-topology">
+      <div class="glass-card">
+        <h3>Kognitive Prozess-Topologie (8 Prozessblöcke)</h3>
+        <p class="card-desc">Live-Telemetrie der 8 kognitiven Prozessblöcke gemäß GUX-032 bis GUX-041.</p>
+        <div id="topology-grid" class="reports-grid">
+          <p class="loading-state">Lade Topologie...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</BachLayout>
+
+<style>
+  .sessions-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+  }
+  .header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .tab-bar {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .tab-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    color: #0b0d14;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .tab-pane {
+    display: none;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .tab-pane.active {
+    display: flex;
+  }
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+  }
+  .glass-card h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.15rem;
+  }
+  .card-desc {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1.25rem 0;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .data-table th, .data-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .reports-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+  .report-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .report-badge {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .report-card h4 {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+  }
+  .report-card p {
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    margin: 0 0 1rem 0;
+    line-height: 1.4;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    background: var(--bg-panel, rgba(255,255,255,0.04));
+    border: 1px solid var(--border);
+  }
+  .badge-accent {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+</style>
+
+<script is:inline>
+  let activeTab = 'sessions';
+
+  function escapeSessionText(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        activeTab = tab;
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById('pane-' + tab);
+        if (target) target.classList.add('active');
+        loadTabContent(tab);
+      });
+    });
+  }
+
+  function refreshCurrentTab() {
+    loadTabContent(activeTab);
+  }
+
+  function loadTabContent(tab) {
+    if (tab === 'sessions') loadSessions();
+    else if (tab === 'lessons') loadLessons();
+    else if (tab === 'working') loadWorking();
+    else if (tab === 'topology') loadTopology();
+  }
+
+  async function loadSessions() {
+    const container = document.getElementById('sessions-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/sessions?limit=25');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      if (sessions.length === 0) {
+        container.innerHTML = '<p class="text-muted">Keine vergangenen Sitzungen gefunden.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Session ID</th>
+              <th>Startzeit</th>
+              <th>Endzeit</th>
+              <th>Zusammenfassung</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sessions.map(s => `
+              <tr>
+                <td>#${escapeSessionText(s.id)}</td>
+                <td><code>${escapeSessionText(s.session_id ? s.session_id.substring(0, 16) + '...' : '-')}</code></td>
+                <td>${escapeSessionText(s.started_at || '-')}</td>
+                <td>${escapeSessionText(s.ended_at || '-')}</td>
+                <td><strong>${escapeSessionText(s.summary || 'Keine Zusammenfassung')}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.textContent = 'Sitzungen konnten nicht geladen werden.';
+    }
+  }
+
+  async function loadLessons() {
+    const container = document.getElementById('lessons-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/usmc-lessons-safe?limit=50');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const lessons = data.lessons || [];
+      if (lessons.length === 0) {
+        container.innerHTML = '<p class="text-muted">Keine Lessons Learned gefunden.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Kategorie</th>
+              <th>Titel</th>
+              <th>Lösung / Best Practice</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lessons.map(l => `
+              <tr>
+                <td>#${escapeSessionText(l.id)}</td>
+                <td><span class="badge">${escapeSessionText(l.category || 'general')}</span></td>
+                <td><strong>${escapeSessionText(l.title)}</strong></td>
+                <td>${escapeSessionText(l.solution)}</td>
+                <td><span class="badge ${l.is_active ? 'badge-accent' : ''}">${l.is_active ? 'Aktiv' : 'Inaktiv'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.textContent = 'Lessons Learned konnten nicht geladen werden.';
+    }
+  }
+
+  async function loadWorking() {
+    const container = document.getElementById('working-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/memory/working');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const items = data.working || [];
+      if (items.length === 0) {
+        container.innerHTML = '<p class="text-muted">Keine aktiven Arbeitsgedächtnis-Einträge vorhanden.</p>';
+        return;
+      }
+      container.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Typ</th>
+              <th>Inhalt</th>
+              <th>Erstellt am</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(w => `
+              <tr>
+                <td>#${escapeSessionText(w.id)}</td>
+                <td><span class="badge badge-accent">${escapeSessionText(w.type || 'scratchpad')}</span></td>
+                <td>${escapeSessionText(w.content)}</td>
+                <td><small>${escapeSessionText(w.created_at || '-')}</small></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      container.textContent = 'Arbeitsgedächtnis konnte nicht geladen werden.';
+    }
+  }
+
+  async function loadTopology() {
+    const container = document.getElementById('topology-grid');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/cognitive/topology');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const blocks = data.blocks || {};
+      const keys = Object.keys(blocks);
+      if (keys.length === 0) {
+        container.innerHTML = '<p class="text-muted">Keine Topologie-Daten verfügbar.</p>';
+        return;
+      }
+      container.innerHTML = keys.map(k => {
+        const b = blocks[k];
+        return `
+          <div class="report-card">
+            <div>
+              <span class="report-badge">${escapeSessionText(b.status).toUpperCase()}</span>
+              <h4>${escapeSessionText(b.title)}</h4>
+              <p style="font-size:0.75rem;color:var(--text-muted);">${escapeSessionText(b.sub)}</p>
+              <p>${escapeSessionText(b.role)}</p>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:0.5rem;">
+              Quelle: <code>${escapeSessionText(b.data_source)}</code>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      container.textContent = 'Topologie konnte nicht geladen werden.';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setupTabs();
+    loadSessions();
+  });
+</script>

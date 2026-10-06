@@ -44,11 +44,16 @@ log = logging.getLogger("bach.chat")
 
 try:
     from hub.bach_paths import BACH_DB as _RUNTIME_DB
-    from hub.task_audit import apply_task_field_changes, GateReopenBlocked
+    from hub.task_audit import (
+        COMPLETED_STATUSES,
+        GateReopenBlocked,
+        apply_task_field_changes,
+    )
     RUNTIME_BACH_DB = str(_RUNTIME_DB)
 except ImportError:
     RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
     apply_task_field_changes = None
+    COMPLETED_STATUSES = frozenset({"completed", "done"})
 
     class GateReopenBlocked(Exception):
         """Fallback, wenn hub.task_audit nicht importierbar ist (kein Guard, aber
@@ -578,6 +583,17 @@ TOOLS_SAFE = [
         "extract_text": {"type": "boolean", "description": "Nur sichtbaren Text extrahieren (bei HTML, Standard: true)"},
         "max_chars": {"type": "integer", "description": "Maximale Zeichenanzahl (Standard 4000, max 8000)"},
     }, ["url"]),
+    _tool("start_task_worktree", "Erzeugt einen isolierten Git-Worktree für eine Aufgabe unter ~/services/bach-worktrees/task-<id>", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+    }, ["task_id"]),
+    _tool("finish_task", "Schließt die Aufgabe im Worktree ab: führt Tests aus, committet, pusht und erstellt einen PR. Bei Abbruch setzt is_wip=True einen WIP-Commit.", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+        "message": {"type": "string", "description": "Commit- und PR-Beschreibung"},
+        "is_wip": {"type": "boolean", "description": "True falls unvollständig/Abbruch (sichert WIP-Stand ohne PR)"},
+    }, ["task_id", "message"]),
+    _tool("cleanup_task_worktree", "Entfernt den Worktree für eine Aufgabe, nachdem der PR gemergt ist.", {
+        "task_id": {"type": "integer", "description": "ID der Aufgabe"},
+    }, ["task_id"]),
 ]
 
 TOOLS_FULL = TOOLS_SAFE + [
@@ -605,6 +621,8 @@ _NICHT_IM_PLAN = frozenset({
     "bach_command", "maintain", "foerderbericht",
     # startet einen fremden Agenten, der diese Grenze nicht kennt
     "delegate",
+    # Worker-Git-Werkzeuge gehoeren nicht in den Planmodus
+    "start_task_worktree", "finish_task", "cleanup_task_worktree",
 })
 
 #: Werkzeuge eines Planlaufs: lesen, nachschlagen, Pakete anlegen.
@@ -837,8 +855,44 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             t = int(args.get("timeout", CMD_TIMEOUT))
             if is_blocked(cmd):
                 return f"Befehl blockiert (Sicherheit): {cmd}"
+            from hub.worker_git import is_live_path_blocked
+            cmd_lower = cmd.lower()
+            if any(git_mut in cmd_lower for git_mut in ["git commit", "git checkout -b", "git merge", "git push", "git rebase"]):
+                cwd = args.get("cwd") or args.get("path") or "."
+                if not any(token in cmd for token in ["bach-worktrees", "task-"]):
+                    if err := is_live_path_blocked(cwd):
+                        return err
             log.info(f"FULL-CMD: {cmd}")
             return run_shell_restricted(cmd, t, allowed=None)
+
+        if name == "start_task_worktree":
+            from hub.worker_git import start_task_worktree
+            tid = args.get("task_id")
+            try:
+                wt = start_task_worktree(tid)
+                return f"Worktree erstellt: {wt}"
+            except Exception as e:
+                return f"Fehler bei start_task_worktree: {e}"
+
+        if name == "finish_task":
+            from hub.worker_git import finish_task
+            tid = args.get("task_id")
+            msg = args.get("message", "")
+            is_wip = bool(args.get("is_wip", False))
+            try:
+                res = finish_task(tid, msg, is_wip=is_wip)
+                return json.dumps(res, ensure_ascii=False)
+            except Exception as e:
+                return f"Fehler bei finish_task: {e}"
+
+        if name == "cleanup_task_worktree":
+            from hub.worker_git import cleanup_task_worktree
+            tid = args.get("task_id")
+            try:
+                ok = cleanup_task_worktree(tid)
+                return f"Worktree aufgeräumt: {ok}"
+            except Exception as e:
+                return f"Fehler bei cleanup_task_worktree: {e}"
 
         if name == "write_file":
             if mode != "full":
@@ -847,6 +901,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             c = args.get("content", "")
             if not p:
                 return "Kein Pfad"
+            from hub.worker_git import is_live_path_blocked
+            if err := is_live_path_blocked(p):
+                return err
             Path(p).parent.mkdir(parents=True, exist_ok=True)
             with open(p, "w", encoding="utf-8") as f:
                 f.write(c)
@@ -916,11 +973,17 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         tid = args.get("task_id")
                         if not tid:
                             return "Keine Task-ID angegeben"
+                        # Serialisiere Lesen und Statuswechsel. Ohne die Schreibtransaktion
+                        # könnten zwei Worker gleichzeitig einen offenen Status lesen und
+                        # beide einen erfolgreichen Abschlussbeleg ausstellen.
+                        conn.execute("BEGIN IMMEDIATE")
                         existing = conn.execute(
                             "SELECT * FROM tasks WHERE id=?", (tid,)
                         ).fetchone()
                         if not existing:
                             return f"Task #{tid} nicht gefunden"
+                        if str(existing["status"] or "").strip().lower() in COMPLETED_STATUSES:
+                            return f"Task #{tid} war bereits erledigt."
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                             # T-20260906-833218904: schliesst dieselbe task_history-Luecke
@@ -986,11 +1049,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if action == "decompose":
                         tid = args.get("task_id")
                         subtasks = args.get("subtasks", [])
-                        if not tid or not subtasks:
+                        if not tid or not isinstance(subtasks, list) or not subtasks:
                             return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
+                        if any(
+                            not isinstance(st, dict)
+                            or not isinstance(st.get("title"), str)
+                            or not st["title"].strip()
+                            or not isinstance(st.get("description", ""), str)
+                            for st in subtasks
+                        ):
+                            return "Task nicht zerlegt: jede Teilaufgabe braucht einen nicht leeren Titel und eine Textbeschreibung."
+                        if "close_parent" in args and type(args["close_parent"]) is not bool:
+                            return "Task nicht zerlegt: close_parent muss true oder false sein."
+                        # Lesen, Teilaufgaben und Elternabschluss bilden eine
+                        # Transaktion; konkurrierende Worker sehen den neuen Status.
+                        conn.execute("BEGIN IMMEDIATE")
                         parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
                         if not parent:
                             return f"Task #{tid} nicht gefunden"
+                        if str(parent["status"] or "").strip().lower() not in {
+                            "open", "pending", "in_progress", "in-progress",
+                        }:
+                            return f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen."
                         parent_dict = dict(parent)
                         cat = args.get("category") or parent_dict.get("category") or ""
                         assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
@@ -998,9 +1078,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         created_ids = []
                         prev_id = None
                         for st in subtasks:
-                            st_title = st.get("title", "")
-                            if not st_title:
-                                continue
+                            st_title = st["title"].strip()
                             st_desc = st.get("description", "")
                             st_prio = st.get("priority", parent_dict.get("priority") or "P3")
                             st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
@@ -1013,6 +1091,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             )
                             prev_id = cur.lastrowid
                             created_ids.append(prev_id)
+                        if not created_ids:
+                            # Ohne angelegte Teilaufgabe ist nichts zerlegt: den
+                            # Eltern-Task nicht schliessen, sonst verschwindet
+                            # Arbeit ohne Nachfolger aus dem offenen Pool.
+                            conn.rollback()
+                            return (f"Task #{tid} nicht zerlegt: keine Teilaufgabe mit Titel angegeben. "
+                                    "subtasks braucht Objekte mit title und description.")
                         if args.get("close_parent", True):
                             note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
                             if task_audit_fn is not None:
@@ -1022,8 +1107,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                               changed_by="chat-runtime", now=now)
                             else:
                                 conn.execute(
-                                    "UPDATE tasks SET status='completed', description=description || ?, updated_at=? WHERE id=?",
-                                    (note, now, tid)
+                                    "UPDATE tasks SET status='completed', description=COALESCE(description, '') || ?, "
+                                    "completed_at=?, updated_at=? WHERE id=?",
+                                    (note, now, now, tid)
                                 )
                         conn.commit()
                         return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"
@@ -1249,6 +1335,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             new_text = args.get("new_text", "")
             if not p or not old_text:
                 return "Pfad und old_text sind erforderlich"
+            from hub.worker_git import is_live_path_blocked
+            if err := is_live_path_blocked(p):
+                return err
             if err := is_safe_write_path(p, mode):
                 return err
             try:

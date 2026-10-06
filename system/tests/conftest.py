@@ -38,6 +38,8 @@ _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+# GUI Host allowlist (DNS-rebinding gate): Starlette's TestClient talks to "testserver".
+os.environ["BACH_GUI_ALLOWED_HOSTS"] = "testserver"
 os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
 os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
 os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
@@ -79,8 +81,11 @@ def _ensure_distribution_manifest():
     if not db_path:
         return
 
-    system_dir = Path(__file__).resolve().parent.parent / "system"
+    system_dir = Path(__file__).resolve().parent.parent
     conn = sqlite3.connect(db_path)
+    schema_file = system_dir / "data" / "schema" / "schema.sql"
+    if schema_file.exists():
+        conn.executescript(schema_file.read_text(encoding="utf-8"))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS distribution_manifest (
             path TEXT PRIMARY KEY,
@@ -91,16 +96,17 @@ def _ensure_distribution_manifest():
     conn.commit()
 
     if system_dir.exists():
-        for file_path in sorted(system_dir.rglob("*")):
-            if not file_path.is_file():
-                continue
-            rel = file_path.relative_to(system_dir)
-            rel_path = f"system/{rel.as_posix()}"
-            file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
-            conn.execute(
-                "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
-                (rel_path, file_hash, 1),
-            )
+        for root, dirs, files in os.walk(system_dir):
+            dirs[:] = [d for d in dirs if d not in ("node_modules", "dist", ".git", ".astro", "__pycache__", ".pytest_cache")]
+            for file_name in sorted(files):
+                file_path = Path(root) / file_name
+                rel = file_path.relative_to(system_dir)
+                rel_path = f"system/{rel.as_posix()}"
+                file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                conn.execute(
+                    "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
+                    (rel_path, file_hash, 1),
+                )
     conn.commit()
     conn.close()
 
@@ -200,28 +206,10 @@ def _destructive_process_reason(command):
     lowered = rendered.casefold()
     executable_lower = executable.casefold()
     executable_name = Path(executable_lower).name
-    unguarded_python = re.compile(
-        r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
-        r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
-        r"(?:-[a-df-hj-rt-z0-9]+\s+)*(?<!-)-(?:[a-df-hj-rt-z0-9]*[eis][a-z0-9]*)(?:\s|$)",
-        re.IGNORECASE,
-    )
-    if unguarded_python.search(rendered):
+    from tests._test_process_guard.python_options import python_without_site_guard
+
+    if python_without_site_guard(command):
         return "Python child without inherited safety guard"
-    if executable_name.startswith("python") and isinstance(command, (list, tuple)):
-        options = []
-        for part in command[1:]:
-            s = str(part)
-            if s in {"-c", "-m"}:
-                break
-            if not s.startswith("-") or s == "-":
-                break
-            options.append(s)
-        if any(
-            not opt.startswith("--") and any(c in "eEisIS" for c in opt[1:])
-            for opt in options
-        ):
-            return "Python child without inherited safety guard"
     if "onedrive" in executable_lower and "/shutdown" in lowered:
         return "OneDrive shutdown"
     if any(token in executable_lower for token in (

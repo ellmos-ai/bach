@@ -101,7 +101,9 @@ def test_db(tmp_path):
         );
         CREATE TABLE IF NOT EXISTS memory_working (
             id INTEGER PRIMARY KEY,
+            type TEXT DEFAULT 'note',
             content TEXT,
+            is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS memory_sessions (
@@ -203,6 +205,30 @@ def client(test_db, monkeypatch):
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     import gui.server as srv
+    from gui import device_auth
+    from gui.api import unified_api
+
+    # Memory routes now require a device token even for loopback clients.
+    # Keep the real validator, but give it this test's DB and a disposable token.
+    token = "gui-smoke-fixture-token"
+
+    def auth_connection():
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", auth_connection)
+    monkeypatch.setattr(unified_api, "BACH_DB", db_path)
+    conn = auth_connection()
+    try:
+        device_auth.init_devices_db(conn)
+        conn.execute(
+            "INSERT INTO devices (name, token_hash, status) VALUES (?, ?, 'active')",
+            ("gui-smoke-fixture", device_auth._hash_token(token)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     monkeypatch.setattr(srv, "BACH_DB", db_path)
     monkeypatch.setattr(srv, "USER_DB", db_path)
     monkeypatch.setattr(srv, "DATA_DIR", test_db / "data")
@@ -219,7 +245,10 @@ def client(test_db, monkeypatch):
     tools_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(srv, "TOOLS_DIR", tools_dir)
 
-    return TestClient(srv.app, raise_server_exceptions=False)
+    return TestClient(
+        srv.app, raise_server_exceptions=False,
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -368,6 +397,12 @@ class TestGUIServerSmoke:
         resp = client.get("/api/memory/overview")
         assert resp.status_code == 200
 
+    def test_memory_auth_is_not_bypassed_by_smoke_fixture(self, client):
+        assert client.get("/api/memory/overview", headers={"Authorization": ""}).status_code == 401
+        assert client.get(
+            "/api/memory/overview", headers={"Authorization": "Bearer invalid-fixture-token"},
+        ).status_code == 403
+
     def test_memory_working(self, client):
         resp = client.get("/api/memory/working")
         assert resp.status_code == 200
@@ -484,11 +519,15 @@ class TestGUIServerWrite:
         })
         assert resp.status_code == 200
 
-    def test_memory_working_create(self, client):
+    def test_memory_working_create(self, client, test_db):
         resp = client.post("/api/memory/working", json={
             "content": "test working memory"
         })
         assert resp.status_code == 200
+        with sqlite3.connect(test_db / "data" / "bach.db") as conn:
+            assert conn.execute(
+                "SELECT content FROM memory_working WHERE id = ?", (resp.json()["id"],),
+            ).fetchone()[0] == "test working memory"
 
     def test_memory_fact_create(self, client):
         resp = client.post("/api/memory/facts", json={
@@ -602,6 +641,8 @@ class TestGUIServerNoDB:
         monkeypatch.setattr(srv, "BACH_DB", missing)
         monkeypatch.setattr(srv, "USER_DB", missing)
 
-        test_client = TestClient(srv.app, raise_server_exceptions=False)
+        monkeypatch.setattr(srv, "validate_token", lambda token: {"id": 1} if token == "smoke-fixture" else None)
+        test_client = TestClient(srv.app, raise_server_exceptions=False,
+                                 headers={"Authorization": "Bearer smoke-fixture"})
         resp = test_client.get("/api/status")
         assert resp.status_code == 503

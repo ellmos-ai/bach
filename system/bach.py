@@ -766,7 +766,6 @@ def _handle_folders(sub_cmd, args):
 
 def _handle_upgrade(sub_cmd, args):
     """Selektive Upgrades & Downgrades (SQ020)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.upgrade import UpgradeHandler
         handler = UpgradeHandler(SYSTEM_ROOT)
@@ -784,7 +783,6 @@ def _handle_upgrade(sub_cmd, args):
 
 def _handle_cookbook(sub_cmd, args):
     """Rezeptbuch-Tool fuer DB-Doku-Generierung (SQ069)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.cookbook import CookbookHandler
         handler = CookbookHandler(SYSTEM_ROOT)
@@ -819,7 +817,6 @@ def _handle_task(sub_cmd, args):
 
 def _handle_pipeline(sub_cmd, args):
     """Pipeline-Management (SQ011)."""
-    sys.path.insert(0, str(HUB_DIR))
     try:
         from hub.pipeline import _handle_pipeline as handle_pipeline_command
         full_args = [sub_cmd] + args if sub_cmd else args
@@ -1292,7 +1289,6 @@ def main():
         # b) File-Restore (SQ020/HQ6)
         if sub_cmd and sub_cmd != "help":
             _track_activity(arg, json_requested, dry_run_requested)
-            sys.path.insert(0, str(HUB_DIR))
             try:
                 from hub.restore import RestoreHandler
                 handler = RestoreHandler(BACH_ROOT)
@@ -1337,9 +1333,8 @@ def main():
     # 3b. Downgrade-Befehl (SQ020: CLI-Alias fuer 'bach upgrade downgrade', Runde 24)
     if command == "downgrade":
         _track_activity(arg, json_requested, dry_run_requested)
-        sys.path.insert(0, str(HUB_DIR))
         try:
-            from upgrade import UpgradeHandler
+            from hub.upgrade import UpgradeHandler
             handler = UpgradeHandler(BACH_ROOT)
             # Delegiere an UpgradeHandler mit operation="downgrade"
             # sub_cmd + args werden als Argumente uebergeben

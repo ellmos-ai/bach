@@ -91,6 +91,33 @@ class TagCounter(HTMLParser):
             self.unmatched_closing.append(tag)
 
 
+class ScriptTagExtractor(HTMLParser):
+    """Extrahiert <script>-Tags strukturiert ohne unsichere Regexes."""
+
+    def __init__(self):
+        super().__init__()
+        self.scripts = []
+        self._in_script = False
+        self._current_attrs = {}
+        self._current_data = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "script":
+            self._in_script = True
+            self._current_attrs = dict(attrs)
+            self._current_data = []
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "script":
+            self._in_script = False
+            self.scripts.append((self._current_attrs, "".join(self._current_data)))
+            self._current_data = []
+
+    def handle_data(self, data):
+        if self._in_script:
+            self._current_data.append(data)
+
+
 class TemplateChecker:
     """Fuehrt alle Pruefungen fuer eine einzelne Template-Datei aus."""
 
@@ -161,17 +188,17 @@ class TemplateChecker:
 
     def _check_inline_js(self):
         """Prueft Inline-<script> Inhalte auf JS-Syntax mit node --check."""
-        scripts = re.findall(
-            r"<script\b([^>]*?)>(.*?)</script>",
-            self.text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        for attrs, code in scripts:
-            attrs_lower = attrs.lower()
-            if "type=" in attrs_lower and (
-                "text/template" in attrs_lower
-                or "application/json" in attrs_lower
-                or "application/ld+json" in attrs_lower
+        extractor = ScriptTagExtractor()
+        try:
+            extractor.feed(self.text)
+        except Exception:
+            return
+        for attrs, code in extractor.scripts:
+            type_attr = str(attrs.get("type", "")).lower()
+            if (
+                "text/template" in type_attr
+                or "application/json" in type_attr
+                or "application/ld+json" in type_attr
             ):
                 continue
             code = code.strip()

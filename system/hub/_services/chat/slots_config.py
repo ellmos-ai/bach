@@ -12,6 +12,7 @@ Manages configuration and live metadata for:
 """
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
@@ -58,7 +59,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_always_on": {
         "id": "buddha_always_on",
         "name": "Buddha Always-On",
-        "description": "Hintergrundworker für offene Aufgaben im Leerlauf",
+        "description": "Hintergrundworker für offene Aufgaben; lokale Inferenz teilt die Fackel mit dem Vordergrund",
         "enabled": True,
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
@@ -116,6 +117,9 @@ WICHTIGSTE REGELN:
 - Bei unklaren Aufgaben: Code-Präzedenzfälle suchen, minimal-invasive Lösungen wählen.
 - 4-STUFEN-PRIORITÄT: 1. Direkt lösen, 2. Zerlegen (task_manage add), 3. Mehrdeutigkeit auflösen, 4. Delegieren.
 - Behalte das Werkzeug-Rundenbudget im Auge.
+- Codeänderungen nur über start_task_worktree → finish_task. Der Live-Ordner ist gesperrt.
+- Nichts Unfertiges committen: Bricht ein Worker ab, sichert er seinen Stand als Commit mit „WIP“ im Titel und pusht ihn, ohne PR.
+- Keine Geheimnisse: Vor jedem Commit laufen Prüfung auf Zugangsdaten (Secrets-Scan) und git diff --check.
 """
 
 DEFAULT_ROLE_PROMPTS: dict[str, str] = {
@@ -179,6 +183,22 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
     "psycho-berater": (
         "Du agierst als beratender Reflexions- und Psycho-Assistent.\n"
         "Schwerpunkte: Strukturierung therapeutischer Reflexionen, Vorbereitung von Beratungsgesprächen und Verhaltensdokumentation."
+    ),
+    "haushaltsmanagement": (
+        "Du bist der Haushalts- und Alltagsmanager im BACH-System.\n"
+        "Schwerpunkte: Einkaufslisten, Haushaltsroutinen, Vorratsmanagement, Inventar und alltägliche Haushaltslogistik."
+    ),
+    "aboservice": (
+        "Du bist der Vertrags- und Abo-Manager im BACH-System.\n"
+        "Schwerpunkte: Prüfung von Vertragslaufzeiten, Kündigungsfristen, Optimierungspotenzialen und monatlichen Fixkosten."
+    ),
+    "data-analysis": (
+        "Du bist der Datenanalyse- und Reporting-Experte im BACH-System.\n"
+        "Schwerpunkte: Strukturierte Auswertung von Kennzahlen, Logs, CSV-Dateien und Zeitreihen sowie visuelle Zusammenfassungen."
+    ),
+    "decision-briefing": (
+        "Du bist der Entscheidungs- und Strategieberater im BACH-System.\n"
+        "Schwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
     ),
 }
 
@@ -521,6 +541,202 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         return worker
 
     raise KeyError(f"Slot or worker {slot_id!r} not found")
+
+
+CORE_SYSTEM_AGENT_IDS = tuple(DEFAULT_CORE_SLOTS)
+CORE_SYSTEM_AGENT_ICONS = {
+    "buddha_chat": "💬",
+    "buddha_always_on": "⚡",
+    "buddha_connector": "📱",
+}
+CORE_EDITABLE_FIELDS = frozenset({
+    "name", "icon", "backend", "model", "mode", "think",
+    "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
+    "enabled",
+})
+CORE_KNOWN_BACKENDS = frozenset({
+    "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
+    "claude", "claude-api", "codex", "openai",
+})
+
+
+def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("System-Agentenkonfiguration hat kein gültiges Slots-Schema")
+    slots = config["slots"]
+    if any(not isinstance(slots.get(slot_id), dict) for slot_id in CORE_SYSTEM_AGENT_IDS):
+        raise ValueError("Mindestens eine feste System-Agenten-ID fehlt")
+    version = hashlib.sha256(raw).hexdigest()
+    public_slots = []
+    for slot_id in CORE_SYSTEM_AGENT_IDS:
+        slot = slots[slot_id]
+        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        pause_info = get_slot_pause_info(slot)
+        public_slots.append({
+            "id": slot_id,
+            "system": True,
+            "deletable": False,
+            "name": slot.get("name", defaults["name"]),
+            "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS[slot_id]),
+            "backend": slot.get("backend"),
+            "model": slot.get("model"),
+            "mode": slot.get("mode"),
+            "think": slot.get("think"),
+            "max_tool_rounds": slot.get("max_tool_rounds"),
+            "pause_after": slot.get("pause_after"),
+            "pause_minutes": slot.get("pause_minutes"),
+            "pause_basis": slot.get("pause_basis", defaults.get("pause_basis", "runs")),
+            "configured_enabled": slot.get("enabled"),
+            "enabled": bool(slot.get("enabled", defaults.get("enabled", True))),
+            "status": slot.get("status", defaults.get("status", "idle")),
+            "current_activity": slot.get("current_activity", ""),
+            "pause_info": pause_info,
+            "living": None,
+            "running": None,
+            "runtime_reason_code": "runtime_not_probed",
+        })
+    return {
+        "schema": "bach.core-system-agents.v1",
+        "configuration_version": version,
+        "updated_at": config.get("updated_at"),
+        "agents": public_slots,
+        "supported_backend_ids": sorted(CORE_KNOWN_BACKENDS),
+    }
+
+
+def core_system_agents_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Read only the allowlisted fields of the existing Control slots file."""
+    target = _resolve_path(path)
+    return _core_snapshot_from_bytes(target.read_bytes())
+
+
+def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(changes, dict) or not changes or set(changes) - CORE_EDITABLE_FIELDS:
+        raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
+    result: dict[str, Any] = {}
+    for field, value in changes.items():
+        if field in {"name", "icon", "backend", "model", "mode"}:
+            limit = 8 if field == "icon" else 120
+            if (not isinstance(value, str) or not value.strip()
+                    or len(value) > limit or any(ord(c) < 32 for c in value)):
+                raise ValueError(f"{field} muss ein kurzer, lesbarer Text sein")
+            value = value.strip()
+            if field == "backend" and value not in CORE_KNOWN_BACKENDS:
+                raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
+            if field == "mode" and value not in {"safe", "full"}:
+                raise ValueError("Modus muss safe oder full sein")
+        elif field in {"think", "enabled"}:
+            if not isinstance(value, bool):
+                raise ValueError(f"{field} muss wahr oder falsch sein")
+        elif field == "pause_basis":
+            if value not in {"runs", "tasks"}:
+                raise ValueError("pause_basis muss runs oder tasks sein")
+        else:
+            upper = 100 if field == "max_tool_rounds" else 1440
+            lower = 0
+            if type(value) is not int or not lower <= value <= upper:
+                raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
+        result[field] = value
+    return result
+
+
+@_serialized_mutation
+def change_core_system_agent(
+    slot_id: str, expected_version: str, changes: dict[str, Any] | None = None,
+    *, reset: bool = False, path: str | None = None,
+) -> dict[str, Any]:
+    """Atomically update existing Core config only; never start a worker."""
+    if slot_id not in CORE_SYSTEM_AGENT_IDS:
+        raise KeyError("Unbekannte System-Agenten-ID")
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    if expected_version != snapshot["configuration_version"]:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    slot = config["slots"][slot_id]
+    if reset:
+        if changes:
+            raise ValueError("Reset akzeptiert keine gleichzeitigen Änderungen")
+        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
+        updates["icon"] = CORE_SYSTEM_AGENT_ICONS[slot_id]
+    else:
+        updates = _validated_core_edits(changes)
+    slot.update(updates)
+    save_slots_config(config, path)
+    return core_system_agents_snapshot(path)
+
+
+def _core_prompt_definitions() -> dict[str, str]:
+    return {
+        "system_default": DEFAULT_SYSTEM_PROMPT,
+        **{"role_" + role_id: body for role_id, body in DEFAULT_ROLE_PROMPTS.items()},
+    }
+
+
+def core_prompt_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Project immutable source defaults and user overrides from Control config."""
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("Control-Konfiguration ist ungültig")
+    custom = config.get("prompts", {})
+    if not isinstance(custom, dict):
+        raise ValueError("Prompt-Overrides sind ungültig")
+    definitions = _core_prompt_definitions()
+    prompts = {}
+    for key, default in definitions.items():
+        override = custom.get(key)
+        if override is not None and not isinstance(override, str):
+            raise ValueError("Prompt-Override ist ungültig")
+        prompts[key] = {
+            "key": key,
+            "default": default,
+            "effective": override if override is not None else default,
+            "is_custom": override is not None,
+        }
+    source_bytes = json.dumps(definitions, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return {
+        "schema": "bach.core-prompts.v1",
+        "configuration_version": hashlib.sha256(raw).hexdigest(),
+        "source_version": hashlib.sha256(source_bytes).hexdigest(),
+        "prompts": prompts,
+    }
+
+
+@_serialized_mutation
+def change_core_prompt(
+    key: str, expected_version: str, *, text: str | None = None,
+    reset: bool = False, path: str | None = None,
+) -> dict[str, Any]:
+    """CAS update a known override; reset removes only that override."""
+    definitions = _core_prompt_definitions()
+    if key not in definitions:
+        raise KeyError("Unbekannte Prompt-ID")
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("Control-Konfiguration ist ungültig")
+    custom = config.setdefault("prompts", {})
+    if not isinstance(custom, dict):
+        raise ValueError("Prompt-Overrides sind ungültig")
+    if reset:
+        if text is not None:
+            raise ValueError("Reset nimmt keinen Prompttext an")
+        custom.pop(key, None)
+    else:
+        if (not isinstance(text, str) or not text.strip()
+                or len(text) > 50000 or "\x00" in text):
+            raise ValueError("Prompttext fehlt oder ist ungültig")
+        custom[key] = text
+    save_slots_config(config, path)
+    return core_prompt_snapshot(path)
 
 
 @_serialized_mutation
@@ -871,6 +1087,88 @@ def record_activity(
                 w["history"] = w["history"][:20]
 
     save_slots_config(cfg, path)
+
+
+WORKER_EDITABLE_FIELDS = frozenset({
+    "name", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
+    "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
+})
+
+
+def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
+    configuration = {field: worker.get(field) for field in sorted(WORKER_EDITABLE_FIELDS)}
+    raw = json.dumps({"id": worker["id"], **configuration}, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return {"id": worker["id"], "configuration": configuration,
+            "configuration_version": hashlib.sha256(raw).hexdigest()}
+
+
+def worker_configuration_snapshot(worker_id: str, *, path: str | None = None) -> dict[str, Any]:
+    worker = get_worker_slot(worker_id, path=path)
+    if not worker:
+        raise KeyError("Workerprofil nicht gefunden")
+    return _worker_configuration(worker)
+
+
+@_serialized_mutation
+def change_worker_configuration(worker_id: str, expected_version: str, changes: dict[str, Any],
+                                *, path: str | None = None) -> dict[str, Any]:
+    config = load_slots_config(path, strict=True)
+    workers = [w for w in config.get("dynamic_workers", []) if w.get("id") == worker_id]
+    if len(workers) != 1:
+        raise KeyError("Workerprofil nicht eindeutig gefunden")
+    worker = workers[0]
+    if expected_version != _worker_configuration(worker)["configuration_version"]:
+        raise RuntimeError("configuration_version_conflict")
+    if worker.get("status") not in {"idle", "paused", "completed", "error"}:
+        raise RuntimeError("worker_not_editable")
+    expiry = _parse_timestamp(worker.get("expires_at"))
+    if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
+        raise RuntimeError("worker_not_editable")
+    if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
+        raise ValueError("Unbekannte Worker-Konfigurationsfelder")
+    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role"}
+    ranges = {"max_tool_rounds": (0, 100), "pause_after": (0, 100),
+              "pause_minutes": (0, 1440), "max_experts": (1, 10)}
+    edits = dict(changes)
+    for field, value in edits.items():
+        if field in boolean_fields and type(value) is not bool:
+            raise ValueError(f"{field} muss wahr oder falsch sein")
+        if field in ranges:
+            low, high = ranges[field]
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
+        if field in {"name", "backend", "model", "mode", "sub_mode", "role_id", "pause_basis", "task_prompt"}:
+            maximum = 20000 if field == "task_prompt" else 180
+            if not isinstance(value, str) or len(value) > maximum or "\x00" in value:
+                raise ValueError(f"{field} ist ungültig")
+            if field not in {"role_id", "task_prompt"} and not value.strip():
+                raise ValueError(f"{field} darf nicht leer sein")
+        if field == "task_id" and value is not None and (type(value) is not int or not 1 <= value <= 2147483647):
+            raise ValueError("Task-ID ist ungültig")
+        if field == "expert_models" and (not isinstance(value, dict) or len(value) > 10 or any(
+                key not in {*DEFAULT_ROLE_PROMPTS, "default"} or not isinstance(model, str)
+                or not model.strip() or len(model) > 180 for key, model in value.items())):
+            raise ValueError("Experten-Modellzuordnung ist ungültig")
+    updated = {**worker, **edits}
+    if (updated.get("backend") not in {"ollama", "ollama-cloud", "openrouter"}
+            or updated.get("mode") not in {"safe", "full"}
+            or updated.get("pause_basis") not in {"runs", "tasks"}
+            or updated.get("sub_mode") not in {"hintergrund_worker", "task_worker", "boss_routing", "expert_role"}):
+        raise ValueError("Worker-Modus oder Provider ist ungültig")
+    if updated["sub_mode"] == "expert_role":
+        if not updated.get("multi_role") and updated.get("role_id") not in DEFAULT_ROLE_PROMPTS:
+            raise ValueError("Fachrolle ist nicht registriert")
+    elif updated.get("role_id") or updated.get("multi_role"):
+        raise ValueError("Fachrollenoptionen gelten nur für Expertenrollen")
+    if updated["sub_mode"] != "boss_routing" and updated.get("expert_models"):
+        raise ValueError("Experten-Modellzuordnungen gelten nur für Bossrouting")
+    if updated["sub_mode"] == "task_worker" and not updated.get("task_id") and not updated.get("task_prompt"):
+        raise ValueError("Taskworker benötigen eine Task-ID oder einen Auftragstext")
+    updated["system_prompt"] = compose_worker_prompt(updated, path=path)
+    worker.update(updated)
+    save_slots_config(config, path)
+    return _worker_configuration(worker)
 
 
 def _parse_timestamp(value: Any) -> datetime | None:

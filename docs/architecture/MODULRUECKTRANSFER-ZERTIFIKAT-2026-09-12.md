@@ -33,7 +33,7 @@
 | 7 | `workflowhooker` | `hub/workflow_hook_provider.py` → `core/hooks.py` Interceptor-Slot | `6d2b1908` | `6d2b190` | ✅ | `BACH_USE_EXTERNAL_WORKFLOWHOOKS=0` | ⬜ offen |
 | 8 | `sqlite-transit-sync` | `hub/transit_sync_provider.py` → `DBSyncManager` | `40e99262` | `40e9926` | ✅ | `BACH_USE_EXTERNAL_TRANSITSYNC=0` | ❌ **offen (Plan 4.3, Multi-Host-Lauf)** |
 
-Alle Checkouts sind **arbeits sauber** (0 uncommitted Änderungen). venv: `/Users/lukas/.venvs/bach` (editable Installs aus `~/services/*`).
+Alle Checkouts sind **arbeits sauber** (0 uncommitted Änderungen). venv: `<venv>/bach` (editable Installs aus `~/services/*`).
 
 ### Test-Nachweis (2026-09-12, mac-studio)
 

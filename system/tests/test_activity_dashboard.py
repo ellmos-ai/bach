@@ -99,22 +99,25 @@ def test_custom_api_base():
     # Auch über das branding-Dict
     content2 = render_activity_dashboard(branding={"api_base": "/gateway/control-api"})
     assert "/gateway/control-api" in content2
-    assert "const API = _rawApiBase" in content2
-    assert "_rawApiBase.replace(/\\/+$/, '')" in content2
+    assert "_rawApiBase.endsWith('/api')" in content2
+    assert "_rawApiBase.replace(/\\/+$/, '') + '/api'" in content2
 
 
 def test_script_values_are_json_encoded_and_brand_icon_is_escaped():
+    payload = "</script><script>window.__review_probe=1</script>"
     content = render_activity_dashboard(
         branding={
-            "api_base": "</script><script>window.__review_probe=1</script>",
-            "brand_icon": '<img src=x onerror="alert(1)">',
+            "token_storage_key": payload,
+            "brand_icon": f'<img src=x onerror="alert(1)">{payload}',
             "slot_always_on_title": "A&B",
         }
     )
-    assert "</script><script>window.__review_probe" not in content
-    assert "\\u003c/script>" in content
-    assert '<span>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</span>' in content
-    assert 'const ALWAYS_ON_TITLE = "A&B";' in content
+    assert payload not in content
+    assert "\\u003c/script\\u003e" in content
+    assert '<span>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;' in content
+    assert '"alwaysOnTitle": "A\\u0026B"' in content
+    with pytest.raises(ValueError):
+        render_activity_dashboard(branding={"api_base": payload})
 
 
 def test_custom_nav_links():
@@ -126,7 +129,7 @@ def test_custom_nav_links():
     content = render_activity_dashboard(branding={"nav_links": links})
 
     assert '<a href="/hub" class="btn btn-outline btn-sm">Zurück zum Hub</a>' in content
-    assert '<a href="https://docs.example.com" target="_blank" class="btn btn-outline btn-sm">Dokumentation</a>' in content
+    assert '<a href="https://docs.example.com" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">Dokumentation</a>' in content
     # Standard-Links sollten nicht mehr im Header enthalten sein
     assert '<a href="/" class="btn btn-outline btn-sm">Chat-Control</a>' not in content
 
@@ -149,25 +152,26 @@ def test_custom_theme_colors():
     assert ".btn{background:var(--btn-primary" in content
 
 
-def test_theme_css_rejects_invalid_names_and_delimiters():
-    content = render_activity_dashboard(
-        branding={
-            "theme_colors": {
-                "accent": "#123456",
-                "bad;name": "red",
-                "probe": "</style><script>window.__review_probe=1</script>",
+def test_theme_css_rejects_invalid_names_and_values():
+    with pytest.raises(ValueError):
+        render_activity_dashboard(
+            branding={
+                "theme_colors": {
+                    "accent": "#123456",
+                    "bad}:name": "red",
+                }
             }
-        }
-    )
-    assert "--accent: #123456;" in content
-    assert "bad;name" not in content
-    assert "</style><script>window.__review_probe" not in content
+        )
+    with pytest.raises(ValueError):
+        render_activity_dashboard(
+            branding={"theme_colors": {"probe": "</style><script>bad</script>"}}
+        )
 
 
 def test_custom_token_storage_key():
     """LocalStorage-Schlüssel für Control-Token muss konfigurierbar sein."""
     content = render_activity_dashboard(branding={"token_storage_key": "ellmos-admin-token"})
-    assert 'const TOKEN_STORAGE_KEY = "ellmos-admin-token";' in content
+    assert '"tokenStorageKey": "ellmos-admin-token"' in content
 
 
 class _ScriptExtractor(HTMLParser):

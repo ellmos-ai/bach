@@ -1209,7 +1209,14 @@ Referenz: BACH_Dev/docs/SQ020_SELEKTIVE_UPGRADES.md""")
         Rollback: BACH_USE_EXTERNAL_EXPLORER=0 (kein Scan, nur Hinweis).
         """
         try:
-            return topology_evidence(self.base_path, persist_state=True)
+            state_dir = None
+            if hasattr(self, "base_path") and self.base_path:
+                bp = Path(self.base_path)
+                if (bp / "data").exists():
+                    state_dir = bp / "data" / "explorer_state"
+                elif (bp / "system" / "data").exists():
+                    state_dir = bp / "system" / "data" / "explorer_state"
+            return topology_evidence(self.base_path, state_dir=state_dir, persist_state=True)
         except Exception as exc:
             return {"enabled": False, "reason": f"explorer_provider error: {exc}"}
 

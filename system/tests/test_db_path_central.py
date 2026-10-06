@@ -64,6 +64,11 @@ WHITELIST = {
     #  test_smoke::test_seal_status rot — die Tests suchten in der echten 82-MB-DB.)
     "hub/seal.py",
     "core/agent_runtime.py",
+    # BetweenManager und TimeManager bekommen base_path herein — Test-Fixtures
+    # (wie test_timebeat_parity) injizieren darueber ihre tmp-DB (wie hub/base.py).
+    "tools/time_system.py",
+    # ToolInjector bekommt base_path herein fuer Test-Fixtures (wie hub/base.py).
+    "tools/injectors.py",
 }
 
 # Verzeichnis-Namen, die an JEDER Stelle im Pfad ausnehmen (nicht nur ganz vorn:
@@ -115,7 +120,6 @@ KNOWN_OFFENDERS = {
     "tools/folder_diff_scanner.py",
     "tools/fs_protection.py",
     "tools/headless_agent.py",
-    "tools/injectors.py",
     "tools/json/json_registry_cleaner.py",
     "tools/llmauto/modes/chain.py",
     "tools/maintenance/create_boot_checks.py",
@@ -146,7 +150,6 @@ KNOWN_OFFENDERS = {
     "tools/schwarm/translate_swarm.py",
     "tools/session_analyzer.py",
     "tools/skill_header_gen.py",
-    "tools/time_system.py",
     "tools/unified_search.py",
     "tools/user_console.py",
 }

@@ -1,0 +1,18 @@
+{
+  "schema": "ellmos.bach.gui-consumer.v1",
+  "id": "ellmos-system-gui",
+  "version": "0.1.4",
+  "status": "pinned_release",
+  "source": {
+    "repository": "ellmos-ai/ellmos-system-gui",
+    "commit": "85dbe25fe665fb6d540f9a689773b5616b49bc60",
+    "archive_sha256": "6a5c9c348c1f2e8c7745e695de06751bd1e63a2670694f7b6ffe394faa807cbb",
+    "dist_manifest_schema": "ellmos-system-gui.dist.v1"
+  },
+  "required_backend_routes": [
+    "/api/gui/brand",
+    "/api/gui/backend-origin",
+    "/api/gui/capabilities"
+  ],
+  "installation_evidence": "Verify the served dist-manifest source_commit and every file hash against the pinned release artifact at deployment. A pin alone does not prove a live installation."
+}

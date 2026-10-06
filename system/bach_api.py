@@ -509,6 +509,135 @@ class _TaskProxy(_DBBackedProxy):
             conn.commit()
             return reaped
 
+    def lease_acquire(
+        self,
+        task_id: int | str,
+        *,
+        worker_id: str,
+        host: str | None = None,
+        request_id: str | None = None,
+        ttl_profile: str = "M",
+        intent: str = "",
+    ) -> dict[str, Any]:
+        """Beansprucht eine Task als gefencten Salt-Lease (Vertrag §5.1 / BACH #1722)."""
+        tid = int(task_id)
+        if not host:
+            if "@" in worker_id:
+                host = worker_id.rsplit("@", 1)[1]
+            else:
+                import socket
+                host = socket.gethostname()
+                worker_id = f"{worker_id}@{host}"
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            ack = client.acquire(
+                tid,
+                worker_id=worker_id,
+                host=host,
+                request_id=request_id,
+                ttl_profile=ttl_profile,
+                intent=intent,
+            )
+            return {
+                "granted": True,
+                "task_id": ack.task_id,
+                "lease_id": ack.lease_id,
+                "fence": ack.fence,
+                "worker_id": ack.worker_id,
+                "host": ack.host,
+                "issued_at": ack.issued_at,
+                "expires_at": ack.expires_at,
+                "ttl_profile": ack.ttl_profile,
+                "server_now": ack.server_now,
+                "local_deadline": ack.local_deadline.isoformat(),
+            }
+
+    def lease_read(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Liest die Holder-Ansicht eines Task-Leases (Vertrag §5.2 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            view = client.read(tid, lease_id=lease_id)
+            return {
+                "task_id": view.task_id,
+                "status": view.status,
+                "leased": view.leased,
+                "fence": view.fence,
+                "legacy": view.legacy,
+                "server_now": view.server_now,
+                "holder": view.holder,
+                "issued_at": view.issued_at,
+                "expires_at": view.expires_at,
+                "ttl_profile": view.ttl_profile,
+                "own": view.own,
+            }
+
+    def lease_renew(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str,
+        fence: int,
+    ) -> dict[str, Any]:
+        """Verlängert einen aktiven Task-Lease (Vertrag §5.3 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            ack = client.renew(tid, lease_id=lease_id, fence=fence)
+            return {
+                "granted": True,
+                "task_id": ack.task_id,
+                "lease_id": ack.lease_id,
+                "fence": ack.fence,
+                "worker_id": ack.worker_id,
+                "host": ack.host,
+                "issued_at": ack.issued_at,
+                "expires_at": ack.expires_at,
+                "ttl_profile": ack.ttl_profile,
+                "server_now": ack.server_now,
+                "local_deadline": ack.local_deadline.isoformat(),
+            }
+
+    def lease_release(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str,
+        fence: int,
+        outcome: str = "done",
+        result_ref: str = "",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Gibt einen Task-Lease frei oder schließt die Task ab (Vertrag §5.4 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            rel = client.release(
+                tid,
+                lease_id=lease_id,
+                fence=fence,
+                outcome=outcome,
+                result_ref=result_ref,
+                note=note,
+            )
+            return {
+                "released": rel.released,
+                "task_id": rel.task_id,
+                "outcome": rel.outcome,
+                "status": rel.status,
+                "fence": rel.fence,
+                "server_now": rel.server_now,
+            }
+
     def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         task_data = dict(row)
         task_data["partner"] = task_data.get("assigned_to") or task_data.get("delegated_to") or ""
@@ -830,12 +959,8 @@ except ImportError:
 
 # --- Injector-Integration ---
 
-# Pattern: "bach befehl" oder "--befehl" CLI-Hinweise erkennen
-_CLI_PATTERN = re.compile(
-    r'bach\s+\w+'           # "bach steuer status", "bach task list"
-    r'|--\w+'               # "--help tasks", "--memory"
-    r'|python\s+\w+\.py'    # "python injectors.py"
-)
+# Derselbe Filter gilt vor der Auswahl im Legacy- und memoryhooker-Pfad.
+from hub.context_hints import CLI_PATTERN as _CLI_PATTERN
 
 
 class _InjectorProxy:
@@ -867,9 +992,9 @@ class _InjectorProxy:
     def set_mode(self, mode: str):
         """Setzt den Modus: 'cli' (alles) oder 'api' (CLI-Hinweise gefiltert).
 
-        Im API-Modus werden Kontext-Hinweise die CLI-Befehle enthalten
-        (z.B. 'bach steuer status') herausgefiltert. Pfad-Hinweise und
-        kognitive Strategien bleiben erhalten.
+        Im API-Modus werden bekannte manuelle Befehle vor der Auswahl als
+        Dokumentationsverweise dargestellt. Verbleibende CLI-Hinweise werden
+        herausgefiltert. Pfad-Hinweise und kognitive Strategien bleiben erhalten.
         """
         if mode in ("cli", "api"):
             self._mode = mode
@@ -907,7 +1032,7 @@ class _InjectorProxy:
             Liste von Hinweisen (kann leer sein)
         """
         system = self._get_system()
-        injections = system.process(text, context, skip=skip)
+        injections = system.process(text, context, skip=skip, cli_hints=self._mode != "api")
         return self._filter_cli(injections)
 
     def check_between(self, last_action: str, session_ending: bool = False):

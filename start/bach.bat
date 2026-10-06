@@ -15,6 +15,9 @@ set "STARTSPINE=!ROOT_DIR!\start\startspine.py"
 set PYTHONIOENCODING=utf-8
 REM Explorer kann alte Umgebungsvariablen halten; User-Konfiguration aus HKCU lesen.
 if not defined BACH_REMOTE_HOST for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_REMOTE_HOST 2^>nul') do set "BACH_REMOTE_HOST=%%B"
+if not defined BACH_DISABLE_TELEGRAM_BOT for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_DISABLE_TELEGRAM_BOT 2^>nul') do set "BACH_DISABLE_TELEGRAM_BOT=%%B"
+if not defined BACH_ACTIVITY_URL for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_ACTIVITY_URL 2^>nul') do set "BACH_ACTIVITY_URL=%%B"
+if not defined BACH_GUI_URL for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_GUI_URL 2^>nul') do set "BACH_GUI_URL=%%B"
 if not defined BACH_CONTROL_API_TOKEN_FILE for /f "tokens=2,*" %%A in ('reg query HKCU\Environment /v BACH_CONTROL_API_TOKEN_FILE 2^>nul') do set "BACH_CONTROL_API_TOKEN_FILE=%%B"
 set "BACH_CLIENT_MODE=local"
 if defined BACH_REMOTE_HOST set "BACH_CLIENT_MODE=remote"
@@ -237,6 +240,18 @@ title BACH Chat Service
 if "!BACH_CLIENT_MODE!"=="remote" (
     echo [WARNUNG] BACH läuft auf !BACH_REMOTE_HOST!. Telegram-Bot nur dort starten.
     echo [INFO] Mit [D] den Remote-Tray und Browser öffnen.
+    pause
+    goto menu
+)
+if "!BACH_DISABLE_TELEGRAM_BOT!"=="1" (
+    echo [WARNUNG] Telegram-Bot auf diesem Host deaktiviert ^(BACH_DISABLE_TELEGRAM_BOT=1^).
+    echo [INFO] Mit [D] den Tray und Browser öffnen.
+    pause
+    goto menu
+)
+if /i "!BACH_DISABLE_TELEGRAM_BOT!"=="true" (
+    echo [WARNUNG] Telegram-Bot auf diesem Host deaktiviert ^(BACH_DISABLE_TELEGRAM_BOT=true^).
+    echo [INFO] Mit [D] den Tray und Browser öffnen.
     pause
     goto menu
 )

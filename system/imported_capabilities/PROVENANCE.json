@@ -1,0 +1,411 @@
+{
+  "schema": "bach.imported-capabilities.provenance.v1",
+  "observed_at_utc": "2026-09-30T14:52:05.213148+00:00",
+  "bach_code_commit": "861a3ca51fa2462c22b31c020c699369aca116a9",
+  "scope": "content and license-text observations, not legal clearance, runtime integration or historical copy-commit proof",
+  "sources": {
+    "NemoFold": {
+      "repo": "https://github.com/ellmos-ai/NemoFold",
+      "verification_commit": "b0545be39fc7740704f5bfe1b54458fe960dbdaf",
+      "historical_copy_commit": null,
+      "license_text_observed": "MIT text",
+      "license_notice_files": [
+        {
+          "source_path": "LICENSE",
+          "retained_path": "licenses/NemoFold/LICENSE",
+          "sha256": "739ebacc8dda8403cef9e58134236067012b53a126e4f983d44ff4aed6bae07f"
+        }
+      ],
+      "root_notice_present": false,
+      "other_license_inventory_paths": [
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    "FolderHome": {
+      "repo": "https://github.com/ellmos-ai/FolderHome",
+      "verification_commit": "2c52211dad0bb2680014a7da244dbacde5b8a23c",
+      "historical_copy_commit": null,
+      "license_text_observed": "MIT text",
+      "license_notice_files": [
+        {
+          "source_path": "LICENSE",
+          "retained_path": "licenses/FolderHome/LICENSE",
+          "sha256": "739ebacc8dda8403cef9e58134236067012b53a126e4f983d44ff4aed6bae07f"
+        }
+      ],
+      "root_notice_present": false,
+      "other_license_inventory_paths": [
+        "THIRD_PARTY_LICENSES.de.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    "Roshambo": {
+      "repo": "https://github.com/ellmos-ai/roshambo",
+      "verification_commit": "f56efcbb926294f12f75e39b8c5865d454164060",
+      "historical_copy_commit": null,
+      "license_text_observed": "Apache License 2.0 text",
+      "license_notice_files": [
+        {
+          "source_path": "LICENSE",
+          "retained_path": "licenses/Roshambo/LICENSE",
+          "sha256": "ed705475166e5b394b64f555195f24f41754beb7de4df24de16ae2b93b569d5d"
+        },
+        {
+          "source_path": "NOTICE",
+          "retained_path": "licenses/Roshambo/NOTICE",
+          "sha256": "bc24f86674e8c8fb4a2220156d6e2cf86cd1a964bb67e27565a32c72b09a9c6f"
+        }
+      ],
+      "root_notice_present": true,
+      "other_license_inventory_paths": []
+    },
+    "SentinelFleet": {
+      "repo": "https://github.com/ellmos-ai/sentinel-fleet",
+      "verification_commit": "e7f9c748df0ed6a677dbba38dcd725fe700fe75e",
+      "historical_copy_commit": null,
+      "license_text_observed": "GNU Affero General Public License version 3 text; version choice not inferred",
+      "license_notice_files": [
+        {
+          "source_path": "LICENSE",
+          "retained_path": "licenses/SentinelFleet/LICENSE",
+          "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+        }
+      ],
+      "root_notice_present": false,
+      "other_license_inventory_paths": []
+    }
+  },
+  "files": [
+    {
+      "local_path": "category_1_solved_wanted/contract_cockpit/contract_store.py",
+      "source_repo": "FolderHome",
+      "source_path": "src/folderhome/capabilities/finance_store/__init__.py",
+      "source_blob_sha256": "2ef5cca9229e16d105a1dd91144a9861a01ae56789ed67079118ac7d5bb8c785",
+      "bach_blob_sha256": "2ef5cca9229e16d105a1dd91144a9861a01ae56789ed67079118ac7d5bb8c785",
+      "normalized_lf_sha256": "2ef5cca9229e16d105a1dd91144a9861a01ae56789ed67079118ac7d5bb8c785",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "datetime",
+        "folderhome.contracts",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "sqlite3"
+      ]
+    },
+    {
+      "local_path": "category_1_solved_wanted/failure_trails/memory_trails.py",
+      "source_repo": "Roshambo",
+      "source_path": "src/roshambo/memory.py",
+      "source_blob_sha256": "3354e4e093798e4a25eb654aefdae63ab1ecc5a742769109bdec1fd278c6ab4e",
+      "bach_blob_sha256": "3354e4e093798e4a25eb654aefdae63ab1ecc5a742769109bdec1fd278c6ab4e",
+      "normalized_lf_sha256": "3354e4e093798e4a25eb654aefdae63ab1ecc5a742769109bdec1fd278c6ab4e",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".config",
+        ".db",
+        ".embeddings",
+        ".errors",
+        ".leases",
+        ".models",
+        "__future__",
+        "collections.abc",
+        "hashlib",
+        "math",
+        "psycopg",
+        "re",
+        "time",
+        "typing",
+        "uuid"
+      ]
+    },
+    {
+      "local_path": "category_1_solved_wanted/leases/leases.py",
+      "source_repo": "Roshambo",
+      "source_path": "src/roshambo/leases.py",
+      "source_blob_sha256": "b4f34b7a7194a4a922d0ac37167fd83b73fab0336ef9f3123e4cbec9320112bc",
+      "bach_blob_sha256": "b4f34b7a7194a4a922d0ac37167fd83b73fab0336ef9f3123e4cbec9320112bc",
+      "normalized_lf_sha256": "b4f34b7a7194a4a922d0ac37167fd83b73fab0336ef9f3123e4cbec9320112bc",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".db",
+        ".models",
+        "__future__",
+        "datetime",
+        "psycopg"
+      ]
+    },
+    {
+      "local_path": "category_1_solved_wanted/leases/models.py",
+      "source_repo": "Roshambo",
+      "source_path": "src/roshambo/models.py",
+      "source_blob_sha256": "78489e34e01016d2cdf17a6ffbe9133225fa3c9e7a2e2d8ca592ce540e5c8ea0",
+      "bach_blob_sha256": "78489e34e01016d2cdf17a6ffbe9133225fa3c9e7a2e2d8ca592ce540e5c8ea0",
+      "normalized_lf_sha256": "78489e34e01016d2cdf17a6ffbe9133225fa3c9e7a2e2d8ca592ce540e5c8ea0",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/action_journal/action_journal.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/action_journal.py",
+      "source_blob_sha256": "1010298102551cba1b336ed68e736485bc72a25e88f4cf551a4992f3e1dccb0c",
+      "bach_blob_sha256": "1010298102551cba1b336ed68e736485bc72a25e88f4cf551a4992f3e1dccb0c",
+      "normalized_lf_sha256": "1010298102551cba1b336ed68e736485bc72a25e88f4cf551a4992f3e1dccb0c",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".contracts",
+        ".smart_inbox",
+        ".storage_policy",
+        "__future__",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "re",
+        "tempfile",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/action_journal/contracts.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/contracts.py",
+      "source_blob_sha256": "5d3a33141e653f60d5cd3c2a9cbbe42676bb54d753949f56dab032d1d0e62dde",
+      "bach_blob_sha256": "5d3a33141e653f60d5cd3c2a9cbbe42676bb54d753949f56dab032d1d0e62dde",
+      "normalized_lf_sha256": "5d3a33141e653f60d5cd3c2a9cbbe42676bb54d753949f56dab032d1d0e62dde",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "math",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/action_journal/smart_inbox.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/smart_inbox.py",
+      "source_blob_sha256": "f50a94ecbc652265b233015b6f7ff05a979e012eced8ba5f2e01ca080020386f",
+      "bach_blob_sha256": "f50a94ecbc652265b233015b6f7ff05a979e012eced8ba5f2e01ca080020386f",
+      "normalized_lf_sha256": "f50a94ecbc652265b233015b6f7ff05a979e012eced8ba5f2e01ca080020386f",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".contracts",
+        ".storage_policy",
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "hashlib",
+        "pathlib",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/action_journal/storage_policy.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/storage_policy.py",
+      "source_blob_sha256": "e01a5aead0b4ed76085fcd885f2ccfdea31b65f430bed3fc0e6012b07575f42a",
+      "bach_blob_sha256": "e01a5aead0b4ed76085fcd885f2ccfdea31b65f430bed3fc0e6012b07575f42a",
+      "normalized_lf_sha256": "e01a5aead0b4ed76085fcd885f2ccfdea31b65f430bed3fc0e6012b07575f42a",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "dataclasses",
+        "pathlib"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/administrative_notice_engine/compliance.py",
+      "source_repo": "SentinelFleet",
+      "source_path": "src/sentinel_fleet/domains/omniledger/compliance.py",
+      "source_blob_sha256": "80e1b816948aad4a08f384eb32ead014b838dfb20b3045ea60cfa75320b5a4c8",
+      "bach_blob_sha256": "80e1b816948aad4a08f384eb32ead014b838dfb20b3045ea60cfa75320b5a4c8",
+      "normalized_lf_sha256": "80e1b816948aad4a08f384eb32ead014b838dfb20b3045ea60cfa75320b5a4c8",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "sentinel_fleet.core.policies",
+        "sentinel_fleet.domains.omniledger.models"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/administrative_notice_engine/dispute_loop.py",
+      "source_repo": "SentinelFleet",
+      "source_path": "src/sentinel_fleet/domains/omniledger/dispute_loop.py",
+      "source_blob_sha256": "d77d13e391c16fd03951fae42e4d2ff2c371ae8f5d707be0a7f72ce2a6c36dbf",
+      "bach_blob_sha256": "d77d13e391c16fd03951fae42e4d2ff2c371ae8f5d707be0a7f72ce2a6c36dbf",
+      "normalized_lf_sha256": "d77d13e391c16fd03951fae42e4d2ff2c371ae8f5d707be0a7f72ce2a6c36dbf",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "sentinel_fleet.core.privacy_contacts",
+        "sentinel_fleet.domains.omniledger.models",
+        "sentinel_fleet.memory.bank",
+        "sentinel_fleet.memory.hooker",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/interrater/interrater.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/interrater.py",
+      "source_blob_sha256": "1d8465e8519360e685207e7673d6731bce78e5bd0a700be4a5129efc7619721a",
+      "bach_blob_sha256": "1d8465e8519360e685207e7673d6731bce78e5bd0a700be4a5129efc7619721a",
+      "normalized_lf_sha256": "1d8465e8519360e685207e7673d6731bce78e5bd0a700be4a5129efc7619721a",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".primitives",
+        "__future__",
+        "dataclasses",
+        "re",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/interrater/primitives.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/primitives.py",
+      "source_blob_sha256": "0d57aa2e7fa5e1d3d5517cec96b01d25e3265eb1e266c836484feb63c0cce4a1",
+      "bach_blob_sha256": "0d57aa2e7fa5e1d3d5517cec96b01d25e3265eb1e266c836484feb63c0cce4a1",
+      "normalized_lf_sha256": "0d57aa2e7fa5e1d3d5517cec96b01d25e3265eb1e266c836484feb63c0cce4a1",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        ".structured_codec",
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "pathlib",
+        "re",
+        "unicodedata"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/interrater/structured_codec.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/structured_codec.py",
+      "source_blob_sha256": "ef16c195af0cb12bb435a5458ad112a022d1bbb242443026ebcf8d3b5a11a4b2",
+      "bach_blob_sha256": "ef16c195af0cb12bb435a5458ad112a022d1bbb242443026ebcf8d3b5a11a4b2",
+      "normalized_lf_sha256": "ef16c195af0cb12bb435a5458ad112a022d1bbb242443026ebcf8d3b5a11a4b2",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "re"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/model_armor/gateway.py",
+      "source_repo": "SentinelFleet",
+      "source_path": "src/sentinel_fleet/core/gateway.py",
+      "source_blob_sha256": "c90192512be8d5875aea877c0342f1b3341de7a2b1072f40936d5c42cd435254",
+      "bach_blob_sha256": "c90192512be8d5875aea877c0342f1b3341de7a2b1072f40936d5c42cd435254",
+      "normalized_lf_sha256": "c90192512be8d5875aea877c0342f1b3341de7a2b1072f40936d5c42cd435254",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "asyncio",
+        "sentinel_fleet.core.access",
+        "sentinel_fleet.core.errors",
+        "sentinel_fleet.core.identity",
+        "sentinel_fleet.core.model_armor",
+        "sentinel_fleet.core.permissions",
+        "sentinel_fleet.core.policies",
+        "sentinel_fleet.core.telemetry",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_2_superior_solutions/model_armor/model_armor.py",
+      "source_repo": "SentinelFleet",
+      "source_path": "src/sentinel_fleet/core/model_armor.py",
+      "source_blob_sha256": "1f76e072447478e3484ff2dd6dd9849b0dacdea1de7b99ae0c1fa86bfb122cfc",
+      "bach_blob_sha256": "1f76e072447478e3484ff2dd6dd9849b0dacdea1de7b99ae0c1fa86bfb122cfc",
+      "normalized_lf_sha256": "1f76e072447478e3484ff2dd6dd9849b0dacdea1de7b99ae0c1fa86bfb122cfc",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "asyncio",
+        "pydantic",
+        "re",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_3_enriching_features/blueprint_graph/blueprint_graph.py",
+      "source_repo": "SentinelFleet",
+      "source_path": "src/sentinel_fleet/web/blueprint_graph.py",
+      "source_blob_sha256": "aa613dce483d14a14d65fe1a3ea120dbfe204121038e3e97cd0dc8166f06f7f1",
+      "bach_blob_sha256": "aa613dce483d14a14d65fe1a3ea120dbfe204121038e3e97cd0dc8166f06f7f1",
+      "normalized_lf_sha256": "aa613dce483d14a14d65fe1a3ea120dbfe204121038e3e97cd0dc8166f06f7f1",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "ast",
+        "os",
+        "typing"
+      ]
+    },
+    {
+      "local_path": "category_3_enriching_features/blueprint_graph/chronicle_svg.py",
+      "source_repo": "NemoFold",
+      "source_path": "src/nemofold/chronicle_svg.py",
+      "source_blob_sha256": "408c0082b9a8fc95d58b2d29af750a669d476dc1481d736d55d3fae15d9f1b20",
+      "bach_blob_sha256": "408c0082b9a8fc95d58b2d29af750a669d476dc1481d736d55d3fae15d9f1b20",
+      "normalized_lf_sha256": "408c0082b9a8fc95d58b2d29af750a669d476dc1481d736d55d3fae15d9f1b20",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "dataclasses",
+        "math",
+        "xml.sax.saxutils"
+      ]
+    },
+    {
+      "local_path": "category_3_enriching_features/inventory_store/inventory_store.py",
+      "source_repo": "FolderHome",
+      "source_path": "src/folderhome/capabilities/inventory_store/__init__.py",
+      "source_blob_sha256": "4589b1226196eb3f7799c50229f20d3567740aa8964250ee88c2046494188788",
+      "bach_blob_sha256": "4589b1226196eb3f7799c50229f20d3567740aa8964250ee88c2046494188788",
+      "normalized_lf_sha256": "4589b1226196eb3f7799c50229f20d3567740aa8964250ee88c2046494188788",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "folderhome.contracts",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "sqlite3"
+      ]
+    },
+    {
+      "local_path": "category_3_enriching_features/medication_store/medication_store.py",
+      "source_repo": "FolderHome",
+      "source_path": "src/folderhome/capabilities/medication_store/__init__.py",
+      "source_blob_sha256": "ded0c6c0be90daceedd5cc65a41b957f108b4768e3d79ecf32cf5f8f54b4e9e7",
+      "bach_blob_sha256": "ded0c6c0be90daceedd5cc65a41b957f108b4768e3d79ecf32cf5f8f54b4e9e7",
+      "normalized_lf_sha256": "ded0c6c0be90daceedd5cc65a41b957f108b4768e3d79ecf32cf5f8f54b4e9e7",
+      "comparison": "unchanged content after CRLF-to-LF normalization only",
+      "direct_imports": [
+        "__future__",
+        "folderhome.contracts",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "sqlite3"
+      ]
+    }
+  ],
+  "dependency_limits": {
+    "journal": "Three required stdlib modules now retained; unchanged ActionJournal imported through wrapper. No host guard implementation or runtime integration supplied.",
+    "roshambo": "Original leases/memory need psycopg and missing relative db/config/errors/leases modules; adapter unit tests are not original package import proof.",
+    "folderhome": "Three copied stores import folderhome.contracts; folderhome package is not retained here. contract_store.py actually contains FinanceStore, not original contract-cockpit workflow.",
+    "sentinel_fleet": "Gateway/compliance/dispute_loop refer to sentinel_fleet packages not retained here; model_armor requires pydantic.",
+    "terms_hypothesis": "No direct import of terms found in AST across copied modules at this checkpoint; does not establish complete optional/dynamic dependency closure."
+  }
+}
