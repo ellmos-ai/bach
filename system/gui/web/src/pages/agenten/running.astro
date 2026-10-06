@@ -702,6 +702,15 @@ import BachLayout from "../../layouts/BachLayout.astro";
         coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
         coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
         coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
+        if (agent.resolved_model && agent.resolved_model !== agent.model) {
+          const resInfo = document.createElement('div');
+          resInfo.style.fontSize = '0.75rem';
+          resInfo.style.color = 'var(--accent)';
+          resInfo.style.marginTop = '-0.2rem';
+          resInfo.style.marginBottom = '0.4rem';
+          resInfo.innerHTML = `↳ <strong>Aufgelöstes Modell:</strong> <code>${escapeHtml(agent.resolved_model)}</code>`;
+          fields.append(resInfo);
+        }
         card.append(fields);
 
         const actions = coreElement('div', undefined, 'core-actions');
@@ -915,6 +924,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
                   <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(w.name || w.id)}</h3>
                   <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
                     Modell: <code style="color:var(--accent);">${escapeHtml(w.model || 'Standard')}</code>
+                    ${w.resolved_model && w.resolved_model !== w.model ? `<span style="font-size:0.75rem;color:var(--text-muted);display:block;margin-top:0.2rem;">↳ Aufgelöst: <code style="color:var(--accent);">${escapeHtml(w.resolved_model)}</code></span>` : ''}
                   </p>
                   <p style="font-size:0.75rem;color:var(--text-muted);line-height:1.4;">
                     ${escapeHtml(w.task_prompt ? 'Auftrag: ' + w.task_prompt : 'Bereit für offene BACH-Tasks')}
@@ -968,6 +978,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
                 <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(w.name || w.id)}</h3>
                 <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">
                   Modell: <code>${escapeHtml(w.model)}</code>
+                  ${w.resolved_model && w.resolved_model !== w.model ? `<span style="font-size:0.75rem;color:var(--accent);display:block;margin-top:0.2rem;">↳ Aufgelöst: <code>${escapeHtml(w.resolved_model)}</code></span>` : ''}
                 </p>
                 <p style="font-size:0.8rem;color:var(--text);margin-bottom:0.75rem;">
                   ${escapeHtml(w.current_activity || 'Verarbeitet Aufgabe…')}

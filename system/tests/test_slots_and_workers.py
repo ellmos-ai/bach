@@ -2173,3 +2173,61 @@ class TestActivityHistoryAndEndpoint:
         handler.do_GET()
         assert responses[-1][1] == 400
         assert "order" in responses[-1][0]["error"]
+
+
+def test_resolved_model_tracking_and_activity_enrichment(tmp_path, monkeypatch):
+    import importlib
+    from hub._services.chat.slots_config import (
+        initialize_slots_config,
+        add_worker,
+        update_slot,
+        get_worker_slot,
+        core_system_agents_snapshot,
+        get_activity_history,
+    )
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+
+    cfg_file = tmp_path / "resolved-model-test.json"
+    initialize_slots_config(str(cfg_file))
+
+    # Dynamic worker
+    worker = add_worker({
+        "id": "worker-resolved-test",
+        "name": "OR Worker",
+        "backend": "openrouter",
+        "model": "openrouter/free",
+    }, path=str(cfg_file))
+    assert worker["resolved_model"] == ""
+
+    update_slot("worker-resolved-test", {"resolved_model": "poolside/laguna-xs-2.1:free"}, path=str(cfg_file))
+    retrieved = get_worker_slot("worker-resolved-test", path=str(cfg_file))
+    assert retrieved["resolved_model"] == "poolside/laguna-xs-2.1:free"
+
+    # Core slot
+    update_slot("buddha_always_on", {"resolved_model": "poolside/laguna-xs-2.1:free"}, path=str(cfg_file))
+    snap = core_system_agents_snapshot(path=str(cfg_file))
+    always_on = [a for a in snap["agents"] if a["id"] == "buddha_always_on"][0]
+    assert always_on["resolved_model"] == "poolside/laguna-xs-2.1:free"
+
+    # Activity enrichment
+    monkeypatch.setattr(
+        "hub._services.chat.telegram_chat.get_worker_slot",
+        lambda wid: get_worker_slot(wid, path=str(cfg_file)),
+    )
+    from hub._services.chat.slots_config import record_activity as sc_record_activity
+    monkeypatch.setattr(
+        "hub._services.chat.telegram_chat.record_activity",
+        lambda wid, act, st="ok", dt=None: sc_record_activity(wid, act, st, dt, path=str(cfg_file)),
+    )
+
+    fake_ctrl = control._WorkerControl("worker-resolved-test", 1)
+    control._WORKER_CONTROLS["worker-resolved-test"] = fake_ctrl
+    try:
+        control._record_worker_activity(fake_ctrl, "Runde 1: Test", "ok")
+        history = get_activity_history(source="worker-resolved-test", path=str(cfg_file))
+        assert len(history) == 1
+        assert history[0]["details"]["resolved_model"] == "poolside/laguna-xs-2.1:free"
+        assert history[0]["details"]["model"] == "openrouter/free"
+    finally:
+        control._WORKER_CONTROLS.pop("worker-resolved-test", None)
+

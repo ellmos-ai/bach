@@ -440,6 +440,7 @@ class ChatSession(_ModuleChatSession):
         self.chat_id: str = ""
         self.operator_control: Any = None
         self.worker_handoff: Any = None
+        self.resolved_model: str = ""
 
     @property
     def mode(self) -> str:
@@ -1445,6 +1446,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     selected_backend,
                     msgs, think=session.think, model=selected_model
                 )
+                resolved = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
+                if resolved:
+                    session.resolved_model = str(resolved)
+                    if chat_id:
+                        try:
+                            from hub._services.chat.slots_config import update_slot
+                            update_slot(str(chat_id), {"resolved_model": str(resolved)})
+                        except Exception:
+                            pass
                 answer = _managed_backend_answer(result)
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
@@ -1570,6 +1580,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
 
+            resolved_model = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
+            if resolved_model:
+                session.resolved_model = str(resolved_model)
+                cid = getattr(session, "chat_id", "")
+                if cid:
+                    try:
+                        from hub._services.chat.slots_config import update_slot
+                        update_slot(cid, {"resolved_model": str(resolved_model)})
+                    except Exception:
+                        pass
+
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
                 # gefangene Ausnahme: derselbe Typ, damit der Idle-Worker ihn
@@ -1663,7 +1684,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if cid:
                     try:
                         from hub._services.chat.slots_config import update_slot
-                        update_slot(cid, {"current_activity": f"Tool [{round_num}]: {t_name}"})
+                        slot_updates = {"current_activity": f"Tool [{round_num}]: {t_name}"}
+                        if getattr(session, "resolved_model", None):
+                            slot_updates["resolved_model"] = session.resolved_model
+                        update_slot(cid, slot_updates)
                     except Exception:
                         pass
                 # Updating activity may race with (or itself trigger) a
@@ -1697,6 +1721,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
             # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
             msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+
+            if background_task and ("openrouter" in getattr(selected_backend, "base_url", "").lower() or "openrouter" in str(selected_model).lower()):
+                await asyncio.sleep(1.0)
 
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
             # hier oft gefragt werden - sie schweigen selbst, wenn nichts ansteht.

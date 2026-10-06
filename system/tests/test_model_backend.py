@@ -35,15 +35,16 @@ from hub._services.llm.model_backend import (  # noqa: E402
 
 
 class _FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, headers=None):
         self.payload = payload
         self.status_code = status_code
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
             request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
-            response = httpx.Response(self.status_code, request=request)
-            raise httpx.HTTPStatusError("Ollama HTTP error", request=request, response=response)
+            response = httpx.Response(self.status_code, request=request, headers=self.headers, json=self.payload if isinstance(self.payload, dict) else None)
+            raise httpx.HTTPStatusError("HTTP error", request=request, response=response)
 
     async def __aenter__(self):
         return self
@@ -72,11 +73,15 @@ class _FakeClient:
     def stream(self, *_args, **kwargs):
         if self.requests is not None:
             self.requests.append(kwargs)
+        if isinstance(self.response, list):
+            return self.response.pop(0)
         return self.response
 
     async def post(self, *_args, **kwargs):
         if self.requests is not None:
             self.requests.append(kwargs)
+        if isinstance(self.response, list):
+            return self.response.pop(0)
         return self.response
 
 
@@ -900,4 +905,68 @@ def test_model_backend_base_preserves_tool_call_id():
         "role": "tool",
         "content": "result",
     }
+
+
+def test_hermes_reports_resolved_model(monkeypatch):
+    reply = {
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": "Antwort von OpenRouter",
+            }
+        }],
+        "model": "poolside/laguna-xs-2.1:free",
+    }
+    fake_client = _FakeClient(_FakeResponse(reply))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    backend = HermesBackend(api_key="test-key", default_model="openrouter/free")
+    res = asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
+    assert res["content"] == "Antwort von OpenRouter"
+    assert res["model"] == "poolside/laguna-xs-2.1:free"
+    assert backend.last_resolved_model == "poolside/laguna-xs-2.1:free"
+
+
+def test_hermes_retries_on_rate_limit_429(monkeypatch):
+    responses = [
+        _FakeResponse({"error": {"message": "Rate limit exceeded"}}, status_code=429, headers={"retry-after": "0.1"}),
+        _FakeResponse({
+            "choices": [{"message": {"role": "assistant", "content": "Erfolg nach Retry"}}],
+            "model": "poolside/laguna-xs-2.1:free",
+        }, status_code=200),
+    ]
+    fake_client = _FakeClient(responses)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    sleeps = []
+    async def fake_sleep(duration):
+        sleeps.append(duration)
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    backend = HermesBackend(api_key="test-key", default_model="openrouter/free")
+    res = asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
+    assert res["content"] == "Erfolg nach Retry"
+    assert res["model"] == "poolside/laguna-xs-2.1:free"
+    assert len(sleeps) == 1
+    assert sleeps[0] == 0.1
+
+
+def test_hermes_fails_after_max_retries_on_429(monkeypatch):
+    responses = [
+        _FakeResponse({"error": {"message": "Rate limit exceeded"}}, status_code=429),
+        _FakeResponse({"error": {"message": "Rate limit exceeded"}}, status_code=429),
+        _FakeResponse({"error": {"message": "Rate limit exceeded"}}, status_code=429),
+        _FakeResponse({"error": {"message": "Rate limit exceeded"}}, status_code=429),
+    ]
+    fake_client = _FakeClient(responses)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    async def fake_sleep(_duration):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    backend = HermesBackend(api_key="test-key", default_model="openrouter/free")
+    with pytest.raises(RuntimeError, match="Hermes/OpenRouter Fehler \\(429\\)"):
+        asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
+
 
