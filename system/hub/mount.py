@@ -190,8 +190,7 @@ class MountHandler(BaseHandler):
             return False, "Verwendung: bach mount add <pfad> <alias>"
 
         try:
-            source = self._resolve_mount_source(args[0])
-            resolved_source = source.resolve(strict=False)
+            resolved_source = self._resolve_mount_source(args[0])
             alias = self._safe_alias(args[1])
             target = self._target_for_alias(alias)
         except ValueError as exc:
