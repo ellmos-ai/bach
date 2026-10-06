@@ -1814,7 +1814,13 @@ async def get_gui_capabilities():
 
     kit_manifest = get_pinned_kit_manifest()
     dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit_manifest.get("pinned_source_commit"))
-    is_kit_verified = bool(kit_manifest.get("verified") and dist_info.get("verified"))
+    expected_pages = kit_manifest.get("expected_page_count")
+    is_kit_verified = bool(
+        kit_manifest.get("verified")
+        and dist_info.get("verified")
+        and type(expected_pages) is int
+        and dist_info.get("page_count") == expected_pages
+    )
 
     kit_status = {
         "revision": kit_manifest.get("pinned_source_commit"),
