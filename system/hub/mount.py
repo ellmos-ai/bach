@@ -56,13 +56,13 @@ class MountHandler(BaseHandler):
             expanded = os.path.expandvars(os.path.expanduser(raw))
             if not os.path.isabs(expanded):
                 return False
-            cand = os.path.realpath(os.path.abspath(expanded))
+            candidate = Path(os.path.realpath(os.path.abspath(expanded)))
         except (ValueError, OSError):
             return False
         for root in self._allowed_source_roots:
             try:
-                base = os.path.realpath(os.path.abspath(os.fspath(root)))
-                if cand == base or os.path.commonpath([cand, base]) == base:
+                base = Path(os.path.realpath(os.path.abspath(os.fspath(root))))
+                if candidate.is_relative_to(base):
                     return True
             except (ValueError, TypeError, OSError):
                 continue
