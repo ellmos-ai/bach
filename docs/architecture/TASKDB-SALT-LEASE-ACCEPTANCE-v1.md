@@ -46,7 +46,7 @@ Die Testsuite `system/tests/test_multi_host_lease_acceptance.py` umfasst 14 stru
   - Nach Erreichen der Gesamtlaufzeit wird jeder weitere Verlängerungsversuch mit `max_total_reached` abgewiesen (fail-closed).
 - **Offline-Deadline Guard (`test_offline_safety_buffer_deadline_enforcement`):**
   - Nach Vertrag §8.1 berechnet der Client `local_deadline = receive_time + (expires_at - server_now) - safety_buffer`.
-  - Wird der Lead offline/unerreichbar, bricht `assert_locally_valid()` vor Erreichen von `expires_at` mit `LeaseOfflineDeadlineExceeded` ab, sodass keine Zombie-Writes auf lokaler Seite entstehen.
+  - Nach Überschreiten der errechneten lokalen Sicherheitsfrist bricht `assert_locally_valid()` vor Erreichen von `expires_at` mit `LeaseOfflineDeadlineExceeded` ab, sodass keine Zombie-Writes auf lokaler Seite entstehen.
 - **Rückabwicklung & Statusübergänge (`test_release_and_return_transitions`):**
   - `outcome="done"` -> Task-Status `done`, Lease-Felder atomar geleert.
   - `outcome="return"` -> Task-Status `pending`, sofort re-claimbar.
@@ -70,8 +70,10 @@ Die Testsuite `system/tests/test_multi_host_lease_acceptance.py` umfasst 14 stru
   - Zur Wahrung der Nachvollziehbarkeit wird das verspätete Ergebnis in `task_history` als `late_result` auditiert, ohne operative Schreibrechte zu gewähren.
 - **Generischer Statuswechsel-Schutz (`test_direct_or_generic_status_update_blocked_by_lease_guard`):**
   - Jeder direkte Statuswechsel über `apply_task_field_changes` oder generische PUT-Routen auf einem geleasten Task ohne Lease-Autorisierung löst `LeaseRequired` aus.
-- **Task-Tamper-Schutz (`test_task_version_or_tamper_fails_closed`):**
-  - Externe Eingriffe oder Fence-Abweichungen führen zum sofortigen Abbruch schreibender Aktionen des alten Holders.
+- **Fence-Tamper-Schutz (`test_fence_tamper_fails_closed`):**
+  - Dieser ursprüngliche Test verändert ausschließlich den Fence; er belegt keine Inhaltsversionsprüfung.
+- **Inhaltsversionsprüfung (Task #1728):**
+  - `test_operator_content_change_rejects_http_holder` ändert die Beschreibung bei unverändertem Fence. Renew und Release des alten HTTP-Adapters werden mit `stale_task_version` abgewiesen. Der lokale Adapter wird separat mit echter Inhaltsänderung geprüft.
 
 ---
 
@@ -80,7 +82,7 @@ Die Testsuite `system/tests/test_multi_host_lease_acceptance.py` umfasst 14 stru
 | Schicht | Komponente | Getestete Funktionen / Befehle | Status |
 | :--- | :--- | :--- | :--- |
 | **Schicht 1** | TaskDB (SQLite) | Schema-Erstellung, `idx_tasks_claim_expires_at`, WAL-Modus, History-Auditierung | **PASS (100%)** |
-| **Schicht 2** | `TaskLeaseClient` | In-Process SQLite Adapter, Remote HTTP Adapter, `acquire`, `read`, `renew`, `release` | **PASS (100%)** |
+| **Schicht 2** | `TaskLeaseClient` | In-Process SQLite Adapter und isolierter urllib-Request/FastAPI-Pfad; `acquire`, `read`, `renew`, `release`, `decompose` | **isoliert geprüft; Live-Lead offen** |
 | **Schicht 3** | CLI (`system/hub/task.py`) | `bach task lease`, `lease-show`, `lease-renew`, `lease-release` | **PASS (100%)** |
 | **Schicht 4** | Python API (`bach_api.py`) | `task.lease_acquire()`, `task.lease_read()`, `task.lease_renew()`, `task.lease_release()` | **PASS (100%)** |
 | **Schicht 5** | Trithon Dispatch | `execute_intent_v1()`, `SyntheticTicket`, `ExecutionReceipt` mit `lease_id` & `fence` | **PASS (100%)** |
@@ -104,3 +106,10 @@ Gemäss Akzeptanzkriterien von Task `#1723` und `#1696`:
 
 1. **Task #1723 Abschluss:** Wird nach Commit und PR-Erstellung auf `status: done` gesetzt.
 2. **Sammelaufgabe #1696 Rückversetzung:** Task `#1696` wird auf der Lead TaskDB von `blocked` auf `pending` zurückgesetzt, damit die nachgelagerten GUX-Punkte (GUX-007, GUX-008, GUX-072, GUX-073, GUX-090) bearbeitet werden können.
+
+
+## 6. Review-Nachprüfung (Task #1728)
+
+Die ursprünglichen grünen Rennen deckten den HTTP-Client nicht ab und rechtfertigten die vollständige Remote-Abnahme nicht. Ergänzt sind verbindliche Worker-Authority ohne Öffnen lokaler Projektionen, tatsächliche Bearer-Requests über den Adapter an die isolierte Lead-App, ungültige/fehlende Geräteauth, Timeout ohne Mutationsretry, nach bestätigtem Server-Commit verlorenes Zerlegungs-ACK ohne zweite Kindergruppe, ungültige/kurze Fristen und korrelierte ACKs. Trithons Stale-Fence-Test liest nun zusätzlich den Ticket-Ledger zurück: Ein abgelehnter Release darf kein `done` hinterlassen.
+
+Diese Tests simulieren Transportfehler und Uhrzeiten. Sie belegen keine Netzwerkverfügbarkeit oder Geräteanmeldung des installierten Mac-Leads. Die ursprüngliche Task-Statusaufnahme in Abschnitt 4 ist ein datierter Readback und kein Lease-Deployment. Mac-/BACH-/Ocean-Laufzeitabnahme, Browser und formale PR-Freigaben bleiben offen.

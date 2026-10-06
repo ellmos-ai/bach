@@ -81,11 +81,11 @@ Folgende Subcommands stehen zur Verfügung:
 | `lease` | `bach task lease <id> --by <worker> [--host <host>] [--ttl S\|M\|L\|XL] [--intent <text>]` | Beansprucht die Task exklusiv und gibt `lease_id` und `fence` aus. |
 | `lease-show` | `bach task lease-show <id> [--lease-id <uuid>]` | Zeigt den aktuellen Halter und Prüfstatus an. |
 | `lease-renew` | `bach task lease-renew <id> --lease-id <uuid> --fence <int>` | Verlängert die Frist einer aktiven Lease. |
-| `lease-release`| `bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done\|return\|blocked] [--ref <ref>] [--note <note>]` | Gibt die Lease frei oder schliesst sie ab. |
+| `lease-release`| `bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done\|return\|blocked] [--ref <ref>] [--note <note>]` | Gibt die Lease frei oder schließt sie ab. |
 
 ### 2.3 Python API (`system/bach_api.py`)
 
-In der Klasse `_TaskAPI` stehen die Methoden bereit:
+In der Klasse `_TaskProxy` stehen die Methoden bereit:
 - `bach_api.task.lease_acquire(...)`
 - `bach_api.task.lease_read(...)`
 - `bach_api.task.lease_renew(...)`
@@ -94,9 +94,9 @@ In der Klasse `_TaskAPI` stehen die Methoden bereit:
 ### 2.4 Trithon Dispatcher (`system/hub/_services/trithon_dispatch.py`)
 
 In `execute_intent_v1`:
-1. **Schritt 2:** Ruft `acquire_lease` auf. Bei Ablehnung bricht die Zuweisung mit `status="claim_failed"` ab.
+1. **Schritt 2:** Ruft `TaskLeaseClient.acquire` über die konfigurierte Authority auf. Bei Ablehnung bricht die Zuweisung mit `status="claim_failed"` ab.
 2. **Schritt 4/5:** Führt Executor aus und bettet `lease_id`, `claim_fence`, `worker_id` und `host` in das `evidence`-Dictionary des `ExecutionReceipt` ein.
-3. **Schritt 6b:** Ruft atomar `release_lease` auf (`outcome="done"` bzw. `"return"`). Bei Stale-Fence oder Fristablauf bricht Trithon fail-closed ab (`status="release_failed"`), ohne den Task-Status in der Datenbank zu korrumpieren.
+3. **Schritt 6b:** Ruft `TaskLeaseClient.release` mit Inhaltsversion auf (`outcome="done"` bzw. `"return"`). Bei Stale-Fence oder Fristablauf bricht Trithon fail-closed ab (`status="release_failed"`), ohne den Task-Status in der Datenbank zu verändern. Erst nach bestätigtem Release wird ein terminales Receipt im Ledger gespeichert.
 
 ---
 
@@ -112,13 +112,29 @@ Künftige Worker (z. B. Ocean Agent-Worker oder Task-Master TASKSOLVER) binden s
 ```python
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError
 
-client = TaskLeaseClient()  # Erkennt automatisch Lead-URL oder lokale DB
+client = TaskLeaseClient()  # Verbindliche Lead-Rolle; kein lokaler Worker-Fallback
 try:
-    ack = client.acquire(task_id, worker_id="ocean-worker@mac-studio", host="mac-studio")
+    snapshot = client.read(task_id)
+    ack = client.acquire(task_id, worker_id="ocean-worker@mac-studio", host="mac-studio",
+                         task_version=snapshot.task_version)
     # ... Inferenz / Ausführung ...
     ack.assert_locally_valid()
-    client.release(task_id, lease_id=ack.lease_id, fence=ack.fence, outcome="done")
+    client.release(task_id, lease_id=ack.lease_id, fence=ack.fence,
+                   task_version=ack.task_version, outcome="done")
 except LeaseError as err:
     # Abfangen und ordentlich melden
     pass
 ```
+
+
+## 4. Review-Korrekturen und Versionsbindung (Task #1728)
+
+- Eine konfigurierte Worker-Rolle hat Vorrang vor einem übergebenen SQLite-Handle. Fehlender/ungültiger fester Lead führt zur Ablehnung. Der gemeinsame Konfigurationsparser bewahrt eine deklarierte Worker-Rolle bei leerer URL; eine beschädigte vorhandene Konfiguration schaltet keine lokale Authority frei. `for_task_db(connection_factory)` öffnet eine lokale Verbindung nur im Lead-/isolierten Modus und schließt die eigene Verbindung am Ende. CLI, Python-API und Trithon nutzen diese Auswahl.
+- HTTP-Anfragen verwenden den registrierten Gerätekey als `Authorization: Bearer …`. Fehlender Key, ungültige Geräteauth, Transportfehler und unverständliche Antworten eröffnen keine lokale Ersatzlease. Fehlerausgaben enthalten keine rohen Antworttexte oder Anmeldedaten.
+- Acquire-ACKs korrelieren Task-ID, Worker und Host; Renew-ACKs zusätzlich die angefragte Lease-ID/Fence, Release-ACKs Task/Fence/Outcome/Status. Typen und Zeitstempel werden geprüft.
+- Die Sicherheitsmarge von 60 Sekunden bleibt auch kurz vor Ablauf erhalten. Ungültige Zeitstempel erhalten keine Ersatzfrist. Die lokale Frist wird konservativ ab Absendezeit berechnet; Transportwartezeit verlängert sie nicht.
+- `LeaseAck` und `LeaseHolderView` bewahren `task_version`. Acquire, Renew und Release unterstützen die Versionsvorbedingung; CLI über `--task-version <hash>`, Python-API über `task_version=…`.
+- `TaskLeaseClient.decompose(...)` sowie `bach_api.task.lease_decompose(...)` verlangen die bestätigte Inhaltsversion und korrelieren Kinderzahl/-IDs, Elternabschluss, Fence und neue Version des ACKs. Nicht bestätigte Mutationen werden niemals automatisch wiederholt.
+- Nach einer offenen Zerlegung gilt die neue bestätigte Version; die alte Version darf nicht für Folgeaktionen verwendet werden. Für neue Aufgaben vor der Ausführung Inhalts-Snapshot und Version zusammen lesen.
+
+Die Prüfnachweise verwenden temporäre SQLite-Dateien, Fake-Transporte und die isolierte FastAPI-App. Das ist keine Installation oder Abnahme des festen Mac-Leads, nativer Running-Worker oder Ocean-Provider.
