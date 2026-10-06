@@ -491,9 +491,13 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
                 aufwand = args[i + 1]
             elif arg == "--priority-score" and i + 1 < len(args):
                 try:
+                    import math
+
                     priority_score = float(args[i + 1])
+                    if not math.isfinite(priority_score):
+                        raise ValueError
                 except ValueError:
-                    return False, "[ATI TASK] --priority-score erwartet eine Zahl"
+                    return False, "[ATI TASK] --priority-score erwartet eine endliche Zahl"
             elif arg == "--source" and i + 1 < len(args):
                 source_file = args[i + 1]
             elif arg == "--tags" and i + 1 < len(args):
