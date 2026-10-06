@@ -4,6 +4,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -137,10 +138,10 @@ class TestCreateLink:
     def test_windows_uses_mklink(self, mount_env):
         h, base, _ = mount_env
         source = base / "src"
-        target = base / "dst"
+        target = base / "user" / "dst"
         source.mkdir()
 
-        with patch("hub.mount.os.name", "nt"), \
+        with patch("hub.mount.os", SimpleNamespace(name="nt", path=os.path)), \
              patch("hub.mount.subprocess.run") as mock_run:
             h._create_link(source, target)
             mock_run.assert_called_once()
@@ -151,13 +152,22 @@ class TestCreateLink:
     def test_unix_uses_symlink(self, mount_env):
         h, base, _ = mount_env
         source = base / "src"
-        target = base / "dst"
+        target = base / "user" / "dst"
         source.mkdir()
 
         with patch("hub.mount.os.name", "posix"), \
              patch("hub.mount.os.symlink") as mock_sym:
             h._create_link(source, target)
             mock_sym.assert_called_once_with(source, target)
+
+    def test_rejects_target_outside_mount_directory(self, mount_env):
+        h, base, _ = mount_env
+        source = base / "src"
+        target = base / "dst"
+        source.mkdir()
+
+        with pytest.raises(ValueError, match="Zielpfad liegt außerhalb"):
+            h._create_link(source, target)
 
 
 class TestRemoveLink:
