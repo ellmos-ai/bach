@@ -67,9 +67,15 @@ def validate_host_path(path: str | Path | None, base_dir: str | Path | None = No
     if not text or "\x00" in text:
         return None
 
-    base_resolved = (
-        Path(base_dir).resolve(strict=False) if base_dir is not None else Path(".").resolve(strict=False)
-    )
+    if base_dir is None:
+        base_resolved = Path(".").resolve(strict=False)
+    else:
+        if not isinstance(base_dir, (str, Path)):
+            return None
+        base_text = str(base_dir).replace("\\", "/").strip()
+        if not base_text or "\x00" in base_text:
+            return None
+        base_resolved = Path(base_text).resolve(strict=False)
 
     raw = Path(text)
     if raw.is_absolute():
