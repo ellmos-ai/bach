@@ -138,7 +138,7 @@ class TestCreateLink:
     def test_windows_uses_mklink(self, mount_env):
         h, base, _ = mount_env
         source = base / "src"
-        target = base / "dst"
+        target = base / "user" / "dst"
         source.mkdir()
 
         with patch("hub.mount.os", SimpleNamespace(name="nt", path=os.path)), \
@@ -152,13 +152,38 @@ class TestCreateLink:
     def test_unix_uses_symlink(self, mount_env):
         h, base, _ = mount_env
         source = base / "src"
-        target = base / "dst"
+        target = base / "user" / "dst"
         source.mkdir()
 
         with patch("hub.mount.os.name", "posix"), \
              patch("hub.mount.os.symlink") as mock_sym:
             h._create_link(source, target)
             mock_sym.assert_called_once_with(source, target)
+
+    def test_rejects_target_outside_mount_directory(self, mount_env):
+        h, base, _ = mount_env
+        source = base / "src"
+        source.mkdir()
+
+        with patch("hub.mount.os.symlink") as mock_sym:
+            with pytest.raises(ValueError, match="Zielpfad liegt außerhalb"):
+                h._create_link(source, base / "dst")
+            with pytest.raises(ValueError, match="Zielpfad liegt außerhalb"):
+                h._create_link(source, base / "user" / ".." / "dst")
+            with pytest.raises(ValueError, match="Zielpfad liegt außerhalb"):
+                h._create_link(source, base / "user")
+        mock_sym.assert_not_called()
+
+    def test_rejects_source_outside_allowed_roots(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with patch("hub.mount.os.symlink") as mock_sym, \
+             pytest.raises(ValueError, match="Quellpfad liegt außerhalb"):
+            h._create_link(outside, base / "user" / "dst")
+        mock_sym.assert_not_called()
 
 
 class TestRemoveLink:
@@ -303,6 +328,38 @@ class TestMountSourceContainment:
 
         with pytest.raises(ValueError, match="außerhalb erlaubter Wurzeln"):
             h._resolve_mount_source(str(traversing))
+
+    def test_rejects_sibling_directory_sharing_root_prefix(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        sibling = tmp_path / (base.name + "_other")
+        sibling.mkdir()
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with pytest.raises(ValueError, match="außerhalb erlaubter Wurzeln"):
+            h._resolve_mount_source(str(sibling))
+        assert h._is_allowed_source(str(sibling)) is False
+
+    def test_rejects_symlink_escaping_allowed_root(self, mount_env, tmp_path):
+        _, base, _ = mount_env
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link = base / "escape"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks nicht verfuegbar")
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with pytest.raises(ValueError, match="außerhalb erlaubter Wurzeln"):
+            h._resolve_mount_source(str(link))
+
+    def test_rejects_nul_byte(self, mount_env):
+        _, base, _ = mount_env
+        h = MountHandler(base, allowed_source_roots=[base])
+
+        with pytest.raises(ValueError, match="Ungueltiger Quellpfad"):
+            h._resolve_mount_source(str(base) + "\x00evil")
+        assert h._is_allowed_source(str(base) + "\x00evil") is False
 
     def test_configured_additional_root_remains_supported(self, mount_env, tmp_path):
         _, base, _ = mount_env

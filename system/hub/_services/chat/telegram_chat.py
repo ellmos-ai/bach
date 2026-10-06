@@ -2686,6 +2686,38 @@ class ControlHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
 
+    def _canonicalize_origin_for_header(self, origin: str) -> Optional[str]:
+        if not origin or "\r" in origin or "\n" in origin:
+            return None
+        try:
+            parsed = urlparse(origin)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            return None
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            return None
+        if not hostname:
+            return None
+        if parsed.username is not None or parsed.password is not None:
+            return None
+
+        try:
+            host = f"[{ipaddress.IPv6Address(hostname).compressed}]"
+        except ValueError:
+            if ":" in hostname:
+                return None
+            try:
+                host = hostname.encode("idna").decode("ascii").lower()
+            except UnicodeError:
+                return None
+            if "\r" in host or "\n" in host:
+                return None
+        if port is None:
+            return f"{scheme}://{host}"
+        return f"{scheme}://{host}:{port}"
+
     def _cors(self):
         raw_origin = str(self.headers.get("Origin") or "").strip()
         host = str(self.headers.get("Host") or "").strip()
@@ -2693,11 +2725,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             return
         if not _is_allowed_origin(raw_origin, host):
             return
-        parsed = urlparse(raw_origin)
-        if not parsed.scheme or not parsed.netloc:
-            return
-        safe_origin = f"{parsed.scheme}://{parsed.netloc}"
-        if "\r" in safe_origin or "\n" in safe_origin:
+        safe_origin = self._canonicalize_origin_for_header(raw_origin)
+        if not safe_origin:
             return
         self.send_header("Access-Control-Allow-Origin", safe_origin)
         self.send_header("Vary", "Origin")
