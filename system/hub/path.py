@@ -79,9 +79,9 @@ def validate_host_path(path: str | Path | None, base_dir: str | Path | None = No
 
     raw = Path(text)
     if raw.is_absolute():
-        raw = Path(*raw.parts[1:])
+        return None
 
-    if any(part in ("", ".") for part in raw.parts):
+    if any(part in ("", ".", "..") for part in raw.parts):
         return None
 
     candidate = (base_resolved / raw).resolve(strict=False)
