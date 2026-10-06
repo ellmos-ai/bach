@@ -74,11 +74,20 @@ def validate_host_path(path: str | Path | None, base_dir: Path | None = None) ->
             return None
         # Security hardening: trust anchor must be an absolute path.
         # Reject relative/unexpected bases instead of resolving them implicitly.
+    # User input must be a relative path segment/path below base_dir.
+    # Reject absolute, drive-letter and UNC-like forms early.
+    if text.startswith("/") or text.startswith("//"):
+        return None
+    if len(text) >= 2 and text[1] == ":" and text[0].isalpha():
+        return None
+
         if not base_dir.is_absolute():
+    if raw.is_absolute():
+        return None
             return None
         base_resolved = base_dir.resolve(strict=False)
 
-    raw = Path(text)
+    candidate = (base_resolved / raw).resolve(strict=False)
     if any(part in ("", ".", "..") for part in raw.parts):
         return None
 
