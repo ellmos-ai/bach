@@ -163,12 +163,8 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
-        if os.name == "nt":
-            src = os.path.realpath(os.path.abspath(os.fspath(source)))
-            tgt = os.path.realpath(os.path.abspath(os.fspath(target)))
-        else:
-            src = source.resolve()
-            tgt = target.resolve(strict=False)
+        src = Path(source).resolve(strict=False)
+        tgt = Path(target).resolve(strict=False)
         if not self._is_allowed_source(str(src)):
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
         if os.name == "nt":
@@ -177,7 +173,7 @@ class MountHandler(BaseHandler):
                 check=True, capture_output=True,
             )
         else:
-            os.symlink(src, tgt)
+            os.symlink(str(src), str(tgt))
 
     def _remove_link(self, target: Path) -> bool:
         if os.name == "nt":
