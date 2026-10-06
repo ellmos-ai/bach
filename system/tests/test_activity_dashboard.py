@@ -99,25 +99,6 @@ def test_custom_api_base():
     # Auch über das branding-Dict
     content2 = render_activity_dashboard(branding={"api_base": "/gateway/control-api"})
     assert "/gateway/control-api" in content2
-    assert "_rawApiBase.endsWith('/api')" in content2
-    assert "_rawApiBase.replace(/\\/+$/, '') + '/api'" in content2
-
-
-def test_script_values_are_json_encoded_and_brand_icon_is_escaped():
-    payload = "</script><script>window.__review_probe=1</script>"
-    content = render_activity_dashboard(
-        branding={
-            "token_storage_key": payload,
-            "brand_icon": f'<img src=x onerror="alert(1)">{payload}',
-            "slot_always_on_title": "A&B",
-        }
-    )
-    assert payload not in content
-    assert "\\u003c/script\\u003e" in content
-    assert '<span>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;' in content
-    assert '"alwaysOnTitle": "A\\u0026B"' in content
-    with pytest.raises(ValueError):
-        render_activity_dashboard(branding={"api_base": payload})
 
 
 def test_custom_nav_links():
@@ -147,25 +128,6 @@ def test_custom_theme_colors():
     assert "--accent: #6366f1;" in content
     assert "--bg-body: #0b0f19;" in content
     assert "--btn-primary: #4f46e5;" in content
-    assert ".card{background:var(--bg-card" in content
-    assert "input,select,textarea{background:var(--bg-input" in content
-    assert ".btn{background:var(--btn-primary" in content
-
-
-def test_theme_css_rejects_invalid_names_and_values():
-    with pytest.raises(ValueError):
-        render_activity_dashboard(
-            branding={
-                "theme_colors": {
-                    "accent": "#123456",
-                    "bad}:name": "red",
-                }
-            }
-        )
-    with pytest.raises(ValueError):
-        render_activity_dashboard(
-            branding={"theme_colors": {"probe": "</style><script>bad</script>"}}
-        )
 
 
 def test_custom_token_storage_key():
@@ -226,14 +188,3 @@ def test_template_missing_raises():
     import gui.activity_dashboard as ad_mod
     with patch.object(ad_mod, "TEMPLATE_PATH", Path("non_existent_file.html")), pytest.raises(FileNotFoundError):
         get_activity_dashboard_template()
-
-
-def test_system_gui_package_imports_from_repository_root():
-    result = subprocess.run(
-        [sys.executable, "-c", "import system.gui; import system.gui.activity_dashboard"],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr

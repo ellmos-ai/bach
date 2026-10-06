@@ -49,23 +49,13 @@ class MountHandler(BaseHandler):
         )
 
     def _is_allowed_source(self, source: str) -> bool:
-        raw = str(source or "")
-        if not raw or "\x00" in raw:
-            return False
-
         try:
-            expanded = os.path.expandvars(os.path.expanduser(raw))
-            if not os.path.isabs(expanded):
-                return False
-            cand_real = os.path.realpath(os.path.abspath(expanded))
-            cand = Path(cand_real)
-        except (ValueError, OSError, TypeError):
+            cand = Path(source).resolve()
+        except (ValueError, OSError):
             return False
-
         for root in self._allowed_source_roots:
             try:
-                base_real = os.path.realpath(os.path.abspath(os.fspath(root)))
-                base = Path(base_real)
+                base = Path(root).resolve()
                 if cand == base or cand.is_relative_to(base):
                     return True
                 if os.path.commonpath([str(base), str(cand)]) == str(base):
@@ -101,37 +91,27 @@ class MountHandler(BaseHandler):
 
         try:
             expanded = os.path.expandvars(os.path.expanduser(raw))
-            expanded_path = Path(expanded)
-            if not expanded_path.is_absolute():
-                raise ValueError("Quellpfad muss absolut sein")
-            candidate = expanded_path.resolve(strict=True)
-        except FileNotFoundError:
-            raise ValueError("Quellpfad existiert nicht")
+            candidate_real = os.path.realpath(os.path.abspath(expanded))
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        resolved_allowed_roots = []
+        allowed = False
         for root in self._allowed_source_roots:
             try:
-                resolved_allowed_roots.append(Path(root).resolve(strict=True))
-            except (ValueError, OSError, FileNotFoundError):
+                if os.path.commonpath([root, candidate_real]) == root:
+                    allowed = True
+                    break
+            except (ValueError, OSError):
                 continue
 
-        is_within_allowed_root = False
-        for root_resolved in resolved_allowed_roots:
-            try:
-                candidate.relative_to(root_resolved)
-                is_within_allowed_root = True
-                break
-            except ValueError:
-                continue
-
-        if not is_within_allowed_root:
+        if not allowed:
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
-        if not candidate.is_dir():
+
+        candidate = Path(candidate_real)
+        if candidate.exists() and not candidate.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return candidate
     
@@ -190,36 +170,17 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
-        src = self._resolve_mount_source(str(source))
+        src = source.resolve()
         tgt = target.resolve(strict=False)
-
-        src_real = os.path.realpath(os.fspath(src))
-        is_within_allowed_root = False
-        for root in self._allowed_source_roots:
-            try:
-                root_real = os.path.realpath(os.fspath(root))
-                if os.path.commonpath([root_real, src_real]) == root_real:
-                    is_within_allowed_root = True
-                    break
-            except (ValueError, OSError):
-                continue
-
-        if not is_within_allowed_root:
+        if not self._is_allowed_source(str(src)):
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
-
-        target_root = self.target_file.resolve()
-        try:
-            tgt.relative_to(target_root)
-        except ValueError:
-            raise ValueError("Zielpfad liegt außerhalb des Mount-Zielordners")
-
         if os.name == "nt":
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(tgt), str(src)],
                 check=True, capture_output=True,
             )
         else:
-            os.symlink(str(src), str(tgt))
+            os.symlink(src, tgt)
 
     def _remove_link(self, target: Path) -> bool:
         if os.name == "nt":

@@ -8,7 +8,6 @@
 BACH GUI Server v1.0
 
 ====================
-
 FastAPI-basiertes Backend fuer das BACH Dashboard
 
 
@@ -93,7 +92,7 @@ try:
 
     from fastapi.middleware.cors import CORSMiddleware
 
-    from pydantic import BaseModel
+    from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
 
 except ImportError:
 
@@ -1835,7 +1834,13 @@ async def get_gui_capabilities():
 
     kit_manifest = get_pinned_kit_manifest()
     dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit_manifest.get("pinned_source_commit"))
-    is_kit_verified = bool(kit_manifest.get("verified") and dist_info.get("verified"))
+    expected_pages = kit_manifest.get("expected_page_count")
+    is_kit_verified = bool(
+        kit_manifest.get("verified")
+        and dist_info.get("verified")
+        and type(expected_pages) is int
+        and dist_info.get("page_count") == expected_pages
+    )
 
     kit_status = {
         "revision": kit_manifest.get("pinned_source_commit"),
@@ -2068,7 +2073,7 @@ async def api_tasks_export():
 
         rows = conn.execute("SELECT * FROM tasks WHERE status = 'pending'").fetchall()
 
-        tasks = rows_to_list(rows)
+        tasks = [_public_task_snapshot(row_to_dict(row)) for row in rows]
 
         conn.close()
 
@@ -2213,7 +2218,7 @@ async def api_get_tasks(
         has_more = limit > 0 and len(rows) > limit
         if has_more:
             rows = rows[:limit]
-        tasks = rows_to_list(rows)
+        tasks = [_public_task_snapshot(row_to_dict(row)) for row in rows]
 
         # image_data nicht in Liste senden (Performance), nur Flag
         for task in tasks:
@@ -2246,8 +2251,12 @@ async def api_post_task(payload: dict = Body(...)):
     """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
         conn = get_bach_db()
-        from hub._services.task_schema import ensure_task_slot_columns
+        from hub._services.task_schema import (
+            ensure_task_creation_origin,
+            ensure_task_slot_columns,
+        )
         ensure_task_slot_columns(conn)
+        ensure_task_creation_origin(conn)
         draft_source = payload.get("source") or payload.get("draft_hash")
         if draft_source:
             existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
@@ -2274,8 +2283,8 @@ async def api_post_task(payload: dict = Body(...)):
 
         now = datetime.now().isoformat()
         cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             payload.get("title"),
             payload.get("description", ""),
@@ -2291,6 +2300,7 @@ async def api_post_task(payload: dict = Body(...)):
             draft_source,
             payload.get("required_model") or None,
             payload.get("assigned_slot") or None,
+            payload.get("creation_origin") or None,
         ))
 
         task_id = cursor.lastrowid
@@ -2312,11 +2322,21 @@ async def get_task(task_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Task nicht gefunden")
     
-    return row_to_dict(row)
+    return _public_task_snapshot(row_to_dict(row))
 
 
 # --- BACH #1721: Lead-seitiger Task-Lease-Dienst (TASKDB-SALT-LEASE-VERTRAG-v1 §5) ---
 # Auth: /api/ liegt hinter DeviceAuthMiddleware (fail-closed, Device-Token).
+
+def _public_task_snapshot(row):
+    from hub._services.task_lease import task_content_version
+    result = dict(row)
+    version = task_content_version(result)
+    for secret in ("claim_id", "claim_request_id", "claim_task_version"):
+        result.pop(secret, None)
+    result["task_version"] = version
+    return result
+
 
 class LeaseAcquireRequest(BaseModel):
     worker_id: str
@@ -2324,17 +2344,27 @@ class LeaseAcquireRequest(BaseModel):
     request_id: str
     ttl_profile: Optional[str] = None
     intent: Optional[str] = None
+    task_version: Optional[StrictStr] = None
 
 
 class LeaseRefRequest(BaseModel):
     lease_id: str
-    fence: int
+    fence: StrictInt
+    task_version: Optional[StrictStr] = None
 
 
 class LeaseReleaseRequest(LeaseRefRequest):
     outcome: str
     result_ref: Optional[str] = None
     note: Optional[str] = None
+
+
+class LeaseDecomposeRequest(LeaseRefRequest):
+    model_config = ConfigDict(extra="forbid")
+    task_version: StrictStr
+    subtasks: list[dict]
+    close_parent: StrictBool = True
+    sequential: StrictBool = False
 
 
 def _lease_device_label(request: Request) -> Optional[str]:
@@ -2365,6 +2395,7 @@ async def acquire_task_lease(task_id: int, body: LeaseAcquireRequest, request: R
     from hub._services.task_lease import acquire_lease
     return _run_lease_op(acquire_lease, task_id, worker_id=body.worker_id, host=body.host,
                          request_id=body.request_id, ttl_profile=body.ttl_profile,
+                         task_version=body.task_version,
                          intent=body.intent or "", device=_lease_device_label(request))
 
 
@@ -2379,7 +2410,8 @@ async def read_task_lease(task_id: int, request: Request):
 async def renew_task_lease(task_id: int, body: LeaseRefRequest):
     """Heartbeat/Verlängerung (Vertrag §5.3)."""
     from hub._services.task_lease import renew_lease
-    return _run_lease_op(renew_lease, task_id, lease_id=body.lease_id, fence=body.fence)
+    return _run_lease_op(renew_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         task_version=body.task_version)
 
 
 @app.post("/api/tasks/{task_id}/lease/release")
@@ -2387,8 +2419,18 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
     """Rückgabe/Abschluss (Vertrag §5.4): outcome return|done|blocked."""
     from hub._services.task_lease import release_lease
     return _run_lease_op(release_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "")
+
+
+@app.post("/api/tasks/{task_id}/lease/decompose")
+async def decompose_task_lease(task_id: int, body: LeaseDecomposeRequest):
+    """Atomare Zerlegung mit Geräteauth, Lease, Fence und Taskversion."""
+    from hub._services.task_lease import decompose_lease
+    return _run_lease_op(decompose_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         task_version=body.task_version, subtasks=body.subtasks,
+                         close_parent=body.close_parent, sequential=body.sequential)
 
 
 @app.put("/api/tasks/{task_id}")
@@ -5968,8 +6010,9 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
 @app.get("/tasks-board", response_class=HTMLResponse)
 async def tasks_board_api():
     """Tasks Board Seite."""
+
     astro_tasks = ASTRO_DIST_DIR / "tasks.html"
-    if astro_tasks.is_file():
+    if astro_tasks.exists():
         return FileResponse(astro_tasks)
 
     try:

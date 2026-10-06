@@ -32,6 +32,7 @@ from typing import List, Tuple, Optional
 from .base import BaseHandler
 from .lang import t
 from ._services.task_schema import (
+    ensure_task_creation_origin,
     ensure_task_due_date,
     task_has_due_date,
     ensure_task_claim_columns,
@@ -250,7 +251,8 @@ class TaskHandler(BaseHandler):
         else:
             return False, f"Unbekannte Operation: {operation}\nNutze: bach task help"
     
-    def _sanitize_title(self, title: str) -> str:
+    @staticmethod
+    def _sanitize_title(title: str) -> str:
         """Titel bereinigen - unbalancierte Anfuehrungszeichen entfernen"""
         # Zaehle Anfuehrungszeichen
         double_quotes = title.count('"')
@@ -287,6 +289,7 @@ class TaskHandler(BaseHandler):
         due_date = None
         required_model = None
         assigned_slot = None
+        creation_origin = None
         
         # Optionen parsen
         i = 1
@@ -320,6 +323,12 @@ class TaskHandler(BaseHandler):
                 else:
                     assigned_slot = clean_args[i + 1].strip()
                 i += 2
+            elif clean_args[i] == "--creation-origin" and i + 1 < len(clean_args):
+                creation_origin = clean_args[i + 1].strip() or None
+                i += 2
+            elif clean_args[i].startswith("--creation-origin="):
+                creation_origin = clean_args[i].split("=", 1)[1].strip() or None
+                i += 1
             elif clean_args[i].startswith("--required-model="):
                 required_model = clean_args[i].split("=", 1)[1].strip()
                 if not required_model:
@@ -350,6 +359,7 @@ class TaskHandler(BaseHandler):
                             "due_date": due_date,
                             "required_model": required_model,
                             "assigned_slot": assigned_slot,
+                            "creation_origin": creation_origin,
                             "created_by": socket.gethostname().split(".")[0].lower(),
                         }
                         ok, res = post_task_to_rheingold(rheingold_url, payload)
@@ -358,21 +368,22 @@ class TaskHandler(BaseHandler):
                             with self._get_db() as conn:
                                 ensure_task_due_date(conn)
                                 ensure_task_slot_columns(conn)
+                                ensure_task_creation_origin(conn)
                                 existing = assert_local_task_id_available(
                                     conn, task_id, title
                                 )
                                 if existing is None:
                                     conn.execute("""
                                         INSERT INTO tasks
-                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}"))
+                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin))
                                 else:
                                     conn.execute("""
                                         UPDATE tasks
-                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?
+                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?, creation_origin = ?
                                         WHERE id = ?
-                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", task_id))
+                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin, task_id))
                                 conn.commit()
 
                             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -387,13 +398,14 @@ class TaskHandler(BaseHandler):
                 with self._get_db() as conn:
                     ensure_task_due_date(conn)
                     ensure_task_slot_columns(conn)
+                    ensure_task_creation_origin(conn)
                     min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                     draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                     conn.execute("""
                         INSERT INTO tasks
-                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
+                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
                     conn.commit()
 
                 due_text = f" (fällig: {due_date})" if due_date else ""
@@ -413,13 +425,14 @@ class TaskHandler(BaseHandler):
             with self._get_db() as conn:
                 ensure_task_due_date(conn)
                 ensure_task_slot_columns(conn)
+                ensure_task_creation_origin(conn)
                 min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                 draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                 conn.execute("""
                     INSERT INTO tasks
-                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
+                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
                 conn.commit()
 
             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -432,11 +445,12 @@ class TaskHandler(BaseHandler):
         with self._get_db() as conn:
             ensure_task_due_date(conn)
             ensure_task_slot_columns(conn)
+            ensure_task_creation_origin(conn)
             cursor = conn.execute("""
                 INSERT INTO tasks
-                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'))
-            """, (title, priority, category, description, due_date, required_model, assigned_slot))
+                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, creation_origin)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
+            """, (title, priority, category, description, due_date, required_model, assigned_slot, creation_origin))
             task_id = cursor.lastrowid
             conn.commit()
 
@@ -961,6 +975,15 @@ class TaskHandler(BaseHandler):
             rest.append(arg)
         return task_id, rest
 
+    @staticmethod
+    def _lease_task_version(args):
+        for index, arg in enumerate(args):
+            if arg.startswith("--task-version="):
+                return arg.split("=", 1)[1]
+            if arg == "--task-version":
+                return args[index + 1] if index + 1 < len(args) else ""
+        return None
+
     def _lease(self, args: List[str]) -> Tuple[bool, str]:
         """Task per Salt-Lease beanspruchen (Vertrag §5.1 / BACH #1722).
         Usage: bach task lease <id> --by <worker_id> [--host <host>] [--ttl <S|M|L|XL>] [--intent <text>]
@@ -1017,18 +1040,19 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 ack = client.acquire(
                     task_id,
                     worker_id=by,
                     host=host,
                     ttl_profile=ttl,
                     intent=intent,
+                    task_version=self._lease_task_version(rest),
                 )
                 return True, (
                     f"[OK] Task {task_id} geleast an {ack.worker_id} (Fence {ack.fence}, "
                     f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at})\n"
+                    f"Auftragsversion: {ack.task_version}\n"
                     f"Lease-Capability: {ack.lease_id}"
                 )
         except LeaseDeniedError as e:
@@ -1059,8 +1083,7 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 view = client.read(task_id, lease_id=lease_id)
                 lines = [
                     f"Task {task_id}: Status={view.status}, Leased={view.leased}, Fence={view.fence}, Legacy={view.legacy}"
@@ -1072,7 +1095,7 @@ class TaskHandler(BaseHandler):
                     if view.expires_at:
                         lines.append(f"Ablaufzeit: {view.expires_at}")
                 if view.own:
-                    lines.append("[EIGENER LEASE BESTAETIGT]")
+                    lines.append("[EIGENER LEASE BESTÄTIGT]")
                 return True, "\n".join(lines)
         except LeaseError as e:
             return False, f"[ERROR] {e}"
@@ -1116,12 +1139,12 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
-                ack = client.renew(task_id, lease_id=lease_id, fence=fence)
-                return True, f"[OK] Task {task_id} Lease verlaengert bis {ack.expires_at} (Fence {ack.fence})"
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.renew(task_id, lease_id=lease_id, fence=fence,
+                                   task_version=self._lease_task_version(rest))
+                return True, f"[OK] Task {task_id} Lease verlängert bis {ack.expires_at} (Fence {ack.fence})"
         except LeaseDeniedError as e:
-            return False, f"[CONFLICT] Verlaengerung abgelehnt: {e.reason}"
+            return False, f"[CONFLICT] Verlängerung abgelehnt: {e.reason}"
         except LeaseError as e:
             return False, f"[ERROR] {e}"
 
@@ -1185,12 +1208,12 @@ class TaskHandler(BaseHandler):
 
         from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
         try:
-            with self._get_db() as conn:
-                client = TaskLeaseClient(conn=conn)
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
                 ack = client.release(
                     task_id,
                     lease_id=lease_id,
                     fence=fence,
+                    task_version=self._lease_task_version(rest),
                     outcome=outcome,
                     result_ref=result_ref,
                     note=note,

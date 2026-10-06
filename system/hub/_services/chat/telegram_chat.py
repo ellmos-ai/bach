@@ -2262,6 +2262,8 @@ def _control_prompt_response() -> dict:
 
 
 
+
+
 def _get_active_session_state():
     try:
         sessions_copy = list(runtime.sessions.values())

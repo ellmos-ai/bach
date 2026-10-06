@@ -42,10 +42,11 @@ from typing import Any
 try:
     from hub._services.task_schema import (
         ensure_task_claim_columns,
+        ensure_task_slot_columns,
         inspect_task_dependencies,
     )
 except ImportError:  # pragma: no cover - Paketimport aus system/hub
-    from .task_schema import ensure_task_claim_columns, inspect_task_dependencies
+    from .task_schema import ensure_task_claim_columns, ensure_task_slot_columns, inspect_task_dependencies
 
 
 # ---------------------------------------------------------------------------
@@ -83,12 +84,13 @@ LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("claim_salt_ref", "TEXT"),
     ("claim_intent", "TEXT"),
     ("claim_request_id", "TEXT"),
+    ("claim_task_version", "TEXT"),
 )
 #: Spalten, die Release/Invalidierung leert; claim_fence bleibt als Hochwassermarke.
 _CLEARED_ON_RELEASE = (
     "claim_id", "claim_host", "claim_issued_at", "claim_expires_at", "claim_heartbeat_at",
     "claim_ttl_profile", "claim_salt_ref", "claim_intent", "claim_request_id",
-    "claimed_by", "claimed_at",
+    "claimed_by", "claimed_at", "claim_task_version",
 )
 
 _WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -217,6 +219,7 @@ def ensure_task_lease_schema(conn: sqlite3.Connection) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
         ensure_task_claim_columns(conn)
+        ensure_task_slot_columns(conn)
         existing = _columns(conn)
         if not {"id", "status"} <= existing:
             raise RuntimeError("tasks-Tabelle mit id/status fehlt")
@@ -312,6 +315,26 @@ def _holder_view(row: Mapping[str, Any], state: Mapping[str, Any]) -> dict[str, 
     }
 
 
+def task_content_version(row: Mapping[str, Any]) -> str:
+    """Fingerprint des Auftrags; Status/Heartbeat ändern dessen Inhalt nicht."""
+    volatile = {"claimed_by", "claimed_at", "status", "updated_at", "started_at", "completed_at", "task_version"}
+    content = {
+        key: {"__bytes_sha256__": hashlib.sha256(value).hexdigest()} if isinstance(value, bytes) else value
+        for key, value in row.items()
+        if not key.startswith("claim_") and key not in volatile and value is not None
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _validate_task_version(value: Any, *, required: bool = False) -> str | None:
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise LeaseValidationError("task_version muss ein SHA-256-Fingerprint sein")
+    return value
+
+
 def _ack(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
     return {
         "granted": True,
@@ -324,6 +347,7 @@ def _ack(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         "expires_at": row["claim_expires_at"],
         "ttl_profile": row["claim_ttl_profile"],
         "server_now": _fmt(now),
+        "task_version": row.get("claim_task_version"),
     }
 
 
@@ -370,29 +394,38 @@ def _choose_profile(requested: str | None, row: Mapping[str, Any], cfg: LeaseCon
 
 def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
                   request_id: str, ttl_profile: str | None = None, intent: str = "",
+                  task_version: str | None = None,
                   device: str | None = None, config: LeaseConfig | None = None,
                   now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
+    task_version = _validate_task_version(task_version)
     if not isinstance(request_id, str) or not _REQUEST_ID_RE.fullmatch(request_id):
         raise LeaseValidationError("request_id muss 16-128 Zeichen [A-Za-z0-9._:-] haben")
     intent = str(intent or "")[:500]
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
 
     _begin(conn)
     try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
         row = _row(conn, task_id)
         if row is None:
             raise TaskNotFound(task_id)
+        version = task_content_version(row)
+        if task_version is not None and task_version != version:
+            conn.rollback()
+            return _deny(task_id, "stale_task_version", now)
         state = _lease_state(row, now, cfg)
 
         if state["live"]:
             if (state["kind"] == "lease" and row.get("claimed_by") == worker_id
                     and row.get("claim_request_id") == request_id):
                 conn.rollback()
+                if row.get("claim_task_version") != version:
+                    return _deny(task_id, "stale_task_version", now)
                 return LeaseResult(_ack(row, now) | {"replayed": True})
             conn.rollback()
             reason = "already_held_by_caller" if row.get("claimed_by") == worker_id else "held"
@@ -428,12 +461,12 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
                   SET status = 'in_progress', claim_id = ?, claimed_by = ?, claim_host = ?,
                       claim_issued_at = ?, claim_expires_at = ?, claim_heartbeat_at = ?,
                       claim_fence = COALESCE(claim_fence, 0) + 1, claim_ttl_profile = ?,
-                      claim_salt_ref = ?, claim_intent = ?, claim_request_id = ?,
+                      claim_salt_ref = ?, claim_intent = ?, claim_request_id = ?, claim_task_version = ?,
                       claimed_at = ?, updated_at = ?,
                       started_at = COALESCE(started_at, ?)
                 WHERE id = ? AND COALESCE(claim_fence, 0) = ? AND status = ?""",
             (lease_id, worker_id, host, issued, expires, issued, profile, _salt_ref(row.get("source")),
-             intent or None, request_id, _local_naive(now), _local_naive(now), _local_naive(now),
+             intent or None, request_id, version, _local_naive(now), _local_naive(now), _local_naive(now),
              task_id, old_fence, status),
         )
         if cursor.rowcount != 1:  # unter BEGIN IMMEDIATE nicht erwartbar; fail-closed
@@ -471,6 +504,7 @@ def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None =
         "fence": int(row.get("claim_fence") or 0),
         "legacy": state["kind"] == "legacy",
         "server_now": _fmt(now),
+        "task_version": task_content_version(row),
     }
     if state["live"]:
         payload.update({
@@ -484,7 +518,7 @@ def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None =
     return LeaseResult(payload)
 
 
-def _load_for_holder(conn, task_id, lease_id, fence, now, cfg):
+def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None):
     """Gemeinsame Prüfung für renew/release unter Schreibsperre."""
     row = _row(conn, task_id)
     if row is None:
@@ -494,20 +528,26 @@ def _load_for_holder(conn, task_id, lease_id, fence, now, cfg):
     state = _lease_state(row, now, cfg)
     if not state["live"]:
         return row, "expired"
+    version = row.get("claim_task_version")
+    if not version or version != task_content_version(row) or (task_version is not None and task_version != version):
+        return row, "stale_task_version"
     return row, None
 
 
 def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
+                task_version: str | None = None,
                 config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.3. Verlängert nie verkürzend, nur lebend, gedeckelt auf profile_max_total."""
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     lease_id, fence = _validate_lease_ref(lease_id, fence)
+    task_version = _validate_task_version(task_version)
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
     _begin(conn)
     try:
-        row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg)
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
+        row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             conn.rollback()
             return _deny(task_id, problem, now)
@@ -540,6 +580,7 @@ def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence:
 
 
 def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
+                  task_version: str | None = None,
                   outcome: str, result_ref: str = "", note: str = "",
                   config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
@@ -550,12 +591,12 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     lease_id, fence = _validate_lease_ref(lease_id, fence)
+    task_version = _validate_task_version(task_version)
     if outcome not in RELEASE_OUTCOMES:
         raise LeaseValidationError(f"outcome muss einer von {sorted(RELEASE_OUTCOMES)} sein")
     result_ref = str(result_ref or "")[:500]
     note = str(note or "")[:4000]
     ensure_task_lease_schema(conn)
-    now = now or _utcnow()
 
     try:
         from hub.task_audit import GateReopenBlocked, apply_task_field_changes
@@ -567,7 +608,9 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
 
     _begin(conn)
     try:
-        row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg)
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
+        row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             recorded = False
             if result_ref or note:
@@ -611,6 +654,106 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             conn.rollback()
         raise
     return LeaseResult(ack)
+
+
+def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
+                    task_version: str, subtasks: list[dict[str, Any]], close_parent: bool = True,
+                    sequential: bool = False, config: LeaseConfig | None = None,
+                    now: datetime | None = None) -> LeaseResult:
+    """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion."""
+    try:
+        from hub.task_audit import apply_task_field_changes
+    except ImportError:  # pragma: no cover - package import from system/hub
+        from ..task_audit import apply_task_field_changes
+
+    cfg = config or LeaseConfig.from_env()
+    task_id = _validate_task_id(task_id)
+    lease_id, fence = _validate_lease_ref(lease_id, fence)
+    task_version = _validate_task_version(task_version, required=True)
+    if type(close_parent) is not bool or type(sequential) is not bool:
+        raise LeaseValidationError("close_parent und sequential müssen boolesch sein")
+    if not isinstance(subtasks, list) or not 1 <= len(subtasks) <= 100:
+        raise LeaseValidationError("subtasks braucht 1 bis 100 Teilaufgaben")
+    allowed = {"title", "description", "priority", "depends_on", "assigned_to", "category",
+               "required_model", "assigned_slot"}
+    normalized = []
+    for item in subtasks:
+        if not isinstance(item, dict) or set(item) - allowed:
+            raise LeaseValidationError("Unbekannte Teilaufgabenfelder")
+        if not isinstance(item.get("title"), str) or not item["title"].strip():
+            raise LeaseValidationError("Jede Teilaufgabe braucht einen Titel")
+        if any(not isinstance(value, str) for value in item.values()):
+            raise LeaseValidationError("Teilaufgabenfelder müssen Text sein")
+        normalized.append({**item, "title": item["title"].strip()})
+
+    ensure_task_lease_schema(conn)
+    _begin(conn)
+    try:
+        # BEGIN IMMEDIATE may wait past expiry; sample live time only under the lock.
+        now = now if now is not None else _utcnow()
+        parent, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
+        if problem:
+            conn.rollback()
+            return _deny(task_id, problem, now)
+        created = []
+        for item in normalized:
+            dependency = item.get("depends_on") or (str(created[-1]) if sequential and created else "")
+            dependencies = inspect_task_dependencies(conn, dependency)
+            if dependencies["missing"] or dependencies["invalid"]:
+                raise LeaseValidationError("Teilaufgabe hat ungültige oder fehlende Abhängigkeiten")
+            cursor = conn.execute(
+                """INSERT INTO tasks (title, description, priority, category, assigned_to,
+                                      depends_on, created_by, required_model, assigned_slot,
+                                      status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                (item["title"], item.get("description", ""), item.get("priority") or parent.get("priority") or "P3",
+                 item.get("category") or parent.get("category") or "",
+                 item.get("assigned_to") or parent.get("assigned_to") or "bach", dependency,
+                 parent.get("claimed_by") or "lease-holder",
+                 item.get("required_model", parent.get("required_model")),
+                 item.get("assigned_slot", parent.get("assigned_slot")),
+                 _local_naive(now), _local_naive(now)),
+            )
+            created.append(cursor.lastrowid)
+        changes = {"description": (parent.get("description") or "") +
+                   f"\n[In {len(created)} Teilaufgaben zerlegt: {created}]"}
+        if close_parent:
+            changes["status"] = "done"
+        try:
+            apply_task_field_changes(conn, task_id, parent, changes,
+                                     changed_by=parent.get("claimed_by") or "lease-holder",
+                                     now=_local_naive(now), lease_authorized=True)
+        except ValueError as exc:
+            conn.rollback()
+            return _deny(task_id, "completion_guard", now, detail=str(exc))
+        after = _row(conn, task_id)
+        version = task_content_version(after)
+        if close_parent:
+            assignments = ", ".join(f"{name} = NULL" for name in _CLEARED_ON_RELEASE)
+            cursor = conn.execute(
+                f"UPDATE tasks SET {assignments} WHERE id = ? AND claim_id = ? AND claim_fence = ? AND claim_task_version = ?",
+                (task_id, lease_id, fence, task_version),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE tasks SET claim_task_version = ? WHERE id = ? AND claim_id = ? AND claim_fence = ? AND claim_task_version = ?",
+                (version, task_id, lease_id, fence, task_version),
+            )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        _history(conn, task_id, "lease_decompose", parent.get("claimed_by") or "lease-holder", now,
+                 {"fence": fence, "created_ids": created, "parent_closed": close_parent,
+                  "previous_task_version": task_version, "task_version": version})
+        payload = {"decomposed": True, "task_id": task_id, "created_ids": created,
+                   "created_count": len(created), "parent_closed": close_parent,
+                   "fence": fence, "task_version": version, "server_now": _fmt(now)}
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    return LeaseResult(payload)
 
 
 # ---------------------------------------------------------------------------

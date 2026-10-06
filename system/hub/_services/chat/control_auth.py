@@ -12,7 +12,6 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-
 CONTROL_API_TOKEN_ENV = "BACH_CONTROL_API_TOKEN"
 CONTROL_API_TOKEN_FILE_ENV = "BACH_CONTROL_API_TOKEN_FILE"
 CONTROL_API_SECRET = "bach_control_api_token"
@@ -29,9 +28,19 @@ def get_control_api_token() -> str:
     if token_file:
         try:
             configured = Path(token_file).read_text(encoding="utf-8").strip()
+            if configured:
+                return configured
         except (OSError, UnicodeError):
-            return ""
-        return configured
+            pass
+
+    default_file = Path.home() / ".credentials" / "bach_control_api_token"
+    if default_file.exists():
+        try:
+            configured = default_file.read_text(encoding="utf-8").strip()
+            if configured:
+                return configured
+        except (OSError, UnicodeError):
+            pass
 
     try:
         from hub.secrets_handler import get_secret_value
@@ -52,15 +61,30 @@ def get_control_api_auth_header() -> str:
 
 
 def is_control_api_authorized(headers: Mapping[str, str]) -> bool:
-    """Validate a request's Bearer header against the configured token."""
+    """Validate a request's Bearer header against configured token or active device token."""
 
-    configured = get_control_api_token()
-    if not configured:
-        return False
-
-    authorization = str(headers.get("Authorization") or "").strip()
+    authorization = str(
+        headers.get("Authorization") or headers.get("authorization") or ""
+    ).strip()
     scheme, separator, supplied = authorization.partition(" ")
     if not separator or scheme.lower() != "bearer":
         return False
     supplied = supplied.strip()
-    return bool(supplied) and hmac.compare_digest(supplied, configured)
+    if not supplied:
+        return False
+
+    configured = get_control_api_token()
+    if configured and hmac.compare_digest(supplied, configured):
+        return True
+
+    try:
+        from gui.device_auth import validate_token
+
+        device = validate_token(supplied)
+        if isinstance(device, dict) and device.get("status") == "active":
+            return True
+    except (ImportError, OSError, ValueError, RuntimeError, AttributeError):
+        pass
+
+    return False
+

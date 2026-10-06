@@ -650,7 +650,7 @@ class TestStaleFenceAndWriteProtection:
                     lease_authorized=False,
                 )
 
-    def test_task_version_or_tamper_fails_closed(self, test_db):
+    def test_fence_tamper_fails_closed(self, test_db):
         """Wird die Task-Zeile extern manipuliert (z.B. Fence manipuliert oder Status entwertet),
         wird der alte Arbeitsstand abgewiesen."""
         with _connect(test_db) as conn:
@@ -720,7 +720,7 @@ class TestE2ELeaseStackReadback:
             "lease-renew", [str(tid), "--lease-id", lid, "--fence", str(fence)]
         )
         assert ok_ren is True, out_ren
-        assert "Lease verlaengert" in out_ren
+        assert "Lease verlängert" in out_ren
 
         # 4. CLI: bach task lease-release <id> --lease-id ... --fence ... --outcome done
         ok_rel, out_rel = handler.handle(

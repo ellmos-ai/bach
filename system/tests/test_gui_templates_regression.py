@@ -91,6 +91,9 @@ class TagCounter(HTMLParser):
             self.unmatched_closing.append(tag)
 
 
+JSON_PLACEHOLDER_RE = re.compile(r"\{\{\s*[A-Za-z_][A-Za-z0-9_]*_json\s*\}\}")
+
+
 class ScriptTagExtractor(HTMLParser):
     """Extrahiert <script>-Tags strukturiert ohne unsichere Regexes."""
 
@@ -204,6 +207,10 @@ class TemplateChecker:
             code = code.strip()
             if not code:
                 continue
+            # Renderer-Platzhalter wie {{ api_base_json }} werden per Vertrag
+            # durch JSON-Literale ersetzt (gui/board_renderers.py); fuer die
+            # Syntaxpruefung genuegt ein gueltiges Literal an ihrer Stelle.
+            code = JSON_PLACEHOLDER_RE.sub("null", code)
             result = subprocess.run(
                 ["node", "--check", "-"],
                 input=code,

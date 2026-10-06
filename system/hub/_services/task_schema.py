@@ -150,3 +150,20 @@ def ensure_task_slot_columns(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+
+def ensure_task_creation_origin(conn: sqlite3.Connection) -> None:
+    """Add separate task-origin metadata without changing synchronization source IDs."""
+    table = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'tasks'"
+    ).fetchone()
+    if not table or table[0] != "table":
+        raise RuntimeError("Task-Migration abgebrochen: tasks-Tabelle fehlt.")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "creation_origin" not in columns:
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN creation_origin TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise

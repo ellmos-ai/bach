@@ -103,14 +103,22 @@ def get_lead_config() -> dict:
             data = json.loads(LEAD_CONFIG_FILE.read_text(encoding="utf-8"))
             mode = data.get("mode", "worker")
             if mode == "isolated":
+                if os.environ.get("BACH_MODE") == "worker":
+                    return {"mode": "worker", "lead_url": None}
                 return {"mode": "isolated", "lead_url": None}
+            # Preserve an explicitly configured role even when its URL is missing.
+            # Lease clients must reject that worker, never authorize its projection.
+            if mode != "worker":
+                return {"mode": "invalid", "lead_url": None}
             lead_url = data.get("lead_url")
-            if lead_url:
-                return {"mode": "worker", "lead_url": lead_url.rstrip("/")}
+            return {"mode": "worker", "lead_url": lead_url.rstrip("/") if isinstance(lead_url, str) else None}
         except Exception:
-            pass
+            # A broken existing configuration is not an explicit isolated setup.
+            return {"mode": "worker", "lead_url": None}
 
-    # Grundsatz: Ohne explizit festgelegten Lead arbeitet BACH isoliert
+    if os.environ.get("BACH_MODE") == "worker":
+        return {"mode": "worker", "lead_url": None}
+    # No declared role/configuration: legacy standalone operation remains isolated.
     return {"mode": "isolated", "lead_url": None}
 
 
@@ -207,13 +215,17 @@ def sync_drafts_to_rheingold(
     base_url: str,
 ) -> List[Dict[str, any]]:
     """Überträgt alle lokal gestagten Entwürfe an Rheingold und ersetzt die temporären IDs."""
-    from hub._services.task_schema import ensure_task_slot_columns
+    from hub._services.task_schema import (
+        ensure_task_creation_origin,
+        ensure_task_slot_columns,
+    )
     ensure_task_slot_columns(conn)
+    ensure_task_creation_origin(conn)
     cursor = conn.cursor()
     # Finde alle Tasks mit Draft-Source
     cursor.execute("""
         SELECT id, title, description, priority, category, status, due_date, source, depends_on,
-               required_model, assigned_slot
+               required_model, assigned_slot, creation_origin
         FROM tasks
         WHERE source LIKE 'draft:%'
         ORDER BY id ASC
@@ -222,7 +234,7 @@ def sync_drafts_to_rheingold(
     promoted = []
 
     for row in drafts:
-        old_id, title, desc, prio, cat, stat, due, draft_src, deps, required_model, assigned_slot = row
+        old_id, title, desc, prio, cat, stat, due, draft_src, deps, required_model, assigned_slot, creation_origin = row
         payload = {
             "title": title,
             "description": desc or "",
@@ -233,6 +245,7 @@ def sync_drafts_to_rheingold(
             "depends_on": deps,
             "required_model": required_model,
             "assigned_slot": assigned_slot,
+            "creation_origin": creation_origin,
             "source": draft_src,
             "created_by": socket.gethostname().split(".")[0].lower(),
         }
@@ -314,9 +327,11 @@ def pull_tasks_from_rheingold(
         "next_occurrence", "due_date", "executable_command", "created_at",
         "started_at", "completed_at", "updated_at", "dist_type", "modified_by",
         "depends_on", "created_by", "assigned_to", "project", "source",
-        "required_model", "assigned_slot",
+        "required_model", "assigned_slot", "creation_origin",
     ]
 
+    from hub._services.task_schema import ensure_task_creation_origin
+    ensure_task_creation_origin(conn)
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(tasks)")
     available_cols = {row[1] for row in cursor.fetchall()}

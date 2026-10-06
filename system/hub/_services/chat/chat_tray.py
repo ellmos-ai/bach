@@ -53,8 +53,15 @@ if sys.stdout is None:
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        sys.stderr.reconfigure(encoding='utf-8')
 import time
 import urllib.error
 import urllib.request
@@ -203,6 +210,33 @@ def mark_tray_ready(icon):
     os.replace(temporary, target)
 
 
+def get_tray_device_token() -> str:
+    """Resolve the device token for tray GUI access.
+
+    Checks environment variable, explicit or default token file, and OS keyring.
+    """
+    token = str(os.environ.get("BACH_DEVICE_TOKEN_TRAY") or os.environ.get("BACH_DEVICE_TOKEN") or "").strip()
+    if token:
+        return token
+    token_file = str(os.environ.get("BACH_DEVICE_TOKEN_FILE") or "").strip()
+    if token_file:
+        try:
+            return Path(token_file).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            pass
+    default_file = Path.home() / ".credentials" / "bach_device_token_tray"
+    if default_file.exists():
+        try:
+            return default_file.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            pass
+    try:
+        from hub.secrets_handler import get_secret_value
+        return str(get_secret_value("bach_device_token_tray") or "").strip()
+    except Exception:
+        return ""
+
+
 class BACHTray:
 
     POLL_INTERVAL = 5
@@ -223,18 +257,12 @@ class BACHTray:
             or os.environ.get("BACH_GUI_URL")
             or f"http://{host}:{gui_port}"
         )
-        self.gui_auth_header = None
-        try:
-            from hub.secrets_handler import get_secret_value
-            tray_token = get_secret_value("bach_device_token_tray")
-            if tray_token:
-                self.gui_auth_header = f"Bearer {tray_token.strip()}"
-        except Exception:
-            self.gui_auth_header = None
+        tray_token = get_tray_device_token()
+        self.gui_auth_header = f"Bearer {tray_token}" if tray_token else None
         self.activity_url = (
             activity_url
             or os.environ.get("BACH_ACTIVITY_URL")
-            or f"{self.base_url}/activity"
+            or f"{self.gui_url}/agenten/running"
         )
         self.ollama_url = f"http://{ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
@@ -1108,7 +1136,7 @@ class BACHTray:
 
             if workers_subitems:
                 workers_subitems.append(pystray.Menu.SEPARATOR)
-            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_activity))
+            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_running))
             items.append(pystray.MenuItem(f"🛠 Dynamische Worker ({len(self.dynamic_workers)})", pystray.Menu(*workers_subitems)))
 
             items.append(pystray.Menu.SEPARATOR)
@@ -1130,8 +1158,9 @@ class BACHTray:
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
 
-            # Aktivitätsanzeige
-            items.append(pystray.MenuItem("📊 Aktivitätsanzeige öffnen...", self._open_activity))
+            # Laufende Agenten & Werkstatt
+            items.append(pystray.MenuItem("📊 Laufende Agenten & Worker...", self._open_running))
+            items.append(pystray.MenuItem("🛠 Agenten-Werkstatt & Vorlagen...", self._open_blueprints))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -1221,7 +1250,8 @@ class BACHTray:
         items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
         items.append(pystray.MenuItem(chat_label, self._open_webchat))
-        items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
+        items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
+        items.append(pystray.MenuItem("Agenten-Werkstatt", self._open_blueprints))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -1338,6 +1368,14 @@ class BACHTray:
     def _open_activity(self, *_):
         import webbrowser
         webbrowser.open(self.activity_url)
+
+    def _open_running(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/running")
+
+    def _open_blueprints(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/blueprints")
 
     def _make_slot_model_action(self, slot_id, model):
         def action(*_):

@@ -518,6 +518,7 @@ class _TaskProxy(_DBBackedProxy):
         request_id: str | None = None,
         ttl_profile: str = "M",
         intent: str = "",
+        task_version: str | None = None,
     ) -> dict[str, Any]:
         """Beansprucht eine Task als gefencten Salt-Lease (Vertrag §5.1 / BACH #1722)."""
         tid = int(task_id)
@@ -529,8 +530,7 @@ class _TaskProxy(_DBBackedProxy):
                 host = socket.gethostname()
                 worker_id = f"{worker_id}@{host}"
         from hub._services.task_lease_client import TaskLeaseClient
-        with self._connect() as conn:
-            client = TaskLeaseClient(conn=conn)
+        with TaskLeaseClient.for_task_db(self._connect) as client:
             ack = client.acquire(
                 tid,
                 worker_id=worker_id,
@@ -538,6 +538,7 @@ class _TaskProxy(_DBBackedProxy):
                 request_id=request_id,
                 ttl_profile=ttl_profile,
                 intent=intent,
+                task_version=task_version,
             )
             return {
                 "granted": True,
@@ -551,6 +552,7 @@ class _TaskProxy(_DBBackedProxy):
                 "ttl_profile": ack.ttl_profile,
                 "server_now": ack.server_now,
                 "local_deadline": ack.local_deadline.isoformat(),
+                "task_version": ack.task_version,
             }
 
     def lease_read(
@@ -562,8 +564,7 @@ class _TaskProxy(_DBBackedProxy):
         """Liest die Holder-Ansicht eines Task-Leases (Vertrag §5.2 / BACH #1722)."""
         tid = int(task_id)
         from hub._services.task_lease_client import TaskLeaseClient
-        with self._connect() as conn:
-            client = TaskLeaseClient(conn=conn)
+        with TaskLeaseClient.for_task_db(self._connect) as client:
             view = client.read(tid, lease_id=lease_id)
             return {
                 "task_id": view.task_id,
@@ -577,6 +578,7 @@ class _TaskProxy(_DBBackedProxy):
                 "expires_at": view.expires_at,
                 "ttl_profile": view.ttl_profile,
                 "own": view.own,
+                "task_version": view.task_version,
             }
 
     def lease_renew(
@@ -585,13 +587,13 @@ class _TaskProxy(_DBBackedProxy):
         *,
         lease_id: str,
         fence: int,
+        task_version: str | None = None,
     ) -> dict[str, Any]:
         """Verlängert einen aktiven Task-Lease (Vertrag §5.3 / BACH #1722)."""
         tid = int(task_id)
         from hub._services.task_lease_client import TaskLeaseClient
-        with self._connect() as conn:
-            client = TaskLeaseClient(conn=conn)
-            ack = client.renew(tid, lease_id=lease_id, fence=fence)
+        with TaskLeaseClient.for_task_db(self._connect) as client:
+            ack = client.renew(tid, lease_id=lease_id, fence=fence, task_version=task_version)
             return {
                 "granted": True,
                 "task_id": ack.task_id,
@@ -604,6 +606,7 @@ class _TaskProxy(_DBBackedProxy):
                 "ttl_profile": ack.ttl_profile,
                 "server_now": ack.server_now,
                 "local_deadline": ack.local_deadline.isoformat(),
+                "task_version": ack.task_version,
             }
 
     def lease_release(
@@ -612,6 +615,7 @@ class _TaskProxy(_DBBackedProxy):
         *,
         lease_id: str,
         fence: int,
+        task_version: str | None = None,
         outcome: str = "done",
         result_ref: str = "",
         note: str = "",
@@ -619,12 +623,12 @@ class _TaskProxy(_DBBackedProxy):
         """Gibt einen Task-Lease frei oder schließt die Task ab (Vertrag §5.4 / BACH #1722)."""
         tid = int(task_id)
         from hub._services.task_lease_client import TaskLeaseClient
-        with self._connect() as conn:
-            client = TaskLeaseClient(conn=conn)
+        with TaskLeaseClient.for_task_db(self._connect) as client:
             rel = client.release(
                 tid,
                 lease_id=lease_id,
                 fence=fence,
+                task_version=task_version,
                 outcome=outcome,
                 result_ref=result_ref,
                 note=note,
@@ -637,6 +641,19 @@ class _TaskProxy(_DBBackedProxy):
                 "fence": rel.fence,
                 "server_now": rel.server_now,
             }
+
+    def lease_decompose(self, task_id: int | str, *, lease_id: str, fence: int,
+                        task_version: str, subtasks: "list[dict[str, Any]]",
+                        close_parent: bool = True, sequential: bool = False) -> dict[str, Any]:
+        """Atomare, versionierte Zerlegung über die konfigurierte Lead-Authority."""
+        from hub._services.task_lease_client import TaskLeaseClient
+        with TaskLeaseClient.for_task_db(self._connect) as client:
+            ack = client.decompose(int(task_id), lease_id=lease_id, fence=fence,
+                                   task_version=task_version, subtasks=subtasks,
+                                   close_parent=close_parent, sequential=sequential)
+            return dict(decomposed=True, task_id=ack.task_id, created_ids=list(ack.created_ids),
+                        created_count=ack.created_count, parent_closed=ack.parent_closed,
+                        fence=ack.fence, task_version=ack.task_version, server_now=ack.server_now)
 
     def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         task_data = dict(row)

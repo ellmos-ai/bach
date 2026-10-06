@@ -6,19 +6,17 @@
 const API = {
     baseUrl: (typeof window !== 'undefined' && window.BOARD_CONFIG && window.BOARD_CONFIG.apiBase != null) ? window.BOARD_CONFIG.apiBase : '',
 
-    deviceHeaders() {
-        const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('bach_device_token');
-        return token ? { Authorization: 'Bearer ' + token } : {};
-    },
-
     _headers(extra = {}) {
-        const headers = { ...this.deviceHeaders(), ...extra };
+        const headers = { ...extra };
         if (typeof window !== 'undefined' && window.BOARD_CONFIG) {
             const token = window.BOARD_CONFIG.token ||
                 (window.BOARD_CONFIG.tokenStorageKey && localStorage.getItem(window.BOARD_CONFIG.tokenStorageKey));
             if (token) {
                 headers['Authorization'] = 'Bearer ' + token;
             }
+        }
+        if (!headers['Authorization']) {
+            Object.assign(headers, this.deviceHeaders());
         }
         return headers;
     },
