@@ -14419,7 +14419,7 @@ async def sort_inbox_file(data: dict):
 
     filename = data.get('filename')
 
-    target_folder = data.get('target_folder')
+    target_folder = safe_path_segment(data.get('target_folder'), field_name="Zielordner")
 
     new_name = data.get('new_name')
 
