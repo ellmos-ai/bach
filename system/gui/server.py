@@ -302,7 +302,10 @@ def safe_cli_value(value, *, field_name: str) -> str:
 
 
 def resolve_under_base(base: Path, value: str, *, allowed_suffixes=None, must_exist: bool = False) -> Path:
-    candidate = validate_host_path(value, base_dir=base)
+    if not isinstance(base, Path):
+        raise HTTPException(status_code=500, detail="Ungueltige Basiskonfiguration")
+    trusted_base = base.resolve(strict=False)
+    candidate = validate_host_path(value, base_dir=trusted_base)
     if candidate is None:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
     if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
