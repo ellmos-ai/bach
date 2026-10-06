@@ -150,6 +150,20 @@ def test_e2e_text_anonymization_spared_officials():
         assert profile.tarnname in result
 
 
+
+def test_fake_birthdate_never_equals_real_date(monkeypatch):
+    """Der Datumsversatz darf nie 0 sein, sonst bleibt das echte Geburtsdatum stehen."""
+    from hub._services.document import anonymizer_service as svc
+
+    # Mittelwert des Zufallsbereichs: frueher ergab das genau Versatz 0.
+    monkeypatch.setattr(svc.secrets, "randbelow", lambda n: n // 2)
+    for sign in (-1, 1):
+        monkeypatch.setattr(svc.secrets, "choice", lambda seq, _s=sign: _s if seq == (-1, 1) else seq[0])
+        fake, offset = svc._generate_fake_date_same_age("15.03.2016")
+        assert offset != 0
+        assert fake != "15.03.2016"
+        assert 1 <= abs(offset) <= 150
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted({k: v for k, v in globals().items()
