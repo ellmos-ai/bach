@@ -182,15 +182,23 @@ class MountHandler(BaseHandler):
     def _create_link(self, source: Path, target: Path):
         src = source.resolve()
         tgt = target.resolve(strict=False)
+
         if not self._is_allowed_source(str(src)):
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
+
+        target_root = self.target_file.resolve()
+        try:
+            tgt.relative_to(target_root)
+        except ValueError:
+            raise ValueError("Zielpfad liegt außerhalb des Mount-Zielordners")
+
         if os.name == "nt":
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(tgt), str(src)],
                 check=True, capture_output=True,
             )
         else:
-            os.symlink(src, tgt)
+            os.symlink(str(src), str(tgt))
 
     def _remove_link(self, target: Path) -> bool:
         if os.name == "nt":
