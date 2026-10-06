@@ -89,12 +89,23 @@ class MountHandler(BaseHandler):
         return target
 
     def _is_source_within_allowed_roots(self, source: Path) -> bool:
-        src = Path(source).resolve(strict=False)
-        for root in self.allowed_roots:
+        raw = str(source or "")
+        if not raw or "\x00" in raw:
+            return False
+        try:
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            if not os.path.isabs(expanded):
+                return False
+            src = Path(os.path.realpath(os.path.abspath(expanded)))
+        except (ValueError, OSError, TypeError):
+            return False
+
+        for root in self._allowed_source_roots:
             try:
-                src.relative_to(root.resolve(strict=False))
-                return True
-            except ValueError:
+                base = Path(os.path.realpath(os.path.abspath(os.fspath(root))))
+                if src.is_relative_to(base):
+                    return True
+            except (ValueError, OSError, TypeError):
                 continue
         return False
 
