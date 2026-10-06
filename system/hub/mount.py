@@ -110,14 +110,20 @@ class MountHandler(BaseHandler):
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        is_within_allowed_root = False
+        resolved_allowed_roots = []
         for root in self._allowed_source_roots:
             try:
-                root_resolved = Path(root).resolve(strict=True)
+                resolved_allowed_roots.append(Path(root).resolve(strict=True))
+            except (ValueError, OSError, FileNotFoundError):
+                continue
+
+        is_within_allowed_root = False
+        for root_resolved in resolved_allowed_roots:
+            try:
                 candidate.relative_to(root_resolved)
                 is_within_allowed_root = True
                 break
-            except (ValueError, OSError):
+            except ValueError:
                 continue
 
         if not is_within_allowed_root:
