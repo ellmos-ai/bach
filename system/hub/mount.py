@@ -165,7 +165,7 @@ class MountHandler(BaseHandler):
         allowed = False
         for root in self._allowed_source_roots:
             try:
-                src.relative_to(root.resolve())
+                src.relative_to(Path(root).resolve())
                 allowed = True
                 break
             except ValueError:
