@@ -2689,24 +2689,31 @@ class ControlHandler(BaseHTTPRequestHandler):
     def _canonicalize_origin_for_header(self, origin: str) -> Optional[str]:
         if not origin or "\r" in origin or "\n" in origin:
             return None
-        parsed = urlparse(origin)
+        try:
+            parsed = urlparse(origin)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            return None
         scheme = (parsed.scheme or "").lower()
         if scheme not in ("http", "https"):
             return None
-        if not parsed.hostname:
+        if not hostname:
             return None
         if parsed.username is not None or parsed.password is not None:
             return None
 
         try:
-            host = parsed.hostname.encode("idna").decode("ascii").lower()
-        except UnicodeError:
-            return None
-
-        if "\r" in host or "\n" in host or ":" in host:
-            return None
-
-        port = parsed.port
+            host = f"[{ipaddress.IPv6Address(hostname).compressed}]"
+        except ValueError:
+            if ":" in hostname:
+                return None
+            try:
+                host = hostname.encode("idna").decode("ascii").lower()
+            except UnicodeError:
+                return None
+            if "\r" in host or "\n" in host:
+                return None
         if port is None:
             return f"{scheme}://{host}"
         return f"{scheme}://{host}:{port}"

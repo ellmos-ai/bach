@@ -140,6 +140,34 @@ def test_auth_check_retains_origin_policy(monkeypatch):
     response.assert_called_once_with({"error": "Fremd-Origin nicht erlaubt"}, 403)
 
 
+def test_cors_preserves_ipv6_origin():
+    handler = _handler(
+        {"Host": "[::1]:8081", "Origin": "http://[::1]:8081"},
+        "/api/status",
+    )
+
+    handler._cors()
+
+    handler.send_header.assert_any_call(
+        "Access-Control-Allow-Origin", "http://[::1]:8081"
+    )
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:abc", "http://localhost:99999"])
+def test_cors_ignores_origins_with_malformed_ports(origin):
+    handler = _handler(
+        {"Host": "localhost:8081", "Origin": origin},
+        "/api/status",
+    )
+
+    handler._cors()
+
+    assert not any(
+        call.args[0] == "Access-Control-Allow-Origin"
+        for call in handler.send_header.call_args_list
+    )
+
+
 def test_auth_check_without_server_token_fails_closed(monkeypatch):
     monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "")
     handler = _handler({"Authorization": "Bearer control-secret"}, "/api/auth/check")
