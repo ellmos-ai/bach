@@ -187,7 +187,18 @@ class MountHandler(BaseHandler):
         src = self._resolve_mount_source(str(source))
         tgt = target.resolve(strict=False)
 
-        if not self._is_allowed_source(str(src)):
+        src_real = os.path.realpath(os.fspath(src))
+        is_within_allowed_root = False
+        for root in self._allowed_source_roots:
+            try:
+                root_real = os.path.realpath(os.fspath(root))
+                if os.path.commonpath([root_real, src_real]) == root_real:
+                    is_within_allowed_root = True
+                    break
+            except (ValueError, OSError):
+                continue
+
+        if not is_within_allowed_root:
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
 
         target_root = self.target_file.resolve()
