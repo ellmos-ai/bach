@@ -1,5 +1,5 @@
 ---
-// blueprints.astro - Vorlagen-Bibliothek & Blueprints (GUX-024, GUX-025, GUX-026, GUX-027)
+// blueprints.astro - Vorlagen-Bibliothek, Teams & Werkstatt-Integration (GUX-024..027)
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
 
@@ -10,13 +10,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
         📐 Blueprints & Vorlagen-Bibliothek
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Zentrale Vorlagen für Agenten, Rollen, Skills, Workflows, Services und Contractus • Ersetzt das alte Agents-Board (GUX-024)
+        Zentrale Vorlagen für Agenten, Rollen, Teams, Staffeln, Skills, Workflows, Services und Contractus
       </p>
     </div>
 
-    <div style="display:flex;gap:0.5rem;align-items:center;">
-      <a href="/agenten/fabrika" class="btn btn-primary">
-        <span>🏭</span> Zur Agenten-Fabrik
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="openCreateBlueprintModal()">
+        <span>✨</span> Neuen Blueprint anlegen
+      </button>
+      <a href="/agenten/fabrika" class="btn">
+        <span>🏭</span> Zur Agenten-Werkstatt
       </a>
       <a href="/agenten/running" class="btn">
         <span>⚡</span> Living & Running
@@ -52,13 +55,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
       </div>
     </div>
 
-    <!-- Kind-Filter Tabs -->
+    <!-- Kind-Filter Tabs inklusive Teams-Reiter -->
     <div class="bp-tabs" style="display:flex;gap:0.4rem;margin-top:1rem;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:0.75rem;">
       <button class="bp-tab active" data-kind="all" onclick="selectKind('all')">
         Alle <span class="badge" id="count-all">0</span>
       </button>
       <button class="bp-tab" data-kind="agent" onclick="selectKind('agent')">
         🤖 Agenten <span class="badge" id="count-agent">0</span>
+      </button>
+      <button class="bp-tab" data-kind="teams" onclick="selectKind('teams')">
+        👥 Teams & Staffeln <span class="badge" id="count-teams">0</span>
       </button>
       <button class="bp-tab" data-kind="role" onclick="selectKind('role')">
         🎭 Rollen <span class="badge" id="count-role">0</span>
@@ -78,14 +84,235 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
-  <!-- Blueprints Grid -->
+  <!-- Standard Blueprints Grid (für agent, role, skill, workflow, service, contractus) -->
   <div id="blueprints-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
     <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;">
       Lade Blueprints...
     </p>
   </div>
 
-  <!-- Materialisieren Modal (Living Aktivierung) -->
+  <!-- Dedizierter Teams- & Staffeln-Bereich (wird bei Kind 'teams' aktiv) -->
+  <div id="teams-view-container" style="display:none;flex-direction:column;gap:1.5rem;">
+    <!-- Unterkategorien: Teams (Swarm-AI) vs. Agentenstaffeln (MarbleRun) -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;background:var(--bg-dark);padding:0.75rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <button id="btn-subcat-teams" class="btn btn-sm btn-primary" onclick="selectTeamsSubcat('teams')">
+          👥 Teams (Swarm-AI)
+        </button>
+        <button id="btn-subcat-staffeln" class="btn btn-sm" onclick="selectTeamsSubcat('staffeln')">
+          ⛓️ Agentenstaffeln (MarbleRun)
+        </button>
+      </div>
+
+      <div id="teams-action-bar">
+        <button class="btn btn-sm btn-primary" id="btn-create-subcat" onclick="triggerSubcatCreate()">
+          <span>+</span> Team bilden (Werkstatt)
+        </button>
+      </div>
+    </div>
+
+    <!-- Unterkategorie 1: Teams Grid -->
+    <div id="pane-teams-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
+      <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;">Lade Teams...</p>
+    </div>
+
+    <!-- Unterkategorie 2: Staffeln Grid -->
+    <div id="pane-staffeln-grid" style="display:none;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
+      <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;">Lade Agentenstaffeln...</p>
+    </div>
+  </div>
+
+  <!-- POP-UP MODAL 1: WERKSTATT - NEUEN BLUEPRINT / VORLAGE ANLEGEN -->
+  <div id="modal-create-blueprint" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:650px;width:92%;margin:auto;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title" style="margin:0;">🏭 Agenten-Werkstatt: Neuen Blueprint anlegen</h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere eine neue Schablone für Agenten, Rollen oder Workflows</p>
+        </div>
+        <button class="btn btn-sm" onclick="closeCreateBlueprintModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Schablonen-Name (ID, z.B. test-auditor)</label>
+            <input type="text" id="cb-name" placeholder="z. B. test-auditor" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Blueprint-Typ (Kind)</label>
+            <select id="cb-kind" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="agent">🤖 Agent (Eigenständige Instanz)</option>
+              <option value="role">🎭 Rolle (Verhaltensmaske)</option>
+              <option value="skill">🧩 Skill (Fähigkeit)</option>
+              <option value="workflow">⛓️ Workflow (Ablauf)</option>
+              <option value="service">⚙️ Service (Dienst)</option>
+              <option value="contractus">📜 Contractus (Arbeitsvertrag)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Anzeigename</label>
+          <input type="text" id="cb-title" placeholder="z. B. Test Auditor & Security Scout" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Persona-Rolle</label>
+          <input type="text" id="cb-role" placeholder="z. B. Sicherheitsprüfer & Code-Reviewer" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">System-Prompt / Persönlichkeit (Persona)</label>
+          <textarea id="cb-prompt" rows="4" placeholder="Du bist ein spezialisierter Agent für..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Skills (Kommasepariert)</label>
+          <input type="text" id="cb-skills" placeholder="git-hygiene, lock-master, pipeline-optimizer" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Modus</label>
+            <select id="cb-modus" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="casualis">Casualis (Auf Zuruf)</option>
+              <option value="usus">Usus (Dauerläufer)</option>
+              <option value="impetus">Impetus (Triggerbasiert)</option>
+              <option value="contractus">Contractus (Streng)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Max. Turns</label>
+            <input type="number" id="cb-turns" value="15" min="1" max="100" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Governance</label>
+            <select id="cb-governance" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="fail_closed_standard">Fail-Closed Standard</option>
+              <option value="read_only_research">Read-Only Research</option>
+              <option value="full_dev_guarded">Full-Dev Guarded</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
+        <button class="btn" onclick="closeCreateBlueprintModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="submitCreateBlueprint()">Blueprint in Werkstatt speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POP-UP MODAL 2: WERKSTATT - TEAM BILDEN (SWARM-AI) -->
+  <div id="modal-create-team" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:580px;width:90%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title" style="margin:0;">👥 Agenten-Werkstatt: Team bilden (Swarm-AI)</h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere ein kollaboratives Multi-Agenten-Team</p>
+        </div>
+        <button class="btn btn-sm" onclick="closeCreateTeamModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Team-Name</label>
+          <input type="text" id="ct-name" placeholder="z. B. Audit & Refactoring Schwarm" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Kooperations-Strategie</label>
+            <select id="ct-strategy" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="swarm_parallel">Parallele Arbeit (Schwarm)</option>
+              <option value="swarm_hierarchy">Hierarchie (Leader + Spezialisten)</option>
+              <option value="swarm_consensus">Konsens & Abstimmung</option>
+              <option value="swarm_specialist">Spezialisten-Zuweisung</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Leader-Agent</label>
+            <input type="text" id="ct-leader" value="Operator" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Mitglieder-Agenten (kommasepariert)</label>
+          <input type="text" id="ct-members" placeholder="z. B. CodeCommander, FileCommander, Sentinel" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung / Zweck des Teams</label>
+          <textarea id="ct-desc" rows="3" placeholder="Gemeinsame Zielsetzung für diesen Verbund..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;"></textarea>
+        </div>
+      </div>
+      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
+        <button class="btn" onclick="closeCreateTeamModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="submitCreateTeam()">Team in Werkstatt anlegen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POP-UP MODAL 3: WERKSTATT - AGENTENSTAFFEL ANLEGEN (MARBLERUN) -->
+  <div id="modal-create-staffel" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:600px;width:90%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title" style="margin:0;">⛓️ Agenten-Werkstatt: Neue Staffel anlegen (MarbleRun)</h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere eine sequenzielle Übergabe-Kette mit getypten Stationen</p>
+        </div>
+        <button class="btn btn-sm" onclick="closeCreateStaffelModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Staffel-ID (technisch)</label>
+            <input type="text" id="cs-name" placeholder="z. B. review-to-deploy" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Anzeigename</label>
+            <input type="text" id="cs-title" placeholder="z. B. Review bis Deployment Staffel" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung</label>
+          <input type="text" id="cs-desc" placeholder="Kette für automatische Qualitäts- und Buildprüfung" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">Stationen-Definition (JSON):</label>
+          <textarea id="cs-steps" rows="5" placeholder='[&#10;  {"step": 1, "action": "Research & Analyse", "agent": "Research Scout", "model": "gemini-2.0-flash"}&#10;]' style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:#a7f3d0;font-size:0.8rem;font-family:monospace;"></textarea>
+        </div>
+      </div>
+      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
+        <button class="btn" onclick="closeCreateStaffelModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="submitCreateStaffel()">Staffel in Werkstatt anlegen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BESEELEN MODAL FÜR TEAMS -->
+  <div id="modal-team-beseelen" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:540px;width:90%;margin:auto;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="card-title">✨ Team beseelen (Modelle zuweisen)</h2>
+        <button class="btn btn-sm" onclick="closeTeamBeseelenModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;">
+        <input type="hidden" id="tb-team-id" />
+        <h3 id="tb-team-name" style="font-size:1.05rem;font-weight:700;margin-bottom:0.75rem;"></h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
+          Weise jedem Teammitglied das passende Modell für seine Spezialaufgabe zu:
+        </p>
+        <div id="tb-members-container" style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1.5rem;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+          <button class="btn" onclick="closeTeamBeseelenModal()">Abbrechen</button>
+          <button class="btn btn-primary" onclick="confirmTeamBeseelen()">Beseelung speichern ✨</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Materialisieren Modal (Living Aktivierung für Einzel-Blueprints) -->
   <div id="modal-materialize" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
     <div class="card" style="max-width:500px;width:90%;margin:auto;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -109,6 +336,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
             <option value="gemini-2.5-pro">gemini-2.5-pro (Subscription / Antigravity)</option>
             <option value="gpt-4o">gpt-4o (Subscription / Codex CLI)</option>
             <option value="qwen2.5-coder:32b">qwen2.5-coder:32b (Ollama Local)</option>
+            <option value="openrouter/free">openrouter/free (Kostenlos)</option>
           </select>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem;">
@@ -216,7 +444,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
 <script is:inline>
   let _allBlueprints = [];
+  let _allTeams = [];
+  let _allChains = [];
   let _currentKind = 'all';
+  let _currentTeamsSubcat = 'teams';
 
   const KIND_ICONS = {
     agent: '🤖',
@@ -224,7 +455,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     skill: '🧩',
     workflow: '⛓️',
     service: '⚙️',
-    contractus: '📜'
+    contractus: '📜',
+    teams: '👥'
   };
 
   const KIND_LABELS = {
@@ -233,17 +465,44 @@ import BachLayout from "../../layouts/BachLayout.astro";
     skill: 'Skill',
     workflow: 'Workflow',
     service: 'Service',
-    contractus: 'Contractus'
+    contractus: 'Contractus',
+    teams: 'Teams & Staffeln'
   };
+
+  const MODEL_OPTIONS = [
+    { id: "claude-3-7-sonnet", label: "🧠 Claude 3.7 Sonnet (Anthropic)" },
+    { id: "gemini-2.0-flash", label: "⚡ Gemini 2.0 Flash (Google)" },
+    { id: "codex-cli", label: "💻 Codex / GPT-4o (OpenAI)" },
+    { id: "ollama/qwen3.8:27b-mlx", label: "🦙 Ollama: Qwen 3.8 27B (Mac Studio)" },
+    { id: "ollama/kimi-k3:cloud", label: "☁️ Kimi K3 Cloud (131k)" },
+    { id: "openrouter/free", label: "🆓 OpenRouter (Kostenlos / Free Tier)" }
+  ];
 
   async function loadBlueprintsData() {
     try {
-      const res = await fetch('/api/agent-studio/blueprints');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      const templates = data.templates || [];
-      const custom = data.blueprints || [];
-      _allBlueprints = [...templates, ...custom];
+      const [bpRes, teamsRes, chainsRes] = await Promise.all([
+        fetch('/api/agent-studio/blueprints'),
+        fetch('/api/agenten/teams').catch(() => ({ ok: false })),
+        fetch('/api/marblerun/chains').catch(() => ({ ok: false }))
+      ]);
+
+      if (bpRes.ok) {
+        const data = await bpRes.json();
+        const templates = data.templates || [];
+        const custom = data.blueprints || [];
+        _allBlueprints = [...templates, ...custom];
+      }
+
+      if (teamsRes.ok) {
+        const teamsData = await teamsRes.json();
+        _allTeams = teamsData.teams || [];
+      }
+
+      if (chainsRes.ok) {
+        const chainsData = await chainsRes.json();
+        _allChains = chainsData.chains || [];
+      }
+
       updateCounts();
       filterBlueprints();
     } catch (e) {
@@ -265,6 +524,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
       const el = document.getElementById('count-' + k);
       if (el) el.textContent = v;
     }
+    const teamsBadge = document.getElementById('count-teams');
+    if (teamsBadge) teamsBadge.textContent = (_allTeams.length + _allChains.length);
   }
 
   function selectKind(kind) {
@@ -272,7 +533,19 @@ import BachLayout from "../../layouts/BachLayout.astro";
     document.querySelectorAll('.bp-tab').forEach(t => {
       t.classList.toggle('active', t.getAttribute('data-kind') === kind);
     });
-    filterBlueprints();
+
+    const grid = document.getElementById('blueprints-grid');
+    const teamsContainer = document.getElementById('teams-view-container');
+
+    if (kind === 'teams') {
+      grid.style.display = 'none';
+      teamsContainer.style.display = 'flex';
+      renderTeamsView();
+    } else {
+      teamsContainer.style.display = 'none';
+      grid.style.display = 'grid';
+      filterBlueprints();
+    }
   }
 
   function clearSearch() {
@@ -283,6 +556,11 @@ import BachLayout from "../../layouts/BachLayout.astro";
   }
 
   function filterBlueprints() {
+    if (_currentKind === 'teams') {
+      renderTeamsView();
+      return;
+    }
+
     const search = (document.getElementById('bp-search').value || '').trim().toLowerCase();
     document.getElementById('search-clear').style.display = search ? 'block' : 'none';
     const templatesOnly = document.getElementById('filter-templates-only').checked;
@@ -309,7 +587,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       grid.innerHTML = `
         <div style="grid-column:1/-1;text-align:center;padding:3rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
           <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine passenden Blueprints gefunden.</p>
-          <a href="/agenten/fabrika" class="btn btn-sm btn-primary">+ Neuen Blueprint in Fabrika anlegen</a>
+          <button onclick="openCreateBlueprintModal()" class="btn btn-sm btn-primary">+ Neuen Blueprint in Werkstatt anlegen</button>
         </div>
       `;
       return;
@@ -371,7 +649,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
             </button>
             <div style="display:flex;gap:0.35rem;">
               <a href="/agenten/fabrika?load=${encodeURIComponent(b.name)}" class="btn btn-sm" style="font-size:0.75rem;">
-                Fabrika 🏭
+                Werkstatt 🏭
               </a>
               <button class="btn btn-sm" style="font-size:0.75rem;background:#1e3a8a;color:#93c5fd;border-color:#3b82f6;" onclick="openMaterializeModal(${Number(b.id)}, '${escapeHtml(b.name)}')">
                 Beseelen ✨
@@ -386,6 +664,138 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }).join('');
   }
 
+  // ── TEAMS & STAFFELN SUB-VIEW ──
+  function selectTeamsSubcat(subcat) {
+    _currentTeamsSubcat = subcat;
+    const btnTeams = document.getElementById('btn-subcat-teams');
+    const btnStaffeln = document.getElementById('btn-subcat-staffeln');
+    const paneTeams = document.getElementById('pane-teams-grid');
+    const paneStaffeln = document.getElementById('pane-staffeln-grid');
+    const btnCreate = document.getElementById('btn-create-subcat');
+
+    if (subcat === 'teams') {
+      btnTeams.classList.add('btn-primary');
+      btnStaffeln.classList.remove('btn-primary');
+      paneTeams.style.display = 'grid';
+      paneStaffeln.style.display = 'none';
+      btnCreate.innerHTML = '<span>+</span> Team bilden (Werkstatt)';
+    } else {
+      btnStaffeln.classList.add('btn-primary');
+      btnTeams.classList.remove('btn-primary');
+      paneTeams.style.display = 'none';
+      paneStaffeln.style.display = 'grid';
+      btnCreate.innerHTML = '<span>+</span> Staffel anlegen (Werkstatt)';
+    }
+  }
+
+  function triggerSubcatCreate() {
+    if (_currentTeamsSubcat === 'teams') {
+      openCreateTeamModal();
+    } else {
+      openCreateStaffelModal();
+    }
+  }
+
+  function renderTeamsView() {
+    const paneTeams = document.getElementById('pane-teams-grid');
+    const paneStaffeln = document.getElementById('pane-staffeln-grid');
+
+    // 1. Render Teams
+    if (_allTeams.length === 0) {
+      paneTeams.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:2.5rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
+          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine Teams konfiguriert.</p>
+          <button class="btn btn-sm btn-primary" onclick="openCreateTeamModal()">+ Team bilden (Swarm-AI)</button>
+        </div>
+      `;
+    } else {
+      paneTeams.innerHTML = _allTeams.map(t => {
+        const members = (t.member_agents || '').split(',').map(m => m.trim()).filter(Boolean);
+        const models = t.member_models || {};
+        return `
+          <div class="bp-card">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <span class="badge" style="background:#1e3a8a;color:#93c5fd;font-size:0.75rem;">👥 Team</span>
+                <span class="badge badge-accent" style="font-size:0.7rem;">${escapeHtml(t.strategy || 'swarm_parallel')}</span>
+              </div>
+              <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(t.name)}</h3>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">${escapeHtml(t.description || 'Keine Beschreibung hinterlegt.')}</p>
+
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Mitglieder (${members.length}):</div>
+              <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
+                ${members.map(m => {
+                  const mod = models[m] ? `<span style="opacity:0.65;font-size:0.68rem;"> (${escapeHtml(models[m])})</span>` : '';
+                  return `<span class="badge" style="background:var(--bg-dark);border:1px solid var(--border);font-size:0.72rem;">🤖 ${escapeHtml(m)}${mod}</span>`;
+                }).join('')}
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
+              <button class="btn btn-sm" style="font-size:0.75rem;color:var(--error);" onclick="deleteTeam(${t.id})">
+                🗑️
+              </button>
+              <div style="display:flex;gap:0.35rem;">
+                <a href="/agenten/fabrika" class="btn btn-sm" style="font-size:0.75rem;">Werkstatt 🏭</a>
+                <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="openTeamBeseelenModal(${t.id}, '${escapeHtml(t.name)}')">
+                  Beseelen ✨
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 2. Render Staffeln
+    if (_allChains.length === 0) {
+      paneStaffeln.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:2.5rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
+          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine Agentenstaffeln hinterlegt.</p>
+          <button class="btn btn-sm btn-primary" onclick="openCreateStaffelModal()">+ Staffel anlegen (MarbleRun)</button>
+        </div>
+      `;
+    } else {
+      paneStaffeln.innerHTML = _allChains.map(c => {
+        let steps = [];
+        try { steps = typeof c.steps_json === 'string' ? JSON.parse(c.steps_json) : (c.steps || []); } catch(e) {}
+        return `
+          <div class="bp-card">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <span class="badge" style="background:#3b1e8a;color:#d8b4fe;font-size:0.75rem;">⛓️ Staffel</span>
+                <span class="badge badge-accent" style="font-size:0.7rem;">${steps.length} Stationen</span>
+              </div>
+              <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(c.title || c.name)}</h3>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">${escapeHtml(c.description || '')}</p>
+
+              <div style="display:flex;flex-direction:column;gap:0.3rem;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);margin-bottom:0.75rem;">
+                ${steps.map(s => `
+                  <div style="font-size:0.75rem;display:flex;justify-content:space-between;">
+                    <span><strong>Station ${s.step}:</strong> ${escapeHtml(s.action)}</span>
+                    <span style="color:var(--accent);">${escapeHtml(s.agent || 'Agent')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
+              <button class="btn btn-sm" style="font-size:0.75rem;color:var(--error);" onclick="deleteStaffel(${c.id})">
+                🗑️
+              </button>
+              <div style="display:flex;gap:0.35rem;">
+                <a href="/agenten/marblerun" class="btn btn-sm" style="font-size:0.75rem;">Editor ↗</a>
+                <a href="/agenten/running" class="btn btn-sm btn-primary" style="font-size:0.75rem;">
+                  Running ⚡
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/[&<>"']/g, m => ({
@@ -397,7 +807,245 @@ import BachLayout from "../../layouts/BachLayout.astro";
     })[m]);
   }
 
-  // Materialize Modal Actions
+  // ── MODAL: CREATE BLUEPRINT (WERKSTATT) ──
+  function openCreateBlueprintModal() {
+    document.getElementById('cb-name').value = '';
+    document.getElementById('cb-title').value = '';
+    document.getElementById('cb-role').value = '';
+    document.getElementById('cb-prompt').value = '';
+    document.getElementById('cb-skills').value = '';
+    document.getElementById('modal-create-blueprint').style.display = 'flex';
+  }
+
+  function closeCreateBlueprintModal() {
+    document.getElementById('modal-create-blueprint').style.display = 'none';
+  }
+
+  async function submitCreateBlueprint() {
+    const name = document.getElementById('cb-name').value.trim().toLowerCase();
+    const kind = document.getElementById('cb-kind').value;
+    const title = document.getElementById('cb-title').value.trim() || name;
+    const role = document.getElementById('cb-role').value.trim();
+    const prompt = document.getElementById('cb-prompt').value.trim();
+    const skills = document.getElementById('cb-skills').value.split(',').map(s => s.trim()).filter(Boolean);
+    const modus = document.getElementById('cb-modus').value;
+    const turns = parseInt(document.getElementById('cb-turns').value) || 15;
+    const govProfile = document.getElementById('cb-governance').value;
+
+    if (!name) {
+      alert('Bitte einen gültigen Schablonen-Namen eingeben.');
+      return;
+    }
+    if (!prompt && !role && (kind === 'agent' || kind === 'role')) {
+      alert('Bitte entweder eine Persona-Rolle oder einen System-Prompt angeben.');
+      return;
+    }
+
+    const payload = {
+      name,
+      kind,
+      title,
+      persona_role: role,
+      persona_prompt: prompt,
+      skills,
+      modus,
+      contractus: { turns, cooldown_seconds: 30 },
+      governance: { profile: govProfile }
+    };
+
+    try {
+      const res = await fetch('/api/agent-studio/blueprints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fehler beim Speichern');
+      alert(`✅ Blueprint '${name}' erfolgreich in der Werkstatt angelegt!`);
+      closeCreateBlueprintModal();
+      loadBlueprintsData();
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  // ── MODAL: CREATE TEAM (WERKSTATT) ──
+  function openCreateTeamModal() {
+    document.getElementById('ct-name').value = '';
+    document.getElementById('ct-members').value = '';
+    document.getElementById('ct-desc').value = '';
+    document.getElementById('modal-create-team').style.display = 'flex';
+  }
+
+  function closeCreateTeamModal() {
+    document.getElementById('modal-create-team').style.display = 'none';
+  }
+
+  async function submitCreateTeam() {
+    const name = document.getElementById('ct-name').value.trim();
+    const strategy = document.getElementById('ct-strategy').value;
+    const leader = document.getElementById('ct-leader').value.trim();
+    const members = document.getElementById('ct-members').value.trim();
+    const desc = document.getElementById('ct-desc').value.trim();
+
+    if (!name) {
+      alert('Bitte einen Teamnamen angeben.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/agenten/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, strategy, leader_agent: leader, member_agents: members, description: desc })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fehler beim Anlegen');
+      alert(`✅ Team '${name}' erfolgreich gebildet!`);
+      closeCreateTeamModal();
+      loadBlueprintsData();
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  async function deleteTeam(teamId) {
+    if (!confirm('Dieses Team wirklich löschen?')) return;
+    try {
+      const res = await fetch(`/api/agenten/teams/${teamId}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadBlueprintsData();
+      } else {
+        alert('Fehler beim Löschen des Teams.');
+      }
+    } catch (e) {
+      alert('Netzwerkfehler: ' + e.message);
+    }
+  }
+
+  // ── MODAL: CREATE STAFFEL (WERKSTATT) ──
+  function openCreateStaffelModal() {
+    document.getElementById('cs-name').value = '';
+    document.getElementById('cs-title').value = '';
+    document.getElementById('cs-desc').value = '';
+    document.getElementById('cs-steps').value = JSON.stringify([
+      { step: 1, action: "Research & Analyse", agent: "Research Scout", model: "gemini-2.0-flash" },
+      { step: 2, action: "Code & Architektur", agent: "Ati Architekt", model: "claude-3-7-sonnet" },
+      { step: 3, action: "Audit & P-001 Check", agent: "Sentinel Auditor", model: "codex-cli" }
+    ], null, 2);
+    document.getElementById('modal-create-staffel').style.display = 'flex';
+  }
+
+  function closeCreateStaffelModal() {
+    document.getElementById('modal-create-staffel').style.display = 'none';
+  }
+
+  async function submitCreateStaffel() {
+    const name = document.getElementById('cs-name').value.trim().toLowerCase();
+    const title = document.getElementById('cs-title').value.trim();
+    const desc = document.getElementById('cs-desc').value.trim();
+    let steps = [];
+    try {
+      steps = JSON.parse(document.getElementById('cs-steps').value);
+    } catch(e) {
+      alert('Ungültiges JSON im Stationen-Feld.');
+      return;
+    }
+
+    if (!name) {
+      alert('Bitte eine Staffel-ID angeben.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/marblerun/chains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, title, description: desc, steps })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fehler beim Anlegen');
+      alert(`✅ Staffel '${title || name}' erfolgreich angelegt!`);
+      closeCreateStaffelModal();
+      loadBlueprintsData();
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  async function deleteStaffel(chainId) {
+    if (!confirm('Diese Staffel wirklich löschen?')) return;
+    try {
+      const res = await fetch(`/api/marblerun/chains/${chainId}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadBlueprintsData();
+      } else {
+        alert('Fehler beim Löschen der Staffel.');
+      }
+    } catch (e) {
+      alert('Netzwerkfehler: ' + e.message);
+    }
+  }
+
+  // ── MODAL: TEAM BESEELEN ──
+  function openTeamBeseelenModal(teamId, teamName) {
+    const team = _allTeams.find(t => t.id === teamId);
+    if (!team) return;
+
+    document.getElementById('tb-team-id').value = teamId;
+    document.getElementById('tb-team-name').textContent = teamName || team.name;
+
+    const members = (team.member_agents || '').split(',').map(m => m.trim()).filter(Boolean);
+    const models = team.member_models || {};
+    const container = document.getElementById('tb-members-container');
+
+    container.innerHTML = members.map(m => {
+      const curMod = models[m] || 'ollama/qwen3.8:27b-mlx';
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);">
+          <strong style="font-size:0.85rem;">🤖 ${escapeHtml(m)}</strong>
+          <select class="tb-member-select" data-member="${escapeHtml(m)}" style="padding:0.35rem 0.6rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
+            ${MODEL_OPTIONS.map(opt => `<option value="${opt.id}" ${opt.id === curMod ? 'selected' : ''}>${opt.label}</option>`).join('')}
+          </select>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('modal-team-beseelen').style.display = 'flex';
+  }
+
+  function closeTeamBeseelenModal() {
+    document.getElementById('modal-team-beseelen').style.display = 'none';
+  }
+
+  async function confirmTeamBeseelen() {
+    const teamId = document.getElementById('tb-team-id').value;
+    const selects = document.querySelectorAll('.tb-member-select');
+    const member_models = {};
+    selects.forEach(sel => {
+      const mem = sel.getAttribute('data-member');
+      member_models[mem] = sel.value;
+    });
+
+    try {
+      const res = await fetch(`/api/agenten/teams/${teamId}/beseelen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_models })
+      });
+      if (res.ok) {
+        alert('✨ Team-Beseelung erfolgreich gespeichert!');
+        closeTeamBeseelenModal();
+        loadBlueprintsData();
+      } else {
+        alert('Fehler beim Beseelen.');
+      }
+    } catch (e) {
+      alert('Netzwerkfehler: ' + e.message);
+    }
+  }
+
+  // ── MATERIALIZE MODAL ──
   function openMaterializeModal(id, name) {
     document.getElementById('mat-bp-id').value = id;
     document.getElementById('mat-bp-name').value = name;
@@ -427,7 +1075,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
   }
 
-  // Start Worker Modal Actions
+  // ── START WORKER MODAL ──
   function openStartWorkerModal(id, name) {
     document.getElementById('start-bp-id').value = id;
     document.getElementById('start-bp-name').value = name;
@@ -473,7 +1121,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
   }
 
-  // Startprompt Vorschau
+  // ── PROMPT PREVIEW ──
   async function previewStartPrompt(name) {
     const bp = _allBlueprints.find(b => b.name === name);
     if (!bp) return;
@@ -498,6 +1146,5 @@ import BachLayout from "../../layouts/BachLayout.astro";
     document.getElementById('modal-prompt-preview').style.display = 'none';
   }
 
-  // Initialize
   document.addEventListener('DOMContentLoaded', loadBlueprintsData);
 </script>

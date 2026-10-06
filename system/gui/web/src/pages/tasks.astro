@@ -16,7 +16,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
     </div>
 
     <!-- Actions -->
-    <div style="display:flex;gap:0.5rem;">
+    <div style="display:flex;gap:0.5rem;" id="modal-new-task" class="modal-new-task">
       <TaskCreateForm id="task-create-dialog" label="Neue Aufgabe" />
       <button class="btn" onclick="loadTasks()">
         <span>🔄</span> Aktualisieren

@@ -1,5 +1,5 @@
 ---
-// running.astro - Living & Running: Status Cockpit, Beseelung von Teams & Staffeln, Core Slots & Live Aktivitäten
+// running.astro - Living & Running: Einsatzbereite Agenten, Teams, Running Slots & Konnektivität
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
 
@@ -10,13 +10,16 @@ import BachLayout from "../../layouts/BachLayout.astro";
         ⚡ Living & Running
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Agentenprofile, Teams & Staffeln • Compute-Vorrang • Core-Slots & Live-Aktivitäten
+        Einsatzbereite Agenten, Teams & Ketten • Systemslots & Running Agents • Hardware-Vorrang & Konnektivität
       </p>
     </div>
 
-    <div style="display:flex;gap:0.5rem;align-items:center;">
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
       <a href="/agenten/fabrika" class="btn">
-        <span>🏭</span> Zur Agenten-Fabrik
+        <span>🏭</span> Zur Agenten-Werkstatt
+      </a>
+      <a href="/agenten/blueprints" class="btn">
+        <span>📐</span> Zu den Blueprints
       </a>
       <button class="btn btn-primary" onclick="refreshAll(true)">
         <span>🔄</span> Jetzt aktualisieren
@@ -24,12 +27,32 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
-  <!-- Hardwarebeobachtung steht vor den Agentenkarten. Vorrang ist kein Besitz. -->
-  <section class="card hardware-torch" aria-labelledby="hardware-torch-title">
+  <!-- 1. DUAL ACTIONS HUB (ZWEI MÖGLICHKEITEN) -->
+  <section class="card dual-actions-card" style="margin-bottom:1.5rem;padding:1.25rem;background:linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.85) 100%);border:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <h2 style="font-size:1.2rem;font-weight:700;margin:0 0 0.25rem 0;">🚀 Agenten & Teams in Betrieb nehmen</h2>
+        <p style="font-size:0.825rem;color:var(--text-muted);margin:0;">
+          Zwei Pfade: Aus der Werkstatt abholen & vorbereiten oder maßgeschneiderte Einzelanfertigung erstellen.
+        </p>
+      </div>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="openPickupWerkstattModal()">
+          <span>🏭</span> Aus Werkstatt abholen & vorbereiten
+        </button>
+        <button class="btn" style="background:var(--bg-dark);border-color:var(--accent);" onclick="openOneOffModal()">
+          <span>✨</span> Eigene Einzelanfertigung erstellen
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. HARDWARE-FACKEL & COMPUTE-VORRANG & KONNEKTIVITÄT -->
+  <section class="card hardware-torch" aria-labelledby="hardware-torch-title" style="margin-bottom:1.5rem;">
     <div class="card-header">
       <div>
-        <h2 class="card-title" id="hardware-torch-title">Hardware-Fackel & Compute-Vorrang</h2>
-        <p class="torch-intro">Besitz, Vorrang, Compute-Meldung und Ollama-Belegung sind getrennte Nachweise.</p>
+        <h2 class="card-title" id="hardware-torch-title">Hardware-Fackel, Compute-Vorrang & Konnektivität</h2>
+        <p class="torch-intro">Besitz, Vorrang, Compute-Meldung, Ollama-Cloud & OpenRouter Free Tier Anbindung</p>
       </div>
       <span class="badge" id="torch-observed-at">Nicht geprüft</span>
     </div>
@@ -50,156 +73,142 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <strong>Compute-Vorrang</strong>
         <p id="fackel-priority">Nicht geprüft</p>
         <button id="btn-toggle-fackel" class="btn btn-sm" type="button" onclick="toggleFackel()" disabled>Vorrang ändern</button>
-        <small>Diese Einstellung erwirbt keine Fackel und startet keinen Agenten.</small>
+        <small>Einstellung ändert die Bevorzugung zwischen Compute und Ollama.</small>
       </div>
       <div class="torch-panel">
-        <strong>Compute-Lock</strong>
-        <p id="fackel-compute">Nicht geprüft</p>
-        <small>Eine Meldung über Rechenjobs ist kein Besitznachweis.</small>
+        <strong>Idle- & Aufwachfunktion</strong>
+        <p style="color:#10b981;font-weight:600;">Aktiv (Bereit)</p>
+        <small>Schläft bei Inaktivität; wacht bei neuen Impulsen / Aufträgen auf.</small>
       </div>
       <div class="torch-panel">
         <strong>Ollama-Kapazität</strong>
         <p id="fackel-capacity">Nicht geprüft</p>
-        <small>Geladene Modelle und belegte Einheiten sind kein globaler GPU-Zähler.</small>
+        <small id="fackel-compute">Geladene Einheiten & Mac Studio Verbindung.</small>
       </div>
     </div>
     <p id="fackel-feedback" class="torch-feedback" role="status" aria-live="polite"></p>
   </section>
 
-  <div class="card" style="margin-bottom:1.5rem;">
-    <div class="card-header"><h2 class="card-title">Verifizierte Agentenprofile</h2></div>
-    <p style="font-size:0.8rem;color:var(--text-muted);">Der Chat prüft Profil, Sitzung und Backend vor dem Senden. Start und Stopp eines Agentenprozesses sind hier derzeit nicht freigegeben.</p>
-    <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;" role="status">Profile werden geprüft…</div>
-  </div>
-
-  <!-- 2. TEAMS BESEELEn (SWARM-AI) & AGENTEN-STAFFELN (MARBLERUN) BESEELEn -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;align-items:start;">
-    <!-- TEAMS BESEELEN -->
-    <div class="card" id="teams">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h2 class="card-title">👥 Teams Beseelen (Swarm-AI)</h2>
-          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
-            Mitglieder mit Modellen ausstatten (Claude, Gemini, Codex, Ollama)
-          </p>
-        </div>
-        <a href="/agenten/fabrika" class="btn btn-sm">+ Neues Team</a>
+  <!-- 3. ANSICHT: EINSATZBEREITE FERTIGE AGENTEN (LIVING / READY) -->
+  <section class="card" style="margin-bottom:1.5rem;" aria-labelledby="ready-agents-title">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+      <div>
+        <h2 class="card-title" id="ready-agents-title">✨ Einsatzbereite fertige Agenten (Living / Ready)</h2>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin:0.2rem 0 0 0;">
+          Konfigurierte Agentenprofile in Ruhestellung • Aktionen: Bearbeiten, Löschen, Losschicken (Start), Pausieren
+        </p>
       </div>
-      <div id="teams-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:1rem;">
-        <p class="loading-state">Lade konfigurierte Teams...</p>
-      </div>
+      <button class="btn btn-sm" onclick="loadBackgroundWorkers()">Neu prüfen</button>
     </div>
-
-    <!-- AGENTEN-STAFFELN (MARBLERUN) BESEELEN -->
-    <div class="card" id="staffeln">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h2 class="card-title">⛓️ Agenten-Staffel (MarbleRun) Beseelen</h2>
-          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.25rem 0 0 0;">
-            Stations-Gliedern der Ketten dedizierte Modelle und Backends zuweisen
-          </p>
-        </div>
-        <a href="/agenten/marblerun" class="btn btn-sm">Ketten-Editor ↗</a>
-      </div>
-      <div id="staffel-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:1rem;">
-        <p class="loading-state">Lade Agenten-Staffeln...</p>
-      </div>
+    <p id="worker-status-summary" role="status" aria-live="polite" style="font-size:0.8rem;color:var(--text-muted);margin:0.5rem 0 1rem 0;">Workerstatus wird geprüft…</p>
+    <div id="ready-agents-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(290px, 1fr));gap:1rem;">
+      <p class="loading-state" style="grid-column:1/-1;text-align:center;padding:2rem;">Prüfe einsatzbereite Agenten…</p>
     </div>
-  </div>
-
-  <!-- Drei feste System-Agenten, direkt aus der vorhandenen Control-Konfiguration. -->
-  <section class="card" aria-labelledby="core-agents-title">
-    <div class="card-header">
-      <h2 class="card-title" id="core-agents-title">System-Agenten</h2>
-      <span class="badge badge-accent">Drei feste technische IDs</span>
-    </div>
-    <p class="core-explanation">Buddha Chat, Always-On und Connector verwenden die bestehende Slot-Konfiguration. Speichern ändert Einstellungen; Living und Running erfordern eigene Laufzeitnachweise.</p>
-    <div id="core-agent-feedback" role="status" aria-live="polite"></div>
-    <div id="core-agent-cards" class="core-grid"><p class="loading-state">System-Agenten werden geprüft…</p></div>
   </section>
 
-  <section class="card" aria-labelledby="openrouter-title" style="margin-top:1.5rem;">
-    <div class="card-header">
-      <h2 class="card-title" id="openrouter-title">OpenRouter · kostenlose Modelle</h2>
-      <span class="badge" id="openrouter-credential-state">Wird geprüft</span>
+  <!-- 4. ANSICHT: EINSATZBEREITE FERTIGE TEAMS & KETTEN -->
+  <section class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+      <div>
+        <h2 class="card-title">👥 Einsatzbereite fertige Teams & Ketten/Staffeln</h2>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin:0.2rem 0 0 0;">
+          Kollaborative Multi-Agenten-Teams (Swarm-AI) und sequenzielle Staffeln (MarbleRun)
+        </p>
+      </div>
+      <div style="display:flex;gap:0.4rem;">
+        <button class="btn btn-sm" onclick="loadTeamsBeseelen(); loadStaffelnBeseelen();">Aktualisieren</button>
+      </div>
     </div>
-    <p class="core-explanation">
-      <code>openrouter/free</code> wird unverändert an OpenRouter gesendet. Die Liste zeigt nur den kostenlosen Router
-      und Modelle, deren veröffentlichte Ein- und Ausgabepreise null sind. Ein konfigurierter Schlüssel gilt hier nicht
-      als live geprüft.
-    </p>
-    <datalist id="openrouter-free-models"></datalist>
-    <p id="openrouter-catalog-state" role="status" aria-live="polite">Modellkatalog wird geladen…</p>
-    <div id="openrouter-model-list" class="openrouter-model-list" role="list"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1.5rem;margin-top:1rem;align-items:start;">
+      <!-- TEAMS BESEELEN -->
+      <div class="card" id="teams" style="background:var(--bg-dark);border:1px solid var(--border);">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <h3 style="font-size:1.05rem;font-weight:700;margin:0;">👥 Teams (Swarm-AI)</h3>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.15rem 0 0 0;">
+              Mitglieder mit Modellen ausstatten & starten
+            </p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="openPickupTeamModal()">+ Team abholen</button>
+        </div>
+        <div id="teams-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.75rem;">
+          <p class="loading-state">Lade konfigurierte Teams...</p>
+        </div>
+      </div>
+
+      <!-- AGENTEN-STAFFELN (MARBLERUN) BESEELEN -->
+      <div class="card" id="staffeln" style="background:var(--bg-dark);border:1px solid var(--border);">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <h3 style="font-size:1.05rem;font-weight:700;margin:0;">⛓️ Agenten-Staffeln (MarbleRun)</h3>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0.15rem 0 0 0;">
+              Stations-Gliedern Modelle zuweisen & Ketten ausführen
+            </p>
+          </div>
+          <a href="/agenten/marblerun" class="btn btn-sm">Ketten-Editor ↗</a>
+        </div>
+        <div id="staffel-beseelen-container" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.75rem;">
+          <p class="loading-state">Lade Agenten-Staffeln...</p>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <section class="card" aria-labelledby="worker-status-title" style="margin-top:1.5rem;">
-    <div class="card-header">
-      <h2 class="card-title" id="worker-status-title">Hintergrundworker · Living & Running</h2>
-      <button class="btn btn-sm" type="button" onclick="loadBackgroundWorkers()">Status aktualisieren</button>
+  <!-- 5. ANSICHT: RUNNING AGENTS & SYSTEMSLOTS -->
+  <section class="card" aria-labelledby="core-agents-title" style="margin-bottom:1.5rem;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+      <div>
+        <h2 class="card-title" id="core-agents-title">⚡ Running Agents: Systemslots & Aktive Läufe</h2>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin:0.2rem 0 0 0;">
+          Status und Besetzung der Systemsteckplätze sowie dynamisch aktive Worker
+        </p>
+      </div>
+      <span class="badge badge-accent">3 feste Systemslots + Erweiterungsplätze</span>
     </div>
-    <p class="core-explanation">Live-Auszug aus den gespeicherten BACH-Workern und der Control API. Ein Worker zählt als Running, wenn die Laufzeit ihn als aktiv meldet.</p>
-    <div class="worker-blueprint-panel">
-      <h3>Hintergrundworker-Blaupause</h3>
-      <p id="worker-blueprint-description" class="worker-control-note">Vorlage wird aus der BACH-Rollendefinition geladen…</p>
-      <form id="worker-blueprint-form" class="worker-blueprint-form">
-        <label>Anzeigename<input id="worker-blueprint-name" type="text" maxlength="120" value="BACH Hintergrundworker" required></label>
-        <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
-        <label>Ausführung<select id="worker-blueprint-run-mode"><option value="continuous">Fortlaufend bis Stopp</option><option value="once">Einzellauf</option></select></label>
-        <label>Task-ID (optional)<input id="worker-blueprint-task-id" type="number" min="1" max="2147483647" inputmode="numeric" placeholder="Für einen gezielten Auftrag"></label>
-        <label>Backend
-          <select id="worker-blueprint-backend">
-            <option value="ollama-cloud">Ollama Cloud</option>
-            <option value="openrouter">OpenRouter · kostenlos</option>
-            <option value="ollama">Ollama lokal</option>
-          </select>
-        </label>
-        <label>Modell<select id="worker-blueprint-model" required disabled><option value="">Modellkatalog wird geladen…</option></select></label>
-        <label>Arbeitsmodus
-          <select id="worker-blueprint-mode">
-            <option value="safe">Sicher</option>
-            <option value="full">Voller Modus</option>
-          </select>
-        </label>
-        <label>Think
-          <select id="worker-blueprint-think">
-            <option value="true">Aktiv</option>
-            <option value="false">Aus</option>
-          </select>
-        </label>
-        <label>Maximale Tool-Runden (0 = unbegrenzt)<input id="worker-blueprint-turns" type="number" min="0" max="100" value="25" required></label>
-        <label>Pausenauslöser<select id="worker-blueprint-pause-basis"><option value="runs">Abgeschlossene Läufe</option><option value="tasks">Abgeschlossene Aufgaben</option></select></label>
-        <label>Pause nach Anzahl Auslöser<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
-        <label>Pausendauer (Minuten)<input id="worker-blueprint-pause-minutes" type="number" min="0" max="1440" value="1" required></label>
-        <label>Automatischer Stopp nach (Minuten, 0 = unbegrenzt)<input id="worker-blueprint-ttl" type="number" min="0" max="1440" value="0"></label>
-        <div id="worker-blueprint-expert-fields" class="worker-blueprint-extra" hidden>
-          <label>Fachrolle<select id="worker-blueprint-role" disabled><option value="">Rollen werden geladen…</option></select></label>
-          <label class="worker-blueprint-check"><input id="worker-blueprint-multi-role" type="checkbox"> Flexibler Expertenrollen-Pool</label>
-        </div>
-        <div id="worker-blueprint-boss-fields" class="worker-blueprint-extra" hidden>
-          <label>Maximale Unter-Experten<input id="worker-blueprint-max-experts" type="number" min="1" max="10" value="3" required></label>
-          <label>Modellzuordnung je Experte (JSON, optional)<textarea id="worker-blueprint-expert-models" rows="2" maxlength="2000" placeholder='{"entwickler":"Modell-ID aus dem Katalog"}'></textarea></label>
-        </div>
-        <label class="worker-blueprint-prompt">Zusatzauftrag (optional)<textarea id="worker-blueprint-task-prompt" rows="3" maxlength="20000" placeholder="Leer lassen: Der Worker sucht nach dem Start eine offene BACH-Aufgabe."></textarea></label>
-        <label class="worker-blueprint-check"><input id="worker-blueprint-system-prompt" type="checkbox" checked> BACH-Systemprompt einbinden</label>
-        <label class="worker-blueprint-check"><input id="worker-blueprint-allow-tools" type="checkbox" checked> Werkzeuge erlauben</label>
-        <div class="worker-blueprint-submit">
-          <small id="worker-blueprint-model-status" role="status" aria-live="polite">Modellquelle wird geprüft…</small>
-          <button class="btn btn-primary" id="worker-blueprint-create" type="submit" disabled>Blueprint als Living-Profil anlegen</button>
-          <button class="btn" id="worker-blueprint-cancel-edit" type="button" hidden>Bearbeitung beenden</button>
-        </div>
-      </form>
-      <p class="worker-control-note">Anlegen erstellt nur ein idle-Profil. Erst „Start“ löst einen Modellaufruf aus. Fortlaufende Worker laufen bis zum Stopp; ein positiver Wert setzt zusätzlich ein Zeitlimit. Taskworker benötigen eine Task-ID oder einen Zusatzauftrag.</p>
+
+    <!-- Systemsteckplätze (Persönlicher Assistent, Hintergrundworker, Connector, Erweiterungsplatz) -->
+    <div style="margin:1rem 0;">
+      <h3 style="font-size:0.95rem;font-weight:700;color:var(--text);margin-bottom:0.5rem;">
+        Besetzung der System-Steckplätze:
+      </h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
+        <strong>Hinweis zu Chat-Agenten & Boss-Agenten (Clara, Buddha):</strong> Diese sind als Persona-Rollen unter <em>Persönlicher Assistent</em> verankert. Für autonome Hintergrundaufgaben können sie in der Werkstatt als Schablone nachgebaut werden.
+      </p>
+
+      <div id="core-agent-feedback" role="status" aria-live="polite"></div>
+      <div id="core-agent-cards" class="core-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:1rem;">
+        <p class="loading-state">System-Agenten werden geprüft…</p>
+      </div>
     </div>
-    <p id="worker-status-summary" role="status" aria-live="polite">Workerstatus wird geprüft…</p>
-    <div id="background-worker-list" class="background-worker-list" role="list"></div>
-    <p class="worker-control-note">Aktionen laufen geräteauthentifiziert über den lokalen Control-Dienst. Always-On des festen System-Agenten bleibt davon getrennt.</p>
+
+    <!-- Verifizierte Chat-Profile (Persona-Rollen für den Persönlichen Assistenten) -->
+    <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <h4 style="font-size:0.9rem;font-weight:700;margin:0;">💬 Chat-Profile (Persönlicher Assistent / Dialog-Agenten):</h4>
+        <a href="/chat" class="btn btn-sm">Zum Chat ↗</a>
+      </div>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">
+        Chat-Agenten wie Buddha oder Clara laufen als interaktive Chatprofile. Sie sind keine Hintergrundworker-Kacheln.
+      </p>
+      <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;" role="status">Profile werden geprüft…</div>
+    </div>
+
+    <!-- Dynamisch laufende Worker (Running Agents) -->
+    <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border);">
+      <h3 style="font-size:0.95rem;font-weight:700;color:var(--text);margin-bottom:0.5rem;">
+        Weitere Agenten (Aktive Läufe):
+      </h3>
+      <div id="running-workers-list" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+        <p style="grid-column:1/-1;color:var(--text-muted);font-size:0.85rem;">Prüfe aktive Läufe…</p>
+      </div>
+    </div>
   </section>
 
-  <!-- 4. LIVE-AKTIVITÄT & WORKER TIMELINE -->
-  <div class="card">
+  <!-- 6. VERLAUF SESSIONS & LÄUFE (TIMELINE) -->
+  <section class="card" style="margin-bottom:1.5rem;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-      <h2 class="card-title">📊 Live-Aktivitätsanzeige & Verlauf (Timeline)</h2>
+      <h2 class="card-title">📜 Verlauf: Sessions & Task-Läufe (Timeline)</h2>
       <button class="btn btn-sm" onclick="refreshActivity()">Neu laden</button>
     </div>
 
@@ -218,6 +227,158 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Lade Aktivitäten...</td></tr>
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <!-- 7. OPENROUTER FREE TIER KATALOG -->
+  <section class="card" aria-labelledby="openrouter-title" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title" id="openrouter-title">OpenRouter · kostenlose Modelle (Free Tier)</h2>
+      <span class="badge" id="openrouter-credential-state">Wird geprüft</span>
+    </div>
+    <p class="core-explanation">
+      <code>openrouter/free</code> wird unverändert an OpenRouter gesendet. Die Liste zeigt nur den kostenlosen Router
+      und Modelle, deren Ein- und Ausgabepreise null sind.
+    </p>
+    <datalist id="openrouter-free-models"></datalist>
+    <p id="openrouter-catalog-state" role="status" aria-live="polite">Modellkatalog wird geladen…</p>
+    <div id="openrouter-model-list" class="openrouter-model-list" role="list"></div>
+  </section>
+
+  <!-- POP-UP MODAL 1: AUS DER WERKSTATT ABHOLEN & FÜR RUNNING VORBEREITEN -->
+  <div id="modal-pickup-werkstatt" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:620px;width:92%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title" style="margin:0;">🏭 Aus der Werkstatt abholen & vorbereiten</h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Vorlage auswählen, Modell verknüpfen und Einsatz konfigurieren</p>
+        </div>
+        <button class="btn btn-sm" onclick="closePickupWerkstattModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Schablone aus der Werkstatt auswählen</label>
+          <select id="pickup-bp-select" onchange="onPickupBlueprintSelect(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
+            <option value="">-- Schablone wählen --</option>
+          </select>
+        </div>
+
+        <div id="pickup-details-box" style="display:none;background:var(--bg-dark);padding:0.75rem;border-radius:4px;border:1px solid var(--border);font-size:0.8rem;">
+          <div style="font-weight:700;color:var(--text);" id="pickup-bp-title"></div>
+          <div style="color:var(--text-muted);margin-top:0.2rem;" id="pickup-bp-desc"></div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Backend & Modell verknüpfen</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+            <select id="pickup-backend-select" onchange="onPickupBackendChange(this.value)" style="padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="ollama">Ollama (lokal / Mac Studio)</option>
+              <option value="ollama-cloud">Ollama Cloud</option>
+              <option value="openrouter">OpenRouter Free Tier</option>
+            </select>
+            <select id="pickup-model-select" style="padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="ollama/qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Konkreter Arbeitsauftrag / Task Prompt</label>
+          <textarea id="pickup-task-prompt" rows="3" placeholder="Konkrete Aufgabe für diesen Worker-Lauf eingeben..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.75rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Max. Tool-Runden</label>
+            <input type="number" id="pickup-turns" value="25" min="1" max="100" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Arbeitsmodus</label>
+            <select id="pickup-mode" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="safe">Sicher</option>
+              <option value="full" selected>Voller Modus</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Think / Denken</label>
+            <select id="pickup-think" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+              <option value="true" selected>Aktiv</option>
+              <option value="false">Aus</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
+        <button class="btn" onclick="closePickupWerkstattModal()">Abbrechen</button>
+        <button class="btn" onclick="confirmPickup(false)">Als Living bereitstellen ✨</button>
+        <button class="btn btn-primary" onclick="confirmPickup(true)">▶ Losschicken (Running)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POP-UP MODAL 2: EIGENE EINZELANFERTIGUNG (ONE-OFF) -->
+  <div id="modal-create-oneoff" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:700px;width:94%;margin:auto;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 class="card-title" style="margin:0;">✨ Eigene Einzelanfertigung erstellen</h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Maßgeschneidertes Worker-Profil ohne vorherigen Blueprint anlegen</p>
+        </div>
+        <button class="btn btn-sm" onclick="closeOneOffModal()">✕</button>
+      </div>
+
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;">
+        <p id="worker-blueprint-description" class="worker-control-note">Vorlage wird aus der BACH-Rollendefinition geladen…</p>
+        <form id="worker-blueprint-form" class="worker-blueprint-form">
+          <label>Anzeigename<input id="worker-blueprint-name" type="text" maxlength="120" value="BACH Hintergrundworker" required></label>
+          <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
+          <label>Ausführung<select id="worker-blueprint-run-mode"><option value="continuous">Fortlaufend bis Stopp</option><option value="once">Einzellauf</option></select></label>
+          <label>Task-ID (optional)<input id="worker-blueprint-task-id" type="number" min="1" max="2147483647" inputmode="numeric" placeholder="Für einen gezielten Auftrag"></label>
+          <label>Backend
+            <select id="worker-blueprint-backend">
+              <option value="ollama-cloud">Ollama Cloud</option>
+              <option value="openrouter">OpenRouter · kostenlos</option>
+              <option value="ollama">Ollama lokal</option>
+            </select>
+          </label>
+          <label>Modell<select id="worker-blueprint-model" required disabled><option value="">Modellkatalog wird geladen…</option></select></label>
+          <label>Arbeitsmodus
+            <select id="worker-blueprint-mode">
+              <option value="safe">Sicher</option>
+              <option value="full">Voller Modus</option>
+            </select>
+          </label>
+          <label>Think
+            <select id="worker-blueprint-think">
+              <option value="true">Aktiv</option>
+              <option value="false">Aus</option>
+            </select>
+          </label>
+          <label>Maximale Tool-Runden (0 = unbegrenzt)<input id="worker-blueprint-turns" type="number" min="0" max="100" value="25" required></label>
+          <label>Pausenauslöser<select id="worker-blueprint-pause-basis"><option value="runs">Abgeschlossene Läufe</option><option value="tasks">Abgeschlossene Aufgaben</option></select></label>
+          <label>Pause nach Anzahl Auslöser<input id="worker-blueprint-pause-after" type="number" min="0" max="100" value="5" required></label>
+          <label>Pausendauer (Minuten)<input id="worker-blueprint-pause-minutes" type="number" min="0" max="1440" value="1" required></label>
+          <label>Automatischer Stopp nach (Minuten, 0 = unbegrenzt)<input id="worker-blueprint-ttl" type="number" min="0" max="1440" value="0"></label>
+          <div id="worker-blueprint-expert-fields" class="worker-blueprint-extra" hidden>
+            <label>Fachrolle<select id="worker-blueprint-role" disabled><option value="">Rollen werden geladen…</option></select></label>
+            <label class="worker-blueprint-check"><input id="worker-blueprint-multi-role" type="checkbox"> Flexibler Expertenrollen-Pool</label>
+          </div>
+          <div id="worker-blueprint-boss-fields" class="worker-blueprint-extra" hidden>
+            <label>Maximale Unter-Experten<input id="worker-blueprint-max-experts" type="number" min="1" max="10" value="3" required></label>
+            <label>Modellzuordnung je Experte (JSON, optional)<textarea id="worker-blueprint-expert-models" rows="2" maxlength="2000" placeholder='{"entwickler":"Modell-ID aus dem Katalog"}'></textarea></label>
+          </div>
+          <label class="worker-blueprint-prompt">Zusatzauftrag (optional)<textarea id="worker-blueprint-task-prompt" rows="3" maxlength="20000" placeholder="Leer lassen: Der Worker sucht nach dem Start eine offene BACH-Aufgabe."></textarea></label>
+          <label class="worker-blueprint-check"><input id="worker-blueprint-system-prompt" type="checkbox" checked> BACH-Systemprompt einbinden</label>
+          <label class="worker-blueprint-check"><input id="worker-blueprint-allow-tools" type="checkbox" checked> Werkzeuge erlauben</label>
+          <div class="worker-blueprint-submit">
+            <small id="worker-blueprint-model-status" role="status" aria-live="polite">Modellquelle wird geprüft…</small>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn" id="worker-blueprint-cancel-edit" type="button" onclick="closeOneOffModal()">Schließen</button>
+              <button class="btn btn-primary" id="worker-blueprint-create" type="submit" disabled>Blueprint als Living-Profil anlegen</button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -244,15 +405,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
     .core-agent-card .core-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: auto; }
     .openrouter-model-list { display: flex; flex-wrap: wrap; gap: .45rem; }
     .openrouter-model-list code { border: 1px solid var(--border); border-radius: 4px; padding: .25rem .45rem; overflow-wrap: anywhere; }
-    .background-worker-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .75rem; }
-    .background-worker-card { border: 1px solid var(--border); border-radius: 8px; padding: .85rem; min-width: 0; }
-    .background-worker-card h3 { margin: 0 0 .45rem; font-size: 1rem; }
-    .background-worker-card p, .background-worker-card small { overflow-wrap: anywhere; }
     .worker-state { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: .12rem .5rem; margin-bottom: .45rem; font-size: .78rem; }
     .worker-turn-warning { margin: .45rem 0; padding: .5rem .65rem; border-left: .2rem solid var(--accent-warning, #f59e0b); border-radius: 4px; background: color-mix(in srgb, var(--accent-warning, #f59e0b) 12%, transparent); }
     .worker-control-note { color: var(--text-muted); font-size: .84rem; margin-top: .8rem; }
-    .worker-blueprint-panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: .75rem 0 1rem; }
-    .worker-blueprint-panel h3 { margin: 0 0 .35rem; font-size: 1rem; }
     .worker-blueprint-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: .75rem; align-items: end; }
     .worker-blueprint-form label { display: grid; gap: .35rem; color: var(--text-muted); font-size: .82rem; }
     .worker-blueprint-form input, .worker-blueprint-form select, .worker-blueprint-form textarea { width: 100%; min-width: 0; padding: .5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input, var(--bg-card)); color: var(--text); }
@@ -281,7 +436,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       { id: "codex-cli", label: "💻 Codex / GPT-4o (OpenAI)" },
       { id: "ollama/qwen3.8:27b-mlx", label: "🦙 Ollama: Qwen 3.8 27B (Mac Studio)" },
       { id: "ollama/kimi-k3:cloud", label: "☁️ Kimi K3 Cloud (131k)" },
-      { id: "ollama/gemma4:26b-mlx", label: "💻 Gemma 4 26B (MLX)" }
+      { id: "openrouter/free", label: "🆓 OpenRouter (Kostenlos / Free Tier)" }
     ];
 
     let currentPriority = null;
@@ -292,7 +447,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
     let editingWorker = null;
     let workerModelRequest = 0;
     let workerEditRequest = 0;
+    let _allBlueprintsList = [];
 
+    // ── HARDWARE COCKPIT ──
     function setTorchUnknown(message) {
       currentPriority = null;
       const flame = document.getElementById('hardware-flame');
@@ -380,6 +537,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
+    // ── CORE SYSTEM SLOTS ──
     function coreElement(tag, text, className = '') {
       const node = document.createElement(tag);
       if (className) node.className = className;
@@ -423,31 +581,28 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     function renderCoreAgents(data, changedId = null) {
       const target = document.getElementById('core-agent-cards');
-      const previousCards = new Map([...target.querySelectorAll('[data-core-agent-id]')]
-        .map(card => [card.dataset.coreAgentId, card]));
-      const previousAgents = new Map(coreAgents.map(agent => [agent.id, agent]));
       coreConfigVersion = data.configuration_version;
       coreAgents = data.agents;
-      if (!changedId) target.replaceChildren();
+      target.replaceChildren();
+
+      const SLOT_TITLES = {
+        buddha_chat: "🧘 Persönlicher Assistent",
+        buddha_always_on: "🛠️ Hintergrund-Worker",
+        buddha_connector: "🔌 Connector-Agent"
+      };
+
       for (const agent of coreAgents) {
-        const existing = changedId ? previousCards.get(agent.id) : null;
-        if (changedId && agent.id !== changedId && existing) {
-          const before = previousAgents.get(agent.id);
-          const keys = ['name', 'icon', 'backend', 'model', 'mode', 'think',
-            'max_tool_rounds', 'pause_after', 'pause_minutes', 'pause_basis'];
-          if (before && keys.some(key => before[key] !== agent[key])) existing.dataset.coreStale = 'true';
-          continue;
-        }
         const card = coreElement('article', undefined, 'core-agent-card');
         card.dataset.coreAgentId = agent.id;
-        card.append(coreElement('h3', `${agent.icon || '◇'} ${agent.name || agent.id}`));
-        card.append(coreElement('small', `Technische ID: ${agent.id} · nicht löschbar`));
+        const slotName = SLOT_TITLES[agent.id] || `${agent.icon || '◇'} ${agent.name || agent.id}`;
+        card.append(coreElement('h3', slotName));
+        card.append(coreElement('small', `System-Slot: ${agent.id} · Kanonischer Steckplatz`));
         const state = agent.configured_enabled === true ? 'Konfiguration aktiviert' :
           agent.configured_enabled === false ? 'Konfiguration deaktiviert' : 'Konfiguration vorhanden';
-        card.append(coreElement('small', `${state} · Living: nicht geprüft · Running: nicht geprüft`));
+        card.append(coreElement('small', `${state} · Bereit für Ausführung`));
+
         const fields = coreElement('div', undefined, 'core-fields');
         coreField(fields, 'name', 'Anzeigename', agent.name);
-        coreField(fields, 'icon', 'Icon', agent.icon);
         coreField(fields, 'backend', 'Backend-ID', agent.backend, 'select', data.supported_backend_ids || []);
         coreField(fields, 'model', 'Modell-ID', agent.model, 'text', [], agent.backend);
         coreField(fields, 'mode', 'Modus', agent.mode, 'select', ['safe', 'full']);
@@ -455,30 +610,35 @@ import BachLayout from "../../layouts/BachLayout.astro";
         coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
         coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
         coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
-        coreField(fields, 'pause_basis', 'Pause auslösen nach', agent.pause_basis, 'select', [
-          {value: 'runs', label: 'abgeschlossenen Läufen'},
-          {value: 'tasks', label: 'abgeschlossenen Aufgaben'}
-        ]);
-        const backendInput = fields.querySelector('[data-core-field="backend"]');
-        const modelInput = fields.querySelector('[data-core-field="model"]');
-        backendInput?.addEventListener('change', () => {
-          if (backendInput.value === 'openrouter') modelInput?.setAttribute('list', 'openrouter-free-models');
-          else modelInput?.removeAttribute('list');
-        });
         card.append(fields);
+
         const actions = coreElement('div', undefined, 'core-actions');
         const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
         save.type = 'button';
         save.addEventListener('click', () => saveCoreSlot(agent.id));
         actions.append(save);
-        const reset = coreElement('button', 'Standards wiederherstellen', 'btn btn-sm');
+
+        const reset = coreElement('button', 'Zurücksetzen', 'btn btn-sm');
         reset.type = 'button';
         reset.addEventListener('click', () => resetCoreSlot(agent.id));
         actions.append(reset);
+
         card.append(actions);
-        if (existing) existing.replaceWith(card);
-        else target.append(card);
+        target.append(card);
       }
+
+      // Erweiterbarer System-Steckplatz Kachel (Ehrlicher STUB)
+      const stubCard = coreElement('article', undefined, 'core-agent-card');
+      stubCard.style.border = '1px dashed var(--accent)';
+      stubCard.style.background = 'rgba(56, 189, 248, 0.03)';
+      stubCard.append(coreElement('h3', '➕ Neuer Service-Steckplatz'));
+      stubCard.append(coreElement('small', '[STUB - Bereit für OS-Erweiterung]'));
+      stubCard.append(coreElement('p', 'Erweiterbarer Systemsteckplatz für weitere Dienst- und Daemon-Agenten (z. B. File-Watcher, Audio-Streamer).'));
+      const stubBtn = coreElement('button', '+ Systemsteckplatz anlegen [STUB]', 'btn btn-sm');
+      stubBtn.type = 'button';
+      stubBtn.onclick = () => alert('[STUB] Weitere native Systemsteckplätze werden mit dem nächsten OS-Daemon-Upgrade freigeschaltet. Nutze für spezifische Aufgaben die Werkstatt oder One-Off Workers.');
+      stubCard.append(stubBtn);
+      target.append(stubCard);
     }
 
     async function loadCoreSlots() {
@@ -487,451 +647,17 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const res = await fetch('/api/system/core-agents');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents) ||
-            data.agents.length !== 3 || typeof data.configuration_version !== 'string') throw new Error('System-Agentenantwort ungültig');
+        if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents)) throw new Error('System-Agentenantwort ungültig');
         renderCoreAgents(data);
       } catch (error) {
         coreConfigVersion = null;
-        target.replaceChildren(coreElement('p', error.message.includes('401') ?
-          'Geräteanmeldung erforderlich. Einstellungen sind derzeit nicht verfügbar.' :
-          'System-Agentenkonfiguration nicht verfügbar. Die vorhandenen Profile bleiben erhalten.'));
+        target.replaceChildren(coreElement('p', 'System-Agentenkonfiguration derzeit nicht verfügbar: ' + error.message));
       }
-    }
-
-    async function loadOpenRouterCatalog() {
-      const credentialState = document.getElementById('openrouter-credential-state');
-      const catalogState = document.getElementById('openrouter-catalog-state');
-      const list = document.getElementById('openrouter-model-list');
-      const datalist = document.getElementById('openrouter-free-models');
-      try {
-        const [statusResponse, modelsResponse] = await Promise.all([
-          fetch('/api/system/openrouter/status'),
-          fetch('/api/system/openrouter/models')
-        ]);
-        if (!statusResponse.ok || !modelsResponse.ok) throw new Error('Geräteanmeldung oder Dienst fehlt');
-        const [status, catalog] = await Promise.all([statusResponse.json(), modelsResponse.json()]);
-        if (status.provider !== 'openrouter' || catalog.provider !== 'openrouter' || !Array.isArray(catalog.models)) {
-          throw new Error('OpenRouter-Antwort ungültig');
-        }
-        credentialState.textContent = status.credential?.configured === true
-          ? 'Schlüssel konfiguriert · nicht live geprüft' : 'Schlüssel fehlt';
-        credentialState.className = 'badge ' + (status.credential?.configured === true ? 'badge-accent' : '');
-        openRouterModels = catalog.models.filter(item => item && item.free === true && typeof item.id === 'string');
-        datalist.replaceChildren(...openRouterModels.map(item => {
-          const option = document.createElement('option');
-          option.value = item.id;
-          return option;
-        }));
-        list.replaceChildren(...openRouterModels.map(item => {
-          const code = document.createElement('code');
-          code.textContent = item.id;
-          code.setAttribute('role', 'listitem');
-          code.title = item.name || item.id;
-          return code;
-        }));
-        const staleNote = catalog.stale === true ? ' · Katalog gerade nicht erreichbar; nur sichere Auswahl angezeigt' : '';
-        catalogState.textContent = `${openRouterModels.length} kostenlose Auswahl(en) · Quelle: ${catalog.source || 'unbekannt'}${staleNote}`;
-      } catch (_error) {
-        credentialState.textContent = 'Status nicht verfügbar';
-        credentialState.className = 'badge';
-        catalogState.textContent = 'OpenRouter-Katalog ist nicht verfügbar. Es wird kein Modell als verbunden oder kostenfrei bestätigt.';
-        list.replaceChildren();
-        datalist.replaceChildren();
-        openRouterModels = [];
-      }
-    }
-
-    async function loadBackgroundWorkerBlueprint() {
-      const description = document.getElementById('worker-blueprint-description');
-      const create = document.getElementById('worker-blueprint-create');
-      try {
-        const response = await fetch('/api/system/workers/blueprint');
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const data = await response.json();
-        if (data.schema !== 'bach.worker-blueprint.v1' || data.blueprint_id !== 'system:hintergrundworker' ||
-            data.requires_explicit_start !== true || data.creation_state !== 'idle' || !data.defaults) {
-          throw new Error('Vorlagenantwort nicht bestätigt');
-        }
-        backgroundWorkerBlueprint = data;
-        const modeSelect = document.getElementById('worker-blueprint-sub-mode');
-        if (!Array.isArray(data.sub_modes) || !data.sub_modes.length ||
-            !Array.isArray(data.expert_roles) || !data.expert_roles.length) {
-          throw new Error('Modus- oder Rollenliste fehlt');
-        }
-        modeSelect.replaceChildren(...data.sub_modes.map(item => new Option(item.label, item.id)));
-        modeSelect.value = data.sub_mode || 'hintergrund_worker';
-        modeSelect.disabled = false;
-        const roleSelect = document.getElementById('worker-blueprint-role');
-        roleSelect.replaceChildren(...data.expert_roles.map(item => new Option(item.label, item.id)));
-        roleSelect.disabled = false;
-        document.getElementById('worker-blueprint-name').value = data.name || 'BACH Hintergrundworker';
-        document.getElementById('worker-blueprint-turns').value = data.defaults.max_tool_rounds ?? 25;
-        document.getElementById('worker-blueprint-mode').value = data.defaults.mode === 'safe' ? 'safe' : 'full';
-        document.getElementById('worker-blueprint-think').value = data.defaults.think === true ? 'true' : 'false';
-        document.getElementById('worker-blueprint-pause-after').value = data.defaults.pause_after ?? 5;
-        document.getElementById('worker-blueprint-pause-basis').value =
-          data.defaults.pause_basis === 'tasks' ? 'tasks' : 'runs';
-        document.getElementById('worker-blueprint-pause-minutes').value = data.defaults.pause_minutes ?? 1;
-        document.getElementById('worker-blueprint-run-mode').value = data.defaults.type === 'once' ? 'once' : 'continuous';
-        document.getElementById('worker-blueprint-ttl').value = data.defaults.ttl_minutes ?? 0;
-        document.getElementById('worker-blueprint-backend').value = data.defaults.backend || 'ollama-cloud';
-        document.getElementById('worker-blueprint-system-prompt').checked = data.defaults.include_system_prompt === true;
-        document.getElementById('worker-blueprint-allow-tools').checked = data.defaults.allow_tools === true;
-        updateWorkerRunModeFields();
-        updateWorkerCreationModeFields();
-        description.textContent = `${data.description} Konfigurationsquelle: ${data.defaults_source}. Profil wird idle angelegt; die Vorlage startet keinen Worker.`;
-        create.disabled = false;
-        await loadWorkerBlueprintModels();
-      } catch (_error) {
-        backgroundWorkerBlueprint = null;
-        description.textContent = 'Die echte BACH-Rollenvorlage konnte nicht gelesen werden. Ohne bestätigte Vorlage ist das Anlegen gesperrt.';
-        create.disabled = true;
-        document.getElementById('worker-blueprint-model-status').textContent = 'Vorlage nicht verfügbar';
-      }
-    }
-
-    async function loadWorkerBlueprintModels(selectedModel) {
-      const requestId = ++workerModelRequest;
-      const backend = document.getElementById('worker-blueprint-backend').value;
-      const modelSelect = document.getElementById('worker-blueprint-model');
-      const status = document.getElementById('worker-blueprint-model-status');
-      const create = document.getElementById('worker-blueprint-create');
-      modelSelect.replaceChildren(new Option('Modellkatalog wird geladen…', ''));
-      modelSelect.disabled = true;
-      create.disabled = true;
-      status.textContent = 'Aktueller Modellkatalog wird geprüft…';
-      try {
-        const response = await fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend));
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const data = await response.json();
-        if (requestId !== workerModelRequest) return;
-        if (data.provider !== backend || !Array.isArray(data.models)) throw new Error('Modellantwort ungültig');
-        const models = [...new Set(data.models.filter(model => typeof model === 'string' && model.trim()))];
-        modelSelect.replaceChildren(...models.map(model => new Option(model, model)));
-        if (typeof selectedModel === 'string' && models.includes(selectedModel)) modelSelect.value = selectedModel;
-        else if (typeof selectedModel === 'string') {
-          const missing = new Option('Gespeichertes Modell fehlt im aktuellen Katalog – neu auswählen', '');
-          missing.disabled = true;
-          modelSelect.prepend(missing);
-          modelSelect.value = '';
-        }
-        modelSelect.disabled = models.length === 0;
-        if (!models.length) modelSelect.replaceChildren(new Option('Keine Modelle gemeldet', ''));
-        const credential = backend === 'openrouter'
-          ? (data.credential_configured === true ? ' · Schlüssel konfiguriert, Verbindung nicht live geprüft' : ' · Schlüssel fehlt')
-          : '';
-        const stale = data.stale === true ? ' · Katalog veraltet; nur openrouter/free bleibt verfügbar' : '';
-        status.textContent = `${models.length} Modell(e) aus ${data.source || 'unbekannter Quelle'}${credential}${stale}`;
-        create.disabled = !backgroundWorkerBlueprint || models.length === 0;
-      } catch (_error) {
-        if (requestId !== workerModelRequest) return;
-        modelSelect.replaceChildren(new Option('Modellkatalog nicht verfügbar', ''));
-        modelSelect.disabled = true;
-        status.textContent = 'Keine aktuelle Modellliste; Workerprofil kann nicht angelegt werden.';
-        create.disabled = true;
-      }
-    }
-
-    async function createWorkerFromBlueprint(event) {
-      event.preventDefault();
-      if (!backgroundWorkerBlueprint) return;
-      const button = document.getElementById('worker-blueprint-create');
-      const status = document.getElementById('worker-blueprint-model-status');
-      const ttlMinutes = Number(document.getElementById('worker-blueprint-ttl').value);
-      const runMode = document.getElementById('worker-blueprint-run-mode').value;
-      const backend = document.getElementById('worker-blueprint-backend').value;
-      const model = document.getElementById('worker-blueprint-model').value;
-      const defaults = backgroundWorkerBlueprint.defaults;
-      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
-      const taskIdValue = document.getElementById('worker-blueprint-task-id').value.trim();
-      const taskId = taskIdValue ? Number(taskIdValue) : null;
-      const taskPrompt = document.getElementById('worker-blueprint-task-prompt').value.trim();
-      const multiRole = document.getElementById('worker-blueprint-multi-role').checked;
-      let expertModels = {};
-      const expertModelsText = document.getElementById('worker-blueprint-expert-models').value.trim();
-      if (expertModelsText) {
-        try {
-          expertModels = JSON.parse(expertModelsText);
-          if (!expertModels || Array.isArray(expertModels) || typeof expertModels !== 'object') throw new Error();
-        } catch (_error) {
-          status.textContent = 'Experten-Modellzuordnung muss ein gültiges JSON-Objekt sein.';
-          return;
-        }
-      }
-      if (subMode === 'task_worker' && !taskId && !taskPrompt) {
-        status.textContent = 'Taskworker benötigen eine Task-ID oder einen Zusatzauftrag.';
-        return;
-      }
-      const payload = {
-        name: document.getElementById('worker-blueprint-name').value.trim(),
-        backend,
-        model,
-        sub_mode: subMode,
-        role_id: subMode === 'expert_role' && !multiRole ? document.getElementById('worker-blueprint-role').value : '',
-        multi_role: subMode === 'expert_role' && multiRole,
-        max_experts: subMode === 'boss_routing' ? Number(document.getElementById('worker-blueprint-max-experts').value) : 3,
-        expert_models: subMode === 'boss_routing' ? expertModels : {},
-        task_id: taskId,
-        max_tool_rounds: Number(document.getElementById('worker-blueprint-turns').value),
-        mode: document.getElementById('worker-blueprint-mode').value,
-        think: document.getElementById('worker-blueprint-think').value === 'true',
-        pause_after: Number(document.getElementById('worker-blueprint-pause-after').value),
-        pause_minutes: Number(document.getElementById('worker-blueprint-pause-minutes').value),
-        pause_basis: document.getElementById('worker-blueprint-pause-basis').value,
-        type: runMode,
-        ttl_minutes: runMode === 'continuous' ? ttlMinutes : 0,
-        task_prompt: taskPrompt,
-        include_system_prompt: document.getElementById('worker-blueprint-system-prompt').checked,
-        allow_tools: document.getElementById('worker-blueprint-allow-tools').checked
-      };
-      button.disabled = true;
-      status.textContent = 'Workerprofil wird angelegt…';
-      try {
-        const editing = editingWorker;
-        const response = await fetch(editing
-          ? `/api/system/workers/${encodeURIComponent(editing.id)}/configuration` : '/api/system/workers', {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(editing
-            ? {configuration_version: editing.version, configuration: payload} : payload)
-        });
-        const data = await response.json();
-        if (!response.ok || data.ok !== true || (editing ? data.id !== editing.id || !data.configuration_version
-                                                        : data.worker?.status !== 'idle')) {
-          throw new Error(data.detail || 'Idle-Readback des neuen Profils fehlt');
-        }
-        if (editing) {
-          editingWorker = {id: editing.id, version: data.configuration_version};
-          status.textContent = 'Worker-Einstellungen gespeichert und zurückgelesen. „Start“ übernimmt sie im nächsten Lauf.';
-        } else {
-          status.textContent = `Profil ${data.worker.name} als Living/idle bestätigt. Es wurde kein Modellaufruf gestartet.`;
-          document.getElementById('worker-blueprint-task-prompt').value = '';
-          document.getElementById('worker-blueprint-task-id').value = '';
-        }
-        await loadBackgroundWorkers();
-      } catch (error) {
-        status.textContent = error.message || 'Profil konnte nicht bestätigt werden.';
-      } finally {
-        button.disabled = !backgroundWorkerBlueprint || document.getElementById('worker-blueprint-model').disabled;
-      }
-    }
-
-    async function editWorkerConfiguration(workerId) {
-      const requestId = ++workerEditRequest;
-      const status = document.getElementById('worker-blueprint-model-status');
-      try {
-        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/configuration`);
-        const data = await response.json();
-        if (requestId !== workerEditRequest) return;
-        if (!response.ok || data.ok !== true || data.id !== workerId || !data.configuration_version) {
-          throw new Error(data.detail || 'Worker-Konfiguration nicht bestätigt');
-        }
-        const config = data.configuration;
-        const fields = {name: 'name', backend: 'backend', sub_mode: 'sub-mode', role_id: 'role',
-          max_tool_rounds: 'turns', mode: 'mode', pause_after: 'pause-after', pause_minutes: 'pause-minutes',
-          pause_basis: 'pause-basis', max_experts: 'max-experts', task_id: 'task-id', task_prompt: 'task-prompt'};
-        for (const [key, field] of Object.entries(fields)) {
-          document.getElementById('worker-blueprint-' + field).value = config[key] ?? '';
-        }
-        document.getElementById('worker-blueprint-think').value = String(config.think === true);
-        for (const [key, field] of Object.entries({multi_role: 'multi-role', allow_tools: 'allow-tools', include_system_prompt: 'system-prompt'})) {
-          document.getElementById('worker-blueprint-' + field).checked = config[key] === true;
-        }
-        document.getElementById('worker-blueprint-expert-models').value = JSON.stringify(config.expert_models || {});
-        editingWorker = {id: workerId, version: data.configuration_version};
-        document.getElementById('worker-blueprint-create').textContent = 'Worker-Einstellungen speichern';
-        document.getElementById('worker-blueprint-cancel-edit').hidden = false;
-        document.getElementById('worker-blueprint-run-mode').disabled = true;
-        document.getElementById('worker-blueprint-ttl').disabled = true;
-        updateWorkerCreationModeFields();
-        await loadWorkerBlueprintModels(config.model);
-        if (requestId !== workerEditRequest) return;
-        status.textContent = 'Workerprofil zur Bearbeitung geladen. Zum Übernehmen Einstellungen speichern, danach ausdrücklich starten.';
-        document.getElementById('worker-blueprint-form').scrollIntoView({block: 'start'});
-      } catch (error) {
-        if (requestId !== workerEditRequest) return;
-        status.textContent = error.message || 'Workerprofil konnte nicht geladen werden.';
-      }
-    }
-
-    function updateWorkerCreationModeFields() {
-      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
-      const expertFields = document.getElementById('worker-blueprint-expert-fields');
-      const bossFields = document.getElementById('worker-blueprint-boss-fields');
-      const roleSelect = document.getElementById('worker-blueprint-role');
-      const multiRole = document.getElementById('worker-blueprint-multi-role');
-      expertFields.hidden = subMode !== 'expert_role';
-      bossFields.hidden = subMode !== 'boss_routing';
-      roleSelect.required = subMode === 'expert_role' && !multiRole.checked;
-      roleSelect.disabled = subMode !== 'expert_role' || multiRole.checked;
-    }
-
-    function updateWorkerRunModeFields() {
-      const once = document.getElementById('worker-blueprint-run-mode').value === 'once';
-      const ttl = document.getElementById('worker-blueprint-ttl');
-      ttl.disabled = once;
-      if (once) ttl.value = '0';
-    }
-
-    async function runWorkerAction(workerId, action, generation) {
-      const summary = document.getElementById('worker-status-summary');
-      const safeActions = new Set(['start', 'pause', 'stop', 'handoff']);
-      if (!safeActions.has(action)) return;
-      summary.textContent = action === 'start' ? 'Start wird angefordert…' :
-        action === 'pause' ? 'Kooperative Pause wird angefordert…' :
-        action === 'handoff' ? 'Kontextübergabe wird angefordert…' : 'Kooperativer Stopp wird angefordert…';
-      try {
-        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(action === 'handoff' ? {generation} : {})
-        });
-        const data = await response.json();
-        if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Aktion nicht bestätigt');
-        if (action === 'start') {
-          summary.textContent = `Start angenommen · Laufzeit-Readback: ${data.runtime_state || 'unbekannt'}`;
-        } else if (action === 'handoff') {
-          summary.textContent = data.receipt?.state === 'confirmed'
-            ? 'Kontextübergabe durch die Laufzeit bestätigt.'
-            : 'Kontextübergabe angefordert · Bestätigung folgt im Workerstatus.';
-        } else {
-          summary.textContent = action === 'pause' ? 'Pause durch Control API bestätigt.' : 'Stopp durch Control API bestätigt.';
-        }
-        await loadBackgroundWorkers();
-      } catch (error) {
-        summary.textContent = error.message || 'Workeraktion konnte nicht bestätigt werden.';
-        await loadBackgroundWorkers();
-      }
-    }
-
-    async function loadBackgroundWorkers() {
-      const summary = document.getElementById('worker-status-summary');
-      const container = document.getElementById('background-worker-list');
-      try {
-        const response = await fetch('/api/system/workers');
-        if (!response.ok) throw new Error(response.status === 401
-          ? 'Geräteanmeldung für den Workerstatus erforderlich.'
-          : response.status === 503 ? 'Control API nicht erreichbar; Workerstatus derzeit unbekannt.'
-          : 'Workerstatus konnte nicht geprüft werden (HTTP ' + response.status + ').');
-        const data = await response.json();
-        if (data.schema !== 'bach.workers.status.v1' || data.availability !== 'available' ||
-            !Array.isArray(data.workers) || data.count !== data.workers.length) {
-          throw new Error('Control API lieferte keinen gültigen Workerstatus.');
-        }
-        const labels = {
-          running: 'Running · arbeitet', idle: 'Living · bereit', paused: 'Living · pausiert',
-          stopping: 'Beendigung läuft', expired: 'Abgelaufen', stopped: 'Beendet', error: 'Fehler'
-        };
-        const counts = data.workers.reduce((result, worker) => {
-          const state = typeof worker.status === 'string' ? worker.status : 'unknown';
-          result[state] = (result[state] || 0) + 1;
-          return result;
-        }, {});
-        summary.textContent = `${data.count} echte Workerprofile · ${counts.running || 0} Running · ${counts.idle || 0} Living/bereit · ${counts.paused || 0} pausiert · geprüft ${new Date(data.observed_at).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})}`;
-        container.replaceChildren(...data.workers.map(worker => {
-          const state = String(worker.status || '').toLowerCase();
-          const card = coreElement('article', undefined, 'background-worker-card');
-          card.setAttribute('role', 'listitem');
-          card.append(coreElement('h3', worker.name || worker.id));
-          const stateLabel = state === 'paused' && worker.auto_paused === true
-            ? 'Living · automatische Pause'
-            : (labels[worker.status] || `Status: ${worker.status || 'unbekannt'}`);
-          card.append(coreElement('span', stateLabel, 'worker-state'));
-          card.append(coreElement('p', `${worker.backend || 'Backend unbekannt'} · ${worker.model || 'Modell unbekannt'}`));
-          const detail = [];
-          const modeLabels = {
-            hintergrund_worker: 'Hintergrundworker',
-            task_worker: 'Taskworker',
-            boss_routing: 'Bossrouting',
-            expert_role: 'Expertenrolle'
-          };
-          if (worker.sub_mode) detail.push(modeLabels[worker.sub_mode] || worker.sub_mode);
-          if (worker.role_id) detail.push('Rolle: ' + worker.role_id);
-          if (worker.task_id !== undefined) detail.push(`Task #${worker.task_id}`);
-          if (worker.max_tool_rounds !== undefined) detail.push(`Limit: ${worker.max_tool_rounds} Toolrunden`);
-          if (worker.pause_after !== undefined && worker.pause_basis) {
-            const basisLabel = worker.pause_basis === 'tasks' ? 'Aufgaben' : 'Läufe';
-            detail.push(`Pause nach ${worker.pause_after} ${basisLabel} · ${worker.pause_minutes ?? 0} Min`);
-          }
-          if (worker.expires_at) detail.push(`Lease bis ${worker.expires_at}`);
-          if (detail.length) card.append(coreElement('small', detail.join(' · ')));
-          const maxToolRounds = Number(worker.max_tool_rounds);
-          const toolRound = Number(worker.tool_round);
-          if (state === 'running' && Number.isInteger(toolRound) && toolRound >= 0 &&
-              Number.isInteger(maxToolRounds) && maxToolRounds > 0) {
-            card.append(coreElement('small', `Toolrunden: ${toolRound}/${maxToolRounds} · letzter Laufzeitbeleg`));
-            const remaining = maxToolRounds - toolRound;
-            if (remaining <= 2) {
-              const warning = coreElement('p', remaining > 0
-                ? `⚠️ Tool-Rundenlimit naht: noch ${remaining} Runde${remaining === 1 ? '' : 'n'}.`
-                : '⚠️ Tool-Rundenlimit erreicht; die Fortsetzung wird vom Workerprozess verwaltet.',
-              'worker-turn-warning');
-              warning.setAttribute('role', 'status');
-              warning.setAttribute('aria-live', 'polite');
-              card.append(warning);
-            }
-          }
-          if (worker.current_activity) card.append(coreElement('p', worker.current_activity));
-          if (worker.handoff_receipt) {
-            const handoffLabels = {pending: 'angefordert', running: 'wird verarbeitet',
-              confirmed: 'bestätigt', error: 'fehlgeschlagen', cancelled: 'abgebrochen'};
-            card.append(coreElement('p', 'Kontextübergabe: ' +
-              (handoffLabels[worker.handoff_receipt.state] || 'unbekannt')));
-          }
-          const actions = coreElement('div', undefined, 'core-actions');
-          if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
-            const edit = coreElement('button', 'Einstellungen bearbeiten', 'btn btn-sm');
-            edit.type = 'button';
-            edit.addEventListener('click', () => editWorkerConfiguration(worker.id));
-            actions.append(edit);
-          }
-          if (['idle', 'paused', 'completed', 'error'].includes(state) && worker.auto_paused !== true) {
-            const start = coreElement('button', state === 'paused' ? '▶ Fortsetzen' : '▶ Start', 'btn btn-sm btn-primary');
-            start.type = 'button';
-            start.addEventListener('click', () => runWorkerAction(worker.id, 'start'));
-            actions.append(start);
-          }
-          if (state === 'running' || (state === 'paused' && worker.auto_paused === true)) {
-            if (state === 'running') {
-              if (typeof worker.generation === 'string' &&
-                  !['pending', 'running'].includes(worker.handoff_receipt?.state)) {
-                const handoff = coreElement('button', 'Kontext übergeben', 'btn btn-sm');
-                handoff.type = 'button';
-                handoff.addEventListener('click', () => runWorkerAction(worker.id, 'handoff', worker.generation));
-                actions.append(handoff);
-              }
-              const pause = coreElement('button', '⏸ Pause', 'btn btn-sm');
-              pause.type = 'button';
-              pause.addEventListener('click', () => runWorkerAction(worker.id, 'pause'));
-              actions.append(pause);
-            }
-            const stop = coreElement('button', '⏹ Stop', 'btn btn-sm');
-            stop.type = 'button';
-            stop.addEventListener('click', () => runWorkerAction(worker.id, 'stop'));
-            actions.append(stop);
-          }
-          if (actions.childElementCount) card.append(actions);
-          return card;
-        }));
-        if (!data.workers.length) container.append(coreElement('p', 'Die Control API meldet derzeit keine Workerprofile.'));
-      } catch (error) {
-        summary.textContent = error.message || 'Workerstatus nicht verfügbar.';
-        container.replaceChildren();
-      }
-    }
-
-    function showCoreSaveFailure(message) {
-      const feedback = document.getElementById('core-agent-feedback');
-      const reload = coreElement('button', 'Zustand neu laden (verwirft Eingaben)', 'btn btn-sm');
-      reload.type = 'button';
-      reload.addEventListener('click', () => loadCoreSlots());
-      feedback.replaceChildren(coreElement('span', message + ' Eingaben bleiben bis zum Neuladen erhalten. '), reload);
     }
 
     async function saveCoreSlot(slotId) {
       const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
       if (!card || !coreConfigVersion) return;
-      if (card.dataset.coreStale === 'true') {
-        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
-        return;
-      }
       const original = coreAgents.find(item => item.id === slotId);
       if (!original) return;
       const changes = {};
@@ -939,10 +665,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const field = input.dataset.coreField;
         const previous = original[field];
         if (input.type === 'checkbox') {
-          if (previous == null && !input.checked) continue;
           if (input.checked !== previous) changes[field] = input.checked;
         } else if (input.type === 'number') {
-          if (input.value.trim() === '' && previous == null) continue;
           const current = input.value.trim() === '' ? null : Number(input.value);
           if (current !== previous) changes[field] = current;
         } else {
@@ -962,41 +686,208 @@ import BachLayout from "../../layouts/BachLayout.astro";
           body: JSON.stringify({configuration_version: coreConfigVersion, changes})
         });
         const data = await res.json();
-        const saved = data.agents?.find(item => item.id === slotId);
-        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
-            !saved || Object.entries(changes).some(([key, value]) => saved[key] !== value)) throw new Error('Speicherung nicht bestätigt');
         renderCoreAgents(data, slotId);
-        feedback.textContent = 'Konfiguration gespeichert. Andere Eingaben bleiben erhalten. Kein Agent wurde dadurch gestartet.';
+        feedback.textContent = 'Konfiguration für ' + slotId + ' erfolgreich gespeichert.';
       } catch (_error) {
-        showCoreSaveFailure('Speicherung nicht bestätigt. Bei einem Versionskonflikt müssen Sie vor erneutem Speichern den Zustand laden.');
+        feedback.textContent = 'Speichern fehlgeschlagen.';
       }
     }
 
     async function resetCoreSlot(slotId) {
-      if (!coreConfigVersion || !window.confirm('Nur die editierbaren Einstellungen dieses System-Agenten zurücksetzen?')) return;
-      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
-      if (card?.dataset.coreStale === 'true') {
-        showCoreSaveFailure('Serverkonfiguration dieses Agenten hat sich verändert.');
-        return;
-      }
-      const feedback = document.getElementById('core-agent-feedback');
-      feedback.textContent = 'Standards werden wiederhergestellt…';
+      if (!confirm('Einstellungen dieses System-Agenten auf Werkstandard zurücksetzen?')) return;
       try {
         const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/reset', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({configuration_version: coreConfigVersion})
         });
         const data = await res.json();
-        if (!res.ok || data.ack?.configuration_saved !== true || data.ack?.worker_started !== false ||
-            !data.agents?.some(item => item.id === slotId)) throw new Error('Reset nicht bestätigt');
         renderCoreAgents(data, slotId);
-        feedback.textContent = 'Einstellungen zurückgesetzt. Andere Eingaben, Aufgaben, Sitzungen und Geräte bleiben erhalten.';
-      } catch (_error) {
-        showCoreSaveFailure('Reset nicht bestätigt. Bitte Serverzustand prüfen.');
+      } catch (e) {
+        alert('Reset fehlgeschlagen: ' + e.message);
       }
     }
 
-    // ── 2. TEAMS BESEELEn ──
+    // ── OPENROUTER CATALOG ──
+    async function loadOpenRouterCatalog() {
+      const credentialState = document.getElementById('openrouter-credential-state');
+      const catalogState = document.getElementById('openrouter-catalog-state');
+      const list = document.getElementById('openrouter-model-list');
+      const datalist = document.getElementById('openrouter-free-models');
+      try {
+        const [statusResponse, modelsResponse] = await Promise.all([
+          fetch('/api/system/openrouter/status'),
+          fetch('/api/system/openrouter/models')
+        ]);
+        if (!statusResponse.ok || !modelsResponse.ok) throw new Error('Geräteanmeldung oder Dienst fehlt');
+        const [status, catalog] = await Promise.all([statusResponse.json(), modelsResponse.json()]);
+        credentialState.textContent = status.credential?.configured === true ? 'Schlüssel konfiguriert' : 'Schlüssel fehlt';
+        credentialState.className = 'badge ' + (status.credential?.configured === true ? 'badge-accent' : '');
+        openRouterModels = (catalog.models || []).filter(item => item && item.free === true && typeof item.id === 'string');
+        datalist.replaceChildren(...openRouterModels.map(item => {
+          const option = document.createElement('option');
+          option.value = item.id;
+          return option;
+        }));
+        list.replaceChildren(...openRouterModels.map(item => {
+          const code = document.createElement('code');
+          code.textContent = item.id;
+          code.title = item.name || item.id;
+          return code;
+        }));
+        catalogState.textContent = `${openRouterModels.length} kostenlose Auswahl(en) verfügbar · OpenRouter Free Tier`;
+      } catch (_error) {
+        credentialState.textContent = 'Status nicht verfügbar';
+        catalogState.textContent = 'OpenRouter-Katalog nicht erreichbar.';
+        list.replaceChildren();
+      }
+    }
+
+    // ── BACKGROUND WORKERS (EINSATZBEREIT vs. RUNNING) ──
+    async function loadBackgroundWorkers() {
+      const summary = document.getElementById('worker-status-summary');
+      const readyGrid = document.getElementById('ready-agents-grid');
+      const runningList = document.getElementById('running-workers-list');
+      try {
+        const response = await fetch('/api/system/workers');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        const workers = data.workers || [];
+
+        const runningWorkers = workers.filter(w => String(w.status).toLowerCase() === 'running');
+        const readyWorkers = workers.filter(w => String(w.status).toLowerCase() !== 'running');
+
+        summary.textContent = `${workers.length} Worker registriert · ${readyWorkers.length} einsatzbereit (Living) · ${runningWorkers.length} aktiv (Running) · Geprüft ${new Date().toLocaleTimeString('de-DE')}`;
+
+        // 1. Render Einsatzbereite Agenten
+        if (readyWorkers.length === 0) {
+          readyGrid.innerHTML = `
+            <div style="grid-column:1/-1;text-align:center;padding:2rem;background:var(--bg-dark);border:1px dashed var(--border);border-radius:var(--radius-sm);">
+              <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine einsatzbereiten Workerprofile vorhanden.</p>
+              <button class="btn btn-sm btn-primary" onclick="openPickupWerkstattModal()">+ Aus Werkstatt abholen</button>
+            </div>
+          `;
+        } else {
+          readyGrid.innerHTML = readyWorkers.map(w => {
+            const isPaused = w.status === 'paused';
+            return `
+              <div class="core-agent-card" style="display:flex;flex-direction:column;justify-content:space-between;">
+                <div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                    <span class="badge" style="background:${isPaused ? '#f59e0b' : '#059669'};color:#fff;font-size:0.75rem;">
+                      ${isPaused ? '⏸ Pausiert' : '● Living · Bereit'}
+                    </span>
+                    <small style="color:var(--text-muted);font-family:monospace;">${escapeHtml(w.backend || 'ollama')}</small>
+                  </div>
+                  <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(w.name || w.id)}</h3>
+                  <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                    Modell: <code style="color:var(--accent);">${escapeHtml(w.model || 'Standard')}</code>
+                  </p>
+                  <p style="font-size:0.75rem;color:var(--text-muted);line-height:1.4;">
+                    ${escapeHtml(w.task_prompt ? 'Auftrag: ' + w.task_prompt : 'Bereit für offene BACH-Tasks')}
+                  </p>
+                </div>
+
+                <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+                  <button class="btn btn-sm" style="font-size:0.75rem;color:var(--error);" onclick="deleteWorker('${escapeHtml(w.id)}')">
+                    🗑️
+                  </button>
+                  <div style="display:flex;gap:0.35rem;">
+                    <button class="btn btn-sm" style="font-size:0.75rem;" onclick="editWorkerConfiguration('${escapeHtml(w.id)}')">
+                      ✏️ Bearbeiten
+                    </button>
+                    ${isPaused ? `
+                      <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="runWorkerAction('${escapeHtml(w.id)}', 'start')">
+                        ▶ Fortsetzen
+                      </button>
+                    ` : `
+                      <button class="btn btn-sm" style="font-size:0.75rem;" onclick="runWorkerAction('${escapeHtml(w.id)}', 'pause')">
+                        ⏸ Pause
+                      </button>
+                      <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="runWorkerAction('${escapeHtml(w.id)}', 'start')">
+                        ▶ Start
+                      </button>
+                    `}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        // 2. Render Running Workers
+        if (runningWorkers.length === 0) {
+          runningList.innerHTML = `
+            <p style="grid-column:1/-1;color:var(--text-muted);font-size:0.85rem;padding:0.75rem;background:var(--bg-dark);border-radius:4px;">
+              Derzeit rechnet kein externer Worker aktiv im Hintergrund.
+            </p>
+          `;
+        } else {
+          runningList.innerHTML = runningWorkers.map(w => {
+            const toolRound = Number(w.tool_round) || 0;
+            const maxRounds = Number(w.max_tool_rounds) || 25;
+            return `
+              <div class="core-agent-card" style="border-color:#38bdf8;background:rgba(56,189,248,0.04);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                  <span class="badge" style="background:#0284c7;color:#fff;font-size:0.75rem;">⚡ RUNNING</span>
+                  <small style="color:var(--accent);">Runde ${toolRound}/${maxRounds}</small>
+                </div>
+                <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(w.name || w.id)}</h3>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">
+                  Modell: <code>${escapeHtml(w.model)}</code>
+                </p>
+                <p style="font-size:0.8rem;color:var(--text);margin-bottom:0.75rem;">
+                  ${escapeHtml(w.current_activity || 'Verarbeitet Aufgabe…')}
+                </p>
+
+                <div style="display:flex;justify-content:flex-end;gap:0.4rem;border-top:1px solid var(--border);padding-top:0.6rem;">
+                  <button class="btn btn-sm" onclick="runWorkerAction('${escapeHtml(w.id)}', 'pause')">⏸ Pause</button>
+                  <button class="btn btn-sm" style="color:var(--error);" onclick="runWorkerAction('${escapeHtml(w.id)}', 'stop')">⏹ Stoppen</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (error) {
+        summary.textContent = 'Workerstatus konnte nicht geladen werden.';
+      }
+    }
+
+    async function runWorkerAction(workerId, action, generation) {
+      try {
+        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(action === 'handoff' ? {generation} : {})
+        });
+        if (response.ok) {
+          loadBackgroundWorkers();
+        } else {
+          alert('Aktion konnte nicht ausgeführt werden.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    async function deleteWorker(workerId) {
+      if (!confirm('Diesen Worker wirklich löschen?')) return;
+      try {
+        const res = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/delete`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        if (res.ok) {
+          loadBackgroundWorkers();
+        } else {
+          alert('Fehler beim Löschen des Workers.');
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      }
+    }
+
+    // ── TEAMS & STAFFELN BESEELEN ──
     async function loadTeamsBeseelen() {
       const container = document.getElementById('teams-beseelen-container');
       try {
@@ -1005,7 +896,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const teams = data.teams || [];
 
         if (teams.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Teams vorhanden. Erstelle eines in Tab 2 der Fabrik!</p>';
+          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Teams vorhanden. Erstelle eines in der Werkstatt!</p>';
           return;
         }
 
@@ -1014,21 +905,20 @@ import BachLayout from "../../layouts/BachLayout.astro";
           const modelsMap = t.member_models || {};
 
           return `
-            <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.85rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
                 <strong style="color:var(--text);font-size:0.95rem;">${escapeHtml(t.name)}</strong>
-                <span class="badge badge-accent">${escapeHtml(t.strategy)}</span>
+                <span class="badge badge-accent" style="font-size:0.7rem;">${escapeHtml(t.strategy)}</span>
               </div>
-              <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.75rem 0;">${escapeHtml(t.description || '')}</p>
+              <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.6rem 0;">${escapeHtml(t.description || '')}</p>
 
-              <div style="display:flex;flex-direction:column;gap:0.5rem;background:var(--bg-card);padding:0.75rem;border-radius:4px;border:1px solid var(--border);">
-                <div style="font-size:0.75rem;color:var(--accent);font-weight:600;margin-bottom:0.25rem;">Mitglieder & Modell-Zuweisung (Beseelung):</div>
+              <div style="display:flex;flex-direction:column;gap:0.4rem;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);margin-bottom:0.6rem;">
                 ${members.map(m => {
                   const curMod = modelsMap[m] || 'ollama/qwen3.8:27b-mlx';
                   return `
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
-                      <span style="font-size:0.8rem;color:var(--text);font-weight:500;">🤖 ${escapeHtml(m)}</span>
-                      <select class="team-member-model-select" data-team="${t.id}" data-member="${escapeHtml(m)}" style="padding:0.25rem 0.5rem;font-size:0.75rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
+                      <span style="font-size:0.78rem;color:var(--text);">🤖 ${escapeHtml(m)}</span>
+                      <select class="team-member-model-select" data-team="${t.id}" data-member="${escapeHtml(m)}" style="padding:0.2rem 0.4rem;font-size:0.72rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;">
                         ${AVAILABLE_MODELS.map(mod => `<option value="${mod.id}" ${mod.id === curMod ? 'selected' : ''}>${mod.label}</option>`).join('')}
                       </select>
                     </div>
@@ -1036,9 +926,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
                 }).join('')}
               </div>
 
-              <div style="display:flex;justify-content:flex-end;margin-top:0.75rem;">
-                <button class="btn btn-sm btn-primary" onclick="saveTeamBeseelung(${t.id})">
-                  ✨ Team-Beseelung speichern
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <button class="btn btn-sm" style="font-size:0.72rem;color:var(--error);" onclick="deleteTeamFromRunning(${t.id})">🗑️ Löschen</button>
+                <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="saveTeamBeseelung(${t.id})">
+                  ✨ Speichern
                 </button>
               </div>
             </div>
@@ -1064,17 +955,27 @@ import BachLayout from "../../layouts/BachLayout.astro";
           body: JSON.stringify({ member_models })
         });
         if (res.ok) {
-          alert('Team-Beseelung erfolgreich gespeichert!');
+          alert('✨ Team-Beseelung erfolgreich gespeichert!');
           loadTeamsBeseelen();
         } else {
-          alert('Fehler beim Beseelen des Teams.');
+          alert('Fehler beim Speichern.');
         }
       } catch (e) {
         alert('Netzwerkfehler: ' + e.message);
       }
     }
 
-    // ── 3. AGENTEN-STAFFELN (MARBLERUN) BESEELEN ──
+    async function deleteTeamFromRunning(teamId) {
+      if (!confirm('Dieses Team wirklich löschen?')) return;
+      try {
+        const res = await fetch(`/api/agenten/teams/${teamId}`, { method: 'DELETE' });
+        if (res.ok) loadTeamsBeseelen();
+      } catch (e) {
+        alert('Fehler: ' + e.message);
+      }
+    }
+
+    // ── STAFFELN BESEELEN ──
     async function loadStaffelnBeseelen() {
       const container = document.getElementById('staffel-beseelen-container');
       try {
@@ -1083,28 +984,29 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const chains = data.chains || [];
 
         if (chains.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Ketten vorhanden. Erstelle eine in MarbleRun!</p>';
+          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Ketten vorhanden. Erstelle eine im Ketten-Editor!</p>';
           return;
         }
 
         container.innerHTML = chains.map(c => {
           let steps = [];
-          try { steps = typeof c.steps_json === 'string' ? JSON.parse(c.steps_json) : (c.steps_json || []); } catch(e) {}
+          try { steps = typeof c.steps_json === 'string' ? JSON.parse(c.steps_json) : (c.steps || []); } catch(e) {}
 
           return `
-            <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.85rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
                 <strong style="color:var(--text);font-size:0.95rem;">⛓️ ${escapeHtml(c.title || c.name)}</strong>
-                <span class="badge badge-accent">${steps.length} Stationen</span>
+                <span class="badge badge-accent" style="font-size:0.7rem;">${steps.length} Stationen</span>
               </div>
+              <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.6rem 0;">${escapeHtml(c.description || '')}</p>
 
-              <div style="display:flex;flex-direction:column;gap:0.5rem;background:var(--bg-card);padding:0.75rem;border-radius:4px;border:1px solid var(--border);">
+              <div style="display:flex;flex-direction:column;gap:0.4rem;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);margin-bottom:0.6rem;">
                 ${steps.map(s => {
                   const curMod = s.model || 'claude-3-7-sonnet';
                   return `
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
-                      <span style="font-size:0.78rem;color:var(--text);">Station ${s.step}: <strong>${escapeHtml(s.action)}</strong> (${escapeHtml(s.agent || 'Agent')})</span>
-                      <select class="chain-step-model-select" data-chain="${c.id}" data-step="${s.step}" style="padding:0.25rem 0.5rem;font-size:0.75rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
+                      <span style="font-size:0.75rem;color:var(--text);">St. ${s.step}: <strong>${escapeHtml(s.action)}</strong></span>
+                      <select class="chain-step-model-select" data-chain="${c.id}" data-step="${s.step}" style="padding:0.2rem 0.4rem;font-size:0.72rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;">
                         ${AVAILABLE_MODELS.map(mod => `<option value="${mod.id}" ${mod.id === curMod ? 'selected' : ''}>${mod.label}</option>`).join('')}
                       </select>
                     </div>
@@ -1112,10 +1014,14 @@ import BachLayout from "../../layouts/BachLayout.astro";
                 }).join('')}
               </div>
 
-              <div style="display:flex;justify-content:flex-end;margin-top:0.75rem;">
-                <button class="btn btn-sm btn-primary" onclick="saveStaffelBeseelung(${c.id})">
-                  ✨ Staffel-Beseelung speichern
-                </button>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <button class="btn btn-sm" style="font-size:0.72rem;color:var(--error);" onclick="deleteStaffelFromRunning(${c.id})">🗑️ Löschen</button>
+                <div style="display:flex;gap:0.35rem;">
+                  <button class="btn btn-sm" style="font-size:0.72rem;" onclick="runStaffelChain(${c.id})">▶ Losschicken</button>
+                  <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="saveStaffelBeseelung(${c.id})">
+                    ✨ Speichern
+                  </button>
+                </div>
               </div>
             </div>
           `;
@@ -1140,33 +1046,53 @@ import BachLayout from "../../layouts/BachLayout.astro";
           body: JSON.stringify({ step_models })
         });
         if (res.ok) {
-          alert('Staffel-Beseelung erfolgreich gespeichert!');
+          alert('✨ Staffel-Beseelung erfolgreich gespeichert!');
           loadStaffelnBeseelen();
         } else {
-          alert('Fehler beim Beseelen der Staffel.');
+          alert('Fehler beim Speichern.');
         }
       } catch (e) {
         alert('Netzwerkfehler: ' + e.message);
       }
     }
 
-    // ── 5. LIVE AKTIVITÄT ──
+    async function runStaffelChain(chainId) {
+      try {
+        const res = await fetch(`/api/marblerun/chains/${chainId}/run`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+        const data = await res.json();
+        alert(`Staffellauf gestartet! Run-ID: ${data.run_id || 'ok'}`);
+      } catch (e) {
+        alert('Fehler: ' + e.message);
+      }
+    }
+
+    async function deleteStaffelFromRunning(chainId) {
+      if (!confirm('Diese Staffel wirklich löschen?')) return;
+      try {
+        const res = await fetch(`/api/marblerun/chains/${chainId}`, { method: 'DELETE' });
+        if (res.ok) loadStaffelnBeseelen();
+      } catch (e) {
+        alert('Fehler: ' + e.message);
+      }
+    }
+
+    // ── LIVE-AKTIVITÄT & TIMELINE ──
     async function refreshActivity() {
       const tbody = document.getElementById('activity-tbody');
       try {
-        const res = await fetch('/api/tasks?limit=6');
+        const res = await fetch('/api/tasks?limit=10');
         const data = await res.json();
         const tasks = data.tasks || [];
 
         if (tasks.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine aktuellen Tasks</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine aktuellen Tasks im Verlauf</td></tr>';
           return;
         }
 
-        tbody.innerHTML = tasks.slice(0, 6).map(t => {
+        tbody.innerHTML = tasks.slice(0, 10).map(t => {
           const timeStr = t.created_at ? t.created_at.slice(11, 16) : '--:--';
           const akteur = t.assigned_to || t.assigned_agent || 'Operator';
-          const model = t.required_model || 'Nicht angegeben';
+          const model = t.required_model || 'Standard';
           const st = t.status || 'todo';
           const badgeClass = st === 'completed' || st === 'done' ? 'badge-success' : (st === 'running' ? 'badge-accent' : 'badge-warning');
 
@@ -1185,82 +1111,334 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
+    // ── VERIFIZIERTE CHAT-PROFILE (PERSONA-ROLLEN FÜR PERSÖNLICHE ASSISTENTEN) ──
     async function loadTrustedProfiles() {
       const container = document.getElementById('trusted-profile-list');
       try {
         const response = await fetch('/api/agents');
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
-        if (data.success !== true || !Array.isArray(data.agents)) throw new Error('Profilantwort ungültig');
-        const profiles = data.agents.filter(agent => agent.profile_chat_ready === true &&
-          Number.isSafeInteger(Number(agent.id)) && Number(agent.id) > 0);
-        let runtimeById = new Map();
-        let runtimeNote = 'Geräteanmeldung für Prozessstatus erforderlich';
-        try {
-          const runtimeResponse = await fetch('/api/agents/runtime');
-          if (runtimeResponse.ok) {
-            const runtimeData = await runtimeResponse.json();
-            if (runtimeData.success === true && Array.isArray(runtimeData.agents)) {
-              runtimeById = new Map(runtimeData.agents.map(item => [Number(item.agent_id), item.process_state]));
-              runtimeNote = 'Prozessstatus nicht prüfbar';
-            }
-          }
-        } catch (_error) {
-          runtimeNote = 'Prozessstatus nicht prüfbar';
-        }
-        const stateLabels = { running: 'Prozess läuft', not_started: 'Kein Prozess bestätigt',
-          ended: 'Prozess beendet', unverified: 'Identität nicht bestätigt',
-          mismatch: 'Prozessabweichung', unavailable: 'Prozessstatus nicht prüfbar' };
+        const profiles = (data.agents || []).filter(agent => agent.profile_chat_ready === true);
+
         container.innerHTML = profiles.length
-          ? profiles.map(agent => `<span><a class="btn" href="/chat?agent_id=${Number(agent.id)}">💬 ${escapeHtml(agent.display_name || agent.name)}</a><small style="display:block;margin-top:0.3rem;color:var(--text-muted);">${stateLabels[runtimeById.get(Number(agent.id))] || runtimeNote}</small></span>`).join('')
-          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine verifizierten Chatprofile verfügbar.</span>';
+          ? profiles.map(agent => `
+              <span style="background:var(--bg-dark);border:1px solid var(--border);padding:0.35rem 0.75rem;border-radius:20px;display:inline-flex;align-items:center;gap:0.4rem;">
+                <a href="/chat?agent_id=${Number(agent.id)}" style="text-decoration:none;color:var(--text);font-size:0.85rem;font-weight:600;">
+                  💬 ${escapeHtml(agent.display_name || agent.name)}
+                </a>
+                <span class="badge" style="font-size:0.68rem;padding:0.1rem 0.35rem;background:rgba(255,255,255,0.08);">Persona</span>
+              </span>
+            `).join('')
+          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine Chatprofile verfügbar.</span>';
       } catch (error) {
-        container.textContent = 'Profile können derzeit nicht geprüft werden: ' + error.message;
+        container.textContent = 'Profile können derzeit nicht geladen werden: ' + error.message;
       }
+    }
+
+    // ── WERKSTATT ABHOLEN MODAL ACTIONS ──
+    async function openPickupWerkstattModal() {
+      const select = document.getElementById('pickup-bp-select');
+      try {
+        const res = await fetch('/api/agent-studio/blueprints');
+        const data = await res.json();
+        _allBlueprintsList = [...(data.templates || []), ...(data.blueprints || [])];
+        select.innerHTML = '<option value="">-- Schablone wählen --</option>' +
+          _allBlueprintsList.map(b => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.title || b.name)} (${b.kind || 'agent'})</option>`).join('');
+      } catch (e) {
+        select.innerHTML = '<option value="">Fehler beim Laden</option>';
+      }
+      document.getElementById('pickup-details-box').style.display = 'none';
+      document.getElementById('modal-pickup-werkstatt').style.display = 'flex';
+      onPickupBackendChange('ollama');
+    }
+
+    function closePickupWerkstattModal() {
+      document.getElementById('modal-pickup-werkstatt').style.display = 'none';
+    }
+
+    function onPickupBlueprintSelect(bpName) {
+      const box = document.getElementById('pickup-details-box');
+      if (!bpName) { box.style.display = 'none'; return; }
+      const bp = _allBlueprintsList.find(b => b.name === bpName);
+      if (!bp) return;
+      document.getElementById('pickup-bp-title').textContent = bp.title || bp.name;
+      document.getElementById('pickup-bp-desc').textContent = bp.description || bp.persona_role || 'Keine Beschreibung';
+      document.getElementById('pickup-task-prompt').value = `Auftrag für ${bp.title || bp.name}: System- und Aufgabenprüfung durchführen.`;
+      box.style.display = 'block';
+    }
+
+    async function onPickupBackendChange(backend) {
+      const modelSelect = document.getElementById('pickup-model-select');
+      modelSelect.innerHTML = '<option value="">Modelle werden geladen…</option>';
+      try {
+        const res = await fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend));
+        const data = await res.json();
+        const models = data.models || [];
+        if (models.length > 0) {
+          modelSelect.innerHTML = models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+        } else {
+          modelSelect.innerHTML = '<option value="ollama/qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>';
+        }
+      } catch (e) {
+        modelSelect.innerHTML = '<option value="ollama/qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>';
+      }
+    }
+
+    async function confirmPickup(startImmediately) {
+      const bpName = document.getElementById('pickup-bp-select').value;
+      if (!bpName) { alert('Bitte eine Schablone wählen.'); return; }
+      const bp = _allBlueprintsList.find(b => b.name === bpName);
+      const backend = document.getElementById('pickup-backend-select').value;
+      const model = document.getElementById('pickup-model-select').value;
+      const taskPrompt = document.getElementById('pickup-task-prompt').value.trim();
+      const turns = parseInt(document.getElementById('pickup-turns').value) || 25;
+      const mode = document.getElementById('pickup-mode').value;
+      const think = document.getElementById('pickup-think').value === 'true';
+
+      const payload = {
+        name: bp ? (bp.title || bp.name) : bpName,
+        backend,
+        model,
+        max_tool_rounds: turns,
+        mode,
+        think,
+        task_prompt: taskPrompt,
+        allow_tools: true,
+        include_system_prompt: true,
+        pause_after: 5,
+        pause_minutes: 1,
+        pause_basis: 'runs',
+        sub_mode: 'hintergrund_worker',
+        type: 'continuous'
+      };
+
+      try {
+        const res = await fetch('/api/system/workers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Fehler beim Bereitstellen');
+        const workerId = data.worker?.id;
+
+        if (startImmediately && workerId) {
+          await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/start`, { method: 'POST' });
+          alert(`⚡ Worker '${payload.name}' wurde gestartet!`);
+        } else {
+          alert(`✨ Worker '${payload.name}' als Living einsatzbereit angelegt!`);
+        }
+        closePickupWerkstattModal();
+        loadBackgroundWorkers();
+      } catch (e) {
+        alert('Fehler: ' + e.message);
+      }
+    }
+
+    function openPickupTeamModal() {
+      // Direct jump to Fabrika teambuilding or open pickup modal
+      openPickupWerkstattModal();
+    }
+
+    // ── ONE-OFF MODAL & BLUEPRINT FORM ──
+    function openOneOffModal() {
+      document.getElementById('modal-create-oneoff').style.display = 'flex';
+      loadBackgroundWorkerBlueprint();
+    }
+
+    function closeOneOffModal() {
+      document.getElementById('modal-create-oneoff').style.display = 'none';
+    }
+
+    async function loadBackgroundWorkerBlueprint() {
+      const description = document.getElementById('worker-blueprint-description');
+      const create = document.getElementById('worker-blueprint-create');
+      try {
+        const response = await fetch('/api/system/workers/blueprint');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        backgroundWorkerBlueprint = data;
+        const modeSelect = document.getElementById('worker-blueprint-sub-mode');
+        modeSelect.replaceChildren(...data.sub_modes.map(item => new Option(item.label, item.id)));
+        modeSelect.value = data.sub_mode || 'hintergrund_worker';
+        modeSelect.disabled = false;
+        const roleSelect = document.getElementById('worker-blueprint-role');
+        roleSelect.replaceChildren(...data.expert_roles.map(item => new Option(item.label, item.id)));
+        roleSelect.disabled = false;
+        document.getElementById('worker-blueprint-name').value = data.name || 'BACH Hintergrundworker';
+        document.getElementById('worker-blueprint-turns').value = data.defaults.max_tool_rounds ?? 25;
+        document.getElementById('worker-blueprint-mode').value = data.defaults.mode === 'safe' ? 'safe' : 'full';
+        document.getElementById('worker-blueprint-think').value = data.defaults.think === true ? 'true' : 'false';
+        document.getElementById('worker-blueprint-pause-after').value = data.defaults.pause_after ?? 5;
+        document.getElementById('worker-blueprint-pause-basis').value = data.defaults.pause_basis === 'tasks' ? 'tasks' : 'runs';
+        document.getElementById('worker-blueprint-pause-minutes').value = data.defaults.pause_minutes ?? 1;
+        document.getElementById('worker-blueprint-run-mode').value = data.defaults.type === 'once' ? 'once' : 'continuous';
+        document.getElementById('worker-blueprint-ttl').value = data.defaults.ttl_minutes ?? 0;
+        document.getElementById('worker-blueprint-backend').value = data.defaults.backend || 'ollama-cloud';
+        document.getElementById('worker-blueprint-system-prompt').checked = data.defaults.include_system_prompt === true;
+        document.getElementById('worker-blueprint-allow-tools').checked = data.defaults.allow_tools === true;
+        updateWorkerRunModeFields();
+        updateWorkerCreationModeFields();
+        description.textContent = `${data.description} Konfigurationsquelle: ${data.defaults_source}. Profil wird idle angelegt.`;
+        create.disabled = false;
+        await loadWorkerBlueprintModels();
+      } catch (_error) {
+        backgroundWorkerBlueprint = null;
+        description.textContent = 'Standard-Rollenvorlage konnte nicht gelesen werden.';
+        create.disabled = true;
+      }
+    }
+
+    async function loadWorkerBlueprintModels(selectedModel) {
+      const requestId = ++workerModelRequest;
+      const backend = document.getElementById('worker-blueprint-backend').value;
+      const modelSelect = document.getElementById('worker-blueprint-model');
+      const status = document.getElementById('worker-blueprint-model-status');
+      const create = document.getElementById('worker-blueprint-create');
+      modelSelect.replaceChildren(new Option('Modellkatalog wird geladen…', ''));
+      modelSelect.disabled = true;
+      create.disabled = true;
+      status.textContent = 'Aktueller Modellkatalog wird geprüft…';
+      try {
+        const response = await fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend));
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (requestId !== workerModelRequest) return;
+        const models = [...new Set(data.models.filter(model => typeof model === 'string' && model.trim()))];
+        modelSelect.replaceChildren(...models.map(model => new Option(model, model)));
+        if (typeof selectedModel === 'string' && models.includes(selectedModel)) modelSelect.value = selectedModel;
+        modelSelect.disabled = models.length === 0;
+        status.textContent = `${models.length} Modell(e) bereitgestellt.`;
+        create.disabled = !backgroundWorkerBlueprint || models.length === 0;
+      } catch (_error) {
+        if (requestId !== workerModelRequest) return;
+        modelSelect.replaceChildren(new Option('Modellkatalog nicht verfügbar', ''));
+        status.textContent = 'Keine Modelle gemeldet.';
+      }
+    }
+
+    async function createWorkerFromBlueprint(event) {
+      event.preventDefault();
+      if (!backgroundWorkerBlueprint) return;
+      const button = document.getElementById('worker-blueprint-create');
+      const status = document.getElementById('worker-blueprint-model-status');
+      const ttlMinutes = Number(document.getElementById('worker-blueprint-ttl').value);
+      const runMode = document.getElementById('worker-blueprint-run-mode').value;
+      const backend = document.getElementById('worker-blueprint-backend').value;
+      const model = document.getElementById('worker-blueprint-model').value;
+      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
+      const taskIdValue = document.getElementById('worker-blueprint-task-id').value.trim();
+      const taskId = taskIdValue ? Number(taskIdValue) : null;
+      const taskPrompt = document.getElementById('worker-blueprint-task-prompt').value.trim();
+      const multiRole = document.getElementById('worker-blueprint-multi-role').checked;
+
+      const payload = {
+        name: document.getElementById('worker-blueprint-name').value.trim(),
+        backend,
+        model,
+        sub_mode: subMode,
+        role_id: subMode === 'expert_role' && !multiRole ? document.getElementById('worker-blueprint-role').value : '',
+        multi_role: subMode === 'expert_role' && multiRole,
+        max_experts: subMode === 'boss_routing' ? Number(document.getElementById('worker-blueprint-max-experts').value) : 3,
+        expert_models: {},
+        task_id: taskId,
+        max_tool_rounds: Number(document.getElementById('worker-blueprint-turns').value),
+        mode: document.getElementById('worker-blueprint-mode').value,
+        think: document.getElementById('worker-blueprint-think').value === 'true',
+        pause_after: Number(document.getElementById('worker-blueprint-pause-after').value),
+        pause_minutes: Number(document.getElementById('worker-blueprint-pause-minutes').value),
+        pause_basis: document.getElementById('worker-blueprint-pause-basis').value,
+        type: runMode,
+        ttl_minutes: runMode === 'continuous' ? ttlMinutes : 0,
+        task_prompt: taskPrompt,
+        include_system_prompt: document.getElementById('worker-blueprint-system-prompt').checked,
+        allow_tools: document.getElementById('worker-blueprint-allow-tools').checked
+      };
+
+      button.disabled = true;
+      status.textContent = 'Workerprofil wird angelegt…';
+      try {
+        const editing = editingWorker;
+        const response = await fetch(editing
+          ? `/api/system/workers/${encodeURIComponent(editing.id)}/configuration` : '/api/system/workers', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(editing
+            ? {configuration_version: editing.version, configuration: payload} : payload)
+        });
+        const data = await response.json();
+        if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Fehler beim Anlegen');
+        alert(editing ? 'Worker-Einstellungen gespeichert!' : 'Profil erfolgreich angelegt!');
+        closeOneOffModal();
+        await loadBackgroundWorkers();
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function editWorkerConfiguration(workerId) {
+      openOneOffModal();
+      const status = document.getElementById('worker-blueprint-model-status');
+      try {
+        const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/configuration`);
+        const data = await response.json();
+        if (!response.ok || data.ok !== true) throw new Error(data.detail);
+        const config = data.configuration;
+        document.getElementById('worker-blueprint-name').value = config.name || '';
+        document.getElementById('worker-blueprint-backend').value = config.backend || 'ollama';
+        document.getElementById('worker-blueprint-turns').value = config.max_tool_rounds || 25;
+        document.getElementById('worker-blueprint-task-prompt').value = config.task_prompt || '';
+        editingWorker = { id: workerId, version: data.configuration_version };
+        document.getElementById('worker-blueprint-create').textContent = 'Einstellungen speichern';
+        await loadWorkerBlueprintModels(config.model);
+      } catch (e) {
+        status.textContent = 'Ladefehler: ' + e.message;
+      }
+    }
+
+    function updateWorkerCreationModeFields() {
+      const subMode = document.getElementById('worker-blueprint-sub-mode').value;
+      const expertFields = document.getElementById('worker-blueprint-expert-fields');
+      const bossFields = document.getElementById('worker-blueprint-boss-fields');
+      const roleSelect = document.getElementById('worker-blueprint-role');
+      const multiRole = document.getElementById('worker-blueprint-multi-role');
+      expertFields.hidden = subMode !== 'expert_role';
+      bossFields.hidden = subMode !== 'boss_routing';
+      roleSelect.required = subMode === 'expert_role' && !multiRole.checked;
+      roleSelect.disabled = subMode !== 'expert_role' || multiRole.checked;
+    }
+
+    function updateWorkerRunModeFields() {
+      const once = document.getElementById('worker-blueprint-run-mode').value === 'once';
+      const ttl = document.getElementById('worker-blueprint-ttl');
+      ttl.disabled = once;
+      if (once) ttl.value = '0';
     }
 
     async function refreshAll(interactive = false) {
       await Promise.all([
         loadTrustedProfiles(),
         loadClusterCockpit(),
+        loadBackgroundWorkers(),
         loadTeamsBeseelen(),
         loadStaffelnBeseelen(),
-        refreshActivity(),
         loadCoreSlots(),
         loadOpenRouterCatalog(),
-        loadBackgroundWorkers()
+        refreshActivity()
       ]);
-      if (interactive) {
-        // Subtle confirmation
-        console.log("Living & Running Daten aktualisiert");
-      }
+      if (interactive) console.log("Living & Running Daten aktualisiert");
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('worker-blueprint-backend')?.addEventListener('change', loadWorkerBlueprintModels);
+      document.getElementById('worker-blueprint-backend')?.addEventListener('change', () => loadWorkerBlueprintModels());
       document.getElementById('worker-blueprint-sub-mode')?.addEventListener('change', updateWorkerCreationModeFields);
       document.getElementById('worker-blueprint-run-mode')?.addEventListener('change', updateWorkerRunModeFields);
       document.getElementById('worker-blueprint-multi-role')?.addEventListener('change', updateWorkerCreationModeFields);
       document.getElementById('worker-blueprint-form')?.addEventListener('submit', createWorkerFromBlueprint);
-      document.getElementById('worker-blueprint-cancel-edit')?.addEventListener('click', async () => {
-        workerEditRequest++;
-        editingWorker = null;
-        document.getElementById('worker-blueprint-create').textContent = 'Blueprint als Living-Profil anlegen';
-        document.getElementById('worker-blueprint-cancel-edit').hidden = true;
-        document.getElementById('worker-blueprint-run-mode').disabled = false;
-        document.getElementById('worker-blueprint-task-id').value = '';
-        document.getElementById('worker-blueprint-task-prompt').value = '';
-        document.getElementById('worker-blueprint-multi-role').checked = false;
-        document.getElementById('worker-blueprint-max-experts').value = '3';
-        document.getElementById('worker-blueprint-expert-models').value = '';
-        await loadBackgroundWorkerBlueprint();
-      });
-      loadBackgroundWorkerBlueprint();
       refreshAll();
-      // Observe hardware and task activity without resetting editable forms.
       setInterval(loadClusterCockpit, 15000);
-      setInterval(refreshActivity, 4000);
-      setInterval(loadBackgroundWorkers, 5000);
+      setInterval(refreshActivity, 5000);
+      setInterval(loadBackgroundWorkers, 6000);
     });
   </script>
 </BachLayout>

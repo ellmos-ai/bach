@@ -124,9 +124,9 @@
     "children": [
       {
         "href": "/agenten/fabrika",
-        "label": "Agenten-Fabrik",
+        "label": "Agenten-Werkstatt",
         "icon": "🏭",
-        "description": "Baukasten: Einzelagenten, Teambuilding (Swarm) & Ketten-Staffel"
+        "description": "Baukasten & Werkstatt: Vorlagen, Teambuilding (Swarm) & Ketten-Staffeln"
       },
       {
         "href": "/agenten/blueprints",

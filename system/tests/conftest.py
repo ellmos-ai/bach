@@ -96,16 +96,17 @@ def _ensure_distribution_manifest():
     conn.commit()
 
     if system_dir.exists():
-        for file_path in sorted(system_dir.rglob("*")):
-            if not file_path.is_file():
-                continue
-            rel = file_path.relative_to(system_dir)
-            rel_path = f"system/{rel.as_posix()}"
-            file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
-            conn.execute(
-                "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
-                (rel_path, file_hash, 1),
-            )
+        for root, dirs, files in os.walk(system_dir):
+            dirs[:] = [d for d in dirs if d not in ("node_modules", "dist", ".git", ".astro", "__pycache__", ".pytest_cache")]
+            for file_name in sorted(files):
+                file_path = Path(root) / file_name
+                rel = file_path.relative_to(system_dir)
+                rel_path = f"system/{rel.as_posix()}"
+                file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                conn.execute(
+                    "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
+                    (rel_path, file_hash, 1),
+                )
     conn.commit()
     conn.close()
 
