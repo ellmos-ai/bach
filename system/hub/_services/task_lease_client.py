@@ -195,7 +195,8 @@ class LeaseAck:
             raise LeaseProtocolError("Ungültige Lease-Capability oder Profil")
         _identity(self.task_id, self.lease_id, self.fence)
         _version(self.task_version)
-        if not isinstance(self.worker_id, str) or self.worker_id.rsplit("@", 1)[-1] != self.host:
+        if (not isinstance(self.worker_id, str) or not isinstance(self.host, str)
+                or self.worker_id.rsplit("@", 1)[-1].lower() != self.host.lower()):
             raise LeaseProtocolError("Ungültiger Lease-Halter")
         deadline = _calc_local_deadline(
             self.issued_at,
