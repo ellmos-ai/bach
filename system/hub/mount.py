@@ -184,7 +184,7 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
-        src = source.resolve()
+        src = self._resolve_mount_source(str(source))
         tgt = target.resolve(strict=False)
 
         if not self._is_allowed_source(str(src)):
