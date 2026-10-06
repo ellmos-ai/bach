@@ -95,7 +95,20 @@ class MountHandler(BaseHandler):
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        if not self._is_allowed_source(str(candidate)):
+        candidate_str = str(candidate)
+        is_allowed = False
+        for root in self._allowed_source_roots:
+            try:
+                base = os.path.realpath(
+                    os.path.abspath(os.path.expandvars(os.path.expanduser(os.fspath(root))))
+                )
+                if os.path.commonpath([base, candidate_str]) == base:
+                    is_allowed = True
+                    break
+            except (ValueError, TypeError, OSError):
+                continue
+
+        if not is_allowed:
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
