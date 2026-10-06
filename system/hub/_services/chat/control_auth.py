@@ -12,7 +12,6 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-
 CONTROL_API_TOKEN_ENV = "BACH_CONTROL_API_TOKEN"
 CONTROL_API_TOKEN_FILE_ENV = "BACH_CONTROL_API_TOKEN_FILE"
 CONTROL_API_SECRET = "bach_control_api_token"
@@ -62,15 +61,30 @@ def get_control_api_auth_header() -> str:
 
 
 def is_control_api_authorized(headers: Mapping[str, str]) -> bool:
-    """Validate a request's Bearer header against the configured token."""
+    """Validate a request's Bearer header against configured token or active device token."""
 
-    configured = get_control_api_token()
-    if not configured:
-        return False
-
-    authorization = str(headers.get("Authorization") or "").strip()
+    authorization = str(
+        headers.get("Authorization") or headers.get("authorization") or ""
+    ).strip()
     scheme, separator, supplied = authorization.partition(" ")
     if not separator or scheme.lower() != "bearer":
         return False
     supplied = supplied.strip()
-    return bool(supplied) and hmac.compare_digest(supplied, configured)
+    if not supplied:
+        return False
+
+    configured = get_control_api_token()
+    if configured and hmac.compare_digest(supplied, configured):
+        return True
+
+    try:
+        from gui.device_auth import validate_token
+
+        device = validate_token(supplied)
+        if isinstance(device, dict) and device.get("status") == "active":
+            return True
+    except (ImportError, OSError, ValueError, RuntimeError, AttributeError):
+        pass
+
+    return False
+

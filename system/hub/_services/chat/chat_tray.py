@@ -262,7 +262,7 @@ class BACHTray:
         self.activity_url = (
             activity_url
             or os.environ.get("BACH_ACTIVITY_URL")
-            or f"{self.base_url}/activity"
+            or f"{self.gui_url}/agenten/running"
         )
         self.ollama_url = f"http://{ollama_host}:11434"
         self.telegram_url = "https://t.me/bach_assistant_bot"
@@ -1136,7 +1136,7 @@ class BACHTray:
 
             if workers_subitems:
                 workers_subitems.append(pystray.Menu.SEPARATOR)
-            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_activity))
+            workers_subitems.append(pystray.MenuItem("+ Neuer Worker... (Web GUI)", self._open_running))
             items.append(pystray.MenuItem(f"🛠 Dynamische Worker ({len(self.dynamic_workers)})", pystray.Menu(*workers_subitems)))
 
             items.append(pystray.Menu.SEPARATOR)
@@ -1158,8 +1158,9 @@ class BACHTray:
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
 
-            # Aktivitätsanzeige
-            items.append(pystray.MenuItem("📊 Aktivitätsanzeige öffnen...", self._open_activity))
+            # Laufende Agenten & Werkstatt
+            items.append(pystray.MenuItem("📊 Laufende Agenten & Worker...", self._open_running))
+            items.append(pystray.MenuItem("🛠 Agenten-Werkstatt & Vorlagen...", self._open_blueprints))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -1249,7 +1250,8 @@ class BACHTray:
         items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
         items.append(pystray.MenuItem(chat_label, self._open_webchat))
-        items.append(pystray.MenuItem("Aktivitätsanzeige", self._open_activity))
+        items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
+        items.append(pystray.MenuItem("Agenten-Werkstatt", self._open_blueprints))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -1366,6 +1368,14 @@ class BACHTray:
     def _open_activity(self, *_):
         import webbrowser
         webbrowser.open(self.activity_url)
+
+    def _open_running(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/running")
+
+    def _open_blueprints(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/blueprints")
 
     def _make_slot_model_action(self, slot_id, model):
         def action(*_):
