@@ -156,9 +156,14 @@ def test_trithon_renews_lease_during_execution(
 ):
     from hub._services import trithon_dispatch
 
+    from threading import Event
+
+    first_renewal = Event()
+
     class SlowExecutor:
         def execute(self, run, ticket, *, cancel_event):
-            assert not cancel_event.wait(timeout=0.05)
+            assert first_renewal.wait(timeout=5)
+            assert not cancel_event.is_set()
             return {"simulated": True}
 
     original_renew = trithon_dispatch.TaskLeaseClient.renew
@@ -166,8 +171,10 @@ def test_trithon_renews_lease_during_execution(
 
     def count_renewals(self, *args, **kwargs):
         nonlocal renewals
+        ack = original_renew(self, *args, **kwargs)
         renewals += 1
-        return original_renew(self, *args, **kwargs)
+        first_renewal.set()
+        return ack
 
     monkeypatch.setattr(
         trithon_dispatch, "_LEASE_RENEWAL_MAX_WAIT_SECONDS", 0.01
