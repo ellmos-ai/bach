@@ -154,11 +154,13 @@ class MountHandler(BaseHandler):
         if not canonical.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
 
-        allowed_roots = self._allowed_source_roots
-        for root in allowed_roots:
+        for root in self._allowed_source_roots:
             try:
                 root_path = Path(root).resolve(strict=True)
             except (ValueError, OSError):
+                continue
+
+            if not root_path.is_dir():
                 continue
 
             try:
@@ -166,8 +168,8 @@ class MountHandler(BaseHandler):
                     return canonical
             except AttributeError:
                 try:
-                    canonical.relative_to(root_path)
-                    return canonical
+                    if canonical == root_path or canonical.relative_to(root_path) is not None:
+                        return canonical
                 except ValueError:
                     continue
 
