@@ -48,21 +48,43 @@ class MountHandler(BaseHandler):
             )
         )
 
-    def _is_allowed_source(self, source: str) -> bool:
+    @staticmethod
+    def _is_within(candidate_real: str, root_real: str) -> bool:
+        """True, wenn der kanonische Pfad gleich der Wurzel ist oder darunter liegt.
+
+        Beide Argumente muessen bereits per ``os.path.realpath`` kanonisiert
+        sein. Der Vergleich per ``startswith`` mit angehaengtem Separator
+        verhindert Geschwister-Praefixe (``/data`` vs. ``/data_other``).
+        """
+        cand = os.path.normcase(candidate_real)
+        root = os.path.normcase(root_real)
+        if cand == root:
+            return True
+        prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+        return cand.startswith(prefix)
+
+    def _contained_source(self, value) -> Optional[str]:
+        """Kanonisiert einen Quellpfad und gibt ihn nur innerhalb erlaubter Wurzeln zurueck.
+
+        Einzige Sicherheitsgrenze fuer Quellpfade: Expansion, ``realpath``
+        (loest ``..`` und Symlinks auf) und Eindaemmung passieren auf dem
+        String, bevor daraus ein Pfadobjekt fuer Dateisystemzugriffe entsteht.
+        """
+        raw = str(value or "")
+        if not raw or "\x00" in raw:
+            return None
         try:
-            cand = Path(source).resolve()
-        except (ValueError, OSError):
-            return False
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            candidate_real = os.path.realpath(os.path.abspath(expanded))
+        except (TypeError, ValueError, OSError):
+            return None
         for root in self._allowed_source_roots:
-            try:
-                base = Path(root).resolve()
-                if cand == base or cand.is_relative_to(base):
-                    return True
-                if os.path.commonpath([str(base), str(cand)]) == str(base):
-                    return True
-            except (ValueError, TypeError, OSError):
-                continue
-        return False
+            if self._is_within(candidate_real, root):
+                return candidate_real
+        return None
+
+    def _is_allowed_source(self, source: str) -> bool:
+        return self._contained_source(source) is not None
     
     @property
     def profile_name(self) -> str:
@@ -89,22 +111,8 @@ class MountHandler(BaseHandler):
         if not raw or "\x00" in raw:
             raise ValueError("Ungueltiger Quellpfad")
 
-        try:
-            expanded = os.path.expandvars(os.path.expanduser(raw))
-            candidate_real = os.path.realpath(os.path.abspath(expanded))
-        except (ValueError, OSError) as exc:
-            raise ValueError(f"Ungueltiger Quellpfad: {exc}")
-
-        allowed = False
-        for root in self._allowed_source_roots:
-            try:
-                if os.path.commonpath([root, candidate_real]) == root:
-                    allowed = True
-                    break
-            except (ValueError, OSError):
-                continue
-
-        if not allowed:
+        candidate_real = self._contained_source(raw)
+        if candidate_real is None:
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
@@ -170,10 +178,18 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
-        src = source.resolve()
-        tgt = target.resolve(strict=False)
-        if not self._is_allowed_source(str(src)):
+        # Quelle und Ziel unmittelbar vor dem Dateisystemzugriff erneut
+        # eindaemmen: Aufrufer duerfen sich nicht auf vorherige Pruefungen
+        # verlassen muessen.
+        src_real = self._contained_source(source)
+        if src_real is None:
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
+        target_root = os.path.realpath(os.path.abspath(str(self.target_file)))
+        tgt_real = os.path.realpath(os.path.abspath(str(target)))
+        if tgt_real == target_root or not self._is_within(tgt_real, target_root):
+            raise ValueError("Zielpfad liegt außerhalb des Mount-Zielordners")
+        src = Path(src_real)
+        tgt = Path(tgt_real)
         if os.name == "nt":
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(tgt), str(src)],
