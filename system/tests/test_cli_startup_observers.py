@@ -366,3 +366,25 @@ def test_tool_fallback_dry_run_skips_logging_and_subprocess(
         "[DRY-RUN] Wuerde ausfuehren: activity_tracker --foo\n"
     )
     assert list(observer_boundary.iterdir()) == []
+
+
+def test_dry_run_tool_fallback_no_filesystem_side_effects(
+    monkeypatch, tmp_path, capsys
+):
+    """Dry-run ueber den Tool-Fallback darf keine Dateien anlegen."""
+    runtime_dir = tmp_path / "runtime"
+    local_dir = tmp_path / "local"
+    runtime_dir.mkdir()
+    local_dir.mkdir()
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("BACH_LOCAL_DIR", str(local_dir))
+    monkeypatch.setattr(sys, "argv", ["bach.py", "activity_tracker", "--dry-run"])
+
+    rc = bach_cli.main()
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "[DRY-RUN] Wuerde ausfuehren: activity_tracker" in captured.out
+    assert not (runtime_dir / "data" / "logs").exists()
+    assert list(tmp_path.rglob("auto_log*.txt")) == []
