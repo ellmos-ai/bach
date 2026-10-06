@@ -746,6 +746,8 @@ class BACHTray:
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         for cand in tasks_resp["tasks"]:
+                            if _is_terminal_parked(cand) and not cand.get("completed_at"):
+                                continue
                             if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
                                 task = cand
                                 task_status = status
@@ -762,6 +764,8 @@ class BACHTray:
                         )
                         if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                             for cand in tasks_resp["tasks"]:
+                                if _is_terminal_parked(cand) and not cand.get("completed_at"):
+                                    continue
                                 if task_matches_slot_binding(cand, always_on):
                                     task = cand
                                     task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
@@ -777,9 +781,11 @@ class BACHTray:
                     )
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         for cand in tasks_resp["tasks"]:
+                            if _is_terminal_parked(cand) and not cand.get("completed_at"):
+                                continue
                             cand_assignee = (cand.get("assigned_to") or "").strip()
-                            # menschliche Tasks (user) und fremde Agenten (claude, gemini) ueberspringen
-                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "operator", "blocked", "")
+                            # menschliche Tasks (user) und fremde Agenten (claude, gemini, codex, kimi) ueberspringen
+                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "codex", "kimi", "operator", "blocked", "")
                                     and task_matches_slot_binding(cand, always_on)):
                                 task = cand
                                 task_status = status

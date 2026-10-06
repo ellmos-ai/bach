@@ -91,6 +91,31 @@ async def reset_core_system_agent(slot_id: str, payload: dict[str, Any] = Body(.
     return _change(slot_id, payload, reset=True)
 
 
+@router.post("/{slot_id}/toggle")
+async def toggle_core_system_agent(slot_id: str):
+    """Schaltet den Ausführungsstatus eines Systemslots (z. B. Always-On) ein oder aus."""
+    if slot_id not in CORE_SYSTEM_AGENT_IDS:
+        raise HTTPException(status_code=404, detail="Unbekannte System-Agenten-ID")
+    try:
+        from hub._services.chat.slots_config import get_slot, update_slot
+        current = get_slot(slot_id)
+        current_enabled = bool(current.get("enabled", True))
+        new_enabled = not current_enabled
+        update_slot(slot_id, {
+            "enabled": new_enabled,
+            "status": "idle" if new_enabled else "paused",
+        })
+        result = _snapshot()
+        result["ack"] = {
+            "technical_agent_id": slot_id,
+            "enabled": new_enabled,
+            "configuration_saved": True,
+        }
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Fehler beim Umschalten des System-Agenten: {exc}")
+
+
 
 
 async def _control_prompt_payload(endpoint: str = "prompts", body: dict[str, Any] | None = None) -> dict[str, Any]:

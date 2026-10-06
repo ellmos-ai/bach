@@ -308,6 +308,45 @@ def test_settle_legacy_tuple_uses_old_prefix():
         "Legacy-Tupel pollt den alten Praefix (dokumentiert das Pre-#1303-Verhalten)"
 
 
+def test_idle_worker_skips_parked_task_and_picks_next_valid():
+    """Verifiziert, dass ein geparkter Task am Anfang der Liste nicht den ganzen Idle-Worker blockiert."""
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_processing = False
+    tray.idle_pending = None
+    tray.idle_task_name = None
+    tray.idle_consecutive = 0
+    tray.icon = None
+    tray.slots = {}
+    tray._update_icon = lambda *a, **k: None
+
+    claimed_ids = []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and "assigned_to=OLLAMA" in path:
+            return {
+                "success": True,
+                "tasks": [
+                    {"id": 1729, "title": "Parked Task", "status": "blocked", "assigned_to": "OLLAMA"},
+                    {"id": 1730, "title": "Valid Task", "status": "pending", "assigned_to": "OLLAMA"},
+                ],
+            }
+        if method == "GET" and "/api/tasks/1730" in path:
+            return {"status": "in_progress"}
+        if method == "PUT" and "/api/tasks/1730" in path:
+            claimed_ids.append(1730)
+            return {"success": True}
+        if method == "POST" and "/api/chat" in path:
+            return {"ok": True, "chat_id": "idle-foerderplaner-1730"}
+        return {"success": True}
+
+    tray._api = fake_api
+    tray._process_idle_task()
+    assert 1730 in claimed_ids, "Idle-Worker muss den geparkten Task 1729 überspringen und Task 1730 beanspruchen"
+    assert 1729 not in claimed_ids, "Geparkter Task 1729 darf nicht beansprucht werden"
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):

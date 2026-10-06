@@ -69,6 +69,10 @@ _EXPERT_ROLE_LABELS = {
     "foerderplaner": "Förderplaner",
     "recherche": "Recherche-Experte",
     "psycho-berater": "Psycho-Berater",
+    "haushaltsmanagement": "Haushaltsmanagement",
+    "aboservice": "Vertrags- & Abo-Service",
+    "data-analysis": "Datenanalyse & Reporting",
+    "decision-briefing": "Entscheidungs-Briefing",
 }
 
 
