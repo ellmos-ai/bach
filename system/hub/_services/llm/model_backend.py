@@ -99,7 +99,10 @@ class ModelBackend(ABC):
 
     def tool_response_message(self, content: str, tool_call_id: str = "") -> dict:
         """Erzeugt die korrekte Tool-Response-Nachricht für dieses Backend."""
-        return {"role": "tool", "content": str(content)}
+        msg = {"role": "tool", "content": str(content)}
+        if tool_call_id:
+            msg["tool_call_id"] = str(tool_call_id)
+        return msg
 
     def availability(
         self,
@@ -634,14 +637,24 @@ class HermesBackend(OpenAIBackend):
             payload["tools"] = tools
 
         async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=120,
-            )
-            r.raise_for_status()
-            data = r.json()
+            try:
+                r = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=120,
+                )
+                r.raise_for_status()
+                data = r.json()
+            except httpx.HTTPStatusError as exc:
+                err_text = ""
+                try:
+                    err_json = exc.response.json()
+                    err_text = err_json.get("error", {}).get("message") or str(err_json)
+                except Exception:
+                    err_text = exc.response.text[:500]
+                log.error(f"Hermes/OpenRouter API-Fehler ({exc.response.status_code}): {err_text}")
+                raise RuntimeError(f"Hermes/OpenRouter Fehler ({exc.response.status_code}): {err_text}") from exc
 
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})
@@ -650,7 +663,7 @@ class HermesBackend(OpenAIBackend):
         tool_calls = []
         # 1. Native OpenAI-style tool calls
         if "tool_calls" in msg and msg["tool_calls"]:
-            for tc in msg["tool_calls"]:
+            for idx, tc in enumerate(msg["tool_calls"]):
                 fn = tc.get("function", {})
                 args = fn.get("arguments", "{}")
                 if isinstance(args, str):
@@ -658,9 +671,11 @@ class HermesBackend(OpenAIBackend):
                         args = json.loads(args)
                     except Exception:
                         pass
+                cid = tc.get("id") or f"call_{idx}_{int(time.time())}"
+                tc["id"] = cid
                 tool_calls.append(
                     {
-                        "id": tc.get("id", ""),
+                        "id": cid,
                         "function": {"name": fn.get("name", ""), "arguments": args},
                     }
                 )
@@ -675,9 +690,10 @@ class HermesBackend(OpenAIBackend):
                     fn_name = parsed.get("name", "")
                     fn_args = parsed.get("arguments", {})
                     if fn_name:
+                        cid = f"hermes_call_{idx}_{int(time.time())}"
                         tool_calls.append(
                             {
-                                "id": f"hermes_call_{idx}_{int(time.time())}",
+                                "id": cid,
                                 "function": {"name": fn_name, "arguments": fn_args},
                             }
                         )
@@ -693,9 +709,23 @@ class HermesBackend(OpenAIBackend):
             if not think:
                 cleaned_content = self.HERMES_THOUGHT_REGEX.sub("", cleaned_content).strip()
 
+        self._last_tool_call_ids = [tc.get("id", "") for tc in tool_calls]
+
         res_msg = dict(msg)
         if thought_content:
             res_msg["thought"] = thought_content
+        if tool_calls and not res_msg.get("tool_calls"):
+            res_msg["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["function"]["name"],
+                        "arguments": json.dumps(tc["function"]["arguments"]),
+                    },
+                }
+                for tc in tool_calls
+            ]
 
         return {
             "content": cleaned_content,

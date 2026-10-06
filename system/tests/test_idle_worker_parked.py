@@ -347,6 +347,37 @@ def test_idle_worker_skips_parked_task_and_picks_next_valid():
     assert 1729 not in claimed_ids, "Geparkter Task 1729 darf nicht beansprucht werden"
 
 
+def test_settle_pending_task_settles_immediately_when_db_shows_done_without_waiting_ttl():
+    """Wenn die DB den Task bereits als done/completed ausweist (z. B. durch Tool call),
+    muss _settle_pending_task sofort abschliessen, ohne 30 Min PENDING_TTL abzuwarten."""
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    # seit liegt erst 60s zurueck, also weit unter PENDING_TTL (1800s)
+    tray.idle_pending = (1603, _time.time() - 60, "Task 1603", "idle-bach-1603")
+    progress, commits = [], []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and "/api/history" in path:
+            # Kein assistant message bisher (z. B. noch in Toolrunden oder vor Zusammenfassung)
+            return {"ok": True, "messages": [{"role": "user", "content": "Start"}]}
+        if method == "GET" and "/api/tasks/1603" in path:
+            # DB meldet bereits erledigt!
+            return {"id": 1603, "status": "done", "completed_at": "2026-10-06T23:43:34"}
+        return {"success": True}
+
+    tray._api = fake_api
+    tray._record_always_on_progress = lambda **kwargs: progress.append(kwargs)
+    tray._auto_commit_task = lambda *a, **k: commits.append(a)
+
+    settled = tray._settle_pending_task()
+    assert settled is True, "Muss sofort True zurueckgeben, da Task in DB done ist"
+    assert tray.idle_pending is None, "idle_pending muss zurueckgesetzt sein"
+    assert any(p.get("task_completed") for p in progress), "Progress muss task_completed vermerken"
+    assert len(commits) == 1, "Auto-Commit muss aufgerufen werden"
+
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):
