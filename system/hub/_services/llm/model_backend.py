@@ -79,6 +79,8 @@ def _probe_model_api(
 class ModelBackend(ABC):
     """Abstrakte Basis für LLM-Backends."""
 
+    last_resolved_model: str = ""
+
     @abstractmethod
     async def chat(self, messages: list, tools: list = None,
                    think: bool = True, model: str = None) -> dict:
@@ -324,11 +326,13 @@ class OllamaBackend(ModelBackend):
             raw_message["thinking"] = "".join(thinking_parts)
         if tool_calls:
             raw_message["tool_calls"] = tool_calls
+        self.last_resolved_model = selected_model
         return {
             "content": content,
             "tool_calls": tool_calls or None,
             "raw_message": raw_message,
             "prompt_tokens": prompt_tokens,
+            "model": selected_model,
         }
 
     def list_models(self) -> list[str]:
@@ -430,10 +434,14 @@ class OpenAIBackend(ModelBackend):
                         args = {}
                 tool_calls.append({"function": {"name": fn.get("name", ""), "arguments": args}})
 
+        resolved_model = resp.get("model") or (model or self.default_model)
+        self.last_resolved_model = str(resolved_model)
+
         return {
             "content": msg.get("content", "") or "",
             "tool_calls": tool_calls,
             "raw_message": msg,
+            "model": self.last_resolved_model,
         }
 
     def list_models(self) -> list[str]:
@@ -614,6 +622,7 @@ class HermesBackend(OpenAIBackend):
         )
         self.site_url = site_url
         self.app_name = app_name
+        self.last_resolved_model: str = ""
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -628,33 +637,76 @@ class HermesBackend(OpenAIBackend):
         import httpx
 
         headers = self._get_headers()
+        target_model = model or self.default_model
         payload: dict[str, Any] = {
-            "model": model or self.default_model,
+            "model": target_model,
             "messages": messages,
             "stream": False,
         }
         if tools:
             payload["tools"] = tools
 
+        max_retries = 4
+        base_delay = 2.0
+        data = None
+
         async with httpx.AsyncClient() as client:
-            try:
-                r = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=120,
-                )
-                r.raise_for_status()
-                data = r.json()
-            except httpx.HTTPStatusError as exc:
-                err_text = ""
+            for attempt in range(max_retries):
                 try:
-                    err_json = exc.response.json()
-                    err_text = err_json.get("error", {}).get("message") or str(err_json)
-                except Exception:
-                    err_text = exc.response.text[:500]
-                log.error(f"Hermes/OpenRouter API-Fehler ({exc.response.status_code}): {err_text}")
-                raise RuntimeError(f"Hermes/OpenRouter Fehler ({exc.response.status_code}): {err_text}") from exc
+                    r = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=120,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    break
+                except httpx.HTTPStatusError as exc:
+                    err_text = ""
+                    try:
+                        err_json = exc.response.json()
+                        err_text = err_json.get("error", {}).get("message") or str(err_json)
+                    except Exception:
+                        err_text = exc.response.text[:500]
+
+                    # Retry on 429 (Rate Limit) or transient 5xx server errors
+                    if exc.response.status_code in (429, 502, 503, 529) and attempt < max_retries - 1:
+                        retry_after_hdr = exc.response.headers.get("retry-after")
+                        delay = None
+                        if retry_after_hdr:
+                            try:
+                                delay = float(retry_after_hdr)
+                            except ValueError:
+                                pass
+                        if delay is None:
+                            delay = base_delay * (2 ** attempt)
+                        log.warning(
+                            f"Hermes/OpenRouter Rate Limit / Server Error ({exc.response.status_code}): {err_text}. "
+                            f"Warte {delay:.1f}s vor Wiederholungsversuch ({attempt + 1}/{max_retries - 1})..."
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                    log.error(f"Hermes/OpenRouter API-Fehler ({exc.response.status_code}): {err_text}")
+                    raise RuntimeError(f"Hermes/OpenRouter Fehler ({exc.response.status_code}): {err_text}") from exc
+                except httpx.RequestError as exc:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        log.warning(
+                            f"Hermes/OpenRouter Verbindungsfehler ({exc}). "
+                            f"Warte {delay:.1f}s vor Wiederholungsversuch ({attempt + 1}/{max_retries - 1})..."
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    log.error(f"Hermes/OpenRouter Verbindungsfehler nach {max_retries} Versuchen: {exc}")
+                    raise RuntimeError(f"Hermes/OpenRouter Verbindungsfehler: {exc}") from exc
+
+        if not data:
+            raise RuntimeError("Hermes/OpenRouter lieferte keine Daten")
+
+        resolved_model = data.get("model") or target_model
+        self.last_resolved_model = str(resolved_model)
 
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})
@@ -731,6 +783,7 @@ class HermesBackend(OpenAIBackend):
             "content": cleaned_content,
             "tool_calls": tool_calls or None,
             "raw_message": res_msg,
+            "model": self.last_resolved_model,
         }
 
     def availability(
@@ -892,10 +945,14 @@ class AnthropicBackend(ModelBackend):
                     }
                 })
 
+        resolved_model = resp.get("model") or model or self.default_model
+        self.last_resolved_model = str(resolved_model)
+
         return {
             "content": "\n".join(text_parts),
             "tool_calls": tool_calls if tool_calls else None,
             "raw_message": resp,
+            "model": self.last_resolved_model,
         }
 
     def list_models(self) -> list[str]:

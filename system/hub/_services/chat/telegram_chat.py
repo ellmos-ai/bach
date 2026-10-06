@@ -281,7 +281,16 @@ def _record_worker_activity(
     with _WORKER_CONTROL_LOCK:
         if _WORKER_CONTROLS.get(control.worker_id) is not control or control.stop_event.is_set():
             return False
-        record_activity(control.worker_id, activity, status, details)
+        det = dict(details or {})
+        try:
+            slot = get_worker_slot(control.worker_id)
+            if slot.get("resolved_model"):
+                det.setdefault("resolved_model", slot["resolved_model"])
+            if slot.get("model"):
+                det.setdefault("model", slot["model"])
+        except Exception:
+            pass
+        record_activity(control.worker_id, activity, status, det or None)
         return True
 
 
@@ -3654,6 +3663,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                         finally:
                             loop.close()
 
+                        resolved = (
+                            getattr(worker_session, "resolved_model", None)
+                            or getattr(target_backend, "last_resolved_model", None)
+                        )
+                        if resolved:
+                            _update_worker_slot(control, {"resolved_model": str(resolved)})
+
                         if control.stop_event.is_set():
                             break
                         ans_str = str(ans)
@@ -3661,10 +3677,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                         # restored as plain text after persistence. Neither
                         # form may complete a once-worker or be logged as ok.
                         if FailedAnswer.looks_like(ans):
-                            _update_worker_slot(control, {
+                            err_update = {
                                 "status": "error",
                                 "current_activity": ans_str[:120],
-                            })
+                            }
+                            if resolved:
+                                err_update["resolved_model"] = str(resolved)
+                            _update_worker_slot(control, err_update)
                             _record_worker_activity(
                                 control,
                                 f"Block {run_count}: {ans_str[:55]}",
