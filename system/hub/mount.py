@@ -101,20 +101,22 @@ class MountHandler(BaseHandler):
 
         try:
             expanded = os.path.expandvars(os.path.expanduser(raw))
-            candidate = Path(expanded).resolve(strict=True)
+            expanded_path = Path(expanded)
+            if not expanded_path.is_absolute():
+                raise ValueError("Quellpfad muss absolut sein")
+            candidate = expanded_path.resolve(strict=True)
         except FileNotFoundError:
             raise ValueError("Quellpfad existiert nicht")
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        candidate_real = os.path.realpath(os.fspath(candidate))
         is_within_allowed_root = False
         for root in self._allowed_source_roots:
             try:
-                root_real = os.path.realpath(os.fspath(root))
-                if os.path.commonpath([root_real, candidate_real]) == root_real:
-                    is_within_allowed_root = True
-                    break
+                root_resolved = Path(root).resolve(strict=True)
+                candidate.relative_to(root_resolved)
+                is_within_allowed_root = True
+                break
             except (ValueError, OSError):
                 continue
 
