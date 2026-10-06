@@ -53,8 +53,15 @@ if sys.stdout is None:
 
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        sys.stderr.reconfigure(encoding='utf-8')
 import time
 import urllib.error
 import urllib.request
@@ -203,6 +210,33 @@ def mark_tray_ready(icon):
     os.replace(temporary, target)
 
 
+def get_tray_device_token() -> str:
+    """Resolve the device token for tray GUI access.
+
+    Checks environment variable, explicit or default token file, and OS keyring.
+    """
+    token = str(os.environ.get("BACH_DEVICE_TOKEN_TRAY") or os.environ.get("BACH_DEVICE_TOKEN") or "").strip()
+    if token:
+        return token
+    token_file = str(os.environ.get("BACH_DEVICE_TOKEN_FILE") or "").strip()
+    if token_file:
+        try:
+            return Path(token_file).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            pass
+    default_file = Path.home() / ".credentials" / "bach_device_token_tray"
+    if default_file.exists():
+        try:
+            return default_file.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            pass
+    try:
+        from hub.secrets_handler import get_secret_value
+        return str(get_secret_value("bach_device_token_tray") or "").strip()
+    except Exception:
+        return ""
+
+
 class BACHTray:
 
     POLL_INTERVAL = 5
@@ -223,14 +257,8 @@ class BACHTray:
             or os.environ.get("BACH_GUI_URL")
             or f"http://{host}:{gui_port}"
         )
-        self.gui_auth_header = None
-        try:
-            from hub.secrets_handler import get_secret_value
-            tray_token = get_secret_value("bach_device_token_tray")
-            if tray_token:
-                self.gui_auth_header = f"Bearer {tray_token.strip()}"
-        except Exception:
-            self.gui_auth_header = None
+        tray_token = get_tray_device_token()
+        self.gui_auth_header = f"Bearer {tray_token}" if tray_token else None
         self.activity_url = (
             activity_url
             or os.environ.get("BACH_ACTIVITY_URL")
