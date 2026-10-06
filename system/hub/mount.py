@@ -161,7 +161,17 @@ class MountHandler(BaseHandler):
     def _create_link(self, source: Path, target: Path):
         src = source.resolve()
         tgt = target.resolve(strict=False)
-        if not self._is_allowed_source(str(src)):
+
+        allowed = False
+        for root in self._allowed_source_roots:
+            try:
+                src.relative_to(root.resolve())
+                allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not allowed:
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
         if os.name == "nt":
             subprocess.run(
