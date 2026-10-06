@@ -21,6 +21,25 @@ let selectedItem = null;
 let draggedItem = null;
 let currentSourceFile = null;
 
+function getSkillsBoardApiUrl(endpoint) {
+    const base = (typeof window !== 'undefined' && window.BOARD_CONFIG && window.BOARD_CONFIG.apiBase != null)
+        ? window.BOARD_CONFIG.apiBase
+        : '';
+    return base + endpoint;
+}
+
+function getSkillsBoardHeaders(extraHeaders = {}) {
+    const headers = { ...extraHeaders };
+    if (typeof window !== 'undefined' && window.BOARD_CONFIG) {
+        const token = window.BOARD_CONFIG.token ||
+            (window.BOARD_CONFIG.tokenStorageKey && localStorage.getItem(window.BOARD_CONFIG.tokenStorageKey));
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+        }
+    }
+    return headers;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // INITIALIZATION
 // ═══════════════════════════════════════════════════════════════
@@ -128,7 +147,9 @@ function setupDetailDelegation() {
 
 async function loadHierarchyData() {
     try {
-        const response = await fetch('/api/skills-board/hierarchy');
+        const response = await fetch(getSkillsBoardApiUrl('/api/skills-board/hierarchy'), {
+            headers: getSkillsBoardHeaders()
+        });
         if (response.ok) {
             hierarchyData = await response.json();
         } else {
@@ -485,7 +506,9 @@ async function loadItemSource() {
             params.set('path_hint', selectedItem.path_hint);
         }
         const url = `/api/skills-board/item-file?${params.toString()}`;
-        const response = await fetch(url);
+        const response = await fetch(getSkillsBoardApiUrl(url), {
+            headers: getSkillsBoardHeaders()
+        });
         const data = await response.json();
 
         if (data.success) {
@@ -512,9 +535,9 @@ async function saveItemSource() {
     const content = document.getElementById('source-editor').value;
 
     try {
-        const response = await fetch('/api/skills-board/item-file', {
+        const response = await fetch(getSkillsBoardApiUrl('/api/skills-board/item-file'), {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getSkillsBoardHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 path: currentSourceFile.absolute_path,
                 content: content
@@ -773,9 +796,9 @@ async function removeAssignment(agentId, key, itemId) {
 }
 
 async function saveHierarchy() {
-    const response = await fetch('/api/skills-board/hierarchy', {
+    const response = await fetch(getSkillsBoardApiUrl('/api/skills-board/hierarchy'), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSkillsBoardHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(hierarchyData)
     });
 

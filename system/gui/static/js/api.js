@@ -4,7 +4,22 @@
  */
 
 const API = {
-    baseUrl: '',
+    baseUrl: (typeof window !== 'undefined' && window.BOARD_CONFIG && window.BOARD_CONFIG.apiBase != null) ? window.BOARD_CONFIG.apiBase : '',
+
+    _headers(extra = {}) {
+        const headers = { ...extra };
+        if (typeof window !== 'undefined' && window.BOARD_CONFIG) {
+            const token = window.BOARD_CONFIG.token ||
+                (window.BOARD_CONFIG.tokenStorageKey && localStorage.getItem(window.BOARD_CONFIG.tokenStorageKey));
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+        }
+        if (!headers['Authorization']) {
+            Object.assign(headers, this.deviceHeaders());
+        }
+        return headers;
+    },
 
     deviceHeaders() {
         const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('bach_device_token');
@@ -13,7 +28,9 @@ const API = {
 
     async get(endpoint) {
         try {
-            const response = await fetch(this.baseUrl + endpoint, { headers: this.deviceHeaders() });
+            const response = await fetch(this.baseUrl + endpoint, {
+                headers: this._headers()
+            });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
         } catch (error) {
@@ -26,7 +43,7 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...this.deviceHeaders() },
+                headers: this._headers({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(data)
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -41,7 +58,7 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', ...this.deviceHeaders() },
+                headers: this._headers({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(data)
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -55,7 +72,8 @@ const API = {
     async delete(endpoint) {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
-                method: 'DELETE', headers: this.deviceHeaders()
+                method: 'DELETE',
+                headers: this._headers()
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();

@@ -5633,12 +5633,30 @@ async def foerderplaner_dashboard_page():
 @app.get("/skills-board", response_class=HTMLResponse)
 async def skills_board_page():
     """Agents Board - Hierarchie- und Agenten-Verwaltung."""
-    board_file = TEMPLATES_DIR / "agents-board.html"
-    if not board_file.exists():
-        board_file = TEMPLATES_DIR / "skills-board.html"
-    if board_file.exists():
-        return FileResponse(board_file)
-    raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
+    try:
+        from gui.board_renderers import render_agents_board
+        return HTMLResponse(render_agents_board())
+    except Exception as render_error:
+        try:
+            from gui.board_renderers import (
+                DEFAULT_AGENTS_BOARD_BRANDING,
+                _apply_common_replacements,
+            )
+            for filename in ("agents-board.html", "skills-board.html"):
+                board_file = TEMPLATES_DIR / filename
+                if board_file.is_file():
+                    rendered = _apply_common_replacements(
+                        board_file.read_text(encoding="utf-8"),
+                        dict(DEFAULT_AGENTS_BOARD_BRANDING),
+                    )
+                    return HTMLResponse(rendered)
+        except Exception as fallback_error:
+            raise HTTPException(status_code=500, detail="Agents Board konnte nicht gerendert werden") from fallback_error
+        if not (TEMPLATES_DIR / "agents-board.html").exists() and not (
+            TEMPLATES_DIR / "skills-board.html"
+        ).exists():
+            raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
+        raise HTTPException(status_code=500, detail="Agents Board konnte nicht gerendert werden") from render_error
 
 
 @app.get("/skills")
@@ -5995,20 +6013,34 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
 
 
 @app.get("/tasks-board", response_class=HTMLResponse)
-
 async def tasks_board_api():
-
     """Tasks Board Seite."""
 
     astro_tasks = ASTRO_DIST_DIR / "tasks.html"
     if astro_tasks.exists():
         return FileResponse(astro_tasks)
 
-    board_file = TEMPLATES_DIR / "tasks_board.html"
-    if board_file.exists():
-        return FileResponse(board_file)
-
-    raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
+    try:
+        from gui.board_renderers import render_tasks_board
+        return HTMLResponse(render_tasks_board())
+    except Exception as render_error:
+        board_file = TEMPLATES_DIR / "tasks_board.html"
+        if board_file.is_file():
+            try:
+                from gui.board_renderers import (
+                    DEFAULT_TASKS_BOARD_BRANDING,
+                    _apply_common_replacements,
+                )
+                rendered = _apply_common_replacements(
+                    board_file.read_text(encoding="utf-8"),
+                    dict(DEFAULT_TASKS_BOARD_BRANDING),
+                )
+                return HTMLResponse(rendered)
+            except Exception as fallback_error:
+                raise HTTPException(status_code=500, detail="Tasks Board konnte nicht gerendert werden") from fallback_error
+        if not board_file.exists():
+            raise HTTPException(status_code=404, detail="Template tasks_board.html nicht gefunden")
+        raise HTTPException(status_code=500, detail="Tasks Board konnte nicht gerendert werden") from render_error
 
 
 

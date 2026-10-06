@@ -5,10 +5,11 @@
     <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BACH - Agents Board</title>
-    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <title>{{ title }}</title>
+    <script>!function(){var t=localStorage.getItem({{ theme_storage_key_json }});t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
+        /* THEME_OVERRIDES */
         .skills-board {
             display: flex;
             height: calc(100vh - 120px);
@@ -716,13 +717,15 @@
 </head>
 
 <body>
+    <!-- NAV_LINKS_START -->
     <header class="main-header" id="main-header"></header>
+    <!-- NAV_LINKS_END -->
 
     <main class="skills-board">
         <!-- LEFT: Tree View -->
         <div class="tree-panel">
             <div class="tree-header">
-                <h2>Agents Board</h2>
+                <h2>{{ header_title }}</h2>
                 <input type="text" class="tree-search" placeholder="Suchen..." id="tree-search">
                 <div class="filter-toolbar" id="filter-toolbar">
                     <button class="filter-btn active" data-filter="all">Alle</button>
@@ -741,8 +744,8 @@
         <!-- RIGHT: Detail View -->
         <div class="detail-panel" id="detail-panel">
             <div class="empty-state">
-                <span class="icon">🎯</span>
-                <h2>Agents Board</h2>
+                <span class="icon">{{ brand_icon }}</span>
+                <h2>{{ header_title }}</h2>
                 <p>Waehle links einen Agenten, Expert, Skill, Service oder Workflow aus.</p>
                 <p style="font-size: 0.85rem; margin-top: 1rem;">
                     Ziehe Elemente per Drag & Drop um sie zuzuordnen.
@@ -751,6 +754,14 @@
         </div>
     </main>
 
+    <script>
+        window.BOARD_CONFIG = {
+            apiBase: {{ api_base_json }},
+            tokenStorageKey: {{ token_storage_key_json }},
+            brandName: {{ brand_name_json }},
+            themeStorageKey: {{ theme_storage_key_json }}
+        };
+    </script>
     <script src="/static/js/api.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script src="/static/js/skills-board.js"></script>

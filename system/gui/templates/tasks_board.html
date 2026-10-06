@@ -4,10 +4,11 @@
 <head>
     <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
-    <title>BACH - Tasks Board</title>
-    <script>!function(){var t=localStorage.getItem("bach-theme");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <title>{{ title }}</title>
+    <script>!function(){var t=localStorage.getItem({{ theme_storage_key_json }});t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
+        /* THEME_OVERRIDES */
         .tasks-container {
             max-width: 100%;
             margin: 0;
@@ -241,9 +242,11 @@
 </head>
 
 <body>
+    <!-- NAV_LINKS_START -->
     <header class="main-header" id="main-header"></header>
+    <!-- NAV_LINKS_END -->
     <main class="tasks-container">
-        <h1>Task Management Board</h1>
+        <h1>{{ header_title }}</h1>
 
         <div class="filter-bar">
             <select id="filter-assigned" onchange="loadTasks()">
@@ -356,9 +359,20 @@
         </div>
     </div>
 
+    <script>
+        window.BOARD_CONFIG = {
+            apiBase: {{ api_base_json }},
+            tokenStorageKey: {{ token_storage_key_json }},
+            brandName: {{ brand_name_json }},
+            themeStorageKey: {{ theme_storage_key_json }}
+        };
+    </script>
     <script src="/static/js/api.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
+        if (typeof API !== 'undefined' && window.BOARD_CONFIG && window.BOARD_CONFIG.apiBase) {
+            API.baseUrl = window.BOARD_CONFIG.apiBase;
+        }
         let tasksData = [];
         let assignees = [];
         let taskImageData = null;
