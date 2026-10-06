@@ -32,6 +32,7 @@ from typing import List, Tuple, Optional
 from .base import BaseHandler
 from .lang import t
 from ._services.task_schema import (
+    ensure_task_creation_origin,
     ensure_task_due_date,
     task_has_due_date,
     ensure_task_claim_columns,
@@ -250,7 +251,8 @@ class TaskHandler(BaseHandler):
         else:
             return False, f"Unbekannte Operation: {operation}\nNutze: bach task help"
     
-    def _sanitize_title(self, title: str) -> str:
+    @staticmethod
+    def _sanitize_title(title: str) -> str:
         """Titel bereinigen - unbalancierte Anfuehrungszeichen entfernen"""
         # Zaehle Anfuehrungszeichen
         double_quotes = title.count('"')
@@ -287,6 +289,7 @@ class TaskHandler(BaseHandler):
         due_date = None
         required_model = None
         assigned_slot = None
+        creation_origin = None
         
         # Optionen parsen
         i = 1
@@ -320,6 +323,12 @@ class TaskHandler(BaseHandler):
                 else:
                     assigned_slot = clean_args[i + 1].strip()
                 i += 2
+            elif clean_args[i] == "--creation-origin" and i + 1 < len(clean_args):
+                creation_origin = clean_args[i + 1].strip() or None
+                i += 2
+            elif clean_args[i].startswith("--creation-origin="):
+                creation_origin = clean_args[i].split("=", 1)[1].strip() or None
+                i += 1
             elif clean_args[i].startswith("--required-model="):
                 required_model = clean_args[i].split("=", 1)[1].strip()
                 if not required_model:
@@ -350,6 +359,7 @@ class TaskHandler(BaseHandler):
                             "due_date": due_date,
                             "required_model": required_model,
                             "assigned_slot": assigned_slot,
+                            "creation_origin": creation_origin,
                             "created_by": socket.gethostname().split(".")[0].lower(),
                         }
                         ok, res = post_task_to_rheingold(rheingold_url, payload)
@@ -358,21 +368,22 @@ class TaskHandler(BaseHandler):
                             with self._get_db() as conn:
                                 ensure_task_due_date(conn)
                                 ensure_task_slot_columns(conn)
+                                ensure_task_creation_origin(conn)
                                 existing = assert_local_task_id_available(
                                     conn, task_id, title
                                 )
                                 if existing is None:
                                     conn.execute("""
                                         INSERT INTO tasks
-                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}"))
+                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin))
                                 else:
                                     conn.execute("""
                                         UPDATE tasks
-                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?
+                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?, creation_origin = ?
                                         WHERE id = ?
-                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", task_id))
+                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin, task_id))
                                 conn.commit()
 
                             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -387,13 +398,14 @@ class TaskHandler(BaseHandler):
                 with self._get_db() as conn:
                     ensure_task_due_date(conn)
                     ensure_task_slot_columns(conn)
+                    ensure_task_creation_origin(conn)
                     min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                     draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                     conn.execute("""
                         INSERT INTO tasks
-                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
+                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
                     conn.commit()
 
                 due_text = f" (fällig: {due_date})" if due_date else ""
@@ -413,13 +425,14 @@ class TaskHandler(BaseHandler):
             with self._get_db() as conn:
                 ensure_task_due_date(conn)
                 ensure_task_slot_columns(conn)
+                ensure_task_creation_origin(conn)
                 min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                 draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                 conn.execute("""
                     INSERT INTO tasks
-                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash))
+                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
+                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
                 conn.commit()
 
             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -432,11 +445,12 @@ class TaskHandler(BaseHandler):
         with self._get_db() as conn:
             ensure_task_due_date(conn)
             ensure_task_slot_columns(conn)
+            ensure_task_creation_origin(conn)
             cursor = conn.execute("""
                 INSERT INTO tasks
-                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'))
-            """, (title, priority, category, description, due_date, required_model, assigned_slot))
+                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, creation_origin)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
+            """, (title, priority, category, description, due_date, required_model, assigned_slot, creation_origin))
             task_id = cursor.lastrowid
             conn.commit()
 

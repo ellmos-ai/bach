@@ -470,11 +470,18 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
     def _task_add(self, args: list) -> tuple:
         """Fuegt neuen ATI-Task hinzu"""
         if not args:
-            return False, "Verwendung: bach ati task add \"TITEL\" [--tool NAME] [--aufwand hoch|mittel|niedrig]"
+            return False, (
+                "Verwendung: bach ati task add \"TITEL\" [--tool NAME] "
+                "[--aufwand hoch|mittel|niedrig] [--priority-score ZAHL] "
+                "[--source QUELLE] [--tags TAGS]"
+            )
 
         task_text = args[0]
         tool_name = "MANUAL"
         aufwand = "mittel"
+        priority_score = 50.0
+        source_file = "manual"
+        tags = None
 
         # Optionen parsen
         for i, arg in enumerate(args):
@@ -482,6 +489,19 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
                 tool_name = args[i + 1]
             elif arg == "--aufwand" and i + 1 < len(args):
                 aufwand = args[i + 1]
+            elif arg == "--priority-score" and i + 1 < len(args):
+                try:
+                    import math
+
+                    priority_score = float(args[i + 1])
+                    if not math.isfinite(priority_score):
+                        raise ValueError
+                except ValueError:
+                    return False, "[ATI TASK] --priority-score erwartet eine endliche Zahl"
+            elif arg == "--source" and i + 1 < len(args):
+                source_file = args[i + 1]
+            elif arg == "--tags" and i + 1 < len(args):
+                tags = args[i + 1]
 
         try:
             conn = sqlite3.connect(self.db_path)
@@ -489,9 +509,17 @@ Hinweis: ATI-Tasks sind Software-Entwicklungs-Tasks,
                 cursor = conn.execute("""
                     INSERT INTO ati_tasks
                     (tool_name, tool_path, task_text, aufwand, status, priority_score,
-                     source_file, synced_at, is_synced)
-                    VALUES (?, '', ?, ?, 'offen', 50, 'manual', ?, 1)
-                """, (tool_name, task_text, aufwand, datetime.now().isoformat()))
+                     source_file, synced_at, is_synced, tags)
+                    VALUES (?, '', ?, ?, 'offen', ?, ?, ?, 1, ?)
+                """, (
+                    tool_name,
+                    task_text,
+                    aufwand,
+                    priority_score,
+                    source_file,
+                    datetime.now().isoformat(),
+                    tags,
+                ))
 
                 task_id = cursor.lastrowid
                 conn.commit()

@@ -2251,8 +2251,12 @@ async def api_post_task(payload: dict = Body(...)):
     """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
         conn = get_bach_db()
-        from hub._services.task_schema import ensure_task_slot_columns
+        from hub._services.task_schema import (
+            ensure_task_creation_origin,
+            ensure_task_slot_columns,
+        )
         ensure_task_slot_columns(conn)
+        ensure_task_creation_origin(conn)
         draft_source = payload.get("source") or payload.get("draft_hash")
         if draft_source:
             existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
@@ -2279,8 +2283,8 @@ async def api_post_task(payload: dict = Body(...)):
 
         now = datetime.now().isoformat()
         cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             payload.get("title"),
             payload.get("description", ""),
@@ -2296,6 +2300,7 @@ async def api_post_task(payload: dict = Body(...)):
             draft_source,
             payload.get("required_model") or None,
             payload.get("assigned_slot") or None,
+            payload.get("creation_origin") or None,
         ))
 
         task_id = cursor.lastrowid

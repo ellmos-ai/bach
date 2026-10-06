@@ -44,10 +44,12 @@ Konfiguration:
 """
 
 import json
+import re
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 import sys
 # Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
@@ -121,65 +123,127 @@ def _set_last_run(task_id: str, when: datetime):
 
 # ============ TASK CREATION ============
 
-def create_task_in_ati(task_text: str, aufwand: str, priority: float, tags: str) -> int:
-    """Erstellt Task in bach.db/ati_tasks."""
-    try:
-        conn = sqlite3.connect(USER_DB)
+@dataclass(frozen=True)
+class CreationResult:
+    """Eindeutiges Ergebnis einer Handler-basierten Task-Erstellung."""
 
-        # Pruefen ob Task schon existiert
-        existing = conn.execute(
-            "SELECT id FROM ati_tasks WHERE task_text = ? AND status = 'offen'",
-            (task_text,)
+    status: Literal["created", "duplicate", "error"]
+    task_id: int | None = None
+    message: str = ""
+
+
+def _task_handler():
+    from hub.task import TaskHandler
+
+    return TaskHandler(_SYSTEM_ROOT)
+
+
+def _ati_handler():
+    from hub.ati import ATIHandler
+
+    return ATIHandler(_SYSTEM_ROOT)
+
+
+def _find_open_task_id(
+    table: Literal["tasks", "ati_tasks"], title: str, original_title: str | None = None
+) -> int | None:
+    """Prueft Duplikate read-only; alle Schreibvorgaenge bleiben im Handler."""
+    if table == "tasks":
+        title_column = "title"
+        statuses = ("pending", "open", "in_progress")
+    else:
+        title_column = "task_text"
+        statuses = ("offen", "in_arbeit")
+
+    placeholders = ", ".join("?" for _ in statuses)
+    db_uri = f"file:{Path(USER_DB).resolve().as_posix()}?mode=ro"
+    titles = (title, original_title) if original_title is not None else (title,)
+    title_placeholders = ", ".join("?" for _ in titles)
+    with sqlite3.connect(db_uri, uri=True) as conn:
+        row = conn.execute(
+            f"SELECT id FROM {table} WHERE {title_column} IN ({title_placeholders}) "
+            f"AND status IN ({placeholders}) ORDER BY id LIMIT 1",
+            (*titles, *statuses),
         ).fetchone()
+    return int(row[0]) if row else None
 
-        if existing:
-            conn.close()
-            return -1  # Bereits vorhanden
 
-        cursor = conn.execute("""
-            INSERT INTO ati_tasks
-            (tool_name, tool_path, task_text, aufwand, status, priority_score,
-             source_file, line_number, synced_at, is_synced, tags)
-            VALUES ('BACH', '', ?, ?, 'offen', ?, 'recurring', 0, ?, 1, ?)
-        """, (task_text, aufwand, priority, datetime.now().isoformat(), tags))
+def _task_id_from_message(message: str) -> int | None:
+    match = re.search(r"(?:Task\s+#?|ID\s+)(-?\d+)", message)
+    return int(match.group(1)) if match else None
 
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return task_id
+
+def create_task_in_ati(
+    task_text: str, aufwand: str, priority: float, tags: str
+) -> CreationResult:
+    """Erstellt einen ATI-Task ausschliesslich ueber den ATIHandler."""
+    try:
+        existing_id = _find_open_task_id("ati_tasks", task_text)
+        if existing_id is not None:
+            return CreationResult("duplicate", existing_id)
+
+        ok, message = _ati_handler().handle(
+            "task",
+            [
+                "add",
+                task_text,
+                "--tool",
+                "BACH",
+                "--aufwand",
+                aufwand,
+                "--priority-score",
+                str(priority),
+                "--source",
+                "recurring",
+                "--tags",
+                tags,
+            ],
+        )
+        task_id = _task_id_from_message(message)
+        if ok and task_id is not None:
+            return CreationResult("created", task_id, message)
+        print(f"  [ERROR] ATI-Task Erstellung fehlgeschlagen: {message}")
+        return CreationResult("error", message=message)
 
     except Exception as e:
         print(f"  [ERROR] ATI-Task Erstellung fehlgeschlagen: {e}")
-        return 0
+        return CreationResult("error", message=str(e))
 
-def create_task_in_bach(task_text: str, priority: str, project: str) -> int:
-    """Erstellt Task in bach.db/tasks."""
+
+def create_task_in_bach(
+    task_text: str, priority: str, project: str
+) -> CreationResult:
+    """Erstellt einen BACH-Task ueber den federationsfaehigen TaskHandler."""
     try:
-        conn = sqlite3.connect(BACH_DB)
+        from hub.task import TaskHandler
 
-        # Pruefen ob Task schon existiert
-        existing = conn.execute(
-            "SELECT id FROM tasks WHERE title = ? AND status IN ('pending', 'open')",
-            (task_text,)
-        ).fetchone()
+        normalized_title = TaskHandler._sanitize_title(task_text)
+        existing_id = _find_open_task_id("tasks", normalized_title, task_text)
+        if existing_id is not None:
+            return CreationResult("duplicate", existing_id)
 
-        if existing:
-            conn.close()
-            return -1
-
-        cursor = conn.execute("""
-            INSERT INTO tasks (title, status, priority, project, created_at, source)
-            VALUES (?, 'pending', ?, ?, ?, 'recurring')
-        """, (task_text, priority, project, datetime.now().isoformat()))
-
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return task_id
+        ok, message = _task_handler().handle(
+            "add",
+            [
+                task_text,
+                "--priority",
+                priority,
+                "--category",
+                project,
+                "--creation-origin",
+                "recurring",
+            ],
+        )
+        task_id = _task_id_from_message(message)
+        if ok and task_id is not None:
+            return CreationResult("created", task_id, message)
+        print(f"  [ERROR] BACH-Task Erstellung fehlgeschlagen: {message}")
+        return CreationResult("error", message=message)
 
     except Exception as e:
         print(f"  [ERROR] BACH-Task Erstellung fehlgeschlagen: {e}")
-        return 0
+        return CreationResult("error", message=str(e))
+
 
 # ============ RECURRING LOGIC ============
 
@@ -235,16 +299,16 @@ def check_recurring_tasks() -> List[str]:
                 task_config.get('project', 'BACH')
             )
 
-        if result == -1:
+        if result.status == "duplicate":
             print(f"  [SKIP] Task existiert bereits: {task_text[:40]}")
             # Bestehender offener Task gilt als bereits eingeplanter Lauf.
             _set_last_run(task_id, now)
-        elif result > 0:
+        elif result.status == "created":
             # last_run aktualisieren
             _set_last_run(task_id, now)
             created.append(task_text)
             print(f"  [+] Recurring Task erstellt: {task_text[:50]}")
-        # result == 0 bedeutet Fehler (bereits geloggt)
+        # status == "error" bedeutet Fehler (bereits geloggt)
 
     return created
 
@@ -317,11 +381,11 @@ def trigger_recurring_task(task_id: str) -> bool:
             task_config.get('project', 'BACH')
         )
 
-    if result > 0:
+    if result.status == "created":
         _set_last_run(task_id, datetime.now())
         print(f"[+] Recurring Task ausgeloest: {task_text[:50]}")
         return True
-    elif result == -1:
+    elif result.status == "duplicate":
         print(f"[SKIP] Task existiert bereits")
         return False
     else:
