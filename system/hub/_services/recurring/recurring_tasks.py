@@ -145,7 +145,7 @@ def _ati_handler():
 
 
 def _find_open_task_id(
-    table: Literal["tasks", "ati_tasks"], title: str
+    table: Literal["tasks", "ati_tasks"], title: str, original_title: str | None = None
 ) -> int | None:
     """Prueft Duplikate read-only; alle Schreibvorgaenge bleiben im Handler."""
     if table == "tasks":
@@ -157,11 +157,13 @@ def _find_open_task_id(
 
     placeholders = ", ".join("?" for _ in statuses)
     db_uri = f"file:{Path(USER_DB).resolve().as_posix()}?mode=ro"
+    titles = (title, original_title) if original_title is not None else (title,)
+    title_placeholders = ", ".join("?" for _ in titles)
     with sqlite3.connect(db_uri, uri=True) as conn:
         row = conn.execute(
-            f"SELECT id FROM {table} WHERE {title_column} = ? "
+            f"SELECT id FROM {table} WHERE {title_column} IN ({title_placeholders}) "
             f"AND status IN ({placeholders}) ORDER BY id LIMIT 1",
-            (title, *statuses),
+            (*titles, *statuses),
         ).fetchone()
     return int(row[0]) if row else None
 
@@ -213,13 +215,24 @@ def create_task_in_bach(
 ) -> CreationResult:
     """Erstellt einen BACH-Task ueber den federationsfaehigen TaskHandler."""
     try:
-        existing_id = _find_open_task_id("tasks", task_text)
+        from hub.task import TaskHandler
+
+        normalized_title = TaskHandler._sanitize_title(task_text)
+        existing_id = _find_open_task_id("tasks", normalized_title, task_text)
         if existing_id is not None:
             return CreationResult("duplicate", existing_id)
 
         ok, message = _task_handler().handle(
             "add",
-            [task_text, "--priority", priority, "--category", project],
+            [
+                task_text,
+                "--priority",
+                priority,
+                "--category",
+                project,
+                "--creation-origin",
+                "recurring",
+            ],
         )
         task_id = _task_id_from_message(message)
         if ok and task_id is not None:

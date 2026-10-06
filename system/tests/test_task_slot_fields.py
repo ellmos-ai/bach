@@ -50,14 +50,15 @@ def test_cli_add_and_edit_routing_fields(task_handler):
     ok, message = handler.handle("add", [
         "Cloud-Aufgabe", "--required-model", "glm-5.3:cloud",
         "--assigned-slot", "cloud_worker",
+        "--creation-origin", "recurring",
     ])
     assert ok, message
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT id, required_model, assigned_slot FROM tasks WHERE title = ?",
+            "SELECT id, required_model, assigned_slot, creation_origin FROM tasks WHERE title = ?",
             ("Cloud-Aufgabe",),
         ).fetchone()
-    assert row[1:] == ("glm-5.3:cloud", "cloud_worker")
+    assert row[1:] == ("glm-5.3:cloud", "cloud_worker", "recurring")
 
     ok, message = handler.handle("edit", [
         str(row[0]), "--required-model", "qwen3.8:27b-mlx",
@@ -110,11 +111,18 @@ def test_gui_http_create_persists_routing_fields(task_handler, monkeypatch):
         "title": "Cloud-Aufgabe",
         "required_model": "glm-5.3:cloud",
         "assigned_slot": "cloud_worker",
+        "creation_origin": "recurring",
+        "source": "draft:test:12345678",
     }))
     assert response["success"] is True, response
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT required_model, assigned_slot FROM tasks WHERE id = ?",
+            "SELECT required_model, assigned_slot, creation_origin, source FROM tasks WHERE id = ?",
             (response["id"],),
         ).fetchone()
-    assert row == ("glm-5.3:cloud", "cloud_worker")
+    assert row == (
+        "glm-5.3:cloud",
+        "cloud_worker",
+        "recurring",
+        "draft:test:12345678",
+    )

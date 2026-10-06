@@ -37,6 +37,7 @@ def _create_test_tasks_table(conn):
             delegated_to TEXT,
             depends_on TEXT,
             source TEXT,
+            creation_origin TEXT,
             due_date TEXT,
             created_at TEXT,
             started_at TEXT,
@@ -153,24 +154,34 @@ def test_sync_drafts_promotes_to_official_id(tmp_path):
         INSERT INTO tasks (id, title, priority, category, description, status, source, created_at)
         VALUES (-1, 'Gestageter Task', 'P1', 'feature', 'Wartet auf Rheingold', 'pending', 'draft:wks:12345678', datetime('now'))
     """)
+    conn.execute(
+        "UPDATE tasks SET creation_origin = 'recurring' WHERE id = -1"
+    )
     conn.commit()
 
     # Mock: Rheingold vergibt ID 1250
     mock_response = (True, {"success": True, "id": 1250, "status": "created"})
-    with patch("hub.rheingold.post_task_to_rheingold", return_value=mock_response):
+    sent_payloads = []
+    with patch(
+        "hub.rheingold.post_task_to_rheingold",
+        side_effect=lambda _url, payload: (sent_payloads.append(payload) or mock_response),
+    ):
         promoted = sync_drafts_to_rheingold(conn, "http://fake-rheingold:8000")
 
     assert len(promoted) == 1
     assert promoted[0]["old_id"] == -1
     assert promoted[0]["new_id"] == 1250
     assert promoted[0]["draft_hash"] == "draft:wks:12345678"
+    assert sent_payloads[0]["creation_origin"] == "recurring"
 
     # Prüfe DB-Stand
-    row = conn.execute("SELECT id, title, source FROM tasks WHERE id = 1250").fetchone()
+    row = conn.execute(
+        "SELECT id, title, source, creation_origin FROM tasks WHERE id = 1250"
+    ).fetchone()
     assert row is not None
     assert row[0] == 1250
     assert row[1] == "Gestageter Task"
-    assert row[2] == "promoted:draft:wks:12345678"
+    assert row[2:] == ("promoted:draft:wks:12345678", "recurring")
 
     # Der alte negative Eintrag darf nicht mehr existieren
     old_row = conn.execute("SELECT id FROM tasks WHERE id = -1").fetchone()
@@ -241,7 +252,13 @@ def test_pull_tasks_mirrors_to_local_bachgrund(tmp_path):
     mock_server_data = {
         "success": True,
         "tasks": [
-            {"id": 101, "title": "Task 101", "status": "pending", "priority": "P2"},
+            {
+                "id": 101,
+                "title": "Task 101",
+                "status": "pending",
+                "priority": "P2",
+                "creation_origin": "recurring",
+            },
             {"id": 102, "title": "Task 102", "status": "done", "priority": "P1"},
         ]
     }
@@ -267,6 +284,9 @@ def test_pull_tasks_mirrors_to_local_bachgrund(tmp_path):
     assert rows[0][0] == 101
     assert rows[1][0] == 102
     assert rows[1][2] == "done"
+    assert conn.execute(
+        "SELECT creation_origin FROM tasks WHERE id = 101"
+    ).fetchone()[0] == "recurring"
     conn.close()
 
 

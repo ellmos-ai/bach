@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 import sys
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -120,9 +121,88 @@ def test_create_bach_task_routes_through_handler_and_accepts_negative_draft(monk
     assert calls == [
         (
             "add",
-            ["Recurring demo", "--priority", "P2", "--category", "BACH"],
+            [
+                "Recurring demo",
+                "--priority",
+                "P2",
+                "--category",
+                "BACH",
+                "--creation-origin",
+                "recurring",
+            ],
         )
     ]
+
+
+def test_create_bach_task_normalizes_titles_before_duplicate_check(tmp_path, monkeypatch):
+    from hub.task import TaskHandler
+
+    db_path = tmp_path / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                priority TEXT,
+                category TEXT,
+                description TEXT,
+                status TEXT,
+                created_at TEXT,
+                source TEXT
+            )
+        """)
+
+    monkeypatch.setattr(recurring_tasks, "USER_DB", db_path)
+
+    def task_handler():
+        handler = TaskHandler(SYSTEM_ROOT)
+        handler.db_path = db_path
+        return handler
+
+    monkeypatch.setattr(recurring_tasks, "_task_handler", task_handler)
+    title = "Review developer's notes"
+
+    created = recurring_tasks.create_task_in_bach(title, "P2", "BACH")
+    duplicate = recurring_tasks.create_task_in_bach(title, "P2", "BACH")
+
+    assert created.status == "created"
+    assert duplicate.status == "duplicate"
+    assert duplicate.task_id == created.task_id
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT title, source, creation_origin FROM tasks"
+        ).fetchone()
+    assert row == ("Review developers notes", None, "recurring")
+
+
+def test_create_bach_task_detects_legacy_raw_title(tmp_path, monkeypatch):
+    db_path = tmp_path / "bach.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                status TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO tasks (id, title, status) VALUES (42, ?, 'pending')",
+            ("Review developer's notes",),
+        )
+
+    monkeypatch.setattr(recurring_tasks, "USER_DB", db_path)
+    monkeypatch.setattr(
+        recurring_tasks,
+        "_task_handler",
+        lambda: (_ for _ in ()).throw(AssertionError("handler must not run")),
+    )
+
+    result = recurring_tasks.create_task_in_bach(
+        "Review developer's notes", "P2", "BACH"
+    )
+
+    assert result.status == "duplicate"
+    assert result.task_id == 42
 
 
 def test_create_bach_task_reports_duplicate_without_calling_handler(monkeypatch):
