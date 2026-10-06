@@ -701,13 +701,25 @@ class BACHTray:
         answer = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
 
         if answer is None:
+            task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+            if isinstance(task_now, dict) and task_now.get("status"):
+                is_done = bool(task_now.get("completed_at") or task_now.get("status") in ("done", "completed"))
+                if is_done or (_is_terminal_parked(task_now) and task_now.get("status") != "in_progress"):
+                    print(f"[Idle] Task #{task_id} terminal ({'done' if is_done else task_now.get('status')}); kein open-Reset (PATH A)")
+                    if is_done:
+                        self._record_always_on_progress(task_completed=True)
+                        self._auto_commit_task(task_id, title)
+                    self.idle_pending = None
+                    return True
+
             if not messages or (time.time() - seit >= self.PENDING_TTL):
                 # Terminal-Waechter fuer PATH A (Client-Timeout ohne Antwort): auch hier
                 # darf ein geparkter Task (blocked / future due_date) NICHT auf 'open'
                 # zurueckgesetzt werden -- sonst Resurrektions-Loop (T-20260912-1240loop
                 # / #1235 4x-Claim / #1293 Option A). Gleicher Guard wie Antwort-Pfad L580
                 # und Scan-Pfad L648. Gleicher _is_terminal_parked-Helfer (8/8 getestet).
-                task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+                if not isinstance(task_now, dict) or not task_now.get("status"):
+                    task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
                 if not isinstance(task_now, dict) or not task_now.get("status"):
                     return False
                 if _is_terminal_parked(task_now):
@@ -747,6 +759,28 @@ class BACHTray:
         self.idle_pending = None
         return True
 
+    def _is_blocked_by_dep(self, task) -> bool:
+        """Prueft fail-closed, ob ein Kandidat auf unerledigte Vorgaenger wartet.
+
+        Die Task-API liefert ``is_blocked_by_dep``. Fehlt das Feld (aeltere
+        server.py) und hat der Task ``depends_on``, wird der Detail-Endpunkt
+        gefragt; laesst sich der Status nicht klaeren, gilt der Task als
+        blockiert, damit der Idle-Worker nicht auf fehlenden Vorarbeiten aufbaut.
+        """
+        if not isinstance(task, dict):
+            return False
+        if "is_blocked_by_dep" in task:
+            return bool(task.get("is_blocked_by_dep"))
+        if not str(task.get("depends_on") or "").strip():
+            return False
+        tid = task.get("id")
+        if not tid:
+            return True
+        detail = self._api("GET", f"/api/tasks/{tid}", base=self.gui_url)
+        if isinstance(detail, dict) and "is_blocked_by_dep" in detail:
+            return bool(detail.get("is_blocked_by_dep"))
+        return True
+
     def _process_idle_task(self):
         if self.idle_processing:
             return
@@ -776,6 +810,9 @@ class BACHTray:
                         for cand in tasks_resp["tasks"]:
                             if _is_terminal_parked(cand) and not cand.get("completed_at"):
                                 continue
+                            if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
+                                print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
+                                continue
                             if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
                                 task = cand
                                 task_status = status
@@ -794,6 +831,9 @@ class BACHTray:
                             for cand in tasks_resp["tasks"]:
                                 if _is_terminal_parked(cand) and not cand.get("completed_at"):
                                     continue
+                                if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
+                                    print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
+                                    continue
                                 if task_matches_slot_binding(cand, always_on):
                                     task = cand
                                     task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
@@ -810,6 +850,9 @@ class BACHTray:
                     if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
                         for cand in tasks_resp["tasks"]:
                             if _is_terminal_parked(cand) and not cand.get("completed_at"):
+                                continue
+                            if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
+                                print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
                                 continue
                             cand_assignee = (cand.get("assigned_to") or "").strip()
                             # menschliche Tasks (user) und fremde Agenten (claude, gemini, codex, kimi) ueberspringen

@@ -347,9 +347,136 @@ def test_idle_worker_skips_parked_task_and_picks_next_valid():
     assert 1729 not in claimed_ids, "Geparkter Task 1729 darf nicht beansprucht werden"
 
 
+def test_settle_pending_task_settles_immediately_when_db_shows_done_without_waiting_ttl():
+    """Wenn die DB den Task bereits als done/completed ausweist (z. B. durch Tool call),
+    muss _settle_pending_task sofort abschliessen, ohne 30 Min PENDING_TTL abzuwarten."""
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    # seit liegt erst 60s zurueck, also weit unter PENDING_TTL (1800s)
+    tray.idle_pending = (1603, _time.time() - 60, "Task 1603", "idle-bach-1603")
+    progress, commits = [], []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and "/api/history" in path:
+            # Kein assistant message bisher (z. B. noch in Toolrunden oder vor Zusammenfassung)
+            return {"ok": True, "messages": [{"role": "user", "content": "Start"}]}
+        if method == "GET" and "/api/tasks/1603" in path:
+            # DB meldet bereits erledigt!
+            return {"id": 1603, "status": "done", "completed_at": "2026-10-06T23:43:34"}
+        return {"success": True}
+
+    tray._api = fake_api
+    tray._record_always_on_progress = lambda **kwargs: progress.append(kwargs)
+    tray._auto_commit_task = lambda *a, **k: commits.append(a)
+
+    settled = tray._settle_pending_task()
+    assert settled is True, "Muss sofort True zurueckgeben, da Task in DB done ist"
+    assert tray.idle_pending is None, "idle_pending muss zurueckgesetzt sein"
+    assert any(p.get("task_completed") for p in progress), "Progress muss task_completed vermerken"
+    assert len(commits) == 1, "Auto-Commit muss aufgerufen werden"
+
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):
             _fn()
             print(f"PASS: {_name}")
     print("ALLE TESTS BESTANDEN")
+
+
+# ---------------------------------------------------------------------------
+# Abhaengigkeiten: der Idle-Worker darf keinen Task ziehen, dessen Vorgaenger
+# noch offen sind (aus rescue/live-wip-20260928 uebernommen, fail-closed).
+# ---------------------------------------------------------------------------
+def _idle_tray(mod, fake_api):
+    tray = object.__new__(mod.BACHTray)
+    tray.gui_url = "http://127.0.0.1:8000"
+    tray.idle_processing = False
+    tray.idle_pending = None
+    tray.idle_task_name = None
+    tray.idle_consecutive = 0
+    tray.icon = None
+    tray.slots = {}
+    tray._update_icon = lambda *a, **k: None
+    tray._api = fake_api
+    return tray
+
+
+def test_idle_worker_skips_dependency_blocked_task_and_picks_next():
+    mod = _load_mod()
+    claimed_ids = []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and "assigned_to=OLLAMA" in path:
+            return {
+                "success": True,
+                "tasks": [
+                    {"id": 1801, "title": "Waits", "status": "pending", "assigned_to": "OLLAMA",
+                     "depends_on": "1800", "is_blocked_by_dep": True},
+                    {"id": 1802, "title": "Ready", "status": "pending", "assigned_to": "OLLAMA",
+                     "depends_on": "1700", "is_blocked_by_dep": False},
+                ],
+            }
+        if method == "GET" and "/api/tasks/1802" in path:
+            return {"status": "in_progress"}
+        if method == "PUT" and "/api/tasks/" in path:
+            claimed_ids.append(int(path.rsplit("/", 1)[1]))
+            return {"success": True}
+        if method == "POST" and "/api/chat" in path:
+            return {"ok": True, "chat_id": "idle-x-1802"}
+        return {"success": True}
+
+    _idle_tray(mod, fake_api)._process_idle_task()
+    assert 1802 in claimed_ids
+    assert 1801 not in claimed_ids
+
+
+def test_idle_worker_never_claims_when_only_blocked_tasks_exist():
+    mod = _load_mod()
+    claimed_ids = []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        if method == "GET" and path.startswith("/api/tasks?"):
+            return {"success": True, "tasks": [
+                {"id": 1901, "title": "Waits", "status": "open", "assigned_to": "OLLAMA",
+                 "depends_on": "1900", "is_blocked_by_dep": True},
+            ]}
+        if method == "PUT":
+            claimed_ids.append(path)
+        return {"success": True}
+
+    _idle_tray(mod, fake_api)._process_idle_task()
+    assert claimed_ids == []
+
+
+@pytest.mark.parametrize("detail,expected", [
+    ({"id": 5, "is_blocked_by_dep": True}, True),
+    ({"id": 5, "is_blocked_by_dep": False}, False),
+    ({"id": 5}, True),          # aeltere API ohne Feld -> fail-closed
+    (None, True),               # Server nicht erreichbar -> fail-closed
+])
+def test_dependency_check_without_list_flag_asks_detail_fail_closed(detail, expected):
+    mod = _load_mod()
+    calls = []
+
+    def fake_api(method, path, body=None, base=None, timeout=8):
+        calls.append((method, path))
+        return detail
+
+    tray = _idle_tray(mod, fake_api)
+    assert tray._is_blocked_by_dep({"id": 5, "depends_on": "4"}) is expected
+    assert calls == [("GET", "/api/tasks/5")]
+
+
+def test_dependency_check_skips_lookup_without_depends_on():
+    mod = _load_mod()
+
+    def fake_api(*a, **k):
+        raise AssertionError("kein Detail-Lookup ohne depends_on")
+
+    tray = _idle_tray(mod, fake_api)
+    assert tray._is_blocked_by_dep({"id": 6, "depends_on": ""}) is False
+    assert tray._is_blocked_by_dep({"id": 7}) is False
+    assert tray._is_blocked_by_dep(None) is False
