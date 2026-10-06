@@ -196,32 +196,37 @@ class MountHandler(BaseHandler):
         except ValueError as exc:
             return False, str(exc)
 
-        if not self._is_allowed_source(str(resolved_source)):
+        try:
+            hardened_source = resolved_source.resolve()
+        except (ValueError, OSError) as exc:
+            return False, f"Ungueltiger Quellpfad: {exc}"
+
+        if not self._is_allowed_source(str(hardened_source)):
             return False, (
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
 
-        if not resolved_source.exists():
+        if not hardened_source.exists():
             return False, "Quellpfad existiert nicht"
 
         if dry_run:
-            return True, f"[DRY-RUN] Wuerde Junction erstellen: {target} -> {resolved_source} und in DB speichern."
+            return True, f"[DRY-RUN] Wuerde Junction erstellen: {target} -> {hardened_source} und in DB speichern."
 
         try:
             if not target.exists():
-                self._create_link(resolved_source, target)
+                self._create_link(hardened_source, target)
 
             conn = self._get_db_conn()
             conn.execute("""
                 INSERT INTO connections (name, type, category, endpoint, is_active, help_text)
                 VALUES (?, 'mount', 'storage', ?, 1, 'User Folder Mount')
                 ON CONFLICT(name) DO UPDATE SET endpoint=excluded.endpoint, is_active=1
-            """, (alias, str(resolved_source)))
+            """, (alias, str(hardened_source)))
             conn.commit()
             conn.close()
 
-            return True, f"[OK] Ordner angebunden und gespeichert: {alias} -> {resolved_source}"
+            return True, f"[OK] Ordner angebunden und gespeichert: {alias} -> {hardened_source}"
         except Exception:
             return False, "Fehler beim Anlegen der Anbindung"
 
