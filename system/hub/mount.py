@@ -163,7 +163,7 @@ class MountHandler(BaseHandler):
             return False, "Fehler beim Lesen der DB"
 
     def _create_link(self, source: Path, target: Path):
-        src = Path(source).resolve(strict=False)
+        src = self._resolve_mount_source(str(source))
         tgt = Path(target).resolve(strict=False)
         if not self._is_allowed_source(str(src)):
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
