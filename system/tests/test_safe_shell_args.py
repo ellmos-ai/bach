@@ -195,3 +195,8 @@ def test_file_tools_block_bot_config(fake_home):
     cfg.write_text("{}", encoding="utf-8")
     assert "BLOCKIERT" in exec_tool("read_file", {"path": str(cfg)}, "safe")
     assert "BLOCKIERT" in exec_tool("list_directory", {"path": str(cfg.parent)}, "safe")
+
+
+@pytest.mark.parametrize("opts", [["-L"], ["-H"], ["-P"], ["-O3"], ["-D", "stat"], ["-L", "-O2"]])
+def test_find_leading_options_do_not_hide_start_path(fake_home, opts):
+    assert check_safe_shell_args(["find", *opts, str(fake_home), "-name", "*.pub"])
