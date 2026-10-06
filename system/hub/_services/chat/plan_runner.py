@@ -135,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     kontext = args.kontext or limit("BACH_CONTEXT_LIMIT")
 
     runtime = tc.runtime
-    runtime.max_tool_rounds = 0
+    # Keep the configured positive limit. In ChatRuntime, 0 suppresses tool
+    # advertisement, so planning could not create tasks via task_manage.
     runtime.auto_continue = 4          # Planen braucht wenige Runden, nicht viele
     runtime.goal = ""
 
