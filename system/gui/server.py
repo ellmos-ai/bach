@@ -2226,19 +2226,11 @@ async def api_get_tasks(
                 task["has_image"] = True
             task.pop("image_data", None)
 
-        # Check dependencies for blocking status
+        # Abhaengigkeitsstatus fail-closed fuer jeden Task setzen: ungueltige,
+        # fehlende oder unerledigte Vorgaenger blockieren (der Idle-Worker im
+        # Tray verlaesst sich auf das Feld).
         for task in tasks:
-            if task.get("depends_on"):
-                try:
-                    dep_ids = [int(x.strip()) for x in task["depends_on"].split(",") if x.strip()]
-                    if dep_ids:
-                        # Prüfen ob alle erledigt sind
-                        placeholders = ",".join(["?"] * len(dep_ids))
-                        unfinished = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) AND status != 'done'", dep_ids).fetchone()[0]
-                        if unfinished > 0:
-                            task["is_blocked_by_dep"] = True
-                except (sqlite3.OperationalError, sqlite3.DatabaseError, ValueError, AttributeError):
-                    pass
+            task["is_blocked_by_dep"] = _task_blocked_by_dependency(conn, task)
 
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
@@ -2316,13 +2308,26 @@ async def api_post_task(payload: dict = Body(...)):
 async def get_task(task_id: int):
     """Holt einzelnen Task aus bach.db."""
     conn = get_bach_db()
-    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    conn.close()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Task nicht gefunden")
-    
-    return _public_task_snapshot(row_to_dict(row))
+    try:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        task = _public_task_snapshot(row_to_dict(row))
+        task["is_blocked_by_dep"] = _task_blocked_by_dependency(conn, task)
+        return task
+    finally:
+        conn.close()
+
+
+def _task_blocked_by_dependency(conn, task: dict) -> bool:
+    """Fail-closed: ungueltige, fehlende oder unerledigte Vorgaenger blockieren."""
+    if not str(task.get("depends_on") or "").strip():
+        return False
+    from hub._services.task_schema import inspect_task_dependencies
+    try:
+        return bool(inspect_task_dependencies(conn, task.get("depends_on"))["blocked"])
+    except sqlite3.Error:
+        return True
 
 
 # --- BACH #1721: Lead-seitiger Task-Lease-Dienst (TASKDB-SALT-LEASE-VERTRAG-v1 §5) ---
