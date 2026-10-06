@@ -158,6 +158,25 @@ class MountHandler(BaseHandler):
         except Exception:
             return False, "Fehler beim Lesen der DB"
 
+    def _normalize_and_validate_source_path(self, source: Path) -> Path:
+        try:
+            canonical = source.resolve()
+        except (ValueError, OSError) as exc:
+            raise ValueError(f"Ungueltiger Quellpfad: {exc}")
+
+        allowed_roots = self._allowed_source_roots()
+        for root in allowed_roots:
+            try:
+                canonical.relative_to(root)
+                return canonical
+            except ValueError:
+                continue
+
+        raise ValueError(
+            "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
+            f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
+        )
+
     def _create_link(self, source: Path, target: Path):
         src = source.resolve()
         tgt = target.resolve(strict=False)
@@ -197,9 +216,9 @@ class MountHandler(BaseHandler):
             return False, str(exc)
 
         try:
-            hardened_source = resolved_source.resolve()
-        except (ValueError, OSError) as exc:
-            return False, f"Ungueltiger Quellpfad: {exc}"
+            hardened_source = self._normalize_and_validate_source_path(resolved_source)
+        except ValueError as exc:
+            return False, str(exc)
 
         if not self._is_allowed_source(str(hardened_source)):
             return False, (
