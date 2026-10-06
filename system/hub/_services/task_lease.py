@@ -318,8 +318,11 @@ def _holder_view(row: Mapping[str, Any], state: Mapping[str, Any]) -> dict[str, 
 def task_content_version(row: Mapping[str, Any]) -> str:
     """Fingerprint des Auftrags; Status/Heartbeat ändern dessen Inhalt nicht."""
     volatile = {"claimed_by", "claimed_at", "status", "updated_at", "started_at", "completed_at", "task_version"}
-    content = {key: value for key, value in row.items()
-               if not key.startswith("claim_") and key not in volatile and value is not None}
+    content = {
+        key: {"__bytes_sha256__": hashlib.sha256(value).hexdigest()} if isinstance(value, bytes) else value
+        for key, value in row.items()
+        if not key.startswith("claim_") and key not in volatile and value is not None
+    }
     return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
                                      separators=(",", ":")).encode("utf-8")).hexdigest()
 
