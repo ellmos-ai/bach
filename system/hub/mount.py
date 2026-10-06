@@ -50,15 +50,13 @@ class MountHandler(BaseHandler):
 
     def _is_allowed_source(self, source: str) -> bool:
         try:
-            cand = Path(source).resolve()
-        except (ValueError, OSError):
+            cand = os.path.realpath(os.path.abspath(os.fspath(source)))
+        except (ValueError, OSError, TypeError):
             return False
         for root in self._allowed_source_roots:
             try:
-                base = Path(root).resolve()
-                if cand == base or cand.is_relative_to(base):
-                    return True
-                if os.path.commonpath([str(base), str(cand)]) == str(base):
+                base = os.path.realpath(os.path.abspath(os.fspath(root)))
+                if os.path.commonpath([base, cand]) == base:
                     return True
             except (ValueError, TypeError, OSError):
                 continue
@@ -91,16 +89,16 @@ class MountHandler(BaseHandler):
 
         try:
             expanded = os.path.expandvars(os.path.expanduser(raw))
-            candidate = Path(expanded).resolve()
+            candidate = Path(expanded).resolve(strict=True)
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
-        if not self._is_allowed_source(str(candidate)):
+        if not self._is_allowed_source(os.fspath(candidate)):
             raise ValueError(
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
-        if candidate.exists() and not candidate.is_dir():
+        if not candidate.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return candidate
     
