@@ -156,6 +156,13 @@ TEMPLATES_DIR = GUI_DIR / "templates"
 
 STATIC_DIR = GUI_DIR / "static"
 
+_CANDIDATE_DIST_DIRS = [
+    GUI_DIR / "web" / "dist",
+    Path(os.environ.get("ELLMOS_SYSTEM_GUI_DIST", "")) if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") else None,
+    Path("C:/_Local_DEV/repos/ellmos-system-gui/dist"),
+]
+ASTRO_DIST_DIR = next((p for p in _CANDIDATE_DIST_DIRS if p and p.is_dir()), GUI_DIR / "web" / "dist")
+
 HELP_DIR = BACH_DIR / "docs" / "help"
 WIKI_DIR = BACH_DIR / "wiki"
 
@@ -1574,6 +1581,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/devices/verify",
         "/api/gui/backend-origin",
         "/api/gui/brand",
+        "/api/gui/kit-manifest",
+        "/api/gui/architecture/concepts",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1778,6 +1787,7 @@ async def get_gui_capabilities():
     """Describe registered GUI adapters without inventing runtime availability."""
     from datetime import datetime, timezone
     from gui.branding import read_gui_brand
+    from hub._services.gui_contract_service import get_pinned_kit_manifest, verify_installed_dist
 
     observed = datetime.now(timezone.utc).isoformat()
     registered_paths = {getattr(route, "path", None) for route in app.routes}
@@ -1801,20 +1811,59 @@ async def get_gui_capabilities():
             "reason_code": "route_registered_runtime_not_probed" if present else "adapter_not_registered",
             "observed_at": observed if present else None,
         }
+
+    kit_manifest = get_pinned_kit_manifest()
+    dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit_manifest.get("pinned_source_commit"))
+    expected_pages = kit_manifest.get("expected_page_count")
+    is_kit_verified = bool(
+        kit_manifest.get("verified")
+        and dist_info.get("verified")
+        and type(expected_pages) is int
+        and dist_info.get("page_count") == expected_pages
+    )
+
+    kit_status = {
+        "revision": kit_manifest.get("pinned_source_commit"),
+        "version": kit_manifest.get("version"),
+        "archive_sha256": kit_manifest.get("release_archive_sha256"),
+        "verified": is_kit_verified,
+        "installed": dist_info.get("installed", False),
+        "installed_files_verified": dist_info.get("verified", False),
+        "served": dist_info.get("installed", False),
+        "reason_code": "verified_pinned_release" if is_kit_verified else dist_info.get("reason_code", "release_identity_not_probed"),
+        "dist_page_count": dist_info.get("page_count", 0),
+    }
+
     return {
         "schema": "ellmos-system-gui.capabilities.v1",
         "schema_version": 1,
-        "kit": {
-            "revision": None, "version": None, "archive_sha256": None,
-            "verified": None, "installed": None,
-            "installed_files_verified": None, "served": None,
-            "reason_code": "release_identity_not_probed",
-        },
+        "kit": kit_status,
         "brand": read_gui_brand(),
         "modules": modules,
         "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
         "observed_at": observed,
     }
+
+
+@app.get("/api/gui/kit-manifest")
+async def get_gui_kit_manifest():
+    """Return pinned kit manifest and verification status for ellmos-system-gui (GUX-001)."""
+    from hub._services.gui_contract_service import get_pinned_kit_manifest, verify_installed_dist
+
+    manifest = get_pinned_kit_manifest()
+    dist_info = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=manifest.get("pinned_source_commit"))
+    return {
+        **manifest,
+        "installed_dist": dist_info,
+    }
+
+
+@app.get("/api/gui/architecture/concepts")
+async def get_gui_architecture_concepts():
+    """Return canonical definitions for SALT, Trithon, and Muschelgrund (GUX-004)."""
+    from hub._services.gui_contract_service import get_architectural_concepts
+
+    return get_architectural_concepts()
 
 
 @app.get("/api/status")
@@ -4921,7 +4970,6 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-ASTRO_DIST_DIR = GUI_DIR / "web" / "dist"
 if (ASTRO_DIST_DIR / "_astro").exists():
     app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
 

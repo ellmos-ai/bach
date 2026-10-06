@@ -103,14 +103,22 @@ def get_lead_config() -> dict:
             data = json.loads(LEAD_CONFIG_FILE.read_text(encoding="utf-8"))
             mode = data.get("mode", "worker")
             if mode == "isolated":
+                if os.environ.get("BACH_MODE") == "worker":
+                    return {"mode": "worker", "lead_url": None}
                 return {"mode": "isolated", "lead_url": None}
+            # Preserve an explicitly configured role even when its URL is missing.
+            # Lease clients must reject that worker, never authorize its projection.
+            if mode != "worker":
+                return {"mode": "invalid", "lead_url": None}
             lead_url = data.get("lead_url")
-            if lead_url:
-                return {"mode": "worker", "lead_url": lead_url.rstrip("/")}
+            return {"mode": "worker", "lead_url": lead_url.rstrip("/") if isinstance(lead_url, str) else None}
         except Exception:
-            pass
+            # A broken existing configuration is not an explicit isolated setup.
+            return {"mode": "worker", "lead_url": None}
 
-    # Grundsatz: Ohne explizit festgelegten Lead arbeitet BACH isoliert
+    if os.environ.get("BACH_MODE") == "worker":
+        return {"mode": "worker", "lead_url": None}
+    # No declared role/configuration: legacy standalone operation remains isolated.
     return {"mode": "isolated", "lead_url": None}
 
 
