@@ -72,6 +72,10 @@ def validate_host_path(path: str | Path | None, base_dir: Path | None = None) ->
     else:
         if not isinstance(base_dir, Path):
             return None
+        # Security hardening: trust anchor must be an absolute path.
+        # Reject relative/unexpected bases instead of resolving them implicitly.
+        if not base_dir.is_absolute():
+            return None
         base_resolved = base_dir.resolve(strict=False)
 
     raw = Path(text)
