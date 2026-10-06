@@ -701,13 +701,25 @@ class BACHTray:
         answer = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
 
         if answer is None:
+            task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+            if isinstance(task_now, dict) and task_now.get("status"):
+                is_done = bool(task_now.get("completed_at") or task_now.get("status") in ("done", "completed"))
+                if is_done or (_is_terminal_parked(task_now) and task_now.get("status") != "in_progress"):
+                    print(f"[Idle] Task #{task_id} terminal ({'done' if is_done else task_now.get('status')}); kein open-Reset (PATH A)")
+                    if is_done:
+                        self._record_always_on_progress(task_completed=True)
+                        self._auto_commit_task(task_id, title)
+                    self.idle_pending = None
+                    return True
+
             if not messages or (time.time() - seit >= self.PENDING_TTL):
                 # Terminal-Waechter fuer PATH A (Client-Timeout ohne Antwort): auch hier
                 # darf ein geparkter Task (blocked / future due_date) NICHT auf 'open'
                 # zurueckgesetzt werden -- sonst Resurrektions-Loop (T-20260912-1240loop
                 # / #1235 4x-Claim / #1293 Option A). Gleicher Guard wie Antwort-Pfad L580
                 # und Scan-Pfad L648. Gleicher _is_terminal_parked-Helfer (8/8 getestet).
-                task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
+                if not isinstance(task_now, dict) or not task_now.get("status"):
+                    task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
                 if not isinstance(task_now, dict) or not task_now.get("status"):
                     return False
                 if _is_terminal_parked(task_now):

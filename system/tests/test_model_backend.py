@@ -25,6 +25,7 @@ from hub._services.llm.model_backend import (  # noqa: E402
     CLIBackend,
     LMStudioBackend,
     HermesBackend,
+    ModelBackend,
     OpenRouterBackend,
     OllamaBackend,
     OpenAIBackend,
@@ -853,3 +854,50 @@ def test_hermes_thought_handling(monkeypatch):
     assert "<thought>" not in res["content"]
     assert res["content"] == "Hier ist das Ergebnis."
     assert "Zuerst Information abrufen" in res["raw_message"]["thought"]
+
+
+def test_hermes_native_tool_call_records_ids_and_response_format(monkeypatch):
+    reply = {
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": "Rufe Tool auf",
+                "tool_calls": [{
+                    "id": "call_12345",
+                    "type": "function",
+                    "function": {"name": "get_status", "arguments": '{"query": "all"}'},
+                }],
+            }
+        }]
+    }
+    fake_client = _FakeClient(_FakeResponse(reply))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: fake_client)
+
+    backend = HermesBackend(api_key="test-key")
+    res = asyncio.run(backend.chat([{"role": "user", "content": "status"}]))
+    assert res["tool_calls"] == [{"id": "call_12345", "function": {"name": "get_status", "arguments": {"query": "all"}}}]
+    assert backend._last_tool_call_ids == ["call_12345"]
+    tool_msg = backend.tool_response_message("ok", "call_12345")
+    assert tool_msg == {"role": "tool", "content": "ok", "tool_call_id": "call_12345"}
+
+
+def test_model_backend_base_preserves_tool_call_id():
+    class _DummyBackend(ModelBackend):
+        async def chat(self, messages, tools=None, think=True, model=None):
+            return {}
+        def list_models(self):
+            return []
+        def get_default_model(self):
+            return ""
+
+    backend = _DummyBackend()
+    assert backend.tool_response_message("result", "call_abc") == {
+        "role": "tool",
+        "content": "result",
+        "tool_call_id": "call_abc",
+    }
+    assert backend.tool_response_message("result") == {
+        "role": "tool",
+        "content": "result",
+    }
+
