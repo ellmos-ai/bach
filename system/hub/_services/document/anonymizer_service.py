@@ -351,7 +351,9 @@ def _generate_fake_date_same_age(real_date: str) -> Tuple[str, int]:
     Generiert ein falsches Geburtsdatum mit demselben Alter.
     Returns: (fake_date, days_offset)
     """
-    offset = secrets.randbelow(300) - 150  # -150 bis +149 Tage
+    # -150 bis -1 oder +1 bis +150 Tage. Ein Versatz von 0 wuerde das echte
+    # Datum (und alle damit verschobenen Daten) unveraendert durchreichen.
+    offset = (secrets.randbelow(150) + 1) * secrets.choice((-1, 1))
     fake = _shift_date(real_date, offset)
     return fake, offset
 
