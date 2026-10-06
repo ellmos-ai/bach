@@ -37,16 +37,12 @@ class MountHandler(BaseHandler):
         else:
             roots = [Path(root) for root in allowed_source_roots]
 
-        self._allowed_source_roots = tuple(
-            dict.fromkeys(
-                os.path.realpath(
-                    os.path.abspath(
-                        os.path.expandvars(os.path.expanduser(os.fspath(root)))
-                    )
-                )
-                for root in roots
-            )
-        )
+        canonical_roots = []
+        for root in roots:
+            expanded_root = os.path.expandvars(os.path.expanduser(os.fspath(root)))
+            canonical_roots.append(Path(expanded_root).resolve(strict=False))
+
+        self._allowed_source_roots = tuple(dict.fromkeys(canonical_roots))
 
     def _is_allowed_source(self, source: str) -> bool:
         try:
@@ -161,10 +157,19 @@ class MountHandler(BaseHandler):
         allowed_roots = self._allowed_source_roots
         for root in allowed_roots:
             try:
-                canonical.relative_to(root)
-                return canonical
-            except ValueError:
+                root_path = Path(root).resolve(strict=True)
+            except (ValueError, OSError):
                 continue
+
+            try:
+                if canonical == root_path or canonical.is_relative_to(root_path):
+                    return canonical
+            except AttributeError:
+                try:
+                    canonical.relative_to(root_path)
+                    return canonical
+                except ValueError:
+                    continue
 
         raise ValueError(
             "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
