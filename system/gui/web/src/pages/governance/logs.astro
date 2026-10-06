@@ -1,0 +1,117 @@
+---
+// src/pages/governance/logs.astro — verifizierbare Audit-Metadaten
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Audit | Governance" currentPath="/governance/logs">
+  <div class="audit-header">
+    <div>
+      <h1>📜 Audit &amp; Systemlogs</h1>
+      <p>Aufgabenänderungen aus der BACH-Datenbank. Inhalte und Akteursidentitäten werden hier nicht ausgegeben.</p>
+    </div>
+    <button id="audit-refresh" class="btn btn-sm btn-primary" type="button">Aktualisieren</button>
+  </div>
+
+  <nav class="audit-nav" aria-label="Governance">
+    <a href="/governance" class="btn btn-sm">🏛️ Control Room</a>
+    <a href="/governance/funk" class="btn btn-sm">📻 Agentenfunk</a>
+    <a href="/governance/usecases" class="btn btn-sm">📑 Use Cases</a>
+    <a href="/governance/logs" class="btn btn-sm btn-primary" aria-current="page">📜 Audit</a>
+  </nav>
+
+  <div class="audit-layout">
+    <aside class="card">
+      <h2>Quellen</h2>
+      <p><strong>Aufgaben-Audit</strong><br />Tatsächliche Zeilen aus <code>task_history</code>. Feldwerte und <code>changed_by</code> werden nicht übertragen; letzteres ist keine verifizierte Geräteidentität.</p>
+      <p><strong>Systemlogs</strong><br />In Arbeit: Für rohe Dienstlogs fehlen ein verlässlicher Geheimnisfilter und eine eng geprüfte Quelle. Sie werden hier nicht als frei lesbarer Stream angeboten.</p>
+    </aside>
+    <section class="card" aria-labelledby="audit-title">
+      <div class="audit-tools">
+        <h2 id="audit-title">Aufgaben-Audit</h2>
+        <label>Filtern <input id="audit-filter" type="search" placeholder="Task-ID oder Feld" /></label>
+      </div>
+      <p id="audit-status" role="status" aria-live="polite">Auditquelle noch nicht geprüft</p>
+      <div id="audit-list" class="audit-list"></div>
+    </section>
+  </div>
+</BachLayout>
+
+<style>
+  .audit-header { display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .audit-header h1 { font-size:1.75rem; margin:0 0 0.25rem; }
+  .audit-header p, .audit-layout p { color:var(--text-muted); line-height:1.5; }
+  .audit-nav { display:flex; gap:0.5rem; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem; }
+  .audit-layout { display:grid; grid-template-columns:minmax(220px,280px) minmax(0,1fr); gap:1.5rem; }
+  .audit-layout > * { min-width:0; padding:1rem; }
+  .audit-layout h2 { font-size:1rem; margin:0 0 1rem; }
+  .audit-tools { display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
+  .audit-tools input { max-width:12rem; padding:0.4rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:4px; color:var(--text); }
+  .audit-list { display:grid; gap:0.5rem; max-height:65vh; overflow:auto; }
+  .audit-row { padding:0.7rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:5px; overflow-wrap:anywhere; }
+  .audit-row small { display:block; color:var(--text-muted); margin-top:0.25rem; }
+  @media(max-width:760px) { .audit-layout { grid-template-columns:minmax(0,1fr); } }
+</style>
+
+<script is:inline>
+  let auditEvents = [];
+
+  function auditToken() {
+    const token = localStorage.getItem('bach_device_token');
+    if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
+    return token;
+  }
+
+  function renderAudit() {
+    const list = document.getElementById('audit-list');
+    const query = document.getElementById('audit-filter').value.trim().toLowerCase();
+    list.replaceChildren();
+    const rows = auditEvents.filter(event =>
+      String(event.task_id).includes(query) || String(event.field).toLowerCase().includes(query));
+    if (!rows.length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'Keine passenden Audit-Einträge.';
+      list.append(empty);
+      return;
+    }
+    for (const event of rows) {
+      const row = document.createElement('div');
+      row.className = 'audit-row';
+      const title = document.createElement('strong');
+      title.textContent = 'Aufgabe #' + event.task_id + ' · ' +
+        (event.action === 'status_change' ? 'Status geändert' : event.action === 'field_change' ? 'Feld geändert' : 'Änderung');
+      const detail = document.createElement('small');
+      detail.textContent = 'Feld: ' + event.field + ' · ' + event.changed_at;
+      row.append(title, detail);
+      list.append(row);
+    }
+  }
+
+  async function refreshAudit() {
+    const status = document.getElementById('audit-status');
+    status.textContent = 'Prüfe Aufgaben-Audit…';
+    try {
+      const response = await fetch('/api/governance/audit?limit=100', {
+        headers: { Authorization: 'Bearer ' + auditToken() }, cache: 'no-store'
+      });
+      if (response.status === 401 || response.status === 403)
+        throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (data.availability !== 'available' || !Array.isArray(data.events))
+        throw new Error('Auditquelle nicht verfügbar.');
+      auditEvents = data.events;
+      status.textContent = auditEvents.length + ' Audit-Einträge geladen · Akteursidentität nicht geprüft';
+      renderAudit();
+    } catch (error) {
+      auditEvents = [];
+      document.getElementById('audit-list').replaceChildren();
+      status.textContent = error.message;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('audit-refresh').addEventListener('click', refreshAudit);
+    document.getElementById('audit-filter').addEventListener('input', renderAudit);
+    refreshAudit();
+  });
+</script>

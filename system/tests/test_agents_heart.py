@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Regressionstests für den engen agents-heart-Besetzungs-Seam."""
 
 import sys
@@ -10,12 +9,15 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from hub._services.agents_heart import (  # noqa: E402
+from hub._services.agents_heart import (
+    _REQUIRED_RIGHTS,
+    ROLE_CONTRACTS,
     AssignmentDenied,
+    authorize_role,
     begin_assignment,
     finish_assignment,
 )
-from hub._services.chat.slots_config import (  # noqa: E402
+from hub._services.chat.slots_config import (
     get_activity_history,
     initialize_slots_config,
 )
@@ -62,6 +64,25 @@ def test_assignment_start_and_end_are_correlated_and_flattened(tmp_path):
         assert entry["started_at"] == assignment.started_at
     assert end["ended_at"]
     assert end["result"] == "task_done"
+
+
+@pytest.mark.parametrize("role_id", ["task_worker", "boss_routing", "expert_role"])
+def test_board_sub_modes_are_registered_with_hintergrund_worker_rights(role_id):
+    """T-20260926-658915805: Board (telegram_chat.py) startet Worker über die
+    sub_mode-Werte task_worker/boss_routing/expert_role, nicht über
+    hintergrund_worker. Ohne einen registrierten Vertrag würde authorize_role()
+    JEDE Board-Ausführung ablehnen -- diese drei müssen also existieren.
+    Least Privilege heißt hier dieselben Rechte wie hintergrund_worker, weil
+    _run_worker_job() für alle sub_mode-Werte denselben Ausführungscode nutzt
+    (kein zusätzliches Recht wird irgendwo geprüft)."""
+    contract = ROLE_CONTRACTS[role_id]
+    assert contract.rights == ROLE_CONTRACTS["hintergrund_worker"].rights
+    assert contract.rights == _REQUIRED_RIGHTS
+
+
+def test_unregistered_board_role_is_denied_fail_closed():
+    with pytest.raises(AssignmentDenied):
+        authorize_role("task_worker_typo", "full")
 
 
 def test_unknown_role_is_denied_before_assignment_is_created(tmp_path):

@@ -5,6 +5,15 @@
 import sqlite3
 
 
+def unbound_task_filter(conn: sqlite3.Connection) -> str:
+    """SQL predicate excluding model/slot-bound tasks on schemas that expose them."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    return "".join(
+        f" AND COALESCE({name},'')=''"
+        for name in ("required_model", "assigned_slot") if name in columns
+    )
+
+
 def parse_task_dependency_ids(value: object) -> tuple[list[int], list[str]]:
     """Parse a legacy ``depends_on`` value without trusting its contents.
 
@@ -123,3 +132,21 @@ def ensure_task_claim_columns(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tasks_claimed_at ON tasks(claimed_at)"
     )
+
+
+def ensure_task_slot_columns(conn: sqlite3.Connection) -> None:
+    """Add optional model and slot routing fields to an existing tasks table."""
+    table = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'tasks'"
+    ).fetchone()
+    if not table or table[0] != "table":
+        raise RuntimeError("Task-Migration abgebrochen: tasks-Tabelle fehlt.")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    for name in ("required_model", "assigned_slot"):
+        if name not in columns:
+            try:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} TEXT")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise

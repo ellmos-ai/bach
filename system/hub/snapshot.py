@@ -396,14 +396,16 @@ class SnapshotHandler(BaseHandler):
     def _delete(self, snapshot_id: str, dry_run: bool = False) -> tuple:
         """Snapshot loeschen.
 
-        KNOWN GAP (S5, session-checkpoint carrier): deletes only the legacy
-        session_snapshots row. Any carrier checkpoint created by
-        checkpoint_after_create for the same source_ref is NOT deleted here
-        -- the carrier is additive/inactive-seam only, "delete" was never
-        wired to it (see session_checkpoint_provider.py). Tracked as a known
-        gap, not fixed in this PR.
+        Loescht die session_snapshots-Zeile und synchronisiert die Loeschung
+        ueber session_checkpoint_provider fail-soft auf den neutralen
+        session-checkpoint Carrier (source_ref=bach-session_snapshots:{snapshot_id}).
         """
         if dry_run:
+            session_checkpoint_provider.checkpoint_after_delete(
+                self.db_path.parent,
+                source_ref=f"bach-session_snapshots:{snapshot_id}",
+                dry_run=True,
+            )
             return True, f"[DRY-RUN] Wuerde Snapshot {snapshot_id} loeschen"
         
         conn, err = self._get_db_connection()
@@ -418,6 +420,11 @@ class SnapshotHandler(BaseHandler):
             conn.close()
             
             if deleted:
+                session_checkpoint_provider.checkpoint_after_delete(
+                    self.db_path.parent,
+                    source_ref=f"bach-session_snapshots:{snapshot_id}",
+                    dry_run=False,
+                )
                 return True, f"[OK] Snapshot {snapshot_id} geloescht"
             else:
                 return False, f"[FEHLER] Snapshot {snapshot_id} nicht gefunden"

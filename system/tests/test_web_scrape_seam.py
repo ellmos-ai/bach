@@ -219,6 +219,32 @@ def test_canonical_response_maps_the_modules_get_dict():
     assert adapted.url == "https://example.org/x"
     assert adapted.text == "<html></html>"
     assert adapted.headers == {"content-type": "text/plain; charset=utf-8"}
+    assert adapted.total_length == 13
+    assert adapted.truncated is False
+
+
+def test_canonical_response_adapts_truncated_payload(handler, monkeypatch):
+    """When the module truncates get() preview, _get() preserves total length and remaining footer."""
+    monkeypatch.setenv(ENGINE_ENV, ENGINE_CANONICAL)
+    scraper = MagicMock()
+    scraper.get.return_value = {
+        "operation": "get",
+        "url": "https://example.org/large",
+        "status": 200,
+        "content_type": "text/html",
+        "length": 15000,
+        "truncated": True,
+        "body": "A" * 10000,
+    }
+    fake_module = MagicMock()
+    fake_module.WebScraper.return_value = scraper
+    monkeypatch.setitem(sys.modules, "web_scraper", fake_module)
+
+    ok, body = handler.handle("get", ["https://example.org/large"])
+
+    assert ok is True
+    assert "Größe: 15000 Zeichen" in body
+    assert "... (5000 weitere Zeichen)" in body
 
 
 def test_canonical_response_maps_the_modules_headers_dict():
@@ -323,14 +349,6 @@ def _network_available() -> bool:
     return True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="T-20260927-842543409/T-20260927-906715058: 'get' liefert bei canonical "
-           "einen kuerzeren Body als bundled (vermutlich interne Preview-Kappung im "
-           "externen web-scraper-Paket, CanonicalResponse ignoriert dessen "
-           "length/truncated-Felder). Kein Netzwerk-Hang -- deterministische "
-           "Inhalts-Ungleichheit, reproduziert 2026-09-27.",
-)
 @pytest.mark.skipif(not _network_available(), reason="no network")
 def test_both_engines_agree_against_a_real_page(handler, monkeypatch):
     """The measurement behind the default switch, repeatable.

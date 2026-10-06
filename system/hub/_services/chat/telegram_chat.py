@@ -30,6 +30,8 @@ import ipaddress
 import json
 import logging
 import os
+import socket
+import sqlite3
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -102,14 +104,24 @@ from hub._services.chat.chat_runtime import (
     SuccessfulAnswer,
 )
 from hub._services.chat.session_store import SQLiteChatSessionStore
+from hub._services.chat.worker_handoff import WorkerHandoff
 from hub._services.chat.control_auth import (
     get_control_api_token,
     is_control_api_authorized,
 )
 from hub._services import agents_heart
+from hub._services.agents_heart import (
+    AssignmentDenied,
+    begin_assignment,
+    finish_assignment,
+)
 from hub._services.chat.slots_config import (
+    bump_pause_counter,
+    get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
     add_worker,
+    change_core_prompt,
+    core_prompt_snapshot,
     get_activity_history,
     get_prompt_templates,
     get_slot,
@@ -122,6 +134,9 @@ from hub._services.chat.slots_config import (
     reset_prompt_template,
     update_prompt_template,
     update_slot,
+    worker_configuration_snapshot,
+    change_worker_configuration,
+    _worker_configuration,
 )
 
 # Compute Lock (optional — graceful if not available)
@@ -167,6 +182,10 @@ class _WorkerControl:
     stop_activity: str = "Manuell gestoppt"
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
+    handoff: WorkerHandoff = field(init=False)
+
+    def __post_init__(self):
+        self.handoff = WorkerHandoff(self.worker_id, self.generation)
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -174,6 +193,40 @@ class _WorkerControl:
 # reports a pending revocation instead of claiming success.
 _WORKER_STOP_WAIT_SECONDS = 2.0
 _WORKER_CONTROLS: Dict[str, _WorkerControl] = {}
+
+
+def _request_worker_handoff(worker_id: str, generation: str) -> Dict[str, Any]:
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        slot = get_worker_slot(worker_id)
+        if (control is None or not _thread_is_alive(control.thread) or control.stop_event.is_set()
+                or not slot or slot.get("status") != "running"):
+            raise ValueError("Worker ist nicht in einem aktiven Lauf")
+        if slot.get("expires_at"):
+            expiry = datetime.fromisoformat(slot["expires_at"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise ValueError("Worker-Lease ist abgelaufen")
+        return control.handoff.request(generation)
+
+
+def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
+    worker = dict(worker)
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker.get("id"))
+        if control and _thread_is_alive(control.thread) and not control.stop_event.is_set():
+            worker["generation"] = control.generation
+            worker["handoff_receipt"] = control.handoff.snapshot()
+    return worker
+
+
+def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if control is not None and not control.done_event.is_set():
+            raise RuntimeError("worker_not_editable")
+        return change_worker_configuration(worker_id, version, changes)
 
 
 def _thread_is_alive(thread: Optional[threading.Thread]) -> bool:
@@ -231,6 +284,72 @@ def _record_worker_activity(
             return False
         record_activity(control.worker_id, activity, status, details)
         return True
+
+
+def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
+    """Apply a configured run/task-count pause while keeping stop responsive."""
+    worker_id = control.worker_id
+    if not bump_pause_counter(worker_id, event_type=event_type):
+        return not control.stop_event.is_set()
+
+    slot = get_worker_slot(worker_id)
+    pause = get_slot_pause_info(slot)
+    if not pause.get("is_paused") or pause.get("remaining_seconds", 0) <= 0:
+        raise RuntimeError("Automatische Pause konnte nicht bestätigt werden")
+
+    minutes = pause.get("pause_minutes", 0)
+    if _update_worker_slot(control, {
+        "status": "paused",
+        "auto_paused": True,
+        "current_activity": f"Automatische Pause ({minutes:g} min)",
+    }) is None:
+        return False
+    _record_worker_activity(control, f"Automatische Pause gestartet ({minutes:g} min)", "ok")
+
+    deadline = time.monotonic() + float(pause["remaining_seconds"])
+    while not control.stop_event.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        control.stop_event.wait(min(1.0, remaining))
+    if control.stop_event.is_set():
+        return False
+
+    updated = _update_worker_slot(control, {
+        "status": "running",
+        "auto_paused": False,
+        "pause_started_at": "",
+        "current_activity": "Automatische Pause beendet; nächster Lauf startet",
+    })
+    if updated is None:
+        return False
+    _record_worker_activity(control, "Automatische Pause beendet", "ok")
+    return True
+
+
+def _worker_pause_event_type(slot: Dict[str, Any], *, task_completed: bool) -> str:
+    """Select a pause counter event without counting an unfinished handoff as a task."""
+    basis = str(slot.get("pause_basis") or "runs").lower()
+    if task_completed and basis == "tasks":
+        return "tasks"
+    return "runs"
+
+
+def _worker_task_completed(slot: Dict[str, Any], completed_task_ids: Any) -> bool:
+    """Match task-completion receipts to an explicitly assigned task, if any."""
+    try:
+        completed = {int(task_id) for task_id in completed_task_ids if int(task_id) > 0}
+    except (TypeError, ValueError):
+        return False
+    if not completed:
+        return False
+    assigned_task_id = slot.get("task_id")
+    if assigned_task_id in (None, "", 0, "0"):
+        return True
+    try:
+        return int(assigned_task_id) in completed
+    except (TypeError, ValueError):
+        return False
 
 
 def _update_worker_slot(
@@ -355,6 +474,7 @@ def _request_worker_revocation(
             control.stop_activity = activity
             control.requested_at = datetime.now(timezone.utc).isoformat()
             control.stop_event.set()
+            control.handoff.cancel()
         elif control.stop_status is None:
             control.stop_status = final_status
 
@@ -784,6 +904,14 @@ BACKEND_PRESETS = {
         "method": "api",
         "description": "Nous Hermes Agent (OpenRouter / Lokal)",
     },
+    "openrouter": {
+        "type": "openrouter",
+        "base_url": os.environ.get("OPENROUTER_URL", "https://openrouter.ai/api/v1"),
+        "default_model": os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
+        "free_only": True,
+        "method": "api",
+        "description": "OpenRouter (kostenloser Router und kostenlose Modelle)",
+    },
     "claude": {
         "type": "claude-cli",
         "default_model": "sonnet",
@@ -824,6 +952,7 @@ _API_KEY_SOURCES = {
     "claude-api": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
     "hermes": ("OPENROUTER_API_KEY", "openrouter_api_key"),
+    "openrouter": ("OPENROUTER_API_KEY", "openrouter_api_key"),
 }
 
 
@@ -868,7 +997,7 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
             preset = BACKEND_PRESETS[backend_key].copy()
             if model:
                 preset["default_model"] = model
-            if preset["method"] == "api" and backend_key in ("claude-api", "openai"):
+            if preset["method"] == "api" and backend_key in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(backend_key)
                 if api_key:
                     preset["api_key"] = api_key
@@ -982,7 +1111,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if preset["method"] == "cli":
                 cli_name = preset["type"].replace("-cli", "")
                 status = _check_cli_available(cli_name)
-            elif preset["method"] == "api" and name in ("claude-api", "openai"):
+            elif preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 status = _check_api_key(name)
             status_str = f" [{status}]" if status else ""
             lines.append(f"  {name} — {preset['description']}{status_str}")
@@ -1009,7 +1138,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(args) > 1:
         preset["default_model"] = args[1]
 
-    if preset["method"] == "api" and name in ("claude-api", "openai"):
+    if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
         env_var, file_name = _API_KEY_SOURCES[name]
         key_file = os.path.expanduser(f"~/.credentials/{file_name}")
         api_key = _load_api_key(name)
@@ -1061,7 +1190,7 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     n_msgs = len(session.messages)
     chars = sum(len(m.get("content", "")) for m in session.messages)
     mr = runtime.max_tool_rounds
-    mr_label = "Unbegrenzt" if mr == 0 else str(mr)
+    mr_label = "Tools aus" if mr == 0 else str(mr)
     tool_info = ""
     if session.current_tool:
         tool_info = f"\nAktives Tool: {session.current_tool} (Runde {session.tool_round})"
@@ -1085,8 +1214,8 @@ async def cmd_maxrounds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not args:
         mr = runtime.max_tool_rounds
         await update.message.reply_text(
-            f"Max Tool-Runden: {'Unbegrenzt' if mr == 0 else mr}\n\n"
-            "/maxrounds 0 — Unbegrenzt\n"
+            f"Max Tool-Runden: {'Tools aus' if mr == 0 else mr}\n\n"
+            "/maxrounds 0 — Tools abschalten\n"
             "/maxrounds 5 — Max 5 Runden\n"
             "/maxrounds 10 — Max 10 Runden"
         )
@@ -1097,7 +1226,7 @@ async def cmd_maxrounds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             val = 0
         runtime.max_tool_rounds = val
         _global_defaults["max_tool_rounds"] = val
-        label = "Unbegrenzt" if val == 0 else str(val)
+        label = "Tools aus" if val == 0 else str(val)
         await update.message.reply_text(f"Max Tool-Runden: {label}")
     except ValueError:
         await update.message.reply_text("Nutzung: /maxrounds <zahl>")
@@ -1955,7 +2084,7 @@ a:hover {
 <button class="btn" onclick="setMaxRounds(5)">5</button>
 <button class="btn" onclick="setMaxRounds(10)">10</button>
 <button class="btn" onclick="setMaxRounds(20)">20</button>
-<button class="btn" onclick="setMaxRounds(0)">Unbegrenzt</button>
+<button class="btn" onclick="setMaxRounds(0)">Tools aus</button>
 </div>
 </div>
 
@@ -1974,10 +2103,10 @@ function toast(msg) {
   setTimeout(() => t.style.display = 'none', 2000);
 }
 function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
+  let token = localStorage.getItem('bach-control-api-token') || '';
   if (!token) {
     token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
+    if (token) localStorage.setItem('bach-control-api-token', token.trim());
   }
   return token.trim();
 }
@@ -2007,7 +2136,7 @@ async function refresh() {
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
   document.getElementById('s-sessions').textContent = s.sessions;
-  document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Unbegrenzt' : s.max_tool_rounds;
+  document.getElementById('s-maxrounds').textContent = s.max_tool_rounds === 0 ? 'Tools aus' : s.max_tool_rounds;
   const fackelVal = s.fackel_preference === 'ollama' ? 'Ollama (Inferenz)' : 'Rechenjobs (Compute)';
   const fackelEl = document.getElementById('s-fackel');
   if (fackelEl) fackelEl.textContent = fackelVal;
@@ -2076,7 +2205,7 @@ async function setModel(model) {
 }
 async function setMaxRounds(rounds) {
   const r = await api('POST', '/max_tool_rounds', {rounds});
-  toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Unbegrenzt' : rounds));
+  toast(r.error || 'Max Runden: ' + (rounds === 0 ? 'Tools aus' : rounds));
   refresh();
 }
 async function setFackel(pref) {
@@ -2095,1273 +2224,45 @@ document.addEventListener('visibilitychange', () => {
 </html>"""
 
 
-WEB_ACTIVITY_DASHBOARD = """<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BACH Aktivitätsanzeige & Worker Dashboard</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#101726;color:#e2e8f0;padding:20px;line-height:1.5}
-a{color:#38bdf8;text-decoration:none}
-a:hover{text-decoration:underline}
-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #1e293b}
-h1{color:#38bdf8;font-size:1.5rem;font-weight:700;display:flex;align-items:center;gap:10px}
-.subtitle{color:#94a3b8;font-size:0.85rem;margin-top:2px}
-.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.fackel-btn{background:#1e293b;color:#f1f5f9;border:1px solid #38bdf8;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:6px;transition:all .2s}
-.fackel-btn:hover{background:#38bdf8;color:#0f172a}
-.fackel-btn.ollama{border-color:#10b981;color:#10b981}
-.fackel-btn.ollama:hover{background:#10b981;color:#0f172a}
-.fackel-btn.compute{border-color:#f59e0b;color:#f59e0b}
-.fackel-btn.compute:hover{background:#f59e0b;color:#0f172a}
-.live-pill{display:inline-flex;align-items:center;gap:6px;font-size:0.75rem;padding:4px 10px;background:#1e293b;border-radius:12px;color:#94a3b8;border:1px solid #334155}
-.pulse-dot{width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.section-title{color:#f8fafc;font-size:1.15rem;font-weight:600;margin:24px 0 12px;display:flex;align-items:center;justify-content:space-between}
-.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
-.card{background:#1e293b;border-radius:12px;padding:18px;border:1px solid #334155;display:flex;flex-direction:column;gap:12px;position:relative}
-.card-header{display:flex;justify-content:space-between;align-items:flex-start}
-.card-title{font-size:1.05rem;font-weight:700;color:#38bdf8;display:flex;align-items:center;gap:8px}
-.card-desc{font-size:0.8rem;color:#94a3b8;margin-top:2px}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;text-transform:uppercase}
-.badge-ready{background:#065f46;color:#34d399}
-.badge-idle{background:#1e3a8a;color:#93c5fd}
-.badge-running{background:#854d0e;color:#fde047;animation:pulse 1.5s infinite}
-.badge-paused{background:#475569;color:#cbd5e1}
-.badge-error{background:#991b1b;color:#fca5a5}
-.badge-expired{background:#374151;color:#9ca3af}
-.form-group{display:flex;flex-direction:column;gap:4px}
-.form-group label{font-size:0.75rem;color:#94a3b8;font-weight:600;text-transform:uppercase}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-input,select,textarea{background:#0f172a;color:#f8fafc;border:1px solid #475569;border-radius:6px;padding:8px 10px;font-size:0.88rem;outline:none;transition:border-color .2s}
-input:focus,select:focus,textarea:focus{border-color:#38bdf8}
-.activity-box{background:#0f172a;border-radius:8px;padding:8px 10px;font-size:0.8rem;color:#cbd5e1;border:1px solid #334155;min-height:36px;display:flex;align-items:center}
-.btn{background:#0284c7;color:#fff;border:none;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
-.btn:hover{background:#38bdf8;color:#0f172a}
-.btn-sm{padding:4px 8px;font-size:0.75rem;border-radius:4px}
-.btn-secondary{background:#334155;color:#e2e8f0}
-.btn-secondary:hover{background:#475569;color:#fff}
-.btn-danger{background:#dc2626;color:#fff}
-.btn-danger:hover{background:#ef4444}
-.btn-success{background:#16a34a;color:#fff}
-.btn-success:hover{background:#22c55e}
-.btn-outline{background:transparent;border:1px solid #475569;color:#94a3b8}
-.btn-outline:hover{background:#334155;color:#fff;border-color:#64748b}
-.workers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.worker-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.worker-top{display:flex;justify-content:space-between;align-items:center}
-.worker-name{font-weight:700;color:#f1f5f9;font-size:0.95rem}
-.worker-meta{font-size:0.78rem;color:#94a3b8;display:flex;flex-direction:column;gap:2px}
-.worker-actions{display:flex;gap:6px;margin-top:auto}
-.table-wrap{background:#1e293b;border-radius:12px;border:1px solid #334155;overflow:hidden}
-table{width:100%;border-collapse:collapse;font-size:0.85rem;text-align:left}
-th{background:#0f172a;color:#94a3b8;font-weight:600;padding:10px 14px;border-bottom:1px solid #334155}
-td{padding:10px 14px;border-bottom:1px solid #1e293b;color:#cbd5e1}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:#24334d}
-.modal-bg{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:100}
-.modal{background:#1e293b;border:1px solid #38bdf8;border-radius:12px;padding:24px;width:95%;max-width:520px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
-.modal-header{display:flex;justify-content:space-between;align-items:center}
-.modal-title{font-size:1.2rem;font-weight:700;color:#38bdf8}
-#toast{position:fixed;bottom:20px;right:20px;background:#38bdf8;color:#0f172a;padding:10px 18px;border-radius:8px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:none;z-index:110}
-</style>
-</head>
-<body>
+# Task #1348 / T-20260926-652455601 Phase 2.2:
+# Modularisiertes Activity- & Worker-Dashboard mit neutralem Backend-Vertrag und konfigurierbarem Branding.
+try:
+    from gui.activity_dashboard import render_activity_dashboard
+except ImportError:
+    from system.gui.activity_dashboard import render_activity_dashboard
 
-<header>
-  <div>
-    <h1><span>🤖</span> BACH Aktivitätsanzeige &amp; Worker Dashboard</h1>
-    <div class="subtitle">Modell-Zuweisung je Slot · Hintergrundworker · Parallele Ausführung · Live-Aktivitäten</div>
-  </div>
-  <div class="header-actions">
-    <button id="btn-fackel" class="fackel-btn compute" onclick="toggleFackel()">Fackel: Lädt...</button>
-    <div class="live-pill"><span class="pulse-dot"></span> Live (3s)</div>
-    <a href="/" class="btn btn-outline btn-sm">Chat-Control</a>
-    <a href="http://127.0.0.1:8000/" target="_blank" class="btn btn-outline btn-sm">GUI :8000</a>
-  </div>
-</header>
+WEB_ACTIVITY_DASHBOARD = render_activity_dashboard()
 
-<div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:1px solid #334155;padding-bottom:12px">
-  <button id="nav-btn-dash" class="btn btn-sm" style="background:#38bdf8;color:#0f172a;font-weight:700" onclick="showTab('dash')">📊 Aktivitäten &amp; Worker</button>
-  <button id="nav-btn-prompts" class="btn btn-sm btn-outline" onclick="showTab('prompts')">📜 System- &amp; Rollenprompts</button>
-</div>
 
-<div id="tab-dash">
-
-<div class="section-title">
-  <span>1. Modell-Slots &amp; Konfiguration</span>
-</div>
-
-<div class="grid-3">
-  <!-- Slot 1: Buddha Chat -->
-  <div class="card" id="card-buddha_chat">
-    <div class="card-header">
-      <div>
-        <div class="card-title"><span>💬</span> Buddha Chat</div>
-        <div class="card-desc">Interaktiver Chat (WebChat, GUI &amp; Tray)</div>
-      </div>
-      <span class="badge badge-ready" id="badge-buddha_chat">Ready</span>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Backend</label>
-        <select id="chat-backend" onchange="onBackendChange('chat')">
-          <option value="ollama">💻 Ollama (lokal)</option>
-          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
-          <option value="hermes">Hermes (API)</option>
-          <option value="claude">Claude CLI</option>
-          <option value="claude-api">Claude API</option>
-          <option value="codex">Codex CLI</option>
-          <option value="openai">OpenAI API</option>
-          <option value="lmstudio">LM Studio</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modell-Vorauswahl</label>
-        <select id="chat-model-preset" onchange="applyModelPreset('chat', this.value)">
-          <option value="">-- Schnell-Auswahl --</option>
-          <optgroup label="☁️ Ollama Cloud (:cloud)">
-            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
-            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
-            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
-          </optgroup>
-          <optgroup label="💻 Ollama Lokal (MLX)">
-            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
-            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
-            <option value="qwen3.5:4b">qwen3.5:4b</option>
-          </optgroup>
-          <optgroup label="🌐 CLI / API">
-            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
-            <option value="sonnet">Claude CLI (sonnet)</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="o4-mini">o4-mini</option>
-          </optgroup>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Modell</label>
-      <input type="text" id="chat-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Max Turns</label>
-        <select id="chat-turns">
-          <option value="5">5 Runden</option>
-          <option value="10">10 Runden</option>
-          <option value="12">12 Runden</option>
-          <option value="15">15 Runden</option>
-          <option value="20">20 Runden</option>
-          <option value="0">Unbegrenzt</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modus &amp; Denken</label>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-          <select id="chat-mode" style="flex:1">
-            <option value="safe">Safe (Lesen)</option>
-            <option value="full">Full (Schreiben)</option>
-          </select>
-          <label style="display:flex;align-items:center;gap:4px;font-size:0.8rem;cursor:pointer">
-            <input type="checkbox" id="chat-think"> Think
-          </label>
-        </div>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Aktuelle Aktivität</label>
-      <div class="activity-box" id="chat-activity">Bereit für Interaktionen</div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_chat')">💾 Speichern</button>
-      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('gui-web')">📜 Verlauf</button>
-    </div>
-  </div>
-
-  <!-- Slot 2: Buddha Always-On -->
-  <div class="card" id="card-buddha_always_on">
-    <div class="card-header">
-      <div>
-        <div class="card-title"><span>⚡</span> Buddha Always-On</div>
-        <div class="card-desc">Hintergrundworker für offene Tasks</div>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span class="badge badge-ready" id="badge-buddha_always_on">Aktiv</span>
-        <button class="btn btn-sm btn-secondary" id="btn-toggle-always-on" onclick="toggleAlwaysOn()">Toggle</button>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Backend</label>
-        <select id="always-backend" onchange="onBackendChange('always')">
-          <option value="ollama">💻 Ollama (lokal)</option>
-          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
-          <option value="hermes">Hermes (API)</option>
-          <option value="claude">Claude CLI</option>
-          <option value="claude-api">Claude API</option>
-          <option value="codex">Codex CLI</option>
-          <option value="openai">OpenAI API</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modell-Vorauswahl</label>
-        <select id="always-model-preset" onchange="applyModelPreset('always', this.value)">
-          <option value="">-- Schnell-Auswahl --</option>
-          <optgroup label="☁️ Ollama Cloud (:cloud)">
-            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
-            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
-            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
-          </optgroup>
-          <optgroup label="💻 Ollama Lokal (MLX)">
-            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
-            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
-            <option value="qwen3.5:4b">qwen3.5:4b</option>
-          </optgroup>
-          <optgroup label="🌐 CLI / API">
-            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
-            <option value="sonnet">Claude CLI (sonnet)</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="o4-mini">o4-mini</option>
-          </optgroup>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Modell</label>
-      <input type="text" id="always-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Max Turns</label>
-        <select id="always-turns">
-          <option value="10">10 Runden</option>
-          <option value="20">20 Runden</option>
-          <option value="25">25 Runden</option>
-          <option value="30">30 Runden</option>
-          <option value="50">50 Runden</option>
-          <option value="0">Unbegrenzt</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modus</label>
-        <select id="always-mode">
-          <option value="full">Full (Schreibrechte / Auto-Commit)</option>
-          <option value="safe">Safe (Nur Analyse)</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Aktuelle Aktivität</label>
-      <div class="activity-box" id="always-activity">Wartet auf Idle-Schwelle</div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_always_on')">💾 Speichern</button>
-      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('idle-worker')">📜 Verlauf</button>
-    </div>
-  </div>
-
-  <!-- Slot 3: Buddha Connector -->
-  <div class="card" id="card-buddha_connector">
-    <div class="card-header">
-      <div>
-        <div class="card-title"><span>📱</span> Buddha Connector</div>
-        <div class="card-desc">Messaging (Telegram, WhatsApp, Signal)</div>
-      </div>
-      <span class="badge badge-ready" id="badge-buddha_connector">Ready</span>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Backend</label>
-        <select id="conn-backend" onchange="onBackendChange('conn')">
-          <option value="ollama">💻 Ollama (lokal)</option>
-          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
-          <option value="hermes">Hermes (API)</option>
-          <option value="claude">Claude CLI</option>
-          <option value="claude-api">Claude API</option>
-          <option value="codex">Codex CLI</option>
-          <option value="openai">OpenAI API</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modell-Vorauswahl</label>
-        <select id="conn-model-preset" onchange="applyModelPreset('conn', this.value)">
-          <option value="">-- Schnell-Auswahl --</option>
-          <optgroup label="☁️ Ollama Cloud (:cloud)">
-            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
-            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
-            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
-          </optgroup>
-          <optgroup label="💻 Ollama Lokal (MLX)">
-            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
-            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
-            <option value="qwen3.5:4b">qwen3.5:4b</option>
-          </optgroup>
-          <optgroup label="🌐 CLI / API">
-            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
-            <option value="sonnet">Claude CLI (sonnet)</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="o4-mini">o4-mini</option>
-          </optgroup>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Modell</label>
-      <input type="text" id="conn-model" list="model-presets-list" placeholder="qwen3.8:27b-mlx">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Max Turns</label>
-        <select id="conn-turns">
-          <option value="5">5 Runden</option>
-          <option value="10">10 Runden</option>
-          <option value="15">15 Runden</option>
-          <option value="20">20 Runden</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Provider</label>
-        <div style="font-size:0.75rem;color:#94a3b8;margin-top:6px;line-height:1.4">
-          <span id="p-tg-status">Telegram: Verifiziert</span> · WhatsApp: Bereit
-        </div>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Aktuelle Aktivität</label>
-      <div class="activity-box" id="conn-activity">Bereit</div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn" style="flex:1" onclick="saveCoreSlot('buddha_connector')">💾 Speichern</button>
-      <button class="btn btn-secondary btn-sm" onclick="openHistoryModal('telegram')">📜 Verlauf</button>
-    </div>
-  </div>
-</div>
-
-<div class="section-title">
-  <span>2. Dynamische &amp; Temporäre Hintergrundworker</span>
-  <button class="btn btn-success btn-sm" onclick="openNewWorkerModal()">+ Neuer Worker anlegen</button>
-</div>
-
-<div class="workers-grid" id="workers-container">
-  <!-- Dynamic workers injected here -->
-</div>
-
-<div class="section-title">
-  <span>3. Echtzeit-Aktivitätsanzeige &amp; Verlauf (Timeline)</span>
-  <button class="btn btn-secondary btn-sm" onclick="refreshActivity()">Neu laden</button>
-</div>
-
-<div class="table-wrap">
-  <table>
-    <thead>
-      <tr>
-        <th style="width:110px">Zeit</th>
-        <th style="width:160px">Akteur / Slot</th>
-        <th>Aktivität (Tool, Runde, Aufgabe)</th>
-        <th style="width:100px">Status</th>
-      </tr>
-    </thead>
-    <tbody id="activity-tbody">
-      <tr><td colspan="4" style="text-align:center;color:#64748b">Lade Aktivitäten...</td></tr>
-    </tbody>
-  </table>
-</div>
-</div> <!-- end of tab-dash -->
-
-<!-- Tab 2: System- & Rollenprompts -->
-<div id="tab-prompts" style="display:none">
-  <div class="section-title">
-    <span>📜 System-Default-Prompt &amp; Rollen-Vorlagen anpassen</span>
-    <button class="btn btn-secondary btn-sm" onclick="loadPromptTemplates()">↺ Neu laden</button>
-  </div>
-  <p style="color:#94a3b8;font-size:0.88rem;margin-bottom:16px">
-    Hier können der allgemeine Buddha-Systemprompt sowie alle Rollenprompts eingesehen und angepasst werden.
-    Der unveränderliche Werkstandard bleibt im System gesichert und kann jederzeit für jeden Prompt wiederhergestellt werden.
-  </p>
-
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px;margin-bottom:24px">
-    <!-- Card A: System-Default-Prompt -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title"><span>🛡️</span> System-Default-Prompt</div>
-          <div class="card-desc">Basis-Instruktion für Buddha (Werkzeuge, Regeln, Deutsch-Gebot)</div>
-        </div>
-        <span class="badge badge-ready" id="badge-prompt-sys">Werkstandard</span>
-      </div>
-      <div class="form-group" style="margin-top:10px">
-        <textarea id="prompt-sys-text" rows="12" style="width:100%;font-family:monospace;font-size:0.82rem"></textarea>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-secondary btn-sm" onclick="resetPrompt('system_default')">↺ Auf Werkstandard zurücksetzen</button>
-        <button class="btn btn-success btn-sm" onclick="savePrompt('system_default')">💾 Systemprompt speichern</button>
-      </div>
-    </div>
-
-    <!-- Card B: Rollen-Prompts -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title"><span>🎭</span> Rollen- &amp; Experten-Prompts</div>
-          <div class="card-desc">Spezifische Verhaltensregeln je Rolle / Experte</div>
-        </div>
-        <span class="badge badge-ready" id="badge-prompt-role">Werkstandard</span>
-      </div>
-      <div class="form-group" style="margin-top:10px">
-        <label>Rolle / Experte auswählen</label>
-        <select id="role-select" onchange="onRolePromptSelect(this.value)">
-          <option value="hintergrund_worker">Hintergrundworker (Task-Abarbeitung &amp; FERTIG-Signal)</option>
-          <option value="task_worker">Task-Worker (Gezielte Auftragserledigung)</option>
-          <option value="boss_routing">Bossagent &amp; Koordinator (Dekomposition &amp; Delegation)</option>
-          <option value="entwickler">Entwickler (Python, Architektur, TDD, Git)</option>
-          <option value="bueroassistent">Büroassistent (Organisation &amp; Dokumente)</option>
-          <option value="gesundheitsassistent">Gesundheitsassistent (Medizin &amp; Berichte)</option>
-          <option value="steuer">Steuer-Experte (Belege, Rechnungen, Werbungskosten)</option>
-          <option value="foerderplaner">Förderplaner (ICF, Pädagogik &amp; Berichte)</option>
-          <option value="recherche">Recherche-Experte (Wissenschaftliche Synthese)</option>
-          <option value="psycho-berater">Psycho-Berater (Therapeutische Reflexion)</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <textarea id="prompt-role-text" rows="9" style="width:100%;font-family:monospace;font-size:0.82rem"></textarea>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-secondary btn-sm" onclick="resetCurrentRolePrompt()">↺ Auf Werkstandard zurücksetzen</button>
-        <button class="btn btn-success btn-sm" onclick="saveCurrentRolePrompt()">💾 Rollenprompt speichern</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Neuer Worker anlegen -->
-<div class="modal-bg" id="new-worker-modal">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <div class="modal-title">+ Neuen Hintergrundworker starten</div>
-      <button class="btn btn-outline btn-sm" onclick="closeNewWorkerModal()">✕</button>
-    </div>
-    <div class="form-group">
-      <label>Worker-Name</label>
-      <input type="text" id="nw-name" placeholder="z.B. Recherche-Worker, Atlas-Refactoring">
-    </div>
-    <div class="form-group">
-      <label>Modus / Untermodus</label>
-      <select id="nw-sub-mode" onchange="onSubModeChange(this.value)">
-        <option value="task_worker">3.2 Taskworker (Gezielter Einzelauftrag)</option>
-        <option value="hintergrund_worker">3.1 Weiterer Hintergrundworker (wie Always-On)</option>
-        <option value="boss_routing">3.3 Bossrouting (Koordination &amp; Unteragenten)</option>
-        <option value="expert_role">3.4 Spezifische Expertenrolle</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Ausführungstyp</label>
-      <select id="nw-type">
-        <option value="persistent">Dauerhaft (bis manuell gelöscht)</option>
-        <option value="once">Einmalig (beendet nach Task)</option>
-      </select>
-    </div>
-
-    <!-- Dynamic Fields for Bossrouting -->
-    <div id="nw-boss-fields" style="display:none;background:#0f172a;padding:10px 12px;border-radius:8px;border:1px dashed #38bdf8;margin-bottom:6px">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Max. beteiligte Experten</label>
-          <input type="number" id="nw-max-experts" value="3" min="1" max="10">
-        </div>
-        <div class="form-group">
-          <label>Modellallokation je Experte (optional)</label>
-          <input type="text" id="nw-expert-models" placeholder='{"entwickler":"kimi-k3:cloud"}'>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dynamic Fields for Expert Role -->
-    <div id="nw-expert-fields" style="display:none;background:#0f172a;padding:10px 12px;border-radius:8px;border:1px dashed #38bdf8;margin-bottom:6px">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Fachrolle / Experte</label>
-          <select id="nw-role-id">
-            <option value="task-divider">Task-Divider (Aufgabenzerlegung in Teil-Tasks)</option>
-            <option value="ticket-master">Ticket-Master (Triage &amp; Zuweisung)</option>
-            <option value="entwickler">Entwickler (Senior Python / TDD)</option>
-            <option value="bueroassistent">Büroassistent (Organisation &amp; Dokumente)</option>
-            <option value="gesundheitsassistent">Gesundheitsassistent (Medizin &amp; Berichte)</option>
-            <option value="steuer">Steuer-Agent (Belege &amp; Werbungskosten)</option>
-            <option value="foerderplaner">Förderplaner (Pädagogik &amp; Berichte)</option>
-            <option value="recherche">Recherche-Experte (Wissenschaft)</option>
-            <option value="psycho-berater">Psycho-Berater (Reflexion)</option>
-          </select>
-        </div>
-        <div class="form-group" style="display:flex;align-items:center;margin-top:22px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.84rem;cursor:pointer;color:#38bdf8">
-            <input type="checkbox" id="nw-multi-role"> Alle Rollen spielen (Multi-Role Pool)
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <!-- System Prompt Checkbox -->
-    <div style="background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #334155;margin-bottom:6px">
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600;color:#38bdf8;cursor:pointer">
-        <input type="checkbox" id="nw-include-system-prompt" checked> System-Default-Prompt einbinden (Standard aktiv)
-      </label>
-      <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
-        Vererbt automatische BACH-Grundregeln, Werkzeuge, Pfade und das Deutsch-Gebot.
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Backend</label>
-        <select id="nw-backend" onchange="onBackendChange('nw')">
-          <option value="ollama">💻 Ollama (lokal)</option>
-          <option value="ollama-cloud">☁️ Ollama (Cloud :cloud)</option>
-          <option value="hermes">Hermes (API)</option>
-          <option value="claude">Claude CLI</option>
-          <option value="claude-api">Claude API</option>
-          <option value="codex">Codex CLI</option>
-          <option value="openai">OpenAI API</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Modell-Vorauswahl</label>
-        <select id="nw-model-preset" onchange="applyModelPreset('nw', this.value)">
-          <option value="">-- Schnell-Auswahl --</option>
-          <optgroup label="☁️ Ollama Cloud (:cloud)">
-            <option value="kimi-k3:cloud">kimi-k3:cloud (131k)</option>
-            <option value="kimi-k2.7-code:cloud">kimi-k2.7-code:cloud</option>
-            <option value="glm-5.3:cloud">glm-5.3:cloud</option>
-          </optgroup>
-          <optgroup label="💻 Ollama Lokal (MLX)">
-            <option value="qwen3.8:27b-mlx">qwen3.8:27b-mlx</option>
-            <option value="gemma4:26b-mlx">gemma4:26b-mlx</option>
-            <option value="qwen3.5:4b">qwen3.5:4b</option>
-            <option value="gemma4:e2b">gemma4:e2b</option>
-            <option value="deepseek-ocr:latest">deepseek-ocr:latest</option>
-          </optgroup>
-          <optgroup label="🌐 CLI / API">
-            <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
-            <option value="sonnet">Claude CLI (sonnet)</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="o4-mini">o4-mini</option>
-          </optgroup>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Modellbezeichnung (exakt)</label>
-      <input type="text" id="nw-model" list="model-presets-list" placeholder="z. B. kimi-k3:cloud oder qwen3.8:27b-mlx">
-      <div style="font-size:0.75rem;color:#94a3b8;margin-top:3px">
-        💡 <strong>Ollama Cloud:</strong> Modellname muss wie im CLI mit <code>:cloud</code> enden (z. B. <code>kimi-k3:cloud</code>). Lokale Modelle laufen direkt auf deiner Hardware.
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Max Turns (pro Rundenblock)</label>
-        <input type="number" id="nw-turns" value="50" min="1" max="250">
-      </div>
-      <div class="form-group">
-        <label>Modus</label>
-        <select id="nw-mode">
-          <option value="full">Full (Schreibrechte)</option>
-          <option value="safe">Safe (begrenzte Schreibtools, keine freie Shell)</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group" style="background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #334155">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="nw-allow-tools" checked> Werkzeuge erlauben
-      </label>
-      <div style="font-size:0.78rem;color:#94a3b8;margin-top:3px;margin-left:24px">
-        Deaktivieren = tool-freier Worker. „Max Turns 0“ bedeutet unbegrenzt, nicht tool-frei.
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Task-ID (optional)</label>
-        <input type="number" id="nw-task-id" placeholder="z.B. 104">
-      </div>
-      <div class="form-group">
-        <label>Ablaufzeit / TTL</label>
-        <select id="nw-ttl">
-          <option value="">Kein Ablaufdatum</option>
-          <option value="3600">1 Stunde</option>
-          <option value="14400">4 Stunden</option>
-          <option value="86400">24 Stunden</option>
-          <option value="604800">7 Tage</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Aufgaben- / Nutzereingabe-Prompt (optional / zielspezifisch)</label>
-      <textarea id="nw-task-prompt" rows="3" placeholder="Konkrete Aufgabenstellung oder Verhaltensanweisung für diesen Worker..."></textarea>
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-      <button class="btn btn-secondary" onclick="closeNewWorkerModal()">Abbrechen</button>
-      <button class="btn btn-success" onclick="createWorker()">Worker erstellen</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Chat- & Tool-Verlauf einsehen -->
-<div class="modal-bg" id="history-modal">
-  <div class="modal" style="max-width:760px;width:95%">
-    <div class="modal-header">
-      <div class="modal-title" id="history-modal-title">📜 Session-Verlauf</div>
-      <button class="btn btn-outline btn-sm" onclick="closeHistoryModal()">✕</button>
-    </div>
-    <div id="history-modal-body" style="max-height:65vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px">
-      <!-- Chat bubbles injected here -->
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px">
-      <button class="btn btn-secondary" onclick="closeHistoryModal()">Schließen</button>
-    </div>
-  </div>
-</div>
-
-<datalist id="model-presets-list">
-  <option value="kimi-k3:cloud">☁️ Ollama Cloud (Moonshot Kimi K3, 131k)</option>
-  <option value="kimi-k2.7-code:cloud">☁️ Ollama Cloud (Kimi Code Spezialist)</option>
-  <option value="glm-5.3:cloud">☁️ Ollama Cloud (Zhipu GLM 5.3, 131k)</option>
-  <option value="qwen3.8:27b-mlx">💻 Ollama Lokal (Qwen 27B MLX)</option>
-  <option value="gemma4:26b-mlx">💻 Ollama Lokal (Google Gemma 26B)</option>
-  <option value="qwen3.5:4b">💻 Ollama Lokal (Qwen 4B)</option>
-  <option value="gemma4:e2b">💻 Ollama Lokal (Google Gemma 2B)</option>
-  <option value="deepseek-ocr:latest">💻 Ollama Lokal (OCR)</option>
-  <option value="claude-3-7-sonnet">🌐 Claude 3.7 Sonnet (Anthropic)</option>
-  <option value="sonnet">🌐 Claude CLI (sonnet)</option>
-  <option value="gpt-4o">🌐 OpenAI API (gpt-4o)</option>
-  <option value="o4-mini">🌐 Codex CLI (o4-mini)</option>
-  <option value="nousresearch/hermes-3-llama-3.1-8b">🌐 Hermes 3</option>
-</datalist>
-
-<div id="toast"></div>
-
-<script>
-const API = location.origin + '/api';
-let _isEditing = false;
-
-function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.display = 'block';
-  setTimeout(() => { t.style.display = 'none'; }, 2800);
-}
-function controlTokenForWrite() {
-  let token = sessionStorage.getItem('bach-control-api-token') || '';
-  if (!token) {
-    token = window.prompt('Control-API-Token für schreibende Aktionen:') || '';
-    if (token) sessionStorage.setItem('bach-control-api-token', token.trim());
-  }
-  return token.trim();
-}
-
-async function api(method, path, body = null) {
-  try {
-    const opts = { method, headers: {} };
-    if (method !== 'GET' && method !== 'HEAD') {
-      const token = controlTokenForWrite();
-      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+def _control_prompt_response() -> dict:
+    """One config-file snapshot in the legacy Activity shape plus CAS metadata."""
+    snapshot = core_prompt_snapshot()
+    prompts = snapshot["prompts"]
+    system = prompts["system_default"]
+    roles = {
+        key[len("role_"):]: {
+            "id": key[len("role_"):],
+            "text": value["effective"],
+            "default": value["default"],
+            "is_custom": value["is_custom"],
+        }
+        for key, value in prompts.items() if key.startswith("role_")
     }
-    if (body) {
-      opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body);
-    }
-    const res = await fetch(API + path, opts);
-    return await res.json();
-  } catch (err) {
-    return { error: String(err) };
-  }
-}
-
-async function refreshAll() {
-  await Promise.all([refreshSlots(), refreshActivity()]);
-}
-
-async function refreshSlots() {
-  const data = await api('GET', '/slots');
-  if (!data || !data.ok) return;
-
-  // Fackel Button
-  const pref = (data.fackel_preference || 'compute').toLowerCase();
-  const fackelBtn = document.getElementById('btn-fackel');
-  if (pref === 'ollama') {
-    fackelBtn.className = 'fackel-btn ollama';
-    fackelBtn.textContent = '🔥 Fackel: Ollama (Priorität)';
-  } else {
-    fackelBtn.className = 'fackel-btn compute';
-    fackelBtn.textContent = '⚙️ Fackel: Rechenjobs (Compute)';
-  }
-
-  const slots = data.slots || {};
-  // Chat Slot
-  if (slots.buddha_chat && !_isEditing) {
-    const s = slots.buddha_chat;
-    let b = s.backend || 'ollama';
-    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
-    document.getElementById('chat-backend').value = b;
-    document.getElementById('chat-model').value = s.model || '';
-    document.getElementById('chat-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 12;
-    document.getElementById('chat-mode').value = s.mode || 'safe';
-    document.getElementById('chat-think').checked = !!s.think;
-    document.getElementById('chat-activity').textContent = s.current_activity || 'Bereit';
-    document.getElementById('badge-buddha_chat').textContent = (s.status || 'ready').toUpperCase();
-  }
-
-  // Always-On Slot
-  if (slots.buddha_always_on && !_isEditing) {
-    const s = slots.buddha_always_on;
-    let b = s.backend || 'ollama';
-    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
-    document.getElementById('always-backend').value = b;
-    document.getElementById('always-model').value = s.model || '';
-    document.getElementById('always-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 25;
-    document.getElementById('always-mode').value = s.mode || 'full';
-    document.getElementById('always-activity').textContent = s.current_activity || (s.enabled ? 'Wartet auf Idle-Schwelle' : 'Pausiert');
-    const enabled = s.enabled !== false;
-    const badge = document.getElementById('badge-buddha_always_on');
-    badge.textContent = enabled ? 'AKTIV' : 'PAUSIERT';
-    badge.className = 'badge ' + (enabled ? 'badge-ready' : 'badge-paused');
-    document.getElementById('btn-toggle-always-on').textContent = enabled ? 'Pausieren' : 'Aktivieren';
-  }
-
-  // Connector Slot
-  if (slots.buddha_connector && !_isEditing) {
-    const s = slots.buddha_connector;
-    let b = s.backend || 'ollama';
-    if (b === 'ollama' && s.model && s.model.includes(':cloud')) b = 'ollama-cloud';
-    document.getElementById('conn-backend').value = b;
-    document.getElementById('conn-model').value = s.model || '';
-    document.getElementById('conn-turns').value = s.max_tool_rounds != null ? s.max_tool_rounds : 10;
-    document.getElementById('conn-activity').textContent = s.current_activity || 'Bereit';
-  }
-
-  // Dynamic Workers
-  renderWorkers(data.dynamic_workers || []);
-}
-
-function renderWorkers(workers) {
-  const container = document.getElementById('workers-container');
-  if (!workers || workers.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;font-size:0.88rem;grid-column:1/-1;padding:12px;background:#1e293b;border-radius:8px;border:1px dashed #334155">Keine dynamischen Hintergrundworker aktiv. Klicke auf "+ Neuer Worker anlegen", um Aufgaben oder Rollen autonom ausführen zu lassen.</div>';
-    return;
-  }
-
-  let html = '';
-  for (const w of workers) {
-    const st = w.status || 'idle';
-    let badgeClass = 'badge-idle';
-    if (st === 'running') badgeClass = 'badge-running';
-    else if (st === 'paused') badgeClass = 'badge-paused';
-    else if (st === 'error') badgeClass = 'badge-error';
-    else if (st === 'expired' || st === 'completed') badgeClass = 'badge-expired';
-
-    const expires = w.expires_at ? new Date(w.expires_at).toLocaleString() : 'Kein Ablauf';
-    const taskBadge = w.task_id ? `<span style="color:#38bdf8">Task #${w.task_id}</span>` : `<span style="color:#94a3b8">${escapeHtml(w.category || 'General')}</span>`;
-    
-    // Sub-mode formatting
-    let subModeLabel = '3.2 Taskworker';
-    if (w.sub_mode === 'hintergrund_worker') subModeLabel = '3.1 Hintergrundworker';
-    else if (w.sub_mode === 'boss_routing') subModeLabel = `3.3 Bossrouting (${w.max_experts || 3} Exp.)`;
-    else if (w.sub_mode === 'expert_role') subModeLabel = w.multi_role ? '3.4 Multi-Role Pool' : `3.4 Experte: ${escapeHtml(w.role_id || w.role)}`;
-
-    const sysPromptBadge = w.include_system_prompt !== false 
-      ? '<span style="color:#10b981;font-size:0.75rem;font-weight:600">✓ SysPrompt</span>' 
-      : '<span style="color:#f59e0b;font-size:0.75rem;font-weight:600">✗ Kein SysPrompt</span>';
-    const turnsLabel = w.max_tool_rounds === 0 ? 'Unbegrenzt' : (w.max_tool_rounds ?? 20);
-    const toolsLabel = w.allow_tools === false ? 'Tool-frei' : 'Werkzeuge erlaubt';
-
-    const isRunning = (st === 'running');
-    const cardBorder = isRunning ? 'border:1px solid #38bdf8;box-shadow:0 0 12px rgba(56,189,248,0.25);' : '';
-    const runBtn = isRunning 
-      ? `<button class="btn btn-sm" style="background:#854d0e;color:#fef08a;cursor:not-allowed;font-weight:600" disabled>⏳ Läuft...</button><button class="btn btn-sm btn-danger" onclick="stopWorker('${w.id}')" title="Worker anhalten / Status zurücksetzen">⏹ Stop</button>`
-      : `<button class="btn btn-sm btn-success" id="btn-run-${w.id}" onclick="runWorker('${w.id}')">▶ Start</button>`;
-
-    html += `
-      <div class="worker-card" id="wcard-${w.id}" style="${cardBorder}">
-        <div class="worker-top">
-          <div class="worker-name">${escapeHtml(w.name || w.id)}</div>
-          <span class="badge ${badgeClass}">${escapeHtml(st)}</span>
-        </div>
-        <div class="worker-meta">
-          <div><strong>Modus:</strong> <span style="color:#38bdf8">${subModeLabel}</span> · ${taskBadge} · ${sysPromptBadge}</div>
-          <div><strong>Modell:</strong> ${escapeHtml(w.model || '?')} (${escapeHtml(w.backend || 'ollama')})</div>
-          <div><strong>Turns:</strong> ${turnsLabel} · <strong>Modus:</strong> ${w.mode || 'full'} · <strong>Tools:</strong> ${toolsLabel}</div>
-          <div><strong>Ablauf:</strong> ${expires}</div>
-        </div>
-        <div class="activity-box" style="min-height:30px">${escapeHtml(w.current_activity || 'Bereit')}</div>
-        <div class="worker-actions">
-          ${runBtn}
-          <button class="btn btn-sm btn-secondary" onclick="openHistoryModal('${w.id}')">📜 Verlauf</button>
-          <button class="btn btn-sm btn-secondary" onclick="toggleWorker('${w.id}', '${st}')">${st === 'paused' ? '▶ Aktiv' : '⏸ Pause'}</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteWorker('${w.id}')">🗑 Löschen</button>
-        </div>
-      </div>
-    `;
-  }
-  container.innerHTML = html;
-}
-
-async function refreshActivity() {
-  const data = await api('GET', '/activity?limit=30');
-  const tbody = document.getElementById('activity-tbody');
-  const history = (data && data.history) ? data.history : [];
-  if (history.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b">Noch keine Aktivitäten protokolliert</td></tr>';
-    return;
-  }
-
-  let rows = '';
-  for (const item of history) {
-    const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '-';
-    const st = item.status || 'ok';
-
-    rows += `
-      <tr>
-        <td style="color:#94a3b8;font-size:0.8rem">${timeStr}</td>
-        <td><strong>${escapeHtml(item.source || '-')}</strong></td>
-        <td>${escapeHtml(item.activity || '-')}</td>
-        <td><span class="badge badge-${st === 'running' ? 'running' : (st === 'error' ? 'error' : 'ready')}">${escapeHtml(st)}</span></td>
-      </tr>
-    `;
-  }
-  tbody.innerHTML = rows;
-}
-
-async function saveCoreSlot(slotId) {
-  let updates = {};
-  if (slotId === 'buddha_chat') {
-    updates = {
-      backend: document.getElementById('chat-backend').value,
-      model: document.getElementById('chat-model').value.trim(),
-      max_tool_rounds: parseInt(document.getElementById('chat-turns').value) || 0,
-      mode: document.getElementById('chat-mode').value,
-      think: document.getElementById('chat-think').checked,
-    };
-  } else if (slotId === 'buddha_always_on') {
-    updates = {
-      backend: document.getElementById('always-backend').value,
-      model: document.getElementById('always-model').value.trim(),
-      max_tool_rounds: parseInt(document.getElementById('always-turns').value) || 0,
-      mode: document.getElementById('always-mode').value,
-    };
-  } else if (slotId === 'buddha_connector') {
-    updates = {
-      backend: document.getElementById('conn-backend').value,
-      model: document.getElementById('conn-model').value.trim(),
-      max_tool_rounds: parseInt(document.getElementById('conn-turns').value) || 0,
-    };
-  }
-  const res = await api('POST', '/slots', { slot_id: slotId, updates });
-  if (res && res.ok) {
-    toast(`Slot ${slotId} gespeichert!`);
-    refreshSlots();
-  } else {
-    toast(`Fehler beim Speichern: ${res.error || 'Unbekannt'}`);
-  }
-}
-
-async function toggleAlwaysOn() {
-  const currentBadge = document.getElementById('badge-buddha_always_on').textContent;
-  const newEnabled = currentBadge !== 'AKTIV';
-  const res = await api('POST', '/slots', {
-    slot_id: 'buddha_always_on',
-    updates: { enabled: newEnabled }
-  });
-  if (res && res.ok) {
-    toast(newEnabled ? 'Buddha Always-On aktiviert' : 'Buddha Always-On pausiert');
-    refreshSlots();
-  }
-}
-
-async function toggleFackel() {
-  const btn = document.getElementById('btn-fackel');
-  const isOllama = btn.classList.contains('ollama');
-  const newPref = isOllama ? 'compute' : 'ollama';
-  const res = await api('POST', '/fackel', { preference: newPref });
-  if (res && res.ok) {
-    toast(newPref === 'ollama' ? 'Fackel an Ollama (Chat & Worker bevorzugt)' : 'Fackel an Rechenjobs (Compute bevorzugt)');
-    refreshSlots();
-  }
-}
-
-function showTab(tab) {
-  const dash = document.getElementById('tab-dash');
-  const prompts = document.getElementById('tab-prompts');
-  const btnDash = document.getElementById('nav-btn-dash');
-  const btnPrompts = document.getElementById('nav-btn-prompts');
-  if (tab === 'prompts') {
-    dash.style.display = 'none';
-    prompts.style.display = 'block';
-    btnPrompts.style.background = '#38bdf8';
-    btnPrompts.style.color = '#0f172a';
-    btnPrompts.style.fontWeight = '700';
-    btnDash.style.background = 'transparent';
-    btnDash.style.color = '#38bdf8';
-    btnDash.style.fontWeight = 'normal';
-    loadPromptTemplates();
-  } else {
-    prompts.style.display = 'none';
-    dash.style.display = 'block';
-    btnDash.style.background = '#38bdf8';
-    btnDash.style.color = '#0f172a';
-    btnDash.style.fontWeight = '700';
-    btnPrompts.style.background = 'transparent';
-    btnPrompts.style.color = '#38bdf8';
-    btnPrompts.style.fontWeight = 'normal';
-    refreshAll();
-  }
-}
-
-let _promptTemplates = null;
-
-async function loadPromptTemplates() {
-  const res = await api('GET', '/prompts');
-  if (!res || !res.ok || !res.templates) return;
-  _promptTemplates = res.templates;
-
-  const sys = _promptTemplates.system_default || {};
-  document.getElementById('prompt-sys-text').value = sys.text || '';
-  const badgeSys = document.getElementById('badge-prompt-sys');
-  badgeSys.textContent = sys.is_custom ? 'Angepasst' : 'Werkstandard';
-  badgeSys.className = 'badge ' + (sys.is_custom ? 'badge-running' : 'badge-ready');
-
-  const roleSelect = document.getElementById('role-select').value;
-  onRolePromptSelect(roleSelect);
-}
-
-function onRolePromptSelect(roleId) {
-  if (!_promptTemplates || !_promptTemplates.roles) return;
-  const role = _promptTemplates.roles[roleId] || {};
-  document.getElementById('prompt-role-text').value = role.text || '';
-  const badgeRole = document.getElementById('badge-prompt-role');
-  badgeRole.textContent = role.is_custom ? 'Angepasst' : 'Werkstandard';
-  badgeRole.className = 'badge ' + (role.is_custom ? 'badge-running' : 'badge-ready');
-}
-
-async function savePrompt(key) {
-  let text = '';
-  if (key === 'system_default') {
-    text = document.getElementById('prompt-sys-text').value;
-  } else if (key.startsWith('role_')) {
-    text = document.getElementById('prompt-role-text').value;
-  }
-  const res = await api('POST', '/prompts', { key, text });
-  if (res && res.ok) {
-    toast(`Prompt '${key}' erfolgreich gespeichert!`);
-    loadPromptTemplates();
-  } else {
-    toast(`Fehler beim Speichern: ${res.error || 'Unbekannt'}`);
-  }
-}
-
-async function resetPrompt(key) {
-  if (!confirm(`Prompt '${key}' wirklich auf den unveränderlichen Werkstandard zurücksetzen?`)) return;
-  const res = await api('POST', '/prompts/reset', { key });
-  if (res && res.ok) {
-    toast(`Prompt '${key}' auf Werkstandard zurückgesetzt.`);
-    loadPromptTemplates();
-  } else {
-    toast(`Fehler beim Zurücksetzen: ${res.error || 'Unbekannt'}`);
-  }
-}
-
-function saveCurrentRolePrompt() {
-  const roleId = document.getElementById('role-select').value;
-  savePrompt('role_' + roleId);
-}
-
-function resetCurrentRolePrompt() {
-  const roleId = document.getElementById('role-select').value;
-  resetPrompt('role_' + roleId);
-}
-
-function openNewWorkerModal() {
-  document.getElementById('new-worker-modal').style.display = 'flex';
-  onSubModeChange(document.getElementById('nw-sub-mode').value);
-}
-
-function closeNewWorkerModal() {
-  document.getElementById('new-worker-modal').style.display = 'none';
-}
-
-function onSubModeChange(subMode) {
-  const bossFields = document.getElementById('nw-boss-fields');
-  const expertFields = document.getElementById('nw-expert-fields');
-  bossFields.style.display = subMode === 'boss_routing' ? 'block' : 'none';
-  expertFields.style.display = subMode === 'expert_role' ? 'block' : 'none';
-}
-
-async function createWorker() {
-  const name = document.getElementById('nw-name').value.trim();
-  const subMode = document.getElementById('nw-sub-mode').value;
-  const workerType = document.getElementById('nw-type').value;
-  const backend = document.getElementById('nw-backend').value;
-  const model = document.getElementById('nw-model').value.trim() || 'qwen3.8:27b-mlx';
-  const turns = parseInt(document.getElementById('nw-turns').value) || 25;
-  const mode = document.getElementById('nw-mode').value;
-  const taskId = document.getElementById('nw-task-id').value.trim() ? parseInt(document.getElementById('nw-task-id').value) : null;
-  const ttl = document.getElementById('nw-ttl').value ? parseInt(document.getElementById('nw-ttl').value) : null;
-  const taskPrompt = document.getElementById('nw-task-prompt').value.trim();
-  const includeSys = document.getElementById('nw-include-system-prompt').checked;
-  const allowTools = document.getElementById('nw-allow-tools').checked;
-
-  let roleId = '';
-  let multiRole = false;
-  if (subMode === 'expert_role') {
-    roleId = document.getElementById('nw-role-id').value;
-    multiRole = document.getElementById('nw-multi-role').checked;
-  }
-
-  let maxExperts = 3;
-  let expertModels = {};
-  if (subMode === 'boss_routing') {
-    maxExperts = parseInt(document.getElementById('nw-max-experts').value) || 3;
-    const emStr = document.getElementById('nw-expert-models').value.trim();
-    if (emStr) {
-      try { expertModels = JSON.parse(emStr); } catch (e) { expertModels = { default: emStr }; }
-    }
-  }
-
-  const payload = {
-    name: name || `Worker-${subMode}`,
-    sub_mode: subMode,
-    role_id: roleId,
-    multi_role: multiRole,
-    max_experts: maxExperts,
-    expert_models: expertModels,
-    include_system_prompt: includeSys,
-    task_prompt: taskPrompt,
-    type: workerType,
-    backend,
-    model,
-    max_tool_rounds: turns,
-    allow_tools: allowTools,
-    mode,
-    task_id: taskId,
-    ttl_seconds: ttl,
-  };
-
-  const res = await api('POST', '/workers', payload);
-  if (res && res.ok) {
-    toast(`Worker '${res.worker.name}' angelegt!`);
-    closeNewWorkerModal();
-    document.getElementById('nw-name').value = '';
-    document.getElementById('nw-task-id').value = '';
-    document.getElementById('nw-task-prompt').value = '';
-    refreshSlots();
-  } else {
-    toast(`Fehler: ${res.error || 'Worker konnte nicht erstellt werden'}`);
-  }
-}
-
-async function openHistoryModal(chatId) {
-  document.getElementById('history-modal-title').textContent = `📜 Session-Verlauf: ${chatId}`;
-  const body = document.getElementById('history-modal-body');
-  body.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center">Lade Chat- und Werkzeugverlauf...</div>';
-  document.getElementById('history-modal').style.display = 'flex';
-
-  const res = await api('GET', `/chat/history?chat_id=${encodeURIComponent(chatId)}`);
-  if (!res || !res.ok || !res.messages || res.messages.length === 0) {
-    body.innerHTML = '<div style="color:#64748b;padding:24px;text-align:center">Noch keine Nachrichten oder Werkzeugläufe für diese Session vorhanden.</div>';
-    return;
-  }
-
-  let html = '';
-  for (const msg of res.messages) {
-    const role = msg.role || 'unknown';
-    const content = msg.content || '';
-    const toolCalls = msg.tool_calls || [];
-    let roleBadge = 'badge-idle';
-    let roleLabel = role.toUpperCase();
-    let bubbleStyle = 'background:#1e293b;border:1px solid #334155;';
-
-    if (role === 'user') {
-      roleBadge = 'badge-ready';
-      roleLabel = 'USER / AUFTRAG';
-      bubbleStyle = 'background:#0f172a;border:1px solid #38bdf8;';
-    } else if (role === 'assistant') {
-      roleBadge = 'badge-running';
-      roleLabel = 'ASSISTANT';
-      bubbleStyle = 'background:#1e293b;border:1px solid #10b981;';
-    } else if (role === 'system') {
-      roleBadge = 'badge-paused';
-      roleLabel = 'SYSTEM';
-      bubbleStyle = 'background:#1e1e2e;border:1px dashed #64748b;';
-    } else if (role === 'tool') {
-      roleBadge = 'badge-paused';
-      roleLabel = 'TOOL RESULT';
-      bubbleStyle = 'background:#182234;border:1px solid #f59e0b;';
+    return {
+        "ok": True,
+        "configuration_version": snapshot["configuration_version"],
+        "source_version": snapshot["source_version"],
+        "templates": {
+            "system_default": {
+                "id": "system_default", "text": system["effective"],
+                "default": system["default"], "is_custom": system["is_custom"],
+            },
+            "roles": roles,
+        },
     }
 
-    html += `
-      <div style="padding:10px 14px;border-radius:8px;${bubbleStyle}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span class="badge ${roleBadge}">${roleLabel}</span>
-        </div>
-        <div style="white-space:pre-wrap;word-break:break-word;font-size:0.86rem;color:#e2e8f0">${escapeHtml(content)}</div>
-    `;
-    if (toolCalls && toolCalls.length > 0) {
-      html += `<div style="margin-top:8px;padding:6px 10px;background:#0f172a;border-radius:4px;font-size:0.8rem;color:#f59e0b">`;
-      for (const tc of toolCalls) {
-        const fn = tc.function || {};
-        html += `<div>⚙️ <strong>${escapeHtml(fn.name || 'Tool')}</strong>(${escapeHtml(JSON.stringify(fn.arguments || {}))})</div>`;
-      }
-      html += `</div>`;
-    }
-    html += `</div>`;
-  }
-  body.innerHTML = html;
-  body.scrollTop = body.scrollHeight;
-}
 
-function closeHistoryModal() {
-  document.getElementById('history-modal').style.display = 'none';
-}
 
-async function runWorker(workerId) {
-  const btn = document.getElementById(`btn-run-${workerId}`);
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Starte...';
-    btn.style.background = '#854d0e';
-    btn.style.color = '#fef08a';
-  }
-  const card = document.getElementById(`wcard-${workerId}`);
-  if (card) {
-    const actBox = card.querySelector('.activity-box');
-    if (actBox) actBox.textContent = 'Starte Worker...';
-    const badge = card.querySelector('.badge');
-    if (badge) {
-      badge.className = 'badge badge-running';
-      badge.textContent = 'running';
-    }
-  }
-  toast(`Starte Worker ${workerId}...`);
-  const res = await api('POST', '/workers/run', { id: workerId });
-  if (res && res.ok) {
-    toast(`Worker ${workerId} läuft!`);
-    refreshAll();
-  } else {
-    toast(`Fehler: ${res.error || 'Konnte nicht starten'}`);
-    refreshAll();
-  }
-}
-
-async function toggleWorker(workerId, currentStatus) {
-  const newStatus = currentStatus === 'paused' ? 'idle' : 'paused';
-  const res = await api('POST', '/workers/toggle', { id: workerId, status: newStatus });
-  if (res && res.ok) {
-    toast(`Worker ${workerId}: ${newStatus}`);
-    refreshSlots();
-  }
-}
-
-async function stopWorker(workerId) {
-  const res = await api('POST', '/workers/stop', { id: workerId });
-  if (res && res.ok) {
-    toast(`Worker ${workerId} gestoppt.`);
-    refreshAll();
-  } else {
-    toast(`Fehler: ${res.error || 'Konnte nicht stoppen'}`);
-  }
-}
-
-async function deleteWorker(workerId) {
-  if (!confirm(`Worker ${workerId} wirklich löschen?`)) return;
-  const res = await api('POST', '/workers/delete', { id: workerId });
-  if (res && res.ok) {
-    toast(`Worker ${workerId} gelöscht.`);
-    refreshSlots();
-  } else {
-    toast(`Fehler: ${res.error || 'Löschen fehlgeschlagen'}`);
-  }
-}
-
-function applyModelPreset(prefix, modelValue) {
-  if (!modelValue) return;
-  const mInput = document.getElementById(`${prefix}-model`);
-  const bSelect = document.getElementById(`${prefix}-backend`);
-  if (mInput) mInput.value = modelValue;
-  if (!bSelect) return;
-
-  const m = modelValue.toLowerCase();
-  if (m.includes(':cloud')) {
-    bSelect.value = 'ollama-cloud';
-  } else if (m.includes('mlx') || m.includes('qwen') || m.includes('gemma') || m.includes('ocr') || m.includes('llama-guard')) {
-    bSelect.value = 'ollama';
-  } else if (m.includes('claude') || m.includes('sonnet') || m.includes('opus')) {
-    bSelect.value = (bSelect.querySelector('option[value="claude-api"]') ? 'claude-api' : 'claude');
-  } else if (m.includes('gpt') || m.includes('o3') || m.includes('o4')) {
-    bSelect.value = (m.includes('o4-mini') && bSelect.querySelector('option[value="codex"]') ? 'codex' : 'openai');
-  } else if (m.includes('hermes')) {
-    bSelect.value = 'hermes';
-  }
-}
-
-function onBackendChange(prefix) {
-  const bSelect = document.getElementById(`${prefix}-backend`);
-  const mInput = document.getElementById(`${prefix}-model`);
-  if (!bSelect || !mInput) return;
-  const val = bSelect.value;
-  if (val === 'ollama-cloud') {
-    if (!mInput.value || !mInput.value.includes(':cloud')) mInput.value = 'kimi-k3:cloud';
-  } else if (val === 'ollama') {
-    if (!mInput.value || mInput.value.includes(':cloud') || mInput.value.includes('sonnet') || mInput.value.includes('gpt')) {
-      mInput.value = 'qwen3.8:27b-mlx';
-    }
-  } else if (val === 'claude' || val === 'claude-api') {
-    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) {
-      mInput.value = val === 'claude-api' ? 'claude-3-7-sonnet' : 'sonnet';
-    }
-  } else if (val === 'codex') {
-    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) mInput.value = 'o4-mini';
-  } else if (val === 'openai') {
-    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) mInput.value = 'gpt-4o';
-  } else if (val === 'hermes') {
-    if (!mInput.value || mInput.value.includes('qwen') || mInput.value.includes(':cloud')) {
-      mInput.value = 'nousresearch/hermes-3-llama-3.1-8b';
-    }
-  }
-}
-
-async function loadModelsIntoPresets() {
-  const data = await api('GET', '/models');
-  if (!data || !data.models || !Array.isArray(data.models)) return;
-  const dl = document.getElementById('model-presets-list');
-  if (!dl) return;
-  let opts = '';
-  for (const m of data.models) {
-    const isCloud = m.includes(':cloud');
-    const label = isCloud ? '☁️ Ollama Cloud' : '💻 Ollama Lokal';
-    opts += `<option value="${escapeHtml(m)}">${label} (${escapeHtml(m)})</option>`;
-  }
-  opts += '<option value="claude-3-7-sonnet">🌐 Claude 3.7 Sonnet (Anthropic)</option>';
-  opts += '<option value="sonnet">🌐 Claude CLI (sonnet)</option>';
-  opts += '<option value="gpt-4o">🌐 OpenAI API (gpt-4o)</option>';
-  opts += '<option value="o4-mini">🌐 Codex CLI (o4-mini)</option>';
-  opts += '<option value="nousresearch/hermes-3-llama-3.1-8b">🌐 Hermes 3</option>';
-  dl.innerHTML = opts;
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-document.addEventListener('focusin', (e) => {
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) _isEditing = true;
-});
-document.addEventListener('focusout', () => { _isEditing = false; });
-
-refreshAll();
-loadModelsIntoPresets();
-setInterval(refreshAll, 3000);
-</script>
-</body>
-</html>"""
 
 
 def _get_active_session_state():
@@ -3399,6 +2300,14 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
     with _runtime_state_lock:
         normalized = str(chat_id or "")
         registered_worker = _registered_worker_slot(normalized)
+        from hub._services.chat.agent_profile_context import profile_chat_id_agent
+        if profile_chat_id_agent(normalized) is not None:
+            if registered_worker is not None or get_worker_slot(normalized) is not None:
+                raise ValueError("Profil-Chat-ID ist bereits als Worker-Slot gebunden")
+            if runtime.session_store is None:
+                raise ValueError("Profilstore fehlt")
+            if runtime.session_store.load_state(chat_id)["binding"] is None:
+                return runtime.backend, (_global_defaults.get("model") or runtime.backend.get_default_model())
         if (
             _is_strict_worker_id(normalized)
             and registered_worker is None
@@ -3508,7 +2417,7 @@ def _probe_backend_inventory_entry(
             cli_name = preset["type"].replace("-cli", "")
             if _check_cli_available(cli_name) != "vorhanden":
                 raise FileNotFoundError(cli_name)
-        elif name in ("claude-api", "openai", "hermes"):
+        elif name in ("claude-api", "openai", "hermes", "openrouter"):
             api_key = _load_api_key(name)
             if not api_key:
                 return False, "Key fehlt"
@@ -3583,12 +2492,57 @@ def _backend_inventory() -> dict[str, dict]:
         return _copy_backend_inventory(backends)
 
 
+def _optional_agent_id(value, *, query: bool = False):
+    """Keep absent legacy requests unchanged; reject bool, aliases and fuzzy IDs."""
+    if value is None:
+        return None
+    if query:
+        if type(value) is not str or not value.isascii() or not value.isdecimal() or value.startswith("0"):
+            raise ValueError("agent_id muss eine positive Ganzzahl sein")
+        value = int(value)
+    if type(value) is not int or value <= 0:
+        raise ValueError("agent_id muss eine positive Ganzzahl sein")
+    return value
+
+
+def _profile_request(agent_id, chat_id):
+    from hub._services.chat.agent_profile_context import (
+        ProfileUnavailable, profile_chat_id_agent, resolve_profile,
+    )
+    if agent_id is None:
+        if str(chat_id).startswith("agent:"):
+            raise ProfileUnavailable("Profilbindung fehlt")
+        return None
+    if profile_chat_id_agent(chat_id) != agent_id:
+        raise ProfileUnavailable("Profil-Chat-ID stimmt nicht mit agent_id überein")
+    if runtime is None or runtime.session_store is None:
+        raise ProfileUnavailable("Dauerhafter Profilstore fehlt")
+    binding, text = resolve_profile(agent_id)
+    state = runtime.session_store.load_state(chat_id)
+    if state["binding"] not in (None, binding) or (state["binding"] is None and state["messages"]):
+        raise ProfileUnavailable("Chatverlauf gehört zu einem anderen Kontext")
+    ram = runtime.sessions.get(chat_id)
+    if ram is not None and (getattr(ram, "profile_binding", None) != binding):
+        raise ProfileUnavailable("RAM-Chat gehört zu einem anderen Kontext")
+    return binding, text
+
+
+def _query_agent_id(parsed_url):
+    values = parse_qs(parsed_url.query, keep_blank_values=True).get("agent_id", [])
+    if len(values) > 1:
+        raise ValueError("agent_id darf nur einmal vorkommen")
+    return _optional_agent_id(values[0], query=True) if values else None
+
+
 def _control_chat_response(answer) -> tuple[dict, int]:
     text = str(answer or "").strip()
     if not text:
         return {"ok": False, "error": "Chat-Backend lieferte keine Antwort"}, 502
     if isinstance(answer, SuccessfulAnswer):
-        return {"ok": True, "answer": text}, 200
+        response = {"ok": True, "answer": text}
+        if getattr(answer, "completed_task_ids", ()):
+            response["completed_task_ids"] = list(answer.completed_task_ids)
+        return response, 200
     if text.startswith(("Backend-Fehler:", "Fehler:")):
         return {"ok": False, "answer": text, "error": text}, 502
     return {"ok": True, "answer": text}, 200
@@ -3666,6 +2620,63 @@ class QuietHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _enrich_activity_history_with_tasks(history: list[dict[str, Any]]) -> None:
+    """Enrich activity items that reference task_id with required_model/assigned_slot from tasks."""
+    if not history:
+        return
+    task_ids: set[int] = set()
+    for item in history:
+        tid = item.get("task_id")
+        if tid is None and isinstance(item.get("details"), dict):
+            tid = item["details"].get("task_id")
+        if tid is not None:
+            try:
+                task_ids.add(int(tid))
+            except (ValueError, TypeError):
+                pass
+    if not task_ids:
+        return
+
+    try:
+        from hub.bach_paths import BACH_DB
+        db_env = os.environ.get("BACH_DB")
+        db_path = Path(db_env) if db_env else BACH_DB
+        if not db_path.exists():
+            return
+        conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
+        try:
+            placeholders = ",".join("?" for _ in task_ids)
+            cursor = conn.execute(
+                f"SELECT id, required_model, assigned_slot FROM tasks WHERE id IN ({placeholders})",
+                list(task_ids),
+            )
+            mapping = {int(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+        finally:
+            conn.close()
+
+        for item in history:
+            tid = item.get("task_id")
+            if tid is None and isinstance(item.get("details"), dict):
+                tid = item["details"].get("task_id")
+            try:
+                tid_int = int(tid) if tid is not None else None
+            except (ValueError, TypeError):
+                tid_int = None
+            if tid_int in mapping:
+                req_m, ass_s = mapping[tid_int]
+                if "required_model" not in item:
+                    item["required_model"] = req_m
+                if "assigned_slot" not in item:
+                    item["assigned_slot"] = ass_s
+            else:
+                if "required_model" not in item:
+                    item["required_model"] = None
+                if "assigned_slot" not in item:
+                    item["assigned_slot"] = None
+    except Exception as exc:
+        log.debug("Konnte Activity nicht mit Tasks anreichern: %s", exc)
+
+
 class ControlHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         log.debug("ControlAPI: " + fmt % args)
@@ -3677,11 +2688,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             pass
 
     def _cors(self):
-        origin = str(self.headers.get("Origin") or "").strip()
+        raw_origin = str(self.headers.get("Origin") or "").strip()
         host = str(self.headers.get("Host") or "").strip()
-        if not _is_allowed_origin(origin, host):
+        if not raw_origin or "\r" in raw_origin or "\n" in raw_origin:
             return
-        self.send_header("Access-Control-Allow-Origin", origin)
+        if not _is_allowed_origin(raw_origin, host):
+            return
+        parsed = urlparse(raw_origin)
+        if not parsed.scheme or not parsed.netloc:
+            return
+        safe_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if "\r" in safe_origin or "\n" in safe_origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", safe_origin)
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -3750,7 +2769,14 @@ class ControlHandler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
-        if path == "/":
+        if path == "/api/auth/check":
+            # T-20260926-652455601: side-effect-free capability authentication.
+            # Use the exact mutation guard; public status proves no write rights.
+            if not self._allow_control_request():
+                return
+            self._json({"service": "bach-chat-control", "authenticated": True})
+
+        elif path == "/":
             self._html(WEB_DASHBOARD)
 
         elif path == "/api/status":
@@ -3792,6 +2818,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": active_user,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": current_tool,
                     "tool_round": tool_round,
                     "last_tools": active_tools,
@@ -3813,6 +2840,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "active_sessions": 0,
                     "max_tool_rounds": runtime.max_tool_rounds,
                     "fackel_preference": get_fackel_preference(),
+                    "compute_turn": runtime.compute_turn_status(),
                     "current_tool": "",
                     "tool_round": 0,
                     "last_tools": [],
@@ -3823,6 +2851,15 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/readiness":
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["api-delegate"])[0]
+            try:
+                agent_id = _query_agent_id(parsed_url)
+                if agent_id is None:
+                    _profile_request(None, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
+            if agent_id is not None and not self._allow_control_request():
+                return
             try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
             except WorkerBindingError as exc:
@@ -3835,31 +2872,92 @@ class ControlHandler(BaseHTTPRequestHandler):
                 selected_backend,
                 model,
             )
-            self._json({
+            result = {
                 "available": available,
                 "status": availability_status,
                 "backend_id": backend_identifier(selected_backend),
                 "model": model,
-            })
+            }
+            if agent_id is not None:
+                try:
+                    binding, _text = _profile_request(agent_id, chat_id)
+                    capability = {"agent_id": agent_id, "available": True,
+                        "context_class": binding["context_class"],
+                        "db_version": binding["db_version"],
+                        "source_version": binding["source_version"]}
+                except Exception:
+                    capability = {"agent_id": agent_id, "available": False,
+                        "context_class": "agent-profile", "db_version": None,
+                        "source_version": None, "reason": "Profilkontext nicht verfügbar"}
+                result["profile_capability"] = capability
+                result["can_chat"] = bool(available and capability["available"])
+            self._json(result)
 
         elif path == "/api/models":
             try:
-                with _runtime_state_lock:
-                    selected_backend = runtime.backend
-                models = selected_backend.list_models()
-                self._json({"models": models})
+                requested_provider = parse_qs(parsed_url.query).get("provider", [""])[0].strip().lower()
+                if requested_provider:
+                    preset = BACKEND_PRESETS.get(requested_provider)
+                    if not preset:
+                        self._json({"error": "Unbekannter Provider"}, 400)
+                        return
+                    config = {key: value for key, value in preset.items()
+                              if key not in ("method", "description")}
+                    configured = True
+                    if requested_provider in {"claude-api", "openai", "hermes", "openrouter"}:
+                        api_key = _load_api_key(requested_provider)
+                        configured = bool(api_key)
+                        if api_key:
+                            config["api_key"] = api_key
+                    selected_backend = create_backend(config)
+                    models = selected_backend.list_models()
+                    self._json({
+                        "provider": requested_provider,
+                        "models": models,
+                        "credential_configured": configured,
+                    })
+                else:
+                    with _runtime_state_lock:
+                        selected_backend = runtime.backend
+                    models = selected_backend.list_models()
+                    self._json({"models": models, "provider": backend_identifier(selected_backend)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/history":
+            if not self._allow_control_request():
+                return
             chat_id = parse_qs(parsed_url.query).get("chat_id", ["gui-web"])[0]
-            self._json({"ok": True, "chat_id": chat_id, "messages": runtime.history(chat_id)})
+            try:
+                agent_id = _query_agent_id(parsed_url)
+                agent_context = _profile_request(agent_id, chat_id)
+                bound = (agent_context is not None and
+                    runtime.session_store.load_state(chat_id)["binding"] == agent_context[0])
+                messages = runtime.history(chat_id) if agent_context is None or bound else []
+                response = {"ok": True, "chat_id": chat_id, "messages": messages}
+                if agent_context is not None:
+                    response.update({"agent_id": agent_context[0]["agent_id"],
+                        "context_class": "agent-profile", "binding_confirmed": bound})
+                self._json(response)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+            except Exception:
+                self._json({"ok": False, "error": "Profilverlauf nicht verifizierbar"}, 503)
 
         elif path == "/api/sessions":
+            if not self._allow_control_request():
+                return
             limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
             if runtime.session_store:
                 try:
+                    agent_id = _query_agent_id(parsed_url)
                     snapshots = runtime.session_store.list_snapshots(limit=limit)
+                    if agent_id is not None:
+                        _profile_request(agent_id, f"agent:{agent_id}:" + "0" * 32)
+                        snapshots = [s for s in snapshots if s.get("agent_id") == agent_id
+                            and s.get("context_class") == "agent-profile"]
+                    else:
+                        snapshots = [s for s in snapshots if s.get("context_class") != "agent-profile"]
                     self._json({"ok": True, "sessions": snapshots})
                 except Exception as e:
                     self._json({"error": str(e)}, 500)
@@ -3867,6 +2965,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "Kein SessionStore konfiguriert"}, 500)
 
         elif path == "/api/session":
+            if not self._allow_control_request():
+                return
             try:
                 sid = int(parse_qs(parsed_url.query).get("id", [0])[0])
             except ValueError:
@@ -3875,6 +2975,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                 try:
                     snap = runtime.session_store.get_snapshot_by_id(sid)
                     if snap:
+                        binding = snap.get("binding")
+                        agent_id = _query_agent_id(parsed_url)
+                        if binding is not None:
+                            if agent_id != binding["agent_id"]:
+                                self._json({"error": "Profilbindung erforderlich"}, 409)
+                                return
+                            current, _text = _profile_request(agent_id, snap["chat_id"])
+                            if current != binding:
+                                self._json({"error": "Profilquelle nicht mehr verifiziert"}, 409)
+                                return
+                        elif agent_id is not None:
+                            self._json({"error": "Snapshot gehört keinem Agentenprofil"}, 409)
+                            return
                         self._json({"ok": True, "session": snap})
                     else:
                         self._json({"error": "Snapshot nicht gefunden"}, 404)
@@ -3884,47 +2997,103 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "Ungültige oder fehlende Snapshot-ID"}, 400)
 
         elif path == "/activity":
-            self._html(WEB_ACTIVITY_DASHBOARD)
+            self._html(render_activity_dashboard())
 
         elif path == "/api/slots":
+            if not self._allow_control_request():
+                return
             try:
                 cfg = load_slots_config()
+                slots = cfg.get("slots", {})
+                for sid, s in slots.items():
+                    s["pause_info"] = get_slot_pause_info(s)
+                workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                for w in workers:
+                    w["pause_info"] = get_slot_pause_info(w)
                 self._json({
                     "ok": True,
-                    "slots": cfg.get("slots", {}),
-                    "dynamic_workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
+                    "slots": slots,
+                    "dynamic_workers": workers,
                     "fackel_preference": get_fackel_preference(),
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            worker_id = parse_qs(parsed_url.query).get("id", [""])[0]
+            try:
+                self._json({"ok": True, **worker_configuration_snapshot(worker_id)})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration nicht verfügbar"}, 503)
+
         elif path == "/api/workers":
             try:
                 self._json({
                     "ok": True,
-                    "workers": list_workers(include_expired=True, active_worker_ids=_active_worker_ids()),
+                    "workers": [_worker_handoff_snapshot(worker) for worker in
+                                list_workers(include_expired=True, active_worker_ids=_active_worker_ids())],
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/activity":
             try:
-                limit = int(parse_qs(parsed_url.query).get("limit", [50])[0])
+                q = parse_qs(parsed_url.query)
+
+                def _query_int(key: str, default: int) -> int:
+                    val = q.get(key, [str(default)])[0].strip()
+                    return int(val) if val else default
+
+                def _query_str_list(key: str) -> Optional[List[str]]:
+                    vals = q.get(key)
+                    if not vals:
+                        return None
+                    items = []
+                    for v in vals:
+                        items.extend([x.strip() for x in v.split(",") if x.strip()])
+                    return items if items else None
+
+                limit = _query_int("limit", 50)
+                offset = _query_int("offset", 0)
+                order = (q.get("order", ["desc"])[0] or "desc").lower()
+                source = _query_str_list("source")
+                status = _query_str_list("status")
+                since = (q.get("since", [""])[0] or None)
+                until = (q.get("until", [""])[0] or None)
+
+                if order not in ("asc", "desc"):
+                    self._json({"error": "order muss 'asc' oder 'desc' sein"}, 400)
+                    return
+
+                history = get_activity_history(
+                    limit=limit,
+                    offset=offset,
+                    source=source,
+                    status=status,
+                    since=since,
+                    until=until,
+                    order=order,
+                )
+                _enrich_activity_history_with_tasks(history)
                 self._json({
                     "ok": True,
-                    "history": get_activity_history(limit=limit),
+                    "history": history,
                 })
             except Exception as e:
+                log.warning("/api/activity Fehler: %s", e, exc_info=True)
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/prompts":
+            if not self._allow_control_request():
+                return
             try:
-                self._json({
-                    "ok": True,
-                    "templates": get_prompt_templates(),
-                })
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                self._json(_control_prompt_response())
+            except (OSError, ValueError, TypeError):
+                # In-memory defaults are a preview, not an attested active revision.
+                self._json({"ok": True, "source": "in_memory_defaults",
+                            "templates": get_prompt_templates()})
 
         elif path == "/api/chat/history":
             chat_id = parse_qs(parsed_url.query).get("chat_id", [""])[0]
@@ -3932,17 +3101,21 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "chat_id erforderlich"}, 400)
             else:
                 try:
+                    agent_context = _profile_request(_query_agent_id(parsed_url), chat_id)
+                    bound = (agent_context is not None and
+                        runtime.session_store.load_state(chat_id)["binding"] == agent_context[0])
                     msgs = []
-                    session = runtime.sessions.get(chat_id)
-                    if session and session.messages:
-                        msgs = session.messages
-                    elif runtime.session_store:
-                        msgs = runtime._load_messages(chat_id)
-                    self._json({
-                        "ok": True,
-                        "chat_id": chat_id,
-                        "messages": msgs,
-                    })
+                    if agent_context is None or bound:
+                        session = runtime.sessions.get(chat_id)
+                        if session and session.messages:
+                            msgs = session.messages
+                        elif runtime.session_store:
+                            msgs = runtime._load_messages(chat_id)
+                    response = {"ok": True, "chat_id": chat_id, "messages": msgs}
+                    if agent_context is not None:
+                        response.update({"agent_id": agent_context[0]["agent_id"],
+                            "context_class": "agent-profile", "binding_confirmed": bound})
+                    self._json(response)
                 except Exception as e:
                     self._json({"error": str(e)}, 500)
 
@@ -3971,7 +3144,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 current_m = _global_defaults.get("model") or getattr(runtime.backend, "default_model", None)
                 if current_m:
                     preset["default_model"] = current_m
-            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes"):
+            if preset["method"] == "api" and name in ("claude-api", "openai", "hermes", "openrouter"):
                 api_key = _load_api_key(name)
                 if not api_key:
                     self._json({"error": f"Kein API-Key für {name}"}, 400)
@@ -4052,12 +3225,25 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/chat":
             prompt = body.get("prompt", "")
             chat_id = body.get("chat_id", "api-delegate")
+            try:
+                agent_id = _optional_agent_id(body.get("agent_id"))
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
             depth = int(self.headers.get("X-Delegation-Depth", "0"))
             if not prompt:
                 self._json({"error": "prompt erforderlich"}, 400)
                 return
             if depth >= 2:
                 self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
+                return
+            try:
+                agent_context = _profile_request(agent_id, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
                 return
             try:
                 selected_backend, model = _snapshot_chat_backend(chat_id)
@@ -4081,18 +3267,19 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 loop = asyncio.new_event_loop()
                 try:
+                    process_kwargs = {"backend": selected_backend, "model": model}
+                    if agent_context is not None:
+                        process_kwargs["agent_context"] = agent_context
                     answer = loop.run_until_complete(
-                        runtime.process(
-                            prompt,
-                            chat_id,
-                            backend=selected_backend,
-                            model=model,
-                        )
+                        runtime.process(prompt, chat_id, **process_kwargs)
                     )
                 finally:
                     loop.close()
                 if not isinstance(answer, FailedAnswer):
                     response, status = _control_chat_response(answer)
+                    if agent_context is not None and status == 200:
+                        response.update({"agent_id": agent_context[0]["agent_id"],
+                            "context_class": "agent-profile", "binding_confirmed": True})
                     self._json(response, status)
                 else:
                     text = str(answer)
@@ -4118,6 +3305,14 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/clear":
             chat_id = body.get("chat_id", "gui-web")
             try:
+                _profile_request(_optional_agent_id(body.get("agent_id")), chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "chat_id": chat_id, "error": "Profilbindung nicht verifizierbar"}, 503)
+                return
+            try:
                 archived_id = runtime.clear_session(chat_id, archive_reason="Control-API")
             except RuntimeError as exc:
                 self._json({"ok": False, "chat_id": chat_id, "error": str(exc)}, 503)
@@ -4127,6 +3322,15 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/fork":
             chat_id = body.get("chat_id", "gui-web")
             try:
+                agent_id = _optional_agent_id(body.get("agent_id"))
+                agent_context = _profile_request(agent_id, chat_id)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 409)
+                return
+            except Exception:
+                self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
+                return
+            try:
                 snapshot_id = int(body.get("snapshot_id", 0))
             except (TypeError, ValueError):
                 snapshot_id = 0
@@ -4134,8 +3338,12 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "snapshot_id erforderlich"}, 400)
                 return
             try:
-                count = runtime.fork_session(chat_id, snapshot_id)
-                self._json({"ok": True, "chat_id": chat_id, "snapshot_id": snapshot_id, "messages_count": count})
+                count = runtime.fork_session(chat_id, snapshot_id, agent_context=agent_context)
+                response = {"ok": True, "chat_id": chat_id, "snapshot_id": snapshot_id, "messages_count": count}
+                if agent_context is not None:
+                    response.update({"agent_id": agent_context[0]["agent_id"],
+                        "context_class": "agent-profile", "binding_confirmed": True})
+                self._json(response)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
@@ -4229,6 +3437,35 @@ class ControlHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
+        elif path == "/api/workers/configuration":
+            try:
+                result = _change_worker_configuration(body.get("id"), body.get("configuration_version"), body.get("changes"))
+                self._json({"ok": True, **result})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except RuntimeError:
+                self._json({"error": "Worker läuft oder Konfiguration inzwischen geändert"}, 409)
+            except (TypeError, ValueError):
+                self._json({"error": "Ungültige Worker-Konfiguration"}, 400)
+            except Exception:
+                self._json({"error": "Worker-Konfiguration konnte nicht bestätigt werden"}, 503)
+
+        elif path == "/api/workers/handoff":
+            worker_id = body.get("id")
+            generation = body.get("generation")
+            if (not isinstance(worker_id, str) or not worker_id or len(worker_id) > 80
+                    or not isinstance(generation, str) or len(generation) != 32
+                    or any(c not in "0123456789abcdef" for c in generation)):
+                self._json({"error": "Worker-ID und aktuelle Generation erforderlich"}, 400)
+                return
+            try:
+                receipt = _request_worker_handoff(worker_id, generation)
+                self._json({"ok": True, "receipt": receipt}, 202)
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 409)
+            except Exception:
+                self._json({"error": "Workerlauf nicht verifizierbar"}, 503)
+
         elif path == "/api/workers/run":
             worker_id = body.get("id") or body.get("worker_id")
             custom_prompt = body.get("prompt")
@@ -4271,12 +3508,38 @@ class ControlHandler(BaseHTTPRequestHandler):
                     _ACTIVE_WORKER_THREADS.pop(worker_id, None)
             control = _WorkerControl(worker_id)
 
+            # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
+            # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
+            sub_mode = (w.get("sub_mode") or "").strip().lower()
+            worker_instance_id = f"worker-{uuid.uuid4().hex}"
+            try:
+                board_assignment = begin_assignment(
+                    role_id=(sub_mode or "task_worker"),
+                    mode=(w.get("mode") or "full"),
+                    agent_instance_id=worker_instance_id,
+                    backend_id=w.get("backend") or "ollama",
+                    model_id=w.get("model") or "qwen3.8:27b-mlx",
+                    slot_id=worker_id,
+                    task_id=(w.get("task_id") if w.get("task_id") is not None else 0),
+                    session_id=worker_id,
+                    initiated_by=f"board:{worker_id}",
+                )
+            except AssignmentDenied as exc:
+                self._json({"error": f"Assignment verweigert: {exc}"}, 400)
+                return
+            except ValueError as exc:
+                self._json({"error": f"Assignment unvollständig: {exc}"}, 400)
+                return
+
             def _run_worker_job():
                 worker_error = None
+                worker_session = None
+                current_assignment = board_assignment
+                assignment_open = True
                 try:
                     if control.stop_event.is_set():
                         return
-                    _update_worker_slot(control, {"status": "running", "current_activity": "Starte Routine..."})
+                    _update_worker_slot(control, {"status": "running", "auto_paused": False, "current_activity": "Starte Routine..."})
                     _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
                     if control.stop_event.is_set():
                         return
@@ -4286,21 +3549,43 @@ class ControlHandler(BaseHTTPRequestHandler):
                     if custom_prompt:
                         initial_prompt = custom_prompt
                     elif w.get("task_id"):
-                        initial_prompt = f"Führe Task #{w.get('task_id')} aus und schließe ihn ab."
+                        initial_prompt = (
+                            f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
+                            f"Erledigung mit task_manage(action='done', task_id={w.get('task_id')}). "
+                            "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "hintergrund_worker":
-                        initial_prompt = "Prüfe offene Tasks in BACH und bearbeite die wichtigste offene Aufgabe autonom."
+                        initial_prompt = (
+                            "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
+                            "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                            "task_manage(action='done', task_id=<ID>). Bei Hindernissen bleibt die Task offen; "
+                            "nenne den konkreten Fortsetzungsschritt."
+                        )
                     elif w.get("sub_mode") == "boss_routing":
-                        initial_prompt = "Analysiere die anstehenden Aufgaben in BACH, koordiniere die Experten und weise Teilaufgaben zu."
+                        initial_prompt = (
+                            "Analysiere die offenen Aufgaben in der TaskDB, zerlege komplexe Aufgaben mit "
+                            "task_manage(action='decompose') und nenne passende Fachrollen als Empfehlung. "
+                            "Behaupte keine Zuweisung oder Übernahme, solange die TaskDB keinen Claim/Lease bestätigt."
+                        )
                     elif w.get("sub_mode") == "expert_role":
                         role = w.get("role_id") or "Experte"
                         if role == "task-divider":
                             initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
                         elif role == "ticket-master":
-                            initial_prompt = "Sichte unzugewiesene oder heimatlose Tickets und ordne sie den passenden Fachrollen zu via task_manage action='assign'."
+                            initial_prompt = (
+                                "Triagiere Aufgaben anhand der TaskDB. Nutze nur task_manage-Aktionen "
+                                "list, detail, add, update und decompose; action='assign' ist nicht verfügbar. "
+                                "Erstelle bei Bedarf konkrete Tasks und halte Tickets als Dokumentationsverweise. "
+                                "Eine Task wird über den vorgesehenen Claim/Lease-Prozess übernommen; behaupte keine "
+                                "Zuweisung, die die TaskDB nicht bestätigt."
+                            )
                         else:
                             initial_prompt = f"Arbeite als {role} die offenen Aufgaben deines Fachgebiets in BACH ab."
                     else:
-                        initial_prompt = w.get("task_prompt") or "Prüfe offene Aufgaben und beginne mit der Bearbeitung."
+                        initial_prompt = w.get("task_prompt") or (
+                            "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
+                            "tatsächlicher Erledigung mit task_manage(action='done', task_id=<ID>)."
+                        )
 
                     prompt_to_run = initial_prompt
                     run_count = 0
@@ -4337,13 +3622,35 @@ class ControlHandler(BaseHTTPRequestHandler):
                             worker_id, worker_slot=current_slot
                         )
 
+                        if not assignment_open:
+                            current_assignment = begin_assignment(
+                                role_id=(current_slot.get("sub_mode") or "task_worker"),
+                                mode=(current_slot.get("mode") or "full"),
+                                agent_instance_id=worker_instance_id,
+                                backend_id=current_slot.get("backend") or "ollama",
+                                model_id=model,
+                                slot_id=worker_id,
+                                task_id=current_slot.get("task_id") or 0,
+                                session_id=worker_id,
+                                initiated_by=f"board:{worker_id}",
+                            )
+                            assignment_open = True
+
                         if control.stop_event.is_set():
                             break
                         loop = asyncio.new_event_loop()
                         ans = ""
                         try:
+                            worker_session = runtime.get_session(worker_id)
+                            worker_session.worker_handoff = control.handoff
                             ans = loop.run_until_complete(
-                                runtime.process(prompt_to_run, worker_id, backend=target_backend, model=model)
+                                runtime.process(
+                                    prompt_to_run,
+                                    worker_id,
+                                    backend=target_backend,
+                                    model=model,
+                                    work_priority="background",
+                                )
                             )
                         finally:
                             loop.close()
@@ -4368,19 +3675,63 @@ class ControlHandler(BaseHTTPRequestHandler):
                         if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
                             break
 
-                        # Wenn Einzellauf ("once") und keine TTL gesetzt ist, direkt abschließen
-                        if current_slot.get("type") == "once" and not exp_str:
+                        completion_reader = getattr(runtime, "consume_task_completion_receipts", None)
+                        try:
+                            completion_receipts = completion_reader(worker_id) if callable(completion_reader) else ()
+                        except Exception:
+                            log.warning("Worker %s: Task-Abschlussbelege konnten nicht gelesen werden", worker_id)
+                            completion_receipts = ()
+                        task_completed = _worker_task_completed(current_slot, completion_receipts)
+
+                        # Einzellauf endet nach einem abgeschlossenen Block.
+                        if current_slot.get("type") == "once":
+                            assigned_task_id = current_slot.get("task_id")
+                            if assigned_task_id not in (None, "", 0, "0") and not task_completed:
+                                _update_worker_slot(control, {
+                                    "status": "idle",
+                                    "current_activity": (
+                                        f"Task #{assigned_task_id} bleibt offen; Zwischenergebnis gespeichert"
+                                    ),
+                                })
+                                _record_worker_activity(
+                                    control,
+                                    f"Task #{assigned_task_id} ohne Abschlussbeleg beendet",
+                                    "pending",
+                                )
+                                break
                             _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
                             break
 
-                        # Wenn keine TTL gesetzt ist (unbegrenzt) und Task abgeschlossen wurde:
-                        if not exp_str:
+                        # Fortlaufende Profile dürfen ohne TTL bis zum manuellen
+                        # Stopp laufen; 0 bedeutet kein Ablaufdatum.
+                        if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": "Fertig: " + ans_str[:40]})
                             break
 
-                        # TTL ist aktiv (noch in der Zukunft):
-                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff
+                        if task_completed:
+                            finish_assignment(
+                                current_assignment, status="completed", result="task_done",
+                                reason="verified_tool_receipt",
+                            )
+                            assignment_open = False
+                            # Die konfigurierte Task ist nur der erste Auftrag.
+                            # Folgeaufträge dürfen nicht an ihre alte ID gebunden
+                            # bleiben; der nächste Block erhält eine neue Besetzung.
+                            if current_slot.get("task_id") not in (None, "", 0, "0"):
+                                if _update_worker_slot(control, {"task_id": None}) is None:
+                                    break
+
+                        # Count a task only when task_manage returned a successful
+                        # completion receipt for this worker's assigned task.
                         is_max_turns = "(Max Tool-Runden erreicht)" in ans_str
+                        pause_event = _worker_pause_event_type(
+                            current_slot,
+                            task_completed=task_completed,
+                        )
+                        if not _wait_worker_cooldown(control, event_type=pause_event):
+                            break
+
+                        # Prüfen ob Max-Tool-Runden erreicht wurden -> Handoff.
                         if is_max_turns:
                             if _update_worker_slot(control, {
                                 "status": "running",
@@ -4393,8 +3744,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                             )
                             if control.stop_event.wait(2):
                                 break
-                        else:
-                            # Task abgeschlossen, aber TTL läuft noch -> Warte kurz und ziehe nächsten Task
+                        elif task_completed:
+                            # A verified completion lets a continuous worker pick the next task.
                             if _update_worker_slot(control, {
                                 "status": "running",
                                 "current_activity": f"Aufgabe fertig. Suche nächste Aufgabe (Lauf {run_count + 1})..."
@@ -4402,7 +3753,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                                 break
                             if control.stop_event.wait(12):
                                 break
-                            prompt_to_run = "Prüfe offene Tasks in BACH und bearbeite die nächste wichtige offene Aufgabe autonom."
+                            prompt_to_run = (
+                                "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
+                                "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
+                                "task_manage(action='done', task_id=<ID>)."
+                            )
+                        else:
+                            # Do not abandon or mark an unverified task complete.
+                            if _update_worker_slot(control, {
+                                "status": "running",
+                                "current_activity": f"Task noch offen. Setze sie fort (Lauf {run_count + 1})..."
+                            }) is None:
+                                break
+                            if control.stop_event.wait(2):
+                                break
+                            prompt_to_run = (
+                                "Setze die zuletzt bearbeitete Task fort. Es liegt noch kein erfolgreicher "
+                                "task_manage(action='done')-Beleg vor. Prüfe den aktuellen Taskstatus und arbeite "
+                                "weiter; nur nach tatsächlicher Erledigung mit der konkreten Task-ID als done markieren."
+                            )
 
                     if control.stop_event.is_set():
                         return
@@ -4418,6 +3787,28 @@ class ControlHandler(BaseHTTPRequestHandler):
                         _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                         _record_worker_activity(control, f"Fehler: {exc}", "error")
                 finally:
+                    # Befehlsvertrag (agents_heart): Assignment in jedem
+                    # Ausstiegspfad beenden (assignment_ended, Konzept 10.8).
+                    try:
+                        if worker_error is not None:
+                            _as_status, _as_result, _as_reason = (
+                                "error", "runtime_error", type(worker_error).__name__)
+                        elif control.stop_event.is_set():
+                            _as_status, _as_result, _as_reason = "interrupted", "stopped", ""
+                        else:
+                            _latest_status = (get_worker_slot(worker_id) or {}).get("status")
+                            if _latest_status == "completed":
+                                _as_status, _as_result, _as_reason = "completed", "task_done", ""
+                            elif _latest_status == "expired":
+                                _as_status, _as_result, _as_reason = "released", "ttl_expired", ""
+                            else:
+                                _as_status, _as_result, _as_reason = "released", "not_finished", ""
+                        if assignment_open:
+                            finish_assignment(current_assignment, status=_as_status,
+                                              result=_as_result, reason=_as_reason)
+                    except Exception:
+                        log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
+                                    exc_info=True)
                     if control.stop_event.is_set():
                         _write_revocation_receipt(
                             control,
@@ -4429,6 +3820,16 @@ class ControlHandler(BaseHTTPRequestHandler):
                             ),
                         )
                     with _WORKER_CONTROL_LOCK:
+                        control.handoff.cancel()
+                        if _WORKER_CONTROLS.get(worker_id) is control:
+                            handoff_receipt = control.handoff.snapshot()
+                            if handoff_receipt:
+                                try:
+                                    update_slot(worker_id, {"handoff_receipt": handoff_receipt})
+                                except Exception:
+                                    log.warning("Worker-Übergabebeleg konnte nicht gespeichert werden", exc_info=True)
+                        if worker_session is not None and getattr(worker_session, "worker_handoff", None) is control.handoff:
+                            worker_session.worker_handoff = None
                         registered_thread = _ACTIVE_WORKER_THREADS.get(worker_id)
                         if registered_thread is threading.current_thread() or registered_thread is control.thread:
                             _ACTIVE_WORKER_THREADS.pop(worker_id, None)
@@ -4438,6 +3839,14 @@ class ControlHandler(BaseHTTPRequestHandler):
 
             th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
             with _WORKER_CONTROL_LOCK:
+                current_control = _WORKER_CONTROLS.get(worker_id)
+                current_slot = get_worker_slot(worker_id)
+                if (current_control is not None and _thread_is_alive(current_control.thread)
+                        or not current_slot
+                        or _worker_configuration(current_slot) != _worker_configuration(w)):
+                    finish_assignment(board_assignment, status="interrupted", result="start_conflict", reason="configuration_changed")
+                    self._json({"error": "Worker oder Konfiguration inzwischen geändert"}, 409)
+                    return
                 control.thread = th
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = th
@@ -4454,25 +3863,53 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/prompts":
             key = str(body.get("key", "")).strip()
-            text = body.get("text", "")
-            if not key or text is None:
+            prompt_text = body.get("text", "")
+            if not key or prompt_text is None:
                 self._json({"error": "key und text erforderlich"}, 400)
                 return
             try:
-                update_prompt_template(key, text)
+                if "configuration_version" in body:
+                    change_core_prompt(key, body["configuration_version"], text=prompt_text)
+                else:
+                    update_prompt_template(key, prompt_text)
                 record_activity("system", f"Prompt-Vorlage {key} aktualisiert", "ok")
-                self._json({"ok": True, "key": key})
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                response = _control_prompt_response()
+                response["key"] = key
+                self._json(response)
+            except KeyError:
+                self._json({"error": "Unbekannte Prompt-ID"}, 404)
+            except RuntimeError as e:
+                if str(e) == "configuration_version_conflict":
+                    self._json({"error": "Konfiguration inzwischen geändert"}, 409)
+                else:
+                    self._json({"error": "Prompt konnte nicht gespeichert werden"}, 503)
+            except ValueError:
+                self._json({"error": "Ungültiger Prompttext oder Zustand"}, 400)
+            except Exception:
+                self._json({"error": "Prompt konnte nicht gespeichert werden"}, 503)
 
         elif path == "/api/prompts/reset":
             key = body.get("key")
             try:
-                reset_prompt_template(key)
+                if "configuration_version" in body:
+                    change_core_prompt(str(key or ""), body["configuration_version"], reset=True)
+                else:
+                    reset_prompt_template(key)
                 record_activity("system", f"Prompt-Vorlage(n) zurückgesetzt: {key or 'alle'}", "ok")
-                self._json({"ok": True, "key": key})
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                response = _control_prompt_response()
+                response["key"] = key
+                self._json(response)
+            except KeyError:
+                self._json({"error": "Unbekannte Prompt-ID"}, 404)
+            except RuntimeError as e:
+                if str(e) == "configuration_version_conflict":
+                    self._json({"error": "Konfiguration inzwischen geändert"}, 409)
+                else:
+                    self._json({"error": "Prompt konnte nicht zurückgesetzt werden"}, 503)
+            except ValueError:
+                self._json({"error": "Ungültiger Promptzustand"}, 400)
+            except Exception:
+                self._json({"error": "Prompt konnte nicht zurückgesetzt werden"}, 503)
 
         else:
             self._json({"error": "Not found"}, 404)
@@ -4555,7 +3992,26 @@ def serve_control_only(server, reason: str) -> None:
         server.server_close()
 
 
-# --- Main ---
+def should_disable_telegram_bot() -> tuple[bool, str]:
+    """Prüft, ob der Telegram-Bot auf diesem Host deaktiviert werden soll (z. B. Remote-Modus,
+    Laptop-Client oder explizite Konfiguration), um einen 2. konkurrierenden Bot zu verhindern."""
+    disable_env = os.environ.get("BACH_DISABLE_TELEGRAM_BOT", "").strip().lower()
+    if disable_env in ("1", "true", "yes", "on"):
+        return True, "Telegram-Bot per BACH_DISABLE_TELEGRAM_BOT deaktiviert"
+
+    remote_host = os.environ.get("BACH_REMOTE_HOST", "").strip().lower()
+    if remote_host and remote_host not in ("", "0", "false", "off", "local", "none"):
+        return True, f"Telegram-Bot deaktiviert: Remote-Host aktiv ({remote_host})"
+
+    bot_host = os.environ.get("BACH_TELEGRAM_BOT_HOST", "").strip().lower()
+    if bot_host and bot_host not in (socket.gethostname().lower(), "localhost", "127.0.0.1"):
+        return True, f"Telegram-Bot deaktiviert: Host ({socket.gethostname()}) ist nicht Bot-Host ({bot_host})"
+
+    if CONFIG.get("telegram", {}).get("disabled") is True:
+        return True, "Telegram-Bot in Konfiguration deaktiviert"
+
+    return False, ""
+
 
 def register_handlers(app) -> None:
     """Registriert ALLE Telegram-Handler - jeder gewrappt mit
@@ -4607,6 +4063,11 @@ def main():
                 print("Compute Lock: kein Crash-Recovery noetig")
         except Exception as e:
             log.warning("Crash recovery failed: %s", e)
+
+    disabled, reason = should_disable_telegram_bot()
+    if disabled:
+        serve_control_only(control_server, reason)
+        return 0
 
     if not BOT_TOKEN:
         serve_control_only(control_server, "Kein Telegram-Bot-Token")

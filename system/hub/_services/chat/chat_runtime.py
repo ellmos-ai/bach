@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
+"""BACH Chat Runtime -- compatibility seam over the neutral ``ellmos-chat`` module.
+
+Since wave 2 of the BACH-GUI module cut (decision D-20260830-002) the session
+management, tool-use loop and context compression live in ``ellmos_chat``.
+This file keeps BACH's import path and its public surface unchanged:
+
+    from hub._services.chat.chat_runtime import ChatRuntime, RUNTIME_BACH_DB
+
+BACH keeps what is BACH's and injects it:
+
+* **Tools** -- ``bach_tools.BachToolProvider`` (``bach_command`` into the 110+
+  CHIAH handlers, plus the lazy ``hub._services.*`` imports for recurring
+  tasks, the Foerderbericht pipeline and the weather service).
+* **Transcripts** -- ``session_store.SQLiteChatSessionStore``, i.e.
+  ``session_snapshots``/``chat-transcript.v1`` in the canonical ``bach.db``.
+  ``_SnapshotStoreAdapter`` below presents it as the module's ``ChatStore``
+  protocol. There is no second chat database.
+* **System prompt** -- BACH's hand-written capability text, not the module's
+  generated one.
+
+Only telegram_chat.py imports this module directly; the tray and the GUI
+``/chat`` page reach the same runtime through the Control API on :8081.
 """
-BACH Chat Runtime
-==================
+from __future__ import annotations
 
-Kernlogik für interaktive Chat-Sessions: Kontextmanagement, Befehle,
-Tool-Use-Loop, Sicherheitsmodi, Zusammenfassung.
-
-Backend-unabhängig — arbeitet mit jedem ModelBackend (Ollama, OpenAI, etc.).
-
-Verwendung:
-    from hub._services.chat.chat_runtime import ChatRuntime
-    from hub._services.llm.model_backend import OllamaBackend
-
-    backend = OllamaBackend()
-    runtime = ChatRuntime(backend, system_prompt="Du bist ein Assistent.")
-    answer = await runtime.process("Hallo!", chat_id="user123")
-"""
 import asyncio
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -31,13 +40,210 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, FrozenSet, Optional
+from typing import Any, Callable, FrozenSet, Optional
+
+#: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
+_DECOMPOSE_RECEIPT_RE = re.compile(
+    r"Task #(\d+) in (\d+) Teilaufgaben zerlegt: IDs (\[[\d, ]*\])"
+)
+
+#: Nutzerregel (Task #1697): Ein Hintergrundworker, der eine Aufgabe nicht
+#: fertigstellen kann, zerlegt sie selbst und stellt die Teilaufgaben ein.
+#: Das Zerlegen ist ein Erfolg, kein Abbruch.
+SELF_DECOMPOSE_INSTRUCTION = (
+    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
+    "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
+    "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
+    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true). "
+    "Erst wenn das Werkzeug die angelegten Teilaufgaben und den geschlossenen Eltern-Task "
+    "bestätigt, gilt die Zerlegung als erfolgreicher Abschluss dieses Laufs; die Teilaufgaben "
+    "übernimmt ein späterer Lauf. Danach mit FERTIG enden. Ohne bestätigten Werkzeugbeleg "
+    "keinen Taskabschluss behaupten."
+)
+
+
+def tool_round_counter(round_num: int, max_rounds: int) -> str:
+    """Rundenzähler für das Modell, z. B. ``[Werkzeugrunde 3/25 · noch 22]``."""
+    if max_rounds > 0:
+        return f"[Werkzeugrunde {round_num}/{max_rounds} · noch {max(0, max_rounds - round_num)}]"
+    return f"[Werkzeugrunde {round_num} · ohne Limit]"
+
+
+def tool_round_warning_threshold(max_rounds: int) -> int:
+    """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
+    return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
+
+def _resume_handoff_context(original, summary, *, background_task, has_tools,
+                            round_num, max_rounds):
+    """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
+    history = [
+        message for message in summary
+        if message.get("role") != "system"
+        and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not re.fullmatch(
+            r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
+            str(message.get("content", "")),
+        )
+    ]
+    messages = [message for message in original if message.get("role") == "system"] + history
+    if background_task and has_tools:
+        messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+    messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
+    return messages, history
+
+try:
+    from ellmos_chat import (
+        ChatRuntime as _ModuleChatRuntime,
+        ChatSession as _ModuleChatSession,
+        Mode,
+        as_mode,
+        RunResult,
+        RunStatus,
+    )
+except ImportError:
+    from enum import Enum
+
+    class Mode(str, Enum):
+        SAFE = "safe"
+        FULL = "full"
+
+    def as_mode(v):
+        return Mode(str(getattr(v, "value", v)).strip().lower())
+
+    class RunResult:
+        pass
+
+    class RunStatus:
+        pass
+
+    class _ModuleChatSession:
+        def __init__(self):
+            self.messages: list[dict] = []
+            self.think: bool = True
+            self._mode: Mode = Mode.SAFE
+            self.model: str = ""
+            self.current_tool: str = ""
+            self.tool_round: int = 0
+            self.last_tools: list[str] = []
+            self.last_active: float = 0.0
+
+        @property
+        def mode(self) -> Mode:
+            return self._mode
+
+        @mode.setter
+        def mode(self, value) -> None:
+            self._mode = as_mode(value)
+
+    class _ModuleChatRuntime:
+        def __init__(
+            self,
+            backend,
+            system_prompt: str = "",
+            store: Any = None,
+            registry: Any = None,
+            policy: Any = None,
+            memory_fn: Any = None,
+            injector: Any = None,
+            max_tool_rounds: int = 12,
+            max_sessions: int = 1024,
+            auto_continue: int = 0,
+            goal: str = "",
+        ):
+            self.backend = backend
+            self.base_system = system_prompt
+            self.system_prompt = system_prompt
+            self.store = store
+            self.registry = registry
+            self.memory = memory_fn
+            self.injector = injector
+            self.max_tool_rounds = max(0, int(max_tool_rounds))
+            self.max_sessions = max(1, int(max_sessions))
+            self.auto_continue = max(0, int(auto_continue))
+            self.goal = str(goal or "")
+            self._sessions: dict[str, Any] = {}
+            self._session_locks: dict[str, Any] = {}
 
 from hub import safe_exec
-from hub._services.limits import limit  # einstellbare Laufzeit-Grenzen
-from hub._services.chat import hooks  # Hook-Punkte fuer memory-/workflowhooker
+from hub._services.limits import limit
+from hub._services.chat import hooks
+from hub._services.chat.bach_tools import (
+    RUNTIME_BACH_DB,
+    apply_task_field_changes,
+    GateReopenBlocked,
+    BachToolProvider,
+    _tool,
+    TOOLS_SAFE,
+    TOOLS_FULL,
+    TOOLS_PLAN,
+    tools_for_mode,
+    exec_tool,
+    is_blocked,
+    is_safe_command,
+    is_safe_write_path,
+    run_shell,
+    run_shell_restricted,
+    run_argv,
+    BLOCKED_PATTERNS,
+    SAFE_BASES,
+    CMD_TIMEOUT,
+    BACH_SYSTEM_DIR,
+    AUTO_NUDGE,
+    HANDOFF_PROMPT,
+    GOAL_CHECK,
+    _ALLOWED_FS_ROOTS,
+    _fs_root_allowed,
+    _resolve,
+    _is_under,
+    _norm,
+    _secret_locations,
+    _is_secret_path,
+    _contains_secret_location,
+    ist_fertig,
+    check_safe_shell_args,
+    BACH_COMMAND_HANDLERS,
+)
 
 log = logging.getLogger("bach.chat")
+
+
+class _SnapshotStoreAdapter:
+    """The module's ``ChatStore`` protocol on BACH's snapshot session store.
+
+    The module appends message by message; BACH's store holds one snapshot of
+    the whole transcript per chat. Each append therefore writes the runtime's
+    current in-memory transcript -- the same thing BACH persisted before the
+    cut, just twice per turn instead of once. Reading first would risk wiping a
+    good snapshot after a transient read error.
+    """
+
+    def __init__(self, runtime: "ChatRuntime"):
+        self._runtime = runtime
+
+    def load(self, chat_id: str) -> list[dict]:
+        return self._runtime._load_messages(chat_id)
+
+    def append(self, chat_id: str, role: str, content: str) -> None:
+        session = self._runtime._sessions.get(chat_id)
+        messages = (
+            session.messages if session is not None
+            else [{"role": role, "content": content}]
+        )
+        self._runtime._persist(chat_id, messages)
+
+    def replace(self, chat_id: str, messages: list[dict]) -> None:
+        self._runtime._persist(chat_id, messages)
+
+    def clear(self, chat_id: str) -> None:
+        store = self._runtime.session_store
+        if store is None:
+            return
+        try:
+            store.delete(chat_id)
+        except Exception as exc:  # already reported by clear_session
+            log.warning("Chat-Persistenz konnte nicht geloescht werden: %s", exc)
+
 
 
 class FailedAnswer(str):
@@ -124,13 +330,13 @@ class FailedAnswer(str):
 
 
 class SuccessfulAnswer(str):
-    """A successful text answer that happens to use the legacy error prefix.
+    """Successful text with explicit status or task completion metadata.
 
     BACH's older order-worker seams are text-only and call ``startswith`` on
     the callback result. This narrow ``str`` subtype keeps the visible answer
     unchanged while making that legacy probe agree with the explicit success
-    status. It is only created for colliding successful text; ordinary answers
-    remain ordinary strings.
+    status. Tool-confirmed task IDs can also travel on this immutable answer
+    instance, rather than a mutable per-chat buffer. Other answers stay strings.
     """
 
     answer_status = FailedAnswer.STATUS_SUCCESS
@@ -196,1353 +402,6 @@ def _managed_backend_answer(result: Any) -> str:
     return content
 
 
-try:
-    from hub.bach_paths import BACH_DB as _RUNTIME_DB
-    from hub.task_audit import apply_task_field_changes, GateReopenBlocked
-    RUNTIME_BACH_DB = str(_RUNTIME_DB)
-except ImportError:
-    RUNTIME_BACH_DB = os.environ.get("BACH_DB", "")
-    apply_task_field_changes = None
-
-    class GateReopenBlocked(Exception):
-        """Fallback, wenn hub.task_audit nicht importierbar ist (kein Guard, aber
-        die except-Zweige in update_task muessen GateReopenBlocked fangen koennen)."""
-
-
-# --- Sicherheit ---
-
-BLOCKED_PATTERNS = [
-    re.compile(r"rm\s+(-[rRf]+\s+)?/($|\s)"),
-    re.compile(r"rm\s+(-[rRf]+\s+)?~($|\s)"),
-    re.compile(r"mkfs\b"),
-    re.compile(r"dd\s+if="),
-    re.compile(r">\s*/dev/sd"),
-    re.compile(r":\(\)\s*\{"),
-]
-
-# Nur lesende Befehle, die selbst keine anderen Programme starten.
-# Entfernt (Argument-Ebene - ohne ein einziges Metazeichen waere ueber sie
-# beliebige Ausfuehrung oder Schreiben moeglich gewesen): env, docker, pip,
-# pip3, brew, curl und bach (umging die bach_command-Allowlist). Im
-# Full-Modus bleiben sie ueber execute_command erreichbar.
-# grep ist ebenfalls raus: Inhaltssuche laeuft ueber search_text, das den
-# Secrets-Deny pro Datei anwendet. find bleibt (liefert nur Dateinamen),
-# ohne ausfuehrende/schreibende Aktionen und nicht auf Secrets-Vorfahren.
-SAFE_BASES = frozenset({
-    "ls", "cat", "head", "tail", "find", "wc", "file", "stat",
-    "echo", "date", "which", "whoami", "hostname", "uname",
-    "df", "du", "uptime", "ps", "top", "sw_vers", "sysctl",
-    "ollama", "git",
-})
-
-# find-Aktionen, die Programme starten, loeschen oder Dateien schreiben.
-_FIND_DENY_PREFIXES = ("-exec", "-ok", "-delete", "-fprint", "-fls")
-# git: nur lesende Unterbefehle, keine globalen Optionen davor (-c,
-# --config-env, --exec-path, -C ...). Aliase sind damit automatisch aus.
-# diff fehlt bewusst: mit --no-index oder Pfaden ausserhalb des Arbeitsbaums
-# liest es beliebige Verzeichnisse rekursiv (Inhalte, nicht nur Namen).
-_GIT_READ_SUBCOMMANDS = frozenset({
-    "status", "log", "show", "branch", "rev-parse", "ls-files",
-})
-_GIT_DENY_ARGS = ("--output", "--upload-pack", "--receive-pack",
-                  "--exec", "--ext-diff", "--textconv")
-_GIT_BRANCH_READ_ARGS = frozenset({
-    "--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv",
-    "--show-current", "--no-color",
-})
-_OLLAMA_READ_SUBCOMMANDS = frozenset({"list", "ls", "ps", "show", "--version", "-v"})
-
-
-def check_safe_shell_args(tokens: list) -> Optional[str]:
-    """Argument-Ebene fuer safe_shell: Fehlermeldung oder None.
-
-    tokens sind bereits tokenisiert und entquotet (Metazeichen-Verkettung
-    faengt safe_exec vorher ab). Hier geht es um Optionen, mit denen ein
-    an sich lesender Befehl doch etwas ausfuehrt oder schreibt."""
-    base = safe_exec.base_command_name(tokens[0])
-    rest = tokens[1:]
-    for t in rest:
-        # Positionsargumente und Werte von --opt=wert gleichermassen pruefen.
-        value = t.split("=", 1)[1] if t.startswith("-") and "=" in t else t
-        if value and not value.startswith("-") and _is_secret_path(Path(value)):
-            return "Secrets-Pfad als Argument"
-        if value.lower().startswith("ext::"):
-            return "ext::-Transport ist nicht erlaubt"
-    if base == "find":
-        for t in rest:
-            if t.lower().startswith(_FIND_DENY_PREFIXES):
-                return f"find-Aktion {t} ist nicht erlaubt"
-    recursive = base in ("du", "find") or (base == "ls" and any(
-        t == "--recursive" or (t.startswith("-") and not t.startswith("--") and "R" in t)
-        for t in rest))
-    if recursive:
-        if base == "find":
-            # Startpfade stehen vor dem ersten Ausdruck (-name, (, ! ...).
-            targets = []
-            for t in rest:
-                if t.startswith(("-", "(", "!")):
-                    break
-                targets.append(t)
-            targets = targets or ["."]
-        else:
-            targets = [t for t in rest if not t.startswith("-")] or ["."]
-        if any(_contains_secret_location(Path(t)) for t in targets):
-            return "rekursiver Befehl auf ein Verzeichnis mit Secrets - list_directory nutzen"
-    if base == "git":
-        if not rest or rest[0] not in _GIT_READ_SUBCOMMANDS:
-            return "git: nur " + ", ".join(sorted(_GIT_READ_SUBCOMMANDS)) + " ohne globale Optionen"
-        for t in rest[1:]:
-            if t.startswith(_GIT_DENY_ARGS):
-                return f"git-Option {t} ist nicht erlaubt"
-        if rest[0] == "branch" and not all(t in _GIT_BRANCH_READ_ARGS for t in rest[1:]):
-            return "git branch: nur auflisten (--list, -a, -r, -v, --show-current)"
-    elif base == "ollama":
-        if not rest or rest[0] not in _OLLAMA_READ_SUBCOMMANDS:
-            return "ollama: nur list, ps, show"
-    elif base == "sysctl":
-        if any(t in ("-w", "--write") or "=" in t for t in rest):
-            return "sysctl: nur lesen"
-    elif base == "date":
-        if any(t in ("-s", "--set") or t.startswith("--set=") for t in rest):
-            return "date: Setzen ist nicht erlaubt"
-    elif base == "hostname":
-        if any(not t.startswith("-") or t in ("-F", "--file") for t in rest):
-            return "hostname: Setzen ist nicht erlaubt"
-    return None
-
-CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
-
-
-def is_blocked(cmd: str) -> bool:
-    return any(pat.search(cmd) for pat in BLOCKED_PATTERNS)
-
-
-def is_safe_command(cmd: str) -> bool:
-    try:
-        parts = shlex.split(cmd)
-    except ValueError:
-        return False
-    if not parts:
-        return False
-    return os.path.basename(parts[0]) in SAFE_BASES
-
-
-BLOCKED_WRITE_PREFIXES = (
-    "/etc", "/usr", "/bin", "/sbin", "/System", "/Library",
-    "/var/root", "/private/etc",
-)
-
-BACH_SYSTEM_DIR = str(Path(__file__).resolve().parents[2])
-
-
-# Kleiner, harter Deny fuer die offensichtlichsten Secrets-Orte in den
-# LESE-Werkzeugen list_directory/read_file/search_text (direkt aus
-# LLM-Argumenten, potenziell prompt-injection-gesteuert - siehe Ticket
-# fuer den vollstaendigen Pfad-Scope: Wurzel-Allowlist, Symlink-Aufloesung,
-# generische Deny-Liste. Das hier verhindert nur den naheliegendsten
-# Exfiltrationspfad, kein vollstaendiger Schutz).
-_SECRET_PATH_SEGMENTS = frozenset({".ssh", ".credentials", "credentials"})
-# Einzelne Dateien mit Tokens/Zugangsdaten (u. a. die Bot-Konfiguration
-# ~/.config/bach/telegram_chat.json mit dem Bot-Token).
-_SECRET_FILE_NAMES = frozenset({
-    "telegram_chat.json", "bach_secrets.json",
-    ".npmrc", ".netrc", ".pypirc", "auth.json",
-})
-
-
-def _resolve(p) -> Path:
-    try:
-        return Path(p).expanduser().resolve()
-    except OSError:
-        return Path(p).expanduser()
-
-
-def _norm(p: Path) -> str:
-    return os.path.normcase(str(p)).rstrip("\\/")
-
-
-def _is_under(child: Path, parent: Path) -> bool:
-    c, par = _norm(child), _norm(parent)
-    return c == par or c.startswith(par + os.sep)
-
-
-def _secret_locations() -> list:
-    """Bekannte Secrets-Orte, fuer den Vorfahren-Check rekursiver Befehle.
-    ~/.config/bach (Bot-Konfiguration mit Token) und die secrets_handler-
-    Ablage (BACH_SECRETS_FILE bzw. ~/.bach/bach_secrets.json) gehoeren dazu."""
-    home = _resolve(Path.home())
-    locs = [home / ".ssh", home / ".credentials", home / "CREDENTIALS",
-            home / ".config" / "bach", home / ".bach"]
-    env_file = os.environ.get("BACH_SECRETS_FILE")
-    if env_file:
-        locs.append(_resolve(env_file))
-    return locs
-
-
-def _is_secret_path(p: Path) -> bool:
-    """`~` und `..` erst aufloesen (expanduser+resolve), DANN pruefen -
-    sonst kann ein relativer Pfad oder ein Symlink den Vergleich auf den
-    falschen (unaufgeloesten) Pfad umlenken und den Deny umgehen."""
-    resolved = _resolve(p)
-    if any(seg.lower() in _SECRET_PATH_SEGMENTS for seg in resolved.parts):
-        return True
-    home = _resolve(Path.home())
-    if _is_under(resolved, home / ".config" / "bach"):
-        return True
-    env_file = os.environ.get("BACH_SECRETS_FILE")
-    if env_file and _is_under(resolved, _resolve(env_file)):
-        return True
-    name = resolved.name.lower()
-    if _is_under(resolved.parent, home / ".bach") and ("token" in name or "secret" in name):
-        return True
-    return (name.endswith(".pem") or name.startswith("id_")
-            or name in _SECRET_FILE_NAMES
-            or name == ".env" or name.startswith(".env."))
-
-
-def _contains_secret_location(p: Path) -> bool:
-    """True, wenn ein REKURSIVER Befehl auf p an Secrets vorbeikommen
-    koennte: p ist selbst geheim, ein Vorfahre eines bekannten Secrets-Orts,
-    ein Dateisystem-Wurzelverzeichnis oder hat ein direktes Unterverzeichnis
-    mit Secrets-Namen.
-    ponytail: tiefer verschachtelte Secrets-Ordner unter fremden Pfaden sieht
-    der Check nicht; die volle Loesung ist die Wurzel-Allowlist im Folgeticket."""
-    resolved = _resolve(p)
-    if _is_secret_path(resolved) or len(resolved.parts) <= 1:
-        return True
-    if any(_is_under(loc, resolved) for loc in _secret_locations()):
-        return True
-    try:
-        return any(c.name.lower() in _SECRET_PATH_SEGMENTS
-                   for c in resolved.iterdir() if c.is_dir())
-    except OSError:
-        return False
-
-
-def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
-    """Return error message if the path is blocked for writes, else None.
-
-    Hier laufen alle schreibenden Werkzeuge ausser write_file zusammen --
-    edit_file, move_file, copy_file, recycle, create_directory. Deshalb steht
-    das Plan-Gate hier und nicht in fuenf Aufrufstellen: Im Planmodus wird
-    nicht geschrieben, auch dann nicht, wenn ein Modell ein Werkzeug aufruft,
-    das ihm gar nicht angeboten wurde (T-20260912-605163733).
-    """
-    if mode == "plan":
-        return "Planmodus: es wird geplant, nicht geschrieben"
-    if mode != "safe":
-        return None
-    p = str(Path(path_str).resolve())
-    for prefix in BLOCKED_WRITE_PREFIXES:
-        if p.startswith(prefix):
-            return f"Schreibzugriff auf {prefix}/ im Safe-Mode nicht erlaubt"
-    if p.startswith(BACH_SYSTEM_DIR) and "/user/" not in p.lower():
-        return "Schreibzugriff auf BACH-Systemdateien im Safe-Mode nicht erlaubt"
-    return None
-
-
-def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
-    """Fuehrt cmd ueber eine echte Shell aus (Pipes/&&/Umleitung erlaubt).
-
-    NUR fuer interne Aufrufer mit FESTEM, nicht von aussen kontrolliertem
-    cmd (system_status/ollama_info-Vorlagen). Fuer alles, was direkt aus
-    LLM-Tool-Argumenten stammt, IMMER run_shell_restricted() nehmen
-    (safe_shell/execute_command) - siehe hub/safe_exec.py fuer den Grund.
-    """
-    timeout = min(max(timeout, 5), 120)
-    try:
-        r = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            encoding='utf-8', errors='replace',
-            timeout=timeout, stdin=subprocess.DEVNULL,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-        )
-        out = r.stdout
-        if r.stderr:
-            out += "\n[stderr] " + r.stderr
-        return (out or "(keine Ausgabe)")[:4000]
-    except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
-
-
-def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
-                          allowed: Optional[FrozenSet[str]] = None) -> str:
-    """Fuehrt cmd fail-closed aus - IMMER shell=False (hub/safe_exec.py).
-
-    Fuer safe_shell/execute_command: cmd kommt direkt aus einem
-    LLM-Tool-Aufruf. Der fruehere Bug dort: der Basisbefehl wurde geprueft
-    (is_safe_command/is_blocked), der KOMPLETTE String aber danach trotzdem
-    per shell=True ausgefuehrt - Metazeichen wie && | ; $() erlaubten
-    beliebige Befehlsverkettung unabhaengig von der Pruefung.
-    safe_exec.resolve_executable() loest argv[0] per shutil.which() auf und
-    lehnt nicht zitierte Metazeichen fail-closed ab. `allowed=None`
-    (execute_command/Full-Modus) heisst "jeder Basisbefehl", Verkettung
-    bleibt trotzdem verboten.
-    """
-    timeout = min(max(timeout, 5), 120)
-    try:
-        argv = safe_exec.resolve_executable(cmd, allowed)
-    except safe_exec.CommandRejected as e:
-        return f"Befehl blockiert (Sicherheit): {e}"
-    try:
-        r = subprocess.run(
-            argv, shell=False, capture_output=True, text=True,
-            encoding='utf-8', errors='replace',
-            timeout=timeout, stdin=subprocess.DEVNULL,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-        )
-        out = r.stdout
-        if r.stderr:
-            out += "\n[stderr] " + r.stderr
-        return (out or "(keine Ausgabe)")[:4000]
-    except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
-
-
-def run_argv(argv: list, timeout: int = CMD_TIMEOUT) -> str:
-    """Fuehrt ein FERTIGES argv aus - immer shell=False, kein Tokenisieren.
-
-    Fuer Faelle wie 'ollama show <modell>': genau EIN Argument kommt aus
-    einem LLM-Tool-Aufruf, der Rest ist fest. Da nie eine Shell beteiligt
-    ist, kann das Argument nicht ausbrechen - unabhaengig davon, was es
-    enthaelt (kein shlex.quote()-Escaping noetig, das unter Windows ohnehin
-    nicht griff, siehe Befund D)."""
-    timeout = min(max(timeout, 5), 120)
-    try:
-        r = subprocess.run(
-            argv, shell=False, capture_output=True, text=True,
-            encoding='utf-8', errors='replace',
-            timeout=timeout, stdin=subprocess.DEVNULL,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-        )
-        out = r.stdout
-        if r.stderr:
-            out += "\n[stderr] " + r.stderr
-        return (out or "(keine Ausgabe)")[:4000]
-    except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
-
-
-# --- Tool-Definitionen ---
-
-def _tool(name, desc, props, required=None):
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": desc,
-            "parameters": {
-                "type": "object",
-                "properties": props,
-                "required": required or [],
-            },
-        },
-    }
-
-
-# Einzige Quelle fuer die bach_command-Handler: sowohl die Tool-Schema-
-# Beschreibung (fuers Modell) als auch die Laufzeit-Allowlist (fuer den
-# Dispatch) werden HIERAUS gebaut - ein Handler in dieser Liste zu ergaenzen
-# reicht, es kann nicht mehr auseinanderlaufen (Befund B: die Schema-
-# Beschreibung war rein deskriptiv, der Dispatch pruefte den vom Modell
-# gelieferten Handler-String gar nicht gegen irgendeine Liste - "sandbox"
-# war z. B. ueber bach_command erreichbar, obwohl es dort nie beworben
-# wurde). "sandbox" bleibt ausgeschlossen: es hat seine eigene, engere
-# Shell-Allowlist (hub/sandbox.py) und ist ueber bach_command nicht als
-# Umweg dorthin gedacht.
-BACH_COMMAND_HANDLERS = (
-    "status", "task", "mem", "search", "help", "tools", "denkarium",
-    "calendar", "contact", "routine", "timer", "countdown", "news",
-    "newspaper", "lesson", "snapshot", "partner", "connector", "msg",
-    "backup", "web-parse", "web-scrape", "skills", "agent", "maintain",
-    "sync", "abo", "steuer", "gesundheit", "mediplaner", "haushalt",
-    "versicherung", "inbox", "wiki",
-)
-
-TOOLS_SAFE = [
-    _tool("list_directory", "Dateien und Ordner in einem Verzeichnis auflisten", {
-        "path": {"type": "string", "description": "Verzeichnispfad"},
-        "details": {"type": "boolean", "description": "Ausführlich mit Rechten und Größe"},
-    }),
-    _tool("read_file", "Inhalt einer Datei lesen (max 200 Zeilen)", {
-        "path": {"type": "string", "description": "Dateipfad"},
-        "lines": {"type": "integer", "description": "Max Zeilen (Standard 50)"},
-        "offset": {"type": "integer", "description": "Startzeile (1-basiert, Standard 1)"},
-    }, ["path"]),
-    _tool("search_text", "In Dateien nach einem Muster suchen (grep)", {
-        "pattern": {"type": "string", "description": "Suchmuster (Regex)"},
-        "path": {"type": "string", "description": "Suchpfad"},
-        "recursive": {"type": "boolean", "description": "Rekursiv"},
-    }, ["pattern"]),
-    _tool("system_status", "Systemstatus: Uptime, RAM, Disk, CPU", {}),
-    _tool("ollama_info", "Ollama-Informationen abrufen", {
-        "action": {"type": "string", "enum": ["list", "running", "show"]},
-        "model": {"type": "string", "description": "Modellname (nur bei show)"},
-    }),
-    _tool("bach_command", "BACH-Befehl ausführen (Memory, Tasks, Kalender, Denkarium, News, etc.)", {
-        "handler": {"type": "string", "description": "Handler: " + ", ".join(BACH_COMMAND_HANDLERS)},
-        "operation": {"type": "string", "description": "Operation: list, add, done, facts, write, read, search, context, today, brainstorm, promote, stats, fetch, generate, create, load"},
-        "args": {"type": "array", "items": {"type": "string"}, "description": "Argumente"},
-    }, ["handler"]),
-    _tool("get_datetime", "Aktuelles Datum und Uhrzeit abfragen", {}),
-    _tool("safe_shell", "Lesenden Shell-Befehl ausführen", {
-        "command": {"type": "string", "description": "Shell-Befehl (nur lesende Befehle erlaubt)"},
-    }, ["command"]),
-    _tool("web_search", "Im Internet nach Informationen suchen (DuckDuckGo)", {
-        "query": {"type": "string", "description": "Suchanfrage"},
-        "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
-    }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
-        "action": {"type": "string", "enum": ["list", "add", "done", "detail", "update", "decompose"],
-                   "description": "Aktion: list (offene Tasks), add (neuer Task), done (erledigen), detail (Details), update (Felder aktualisieren), decompose (in Teilaufgaben zerlegen)"},
-        "title": {"type": "string", "description": "Task-Titel (bei add)"},
-        "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
-        "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
-        "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
-        "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
-        "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
-        "subtasks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "priority": {"type": "string"},
-                    "depends_on": {"type": "string"}
-                },
-                "required": ["title"]
-            },
-            "description": "Liste von Teilaufgaben bei action='decompose'"
-        },
-        "sequential": {"type": "boolean", "description": "Bei decompose: ob Teilaufgaben sequentiell voneinander abhängen sollen"},
-        "close_parent": {"type": "boolean", "description": "Bei decompose: ob der übergeordnete Task als completed markiert wird (Standard true)"}
-    }, ["action"]),
-    _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
-        "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
-                   "description": "check=fällige Tasks, run=Wartung, health=BACH-Status, services=Service-Check, sync=OneDrive→Mirror"},
-        "operation": {"type": "string",
-                      "description": "Bei run: registry, skills, docs, backup, clean, memory, recurring"},
-    }, ["action"]),
-    _tool("foerderbericht", "Förderbericht-Pipeline: Anonymisierung und Berichterstellung", {
-        "action": {"type": "string", "enum": ["prepare", "status", "cleanup"],
-                   "description": "prepare=Phase 1 (Anonymisierung, kein LLM), status=Pipeline-Status, cleanup=Zwischendateien löschen"},
-        "zeitraum": {"type": "string", "description": "Berichtszeitraum (z.B. '01.01.2025 - 31.12.2025')"},
-        "eltern": {"type": "array", "items": {"type": "string"}, "description": "Elternnamen zur Anonymisierung"},
-        "adresse": {"type": "string", "description": "Klienten-Adresse zur Anonymisierung"},
-    }, ["action"]),
-    _tool("delegate", "Aufgabe an Claude Code oder Codex CLI delegieren", {
-        "target": {"type": "string", "enum": ["claude", "codex"], "description": "Ziel-Agent"},
-        "prompt": {"type": "string", "description": "Aufgabe oder Frage für den Agenten"},
-        "context": {"type": "string", "description": "Optionaler Kontext zur Aufgabe"},
-    }, ["target", "prompt"]),
-    _tool("weather", "Aktuelles Wetter für einen Ort oder Koordinaten abfragen (wttr.in)", {
-        "location": {"type": "string", "description": "Ortsname (z.B. 'Berlin') oder Koordinaten ('52.52,13.405')"},
-    }, ["location"]),
-    _tool("edit_file", "Text in einer Datei ersetzen (suchen und ersetzen)", {
-        "path": {"type": "string", "description": "Dateipfad"},
-        "old_text": {"type": "string", "description": "Zu ersetzender Text (muss exakt vorkommen)"},
-        "new_text": {"type": "string", "description": "Neuer Text"},
-        "all": {"type": "boolean", "description": "Alle Vorkommen ersetzen (Standard: nur erstes)"},
-    }, ["path", "old_text", "new_text"]),
-    _tool("move_file", "Datei oder Ordner verschieben oder umbenennen", {
-        "source": {"type": "string", "description": "Quellpfad"},
-        "destination": {"type": "string", "description": "Zielpfad"},
-    }, ["source", "destination"]),
-    _tool("copy_file", "Datei oder Ordner kopieren", {
-        "source": {"type": "string", "description": "Quellpfad"},
-        "destination": {"type": "string", "description": "Zielpfad"},
-    }, ["source", "destination"]),
-    _tool("file_info", "Detaillierte Informationen zu einer Datei oder einem Ordner", {
-        "path": {"type": "string", "description": "Pfad zur Datei oder zum Ordner"},
-    }, ["path"]),
-    _tool("recycle", "Datei oder Ordner in den Papierkorb verschieben (wiederherstellbar)", {
-        "path": {"type": "string", "description": "Pfad zum Löschen (wird in Papierkorb verschoben)"},
-    }, ["path"]),
-    _tool("create_directory", "Neuen Ordner erstellen (inkl. Elternordner)", {
-        "path": {"type": "string", "description": "Pfad des neuen Ordners"},
-    }, ["path"]),
-    _tool("web_fetch", "Inhalt einer URL abrufen (Webseite, API, JSON)", {
-        "url": {"type": "string", "description": "Die abzurufende URL"},
-        "extract_text": {"type": "boolean", "description": "Nur sichtbaren Text extrahieren (bei HTML, Standard: true)"},
-        "max_chars": {"type": "integer", "description": "Maximale Zeichenanzahl (Standard 4000, max 8000)"},
-    }, ["url"]),
-]
-
-TOOLS_FULL = TOOLS_SAFE + [
-    _tool("execute_command", "Beliebigen Shell-Befehl ausführen (nur im Full-Modus)", {
-        "command": {"type": "string", "description": "Shell-Befehl"},
-        "timeout": {"type": "integer", "description": "Timeout in Sekunden (max 120)"},
-    }, ["command"]),
-    _tool("write_file", "Datei schreiben oder erstellen", {
-        "path": {"type": "string", "description": "Dateipfad"},
-        "content": {"type": "string", "description": "Dateiinhalt"},
-    }, ["path", "content"]),
-]
-
-#: Aus TOOLS_SAFE fuer den Planmodus ausgenommen.
-#:
-#: `safe` heisst "ohne beliebige Shell", nicht "ohne Schreiben" -- /mode full
-#: kuendigt dem Nutzer ausdruecklich "Shell-Befehle und Dateischreiben" an,
-#: also ist safe der Modus, in dem man mit Dateien arbeitet, ohne die Shell zu
-#: oeffnen. Fuer den interaktiven Chat ist das richtig. Ein Planlauf braucht
-#: davon nichts: Er liest, und sein einziges Ergebnis sind Tasks.
-_NICHT_IM_PLAN = frozenset({
-    # veraendern das Dateisystem
-    "edit_file", "move_file", "copy_file", "recycle", "create_directory",
-    # veraendern BACH-Zustand jenseits der Tasks
-    "bach_command", "maintain", "foerderbericht",
-    # startet einen fremden Agenten, der diese Grenze nicht kennt
-    "delegate",
-})
-
-#: Werkzeuge eines Planlaufs: lesen, nachschlagen, Pakete anlegen.
-#: Abgeleitet statt aufgezaehlt -- so bleibt TOOLS_PLAN automatisch eine
-#: Teilmenge von TOOLS_SAFE, auch wenn dort etwas hinzukommt.
-TOOLS_PLAN = [t for t in TOOLS_SAFE
-              if t["function"]["name"] not in _NICHT_IM_PLAN]
-
-
-def tools_for_mode(mode: str) -> list:
-    """Werkzeugliste zum Sitzungsmodus.
-
-    Ein unbekannter Modus faellt bewusst auf `safe` zurueck und nicht auf
-    `full`: Ein Tippfehler darf nie mehr Rechte geben als angefordert.
-    """
-    if mode == "full":
-        return TOOLS_FULL
-    if mode == "plan":
-        return TOOLS_PLAN
-    return TOOLS_SAFE
-
-
-# --- Delegation ---
-
-def _delegate_claude_api(prompt: str, api_key: str,
-                         model: str = "claude-sonnet-4-6") -> str:
-    import httpx
-    try:
-        r = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": model,
-                "max_tokens": 2048,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=120,
-        )
-        data = r.json()
-        if r.status_code != 200:
-            return f"Claude API Fehler ({r.status_code}): {data.get('error', {}).get('message', str(data)[:500])}"
-        blocks = data.get("content", [])
-        text = "\n".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-        return (text or "(keine Antwort)")[:3000]
-    except httpx.TimeoutException:
-        return "Claude API Timeout (120s)"
-    except Exception as e:
-        return f"Claude API Fehler: {e}"
-
-
-# --- Tool-Ausführung ---
-
-def exec_tool(name: str, args: Any, mode: str, bach_app=None,
-              default_model: str = "") -> str:
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except (json.JSONDecodeError, TypeError):
-            args = {}
-
-    try:
-        if name == "list_directory":
-            # Kein Subprocess/Shell mehr (frueher: run_shell("ls ..." per
-            # shell=True) mit shlex.quote() auf den Pfad - shlex.quote()
-            # eskript POSIX-Single-Quotes, die auf Windows'
-            # shell=True->cmd.exe NICHT als Quotierung wirken, sondern als
-            # literale Zeichen; Metazeichen im Pfad waeren dort trotzdem
-            # von cmd.exe interpretiert worden. pathlib kennt keine Shell.
-            target = Path(args.get("path") or os.path.expanduser("~"))
-            if _is_secret_path(target):
-                return "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden"
-            try:
-                entries = sorted(target.iterdir(), key=lambda e: e.name)
-            except OSError as e:
-                return f"Fehler: {e}"
-            details = args.get("details")
-            lines = []
-            for e in entries:
-                if _is_secret_path(e):
-                    continue
-                if details:
-                    try:
-                        st = e.stat()
-                        kind = "d" if e.is_dir() else "-"
-                        lines.append(f"{kind} {st.st_size:>10} {e.name}")
-                    except OSError:
-                        lines.append(f"? {e.name}")
-                else:
-                    lines.append(e.name)
-            return ("\n".join(lines) or "(leer)")[:4000]
-
-        if name == "read_file":
-            p = args.get("path", "")
-            if not p:
-                return "Kein Pfad angegeben"
-            if _is_secret_path(Path(p)):
-                return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
-            lines = min(int(args.get("lines", 50)), 200)
-            offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
-            end_line = offset + lines - 1
-            try:
-                with open(p, "r", encoding="utf-8", errors="replace") as fh:
-                    picked = [
-                        line for i, line in enumerate(fh, start=1)
-                        if offset <= i <= end_line
-                    ]
-            except OSError as e:
-                return f"Fehler: {e}"
-            return ("".join(picked) or "(keine Zeilen)")[:4000]
-
-        if name == "search_text":
-            pat = args.get("pattern", "")
-            p = Path(args.get("path", "."))
-            if _is_secret_path(p):
-                return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
-            recursive = args.get("recursive", True)
-            try:
-                rx = re.compile(pat)
-            except re.error as e:
-                return f"Ungueltiges Muster: {e}"
-            files = p.rglob("*") if recursive and p.is_dir() else (
-                p.glob("*") if p.is_dir() else [p]
-            )
-            hits = []
-            for f in files:
-                if not f.is_file() or len(hits) >= 200 or _is_secret_path(f):
-                    continue
-                try:
-                    with open(f, "r", encoding="utf-8", errors="replace") as fh:
-                        for i, line in enumerate(fh, start=1):
-                            if rx.search(line):
-                                hits.append(f"{f}:{i}:{line.rstrip()}")
-                                if len(hits) >= 200:
-                                    break
-                except OSError:
-                    continue
-            return ("\n".join(hits) or "(keine Treffer)")[:4000]
-
-        if name == "system_status":
-            parts = [
-                run_shell("uptime"),
-                "Disk: " + run_shell("df -h / | tail -1"),
-                "Speicher: " + run_shell("memory_pressure | head -3"),
-                "CPU: " + run_shell("sysctl -n machdep.cpu.brand_string"),
-            ]
-            return "\n".join(parts)[:4000]
-
-        if name == "ollama_info":
-            act = args.get("action", "list")
-            if act == "list":
-                return run_shell("ollama list")
-            if act == "running":
-                return run_shell("ollama ps")
-            if act == "show":
-                # "model" kommt aus einem LLM-Tool-Argument, nicht aus einer
-                # festen Vorlage - deshalb NICHT run_shell() (shell=True):
-                # argv-Liste + shell=False, das Argument wird nie von einer
-                # Shell interpretiert (kein shlex.quote()-Escaping noetig
-                # oder moeglich Windows-Umgehung, siehe Befund D).
-                m = args.get("model", default_model)
-                return run_argv(["ollama", "show", m])
-            return "Unbekannte Aktion: " + act
-
-        if name == "bach_command":
-            if not bach_app:
-                return "BACH nicht verfügbar"
-            _HANDLER_ALIASES = {
-                "kalender": "calendar", "kontakte": "contact",
-                "contacts": "contact", "routinen": "routine",
-                "routines": "routine", "notes": "denkarium",
-                "timers": "timer", "counters": "countdown",
-                "lessons": "lesson", "partners": "partner",
-                "agents": "agent", "messages": "msg",
-            }
-            h = args.get("handler", "")
-            h = _HANDLER_ALIASES.get(h, h)
-            if h not in BACH_COMMAND_HANDLERS:
-                return (
-                    f"BLOCKIERT: Handler '{h}' ist nicht in der bach_command-Allowlist.\n"
-                    f"Erlaubt: {', '.join(BACH_COMMAND_HANDLERS)}"
-                )
-            op = args.get("operation", "")
-            ex = args.get("args", [])
-            ok, out = bach_app.execute(h, op, ex)
-            r = str(out)[:4000] if out else "(keine Ausgabe)"
-            return r if ok else "Fehler: " + r
-
-        if name == "get_datetime":
-            return datetime.now().strftime("%Y-%m-%d %H:%M:%S (%A)")
-
-        if name == "safe_shell":
-            cmd = args.get("command", "")
-            if not cmd:
-                return "Kein Befehl angegeben"
-            if not is_safe_command(cmd):
-                return f"Befehl nicht in der Safe-Liste. Erlaubt: {', '.join(sorted(SAFE_BASES)[:15])}..."
-            if is_blocked(cmd):
-                return "Befehl blockiert (Sicherheit)"
-            try:
-                tokens = [safe_exec.dequote(t) for t in safe_exec.tokenize(cmd)]
-            except safe_exec.CommandRejected as e:
-                return f"Befehl blockiert (Sicherheit): {e}"
-            reason = check_safe_shell_args(tokens)
-            if reason:
-                return f"Befehl blockiert (Sicherheit): {reason}"
-            return run_shell_restricted(cmd, allowed=SAFE_BASES)
-
-        if name == "execute_command":
-            if mode != "full":
-                return "Nur im Full-Modus. Aktivieren: /mode full bestätigt"
-            cmd = args.get("command", "")
-            t = int(args.get("timeout", CMD_TIMEOUT))
-            if is_blocked(cmd):
-                return f"Befehl blockiert (Sicherheit): {cmd}"
-            log.info(f"FULL-CMD: {cmd}")
-            return run_shell_restricted(cmd, t, allowed=None)
-
-        if name == "write_file":
-            if mode != "full":
-                return "Nur im Full-Modus."
-            p = args.get("path", "")
-            c = args.get("content", "")
-            if not p:
-                return "Kein Pfad"
-            Path(p).parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(c)
-            log.info(f"WRITE: {p} ({len(c)} chars)")
-            return f"Geschrieben: {p} ({len(c)} Zeichen)"
-
-        if name == "web_search":
-            query = args.get("query", "")
-            if not query:
-                return "Keine Suchanfrage angegeben"
-            max_r = min(int(args.get("max_results", 5)), 10)
-            try:
-                from duckduckgo_search import DDGS
-                results = DDGS().text(query, max_results=max_r)
-                if not results:
-                    return f"Keine Ergebnisse für: {query}"
-                out = []
-                for r in results:
-                    title = r.get("title", "")
-                    href = r.get("href", "")
-                    body = r.get("body", "")[:300]
-                    out.append(f"**{title}**\n{href}\n{body}")
-                return "\n\n".join(out)[:4000]
-            except ImportError:
-                return "Web-Suche nicht verfügbar (ddgs nicht installiert)"
-            except Exception as e:
-                return f"Suchfehler: {e}"
-
-        if name == "task_manage":
-            action = args.get("action", "list")
-            try:
-                conn = sqlite3.connect(RUNTIME_BACH_DB)
-                conn.row_factory = sqlite3.Row
-                try:
-                    if action == "list":
-                        rows = conn.execute(
-                            "SELECT id, title, priority, status FROM tasks "
-                            "WHERE status IN ('pending','in-progress') "
-                            "ORDER BY priority, id DESC LIMIT 20"
-                        ).fetchall()
-                        if not rows:
-                            return "Keine offenen Tasks."
-                        lines = [f"[{r['id']}] {r['priority']} {r['status']}: {r['title']}" for r in rows]
-                        return "\n".join(lines)
-
-                    if action == "add":
-                        title = args.get("title", "")
-                        if not title:
-                            return "Kein Titel angegeben"
-                        prio = args.get("priority", "P3")
-                        assignee = args.get("assigned_to") or "bach"
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        cur = conn.execute(
-                            "INSERT INTO tasks (title, description, category, depends_on, "
-                            "priority, status, assigned_to, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                            (title, args.get("description", ""), args.get("category", ""),
-                             args.get("depends_on", ""), prio, assignee, now, now)
-                        )
-                        conn.commit()
-                        zusatz = f" [{args['category']}]" if args.get("category") else ""
-                        return f"Task #{cur.lastrowid} erstellt: {title} ({prio}){zusatz}"
-
-                    if action == "done":
-                        tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
-                        existing = conn.execute(
-                            "SELECT * FROM tasks WHERE id=?", (tid,)
-                        ).fetchone()
-                        if not existing:
-                            return f"Task #{tid} nicht gefunden"
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        if apply_task_field_changes is not None:
-                            # T-20260906-833218904: schliesst dieselbe task_history-Luecke
-                            # wie server.py/headless.py/task.py -- 'done' zaehlt ueber
-                            # hub.task_audit.COMPLETED_STATUSES als Abschluss.
-                            apply_task_field_changes(conn, tid, dict(existing), {"status": "done"},
-                                                      changed_by="chat-runtime", now=now)
-                        else:
-                            # Fallback: identischer sys.path-Vorbehalt wie RUNTIME_BACH_DB
-                            # oben -- Aktion soll auch ohne hub.task_audit funktionieren,
-                            # nur ohne Audit-Trail.
-                            conn.execute(
-                                "UPDATE tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
-                                (now, now, tid)
-                            )
-                        conn.commit()
-                        return f"Task #{tid} erledigt."
-
-                    if action == "detail":
-                        tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
-                        row = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
-                        if not row:
-                            return f"Task #{tid} nicht gefunden"
-                        return "\n".join(f"{k}: {row[k]}" for k in row.keys())
-
-                    if action == "update":
-                        tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
-                        existing = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
-                        if not existing:
-                            return f"Task #{tid} nicht gefunden"
-                        updates = {}
-                        for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
-                            if fld in args and args[fld] is not None:
-                                updates[fld] = args[fld]
-                        if not updates:
-                            return "Keine Felder zum Aktualisieren angegeben"
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        if apply_task_field_changes is not None:
-                             # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
-                             # Der Terminal-Park-Guard im Choke-Point blockiert einen
-                             # Reopen auf open|pending|in_progress fuer einen gate-geparkten
-                             # Task. Das Agent-Tool darf den Task NICHT resurrektieren
-                             # (Fail-Closed) -- stattdessen klare Meldung, damit der
-                             # Operator bei Bedarf via CLI `reopen`/`unblock` (allow_reopen)
-                             # oder GUI explicit wieder oeffnet.
-                            try:
-                                apply_task_field_changes(conn, tid, dict(existing), updates,
-                                                          changed_by="chat-runtime", now=now)
-                            except GateReopenBlocked as exc:
-                                conn.rollback()
-                                return f"[WARN] Task #{tid} ist terminal geparkt (Gate-Haltefrist) -- Reopen blockiert: {exc}. Fuer einen bewussten Reopen `bach task reopen {tid}` (oder unblock) nutzen."
-                        else:
-                            updates["updated_at"] = now
-                            set_str = ", ".join(f"{k}=?" for k in updates.keys())
-                            conn.execute(f"UPDATE tasks SET {set_str} WHERE id=?", list(updates.values()) + [tid])
-                        conn.commit()
-                        return f"Task #{tid} aktualisiert: {', '.join(updates.keys())}"
-
-                    if action == "decompose":
-                        tid = args.get("task_id")
-                        subtasks = args.get("subtasks", [])
-                        if not tid or not subtasks:
-                            return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
-                        parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
-                        if not parent:
-                            return f"Task #{tid} nicht gefunden"
-                        parent_dict = dict(parent)
-                        cat = args.get("category") or parent_dict.get("category") or ""
-                        assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        created_ids = []
-                        prev_id = None
-                        for st in subtasks:
-                            st_title = st.get("title", "")
-                            if not st_title:
-                                continue
-                            st_desc = st.get("description", "")
-                            st_prio = st.get("priority", parent_dict.get("priority") or "P3")
-                            st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
-                            st_assignee = st.get("assigned_to") or assignee
-                            cur = conn.execute(
-                                "INSERT INTO tasks (title, description, category, depends_on, "
-                                "priority, status, assigned_to, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                                (st_title, st_desc, cat, st_dep, st_prio, st_assignee, now, now)
-                            )
-                            prev_id = cur.lastrowid
-                            created_ids.append(prev_id)
-                        if args.get("close_parent", True):
-                            note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
-                            if apply_task_field_changes is not None:
-                                apply_task_field_changes(conn, tid, parent_dict,
-                                                          {"status": "completed",
-                                                           "description": (parent_dict.get("description") or "") + note},
-                                                          changed_by="chat-runtime", now=now)
-                            else:
-                                conn.execute(
-                                    "UPDATE tasks SET status='completed', description=description || ?, updated_at=? WHERE id=?",
-                                    (note, now, tid)
-                                )
-                        conn.commit()
-                        return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"
-
-                    return f"Unbekannte Aktion: {action}"
-                finally:
-                    conn.close()
-            except Exception as e:
-                return f"Task-Fehler: {e}"
-
-        if name == "maintain":
-            action = args.get("action", "check")
-            operation = args.get("operation", "")
-            try:
-                if action == "check":
-                    base = str(Path(__file__).parent.parent.parent.parent)
-                    if base not in sys.path:
-                        sys.path.insert(0, base)
-                    from hub._services.recurring.recurring_tasks import list_recurring_tasks
-                    tasks = list_recurring_tasks()
-                    if not tasks:
-                        return "Keine wiederkehrenden Tasks konfiguriert."
-                    lines = []
-                    for tid, info in tasks.items():
-                        status = info.get("status", "?")
-                        due = info.get("next_due", "?")
-                        text = info.get("task_text", tid)[:60]
-                        marker = "🔴 FÄLLIG" if status == "overdue" else ("🟡 bald" if status == "due_soon" else "✅")
-                        lines.append(f"{marker} {tid}: {text} (nächst: {due})")
-                    return "\n".join(lines)
-                elif action == "run":
-                    if not operation:
-                        return "Bitte 'operation' angeben: registry, skills, docs, backup, clean, memory, recurring"
-                    op_map = {
-                        "registry": "maintain registry",
-                        "skills": "maintain skills",
-                        "docs": "maintain docs report",
-                        "backup": "backup status",
-                        "clean": "maintain clean",
-                        "memory": "mem gc",
-                        "recurring": "recurring check",
-                    }
-                    cmd = op_map.get(operation)
-                    if not cmd:
-                        return f"Unbekannte Operation: {operation}. Erlaubt: {', '.join(op_map)}"
-                    parts = cmd.split()
-                    handler, op_args = parts[0], " ".join(parts[1:])
-                    return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
-                                     f"PYTHONIOENCODING=utf-8 python bach.py --{handler} {op_args}", 60)
-                elif action == "health":
-                    return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
-                                     f"PYTHONIOENCODING=utf-8 python bach.py status", 60)
-                elif action == "services":
-                    http_checks = {
-                        "GUI Dashboard (:8000)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000/",
-                        "Ollama (:11434)": "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:11434/api/tags",
-                    }
-                    proc_checks = {
-                        "Telegram Bot": "telegram_chat",
-                        "GUI Server": "gui/server\\.py",
-                        "Chat Tray": "chat_tray",
-                    }
-                    lines = ["BACH Service-Check:"]
-                    lines.append("  ✅ Control API (:8081) — läuft (diese Anfrage)")
-                    for svc, cmd in http_checks.items():
-                        code = run_shell(cmd).strip()
-                        ok = code == "200"
-                        lines.append(f"  {'✅' if ok else '❌'} {svc} — HTTP {code}")
-                    for svc, pattern in proc_checks.items():
-                        ps_out = run_shell(f"pgrep -f '{pattern}' 2>/dev/null").strip()
-                        if ps_out:
-                            pids = ps_out.replace('\n', ', ')
-                            lines.append(f"  ✅ {svc} — PID {pids}")
-                        else:
-                            lines.append(f"  ❌ {svc} — nicht gefunden")
-                    lines.append(f"  Uptime: {run_shell('uptime').strip()}")
-                    return "\n".join(lines)
-                elif action == "sync":
-                    sync_script = Path.home() / "services" / "bach" / "sync_mirror.sh"
-                    if not sync_script.exists():
-                        return "Sync-Script nicht gefunden: ~/services/bach/sync_mirror.sh"
-                    out = run_shell(f"bash {sync_script} 2>&1")
-                    return f"OneDrive → Mirror Sync abgeschlossen.\n{out.strip()}" if out.strip() else "OneDrive → Mirror Sync abgeschlossen (keine Änderungen)."
-                else:
-                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health, services, sync"
-            except Exception as e:
-                return f"Wartungsfehler: {e}"
-
-        if name == "foerderbericht":
-            action = args.get("action", "status")
-            try:
-                base = str(Path(__file__).parent.parent.parent.parent)
-                if base not in sys.path:
-                    sys.path.insert(0, base)
-                from hub._services.document.foerderbericht_pipeline import FoerderberichtPipeline
-                pipeline = FoerderberichtPipeline()
-                lock_file = pipeline.base_path / ".pipeline_lock"
-
-                if action == "status":
-                    data_roh = pipeline.base_path / "data_roh"
-                    client_count = (
-                        len([d for d in data_roh.iterdir() if d.is_dir()])
-                        if data_roh.exists() else 0
-                    )
-                    prompt_exists = (pipeline.base_path / "data_bundled" / "prompt.txt").exists()
-                    state = "Pipeline läuft." if lock_file.exists() else "Pipeline bereit."
-                    status = state + "\n"
-                    status += f"Akte erkannt: {'ja' if client_count else 'nein'} ({client_count} Ordner)\n"
-                    status += f"Anonymisierter Prompt vorhanden: {'ja' if prompt_exists else 'nein'}"
-                    return status
-
-                elif action == "prepare":
-                    zeitraum = args.get("zeitraum", "01.01.2025 - 31.12.2025")
-                    eltern = args.get("eltern")
-                    adresse = args.get("adresse")
-                    result = pipeline.prepare_prompt(
-                        berichtszeitraum=zeitraum,
-                        parent_names=eltern,
-                        client_address=adresse,
-                    )
-                    if result.success:
-                        return (f"Phase 1 abgeschlossen. Tarnname: {result.tarnname}\n"
-                                f"Anonymisierter Prompt bereit.\n"
-                                f"Dauer: {result.duration_s:.1f}s\nSchritte: {', '.join(result.steps_completed)}")
-                    return f"Phase 1 fehlgeschlagen: {result.error}"
-
-                elif action == "cleanup":
-                    for folder in ["data_ano", "data_bundled"]:
-                        p = pipeline.base_path / folder
-                        if p.exists():
-                            import shutil
-                            shutil.rmtree(p)
-                            p.mkdir()
-                    if lock_file.exists():
-                        lock_file.unlink()
-                    return "Zwischendateien gelöscht (data_ano/, data_bundled/), Lock entfernt."
-
-                return f"Unbekannte Aktion: {action}. Erlaubt: prepare, status, cleanup"
-            except Exception as e:
-                return f"Pipeline-Fehler: {e}"
-
-        if name == "delegate":
-            target = args.get("target", "")
-            prompt = args.get("prompt", "")
-            context = args.get("context", "")
-            if target not in ("claude", "codex"):
-                return f"Unbekanntes Ziel: {target}. Erlaubt: claude, codex"
-            if not prompt:
-                return "Kein Prompt angegeben"
-            depth = int(os.environ.get("BACH_DELEGATION_DEPTH", "0"))
-            if depth >= 2:
-                return "Maximale Delegationstiefe erreicht (2). Abbruch."
-            full_prompt = prompt
-            if context:
-                full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
-            env = {**os.environ, "PYTHONIOENCODING": "utf-8",
-                   "BACH_DELEGATION_DEPTH": str(depth + 1)}
-            log.info(f"DELEGATE -> {target} (depth={depth}): {prompt[:100]}")
-            if target == "claude":
-                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-                if not api_key:
-                    kf = Path.home() / ".credentials" / "anthropic_api_key"
-                    if kf.exists():
-                        api_key = kf.read_text(encoding="utf-8").strip()
-                if api_key:
-                    return _delegate_claude_api(full_prompt, api_key)
-                cmd = ["claude", "-p", full_prompt]
-            else:
-                cmd = ["codex", "exec", full_prompt]
-            try:
-                r = subprocess.run(
-                    cmd, capture_output=True, text=True,
-                    encoding='utf-8', errors='replace', timeout=limit("BACH_DELEGATE_TIMEOUT"),
-                    stdin=subprocess.DEVNULL, env=env,
-                )
-                out = (r.stdout or "").strip()
-                if r.returncode != 0 and r.stderr:
-                    out += f"\n[stderr] {r.stderr.strip()[:500]}"
-                return (out or "(keine Ausgabe)")[:3000]
-            except subprocess.TimeoutExpired:
-                return f"Delegation an {target} abgebrochen (Timeout 120s)"
-            except FileNotFoundError:
-                return f"{target} CLI nicht gefunden — API-Key unter ~/.credentials/anthropic_api_key hinterlegen für API-Fallback"
-            except Exception as e:
-                return f"Delegation fehlgeschlagen: {e}"
-
-        if name == "weather":
-            location = args.get("location", "")
-            if not location:
-                return "Kein Ort angegeben"
-            try:
-                from hub._services.weather.weather_service import get_weather_text
-                parts = location.replace(" ", "").split(",")
-                if len(parts) == 2:
-                    try:
-                        lat, lon = float(parts[0]), float(parts[1])
-                        return get_weather_text(lat, lon)
-                    except ValueError:
-                        pass
-                url = f"https://wttr.in/{urllib.parse.quote(location)}?format=j1&lang=de"
-                req = urllib.request.Request(url, headers={"User-Agent": "BACH/1.0"})
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                cc = data["current_condition"][0]
-                area = data.get("nearest_area", [{}])[0]
-                area_name = area.get("areaName", [{}])[0].get("value", location)
-                country = area.get("country", [{}])[0].get("value", "")
-                desc = cc.get("lang_de", [{}])
-                desc_text = desc[0].get("value", cc.get("weatherDesc", [{}])[0].get("value", "")) if desc else cc.get("weatherDesc", [{}])[0].get("value", "")
-                temp = cc.get("temp_C", "?")
-                feels = cc.get("FeelsLikeC", "?")
-                hum = cc.get("humidity", "?")
-                wind = cc.get("windspeedKmph", "?")
-                return (f"Wetter in {area_name}, {country}:\n"
-                        f"Temperatur: {temp}°C (gefühlt: {feels}°C) | {desc_text}\n"
-                        f"Wind: {wind} km/h | Luftfeuchtigkeit: {hum}%")
-            except Exception as e:
-                return f"Wetter-Fehler: {e}"
-
-        if name == "edit_file":
-            p = args.get("path", "")
-            old_text = args.get("old_text", "")
-            new_text = args.get("new_text", "")
-            if not p or not old_text:
-                return "Pfad und old_text sind erforderlich"
-            if err := is_safe_write_path(p, mode):
-                return err
-            try:
-                content = Path(p).read_text(encoding="utf-8")
-            except FileNotFoundError:
-                return f"Datei nicht gefunden: {p}"
-            except Exception as e:
-                return f"Lesefehler: {e}"
-            if old_text not in content:
-                return f"Text nicht gefunden in {p}"
-            if args.get("all"):
-                new_content = content.replace(old_text, new_text)
-                count = content.count(old_text)
-            else:
-                new_content = content.replace(old_text, new_text, 1)
-                count = 1
-            try:
-                Path(p).write_text(new_content, encoding="utf-8")
-                log.info(f"EDIT: {p} ({count}x ersetzt)")
-                return f"Bearbeitet: {p} ({count} Ersetzung{'en' if count > 1 else ''})"
-            except Exception as e:
-                return f"Schreibfehler: {e}"
-
-        if name == "move_file":
-            src = args.get("source", "")
-            dst = args.get("destination", "")
-            if not src or not dst:
-                return "source und destination sind erforderlich"
-            if err := is_safe_write_path(src, mode):
-                return err
-            if err := is_safe_write_path(dst, mode):
-                return err
-            try:
-                import shutil
-                shutil.move(src, dst)
-                log.info(f"MOVE: {src} -> {dst}")
-                return f"Verschoben: {src} → {dst}"
-            except Exception as e:
-                return f"Fehler beim Verschieben: {e}"
-
-        if name == "copy_file":
-            src = args.get("source", "")
-            dst = args.get("destination", "")
-            if not src or not dst:
-                return "source und destination sind erforderlich"
-            if err := is_safe_write_path(dst, mode):
-                return err
-            try:
-                import shutil
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
-                log.info(f"COPY: {src} -> {dst}")
-                return f"Kopiert: {src} → {dst}"
-            except Exception as e:
-                return f"Fehler beim Kopieren: {e}"
-
-        if name == "file_info":
-            p = args.get("path", "")
-            if not p:
-                return "Kein Pfad angegeben"
-            try:
-                st = os.stat(p)
-                import stat
-                ftype = "Ordner" if stat.S_ISDIR(st.st_mode) else "Datei"
-                size = st.st_size
-                if size < 1024:
-                    size_str = f"{size} B"
-                elif size < 1024 * 1024:
-                    size_str = f"{size / 1024:.1f} KB"
-                elif size < 1024 * 1024 * 1024:
-                    size_str = f"{size / (1024 * 1024):.1f} MB"
-                else:
-                    size_str = f"{size / (1024 * 1024 * 1024):.2f} GB"
-                mtime = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                ctime = datetime.fromtimestamp(st.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-                perms = oct(st.st_mode)[-3:]
-                lines = [
-                    f"Typ: {ftype}",
-                    f"Pfad: {p}",
-                    f"Größe: {size_str}",
-                    f"Geändert: {mtime}",
-                    f"Erstellt: {ctime}",
-                    f"Rechte: {perms}",
-                ]
-                if ftype == "Ordner":
-                    try:
-                        entries = os.listdir(p)
-                        lines.append(f"Einträge: {len(entries)}")
-                    except PermissionError:
-                        lines.append("Einträge: (keine Berechtigung)")
-                return "\n".join(lines)
-            except FileNotFoundError:
-                return f"Nicht gefunden: {p}"
-            except Exception as e:
-                return f"Fehler: {e}"
-
-        if name == "recycle":
-            p = args.get("path", "")
-            if not p:
-                return "Kein Pfad angegeben"
-            if err := is_safe_write_path(p, mode):
-                return err
-            if not os.path.exists(p):
-                return f"Nicht gefunden: {p}"
-            try:
-                trash = Path.home() / ".Trash"
-                basename = Path(p).name
-                dest = trash / basename
-                if dest.exists():
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    dest = trash / f"{Path(basename).stem}_{ts}{Path(basename).suffix}"
-                import shutil
-                shutil.move(p, str(dest))
-                log.info(f"RECYCLE: {p} -> {dest}")
-                return f"In Papierkorb verschoben: {p}"
-            except Exception as e:
-                return f"Fehler beim Recyceln: {e}"
-
-        if name == "create_directory":
-            p = args.get("path", "")
-            if not p:
-                return "Kein Pfad angegeben"
-            if err := is_safe_write_path(p, mode):
-                return err
-            try:
-                Path(p).mkdir(parents=True, exist_ok=True)
-                log.info(f"MKDIR: {p}")
-                return f"Ordner erstellt: {p}"
-            except Exception as e:
-                return f"Fehler: {e}"
-
-        if name == "web_fetch":
-            url = args.get("url", "")
-            if not url:
-                return "Keine URL angegeben"
-            if not url.startswith(("http://", "https://")):
-                return "Nur http:// und https:// URLs erlaubt"
-            extract = args.get("extract_text", True)
-            max_chars = min(int(args.get("max_chars", 4000)), 8000)
-            try:
-                import httpx
-                r = httpx.get(url, follow_redirects=True, timeout=15,
-                              headers={"User-Agent": "BACH/3.9"})
-                ct = r.headers.get("content-type", "")
-                if "json" in ct:
-                    return json.dumps(r.json(), indent=2, ensure_ascii=False)[:max_chars]
-                text = r.text
-                if extract and "html" in ct.lower():
-                    try:
-                        from lxml import html as lxml_html
-                        doc = lxml_html.fromstring(text)
-                        for el in doc.xpath("//script|//style|//noscript"):
-                            el.getparent().remove(el)
-                        text = doc.text_content()
-                    except Exception:
-                        text = re.sub(r"<[^>]+>", "", text)
-                    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-                return text[:max_chars]
-            except Exception as e:
-                return f"Fehler beim Abrufen: {e}"
-
-        return f"Unbekanntes Tool: {name}"
-    except Exception as e:
-        return f"Tool-Fehler ({name}): {e}"
-
-
-# --- Chat Runtime ---
-
-# --- Loop-Mode (/auto) -----------------------------------------------------
-# Der Tool-Loop endet normalerweise, sobald das Modell eine Antwort ohne
-# Werkzeugaufruf schickt - es fragt dann zurueck statt weiterzubauen. Im
-# Loop-Mode wird stattdessen automatisch nachgeschoben.
-def ist_fertig(antwort: str | None, fenster: int = 300) -> bool:
-    """FERTIG am Anfang oder am Ende der Antwort.
-
-    Die Auftraege verlangen FERTIG als Abschluss; nur den Anfang zu pruefen
-    liess lange Abschlussberichte als offen gelten.
-    """
-    text = (antwort or "").upper()
-    return "FERTIG" in text[:fenster] or "FERTIG" in text[-fenster:]
-
-
-AUTO_NUDGE = (
-    "Weiter. Frage nicht nach und warte nicht auf Bestaetigung - du arbeitest autonom. "
-    "Baue oder erledige den naechsten offenen Punkt direkt. "
-    "Erst wenn die Aufgabe vollstaendig erledigt ist, antworte mit dem Wort FERTIG."
-)
-
-HANDOFF_PROMPT = (
-    "Dein Kontextfenster ist fast voll. Schreibe JETZT eine Uebergabe an dich "
-    "selbst, damit du gleich mit leerem Kontext weiterarbeiten kannst. Du "
-    "verlierst alles, was nicht in dieser Uebergabe steht - der Verlauf, die "
-    "gelesenen Dateien, deine Zwischenergebnisse.\n\n"
-    "Halte dich an dieses Format, kurz und konkret:\n"
-    "AUFTRAG: <worum geht es, in einem Satz>\n"
-    "ERLEDIGT: <was fertig ist, mit Dateinamen>\n"
-    "STAND: <was gerade halb fertig ist>\n"
-    "OFFEN: <was noch zu tun ist, in der Reihenfolge>\n"
-    "GEPRUEFT: <welche Pruefbefehle laufen, mit Ergebnis>\n"
-    "SACKGASSEN: <was du schon erfolglos versucht hast - damit du es nicht wiederholst>\n"
-    "RESUME: <der naechste konkrete Befehl oder Schritt>\n\n"
-    "Keine Erklaerungen, keine Hoeflichkeit, nur die Uebergabe."
-)
-
-GOAL_CHECK = (
-    "Bevor du fertig bist, pruefe streng gegen dieses Ziel:\n{goal}\n\n"
-    "Gehe jeden Punkt einzeln durch und pruefe nach, ob er wirklich umgesetzt ist - "
-    "schau im Code oder im Ergebnis nach, verlasse dich nicht auf deine Erinnerung. "
-    "Fehlt etwas, baue es jetzt. Ist wirklich alles erfuellt, antworte nur mit FERTIG."
-)
-
-
 def _session_name(chat_id: str, session: Optional["ChatSession"] = None) -> str:
     cid = str(chat_id)
     if cid == "gui-web" or cid.startswith("web"):
@@ -1563,33 +422,37 @@ def _session_name(chat_id: str, session: Optional["ChatSession"] = None) -> str:
     return f"Chat ({cid})"
 
 
-class ChatSession:
-    """State für eine einzelne Chat-Session."""
+
+class ChatSession(_ModuleChatSession):
+    """Laufzeit-State für eine einzelne Chat-Session."""
 
     def __init__(self):
-        self.messages: list[dict] = []
-        self.think: bool = True
-        self.mode: str = "safe"
-        self.model: str = ""
-        self.current_tool: str = ""
-        self.tool_round: int = 0
-        self.last_tools: list[str] = []
+        super().__init__()
+        self._bach_mode: str = "safe"
         self.voice_output: bool = False
-        self.last_active: float = 0.0
         self.backend: Any = None
         self.max_tool_rounds: Optional[int] = None
-        # Explicit capability gate; max_tool_rounds=0 retains its legacy
-        # meaning of unlimited rounds and does not disable tools.
         self.allow_tools: bool = True
-        # Dynamic workers can refresh a live capability downgrade at each
-        # model/dispatch boundary without affecting ordinary chat sessions.
         self.worker_slot_reader: Any = None
         self.custom_system_prompt: str = ""
+        self.profile_binding: dict | None = None
+        self.profile_context_text: str = ""
         self.chat_id: str = ""
-        # OPS-RUN-001: Operator-Steuerung (steer/pause/resume/checkpoint) an
-        # Modell-/Tool-Grenzen. None = inaktiv (z.B. Telegram-Chat).
         self.operator_control: Any = None
+        self.worker_handoff: Any = None
 
+    @property
+    def mode(self) -> str:
+        return getattr(self, "_bach_mode", "safe")
+
+    @mode.setter
+    def mode(self, value) -> None:
+        val = str(value.value if hasattr(value, "value") else value).strip().lower() if value is not None else "safe"
+        self._bach_mode = val
+        if val in ("safe", "full"):
+            self._mode = as_mode(val)
+        else:
+            self._mode = Mode.SAFE
 
 
 class ComputeLocked(RuntimeError):
@@ -1609,7 +472,31 @@ class _ChatTurnGate:
         self.clearing = False
 
 
-class ChatRuntime:
+class _ComputeTurnGate:
+    """Serialize local inference runs and let foreground chats pass first."""
+
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.active = False
+        self.foreground_waiters = 0
+        self.chat_id = ""
+        self.priority = ""
+        self.started_at: float | None = None
+
+
+class ChatRuntime(_ModuleChatRuntime):
+    _sessions: dict[str, Any] = {}
+
+    @property
+    def sessions(self) -> dict:
+        if not hasattr(self, "_sessions"):
+            self._sessions = {}
+        return self._sessions
+
+    @sessions.setter
+    def sessions(self, value: dict) -> None:
+        self._sessions = value
+
     """Backend-unabhängige Chat-Runtime mit Tool-Use-Loop."""
 
     MAX_CONTEXT_CHARS = limit("BACH_MAX_CONTEXT_CHARS")
@@ -1627,32 +514,42 @@ class ChatRuntime:
         self.memory = memory_fn
         self.injector = injector
         self.session_store = session_store
-        # Setzt telegram_chat: eine Funktion, die True liefert, solange ein
-        # Compute-Lock steht. None = kein Gate (Tests, andere Konsumenten).
         self.compute_gate = None
-        self.sessions: dict[str, ChatSession] = {}
+        self._sessions = {}
+        self._session_locks = {}
         self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
         self._chat_turn_gates_lock = threading.Lock()
+        self._compute_turn_gate = _ComputeTurnGate()
+        self._compute_turn_context = ContextVar(
+            f"bach_compute_turn_context_{id(self)}", default=None
+        )
+        self._task_completion_receipts: dict[str, list[int]] = {}
+        self._task_completion_receipts_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
         self._persistence_error: str | None = None
-        # Loop-Mode: wie oft darf ohne Nutzerantwort nachgeschoben werden?
         self.auto_continue: int = limit("BACH_AUTO_CONTINUE")
         self.goal: str = ""
-        # Kontext-Uebergabe: Fenstergroesse und Schwelle in Prozent
         self.context_limit: int = limit("BACH_CONTEXT_LIMIT")
         self.handoff_percent: int = limit("BACH_HANDOFF_PERCENT")
         self.last_handoff: str = ""
-        # nach wie vielen Werkzeugrunden die Hooks gefragt werden
         self.hook_every: int = limit("BACH_HOOK_EVERY")
+        super().__init__(
+            backend,
+            system_prompt=system_prompt,
+            store=_SnapshotStoreAdapter(self),
+            registry=BachToolProvider(bach_app, backend.get_default_model if hasattr(backend, "get_default_model") else None),
+            memory_fn=memory_fn,
+            injector=injector,
+        )
 
     @staticmethod
     def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
-        reader = session.worker_slot_reader
+        reader = getattr(session, "worker_slot_reader", None)
         if reader is None:
             return None
         try:
             slot = reader()
-            if not isinstance(slot, dict) or slot.get("id") != session.chat_id:
+            if not isinstance(slot, dict) or slot.get("id") != getattr(session, "chat_id", ""):
                 raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
             session.allow_tools = slot.get("allow_tools", True) is True
             return None
@@ -1677,6 +574,11 @@ class ChatRuntime:
     def _load_messages(self, chat_id: str) -> list[dict]:
         if self.session_store is None:
             return []
+        if str(chat_id).startswith("agent:"):
+            state = self.session_store.load_state(chat_id)
+            if state["binding"] is None:
+                raise ValueError("Der Profilkontext fehlt vor dem Restore")
+            return self._restore_message_status(state["messages"])
         try:
             messages = self.session_store.load(chat_id)
             self._persistence_error = None
@@ -1726,7 +628,7 @@ class ChatRuntime:
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-             if key != FailedAnswer.STATUS_KEY}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids")}
             for message in messages
         ]
 
@@ -1755,6 +657,25 @@ class ChatRuntime:
             stored.append(item)
         return stored
 
+    def _persist(self, chat_id: str, messages: list[dict]) -> None:
+        if self.session_store is None:
+            return
+        try:
+            session = self._sessions.get(chat_id)
+            name = _session_name(chat_id, session) if session else ""
+            self.session_store.save(
+                chat_id,
+                self._messages_for_store(messages),
+                name=name, binding=getattr(session, "profile_binding", None),
+            )
+            self._persistence_error = None
+        except Exception as exc:
+            self._persistence_error = str(exc)
+            if getattr(session, "profile_binding", None) is not None:
+                self.sessions.pop(chat_id, None)
+                raise RuntimeError("Profiltranskript konnte nicht dauerhaft gespeichert werden") from exc
+            log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
+
     def _persist_session(self, chat_id: str, session: ChatSession) -> None:
         if self.session_store is None:
             return
@@ -1763,11 +684,14 @@ class ChatRuntime:
             self.session_store.save(
                 chat_id,
                 self._messages_for_store(session.messages),
-                name=name,
+                name=name, binding=getattr(session, "profile_binding", None),
             )
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
+            if getattr(session, "profile_binding", None) is not None:
+                self.sessions.pop(chat_id, None)
+                raise RuntimeError("Profiltranskript konnte nicht dauerhaft gespeichert werden") from exc
             log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
 
     def persistence_status(self) -> dict:
@@ -1778,17 +702,64 @@ class ChatRuntime:
             "error": self._persistence_error or "",
         }
 
+    def bind_profile_session(self, chat_id: str, agent_context: tuple[dict, str]) -> None:
+        from .agent_profile_context import binding_metadata, profile_chat_id_agent, require_current_binding
+        binding, profile_text = agent_context
+        binding = binding_metadata(binding)
+        current_binding, current_text = require_current_binding(binding)
+        if current_binding != binding or current_text != profile_text:
+            raise ValueError("Profilquelle hat sich vor dem Turn geändert")
+        if (profile_chat_id_agent(chat_id) != binding["agent_id"] or not profile_text
+                or self.session_store is None):
+            raise ValueError("Profil-Chat-ID, Kontext oder dauerhafter Store fehlt")
+        state = self.session_store.load_state(chat_id)
+        prior = state["binding"]
+        ram = self.sessions.get(chat_id)
+        if prior is None:
+            if state["messages"] or (ram is not None and ram.messages):
+                raise ValueError("Bestehender globaler Verlauf darf kein Profil übernehmen")
+            self.session_store.save(chat_id, [], binding=binding)
+            self.sessions.pop(chat_id, None)
+        elif prior != binding or (ram is not None and getattr(ram, "profile_binding", None) != binding):
+            raise ValueError("Profilbindung darf nicht gewechselt werden")
+        session = self.get_session(chat_id)
+        if session.worker_slot_reader is not None or (session.custom_system_prompt and not session.profile_context_text):
+            raise ValueError("Slot- und Profilprompt sind nicht kombinierbar")
+        session.profile_binding = binding
+        session.profile_context_text = profile_text
+
     def get_session(self, chat_id: str) -> ChatSession:
+        if str(chat_id).startswith("agent:"):
+            if self.session_store is None:
+                raise ValueError("Profilstore fehlt")
+            state = self.session_store.load_state(chat_id)
+            if state["binding"] is None:
+                raise ValueError("Profilbindung fehlt")
+            cached = self.sessions.get(chat_id)
+            if cached is not None:
+                if getattr(cached, "profile_binding", None) != state["binding"]:
+                    raise ValueError("RAM-Profilbindung stimmt nicht mit dem Store überein")
+                return cached
+            session = ChatSession()
+            session.chat_id = chat_id
+            session.model = self.backend.get_default_model() if hasattr(self.backend, "get_default_model") else ""
+            session.messages = self._restore_message_status(state["messages"])
+            session.profile_binding = state["binding"]
+            session.last_active = time.time()
+            self.sessions[chat_id] = session
+            return session
         now = time.time()
-        if chat_id in self.sessions:
-            s = self.sessions[chat_id]
+        if chat_id in self._sessions:
+            s = self._sessions[chat_id]
             s.chat_id = chat_id
-            if s.last_active > 0 and (now - s.last_active) > self.SESSION_IDLE_TTL:
+            if getattr(s, "last_active", 0.0) > 0 and (now - s.last_active) > self.SESSION_IDLE_TTL:
                 log.info("Session %s wegen Inaktivität (>24h) archiviert und zurückgesetzt", chat_id)
                 self.archive_and_reset(chat_id, reason="24h Inaktivität (RAM)")
-                s_new = self.sessions[chat_id]
+                s_new = self._sessions[chat_id]
                 s_new.chat_id = chat_id
+                self._ensure_session_attrs(s_new)
                 return s_new
+            self._ensure_session_attrs(s)
             return s
 
         if self.session_store is not None:
@@ -1802,18 +773,47 @@ class ChatRuntime:
                     log.warning("Auto-Reset Archivierung fehlgeschlagen: %s", exc)
                 s = ChatSession()
                 s.chat_id = chat_id
-                s.model = self.backend.get_default_model()
+                s.model = self.backend.get_default_model() if hasattr(self.backend, "get_default_model") else ""
                 s.last_active = now
-                self.sessions[chat_id] = s
+                self._ensure_session_attrs(s)
+                self._sessions[chat_id] = s
                 return s
 
         s = ChatSession()
         s.chat_id = chat_id
-        s.model = self.backend.get_default_model()
+        s.model = self.backend.get_default_model() if hasattr(self.backend, "get_default_model") else ""
         s.messages = self._load_messages(chat_id)
         s.last_active = now if s.messages else 0.0
-        self.sessions[chat_id] = s
+        self._ensure_session_attrs(s)
+        self._sessions[chat_id] = s
         return s
+
+    @staticmethod
+    def _ensure_session_attrs(session: ChatSession) -> None:
+        if not hasattr(session, "voice_output"):
+            session.voice_output = False
+        if not hasattr(session, "allow_tools"):
+            session.allow_tools = True
+        if not hasattr(session, "worker_slot_reader"):
+            session.worker_slot_reader = None
+        if not hasattr(session, "operator_control"):
+            session.operator_control = None
+        if not hasattr(session, "custom_system_prompt"):
+            session.custom_system_prompt = ""
+        if not hasattr(session, "profile_binding"):
+            session.profile_binding = None
+        if not hasattr(session, "profile_context_text"):
+            session.profile_context_text = ""
+        if not hasattr(session, "backend"):
+            session.backend = None
+        if not hasattr(session, "max_tool_rounds"):
+            session.max_tool_rounds = None
+        if not hasattr(session, "current_tool"):
+            session.current_tool = ""
+        if not hasattr(session, "tool_round"):
+            session.tool_round = 0
+        if not hasattr(session, "last_tools"):
+            session.last_tools = []
 
     def _context_limit_for_backend(self, backend, model: str = "") -> int:
         """Freeze the effective context limit for the backend selected for a turn."""
@@ -1841,7 +841,9 @@ class ChatRuntime:
             prefix = f"Archiv [{reason}] {_session_name(chat_id)}"
             try:
                 archived_id = self.session_store.archive_and_delete(
-                    chat_id, session.messages if session else None, prefix
+                    chat_id, session.messages if session else None, prefix,
+                    binding=(getattr(session, "profile_binding", None) if session else
+                        self.session_store.load_state(chat_id)["binding"] if str(chat_id).startswith("agent:") else None)
                 )
                 self._persistence_error = None
             except Exception as exc:
@@ -1914,6 +916,163 @@ class ChatRuntime:
             return self._chat_turn_gates.setdefault(key, _ChatTurnGate())
 
     @staticmethod
+    def _uses_local_compute(backend) -> bool:
+        """Only local Ollama/LM Studio inference competes for this host's torch."""
+        try:
+            from hub._services.llm.model_backend import backend_identifier
+
+            backend_id = backend_identifier(backend)
+        except Exception:
+            backend_id = str(getattr(backend, "backend_id", "") or "").lower()
+        if backend_id not in {"lmstudio", "ollama"}:
+            return False
+
+        base_url = getattr(backend, "base_url", None)
+        if not base_url:
+            return True
+        try:
+            hostname = urllib.parse.urlsplit(str(base_url)).hostname
+        except ValueError:
+            return False
+        return hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+    @staticmethod
+    def _process_priority(chat_id: str, requested: str | None) -> str:
+        if requested in {"foreground", "background"}:
+            return requested
+        if str(chat_id).startswith(("idle-", "worker-", "tray-worker-")):
+            return "background"
+        return "foreground"
+
+    @staticmethod
+    async def _enter_compute_turn(gate: _ComputeTurnGate, chat_id: str, priority: str) -> None:
+        waiting_foreground = priority == "foreground"
+        registered_waiter = False
+        try:
+            if waiting_foreground:
+                with gate.condition:
+                    gate.foreground_waiters += 1
+                    registered_waiter = True
+            while True:
+                with gate.condition:
+                    if not gate.active and (priority != "background" or gate.foreground_waiters == 0):
+                        gate.active = True
+                        gate.chat_id = str(chat_id)
+                        gate.priority = priority
+                        gate.started_at = time.time()
+                        if registered_waiter:
+                            gate.foreground_waiters -= 1
+                            registered_waiter = False
+                        return
+                await asyncio.sleep(0.025)
+        finally:
+            if registered_waiter:
+                with gate.condition:
+                    gate.foreground_waiters = max(0, gate.foreground_waiters - 1)
+                    gate.condition.notify_all()
+
+    @staticmethod
+    def _leave_compute_turn(gate: _ComputeTurnGate) -> None:
+        with gate.condition:
+            gate.active = False
+            gate.chat_id = ""
+            gate.priority = ""
+            gate.started_at = None
+            gate.condition.notify_all()
+
+    async def _chat_with_compute_turn(self, backend, *args, **kwargs):
+        """Hold the local-compute gate for one model call, then yield to waiters."""
+        turn_context = self._compute_turn_context.get()
+        if not self._uses_local_compute(backend):
+            return await backend.chat(*args, **kwargs)
+
+        chat_id, priority = turn_context or ("runtime", "foreground")
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        async with HostInferenceGate().turn(chat_id, priority):
+            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
+            try:
+                return await backend.chat(*args, **kwargs)
+            finally:
+                self._leave_compute_turn(self._compute_turn_gate)
+
+    def _reset_task_completion_receipts(self, chat_id: str) -> None:
+        with self._task_completion_receipts_lock:
+            self._task_completion_receipts[str(chat_id)] = []
+
+    def _record_task_completion_receipt(
+        self, chat_id: str, tool_name: str, tool_args: Any, tool_result: str
+    ) -> bool:
+        """Record a successful `task_manage(done)` or self-decomposition receipt.
+
+        Nutzerregel (Task #1697): Kann der Hintergrundworker eine Aufgabe nicht
+        fertigstellen, zerlegt er sie selbst in kleinere Teilaufgaben und stellt
+        sie ein. Diese Zerlegung ist ein Erfolg. Sie zählt nur, wenn das Werkzeug
+        mindestens eine Teilaufgabe angelegt und den Eltern-Task geschlossen hat.
+        """
+        turn_context = self._compute_turn_context.get()
+        if (
+            turn_context is None
+            or turn_context[0] != str(chat_id)
+            or turn_context[1] != "background"
+        ):
+            return False
+        if tool_name != "task_manage" or not isinstance(tool_args, dict):
+            return False
+        action = tool_args.get("action")
+        if action not in ("done", "decompose"):
+            return False
+        try:
+            task_id = int(tool_args.get("task_id"))
+        except (TypeError, ValueError):
+            return False
+        if task_id <= 0:
+            return False
+        result_text = str(tool_result).strip()
+        if action == "done":
+            if result_text != f"Task #{task_id} erledigt.":
+                return False
+        else:
+            if not tool_args.get("close_parent", True):
+                return False
+            match = _DECOMPOSE_RECEIPT_RE.fullmatch(result_text)
+            if not match or int(match.group(1)) != task_id or int(match.group(2)) < 1:
+                return False
+            try:
+                child_ids = json.loads(match.group(3))
+            except ValueError:
+                return False
+            if (
+                len(child_ids) != int(match.group(2))
+                or any(type(child_id) is not int or child_id <= 0 or child_id == task_id
+                       for child_id in child_ids)
+                or len(set(child_ids)) != len(child_ids)
+            ):
+                return False
+        with self._task_completion_receipts_lock:
+            receipts = self._task_completion_receipts.setdefault(str(chat_id), [])
+            if task_id in receipts:
+                return False
+            receipts.append(task_id)
+        return True
+
+    def get_last_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
+        """Return task IDs confirmed by successful task-management tool calls."""
+        with self._task_completion_receipts_lock:
+            return tuple(self._task_completion_receipts.get(str(chat_id), ()))
+
+    def consume_task_completion_receipts(self, chat_id: str) -> tuple[int, ...]:
+        """Return and discard receipts after a worker block has consumed them."""
+        with self._task_completion_receipts_lock:
+            return tuple(self._task_completion_receipts.pop(str(chat_id), ()))
+
+    def compute_turn_status(self) -> dict[str, Any]:
+        """Return live evidence about which BACH run currently owns local inference."""
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+
+        return HostInferenceGate().status()
+
+    @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
         while True:
             with gate.condition:
@@ -1925,12 +1084,21 @@ class ChatRuntime:
             await asyncio.sleep(0.025)
 
     @staticmethod
+    async def _enter_profile_turn(gate: _ChatTurnGate) -> None:
+        while True:
+            with gate.condition:
+                if not gate.clearing and gate.active_turns == 0:
+                    gate.active_turns = 1
+                    return
+            await asyncio.sleep(0.025)
+
+    @staticmethod
     def _leave_chat_turn(gate: _ChatTurnGate) -> None:
         with gate.condition:
             gate.active_turns -= 1
             gate.condition.notify_all()
 
-    def fork_session(self, target_chat_id: str, snapshot_id: int) -> int:
+    def fork_session(self, target_chat_id: str, snapshot_id: int, *, agent_context=None) -> int:
         """Klont den Verlauf aus einem Snapshot in die Ziel-Session."""
         if not self.session_store:
             raise RuntimeError("Kein SessionStore verfügbar")
@@ -1938,6 +1106,27 @@ class ChatRuntime:
         if not snap:
             raise ValueError(f"Snapshot ID {snapshot_id} nicht gefunden")
         messages = self._restore_message_status(snap.get("messages", []))
+        source_binding = snap.get("binding")
+        if agent_context is not None:
+            from .agent_profile_context import profile_chat_id_agent
+            binding, text = agent_context
+            if profile_chat_id_agent(target_chat_id) != binding["agent_id"] or source_binding != binding:
+                raise ValueError("Fork darf Profil oder Kontextklasse nicht wechseln")
+            target = self.session_store.load_state(target_chat_id)
+            if target["binding"] is not None or target["messages"] or target_chat_id in self.sessions:
+                raise ValueError("Profil-Fork benötigt eine neue leere Ziel-Session")
+            s = ChatSession()
+            s.chat_id = target_chat_id
+            s.model = self.backend.get_default_model()
+            s.messages = list(messages)
+            s.profile_binding = binding
+            s.profile_context_text = text
+            s.last_active = time.time()
+            self._persist_session(target_chat_id, s)
+            self.sessions[target_chat_id] = s
+            return len(messages)
+        if source_binding is not None or str(target_chat_id).startswith("agent:"):
+            raise ValueError("Ein Profil-Snapshot darf keinen globalen Fork erzeugen")
 
         # Aktuelle Ziel-Session vor dem Fork sichern
         curr = self.sessions.get(target_chat_id)
@@ -1971,12 +1160,14 @@ class ChatRuntime:
         messages = session.messages if session is not None else self._load_messages(chat_id)
         return [
             {"role": m["role"], "content": m.get("content", ""),
-             "ok": not FailedAnswer.message_is_failed(m)}
+             "ok": not FailedAnswer.message_is_failed(m),
+             **({"completed_task_ids": list(m["completed_task_ids"])}
+                if m.get("completed_task_ids") else {})}
             for m in messages
             if m.get("role") in ("user", "assistant")
         ]
 
-    def build_system_prompt(self, session: ChatSession) -> str:
+    def build_system_prompt(self, session: ChatSession, *, profile_context: str = "") -> str:
         capabilities = """
 Du hast Zugriff auf Werkzeuge (Tools), die du bei Bedarf aufrufen kannst.
 
@@ -2044,7 +1235,7 @@ REGELN:
 TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
-- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='add', title='Edit: ...') in konkrete Einzelschritte zerlegen.
+- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true) in konkrete Einzelschritte zerlegen. Erst die Werkzeugbestätigung belegt einen Abschluss.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
 - 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
@@ -2054,29 +1245,41 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(run, operation) führt Wartung aus (registry, skills, docs, backup, clean, memory, recurring)
 - maintain(health) zeigt den Gesamtstatus
 """
-        s = self.base_system + "\n\n" + capabilities
+        base = self.base_system
+        if profile_context:
+            base += ("\n\nDu bist das ausdrücklich ausgewählte BACH-Agentenprofil. Antworte auf Deutsch. "
+                     "Die globalen Modus- und Werkzeuggrenzen gelten unverändert.")
+        s = base + "\n\n" + capabilities
+        if profile_context:
+            s += "\n\n--- AUSGEWÄHLTES AGENTENPROFIL ---\n" + profile_context
         s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
         return s
 
-    def _get_bach_context(self, text: str) -> str:
-        # Nur noch der Injektor-Altpfad (heute: Time). Der fruehere Memory-
-        # Schnappschuss (memory("context")) kam nie an -- bach_api liefert ein
-        # Tupel, die str-Pruefung verwarf es still; prompt-bezogenes Gedaechtnis
-        # liefert der MEMORY-HOOK-Block (S3 E6, T-20260920-823767362).
-        if not self.injector:
+    def _get_extra_context(self, text: str) -> str:
+        if not self.injector and not self.memory:
             return ""
         parts = []
-        try:
-            # Was der memoryhooker-Seam uebernimmt, liefert er im MEMORY-HOOK-
-            # Block; hier nicht doppelt (S3, Rueckweg BACH_LEGACY_INJECTORS).
-            hook = self._memory_hook()
-            skip = hook.handled_injectors() if hook is not None else frozenset()
-            inj = self.injector.process(text, skip=skip) if skip else self.injector.process(text)
-            if inj:
-                parts.append("Kontext:\n" + "\n".join(str(i) for i in inj[:3]))
-        except Exception:
-            pass
+        if self.injector:
+            try:
+                hook = self._memory_hook()
+                skip = hook.handled_injectors() if hook is not None else frozenset()
+                inj = self.injector.process(text, skip=skip) if skip else self.injector.process(text)
+                if inj:
+                    parts.append("Kontext:\n" + "\n".join(str(i) for i in inj[:3]))
+            except Exception:
+                pass
+        if self.memory:
+            try:
+                ctx = self.memory("context")
+                if ctx and isinstance(ctx, str) and len(ctx) > 10:
+                    parts.append(ctx[:2000])
+            except Exception:
+                pass
         return "\n\n".join(parts)
+
+    def _get_bach_context(self, text: str) -> str:
+        """BACH's name for the module's injector/memory context hook."""
+        return self._get_extra_context(text)
 
     def _get_memory_hook_context(self, text: str, chat_id: str) -> str:
         """Memoryhooker-Kontext (Stufe 6) -- fail-soft, liefert nie einen Abbruch.
@@ -2122,23 +1325,43 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return None
 
     async def process(self, text: str, chat_id: str, *, backend=None, model=None,
-                      skip_compute_gate: bool = False, **kwargs) -> str:
+                      skip_compute_gate: bool = False, agent_context=None,
+                      work_priority: str | None = None, **kwargs) -> str:
+        from .agent_profile_context import profile_chat_id_agent
+        profile_id = profile_chat_id_agent(chat_id)
+        if str(chat_id).startswith("agent:") and profile_id is None:
+            return FailedAnswer("Profil-Chat-ID ist ungültig")
+        if profile_id is not None and agent_context is None:
+            return FailedAnswer("Profilbindung fehlt")
+        if agent_context is not None and profile_id is None:
+            return FailedAnswer("Profilkontext benötigt eine Profil-Chat-ID")
         gate = self._chat_turn_gate(chat_id)
-        await self._enter_chat_turn(gate)
+        if agent_context is not None:
+            await self._enter_profile_turn(gate)
+        else:
+            await self._enter_chat_turn(gate)
+        compute_context_token = self._compute_turn_context.set((
+            str(chat_id), self._process_priority(chat_id, work_priority)
+        ))
         try:
+            if self._process_priority(chat_id, work_priority) == "background":
+                self._reset_task_completion_receipts(chat_id)
+            if agent_context is not None:
+                self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
                 text, chat_id, backend=backend, model=model,
                 skip_compute_gate=skip_compute_gate, **kwargs,
             )
         finally:
+            self._compute_turn_context.reset(compute_context_token)
             self._leave_chat_turn(gate)
 
     async def _process_turn(self, text: str, chat_id: str, *, backend=None, model=None,
                             skip_compute_gate: bool = False, **kwargs) -> str:
         """Verarbeitet eine User-Nachricht und gibt die Antwort zurück."""
-        # Der eine Punkt, an dem jeder Modell-Load vorbeikommt: Telegram,
-        # /api/chat (Idle-Worker) und der Auftrags-Worker rufen alle hier an.
-        # Das Gate deshalb hier statt je Aufrufer (T-20260907-440775748).
+        # Jeder lokale Modellaufruf nutzt _chat_with_compute_turn. Das Gate
+        # wird nach jeder Inferenz freigegeben, damit ein wartender Vordergrund-
+        # Chat vor der nächsten Hintergrund-Toolrunde rechnen kann.
         known_session = self.sessions.get(chat_id)
         selected_backend = (
             backend
@@ -2156,6 +1379,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
+        if str(chat_id).startswith("agent:"):
+            if not session.profile_binding or not session.profile_context_text:
+                raise ValueError("Profilkontext fehlt vor Inferenz")
+            session.model = selected_model
+            session.custom_system_prompt = self.build_system_prompt(
+                session, profile_context=session.profile_context_text)
         capability_error = self._worker_backend_gate(session, selected_backend)
         if capability_error is not None:
             session.messages.extend([
@@ -2185,11 +1414,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 model=selected_model,
             )
 
-        bach_ctx = self._get_bach_context(text)
+        bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
         # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
         # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
         # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
-        hook_ctx = self._get_memory_hook_context(text, chat_id)
+        hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)
 
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):
@@ -2204,20 +1433,23 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         )
 
         if getattr(selected_backend, "manages_own_tools", False):
+            if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
+                msgs[0]["content"] += "\n\n" + SELF_DECOMPOSE_INSTRUCTION
             capability_error = self._worker_backend_gate(session, selected_backend)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
                 self._persist_session(chat_id, session)
                 return capability_error
             try:
-                result = await selected_backend.chat(
+                result = await self._chat_with_compute_turn(
+                    selected_backend,
                     msgs, think=session.think, model=selected_model
                 )
                 answer = _managed_backend_answer(result)
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = tools_for_mode(session.mode) if session.allow_tools is True else []
+            tools = tools_for_mode(session.mode) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -2227,6 +1459,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 context_limit=context_limit,
             )
         answer = _classify_successful_answer(answer)
+        completed_task_ids = ()
+        if self._compute_turn_context.get() == (str(chat_id), "background") and not isinstance(answer, FailedAnswer):
+            completed_task_ids = self.get_last_task_completion_receipts(chat_id)
+        if completed_task_ids:
+            answer = SuccessfulAnswer(answer)
+            answer.completed_task_ids = completed_task_ids
         session.messages.append({
             "role": "assistant",
             "content": answer,
@@ -2235,6 +1473,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if isinstance(answer, FailedAnswer)
                 else FailedAnswer.STATUS_SUCCESS
             ),
+            **({"completed_task_ids": list(completed_task_ids)} if completed_task_ids else {}),
         })
         self._persist_session(chat_id, session)
         return answer
@@ -2254,6 +1493,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         offered_tools = tools
+        turn_context = self._compute_turn_context.get()
+        background_task = turn_context is not None and turn_context[1] == "background"
+        if background_task and session.allow_tools is True and offered_tools:
+            msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+        msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
         while True:
             capability_error = self._refresh_worker_tools(session)
             if capability_error is not None:
@@ -2291,8 +1535,35 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     # Steuerung darf den Lauf nie gefährden.
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
 
+            handoff_control = getattr(session, "worker_handoff", None)
+            if handoff_control is not None and handoff_control.closed:
+                return FailedAnswer.from_exception(RuntimeError("Workerlauf beendet"))
+            request_id = handoff_control.consume() if handoff_control is not None else None
+            if request_id is not None:
+                try:
+                    summary = await self._handoff(
+                        msgs, session, backend=selected_backend, model=selected_model, strict=True,
+                    )
+                    resumed, history = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
+                    )
+                    if not handoff_control.finish(request_id, succeeded=True):
+                        return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
+                    msgs = resumed
+                    session.messages = history
+                    capability_error = self._refresh_worker_tools(session)
+                    if capability_error is not None:
+                        return capability_error
+                    tools = offered_tools if session.allow_tools is True else []
+                except Exception as exc:
+                    handoff_control.finish(request_id, succeeded=False)
+                    return FailedAnswer.from_exception(exc)
+
             try:
-                result = await selected_backend.chat(
+                result = await self._chat_with_compute_turn(
+                    selected_backend,
                     msgs, tools=tools, think=session.think, model=selected_model
                 )
             except Exception as e:
@@ -2322,12 +1593,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
                 try:
-                    msgs = await self._handoff(
+                    summary = await self._handoff(
                         msgs,
                         session,
                         backend=selected_backend,
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
+                    )
+                    msgs, session.messages = _resume_handoff_context(
+                        msgs, summary, background_task=background_task,
+                        has_tools=session.allow_tools is True and bool(offered_tools),
+                        round_num=round_num, max_rounds=max_rounds,
                     )
                 except Exception as e:
                     session.current_tool = ""
@@ -2406,6 +1682,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     bach_app=self.bach_app,
                     default_model=selected_model,
                 )
+                self._record_task_completion_receipt(
+                    getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
+                )
                 tool_call_id = ""
                 if hasattr(selected_backend, "_last_tool_call_ids"):
                     ids = selected_backend._last_tool_call_ids
@@ -2414,6 +1693,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 msgs.append(
                     selected_backend.tool_response_message(str(t_result), tool_call_id)
                 )
+
+            # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
+            # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
+            msgs.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
 
             # Hook-Punkt: die Hooker bringen eigene Cooldowns mit, deshalb darf
             # hier oft gefragt werden - sie schweigen selbst, wenn nichts ansteht.
@@ -2447,7 +1730,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.think if selected_model == "glm-5.3:cloud"
                         else False
                     )
-                    final_res = await selected_backend.chat(
+                    final_res = await self._chat_with_compute_turn(
+                        selected_backend,
                         msgs, tools=None, think=final_think, model=selected_model
                     )
                     if final_res.get("error"):
@@ -2464,15 +1748,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     log.warning("Abschluss-Zusammenfassung fehlgeschlagen: %s", e)
                     return FailedAnswer.from_exception(e)
 
-            if max_rounds > 0 and round_num >= max_rounds - 2:
+            if max_rounds > 0 and max_rounds - round_num <= tool_round_warning_threshold(max_rounds):
                 rest = max_rounds - round_num
                 nudge = (
                     f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
                     "Deine Werkzeugrunden sind fast aufgebraucht! "
                     "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
-                    "Wenn du den Code in dieser Session nicht mehr fertigstellen kannst: "
-                    "Rufe sofort `task_manage(action='add', title='Edit: ...', description='Exakte Datei: ..., Zeilen: ..., Was zu tun ist: ...', category='...')` auf, "
-                    "um einen konkreten Editier-Task anzulegen, und schließe diesen Analyse-Task mit deinen Erkenntnissen ab."
+                    "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
+                    + SELF_DECOMPOSE_INSTRUCTION
                 )
                 msgs.append({"role": "user", "content": nudge})
 
@@ -2538,7 +1821,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_model = model or session.model or selected_backend.get_default_model()
         handoff_error = None
         try:
-            res = await selected_backend.chat(
+            res = await self._chat_with_compute_turn(
+                selected_backend,
                 frage, tools=None,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
                 model=selected_model,
@@ -2609,7 +1893,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            result = await selected_backend.chat(
+            result = await self._chat_with_compute_turn(
+                selected_backend,
                 prompt,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
                 model=selected_model,

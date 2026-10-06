@@ -102,6 +102,10 @@ def probe_explorer_provider() -> ExplorerProvider:
 
 def load_external_explorer() -> Any:
     """Import the independent module explicitly (no silent fallback)."""
+    try:
+        import email  # noqa: F401
+    except Exception:
+        pass
     return importlib.import_module(EXTERNAL_MODULE)
 
 
@@ -295,24 +299,37 @@ def topology_evidence(
 
     payload: dict = {"enabled": True, "report": report}
 
-    drift = _compare_and_persist(report, state_dir, persist_state)
+    drift = _compare_and_persist(report, state_dir, persist_state, base_path=base_path)
     if drift is not None:
         payload["drift"] = drift
     return payload
 
 
-def _state_file(state_dir: Path | None) -> Path | None:
+def _state_file(
+    state_dir: Path | None,
+    base_path: Path | str | None = None,
+) -> Path | None:
     if state_dir is None:
-        try:
-            from .bach_paths import DATA_DIR
-            state_dir = DATA_DIR / STATE_DIR_NAME
-        except Exception:
-            return None
+        if base_path is not None:
+            p = Path(base_path)
+            if (p / "data").exists():
+                state_dir = p / "data" / STATE_DIR_NAME
+            elif (p / "system" / "data").exists():
+                state_dir = p / "system" / "data" / STATE_DIR_NAME
+        if state_dir is None:
+            try:
+                from .bach_paths import DATA_DIR
+                state_dir = DATA_DIR / STATE_DIR_NAME
+            except Exception:
+                return None
     return Path(state_dir) / STATE_FILE_NAME
 
 
 def _compare_and_persist(
-    report: dict, state_dir: Path | None, persist_state: bool
+    report: dict,
+    state_dir: Path | None,
+    persist_state: bool,
+    base_path: Path | str | None = None,
 ) -> list[str] | None:
     """Vergleicht den Report mit dem letzten gespeicherten Stand.
 
@@ -320,7 +337,7 @@ def _compare_and_persist(
     Stand existiert / verglichen werden kann. Speichert den Report nur bei
     ``persist_state=True`` (upgrade check); preflight bleibt lese-/beweisend.
     """
-    state_file = _state_file(state_dir)
+    state_file = _state_file(state_dir, base_path=base_path)
     if state_file is None:
         return None
 

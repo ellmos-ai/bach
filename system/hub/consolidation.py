@@ -16,6 +16,7 @@ Operationen:
 - archive:  Alte Eintraege archivieren
 - index:    Facts/Help/Wiki abgleichen
 - review:   KI-Review anfordern (Tasks)
+- sleep:    Schlaffunktion (TTL-Grace/Deaktivierung via Gardener sleep_union)
 """
 import sqlite3
 from contextlib import contextmanager
@@ -51,7 +52,8 @@ class ConsolidationHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "status": "Konsolidierungs-Status anzeigen",
-            "run": "Alle Prozesse ausfuehren (weight, archive, index)",
+            "run": "Bestehende BACH-Schritte inkl. sync-triggers und Gardener-TTL ausführen",
+            "policy": "S4-Zuständigkeit und Auslöservertrag anzeigen (keine Laufzeitprüfung)",
             "compress": "Sessions komprimieren (benoetigt KI)",
             "weight": "Gewichtungen aktualisieren (decay + boost)",
             "archive": "Alte Eintraege archivieren",
@@ -60,10 +62,13 @@ class ConsolidationHandler(BaseHandler):
             "init": "Tracking fuer existierende Eintraege initialisieren",
             "sync-triggers": "Dynamische Kontext-Trigger aktualisieren (NEU v1.1.80)",
             "forget": "Ungenutzte Eintraege loeschen (weight < threshold)",
-            "reclassify": "Falsch kategorisierte Eintraege korrigieren (NEU v1.1.81)"
+            "reclassify": "Falsch kategorisierte Eintraege korrigieren (NEU v1.1.81)",
+            "sleep": "Schlaffunktion (TTL-Grace/Deaktivierung via Gardener sleep_union)"
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        if operation == "policy":
+            return self._sleep_policy()
         if not self.db_path.exists():
             return False, f"[FEHLER] Datenbank nicht gefunden: {self.db_path}"
 
@@ -89,6 +94,8 @@ class ConsolidationHandler(BaseHandler):
             return self._deactivate_unused(dry_run)
         elif operation == "reclassify":
             return self._reclassify(args, dry_run)
+        elif operation == "sleep":
+            return self._sleep_union(args, dry_run)
         else:
             ops = "\n".join(f"  {k:12} - {v}" for k, v in self.get_operations().items())
             return False, f"[FEHLER] Unbekannte Operation: {operation}\n\nVerfuegbar:\n{ops}"
@@ -152,46 +159,87 @@ class ConsolidationHandler(BaseHandler):
                 output.append(f"    - active:              {by_status.get('active', 0):5}")
                 output.append(f"    - archived:            {by_status.get('archived', 0):5}")
                 output.append(f"    - deleted:             {by_status.get('deleted', 0):5}")
+                output.append(f"    - forgotten:           {by_status.get('forgotten', 0):5}")
                 output.append(f"  Durchschnittl. Gewicht:  {avg_weight:.2f}")
                 output.append(f"  Unter Archiv-Schwelle:   {below_threshold:5}")
             except Exception as e:
                 output.append(f"KONSOLIDIERUNG: Fehler - {e}")
 
             output.append("")
+            # Schlaf & TTL Status (Gardener sleep_union / decay_config)
+            try:
+                cursor.execute("""
+                    SELECT type,
+                           COUNT(*) as total,
+                           SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active,
+                           SUM(CASE WHEN is_active = 1 AND expires_at IS NOT NULL THEN 1 ELSE 0 END) as with_ttl,
+                           SUM(CASE WHEN is_active = 1 AND expires_at IS NOT NULL AND datetime(expires_at) < datetime('now') THEN 1 ELSE 0 END) as expired
+                    FROM memory_working
+                    WHERE type IN ('handoff', 'context')
+                    GROUP BY type
+                """)
+                working_ttl = cursor.fetchall()
+                if working_ttl:
+                    output.append("")
+                    output.append("SCHLAF & TTL (Working-Memory):")
+                    for row in working_ttl:
+                        act = row["active"] or 0
+                        w_ttl = row["with_ttl"] or 0
+                        exp = row["expired"] or 0
+                        output.append(f"  {row['type']:10} aktiv: {act:4} | mit TTL: {w_ttl:4} | abgelaufen: {exp:4}")
+
+                cursor.execute("SELECT COUNT(*) FROM decay_config")
+                decay_count = cursor.fetchone()[0]
+                if decay_count > 0:
+                    cursor.execute("SELECT agent_id, fact_decay_rate, lesson_decay_rate, min_confidence, last_cleanup_at FROM decay_config ORDER BY agent_id")
+                    cfg_rows = cursor.fetchall()
+                    output.append("")
+                    output.append(f"DECAY-CONFIG ({decay_count} Agenten):")
+                    for cr in cfg_rows:
+                        last_c = cr['last_cleanup_at'] or "nie"
+                        output.append(f"  {cr['agent_id']:12} Fact-Decay: {cr['fact_decay_rate']}, Lesson-Decay: {cr['lesson_decay_rate']}, Letzter Schlaf: {last_c}")
+            except Exception:
+                pass
+
+            output.append("")
             output.append("SCHWELLENWERTE:")
             output.append(f"  Archivieren bei weight < {self.WEIGHT_THRESHOLD_ARCHIVE}")
-            output.append(f"  Loeschen bei weight <    {self.WEIGHT_THRESHOLD_DELETE}")
+            output.append(f"  Vergessen bei weight <   {self.WEIGHT_THRESHOLD_DELETE}")
             output.append(f"  Decay-Rate (taeglich):   {self.DECAY_RATE_DEFAULT}")
             output.append(f"  Boost bei Abruf:         +{self.BOOST_ON_ACCESS}")
 
             return True, "\n".join(output)
 
+    def _sleep_policy(self) -> tuple:
+        """Normativer S4-Vertrag; keine Behauptung über aktivierte Jobs."""
+        return True, (
+            "[S4-POLICY] Gemeinsamer Schlaf: Gardener ist der zuständige Träger.\n"
+            "sync-triggers gehört zur gemeinsamen Schlaf-Pipeline.\n"
+            "Bestehender BACH-Pfad run: weight, archive, index, sync-triggers, forget, Gardener-TTL.\n"
+            "sleep ruft derzeit nur Gardener sleep_union (TTL) auf; decay=False vermeidet Doppelverfall.\n"
+            "Vorgesehene Auslöser: workflowhooker Stop und ellmos-scheduler Nachtlauf.\n"
+            "Offene Integration: gemeinsamer Gardener-Pipeline-Einstieg und dessen Stop-/Nacht-Anbindung.\n"
+            "Diese Ausgabe prüft keine Registrierungen und aktiviert keine Jobs oder Hooks."
+        )
+
     def _run_all(self, dry_run: bool = False) -> tuple:
-        """Fuehrt alle automatischen Prozesse aus"""
+        """Bestehenden BACH-Pfad ausführen, jeden Teilschritt wahrheitsgemäß melden."""
         results = []
-
-        # 1. Gewichtungen aktualisieren
-        success, msg = self._update_weights(dry_run)
-        results.append(f"WEIGHT: {msg.split(chr(10))[0]}")
-
-        # 2. Alte archivieren
-        success, msg = self._archive_old(dry_run)
-        results.append(f"ARCHIVE: {msg.split(chr(10))[0]}")
-
-        # 3. Facts-Index
-        success, msg = self._index_facts(dry_run)
-        results.append(f"INDEX: {msg.split(chr(10))[0]}")
-        
-        # 4. Sync Triggers (NEU v1.1.80)
-        success, msg = self._sync_triggers(dry_run)
-        results.append(f"TRIGGERS: {msg.split(chr(10))[0]}")
-        
-        # 5. Vergessen (NEU v1.1.80)
-        success, msg = self._deactivate_unused(dry_run)
-        results.append(f"FORGET: {msg.split(chr(10))[0]}")
-
+        all_ok = True
+        for name, step in (
+            ("WEIGHT", self._update_weights),
+            ("ARCHIVE", self._archive_old),
+            ("INDEX", self._index_facts),
+            ("TRIGGERS", self._sync_triggers),
+            ("FORGET", self._deactivate_unused),
+            ("SLEEP", self._sleep_union),
+        ):
+            success, msg = step(dry_run=dry_run)
+            all_ok = all_ok and success
+            # Details erhalten: ein fehlender Generator darf nicht im ersten Satz verschwinden.
+            results.append(f"{name} ({'OK' if success else 'FEHLER'}): {msg}")
         prefix = "[DRY-RUN] " if dry_run else ""
-        return True, f"{prefix}[CONSOLIDATION] Run All\n" + "\n".join(results)
+        return all_ok, f"{prefix}[CONSOLIDATION] Run All\n" + "\n".join(results)
 
     def _update_weights(self, dry_run: bool = False) -> tuple:
         """Aktualisiert Gewichtungen (decay)"""
@@ -587,6 +635,7 @@ class ConsolidationHandler(BaseHandler):
         if dry_run:
             return True, "[DRY-RUN] Trigger-Synchronisation uebersprungen."
             
+        import os
         import subprocess
         import sys
         
@@ -600,24 +649,30 @@ class ConsolidationHandler(BaseHandler):
         
         results = []
         tools_path = self.base_path / "tools"
+        env = os.environ.copy()
+        env["BACH_DB"] = str(self.db_path.resolve())
+        all_ok = True
         
         for script in scripts:
             script_path = tools_path / script
             if script_path.exists():
                 try:
-                    res = subprocess.run([sys.executable, str(script_path)],
+                    subprocess.run([sys.executable, str(script_path)],
                                        capture_output=True, text=True,
-                                       encoding='utf-8', errors='replace', check=True)
+                                       encoding='utf-8', errors='replace', check=True,
+                                       env=env)
                     results.append(f"  {script}: OK")
                 except Exception as e:
+                    all_ok = False
                     results.append(f"  {script}: Fehler ({e})")
             else:
+                all_ok = False
                 results.append(f"  {script}: Nicht gefunden")
                 
-        return True, "Trigger-Sync abgeschlossen:\n" + "\n".join(results)
+        return all_ok, "Trigger-Sync abgeschlossen:\n" + "\n".join(results)
 
     def _deactivate_unused(self, dry_run: bool = False) -> tuple:
-        """Deaktiviert oder loescht Eintraege mit sehr geringem Gewicht (v1.1.80)."""
+        """Deaktiviert oder markiert Eintraege mit sehr geringem Gewicht als vergessen (v1.1.80)."""
         with self._get_db() as conn:
             cursor = conn.cursor()
 
@@ -627,28 +682,46 @@ class ConsolidationHandler(BaseHandler):
                 WHERE status = 'active' AND weight < ?
             """, (self.WEIGHT_THRESHOLD_DELETE,))
 
-            to_delete = cursor.fetchall()
+            to_process = cursor.fetchall()
+            deactivated = 0
+            forgotten = 0
+
+            for entry in to_process:
+                if entry['source_table'] == 'memory_facts':
+                    forgotten += 1
+                else:
+                    deactivated += 1
 
             if not dry_run:
                 now = datetime.now().isoformat()
-                for entry in to_delete:
-                    cursor.execute("""
-                        UPDATE memory_consolidation
-                        SET status = 'deleted', updated_at = ?
-                        WHERE id = ?
-                    """, (now, entry['id']))
-
+                for entry in to_process:
                     table = entry['source_table']
-                    if table in ['memory_lessons', 'memory_working']:
-                        cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?",
-                                     (now, entry['source_id']))
-                    elif table == 'memory_facts':
-                        cursor.execute("DELETE FROM memory_facts WHERE id = ?", (entry['source_id'],))
+                    if table == 'memory_facts':
+                        cursor.execute("""
+                            UPDATE memory_consolidation
+                            SET status = 'forgotten', updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['id']))
+                        cursor.execute("""
+                            UPDATE memory_facts
+                            SET confidence = 0.0, updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['source_id']))
+                    else:
+                        cursor.execute("""
+                            UPDATE memory_consolidation
+                            SET status = 'deleted', updated_at = ?
+                            WHERE id = ?
+                        """, (now, entry['id']))
+
+                        if table in ['memory_lessons', 'memory_working']:
+                            cursor.execute(f"UPDATE {table} SET is_active = 0, updated_at = ? WHERE id = ?",
+                                         (now, entry['source_id']))
 
                 conn.commit()
 
             prefix = "[DRY-RUN] " if dry_run else ""
-            return True, f"{prefix}[OK] {len(to_delete)} Eintraege geloescht/deaktiviert"
+            return True, f"{prefix}[OK] {deactivated} Einträge deaktiviert, {forgotten} als vergessen markiert"
 
     def _reclassify(self, args: list, dry_run: bool = False) -> tuple:
         """Korrigiert falsch kategorisierte Eintraege (v1.1.81).
@@ -900,3 +973,69 @@ class ConsolidationHandler(BaseHandler):
             conn.commit()
 
             return True, f"[OK] {fixed} Eintraege reklassifiziert, {tasks_created} Tasks erstellt"
+
+    def _sleep_union(self, args: Optional[List[str]] = None, dry_run: bool = False) -> tuple:
+        """Schlaffunktion via Gardener sleep_union (TTL-Grace/Deaktivierung).
+
+        Wendet TTL-Grace-Periods auf handoff/context Working-Memory-Eintraege an
+        und deaktiviert abgelaufene Eintraege.
+        decay=False, da BACH eigene Gewichtung/Verfall verwaltet.
+
+        CLI-Argumente:
+          --agent <id>    Nur fuer bestimmten Agenten ausfuehren
+          --if-due        Nur ausfuehren, wenn Intervall laut decay_config faellig
+          --report <path> JSON-Report anhaengen
+        """
+        args = args or []
+        agent = None
+        if_due = False
+        report = None
+
+        i = 0
+        while i < len(args):
+            if args[i] == "--agent" and i + 1 < len(args):
+                agent = args[i + 1]
+                i += 2
+            elif args[i] == "--if-due":
+                if_due = True
+                i += 1
+            elif args[i] == "--report" and i + 1 < len(args):
+                report = args[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        try:
+            import sleep_union
+        except ImportError:
+            try:
+                from gardener import sleep_union
+            except ImportError:
+                return False, "[SLEEP] sleep_union Modul (gardener) nicht verfuegbar."
+
+        try:
+            result = sleep_union.sleep(
+                str(self.db_path),
+                agent=agent,
+                if_due=if_due,
+                dry_run=dry_run,
+                decay=False,
+                report=report,
+            )
+            agents = result.get("agents", {})
+            total_ttl = sum(a.get("ttl_gesetzt", 0) for a in agents.values())
+            total_deact = sum(a.get("deaktiviert", 0) for a in agents.values())
+
+            skipped = []
+            for ag_id, a_data in sorted(agents.items()):
+                if a_data.get("uebersprungen"):
+                    reasons = ",".join(str(r) for r in a_data["uebersprungen"])
+                    skipped.append(f"{ag_id}: {reasons}")
+
+            prefix = "[DRY-RUN] " if dry_run else ""
+            summary = f"{prefix}[SLEEP] TTL gesetzt: {total_ttl}, Deaktiviert: {total_deact} ({len(agents)} Agenten)"
+            if skipped:
+                summary += f" | Uebersprungen: {'; '.join(skipped)}"
+            return True, summary
+        except Exception as e:
+            return False, f"[SLEEP] Fehler: {e}"

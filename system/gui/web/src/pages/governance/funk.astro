@@ -1,0 +1,57 @@
+---
+// src/pages/governance/funk.astro — Agentenfunk-Vertragsplatz
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+
+<BachLayout title="Agentenfunk | Governance" currentPath="/governance/funk">
+  <header class="funk-header">
+    <div>
+      <h1>📻 Agentenfunk</h1>
+      <p>Nachrichten und Signale zwischen Agenten.</p>
+    </div>
+    <span class="badge">Transportstatus unbekannt</span>
+  </header>
+
+  <nav class="funk-nav" aria-label="Governance">
+    <a href="/governance" class="btn btn-sm">🏛️ Control Room</a>
+    <a href="/governance/funk" class="btn btn-sm btn-primary" aria-current="page">📻 Agentenfunk</a>
+    <a href="/governance/usecases" class="btn btn-sm">📑 Use Cases</a>
+    <a href="/governance/logs" class="btn btn-sm">📜 Audit</a>
+  </nav>
+
+  <div class="funk-grid">
+    <section class="card">
+      <h2>📡 Signal übertragen</h2>
+      <p>In Arbeit: Es fehlt ein geprüfter Empfänger- und Zustellvertrag. Ein lokaler Eintrag im Browser wäre noch keine zugestellte Nachricht.</p>
+      <form class="funk-form">
+        <label>Absender <input type="text" value="Geräteidentität noch nicht gebunden" disabled /></label>
+        <label>Ziel <select disabled><option>Empfängerregistrierung fehlt</option></select></label>
+        <label>Signaltyp <select disabled><option>Transportvertrag fehlt</option></select></label>
+        <label>Inhalt <textarea rows="4" placeholder="Nachrichtenversand noch nicht angebunden" disabled></textarea></label>
+        <button type="button" class="btn btn-primary" disabled>Signal senden</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>📜 Zustellung &amp; Verlauf</h2>
+      <p>In Arbeit: Für einen Verlauf braucht die Oberfläche quittierte Sendungen, Empfängerbezug und eine zugriffsgeschützte Quelle. Derzeit liegt kein bestätigter Live-Feed vor.</p>
+      <p role="status" class="funk-state">Keine Transportmessung verfügbar</p>
+    </section>
+  </div>
+</BachLayout>
+
+<style>
+  .funk-header { display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .funk-header h1 { font-size:1.75rem; margin:0 0 0.25rem; }
+  .funk-header p, .funk-grid p { color:var(--text-muted); line-height:1.5; }
+  .funk-nav { display:flex; gap:0.5rem; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem; }
+  .funk-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.5rem; }
+  .funk-grid .card { min-width:0; padding:1rem; }
+  .funk-grid h2 { font-size:1rem; }
+  .funk-form { display:grid; gap:0.75rem; }
+  .funk-form label { display:grid; gap:0.3rem; color:var(--text-muted); font-size:0.85rem; }
+  .funk-form input, .funk-form select, .funk-form textarea { width:100%; box-sizing:border-box; padding:0.5rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:5px; color:var(--text); }
+  .funk-form button { justify-self:start; }
+  .funk-state { border:1px solid var(--border); border-radius:5px; padding:0.75rem; }
+  @media(max-width:760px) { .funk-grid { grid-template-columns:minmax(0,1fr); } }
+</style>

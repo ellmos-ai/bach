@@ -572,27 +572,32 @@ class DaemonService:
                     )
                     thread.start()
     
-    def run(self, pause_onedrive: bool = True):
+    def run(self, pause_onedrive: bool = True, owner_kind: str = "standalone"):
         """
         Startet den Daemon-Loop.
 
         Args:
             pause_onedrive: Wenn True, wird OneDrive waehrend des Daemon-Betriebs pausiert
         """
+        from gui.daemon_identity import identity_path, make_identity
+        identity = make_identity(DAEMON_PID_FILE, BACH_DIR, owner_kind)
         self.running = True
 
-        # PID-File erstellen
+        # Numeric PID for legacy readers; sidecar binds PID to process birth and service root.
         DAEMON_PID_FILE.parent.mkdir(exist_ok=True)
-        DAEMON_PID_FILE.write_text(str(os.getpid()))
+        sidecar = identity_path(DAEMON_PID_FILE)
+        temporary = sidecar.with_suffix(".tmp")
+        temporary.write_text(json.dumps(identity), encoding="utf-8")
+        os.replace(temporary, sidecar)
+        DAEMON_PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
         logger.info("BACH Daemon Service gestartet")
 
         # Hinweis: Cloud-Sync wird nicht mehr dauerhaft im Leerlauf pausiert,
         # sondern punktuell und operativ waehrend einzelner Schreib-Jobs.
 
-        self.load_jobs()
-
         try:
+            self.load_jobs()
             while self.running and not self._shutdown_event.is_set():
                 self.check_and_run_due_jobs()
 
@@ -613,9 +618,16 @@ class DaemonService:
                                 logger.error(f"[RECURRING] Fehler: {e}")
 
         finally:
-            # PID-File entfernen
-            if DAEMON_PID_FILE.exists():
-                DAEMON_PID_FILE.unlink()
+            self.running = False
+            # Delete only our own identity record; never remove a later owner's files.
+            try:
+                same_identity = json.loads(sidecar.read_text(encoding="utf-8")) == identity
+                same_pid = DAEMON_PID_FILE.read_text(encoding="utf-8").strip() == str(os.getpid())
+                if same_identity and same_pid:
+                    DAEMON_PID_FILE.unlink()
+                    sidecar.unlink()
+            except (OSError, ValueError, TypeError):
+                pass
             logger.info("BACH Daemon Service beendet")
     
     def stop(self):

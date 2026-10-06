@@ -33,6 +33,7 @@ from hub._services.chat.slots_config import (
     is_slot_paused,
     list_workers,
     load_slots_config,
+    match_task_to_pickup_filter,
     record_activity,
     remove_worker,
     save_slots_config,
@@ -46,6 +47,18 @@ from hub._services.chat.telegram_chat import (
     _snapshot_chat_backend,
     legacy_worker_binding,
 )
+
+
+def test_control_chat_response_carries_receipts_bound_to_this_answer():
+    from hub._services.chat.chat_runtime import SuccessfulAnswer
+    from hub._services.chat.telegram_chat import _control_chat_response
+
+    answer = SuccessfulAnswer("FERTIG")
+    answer.completed_task_ids = (42,)
+    response, status = _control_chat_response(answer)
+    assert status == 200
+    assert response == {"ok": True, "answer": "FERTIG", "completed_task_ids": [42]}
+    assert _control_chat_response("FERTIG")[0] == {"ok": True, "answer": "FERTIG"}
 
 
 class TestSlotsConfigCRUD:
@@ -359,6 +372,152 @@ class TestSlotsConfigCRUD:
         assert is_slot_paused(slot) is True
         assert slot["pause_counter"] == 0
 
+    def test_pause_basis_tasks_and_persisted_counter(self, tmp_path):
+        cfg_file = tmp_path / "pause-tasks.json"
+        initialize_slots_config(str(cfg_file))
+        update_slot("buddha_always_on", {
+            "pause_after": 2, "pause_minutes": 1, "pause_basis": "tasks",
+        }, path=str(cfg_file))
+
+        assert bump_pause_counter("buddha_always_on", "runs", str(cfg_file)) is False
+        assert get_slot("buddha_always_on", str(cfg_file))["pause_counter"] == 0
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is False
+        assert get_slot("buddha_always_on", str(cfg_file))["pause_counter"] == 1
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is True
+        paused = get_slot("buddha_always_on", str(cfg_file))
+        assert paused["pause_counter"] == 0
+        assert is_slot_paused(paused)
+        assert bump_pause_counter("buddha_always_on", "tasks", str(cfg_file)) is False
+
+    def test_existing_v1_config_gains_pause_fields(self, tmp_path):
+        cfg_file = tmp_path / "slots-v1.json"
+        cfg = initialize_slots_config(str(cfg_file))
+        cfg["version"] = 1
+        for slot in cfg["slots"].values():
+            for field in ("pause_after", "pause_minutes", "pause_basis",
+                          "pause_counter", "pause_started_at"):
+                slot.pop(field)
+        save_slots_config(cfg, str(cfg_file))
+
+        migrated = load_slots_config(str(cfg_file), strict=True)
+        assert migrated["version"] == 3
+        assert all(slot["pause_after"] == 5 for slot in migrated["slots"].values())
+
+
+
+    def test_pause_basis_tasks_only_increments_on_tasks(self, tmp_path):
+        from hub._services.chat.slots_config import (
+            get_slot_pause_info,
+            bump_pause_counter,
+            is_slot_paused,
+            update_slot,
+            get_slot,
+            initialize_slots_config,
+        )
+        cfg_file = tmp_path / "pause-basis-test.json"
+        initialize_slots_config(str(cfg_file))
+        update_slot(
+            "buddha_always_on",
+            {"pause_after": 2, "pause_minutes": 10, "pause_basis": "tasks"},
+            path=str(cfg_file),
+        )
+        slot = get_slot("buddha_always_on", path=str(cfg_file))
+
+        # Event type "runs" must NOT increment when basis is "tasks"
+        assert bump_pause_counter(slot, event_type="runs") is False
+        assert slot["pause_counter"] == 0
+
+        # Event type "tasks" increments counter
+        assert bump_pause_counter(slot, event_type="tasks") is False
+        assert slot["pause_counter"] == 1
+        assert is_slot_paused(slot) is False
+
+        # Second task reaches threshold -> pause starts!
+        assert bump_pause_counter(slot, event_type="tasks") is True
+        assert is_slot_paused(slot) is True
+        assert slot["pause_counter"] == 0
+
+        info = get_slot_pause_info(slot)
+        assert info["is_paused"] is True
+        assert info["remaining_minutes"] > 0
+        assert info["pause_basis"] == "tasks"
+
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
+    def test_dynamic_worker_cooldown_is_visible_and_resumes_after_timer(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-cooldown-test")
+        writes = []
+        monkeypatch.setattr(telegram_chat, "bump_pause_counter", lambda *_a, **_k: True)
+        monkeypatch.setattr(telegram_chat, "get_worker_slot", lambda _worker_id: {"id": control.worker_id})
+        monkeypatch.setattr(telegram_chat, "get_slot_pause_info", lambda _slot: {
+            "is_paused": True, "remaining_seconds": 0.02, "pause_minutes": 1,
+        })
+        monkeypatch.setattr(
+            telegram_chat,
+            "_update_worker_slot",
+            lambda _control, updates: writes.append(dict(updates)) or updates,
+        )
+        monkeypatch.setattr(telegram_chat, "_record_worker_activity", lambda *_a, **_k: True)
+
+        assert telegram_chat._wait_worker_cooldown(control) is True
+        assert writes[0]["status"] == "paused"
+        assert writes[0]["auto_paused"] is True
+        assert writes[-1]["status"] == "running"
+        assert writes[-1]["auto_paused"] is False
+
+    def test_dynamic_worker_cooldown_passes_task_event_type(self, monkeypatch):
+        from hub._services.chat import telegram_chat
+
+        control = telegram_chat._WorkerControl("worker-task-cooldown-test")
+        received = []
+        monkeypatch.setattr(
+            telegram_chat,
+            "bump_pause_counter",
+            lambda _worker_id, event_type="runs": received.append(event_type) or False,
+        )
+
+        assert telegram_chat._wait_worker_cooldown(control, event_type="tasks") is True
+        assert received == ["tasks"]
+
+    def test_dynamic_worker_pause_counts_tasks_only_after_turn_handoff_finishes(self):
+        from hub._services.chat.telegram_chat import (
+            _worker_pause_event_type,
+            _worker_task_completed,
+        )
+
+        task_based = {"pause_basis": "tasks"}
+        run_based = {"pause_basis": "runs"}
+        assert _worker_pause_event_type(task_based, task_completed=False) == "runs"
+        assert _worker_pause_event_type(task_based, task_completed=True) == "tasks"
+        assert _worker_pause_event_type(run_based, task_completed=True) == "runs"
+        assert _worker_task_completed({"task_id": 42}, (42,)) is True
+        assert _worker_task_completed({"task_id": 42}, (43,)) is False
+        assert _worker_task_completed({}, ()) is False
+        assert _worker_task_completed({}, (43,)) is True
+
 
 class TestTelegramSlotMapping:
     def test_display_names_do_not_block_api_default_or_exact_worker_id(self, tmp_path, monkeypatch):
@@ -661,6 +820,7 @@ class TestTelegramSlotMapping:
                     _resolve_slot_for_chat("worker-legacy-other")
 
     def test_legacy_session_binding_is_explicit_and_scoped(self, tmp_path):
+        initialize_slots_config()
         cfg_file = tmp_path / "legacy_binding.json"
         cfg = load_slots_config(str(cfg_file))
         session = ChatSession()
@@ -1045,7 +1205,7 @@ class TestControlHandlerEndpoints:
     def test_worker_gui_exposes_truthful_no_tools_control(self):
         from hub._services.chat import telegram_chat
 
-        source = Path(telegram_chat.__file__).read_text(encoding="utf-8")
+        source = getattr(telegram_chat, "WEB_ACTIVITY_DASHBOARD", "") or Path(telegram_chat.__file__).read_text(encoding="utf-8")
         assert 'id="nw-allow-tools" checked' in source
         assert "allow_tools: allowTools" in source
         assert "Max Turns 0“ bedeutet unbegrenzt" in source
@@ -1105,9 +1265,11 @@ class TestControlHandlerEndpoints:
             assert "completed" not in statuses
             assert activities[-1] == "error"
 
-    def test_get_slots_and_activity(self):
+    def test_get_slots_and_activity(self, monkeypatch):
+        initialize_slots_config()
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         handler = ControlHandler.__new__(ControlHandler)
-        handler.headers = {}
+        handler.headers = {"Authorization": "Bearer test-control-token"}
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()
@@ -1133,9 +1295,10 @@ class TestControlHandlerEndpoints:
             assert "buddha_chat" in html
             assert "buddha_always_on" in html
 
-    def test_get_prompts_and_history(self):
+    def test_get_prompts_and_history(self, monkeypatch):
+        monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
         handler = ControlHandler.__new__(ControlHandler)
-        handler.headers = {}
+        handler.headers = {"Authorization": "Bearer test-control-token"}
         handler.wfile = MagicMock()
         handler.send_response = MagicMock()
         handler.send_header = MagicMock()
@@ -1386,6 +1549,9 @@ class TestControlHandlerEndpoints:
                 self.release = threading.Event()
                 self.calls = 0
 
+            def get_session(self, _worker_id):
+                return ChatSession()
+
             async def process(self, *args, **kwargs):
                 self.calls += 1
                 self.started.set()
@@ -1629,3 +1795,381 @@ class TestControlHandlerEndpoints:
 
         assert responses[-1][1] == 400
         assert "Assignment verweigert" in responses[-1][0]["error"]
+
+
+class TestSlotsConfigVersionAndDefaults:
+    def test_initialize_slots_config_creates_file_with_version_3_and_defaults(self, tmp_path):
+        cfg_file = tmp_path / "init-defaults-v3.json"
+        assert not cfg_file.exists()
+
+        cfg = initialize_slots_config(str(cfg_file))
+
+        assert cfg_file.exists()
+        assert cfg["version"] == 3
+        assert "buddha_always_on" in cfg["slots"]
+        always_on = cfg["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+        assert always_on["pickup_filter"]["priorities"] == ["P1", "P2"]
+        assert "pause_after" in always_on
+        assert "pause_minutes" in always_on
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == always_on["pickup_filter"]
+
+    def test_load_slots_config_migrates_v2_to_v3_adding_pickup_filter(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v2-v3.json"
+        v2_cfg = {
+            "version": 2,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": dict(DEFAULT_CORE_SLOTS["buddha_chat"]),
+                "buddha_always_on": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_always_on"].items()
+                    if k != "pickup_filter"
+                },
+                "buddha_connector": dict(DEFAULT_CORE_SLOTS["buddha_connector"]),
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v2_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        always_on = loaded["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+
+    def test_load_slots_config_migrates_v1_to_v3_adding_pause_and_pickup_filter(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v1-v3.json"
+        pause_fields = {"pause_after", "pause_minutes", "pause_basis", "pause_counter", "pause_started_at"}
+        v1_cfg = {
+            "version": 1,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_chat"].items()
+                    if k not in pause_fields
+                },
+                "buddha_always_on": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_always_on"].items()
+                    if k not in pause_fields and k != "pickup_filter"
+                },
+                "buddha_connector": {
+                    k: v for k, v in DEFAULT_CORE_SLOTS["buddha_connector"].items()
+                    if k not in pause_fields
+                },
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v1_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        for slot_id in DEFAULT_CORE_SLOTS:
+            slot = loaded["slots"][slot_id]
+            assert "pause_after" in slot
+            assert "pause_minutes" in slot
+            assert "pause_counter" in slot
+        always_on = loaded["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+
+    def test_load_slots_config_keeps_existing_pickup_filter_on_v3(self, tmp_path):
+        cfg_file = tmp_path / "migrate-v3-keep-filter.json"
+        custom_filter = {
+            "enabled": False,
+            "categories": ["INBOX", "TASK"],
+            "priorities": ["P0"],
+            "tags": ["urgent"],
+            "exclude_tags": ["delegated"],
+        }
+        v3_cfg = {
+            "version": 3,
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "slots": {
+                "buddha_chat": dict(DEFAULT_CORE_SLOTS["buddha_chat"]),
+                "buddha_always_on": {
+                    **DEFAULT_CORE_SLOTS["buddha_always_on"],
+                    "pickup_filter": custom_filter,
+                },
+                "buddha_connector": dict(DEFAULT_CORE_SLOTS["buddha_connector"]),
+            },
+            "dynamic_workers": [],
+            "activity_history": [],
+        }
+        save_slots_config(v3_cfg, str(cfg_file))
+
+        loaded = load_slots_config(str(cfg_file))
+        assert loaded["version"] == 3
+        assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == custom_filter
+
+    def test_system_data_slots_config_exists_with_version_3_and_pickup_filter(self, tmp_path):
+        system_slots_file = tmp_path / "slots_config.json"
+        initialize_slots_config(str(system_slots_file))
+        cfg = load_slots_config(str(system_slots_file), strict=True)
+        assert cfg["version"] == 3
+        assert "buddha_always_on" in cfg["slots"]
+        always_on = cfg["slots"]["buddha_always_on"]
+        assert "pickup_filter" in always_on
+        assert always_on["pickup_filter"]["enabled"] is True
+        assert always_on["pickup_filter"]["categories"] == ["INBOX"]
+        assert always_on["pickup_filter"]["priorities"] == ["P1", "P2"]
+        assert isinstance(cfg.get("dynamic_workers"), list)
+        assert isinstance(cfg.get("activity_history"), list)
+
+
+class TestMatchTaskToPickupFilter:
+    """Direct unit tests for match_task_to_pickup_filter."""
+
+    @pytest.mark.parametrize(
+        "task,slot_filter,expected",
+        [
+            # enabled match / mismatch by category
+            ({"categories": ["INBOX"]}, {"enabled": True, "categories": ["INBOX"]}, True),
+            ({"categories": ["DONE"]}, {"enabled": True, "categories": ["INBOX"]}, False),
+            # disabled filter rejects everything
+            ({"categories": ["INBOX"]}, {"enabled": False, "categories": ["INBOX"]}, False),
+            # missing / malformed filter rejects everything
+            ({"categories": ["INBOX"]}, None, False),
+            ({"categories": ["INBOX"]}, "invalid", False),
+            # categories: multiple values, string normalization
+            ({"categories": "WORK"}, {"enabled": True, "categories": ["INBOX", "WORK"]}, True),
+            ({"categories": ["MEETING"]}, {"enabled": True, "categories": ["INBOX", "WORK"]}, False),
+            # priority
+            ({"priority": "P1"}, {"enabled": True, "priorities": ["P1", "P2"]}, True),
+            ({"priority": "P3"}, {"enabled": True, "priorities": ["P1", "P2"]}, False),
+            # tags
+            ({"tags": ["urgent"]}, {"enabled": True, "tags": ["urgent", "blocking"]}, True),
+            ({"tags": ["normal"]}, {"enabled": True, "tags": ["urgent"]}, False),
+            # tags as string
+            ({"tags": "urgent"}, {"enabled": True, "tags": ["urgent"]}, True),
+            # exclude tags
+            ({"tags": ["blocked"]}, {"enabled": True, "exclude_tags": ["blocked"]}, False),
+            ({"tags": ["ok"]}, {"enabled": True, "exclude_tags": ["blocked"]}, True),
+            # empty filter (enabled but no restrictions) matches any task
+            ({"categories": ["ANY"], "priority": "P9", "tags": ["whatever"]}, {"enabled": True}, True),
+            # combination: all criteria must match
+            (
+                {"categories": ["INBOX"], "priority": "P1", "tags": ["urgent"]},
+                {"enabled": True, "categories": ["INBOX"], "priorities": ["P1"], "tags": ["urgent"]},
+                True,
+            ),
+            (
+                {"categories": ["INBOX"], "priority": "P1", "tags": ["blocked"]},
+                {"enabled": True, "categories": ["INBOX"], "priorities": ["P1"], "exclude_tags": ["blocked"]},
+                False,
+            ),
+        ],
+    )
+    def test_match_task_to_pickup_filter(self, task, slot_filter, expected):
+        slot = {"pickup_filter": slot_filter}
+        assert match_task_to_pickup_filter(task, slot) is expected
+
+    def test_empty_slot_filter_dict_rejects(self):
+        # A slot with an empty dict as pickup_filter is treated as missing/malformed
+        assert match_task_to_pickup_filter({"categories": ["INBOX"]}, {"pickup_filter": {}}) is False
+
+    def test_match_task_sqlite_category_project_and_tags(self):
+        slot = {
+            "pickup_filter": {
+                "enabled": True,
+                "categories": ["INBOX"],
+                "priorities": ["P1", "P2"],
+                "tags": ["urgent"],
+                "exclude_tags": ["delegated"],
+            }
+        }
+        # Matches via singular 'category' and comma-separated tags
+        task1 = {"category": "INBOX", "priority": "P1", "tags": "urgent, review"}
+        assert match_task_to_pickup_filter(task1, slot) is True
+
+        # Matches via 'project'
+        task2 = {"project": "INBOX", "priority": "P2", "tags": "urgent"}
+        assert match_task_to_pickup_filter(task2, slot) is True
+
+        # Rejected via exclude_tags in comma-separated string
+        task3 = {"category": "INBOX", "priority": "P1", "tags": "urgent, delegated"}
+        assert match_task_to_pickup_filter(task3, slot) is False
+
+        # Rejected via category mismatch
+        task4 = {"category": "OTHER", "priority": "P1", "tags": "urgent"}
+        assert match_task_to_pickup_filter(task4, slot) is False
+
+    def test_match_task_model_and_slot_binding(self):
+        slot = {
+            "id": "buddha_always_on",
+            "model": "qwen3.8:27b-mlx",
+            "pickup_filter": {"enabled": True},
+        }
+        # Matching model and slot
+        task1 = {"required_model": "qwen3.8:27b-mlx", "assigned_slot": "buddha_always_on"}
+        assert match_task_to_pickup_filter(task1, slot) is True
+
+        # Mismatched model
+        task2 = {"required_model": "glm-5.3:cloud"}
+        assert match_task_to_pickup_filter(task2, slot) is False
+
+        # Mismatched slot
+        task3 = {"assigned_slot": "buddha_chat"}
+        assert match_task_to_pickup_filter(task3, slot) is False
+
+        # Task without model/slot restrictions passes
+        task4 = {"required_model": None, "assigned_slot": None}
+        assert match_task_to_pickup_filter(task4, slot) is True
+
+
+class TestOffeneTasksPickupFilter:
+    """Tests for offene_tasks filtering with slot/pickup_filter."""
+
+    def test_offene_tasks_filters_by_slot_pickup_filter(self, tmp_path):
+        import sqlite3
+
+        from hub._services.chat.task_runner import offene_tasks
+        db_path = tmp_path / "test_tasks.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE tasks ("
+                "id INTEGER PRIMARY KEY, title TEXT, description TEXT, depends_on TEXT, "
+                "status TEXT, priority TEXT, project TEXT, category TEXT, tags TEXT, "
+                "required_model TEXT, assigned_slot TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (1, 'Inbox P1', '', '', 'pending', 'P1', 'bach', 'INBOX', 'urgent', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (2, 'Inbox P3', '', '', 'pending', 'P3', 'bach', 'INBOX', 'urgent', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (3, 'Inbox Delegated', '', '', 'pending', 'P1', 'bach', 'INBOX', 'delegated', NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tasks VALUES (4, 'General P1', '', '', 'pending', 'P1', 'bach', 'general', '', NULL, NULL)"
+            )
+
+        slot = {
+            "pickup_filter": {
+                "enabled": True,
+                "categories": ["INBOX"],
+                "priorities": ["P1", "P2"],
+                "exclude_tags": ["delegated"],
+            }
+        }
+        # With slot filter, only task 1 should match
+        tasks = offene_tasks(str(db_path), "all", slot=slot)
+        assert len(tasks) == 1
+        assert tasks[0]["id"] == 1
+
+        # Without filter, all 4 open tasks match
+        all_tasks = offene_tasks(str(db_path), "all")
+        assert len(all_tasks) == 4
+
+    def test_binding_applies_without_pickup_filter(self, tmp_path):
+        import sqlite3
+        from hub._services.chat.task_runner import offene_tasks
+        from hub._services.chat.slots_config import task_matches_slot_binding
+
+        db_path = tmp_path / "bound_tasks.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, "
+                "depends_on TEXT, status TEXT, priority TEXT, project TEXT, "
+                "required_model TEXT, assigned_slot TEXT)"
+            )
+            conn.executemany(
+                "INSERT INTO tasks VALUES (?, ?, '', '', 'pending', 'P1', 'bach', ?, ?)",
+                [(1, "cloud", "kimi-k3:cloud", None),
+                 (2, "local", "qwen3.8:27b-mlx", "buddha_always_on"),
+                 (3, "other slot", None, "cloud-worker"),
+                 (4, "unbound", None, None)],
+            )
+
+        local = {"id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+                 "pickup_filter": {"enabled": False}}
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
+        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]
+        assert not task_matches_slot_binding(
+            {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker"}
+        )
+        assert task_matches_slot_binding(
+            {"required_model": "kimi-k3:cloud", "assigned_slot": "cloud-worker"},
+            {"id": "cloud-worker", "model": "kimi-k3:cloud"},
+        )
+
+
+class TestActivityHistoryAndEndpoint:
+    """Tests for get_activity_history and GET /api/activity."""
+
+    def test_get_activity_history_filtering_and_pagination(self, tmp_path):
+        from hub._services.chat.slots_config import (
+            get_activity_history,
+            initialize_slots_config,
+            record_activity,
+        )
+
+        cfg_file = tmp_path / "slots-activity.json"
+        initialize_slots_config(str(cfg_file))
+
+        record_activity("slot_a", "activity 1", status="ok", path=str(cfg_file))
+        record_activity("slot_b", "activity 2", status="ok", path=str(cfg_file))
+        record_activity("slot_a", "activity 3", status="error", path=str(cfg_file))
+
+        # Filter by source
+        hist_a = get_activity_history(source="slot_a", path=str(cfg_file))
+        assert len(hist_a) == 2
+        assert all(e["source"] == "slot_a" for e in hist_a)
+
+        # Filter by status
+        hist_err = get_activity_history(status="error", path=str(cfg_file))
+        assert len(hist_err) == 1
+        assert hist_err[0]["status"] == "error"
+
+        # Pagination: limit & offset
+        all_hist = get_activity_history(order="asc", path=str(cfg_file))
+        assert len(all_hist) == 3
+        paged = get_activity_history(limit=1, offset=1, order="asc", path=str(cfg_file))
+        assert len(paged) == 1
+        assert paged[0] == all_hist[1]
+
+    def test_api_activity_endpoint(self, tmp_path, monkeypatch):
+        import importlib
+
+        from hub._services.chat.slots_config import (
+            get_activity_history,
+            initialize_slots_config,
+            record_activity,
+        )
+        control = importlib.import_module("hub._services.chat.telegram_chat")
+
+        cfg_file = tmp_path / "endpoint-activity.json"
+        initialize_slots_config(str(cfg_file))
+        record_activity("slot_1", "action 1", status="ok", path=str(cfg_file))
+        record_activity("slot_2", "action 2", status="error", path=str(cfg_file))
+
+        monkeypatch.setattr(
+            "hub._services.chat.telegram_chat.get_activity_history",
+            lambda **kwargs: get_activity_history(**kwargs, path=str(cfg_file)),
+        )
+
+        handler = control.ControlHandler.__new__(control.ControlHandler)
+        responses = []
+        monkeypatch.setattr(handler, "_json", lambda body, code=200: responses.append((body, code)))
+
+        # GET /api/activity
+        handler.path = "/api/activity?limit=10&source=slot_1"
+        handler.do_GET()
+        assert responses[-1][1] == 200
+        assert responses[-1][0]["ok"] is True
+        assert len(responses[-1][0]["history"]) == 1
+        assert responses[-1][0]["history"][0]["source"] == "slot_1"
+
+        # GET /api/activity with invalid order
+        handler.path = "/api/activity?order=invalid"
+        handler.do_GET()
+        assert responses[-1][1] == 400
+        assert "order" in responses[-1][0]["error"]

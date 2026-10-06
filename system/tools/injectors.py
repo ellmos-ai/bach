@@ -429,17 +429,50 @@ class ContextInjector:
     }
     
     @classmethod
-    def check(cls, text: str) -> Optional[str]:
+    def _compile_trigger(cls, trigger: str) -> Optional[re.Pattern]:
+        """Kompiliert Trigger-Phrase mit Wortgrenzen (verhindert falsche Substring-Treffer).
+
+        Kurze Trigger (<= 3 Zeichen), englische Kollisionen ('import', 'export')
+        sowie Mehrwort-Phrasen fordern Wortgrenzen an beiden Enden (z. B. 'abo' trifft
+        nicht 'labor' oder 'about', 'import' trifft nicht 'important').
+        Fuer laengere deutsche Woerter genuegt die Wortgrenze am Beginn, um Komposita
+        und Beugungen wie 'Steuererklärung', 'Arzttermin' oder 'Medikamenten' zu erfassen.
+        """
+        if not trigger:
+            return None
+        alts = [a.strip() for a in trigger.split('|') if a.strip()]
+        if not alts:
+            return None
+        parts = []
+        for a in alts:
+            escaped = re.escape(a)
+            if len(a) <= 3 or a.lower() in ('import', 'export') or ' ' in a:
+                parts.append(rf'\b{escaped}\b')
+            else:
+                parts.append(rf'\b{escaped}')
+        return re.compile('|'.join(parts), re.IGNORECASE)
+
+    @classmethod
+    def check(cls, text: str, cli_hints: bool = True) -> Optional[str]:
         """Prüft ob Kontext-Hinweis hilfreich wäre."""
         text_lower = text.lower()
-        
+
         # Cache-Logik (v1.1.80)
         now = datetime.now()
         if cls._cache is None or cls._last_load is None or (now - cls._last_load).total_seconds() > cls._ttl_sec:
             cls._refresh_cache()
-            
+
         for trigger, data in cls._cache.items():
-            if trigger in text_lower:
+            pattern = data.get('pattern')
+            matched = bool(pattern.search(text)) if pattern else (trigger in text_lower)
+            if matched:
+                hint = data['hint']
+                if not cli_hints:
+                    from hub.context_hints import CLI_PATTERN, neutral_manual_hint
+                    if data.get('source') == 'manual':
+                        hint = neutral_manual_hint(hint, Path(__file__).resolve().parent.parent)
+                    if CLI_PATTERN.search(hint):
+                        continue
                 # v1.1.82: Themen-Pakete nur einmal pro Session
                 if data.get('source') == 'theme':
                     if data['id'] in cls._session_triggered:
@@ -454,19 +487,27 @@ class ContextInjector:
                 # v1.1.81: Usage tracking
                 if data.get('id'):
                     cls._mark_usage(data['id'])
-                    
-                return f"[KONTEXT] {data['hint']}"
-        
+
+                return f"[KONTEXT] {hint}"
+
         return None
 
     @classmethod
     def _refresh_cache(cls):
         """Lädt Triggers aus DB oder nutzt hardcoded Fallback."""
         cls._last_load = datetime.now()
-        
+
         # Fallback laden (v1.1.82: Mit ID und Source)
-        cls._cache = {t: {'id': None, 'hint': h, 'source': 'manual'} for t, h in cls.CONTEXT_TRIGGERS.items()}
-        
+        cls._cache = {
+            t: {
+                'id': None,
+                'hint': h,
+                'source': 'manual',
+                'pattern': cls._compile_trigger(t),
+            }
+            for t, h in cls.CONTEXT_TRIGGERS.items()
+        }
+
         if not cls.base_path:
             return
 
@@ -496,7 +537,15 @@ class ContextInjector:
             ).fetchall()
             if rows:
                 # Wenn DB Daten hat, nutzen wir diese
-                cls._cache = {r['trigger_phrase']: {'id': r['id'], 'hint': r['hint_text'], 'source': r['source']} for r in rows}
+                cls._cache = {
+                    r['trigger_phrase']: {
+                        'id': r['id'],
+                        'hint': r['hint_text'],
+                        'source': r['source'],
+                        'pattern': cls._compile_trigger(r['trigger_phrase']),
+                    }
+                    for r in rows
+                }
             conn.close()
         except Exception as e:
             _warn_once("context_triggers lesen", e)
@@ -506,12 +555,12 @@ class ContextInjector:
 
     @classmethod
     def _db_path(cls) -> Path:
-        """Kanonische BACH-DB (hub/bach_paths.py), sonst der alte Ort unter base_path."""
+        """Kanonische BACH-DB (hub/bach_paths.py), sonst Notfall-Fallback."""
         try:
             from hub.bach_paths import BACH_DB
             return Path(BACH_DB)
         except Exception:
-            return cls.base_path / "data" / "bach.db"
+            return Path.home() / ".bach" / "bach.db"
 
     @classmethod
     def _mark_usage(cls, trigger_id: int):
@@ -612,18 +661,27 @@ class ToolInjector:
 
         # Versuche aktuelle Tool-Anzahl aus DB zu lesen
         tool_count = 0
-        if base_path:
+        try:
+            import sqlite3
+            system_root = Path(__file__).resolve().parent.parent
             try:
-                import sqlite3
-                db = base_path / "data" / "bach.db"
-                if db.exists():
-                    conn = sqlite3.connect(str(db))
-                    tool_count = conn.execute(
-                        "SELECT COUNT(*) FROM tools WHERE is_available = 1"
-                    ).fetchone()[0]
-                    conn.close()
-            except Exception:
-                pass
+                from hub.bach_paths import BACH_DB
+                db = Path(BACH_DB)
+                if base_path:
+                    local_db = base_path / "data" / "bach.db"
+                    if local_db.exists() and base_path.resolve() not in (system_root, system_root.parent):
+                        db = local_db
+            except ImportError:
+                db = (base_path / "data" / "bach.db") if base_path else (Path.home() / ".bach" / "bach.db")
+
+            if db.exists():
+                conn = sqlite3.connect(str(db))
+                tool_count = conn.execute(
+                    "SELECT COUNT(*) FROM tools WHERE is_available = 1"
+                ).fetchone()[0]
+                conn.close()
+        except Exception:
+            pass
 
         if tool_count:
             lines.append(f"  {tool_count} Tools in bach.db registriert")
@@ -918,7 +976,7 @@ class InjectorSystem:
         self.cooldown = CooldownManager(base_path)  # v1.1.75: Cooldown-Management
         self._tool_reminder_shown = False
 
-    def process(self, text: str, context: dict = None, skip=()) -> List[str]:
+    def process(self, text: str, context: dict = None, skip=(), cli_hints: bool = True) -> List[str]:
         """
         Verarbeitet Text durch alle aktiven Injektoren.
 
@@ -944,7 +1002,7 @@ class InjectorSystem:
         # Context Injector (Cooldown: 1 Min)
         if self.config.is_enabled("context_injector") and "context" not in skip:
             if not self.cooldown.is_on_cooldown("context"):
-                ctx = ContextInjector.check(text)
+                ctx = ContextInjector.check(text, cli_hints=cli_hints)
                 if ctx:
                     injections.append(ctx)
                     self.cooldown.mark_shown("context")

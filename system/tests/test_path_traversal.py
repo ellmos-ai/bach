@@ -70,15 +70,25 @@ class TestPromptGeneratorPathTraversal:
 # ===========================================================================
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """FastAPI TestClient for the GUI server (synchronous)."""
     try:
         from starlette.testclient import TestClient
     except ImportError:
         pytest.skip("starlette not available")
 
-    from gui.server import app
-    return TestClient(app, raise_server_exceptions=False)
+    import gui.server as server
+
+    monkeypatch.setattr(
+        server,
+        "validate_token",
+        lambda token: {"id": 1} if token == "path-fixture" else None,
+    )
+    return TestClient(
+        server.app,
+        raise_server_exceptions=False,
+        headers={"Authorization": "Bearer path-fixture"},
+    )
 
 
 def test_workflow_tuev_blocks_traversal(client):

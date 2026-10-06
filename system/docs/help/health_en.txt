@@ -51,13 +51,13 @@ bach health disk
 FILES
 =======
 
-hub/health.py Health handler implementation
-data/bach.db Loggings in memory_working table
+system/hub/health.py    Health handler implementation
+~/.bach/bach.db         Canonical runtime DB; loggings in memory_working table
                         (Checks are logged with timestamp)
 
 
 SEE ALSO
 ==========
 
-hub/base.py BaseHandler (class base)
-docs/help/ Other handler documentation
+system/hub/base.py      BaseHandler (class base)
+system/docs/help/       Other handler documentation

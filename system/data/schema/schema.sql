@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS tasks (
         recurrence_pattern TEXT,
         next_occurrence TEXT,
         due_date TEXT,
+        required_model TEXT,
+        assigned_slot TEXT,
         executable_command TEXT,
         created_at TEXT,
         started_at TEXT,

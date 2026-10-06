@@ -268,11 +268,15 @@ class _TaskProxy(_DBBackedProxy):
         description: str | None = None,
         category: str | None = "general",
         due_date: str | None = None,
+        required_model: str | None = None,
+        assigned_slot: str | None = None,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
         cli_category = category
         cli_due_date = due_date
+        cli_required_model = required_model
+        cli_assigned_slot = assigned_slot
 
         i = 0
         while i < len(args):
@@ -301,6 +305,19 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--due="):
                 cli_due_date = arg.split("=", 1)[1]
                 i += 1
+            elif arg in ("--required-model", "--assigned-slot"):
+                value = str(args[i + 1]) if i + 1 < len(args) else ""
+                if arg == "--required-model":
+                    cli_required_model = value
+                else:
+                    cli_assigned_slot = value
+                i += 2 if i + 1 < len(args) else 1
+            elif arg.startswith("--required-model="):
+                cli_required_model = arg.split("=", 1)[1]
+                i += 1
+            elif arg.startswith("--assigned-slot="):
+                cli_assigned_slot = arg.split("=", 1)[1]
+                i += 1
             else:
                 i += 1
 
@@ -311,6 +328,10 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--category", cli_category])
         if cli_due_date is not None:
             raw_args.extend(["--due", cli_due_date])
+        if cli_required_model is not None:
+            raw_args.extend(["--required-model", cli_required_model])
+        if cli_assigned_slot is not None:
+            raw_args.extend(["--assigned-slot", cli_assigned_slot])
 
         success, message = self.raw("add", *raw_args)
         if not success:
@@ -335,6 +356,28 @@ class _TaskProxy(_DBBackedProxy):
         task_data["_message"] = str(message)
         return task_data
 
+    def edit(
+        self,
+        task_id: int | str,
+        *,
+        required_model: str | None = None,
+        assigned_slot: str | None = None,
+    ) -> dict[str, Any]:
+        """Set or clear model and slot routing on an existing task."""
+        if required_model is None and assigned_slot is None:
+            raise BachAPIError("Mindestens ein Routing-Feld angeben")
+        raw_args = [str(task_id)]
+        if required_model is not None:
+            raw_args.extend(["--required-model", required_model])
+        if assigned_slot is not None:
+            raw_args.extend(["--assigned-slot", assigned_slot])
+        success, message = self.raw("edit", *raw_args)
+        if not success:
+            raise BachAPIError(message)
+        result = self.show(task_id)
+        result["_message"] = str(message)
+        return result
+
     def list(
         self,
         *args,
@@ -352,8 +395,9 @@ class _TaskProxy(_DBBackedProxy):
         i = 0
         while i < len(args):
             arg = str(args[i])
-            if arg in ("all", "done", "pending", "open", "blocked"):
-                status_filter = None if arg == "all" else arg
+            arg_lower = arg.lower()
+            if arg_lower in ("all", "done", "pending", "open", "blocked", "in_progress", "in-progress", "completed", "cancelled"):
+                status_filter = None if arg_lower == "all" else ("in_progress" if arg_lower == "in-progress" else arg_lower)
             elif arg.startswith("--filter="):
                 title_filter = arg.split("=", 1)[1]
             elif arg == "--filter" and i + 1 < len(args):
@@ -370,7 +414,13 @@ class _TaskProxy(_DBBackedProxy):
 
         conditions = []
         params: list[Any] = []
-        if status_filter:
+        if status_filter == "open":
+            conditions.append("status IN ('pending', 'open', 'in_progress')")
+        elif status_filter == "pending":
+            conditions.append("status IN ('pending', 'open')")
+        elif status_filter == "completed":
+            conditions.append("status IN ('done', 'completed')")
+        elif status_filter:
             conditions.append("status = ?")
             params.append(status_filter)
         if title_filter:
@@ -390,10 +440,15 @@ class _TaskProxy(_DBBackedProxy):
             from hub._services.task_schema import task_has_due_date
 
             due_projection = "due_date" if task_has_due_date(conn) else "NULL AS due_date"
+            task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+            routing_projection = ", ".join(
+                name if name in task_columns else f"NULL AS {name}"
+                for name in ("required_model", "assigned_slot")
+            )
             sql = (
                 "SELECT id, priority, title, status, category, description, assigned_to, "
                 "delegated_to, depends_on, created_at, completed_at, updated_at, "
-                f"{due_projection} FROM tasks "
+                f"{due_projection}, {routing_projection} FROM tasks "
                 f"WHERE {where_clause} "
                 "ORDER BY priority, id"
             )
@@ -445,6 +500,143 @@ class _TaskProxy(_DBBackedProxy):
             db_path=db_path,
             project_path=_SYSTEM_DIR.parent,
         )
+
+    def reap(self, lease_seconds: int = 1800) -> List[int]:
+        """Reap stale in_progress tasks whose claim lease has expired."""
+        with self._connect() as conn:
+            from hub.task_audit import reap_stale_in_progress_tasks
+            reaped = reap_stale_in_progress_tasks(conn, lease_seconds=lease_seconds)
+            conn.commit()
+            return reaped
+
+    def lease_acquire(
+        self,
+        task_id: int | str,
+        *,
+        worker_id: str,
+        host: str | None = None,
+        request_id: str | None = None,
+        ttl_profile: str = "M",
+        intent: str = "",
+    ) -> dict[str, Any]:
+        """Beansprucht eine Task als gefencten Salt-Lease (Vertrag §5.1 / BACH #1722)."""
+        tid = int(task_id)
+        if not host:
+            if "@" in worker_id:
+                host = worker_id.rsplit("@", 1)[1]
+            else:
+                import socket
+                host = socket.gethostname()
+                worker_id = f"{worker_id}@{host}"
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            ack = client.acquire(
+                tid,
+                worker_id=worker_id,
+                host=host,
+                request_id=request_id,
+                ttl_profile=ttl_profile,
+                intent=intent,
+            )
+            return {
+                "granted": True,
+                "task_id": ack.task_id,
+                "lease_id": ack.lease_id,
+                "fence": ack.fence,
+                "worker_id": ack.worker_id,
+                "host": ack.host,
+                "issued_at": ack.issued_at,
+                "expires_at": ack.expires_at,
+                "ttl_profile": ack.ttl_profile,
+                "server_now": ack.server_now,
+                "local_deadline": ack.local_deadline.isoformat(),
+            }
+
+    def lease_read(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Liest die Holder-Ansicht eines Task-Leases (Vertrag §5.2 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            view = client.read(tid, lease_id=lease_id)
+            return {
+                "task_id": view.task_id,
+                "status": view.status,
+                "leased": view.leased,
+                "fence": view.fence,
+                "legacy": view.legacy,
+                "server_now": view.server_now,
+                "holder": view.holder,
+                "issued_at": view.issued_at,
+                "expires_at": view.expires_at,
+                "ttl_profile": view.ttl_profile,
+                "own": view.own,
+            }
+
+    def lease_renew(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str,
+        fence: int,
+    ) -> dict[str, Any]:
+        """Verlängert einen aktiven Task-Lease (Vertrag §5.3 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            ack = client.renew(tid, lease_id=lease_id, fence=fence)
+            return {
+                "granted": True,
+                "task_id": ack.task_id,
+                "lease_id": ack.lease_id,
+                "fence": ack.fence,
+                "worker_id": ack.worker_id,
+                "host": ack.host,
+                "issued_at": ack.issued_at,
+                "expires_at": ack.expires_at,
+                "ttl_profile": ack.ttl_profile,
+                "server_now": ack.server_now,
+                "local_deadline": ack.local_deadline.isoformat(),
+            }
+
+    def lease_release(
+        self,
+        task_id: int | str,
+        *,
+        lease_id: str,
+        fence: int,
+        outcome: str = "done",
+        result_ref: str = "",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Gibt einen Task-Lease frei oder schließt die Task ab (Vertrag §5.4 / BACH #1722)."""
+        tid = int(task_id)
+        from hub._services.task_lease_client import TaskLeaseClient
+        with self._connect() as conn:
+            client = TaskLeaseClient(conn=conn)
+            rel = client.release(
+                tid,
+                lease_id=lease_id,
+                fence=fence,
+                outcome=outcome,
+                result_ref=result_ref,
+                note=note,
+            )
+            return {
+                "released": rel.released,
+                "task_id": rel.task_id,
+                "outcome": rel.outcome,
+                "status": rel.status,
+                "fence": rel.fence,
+                "server_now": rel.server_now,
+            }
 
     def _row_to_task(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         task_data = dict(row)
@@ -767,12 +959,8 @@ except ImportError:
 
 # --- Injector-Integration ---
 
-# Pattern: "bach befehl" oder "--befehl" CLI-Hinweise erkennen
-_CLI_PATTERN = re.compile(
-    r'bach\s+\w+'           # "bach steuer status", "bach task list"
-    r'|--\w+'               # "--help tasks", "--memory"
-    r'|python\s+\w+\.py'    # "python injectors.py"
-)
+# Derselbe Filter gilt vor der Auswahl im Legacy- und memoryhooker-Pfad.
+from hub.context_hints import CLI_PATTERN as _CLI_PATTERN
 
 
 class _InjectorProxy:
@@ -804,9 +992,9 @@ class _InjectorProxy:
     def set_mode(self, mode: str):
         """Setzt den Modus: 'cli' (alles) oder 'api' (CLI-Hinweise gefiltert).
 
-        Im API-Modus werden Kontext-Hinweise die CLI-Befehle enthalten
-        (z.B. 'bach steuer status') herausgefiltert. Pfad-Hinweise und
-        kognitive Strategien bleiben erhalten.
+        Im API-Modus werden bekannte manuelle Befehle vor der Auswahl als
+        Dokumentationsverweise dargestellt. Verbleibende CLI-Hinweise werden
+        herausgefiltert. Pfad-Hinweise und kognitive Strategien bleiben erhalten.
         """
         if mode in ("cli", "api"):
             self._mode = mode
@@ -844,7 +1032,7 @@ class _InjectorProxy:
             Liste von Hinweisen (kann leer sein)
         """
         system = self._get_system()
-        injections = system.process(text, context, skip=skip)
+        injections = system.process(text, context, skip=skip, cli_hints=self._mode != "api")
         return self._filter_cli(injections)
 
     def check_between(self, last_action: str, session_ending: bool = False):

@@ -1,0 +1,32 @@
+# BACH/Ocean GUI: gemeinsame Quelle und Backendvertrag
+
+Stand: 03.10.2026. Dieser Plan beschreibt die Migration; er ist kein Nachweis einer bereits installierten Ocean-GUI.
+
+## Verifizierte Ausgangslage
+
+- `ellmos-ai/bach` und `ellmos-ai/open-ocean` sind öffentliche Repositories. `ellmos-ai/ellmos-unified-gui` ist ebenfalls öffentlich und enthält die eigenständige Jinja-/HTMX-Konsole, künftig als **Universal GUI** bezeichnet. Der technische Paketname kann aus Kompatibilitätsgründen bleiben.
+- Unter `ellmos-ai` wurde am 03.10.2026 kein eigenständiges Astro-GUI-Repository mit `gui` oder `ocean` im Namen gefunden. `open-ocean` enthält keinen Astro-Quellbaum. Die einzige gegenwärtige Astro-Gesamtquelle liegt in BACH unter `system/gui/web` (27 zuvor getrackte Dateien, Astro 5, privates npm-Paket, MIT-Lizenz des BACH-Repositories).
+- BACH `server.py` liest HTML und Assets aus `system/gui/web/dist`. 16 statische Routen rufen BACH-REST-Endpunkte direkt auf. `open-ocean` stellt diese Endpunkte derzeit nicht vollständig bereit. Ein gemeinsames Frontend allein macht diese Funktionen nicht nutzbar.
+
+## Ziel und Eigentum
+
+1. Neues öffentliches Repository `ellmos-ai/ellmos-system-gui`: **einzige** Astro-Quellbasis mit Produktanzeige „BACH/Ocean GUI“. Jeder Konsument setzt Laufzeit-Branding für Anzeigename, Produktname, Logo und Theme durch validierte öffentliche Metadaten; derselbe statische Build wird in BACH und Ocean verwendet. Der Initialimport besteht nur aus dem bereinigten, publizierten BACH-Quellstand plus separat geprüften Änderungen dieser Welle; keine alte BACH-Git-Historie und keine Zugangsdaten.
+2. Das Repository baut mit festem Lockfile einen versionierten statischen `dist`-Baum. Ein Veröffentlichungsmanifest nennt Quellcommit, Variantenname, Dateiliste und SHA-256 jedes Artefakts. Keine unversionierte Kopie wird zur zweiten Quelle.
+3. BACH konsumiert genau eine geprüfte Version über ein Pin-/SHA-Manifest und installiert den Build vor dem Start seines bestehenden GUI-Dienstes. Der aktuelle Mac-Dienst bleibt bis zur unabhängigen Abnahme seines neuen Overlay-Baums unverändert.
+4. `open-ocean` konsumiert denselben Versionseintrag über seinen vorhandenen Source-Pin-/Bundle-Vertrag. Ohne API-Adapter und echte Capability-Probe wird der Build dort **nicht** als voll nutzbare Oberfläche aktiviert. Jeder fehlende Bereich zeigt „Modul nicht installiert“ oder „Anbindung nicht verfügbar“ statt Beispiel-/Live-Daten.
+5. Das vorhandene `ellmos-ai/ellmos-unified-gui` wird als Repository zu `ellmos-ai/ellmos-universal-gui` umbenannt, damit Git-Historie, Issues, Releases, Stars und Beobachter erhalten bleiben. Sein Python-Paket `ellmos-unified-gui`, Importname `unified_gui` und vorhandene Modul-/Capability-IDs bleiben während der Konsumentenumstellung kompatibel. Der Anzeigename und die Rollenbeschreibung werden in README/Manifest berichtigt; seine Jinja-Quelle wird nicht mit Astro dupliziert. Rename erfolgt erst nach Altverweis-Inventur und gezieltem Update der Quellreferenzen. GitHub-Redirects ersetzen keine Paket- oder Actions-Migration.
+
+## REST- und Brand-Vertrag
+
+- Die gemeinsame GUI erwartet versionierte API-Verträge je Widget und eine `GET /api/gui/capabilities`-Antwort mit installierten Modulen, Adapterversion, letzter Prüfung und Status. Eine Route im Frontend gilt erst dann als nutzbar, wenn ihr Backend-Adapter den Vertrag erfüllt. Open-Ocean kann zunächst nur seine tatsächlich vorhandenen Module melden. `GET /api/gui/brand` liefert pro Konsument validierte Anzeigetexte, optionalen Logo-Pfad unter `/static/branding/` und eines der vorhandenen Themes. Die Seite lädt diese Daten zur Laufzeit; sie baut keine zweite Brand-Variante.
+- `GET /api/gui/backend-origin` ist öffentliche, nichtgeheime Statusmetadatenroute: `mode`, `declared_mode`, `backend_kind`, `instance_label`, `connection_verified`, `schema_verified`, `instance_verified`, `adapter_binding_verified`, `observed_at`, `reason_code`. Das BACH-Backend vergleicht zur Laufzeit die Datenbankquelle von `server.get_bach_db()` und `unified_api._get_conn()`, öffnet genau diese Quelle nur lesend, prüft die erwarteten Tabellen und gleicht die Maschinenidentität intern mit einem privaten Deploymentmanifest ab. Pfad, Hostname und Hash bleiben aus der Antwort heraus. Die Probe belegt Verbindung und minimales Schema, weder Integrität noch Cluster-Synchronität.
+- Nur bei gültiger Deklaration **und** Live-Probe erscheint „Backend: Server“ oder „Backend: Lokal“. Sonst erscheint „Backend unbekannt“; bei nicht erreichbarer Route „Offline · Backend unbekannt“. „Offline-Cache“ setzt künftig ein tatsächlich genutztes und geprüftes Cache-Artefakt voraus. Browser-Hostname oder das bestehende `get_deployment_mode()` dienen nicht als Beweis.
+- Trithon, Muschelgrund und Salt sind Systemthemen, keine Backendmodus-Synonyme. Die derzeit sichtbaren BACH-Adapter für Dispatch und Receipt-Projektion belegen nur Teilfunktionen; ältere und neuere Architekturtexte beschreiben darüber hinaus Instanzverbund, Aufgaben-/Speicherort und Lease-/Claim-Verträge. Diese Definitions- und Versionsabweichung bleibt bis zum eigenen Modulvertrag offen. Die UI zeigt daher neutrale, ungeprüfte Konfiguration statt einen Gesamtstatus zu behaupten. Die Fackel als Agenten-Compute-Vorrang bleibt unter Agenten.
+
+## Reihenfolge und Gates
+
+1. Den BACH-Portbasis-Patch auf bereinigtem Main isoliert bauen und überprüfen: Insignien nach System, Fackel unter Agenten, gemeinsamer Header mit Brand-Variante und ehrlichem Backendbadge, keine statisch grünen Statuswerte.
+2. Lizenz, getrackte Dateien, Quellcode und Build auf Zugangsdaten und alte eingebettete Literale prüfen. Ein neues Repository mit eigenem Root, README, Lizenz, AGENTS/Build-Anleitung und Versionsmanifest aus **diesem** Quellbaum anlegen. Git-Historie von BACH nicht importieren.
+3. Paket-Build für beide Brand-Varianten reproduzierbar prüfen, Dist-Dateien und SHA manifestieren. Unabhängige Review der Quell-/Build-Parität und der nicht unterstützten Ocean-Widgets einholen.
+4. BACH-Consumer auf gepinnten GUI-Commit/Artefakt umstellen und im eigenen Worktree bauen; danach Open-Ocean-Consumer auf dem aktuellen Remote-Main ergänzen, ohne den älteren lokalen `open-ocean`-Main zu überschreiben. Open-Ocean-API-Coverage bleibt explizit unvollständig, bis echte Adapter implementiert und geprüft sind.
+5. Erst nach unabhängiger Review und privater Mac-Vorabbild-Sicherung den BACH-GUI-Dienst gezielt aktualisieren. Kein Datenbanktausch und keine Modell-/Agentenstarts.

@@ -81,5 +81,43 @@ def test_load_empty_namespace_returns_none(store):
     assert adapter.load(store) is None
 
 
+def test_adapter_import_safe_without_carrier(monkeypatch):
+    """Adapter must be importable without session_checkpoint installed (e.g. by HandlerRegistry)."""
+    import importlib
+    # simulate uninstalled session_checkpoint
+    monkeypatch.setitem(sys.modules, "session_checkpoint", None)
+    import hub.session_checkpoint_adapter as fresh_adapter
+    importlib.reload(fresh_adapter)
+    assert hasattr(fresh_adapter, "create")
+    assert hasattr(fresh_adapter, "load")
+    assert hasattr(fresh_adapter, "list_checkpoints")
+    assert hasattr(fresh_adapter, "delete")
+
+
+def test_checkpoint_after_delete_provider(bach_db):
+    from hub import session_checkpoint_provider as prov
+
+    data_dir = bach_db.parent
+    res_create = prov.checkpoint_after_create(
+        bach_db, data_dir, name="test-prov", source_ref="bach-session_snapshots:42"
+    )
+    assert res_create.get("enabled") is True
+
+    store = prov.get_checkpoint_store(data_dir)
+    assert store is not None
+    cps = [cp for cp in store.list(namespace="bach") if cp.source_ref == "bach-session_snapshots:42"]
+    assert len(cps) == 1
+
+    # Dry-run delete does not remove the checkpoint
+    dry_res = prov.checkpoint_after_delete(data_dir, source_ref="bach-session_snapshots:42", dry_run=True)
+    assert dry_res.get("enabled") is True
+    assert len([cp for cp in store.list(namespace="bach") if cp.source_ref == "bach-session_snapshots:42"]) == 1
+
+    # Live delete removes the checkpoint
+    del_res = prov.checkpoint_after_delete(data_dir, source_ref="bach-session_snapshots:42", dry_run=False)
+    assert del_res.get("enabled") is True
+    assert len([cp for cp in store.list(namespace="bach") if cp.source_ref == "bach-session_snapshots:42"]) == 0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -1,13 +1,13 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-09-24 | **Version:** 4.3.65 | **Review:** 2026-09-24 (Daily Care & Dev Check)
+**Stand:** 2026-10-03 | **Version:** 4.3.69 | **Review:** 2026-10-03 (Daily Care & Dev Check)
 
 ## ARCHIV (veraltet) — Navigations-Index
 
 > **Reiner Index-Anker, rein additiv (0 Bewegungsrisiko).** Verschiebt NIX — verweist
 > nur auf die bestehenden, verteilten „Abgeschlossen"-Blöcke. Inhalte bleiben an ihren
 > bisherigen Stellen. Aktuelle/Offene Visionen (z. B. MCP-Server 2026-06-03, Persona-System
-> Phase 2) und der aktuellste Changelog-Eintrag (4.3.63, 2026-09-10) sind **nicht** als
+> Phase 2) und der aktuellste Changelog-Eintrag (4.3.64, 2026-09-10) sind **nicht** als
 > veraltet gekennzeichnet und bleiben aktiv.
 >
 > Status-Quelle: Task #1215 (Option A') / Folgeaufgabe #1216.
@@ -18,6 +18,153 @@
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-10-03 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20261003_164801` für Partner `gemini` im Silent-Modus gestartet und via `session end` sauber beendet (7 Änderungen im Directory-Scan erfasst, Auto-Snapshot erstellt, Continuation-Context intakt, 0 offene Sessions).
+  - Working Memory Cleanup: 0 abgelaufene Einträge; 182 Einträge analysiert (18 <7d, 7 7-14d, 157 >14d).
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (PRs #185-#189 integriert: Ocean GUI deployment, Agent Studio GET routes read only, honest session summaries, Compare-Race worker tree bounds & guarded SDK adapter).
+- **Fehlerbehebung & CI-Härtung:**
+  - *Test-Regression in `test_hook_provider_wiring.py` behoben:* Assert auf `self._get_memory_hook_context(text, chat_id)` angepasst, sodass die Profile-Guard-Bedingung `hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)` aus Commit `3b6609c` valide geprüft wird.
+  - *Hermetische Test-Isolation & TestLibraryAPI in `conftest.py` gehärtet:* Pfad-Fehlauflösung von `system_dir` in `_ensure_distribution_manifest` korrigiert (Verdopplung von `system/` entfernt) und Bereitstellung der `schema.sql`-Tabellen für isolierte Testläufe verankert, wodurch `TestLibraryAPI` und In-Process-API-Aufrufe (`bach_api.task`, `bach_api.memory`, `bach_api.prompt`, `app.execute`) 100% deterministisch grün laufen.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+  - Topologie-Audit via `system-explorer` liefert 100% fehlerfreie Evidenz (0 Drift).
+- **Task-Audit & Erledigung:**
+  - Tasks #1214 (Stale `.db-wal` Bereinigung in `system/data/`), #1204 & #1205 (Dead-Code `self.webchat_url` auf Port 8080 verifiziert entfernt/auf `/chat` konsolidiert), #1202 (`chat.html:738` mit `main-header`-Klasse verifiziert) und #1134 (Memory-Archiv geprüft) erledigt.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **Testsuite-Vollprüfung (100% grün):**
+  - 349/349 Tests bestanden in 251.44s (Core-Suite inkl. TestLibraryAPI, Provider- & Wiring-Suite, Upgrade-Suite, Side-Effects-Suite).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Backup: Frisches lokales Backup `userdata_2026-10-03_171021.zip` (0.81 MB) erfolgreich erstellt.
+  - Dokumentations-Report `Doc_Update_Report_2026-10-03_16-49.md` erstellt.
+- **OpenClaw Competitive Watch (Stand v2026.9.7):**
+  - Stand `v2026.9.7` (30. September 2026) verifiziert (Stabilität für lange Konversationen, OpenAI Agents API, "Sign in with ChatGPT" Beta, erweiterte Update-Backups mit Rollback-Schutz, Desktop/Mobile-Kontinuität). Relevanz für BACHs Session-Continuation Snapshots, atomare Release- & Rollback-Grenzen (`distribution_releases` v3.14.0) und Task #1118 (OPS-RUN-001) bestätigt.
+## GUI-Dashboard-Korrektur 2026-10-03 (Task #1693, Review ausstehend)
+
+- Die Astro-Startseite zählt offene Tasks über einen gefilterten API-Gesamtwert vor der Pagination, zeigt die kanonische Zuständigkeit und behandelt Ladefehler mit einem erneuten Versuch.
+- Die Darstellung nutzt ein kleines eigenständiges Frontend-Modul mit Vertragstests; die bestehenden API-Felder bleiben kompatibel. Dies ist ein begrenzter Stabilitätsschritt innerhalb der GUI-Roadmap.
+- Lieferung über einen separaten PR. Promptboard-/Tray-Integration, modulare Installer und die offenen Compare-Race-Aufgaben bleiben eigene Arbeitspakete; daraus wird kein abgeschlossener Live-Test abgeleitet.
+- Diagnose-Folgeaufgabe #1694: Taskänderungen und Abschluss aus Rheingold-Workern zum Lead propagieren; lokaler Cache und Lead-Status dürfen nicht auseinanderlaufen. Separat vom Recurring-/ID-Kollisions-Slice #1346 bearbeiten.
+
+## Review 2026-10-01 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20261001_161927` für Partner `gemini` im Silent-Modus erfolgreich gestartet.
+  - Working Memory Cleanup: 0 abgelaufene Einträge; 179 Einträge analysiert (17 <7d, 5 7-14d, 157 >14d); Continuation-Context intakt.
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (Integration von PR #180 expliziter geteilter Adapter mit geforderter Pinned-Source CI, PR #181 Capabilities: Härtung von Leases und Guarded Journals, PR #182 Seal: Identitäts-Update an verifizierten logischen Singleton gebunden, PR #183 Docs(T797): Feature-Vergleich an vollständige statische Paket-Closures gebunden, PR #184 T903: Native Readiness und Pinned Carrier CI gefordert).
+- **Fehlerbehebung & Systemhärtung:**
+  - *Standard-Library Beschattung in `upgrade check --json` behoben:* Redundantes `sys.path.insert(0, str(HUB_DIR))` in `system/bach.py` (`_handle_upgrade`, `_handle_cookbook`, `_handle_pipeline`, restore, downgrade) entfernt, wodurch Stdlib-`email` nicht mehr durch `system/hub/email.py` überschattet wird.
+  - *Hermetische Topologie-Zustandsisolation:* In `system/hub/explorer_provider.py` und `UpgradeHandler._topology_evidence_payload` wird `_state_file` nun relativ zum übergebenen `base_path` aufgelöst, sodass Test-Suiten mit temporären Umgebungen keine Zugriffe auf das Checkout-Datenverzeichnis mehr versuchen.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+  - Topologie-Audit via `system-explorer` liefert 100% fehlerfreie Evidenz (260 Dateien, 286 Verzeichnisse, 1.733 Knoten, 1.765 Kanten, 0 Drift).
+- **Task-Audit & Erledigung:**
+  - Tasks #1125 (Backup-Status), #1135 (Anschlussanalyse Registry/Skills), #1136 (Dokumentations-Frische) und #1137 (Docs-Changelog) verifiziert und als erledigt markiert.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **Testsuite-Vollprüfung (100% grün):**
+  - Core-Suite: 124 passed in 285.34s (`test_memory_working_cleanup.py`, `test_registry_watcher.py`, `test_self_heal_handlers.py`, `test_core.py`, `test_dry_run_side_effects.py`).
+  - Provider- & Wiring-Suite: 149 passed in 96.60s (`test_explorer_provider_wiring.py`, `test_hook_provider_wiring.py`, `test_scheduler_provider_wiring.py`, `test_transit_sync_provider_wiring.py`, `test_db_guard_hook.py`).
+  - Upgrade- & Explorer-Suite: 74 passed in 53.20s (`test_upgrade_handler.py`, `test_explorer_provider_wiring.py`).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Backup: Frisches lokales Backup `userdata_2026-10-01_155334` (0.80 MB) verifiziert.
+  - Dokumentations-Report (`Doc_Update_Report_2026-10-01_16-30.md`, 2.099 Dokumente geprüft, 0 ungültige Pfade) und 30-Tage-Changelog (`2026-10_docs_report.md`, 148 Änderungen) erstellt.
+- **OpenClaw Competitive Watch (Stand v2026.9.7):**
+  - Abgleich mit neuester OpenClaw Version `v2026.9.7` (veröffentlicht am 30. September 2026, folgend auf `v2026.9.6`):
+    - *Stabilität bei langen Konversationen:* Optimierungen für lange Chatverläufe und hohe Last.
+    - *OpenAI Agents API & Auth:* Integration von OpenAIs Agents API und "Sign in with ChatGPT" (Beta).
+    - *Backup & Rollback-Schutz:* Verbesserte Update-Backups und erweiterte Rollback-Absicherung.
+    - *Multi-Device Continuity:* Verbesserte Desktop/Mobile-Unterstützung (Mac, iPhone, iPad).
+  - *Relevanz für BACH:* Bestätigt BACHs Session-Continuation Context & Snapshots, atomare Release- & Rollback-Reparatur (`bach update apply` / `rollback` / `upgrade repair`, `distribution_releases` v3.14.0) und Task #1118 (OPS-RUN-001 aktive Laufsteuerung).
+
+## Review 2026-09-30 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20260930_161936` für Partner `gemini` im Silent-Modus erfolgreich gestartet.
+  - Directory-Scan erfasste 2 neue Dateien (`data/schema/migrations/migrate_unify_distribution.py`, `tests/test_migrate_unify_distribution.py`) und 1 gelöschte Migration aus PR #175.
+  - Working Memory Cleanup ohne abgelaufene Einträge; Continuation-Context konsistent.
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch synchronisiert auf den aktuellen Stand von `origin/main` (Integration von PR #176 atomare lokale S7-Fencing-Zustände, PR #177 Activity-Shell-Extraktion mit CI-Gates, PR #178 S4 Policy & neutrale Context-Hints und PR #179 Seal-Sampling & hermetische CI-Testdatenbank-Fixtures).
+  - Alle Testsuiten (Core-Suite inkl. TestApp-Hermetik mit 53 Tests, 189 Provider-/Wiring-Tests, 87 Distribution-Migrationstests, 2 Dry-Run-Side-Effects-Tests) zu 100% grün.
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+- **Task-Audit & Konsistenzprüfung:**
+  - Aufgaben im Task-Backlog geprüft (#1061, #1062, #1341, #1343, #1346, #1044, #1118, #1340).
+  - Keine unberechtigten Statusverschiebungen; Fail-Closed gewahrt.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py --maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Memory-Hygiene: Working Memory analysiert (175 Einträge; 0 abgelaufene `is_active`-Bereinigungen nötig).
+  - Backup: Frisches lokales Backup `userdata_2026-09-30_155235` (0.80 MB) verifiziert.
+  - Dokumentations-Report (`Doc_Update_Report_2026-09-30_16-25.md`) und 30-Tage-Changelog (`2026-09_docs_report.md`) erstellt.
+- **OpenClaw Competitive Watch (Stand v2026.9.6):**
+  - Abgleich mit neuester OpenClaw Version `v2026.9.6` (Stand September 2026):
+    - *Modellunterstützung:* Neuankömmlinge wie Claude Opus 5.5, GPT-6 Sol/Luna und Grok 4.7 integriert.
+    - *GitHub Reader:* Direkte Ingestion von öffentlichen Diffs und Diskussionen.
+    - *Managed-Update Outcomes & Recovery:* Atomare Update-Zustände und Wiederaufnahme unfertiger Konversationen nach Neustarts.
+    - *30-Tage-Usage Reporting:* Kompakte, aggregierte Nutzungsberichte.
+  - *Relevanz für BACH:* Bestätigt die Architektur von atomaren Release- & Snapshot-Reparaturen (`distribution_releases` v3.14.0), Session-Continuation Context & Task #1118 (OPS-RUN-001) sowie das Design lokaler Low-Cardinality Telemetrie-Zähler (`system/core/telemetry.py` / Task #1315).
+
+## Review 2026-09-29 (Daily Care & Dev Check)
+
+Automatisierter Daily Care & Dev Check. Befund und Status:
+
+- **Session-Lifecycle & Partner-Status:**
+  - Partner-Session `session_20260929_162252` für Partner `gemini` im Silent-Modus erfolgreich initialisiert.
+  - Vorherige Session ordnungsgemäß mit Auto-Snapshot abgeschlossen; Directory-Scan und Continuation-Context intakt.
+- **Repository-Stand & Main-Branch-Parität:**
+  - Lokaler `main`-Branch auf den neuesten Stand von `origin/main` per Fast-Forward aktualisiert (74 Commits nachgezogen, u. a. PR #169 Importierte Fähigkeiten aus Kategorien 1-3, Trithon Phasen 2-5 Routing/Fencing, Device-Auth-Strategie, Task-Model-Binding, Safe-Exec-Härtung).
+  - Arbeitsverzeichnis sauber bis auf dokumentarische Pfad-Konsolidierungen in `system/docs/help/health.txt` und `health_en.txt` (`~/.bach/bach.db` kanonisch verankert).
+- **Upgrade- & Release-Katalog-Status (`v3.14.0`):**
+  - Live-Release `v3.14.0` bestätigt (`current_release_registered: true`, `repair_recommended: false`, 3 Releases: `v3.12.4-earth`, `v3.13.0-bluesky`, `v3.14.0`).
+  - 3.394 getrackte Dateien, 3.626 Manifest-Einträge im Verteilungskatalog.
+- **Task-Audit & Konsistenzprüfung:**
+  - 8 Aufgaben im Task-Backlog verifiziert: #1061 (Installer E2E), #1062 (GUI Regression), #1341 (assistant-core Checkout-Pin), #1343 (i18n Release Drift), #1346 (Recurring-Task-Erzeugung / ID-Kollisionen Reconcilierung), #1044 (Mail-Service), #1118 (Supervisor/Runner), #1340 (TRANSFER-09 Haltefrist bis 2026-10-12).
+  - Keine unberechtigten Statusverschiebungen; Fail-Closed gewahrt.
+- **Agent Doctor, Scheduler & Dry-Runs:**
+  - Agent Doctor für `ati` und `entwickler`: Jeweils 7/7 Checks bestanden, 0 Fehler, `ready: true`, `can_start: true`.
+  - Dry-Run-Starts für Agenten (`bach agent start ati --dry-run`) fehlerfrei.
+  - Scheduler Doctor: 7/7 Checks bestanden (`ready: true`, 4/5 Jobs aktiv).
+  - Usecase-Suite: 50/50 Tests grün (100% mit zugeordneten Workflow-Dateien verknüpft, 0 Fehler).
+- **System- & Registrierungs-Wartung:**
+  - Registry-Health: `system/bach.py --maintain registry check --json` meldet `healthy: true` (0 actionable issues, 3 stale, 78 historische Einträge geschützt).
+  - Skill-Health: `system/bach.py maintain skills` meldet `GESUND` (30/30 Skills, 10/10 Agenten).
+  - Memory-Hygiene: Working Memory analysiert (171 Einträge; 0 abgelaufene `is_active`-Bereinigungen nötig).
+- **OpenClaw Competitive Watch (Stand v2026.9.6):**
+  - Abgleich mit neuester OpenClaw Version `v2026.9.6` (Stand 2026-09-29):
+    - *Managed-Update Outcomes & Recovery:* Verbesserungen der Update-Zuverlässigkeit und Recovery nicht abgeschlossener Aufgaben über Restarts hinweg.
+    - *Security Guardrails:* Verstärkte System-Prompt-Leitplanken und strikte Befehlsautorisierung gegen unbefugte Shell-Ausführungen.
+    - *Background Task Orchestration:* Steuerung von Hintergrund-Tasks direkt über Command-Palette und verbesserte Telemetrie/30-Tage-Reportings.
+  - *Relevanz für BACH:* Bestätigt vollumfänglich BACHs Architekturfokus: atomare Release- & Update-Reparatur (`distribution_releases` v3.14.0), Session-Continuation Context & Snapshots, `safe_exec.py` ohne Shell & Allowlist-Validierung (#137) sowie Task #1118 (OPS-RUN-001 aktive Laufsteuerung).
 
 ## Review 2026-09-24 (Daily Care & Dev Check)
 
@@ -223,8 +370,8 @@ Automatisierter Roadmap-Review (P2, wiederkehrend). Befund:
   #1184–#1195, #1181 (ellmos-tests-Kandidat) und #1175 (TASKPLAN-Cutover) sind in der
   heutigen Task-DB nicht mehr aufloesbar — die IDs wurden am 2026-09-08 mit abgeschlossenen
   GUI-Tasks bzw. Wegwerf-Test-Tasks neu belegt. Additiv korrigiert: BACH-2.0-Sektion,
-  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und Tagesvertrag bleiben als
-  Regelwerk gueltig; die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
+  clutch-M8-Sektion, TASKPLAN-Cutover-Ueberschrift. Gates und allgemeine Sicherheitsregeln bleiben als
+  Regelwerk gueltig (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft; Rückfluss läuft nachweisbasiert so schnell wie die Prüfungen es erlauben); die laufende Rueckspiegelung nutzt den MODULRUECKTRANSFER-PLAN
   (docs/architecture/MODULRUECKTRANSFER-PLAN.md) als Gate-Quelle.
 - **Prioritaeten:** Kohaerent. P1–3 erledigt; P4 nach Release. Aktiver Fokus:
   MODULRUECKTRANSFER Stufen 6–8, TASKPLAN-Cutover (TASKPLAN #299/#300–#302) und
@@ -513,8 +660,8 @@ kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
 > neu belegt (#1181 = Layout-Shift, #1184 = Präsenzstatus). Die Rueckspiegelung
 > laeuft seit September 2026 stattdessen ueber den MODULRUECKTRANSFER-PLAN
 > (`docs/architecture/MODULRUECKTRANSFER-PLAN.md`, BACH-Tasks 1217–1224) mit dort
-> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und Tagesvertrag dieser
-> Sektion bleiben als Regelwerk gueltig; bei Marker `Wettbewerb beendet` waere die
+> definierten Gates; Stufen 1–5 sind abgeschlossen. Gates und allgemeine Sicherheitsregeln dieser
+> Sektion bleiben als Regelwerk gueltig (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft); bei Marker `Wettbewerb beendet` waere die
 > Kette unter neuen IDs neu anzulegen.
 
 | ID | Atomarer Task | Abhängigkeiten | Abschlussgrenze |
@@ -524,23 +671,24 @@ kanonischen BACH-Task-System als Kategorie `bach2` angelegt.
 | **1186** | `BACH20-02` versioniertes Systemmanifest | 1185 | Schema, Beispiel und Validatorvertrag; vorhandene Manifestflächen wiederverwenden |
 | **1187** | `BACH20-03` referenzieller Registry-ID-Vertrag | 1185, 1186 | Module-/Skill-/Policy-/Learning-IDs ohne Registry-Kopie |
 | **1188** | `BACH20-04` Kandidatenregister und Scoring | 1185, 1187 | live belegte Eignung oder ehrliches `NO_OP`/`BLOCKED` |
-| **1189** | `BACH20-05` seiteneffektfreier read-only Tagesplaner | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
+| **1189** | `BACH20-05` seiteneffektfreier read-only Planer | 1186–1188 | null Session-/DB-/Log-/Sync-/Backup-/Scheduler-Mutation |
 | **1190** | `BACH20-06` Baseline-/Contract-/Shadow-/Rollback-Gates | 1186–1188 | gleiche Contracts, single-writer Shadow, vollständiger Rollback |
 | **1191** | `BACH20-07` atomarer Adapter-/Datenmigrationsvertrag | 1187, 1190 | idempotent, transaktional, crash- und rollbackfähig |
-| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | höchstens ein produktiver Wechsel pro Kalendertag |
+| **1192** | `BACH20-08` Source-of-Truth-Umschaltgate | 1189–1191 | Wechsel nacheinander; nächster erst nach grünem Nachweis (NACHTRAG 2026-09-27: Tageslimit entfallen) |
 | **1194** | `BACH20-10` unabhängige Modulupdates | 1186, 1187, 1190, 1192 | Pin/Hash, staged Update, konsistenter Code-/Manifest-/Datenrollback |
 | **1193** | `BACH20-09` Haltefrist-/Nullreferenz-/Removal-Gate | 1192, 1194 | recoverable Archivierung vor Entfernung; Daten/Credentials bleiben |
 | **1195** | `BACH20-11` BACH-2.0-Reifegates | 1193, 1194 | unabhängige Zertifizierung aller in T-20260728-12 definierten Reifekriterien |
 
-#### Tagesvertrag nach Aktivierung
+#### Allgemeine Sicherheitsregeln nach Aktivierung (NACHTRAG 2026-09-27: Tagesvertrag auf Nutzerentscheid abgeschafft)
 
-1. Der read-only Planner aktualisiert keine Zustände und liefert genau einen
-   belegten Kandidaten oder `NO_OP`/`BLOCKED`.
+1. Der read-only Planner aktualisiert keine Zustände und ermittelt den nächsten
+   geeigneten Kandidaten, sobald der vorige abgeschlossen ist.
 2. Locks, Ownerarbeit, Drift, fehlende Datenverträge oder rote Gates machen
    einen Kandidaten ungeeignet; es wird kein frischer Ersatz zur
    Quotenerfüllung gewählt.
-3. Analyse mehrerer Kandidaten ist zulässig. Pro Kalendertag darf aber
-   höchstens **ein** produktiver Source-of-Truth-Wechsel erfolgen.
+3. Analyse mehrerer Kandidaten ist zulässig. Wechsel laufen nacheinander. Der
+   nächste startet, sobald der vorige nachweislich grün ist (die Beschränkung
+   auf höchstens einen Wechsel pro Kalendertag ist auf Nutzerentscheid entfallen).
 4. Baseline, Contracttests, single-writer Shadowbetrieb und Rollback sind
    Vorbedingungen der atomaren Adapter-/Datenmigration.
 5. Umschaltung, Modulupdate und Entfernung sind drei getrennte Ereignisse.
@@ -720,7 +868,12 @@ Konsument mit schlankem Anzeige-Tray, den BACH umbrandet.
 > und ist die Oberfläche der OCEAN-**Vollausprägung**; BACH konsumiert und brandet sie zurück
 > (Muster wie `assistant-core`/`ellmos-chat`). `ellmos-unified-gui` bleibt als **Lite**-Schale
 > für Teilinstallationen erhalten, kein Nachbau. Details und Folgestufen:
-> `_control-center/_TICKETS/ACTIONABLE/T-20260920-829000873.ASUS-GEI.txt`.
+> Ticket `T-20260920-829000873` in `_control-center/_TICKETS/`; nach Ticket-ID über
+> die Lebenszyklusordner auflösen.
+
+> **Pointer-Korrektur [P 2026-09-30, T-20260920-829000873]:** Der Verweis oben ist
+> lebenszyklusstabil nachgeführt. Die Richtung des Nachtrags vom 23.09. gilt
+> unverändert; Folgetickets sind im Mutterticket registriert.
 
 **Richtigstellung:** Die Seite „BACH Aktivitätsanzeige & Worker Dashboard" liegt entgegen einer
 Ticketnotiz **in `origin/main`** (`telegram_chat.py:1519` Titel, `:1591` Überschrift, Fackel,
@@ -1810,3 +1963,68 @@ Erkenntnis aus dem ctx-/n8n-manager-Strang (Luca King / ctxrs).
   über `bach.db`) und **Nutzer** (Suche via Lib/CLI/MCP).
 - **Referenz/Alternative:** `ctx` (ctxrs, Apache-2.0) als Vorbild; deckt aber nur
   Coding-Agent-Transkripte ab, nicht die BACH-DB. Eigenbau bevorzugt.
+
+---
+
+## Transferierter Funktions- & Skill-Katalog (Ticket T-20260929-797360984) [G 2026-09-29]
+
+Vollständige, read-only Quell-Evaluation der vier internen Schwester-Repositories (`NemoFold`, `FolderHome`, `SentinelFleet`, `Roshambo`) zur Vermeidung von Doppelarbeit und zur Schließung bekannter Architektur-Lücken in BACH und OCEAN. Alle Quell-Komponenten wurden unter Erhalt der Lizenz- und Urheberrechts-Attribution (MIT / Apache-2.0) als isolierte Code-Kopien nach `system/imported_capabilities/` überführt und mit sauberen Adaptern sowie 100% grünen Regressionstests (`system/tests/test_imported_capabilities.py`) ausgestattet.
+
+### 1. Kategorie 1: Gewünscht & bereits gelöst (Sofortige Lückenschließung)
+- **CAP-1.1 (Task #1510, P1, `governance`): Atomare Distributed Leases & Work-Claiming**
+  - *Quelle:* Roshambo (`roshambo/core/leases.py`, `models.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `coordination` (`ellmos-coordination-choice-bundle` / `lock-master`).
+  - *Lückenschluss:* **Behebt BACH Kernlücke 1** („Kein atomarer Claim; worker nimmt offen[0] und startet ohne Anspruch; chat_tray liest erst und markiert danach", siehe Zeilen 677–679 oben).
+  - *Adapter:* `imported_capabilities/category_1_solved_wanted/leases/adapter_bach.py` (`try_claim_task_atomic`, `renew_task_lease`, `release_task_lease`).
+- **CAP-1.2 (Task #1511, P2, `memory`): Negatives Gedächtnis & Failure Trails**
+  - *Quelle:* Roshambo (`roshambo/core/memory_trails.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `working_memory` (`ellmos-working-memory-bundle` / `session-checkpoint`).
+  - *Nutzen:* Verhindert autonome Endlosschleifen von Hintergrund-Subagenten durch protokollierte Sackgassen und Kontextabgleich vor Werkzeugausführungen.
+  - *Adapter:* `imported_capabilities/category_1_solved_wanted/failure_trails/adapter_bach.py`.
+- **CAP-1.3 (Task #1512, P2, `features`): Vertrags- & Kündigungscockpit**
+  - *Quelle:* FolderHome (`folderhome/services/contract_store.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `finance_assist` (`ellmos-finance-assist-bundle` / `accounts-core`).
+  - *Nutzen:* Proaktives Fristenmanagement, Kündigungserinnerungen und Kostenübersichten für monatliche Fixkosten im modularen Finanz-Assistenten.
+  - *Adapter:* `imported_capabilities/category_1_solved_wanted/contract_cockpit/adapter_bach.py`.
+
+### 2. Kategorie 2: Überlegene Lösungen (Modernisierung bestehender Bausteine)
+- **CAP-2.1 (Task #1513, P1, `security`): Zero-Trust Model Armor Interceptor**
+  - *Quelle:* SentinelFleet (`sentinelfleet/armor/model_armor.py`, `gateway.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `K9-BOUNDARY` (Security Interceptor & Model Armor Gateway).
+  - *Vorteil:* Robuste heuristische & regex-basierte Erkennung von Evasion-Mustern (Space-Padding, Delimiter-Manipulation) sowie automatische PII-Redaction (IBAN, API-Keys).
+  - *Adapter:* `imported_capabilities/category_2_superior_solutions/model_armor/adapter_bach.py`.
+- **CAP-2.2 (Task #1514, P2, `evaluation`): Inter-Rater-Reliabilität (Cohen's Kappa)**
+  - *Quelle:* NemoFold (`nemofold/interrater.py`, `structured_codec.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `evaluation` (`skills` / `compare-race` & `ellmos-agents-bundle`).
+  - *Vorteil:* Mathematisch fundierte Übereinstimmungsmessung bei Multi-Modell-Vergleichen (Claude vs. GPT vs. Gemini) statt simpler String-Gleichheit.
+  - *Adapter:* `imported_capabilities/category_2_superior_solutions/interrater/adapter_bach.py`.
+- **CAP-2.3 (Task #1515, P2, `core`): Reversibles Zwei-Phasen Action Journal**
+  - *Quelle:* NemoFold (`nemofold/core/action_journal.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `K9-BOUNDARY` (Transaktionale Dateisystem-Schicht / FS-Journaling).
+  - *Vorteil:* Transaktionales Dateisystem-Journaling mit SHA-256 Integritätsprüfung und vollständigem automatischem Rollback bei Fehlern oder Abstürzen.
+  - *Adapter:* `imported_capabilities/category_2_superior_solutions/action_journal/adapter_bach.py`.
+- **CAP-2.4 (Task #1516, P2, `features`): § 14 UStG Rechnungsprüfung & Dispute Loop**
+  - *Quelle:* SentinelFleet (`sentinelfleet/compliance.py`, `dispute_loop.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `doc_handler` & `finance_assist` (`ellmos-doc-handler-bundle` / `ellmos-finance-assist-bundle`).
+  - *Vorteil:* Validierung formaler Pflichtangaben auf Eingangsrechnungen und automatisierte Generierung rechtssicherer Bestreitungsschreiben bei Formfehlern.
+  - *Adapter:* `imported_capabilities/category_2_superior_solutions/administrative_notice_engine/adapter_bach.py`.
+
+### 3. Kategorie 3: Bereichernde Features (Mehrwert für BACH & OCEAN)
+- **CAP-3.1 (Task #1517, P2, `gui`): Standalone Blueprint & Circuit SVG Generator**
+  - *Quelle:* SentinelFleet (`sentinelfleet/blueprint_graph.py`) & NemoFold (`nemofold/chronicle_svg.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `ellmos-unified-gui` (Recipe & Topology Visualizer).
+  - *Vorteil:* Erzeugt leichtgewichtige, interaktive SVG-Topologiediagramme ohne Abhängigkeit von schweren externen JS-Bibliotheken oder fehleranfälligen Mermaid-Renderern.
+  - *Adapter:* `imported_capabilities/category_3_enriching_features/blueprint_graph/adapter_ocean_bach.py`.
+- **CAP-3.2 (Task #1518, P3, `features`): Haushaltsinventar & Mindestbestands-Tracker**
+  - *Quelle:* FolderHome (`folderhome/services/inventory_store.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `daily_life` (`ellmos-daily-life-bundle`).
+  - *Adapter:* `imported_capabilities/category_3_enriching_features/inventory_store/adapter_bach.py`.
+- **CAP-3.3 (Task #1519, P3, `features`): Medikationsplan & Einnahme-Logger**
+  - *Quelle:* FolderHome (`folderhome/services/medication_store.py`)
+  - *Zielmodul (Ocean):* `open-ocean` / `health_assist` (`ellmos-health-assist-bundle`).
+  - *Adapter:* `imported_capabilities/category_3_enriching_features/medication_store/adapter_bach.py`.
+- **CAP-3.4 (Task #1520, P2, `gui`, hängt von #1510 ab): Swarm Radar / GPS Dashboard**
+  - *Quelle:* Roshambo & SentinelFleet
+  - *Zielmodul (Ocean):* `open-ocean` / `ellmos-unified-gui` & `coordination` (`ellmos-coordination-choice-bundle`).
+  - *Vorteil:* Hostübergreifende Live-Übersicht im Dashboard über aktive Agenten, Leases und abgewendete Arbeitskollisionen (ASUS-GEI, WORKSTATION-LG, Mac Studio).
+  - *Adapter:* `imported_capabilities/category_3_enriching_features/swarm_radar/adapter_bach_gui.py`.

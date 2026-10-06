@@ -76,22 +76,31 @@ class FSHandler(BaseHandler):
             "classify": "dist_type fuer Pfad zeigen",
             "scan": "Dateien nach dist_type gruppieren",
             "status": "Schutz-Status anzeigen",
+            "backup": "Backup erstellen",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> Tuple[bool, str]:
+        if "--dry-run" in args or "-n" in args:
+            dry_run = True
+            args = [a for a in args if a not in ("--dry-run", "-n")]
+
         if operation == "check" or not operation:
             return self.fs.check_integrity()
 
         elif operation == "heal":
             if "--all" in args:
                 force = "--force" in args
-                return self.fs.heal(force=force)
+                return self.fs.heal(force=force, dry_run=dry_run)
             elif args:
                 file_path = args[0]
                 force = "--force" in args
-                return self.fs.heal(file_path, force)
+                return self.fs.heal(file_path, force, dry_run=dry_run)
             else:
                 return False, "Usage: bach fs heal <file> oder bach fs heal --all"
+
+        elif operation == "backup":
+            tag = args[0] if args else "manual"
+            return self.fs.create_backup(tag, dry_run=dry_run)
 
         elif operation == "classify":
             if not args:

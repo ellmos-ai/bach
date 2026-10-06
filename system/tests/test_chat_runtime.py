@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
-"""Tests for ChatRuntime security functions (hub/_services/chat/chat_runtime.py)."""
+"""Tests for BACH's chat tool surface (hub/_services/chat/bach_tools.py).
+
+Wave 2 of the module cut (D-20260830-002) moved these functions out of
+chat_runtime.py, which is now a thin seam over the ellmos-chat runtime. The
+assertions are unchanged; only the module under test moved.
+"""
 
 import subprocess
 import sys
@@ -15,11 +20,13 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services.chat.chat_runtime import (
-    BACH_SYSTEM_DIR,
-    BLOCKED_PATTERNS,
     ComputeLocked,
     FailedAnswer,
     SuccessfulAnswer,
+)
+from hub._services.chat.bach_tools import (
+    BACH_SYSTEM_DIR,
+    BLOCKED_PATTERNS,
     CMD_TIMEOUT,
     SAFE_BASES,
     TOOLS_SAFE,
@@ -207,7 +214,7 @@ class TestIsSafeWritePath:
     ])
     def test_safe_mode_blocks_system_paths(self, path, expected_resolve):
         """Unix system paths should be blocked in safe mode."""
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: expected_resolve
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -229,8 +236,8 @@ class TestIsSafeWritePath:
         # We mock to simulate Unix-like path resolution.
         fake_bach_dir = "/home/agent/BACH/system/hub"
         fake_user_path = fake_bach_dir + "/data/user/notes.txt"
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath, \
-             patch("hub._services.chat.chat_runtime.BACH_SYSTEM_DIR", fake_bach_dir):
+        with patch("hub._services.chat.bach_tools.Path") as MockPath, \
+             patch("hub._services.chat.bach_tools.BACH_SYSTEM_DIR", fake_bach_dir):
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: fake_user_path
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -239,7 +246,7 @@ class TestIsSafeWritePath:
 
     def test_safe_mode_allows_tmp(self):
         """Paths outside blocked prefixes should be allowed (e.g. /tmp on Unix)."""
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: "/tmp/output.txt"
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -247,7 +254,7 @@ class TestIsSafeWritePath:
         assert result is None
 
     def test_safe_mode_allows_home_dir(self):
-        with patch("hub._services.chat.chat_runtime.Path") as MockPath:
+        with patch("hub._services.chat.bach_tools.Path") as MockPath:
             mock_resolved = MagicMock()
             mock_resolved.__str__ = lambda self: "/home/user/documents/test.txt"
             MockPath.return_value.resolve.return_value = mock_resolved
@@ -290,7 +297,7 @@ class TestIsSafeWritePath:
 class TestRunShell:
     """Test run_shell timeout clamping, subprocess handling, error handling."""
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_successful_command(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="hello world\n",
@@ -300,7 +307,7 @@ class TestRunShell:
         assert "hello world" in result
         mock_run.assert_called_once()
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_stderr_included(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="output\n",
@@ -311,7 +318,7 @@ class TestRunShell:
         assert "[stderr]" in result
         assert "warning: something" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_empty_output(self, mock_run):
         mock_run.return_value = MagicMock(
             stdout="",
@@ -320,21 +327,21 @@ class TestRunShell:
         result = run_shell("true")
         assert result == "(keine Ausgabe)"
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_expired(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=30)
         result = run_shell("sleep 999", timeout=30)
         assert "Timeout" in result
         assert "30s" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_generic_exception(self, mock_run):
         mock_run.side_effect = OSError("No such file or directory")
         result = run_shell("nonexistent_cmd")
         assert "Fehler" in result
         assert "No such file or directory" in result
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_minimum(self, mock_run):
         """Timeout below 5 should be clamped to 5."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -342,7 +349,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 5
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_maximum(self, mock_run):
         """Timeout above 120 should be clamped to 120."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -350,7 +357,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_within_range(self, mock_run):
         """Timeout within 5-120 should be passed as-is."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -358,7 +365,7 @@ class TestRunShell:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 60
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_output_truncated_at_4000(self, mock_run):
         """Output longer than 4000 chars should be truncated."""
         long_output = "x" * 5000
@@ -366,7 +373,7 @@ class TestRunShell:
         result = run_shell("generate_long_output")
         assert len(result) == 4000
 
-    @patch("hub._services.chat.chat_runtime.subprocess.run")
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_default_timeout_is_cmd_timeout(self, mock_run):
         """Default timeout should be CMD_TIMEOUT (30)."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="")
@@ -710,7 +717,7 @@ def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
             raise ProcessLookupError("[Errno 3] No such process")
         return None
 
-    monkeypatch.setattr("os.kill", mock_kill)
+    monkeypatch.setattr("hub.compute_lock.os", types.SimpleNamespace(name="posix", kill=mock_kill))
     monkeypatch.setattr("hub.compute_lock._pid_is_stopped", lambda pid: False)
 
     status = {
@@ -729,6 +736,33 @@ def test_filter_stopped_jobs_ignores_unmanageable_and_dead_pids(monkeypatch):
     assert is_active
     assert len(filtered["active_compute_jobs"]) == 1
     assert filtered["active_compute_jobs"][0]["pid"] == 44252
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PID probe regression")
+def test_windows_compute_pid_probe_leaves_owned_child_alive():
+    import time
+    from hub.compute_lock import _filter_stopped_jobs
+
+    # Never probe an unrelated live PID; this child belongs to this test.
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(20)"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        assert child.stdout.readline().strip() == "ready"
+        active, status = _filter_stopped_jobs({"active_compute_jobs": [{"pid": child.pid}]})
+        time.sleep(0.05)
+        assert child.poll() is None, "Checking a PID must never terminate that process"
+        assert active is True
+        assert status["active_compute_jobs"] == [{"pid": child.pid}]
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=5)
+        child.stdout.close()
+        child.stderr.close()
+    assert _filter_stopped_jobs({"active_compute_jobs": [{"pid": child.pid}]}) == (False, {})
 
 
 class TestFailedAnswer:
@@ -1343,6 +1377,236 @@ def test_glm_cloud_summarize_preserves_older_context():
     assert backend.calls[0]["think"] is True
 
 
+def test_local_compute_gate_serves_foreground_between_background_model_calls():
+    import asyncio
+    import threading
+    import time
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+
+    runtime = ChatRuntime(OllamaBackend(base_url="http://127.0.0.1:11434"))
+    background_started = threading.Event()
+    foreground_started = threading.Event()
+    release_background = threading.Event()
+    calls = []
+
+    async def fake_chat(_messages, **_kwargs):
+        chat_id = runtime.compute_turn_status()["chat_id"]
+        calls.append(chat_id)
+        if chat_id == "worker-unit-test" and calls.count(chat_id) == 1:
+            background_started.set()
+            await asyncio.to_thread(release_background.wait)
+        elif chat_id == "gui-web":
+            foreground_started.set()
+        return {"content": "ok"}
+
+    async def fake_process_turn(text, chat_id, **_kwargs):
+        await runtime._chat_with_compute_turn(runtime.backend, [{"role": "user", "content": text}])
+        if chat_id == "worker-unit-test":
+            await runtime._chat_with_compute_turn(runtime.backend, [{"role": "user", "content": "Fortsetzung"}])
+        return "ok"
+
+    runtime.backend.chat = fake_chat
+    runtime._process_turn = fake_process_turn
+    outcomes = {}
+
+    def invoke(chat_id, priority):
+        outcomes[chat_id] = asyncio.run(
+            runtime.process("probe", chat_id, work_priority=priority)
+        )
+
+    background = threading.Thread(target=invoke, args=("worker-unit-test", "background"))
+    foreground = threading.Thread(target=invoke, args=("gui-web", "foreground"))
+    background.start()
+    assert background_started.wait(2)
+    foreground.start()
+
+    deadline = time.monotonic() + 2
+    while runtime.compute_turn_status()["foreground_waiters"] == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert runtime.compute_turn_status()["foreground_waiters"] == 1
+    assert not foreground_started.is_set()
+
+    release_background.set()
+    background.join(3)
+    foreground.join(3)
+
+    assert not background.is_alive()
+    assert not foreground.is_alive()
+    assert calls == ["worker-unit-test", "gui-web", "worker-unit-test"]
+    assert outcomes == {"worker-unit-test": "ok", "gui-web": "ok"}
+    assert runtime.compute_turn_status()["active"] is False
+
+
+def test_task_completion_receipts_require_successful_done_tool_response():
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _Backend:
+        def get_default_model(self):
+            return "test-model"
+
+    runtime = ChatRuntime(_Backend())
+    runtime._reset_task_completion_receipts("worker-receipt-test")
+    context_token = runtime._compute_turn_context.set(("worker-receipt-test", "background"))
+
+    assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 nicht gefunden",
+    )
+    assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 war bereits erledigt.",
+    )
+    assert not runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "update", "task_id": 42},
+        "Task #42 aktualisiert: status",
+    )
+    assert runtime.get_last_task_completion_receipts("worker-receipt-test") == ()
+
+    assert runtime._record_task_completion_receipt(
+        "worker-receipt-test", "task_manage", {"action": "done", "task_id": 42},
+        "Task #42 erledigt.",
+    )
+    assert runtime.get_last_task_completion_receipts("worker-receipt-test") == (42,)
+    runtime._compute_turn_context.reset(context_token)
+
+
+@pytest.mark.parametrize("result", [
+    "Task #43 in 1 Teilaufgaben zerlegt: IDs [44]",
+    "Task #42 in 2 Teilaufgaben zerlegt: IDs [43]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs []",
+    "Task #42 in 2 Teilaufgaben zerlegt: IDs [43, 43]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs [0]",
+    "Task #42 in 1 Teilaufgaben zerlegt: IDs [42]",
+    "FERTIG",
+])
+def test_inconsistent_decomposition_result_is_not_a_completion_receipt(result):
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    runtime = ChatRuntime(object())
+    token = runtime._compute_turn_context.set(("worker-receipts", "background"))
+    try:
+        assert runtime._record_task_completion_receipt(
+            "worker-receipts", "task_manage", {"action": "decompose", "task_id": 42}, result,
+        ) is False
+        assert runtime.get_last_task_completion_receipts("worker-receipts") == ()
+    finally:
+        runtime._compute_turn_context.reset(token)
+
+
+def test_parallel_decomposition_receipt_is_recorded_once():
+    from concurrent.futures import ThreadPoolExecutor
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    runtime = ChatRuntime(object())
+
+    def record():
+        token = runtime._compute_turn_context.set(("worker-parallel", "background"))
+        try:
+            return runtime._record_task_completion_receipt(
+                "worker-parallel", "task_manage", {"action": "decompose", "task_id": 42},
+                "Task #42 in 2 Teilaufgaben zerlegt: IDs [43, 44]",
+            )
+        finally:
+            runtime._compute_turn_context.reset(token)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: record(), range(2)))
+    assert results.count(True) == 1
+    assert runtime.consume_task_completion_receipts("worker-parallel") == (42,)
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_failed_or_cancelled_inference_releases_compute_turn(cancelled):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class Backend:
+        async def chat(self, *_args, **_kwargs):
+            raise asyncio.CancelledError() if cancelled else RuntimeError("Modellzug fehlgeschlagen")
+
+    runtime = ChatRuntime(Backend())
+    token = runtime._compute_turn_context.set(("worker-error", "background"))
+    try:
+        with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+            asyncio.run(runtime._chat_with_compute_turn(runtime.backend, []))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert runtime.compute_turn_status()["active"] is False
+
+
+class _RoundBudgetBackend:
+    """Isolated model boundary; all runtime prompt and dispatch behavior is real."""
+    def __init__(self, tool_rounds):
+        self.tool_rounds = tool_rounds
+        self.calls = []
+
+    def get_default_model(self):
+        return "test-model"
+
+    async def chat(self, messages, tools=None, think=True, model=None):
+        from copy import deepcopy
+        self.calls.append(deepcopy(messages))
+        if len(self.calls) <= self.tool_rounds:
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "get_datetime", "arguments": {},
+            }}], "raw_message": {"role": "assistant", "content": ""}}
+        return {"content": "FERTIG", "tool_calls": None}
+
+    def tool_response_message(self, content, tool_call_id=""):
+        return {"role": "tool", "content": content}
+
+
+@pytest.mark.parametrize("max_rounds,tool_rounds,counters", [
+    (25, 21, ["[Werkzeugrunde 0/25 · noch 25]", "[Werkzeugrunde 20/25 · noch 5]",
+              "[Werkzeugrunde 21/25 · noch 4]"]),
+    (0, 3, ["[Werkzeugrunde 0 · ohne Limit]", "[Werkzeugrunde 1 · ohne Limit]",
+             "[Werkzeugrunde 3 · ohne Limit]"]),
+    (1, 1, ["[Werkzeugrunde 0/1 · noch 1]", "[Werkzeugrunde 1/1 · noch 0]"]),
+])
+def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, max_rounds, tool_rounds, counters):
+    import asyncio
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool", lambda *_a, **_k: "Testwert")
+    backend = _RoundBudgetBackend(tool_rounds)
+    runtime = ChatRuntime(backend)
+    runtime.hook_every = 999
+    session = ChatSession()
+    session.chat_id = "worker-budget-test"
+    session.max_tool_rounds = max_rounds
+    session.custom_system_prompt = "Eigene Worker-Rolle"
+    token = runtime._compute_turn_context.set((session.chat_id, "background"))
+    try:
+        answer = asyncio.run(runtime._tool_loop(
+            [{"role": "system", "content": session.custom_system_prompt},
+             {"role": "user", "content": "Task #42 bearbeiten"}], session,
+            tools=[{"type": "function", "function": {"name": "get_datetime"}}],
+        ))
+    finally:
+        runtime._compute_turn_context.reset(token)
+
+    assert answer == "FERTIG"
+    all_text = "\n".join(m.get("content", "") for messages in backend.calls for m in messages)
+    for counter in counters:
+        assert counter in all_text
+    first_text = "\n".join(m.get("content", "") for m in backend.calls[0])
+    assert "task_manage(action='decompose'" in first_text
+    assert "Werkzeug" in first_text and "bestätigt" in first_text
+    if max_rounds == 25:
+        warning_text = "\n".join(m.get("content", "") for m in backend.calls[20])
+        assert "fast aufgebraucht" in warning_text
+        assert "task_manage(action='decompose'" in warning_text
+        before_warning = "\n".join(m.get("content", "") for m in backend.calls[19])
+        assert "fast aufgebraucht" not in before_warning
+    elif max_rounds == 0:
+        assert "fast aufgebraucht" not in all_text
+        assert "aufgebraucht (" not in all_text
+    # A bare model word never completes a TaskDB task.
+    assert runtime.consume_task_completion_receipts(session.chat_id) == ()
+
+
 @pytest.mark.parametrize("failure", ["exception", "partial_error"])
 def test_glm_cloud_summarize_failure_does_not_silently_drop_history(failure):
     import asyncio
@@ -1452,6 +1716,67 @@ def test_successful_but_still_full_context_handoffs_are_bounded():
     assert isinstance(answer, FailedAnswer)
     assert "Kontext-Übergabe" in answer
     assert backend.calls <= 5
+
+
+@pytest.mark.parametrize("summary_fails", [False, True])
+@pytest.mark.parametrize("completed_rounds", [0, 1])
+def test_automatic_handoff_keeps_worker_role_policy_budget_and_history(summary_fails, completed_rounds, monkeypatch):
+    import asyncio
+    from hub._services.chat.chat_runtime import (
+        ChatRuntime, ChatSession, HANDOFF_PROMPT, SELF_DECOMPOSE_INSTRUCTION,
+        tool_round_counter,
+    )
+    monkeypatch.setattr("hub._services.chat.chat_runtime.exec_tool", lambda *a, **kw: "synthetic result")
+
+    class Backend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "test-model"
+
+        def tool_response_message(self, content, tool_call_id):
+            return {"role": "tool", "content": content, "tool_call_id": tool_call_id}
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append([dict(m) for m in messages])
+            if messages[-1]["content"] == HANDOFF_PROMPT:
+                if summary_fails:
+                    raise TimeoutError("synthetic summary failure")
+                return {"content": "RESUME: continue exact work"}
+            if completed_rounds and len(self.calls) == 1:
+                return {"content": "", "prompt_tokens": 10, "tool_calls": [{
+                    "id": "synthetic-call", "function": {"name": "read_file", "arguments": '{"path":"test"}'},
+                }]}
+            if len(self.calls) == completed_rounds + 1:
+                return {"content": "", "prompt_tokens": 90}
+            return {"content": "continued", "prompt_tokens": 10}
+
+    backend = Backend()
+    runtime = ChatRuntime(backend)
+    runtime.handoff_percent = 75
+    session = ChatSession()
+    session.allow_tools = True
+    session.max_tool_rounds = 5
+    session.messages = [{"role": "user", "content": "old full conversation"}]
+    original = [{"role": "system", "content": "Specific worker role"}, *session.messages]
+    token = runtime._compute_turn_context.set(("worker-test", "background"))
+    try:
+        answer = asyncio.run(runtime._tool_loop(original, session, tools=[{"name": "read"}], context_limit=100))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert answer == "continued"
+    resumed = backend.calls[-1]
+    assert [m for m in resumed if m["role"] == "system"] == [{"role": "system", "content": "Specific worker role"}]
+    assert sum(m["content"] == SELF_DECOMPOSE_INSTRUCTION for m in resumed) == 1
+    assert sum(m["content"] == tool_round_counter(completed_rounds, 5) for m in resumed) == 1
+    assert sum(str(m["content"]).startswith("[Werkzeugrunde ") for m in resumed) == 1
+    assert all(m["role"] != "system" for m in session.messages)
+    if not summary_fails:
+        assert "old full conversation" not in str(session.messages)
+        assert "RESUME: continue exact work" in str(session.messages)
 
 
 def test_non_glm_transient_handoff_failure_keeps_tail_fallback():
@@ -1833,3 +2158,177 @@ class TestFackelPreference:
         assert '"fackel_preference": get_fackel_preference()' in src
         assert 'app.add_handler(CommandHandler("fackel", _require_owner(cmd_fackel)))' in src
         assert 'setFackel' in src
+
+
+class TestFsRootAllowlist:
+    """Wurzel-Allowlist fuer list_directory/read_file/search_text.
+
+    Nur Pfade unterhalb von HOME oder BACH_SYSTEM_DIR (_ALLOWED_FS_ROOTS)
+    duerfen gelesen werden; Pfade werden vor dem Vergleich aufgeloest
+    (Symlinks), damit ein Symlink im erlaubten Ast, der nach aussen zeigt,
+    blockiert wird.
+    """
+
+    def test_fs_root_allowed_helper(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        assert cr._fs_root_allowed(tmp_path.resolve())
+        assert cr._fs_root_allowed(tmp_path.resolve() / "sub" / "file.txt")
+        assert not cr._fs_root_allowed(tmp_path.resolve().parent)
+        assert not cr._fs_root_allowed(Path("/etc"))
+
+    def test_list_directory_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        # tmp_path liegt ueblicherweise unter dem System-Temp-Verzeichnis,
+        # weder unter HOME noch unter BACH_SYSTEM_DIR (Ausnahme z. B.
+        # Windows: %USERPROFILE%\AppData\Local\Temp unterhalb von HOME).
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        result = exec_tool("list_directory", {"path": str(tmp_path)}, "safe")
+        assert "BLOCKIERT" in result
+
+    def test_read_file_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        f = tmp_path / "secret_notes.txt"
+        f.write_text("geheim\n", encoding="utf-8")
+        result = exec_tool("read_file", {"path": str(f)}, "safe")
+        assert "BLOCKIERT" in result
+        assert "geheim" not in result
+
+    def test_search_text_outside_roots_blocked(self, tmp_path):
+        from hub._services.chat import chat_runtime as cr
+
+        if cr._fs_root_allowed(cr._resolve(tmp_path)):
+            pytest.skip("tmp_path liegt hier unter einer erlaubten Wurzel")
+        f = tmp_path / "notes.txt"
+        f.write_text("suchbegriff hier\n", encoding="utf-8")
+        result = exec_tool(
+            "search_text",
+            {"pattern": "suchbegriff", "path": str(tmp_path)},
+            "safe",
+        )
+        assert "BLOCKIERT" in result
+        assert "notes.txt" not in result
+
+    def test_list_directory_bach_root_allowed(self):
+        result = exec_tool("list_directory", {"path": BACH_SYSTEM_DIR}, "safe")
+        assert "BLOCKIERT" not in result
+
+    def test_home_allowed(self):
+        from hub._services.chat import chat_runtime as cr
+
+        if not any(cr._is_under(cr._resolve(Path.home()), r)
+                   for r in cr._ALLOWED_FS_ROOTS):
+            pytest.skip("HOME ist in dieser Umgebung keine erlaubte Wurzel")
+        result = exec_tool("list_directory", {"path": str(Path.home())}, "safe")
+        assert "BLOCKIERT" not in result
+
+    def test_symlink_escape_blocked(self, tmp_path, monkeypatch):
+        import os
+
+        from hub._services.chat import chat_runtime as cr
+
+        # tmp_path als einzige erlaubte Wurzel: der Symlink (in tmp_path)
+        # zeigt auf tmp_path.parent, also NACH AUSSERHALB der Wurzel, und
+        # muss trotzdem blockiert werden, weil aufgeloest verglichen wird.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        link = tmp_path / "escape_link"
+        try:
+            os.symlink(str(tmp_path.resolve().parent), str(link))
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks nicht verfuegbar (fehlende Rechte/Windows)")
+        result = exec_tool("list_directory", {"path": str(link)}, "safe")
+        assert "BLOCKIERT" in result
+
+    def test_patched_root_allows_tmp_path(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        # Gegenprobe: mit tmp_path als erlaubter Wurzel ist ein direkter
+        # Zugriff auf tmp_path NICHT blockiert und listet Dateien auf.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        marker = tmp_path / "allowlist_marker.txt"
+        marker.write_text("x\n", encoding="utf-8")
+        result = exec_tool("list_directory", {"path": str(tmp_path)}, "safe")
+        assert "BLOCKIERT" not in result
+        assert "allowlist_marker.txt" in result
+
+    def test_patched_root_search_and_read_allowed(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        f = tmp_path / "fund.txt"
+        f.write_text("nadel im heuhaufen\n", encoding="utf-8")
+        read = exec_tool("read_file", {"path": str(f)}, "safe")
+        assert "BLOCKIERT" not in read
+        assert "nadel" in read
+        hits = exec_tool(
+            "search_text",
+            {"pattern": "nadel", "path": str(tmp_path), "recursive": True},
+            "safe",
+        )
+        assert "BLOCKIERT" not in hits
+        assert "fund.txt" in hits
+
+    def test_search_text_still_blocks_secrets_under_allowed_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        # Die Secrets-Deny-Schicht bleibt auch bei erlaubter Wurzel aktiv:
+        # eine Datei in einem .ssh-Verzeichnis darf nicht gefunden werden.
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "id_rsa").write_text("PRIVATE KEY nadel\n", encoding="utf-8")
+        hits = exec_tool(
+            "search_text",
+            {"pattern": "nadel", "path": str(tmp_path), "recursive": True},
+            "safe",
+        )
+        assert "id_rsa" not in hits
+
+    def test_search_text_skips_file_symlink_outside_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        outside = tmp_path / "outside.txt"
+        outside.write_text("escape marker\n", encoding="utf-8")
+        link = allowed / "linked.txt"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("Datei-Symlinks sind hier nicht verfügbar")
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (allowed.resolve(),))
+
+        result = exec_tool(
+            "search_text", {"pattern": "escape marker", "path": str(allowed)}, "safe"
+        )
+        assert "linked.txt" not in result
+        assert "escape marker" not in result
+
+    def test_search_text_checks_resolved_file_root(self, tmp_path, monkeypatch):
+        from hub._services.chat import chat_runtime as cr
+
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        linked = allowed / "linked.txt"
+        linked.write_text("escape marker\n", encoding="utf-8")
+        outside = tmp_path / "outside.txt"
+        real_resolve = cr._resolve
+
+        def resolve_with_escape(path):
+            if Path(path) == linked:
+                return outside
+            return real_resolve(path)
+
+        monkeypatch.setattr(cr, "_ALLOWED_FS_ROOTS", (allowed.resolve(),))
+        monkeypatch.setattr(cr, "_resolve", resolve_with_escape)
+        result = exec_tool(
+            "search_text", {"pattern": "escape marker", "path": str(allowed)}, "safe"
+        )
+        assert "linked.txt" not in result
+        assert "escape marker" not in result

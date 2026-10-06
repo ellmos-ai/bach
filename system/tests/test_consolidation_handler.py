@@ -17,14 +17,17 @@ from hub.consolidation import ConsolidationHandler
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS memory_working (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL CHECK(type IN ('scratchpad', 'context', 'loop', 'note')),
+    type TEXT NOT NULL CHECK(type IN ('scratchpad', 'context', 'loop', 'note', 'handoff', 'task')),
     content TEXT NOT NULL,
     priority INTEGER DEFAULT 0,
     tags TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
-    is_active INTEGER DEFAULT 1
+    is_active INTEGER DEFAULT 1,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    session_id TEXT,
+    related_to TEXT
 );
 
 CREATE TABLE IF NOT EXISTS memory_facts (
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS memory_facts (
     source TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    agent_id TEXT DEFAULT 'default',
     UNIQUE(category, key)
 );
 
@@ -56,7 +60,8 @@ CREATE TABLE IF NOT EXISTS memory_lessons (
     last_shown TEXT,
     created_at TEXT,
     updated_at TEXT,
-    dist_type INTEGER DEFAULT 1
+    dist_type INTEGER DEFAULT 1,
+    agent_id TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS memory_sessions (
@@ -102,6 +107,21 @@ CREATE TABLE IF NOT EXISTS memory_context (
     injection_template TEXT,
     is_active INTEGER DEFAULT 1,
     updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS decay_config (
+    agent_id TEXT PRIMARY KEY,
+    fact_decay_rate REAL DEFAULT 0.01,
+    lesson_decay_rate REAL DEFAULT 0.005,
+    min_confidence REAL DEFAULT 0.2,
+    max_facts INTEGER DEFAULT 1000,
+    max_lessons INTEGER DEFAULT 200,
+    max_sessions INTEGER DEFAULT 500,
+    auto_cleanup_enabled INTEGER DEFAULT 1,
+    cleanup_interval_days INTEGER DEFAULT 7,
+    last_cleanup_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -329,19 +349,102 @@ class TestIndex:
 # ================================================================
 
 class TestRunAll:
-    def test_run_all_empty(self, cons_env):
+    @pytest.mark.parametrize('failed', [None, 'WEIGHT', 'ARCHIVE', 'INDEX', 'TRIGGERS', 'FORGET', 'SLEEP'])
+    @pytest.mark.parametrize('dry_run', [False, True])
+    def test_order_and_failure_receipt(self, cons_env, monkeypatch, failed, dry_run):
         h, _ = cons_env
+        called = []
+        steps = [('WEIGHT', '_update_weights'), ('ARCHIVE', '_archive_old'),
+                 ('INDEX', '_index_facts'), ('TRIGGERS', '_sync_triggers'),
+                 ('FORGET', '_deactivate_unused'), ('SLEEP', '_sleep_union')]
+        for name, method in steps:
+            def step(dry_run, name=name):
+                called.append((name, dry_run))
+                return name != failed, f'{name} details\nsecond line'
+            monkeypatch.setattr(h, method, step)
+        ok, msg = h.handle('run', [], dry_run=dry_run)
+        assert ok is (failed is None)
+        assert called == [(name, dry_run) for name, _ in steps]
+        assert msg.count('second line') == 6
+        if failed:
+            assert f'{failed} (FEHLER)' in msg
+
+    def test_run_all_empty(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        monkeypatch.setattr(h, '_sync_triggers', lambda dry_run: (True, 'fixture sync'))
+        monkeypatch.setattr(h, '_sleep_union', lambda dry_run: (True, 'fixture TTL'))
         ok, msg = h.handle("run", [])
         assert ok is True
         assert "WEIGHT" in msg
         assert "ARCHIVE" in msg
         assert "INDEX" in msg
+        assert "SLEEP" in msg
 
-    def test_run_all_dry_run(self, cons_env):
+    def test_run_all_dry_run(self, cons_env, monkeypatch):
         h, _ = cons_env
+        monkeypatch.setattr(h, '_sleep_union', lambda dry_run: (True, 'fixture TTL'))
         ok, msg = h.handle("run", [], dry_run=True)
         assert ok is True
         assert "DRY-RUN" in msg
+
+
+class TestS4PolicyAndTriggerBinding:
+    def test_policy_without_database(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        h.db_path = h.base_path / 'absent.db'
+        monkeypatch.setattr(sqlite3, 'connect', lambda *a, **kw: pytest.fail('policy opens DB'))
+        ok, msg = h.handle('policy', [])
+        assert ok
+        for text in ('Gardener', 'sync-triggers', 'workflowhooker Stop', 'ellmos-scheduler',
+                     'Offene Integration', 'aktiviert keine', 'decay=False'):
+            assert text in msg
+        assert not h.db_path.exists()
+
+    def test_missing_generators_fail(self, cons_env):
+        h, _ = cons_env
+        ok, msg = h.handle('sync-triggers', [])
+        assert not ok
+        assert msg.count('Nicht gefunden') == 5
+
+    def test_generator_database_is_handler_database(self, cons_env, monkeypatch):
+        h, db = cons_env
+        tools = h.base_path / 'tools'
+        tools.mkdir()
+        scripts = ['workflow_trigger_generator.py', 'lesson_trigger_generator.py',
+                   'tool_auto_discovery.py', 'theme_packet_generator.py', 'trigger_maintainer.py']
+        # Echte Kindprozesse, ausschließlich gegen die Temp-DB. Der geerbte Pfad ist absichtlich falsch.
+        monkeypatch.setenv('BACH_DB', str(h.base_path / 'must-not-create.db'))
+        source = (
+            "import os, sqlite3\n"
+            "from pathlib import Path\n"
+            "conn = sqlite3.connect(os.environ['BACH_DB'])\n"
+            "conn.execute('CREATE TABLE IF NOT EXISTS sync_probes (name TEXT)')\n"
+            "conn.execute('INSERT INTO sync_probes VALUES (?)', (Path(__file__).name,))\n"
+            "conn.commit()\nconn.close()\n"
+        )
+        for script in scripts:
+            (tools / script).write_text(source, encoding='utf-8')
+        ok, msg = h.handle('sync-triggers', [])
+        assert ok, msg
+        conn = sqlite3.connect(db)
+        try:
+            assert [r[0] for r in conn.execute('SELECT name FROM sync_probes')] == scripts
+        finally:
+            conn.close()
+        assert not (h.base_path / 'must-not-create.db').exists()
+        (tools / scripts[0]).write_text('raise SystemExit(7)', encoding='utf-8')
+        ok, msg = h.handle('sync-triggers', [])
+        assert not ok
+        assert 'Fehler' in msg and scripts[0] in msg
+
+    def test_dry_trigger_sync_has_no_process_or_write(self, cons_env, monkeypatch):
+        import subprocess
+        h, db = cons_env
+        before = db.read_bytes()
+        monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: pytest.fail('dry-run launches subprocess'))
+        ok, msg = h.handle('sync-triggers', [], dry_run=True)
+        assert ok and 'DRY-RUN' in msg
+        assert db.read_bytes() == before
 
 
 # ================================================================
@@ -594,3 +697,157 @@ class TestReview:
         h, _ = cons_env
         ok, msg = h.handle("review", [])
         assert ok is True
+
+
+# ================================================================
+# SLEEP (GARDENER SLEEP_UNION SEAM)
+# ================================================================
+
+class TestSleep:
+    def test_status_displays_sleep_and_decay_config(self, cons_env):
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO decay_config (agent_id, fact_decay_rate, lesson_decay_rate, min_confidence, last_cleanup_at)
+            VALUES ('claude', 0.01, 0.005, 0.2, '2026-09-28 10:00:00')
+        """)
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Active handoff', 'claude', '2026-09-25 10:00:00', '2026-10-25 10:00:00', 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("status", [])
+        assert ok is True
+        assert "SCHLAF & TTL (Working-Memory):" in msg
+        assert "handoff" in msg
+        assert "DECAY-CONFIG (1 Agenten):" in msg
+        assert "claude" in msg
+
+    def test_sleep_module_missing_graceful_handling(self, cons_env, monkeypatch):
+        h, _ = cons_env
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if "sleep_union" in name:
+                raise ImportError("No module named 'sleep_union'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.setitem(sys.modules, "sleep_union", None)
+        ok, msg = h.handle("sleep", [])
+        assert ok is False
+        assert "nicht verfuegbar" in msg
+
+    def test_sleep_empty(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, _ = cons_env
+        ok, msg = h.handle("sleep", [])
+        assert ok is True
+        assert "TTL gesetzt: 0, Deaktiviert: 0" in msg
+
+    def test_sleep_ttl_grace_applied(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Handoff task notes', 'default', '2026-09-01 10:00:00', NULL, 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("sleep", [])
+        assert ok is True
+        assert "TTL gesetzt: 1" in msg
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute("SELECT expires_at, is_active FROM memory_working WHERE type='handoff'").fetchone()
+        conn.close()
+        assert row[0] is not None
+        assert row[1] == 1
+
+    def test_sleep_deactivates_expired(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('context', 'Old context notes', 'default', '2026-01-01 10:00:00', '2026-01-15 10:00:00', 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("sleep", [])
+        assert ok is True
+        assert "Deaktiviert: 1" in msg
+
+        conn = sqlite3.connect(str(db))
+        active = conn.execute("SELECT is_active FROM memory_working WHERE type='context'").fetchone()[0]
+        conn.close()
+        assert active == 0
+
+    def test_sleep_dry_run_leaves_database_untouched(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Dry run test notes', 'default', '2026-09-01 10:00:00', NULL, 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("sleep", [], dry_run=True)
+        assert ok is True
+        assert "DRY-RUN" in msg
+        assert "TTL gesetzt: 1" in msg
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute("SELECT expires_at FROM memory_working WHERE type='handoff'").fetchone()
+        conn.close()
+        assert row[0] is None
+
+    def test_sleep_agent_filter(self, cons_env):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, db = cons_env
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Claude handoff', 'claude', '2026-09-01 10:00:00', NULL, 1)
+        """)
+        conn.execute("""
+            INSERT INTO memory_working (type, content, agent_id, created_at, expires_at, is_active)
+            VALUES ('handoff', 'Gemini handoff', 'gemini', '2026-09-01 10:00:00', NULL, 1)
+        """)
+        conn.commit()
+        conn.close()
+
+        ok, msg = h.handle("sleep", ["--agent", "claude"])
+        assert ok is True
+        assert "(1 Agenten)" in msg
+
+        conn = sqlite3.connect(str(db))
+        claude_exp = conn.execute("SELECT expires_at FROM memory_working WHERE agent_id='claude'").fetchone()[0]
+        gemini_exp = conn.execute("SELECT expires_at FROM memory_working WHERE agent_id='gemini'").fetchone()[0]
+        conn.close()
+        assert claude_exp is not None
+        assert gemini_exp is None
+
+    def test_sleep_report(self, cons_env, tmp_path):
+        pytest.importorskip("sleep_union", exc_type=ImportError, reason="gardener-os / sleep_union ist nicht installiert")
+        h, _ = cons_env
+        report_file = tmp_path / "sleep_report.jsonl"
+
+        ok, msg = h.handle("sleep", ["--report", str(report_file)])
+        assert ok is True
+        assert "TTL gesetzt:" in msg
+        assert report_file.exists()
+        lines = report_file.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        import json
+        data = json.loads(lines[0])
+        assert "time" in data
+        assert "agents" in data

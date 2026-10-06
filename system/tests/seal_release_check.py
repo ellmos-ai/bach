@@ -149,17 +149,28 @@ class SealSystemTests:
         print()
 
     def test_startup_check_sampling(self):
-        """Test 4: Startup-Check Stichproben-Logik."""
+        """Test 4: Startup-Check Stichproben-Logik.
+        Simuliert die Stichproben-Pruefung aus system/hub/startup.py (SQ021):
+        5 zufaellige CORE-Dateien werden gezogen und auf Dateipraesenz geprueft.
+        Wie Startup muss jede der fünf gezogenen Dateien vorhanden sein.
+        Zusaetzlich wird bei vorhandenem Release-Hash die Hash-Berechnung getestet.
+        Hash-Abweichungen werden nur informativ ausgegeben; dies ist kein
+        Ersatz für die vollständige Integritätsprüfung mit bach seal check.
+        """
         print("[TEST 4] Startup-Check Stichproben")
         print("-" * 70)
 
         conn = self._ro_connect()
 
-        # Wähle 5 zufällige CORE-Dateien mit Hashes aus dist_file_versions
+        # Waehle 5 zufaellige CORE-Dateien aus distribution_manifest mit aktuellem Hash
         cursor = conn.execute("""
-            SELECT v.file_path, v.file_hash
-            FROM dist_file_versions v
-            JOIN distribution_manifest m ON v.file_path = m.path
+            SELECT m.path, COALESCE(
+                (SELECT v.file_hash FROM dist_file_versions v
+                 WHERE v.file_path = m.path
+                 ORDER BY v.id DESC LIMIT 1),
+                m.template_hash
+            ) as stored_hash
+            FROM distribution_manifest m
             WHERE m.dist_type = 2
             ORDER BY RANDOM()
             LIMIT 5
@@ -173,40 +184,53 @@ class SealSystemTests:
             print()
             return
 
-        verified = 0
+        verified_exists = 0
+        verified_hash = 0
         for path, stored_hash in samples:
-            # Versuche Datei zu finden
             abs_path = self._resolve_path(path)
 
             if not abs_path.exists():
                 print(f"  - {path}: Datei nicht gefunden")
                 continue
 
-            # Berechne aktuellen Hash
-            try:
-                content = abs_path.read_bytes()
-                current_hash = hashlib.sha256(content).hexdigest()
+            verified_exists += 1
 
-                if current_hash == stored_hash:
-                    verified += 1
-            except Exception as e:
-                print(f"  - {path}: Fehler beim Hash-Check: {e}")
+            if stored_hash:
+                try:
+                    content = abs_path.read_bytes()
+                    current_hash = hashlib.sha256(content).hexdigest()
+                    if current_hash == stored_hash:
+                        verified_hash += 1
+                except Exception as e:
+                    print(f"  - {path}: Fehler beim Hash-Check: {e}")
 
-        if verified >= 4:  # Mindestens 4/5 sollten verifiziert werden
-            print(f"✓ PASS: {verified}/5 Stichproben verifiziert")
+        # T437: Startup meldet jede fehlende Datei. Vier von fünf genügen
+        # deshalb nicht für eine erfolgreiche Präsenz-Stichprobe.
+        if verified_exists == 5:
+            print(f"✓ PASS: {verified_exists}/5 Stichproben verifiziert (Dateipraesenz: {verified_exists}/5, Hash-Match: {verified_hash}/{verified_exists})")
             self.tests_passed += 1
         else:
-            print(f"✗ FAIL: Nur {verified}/5 Stichproben verifiziert")
+            print(f"✗ FAIL: Nur {verified_exists}/5 Stichproben gefunden")
             self.tests_failed += 1
 
         print()
 
     def _resolve_path(self, relative_path: str) -> Path:
-        """Konvertiert relativen Pfad in absoluten Pfad."""
-        if relative_path.startswith('system/'):
-            return self.bach_root / relative_path
-        else:
-            return self.system_root / relative_path
+        """Konvertiert relativen Pfad in absoluten Pfad.
+        Unterstuetzt sowohl system/-Prefix als auch Repo-Root-Pfade
+        (z.B. start/bach.bat, .gitignore, README.md, requirements.txt).
+        Muster wie in system/tools/fs_protection.py::_resolve_manifest_path.
+        """
+        relative = Path(relative_path)
+        if relative.parts and relative.parts[0] == "system":
+            return self.bach_root / relative
+        system_candidate = self.system_root / relative
+        if system_candidate.exists():
+            return system_candidate
+        root_candidate = self.bach_root / relative
+        if root_candidate.exists():
+            return root_candidate
+        return system_candidate
 
     def _ro_connect(self) -> sqlite3.Connection:
         """Oeffnet BACH_DB read-only per URI (mode=ro): dieses Tool ist eine

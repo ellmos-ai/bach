@@ -313,9 +313,13 @@ class StartupHandler(BaseHandler):
 
         Prueft mtime der Ordner skills/ und tools/. Nur wenn sich ein Ordner
         seit dem letzten Sync geaendert hat, wird er synchronisiert.
-        Zustand wird in data/sync_state.json gespeichert.
+        Zustand wird in LOCAL_BACH_DIR / sync_state.json gespeichert.
         """
-        sync_state_path = self.base_path / "data" / "sync_state.json"
+        try:
+            from .bach_paths import LOCAL_BACH_DIR
+            sync_state_path = LOCAL_BACH_DIR / "sync_state.json"
+        except ImportError:
+            sync_state_path = self.base_path / "data" / "sync_state.json"
         sync_dirs = {
             "skills": self.base_path / "skills",
             "tools": self.base_path / "tools",
@@ -788,6 +792,8 @@ class StartupHandler(BaseHandler):
                     for rel_path in sample_files:
                         if not rel_path.startswith('system/'):
                             file_path = self.base_path.parent / 'system' / rel_path
+                            if not file_path.exists() and (self.base_path.parent / rel_path).exists():
+                                file_path = self.base_path.parent / rel_path
                         else:
                             file_path = self.base_path.parent / rel_path
                         if not file_path.exists():

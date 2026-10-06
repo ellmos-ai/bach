@@ -972,7 +972,12 @@ unangetastet.
 > `ellmos-unified-gui` bleibt **Lite**-Schale für Teilinstallationen. Das ist weiterhin EIN
 > Modul, von beiden importiert — die hier verworfene Zwei-Oberflächen-Drift entsteht dadurch
 > nicht. Betrifft auch §10.7 Schritt (9) unten und `ROADMAP.md` Zusatzschritt (9). Details:
-> `_control-center/_TICKETS/ACTIONABLE/T-20260920-829000873.ASUS-GEI.txt`.
+> Ticket `T-20260920-829000873` in `_control-center/_TICKETS/`; nach Ticket-ID über
+> die Lebenszyklusordner auflösen.
+
+> **Pointer-Korrektur [P 2026-09-30, T-20260920-829000873]:** Der Verweis oben ist
+> lebenszyklusstabil nachgeführt. Die Richtung des Nachtrags vom 23.09. gilt
+> unverändert; Folgetickets sind im Mutterticket registriert.
 
 ### 10.6 Rücktransfer aus den drei Schwestersystemen
 

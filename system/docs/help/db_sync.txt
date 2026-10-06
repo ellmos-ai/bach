@@ -121,3 +121,93 @@ SIEHE AUCH
 - docs/help/setup.txt: bach setup prosync (Konfiguration)
 - hub/bach_paths.py: BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
 - basehandler / Handler-Framework: Siehe base.py für Schnittstelle
+
+
+EXPLIZITE LOKALE SHARED-API (T903, 2026-09-30)
+===========================================
+Die lokale Quellnaht hub/db_sync_adapter.py verwendet unveränderten,
+hashgebundenen Adaptercode aus Ocean 7127a0f5 und TransitSync 7648a20.
+Sie ist keine Aktivierung der Ocean-Produktruntime oder des Startup-/Exit-Sync.
+Kein generischer tools-Import, kein installiertes Modul als Fallback.
+
+SharedDBSyncConfig verlangt explizite absolute database/transit/state/marker/
+heartbeat-Pfade, node_id, namespace="bach", required_schema und user_version.
+SharedDBSyncAdapter verlangt zusätzlich ocean_root, carrier_root und eine Uhr
+mit Zeitzone. Anwendungsschema, DB-Erstellung und exklusiver Schreibclaim mit
+ruhender DB bleiben Aufruferpflicht. Symlinks/Reparse-Pfade und SQLite-Sidecars
+werden verweigert. Diese Naht erzwingt keine globale Schreibruhe oder Locks.
+
+API: adapter.handle(operation, dry_run=True, scope=None) liefert das gemeinsame
+OperationResult (supported/dry-run/refused/error, code, message, data).
+Source-/Konfigurationsfehler können vor dem Aufruf eine Verweigerung auslösen.
+Handler: DBSyncHandler.handle(..., shared_adapter=adapter, dry_run=...) wählt
+diese Naht VOR der Konstruktion des nativen Managers. Ohne ausdrücklichen
+Selector bleibt der native Weg; Verweigerung fällt niemals auf ihn zurück.
+Der bestehende Handlerdefault dry_run=False ist APPLY, der Adapterdefault
+dry_run=True ist Vorschau. Aufrufer müssen diesen Unterschied beachten.
+
+Operation | Gemeinsamer Vertrag | Native Einordnung / offene Korrektur
+backup    | Carrier-Snapshot, Secretsprüfung, Heartbeat nach Publikation
+          | ersetzt nur den ausgewählten Call; native .bachdb-Backups separat
+status    | verifizierte Snapshotmetadaten, Marker, Heartbeat, keine Änderungen
+          | neues strukturiertes Ergebnis statt ungeprüfter Legacy-Inventarliste
+enable    | exakt "enabled" am injizierten Marker atomar schreiben
+disable   | nur diesen eigenen Marker entfernen, Fremdinhalt verweigern
+          | native Konfigurationspfade bleiben unverändert; keine Aktivierung
+cleanup   | Scope ausdrücklich local-node/all-nodes, Carrier-Retention UTC
+          | Handlerargs --local-node/--all-nodes; kein Scope aus Default ableiten
+          | Unterschied zu Legacy: Manifestzeit statt Dateimtime, klare Fehler
+init      | vorhandenes ausdrücklich deklariertes Schema und Version prüfen
+          | keine Erstkopie, Migration oder Frischeannahme
+
+Push/pull/sync, Aliase und unbekannte Argumente sind unter diesem Selector
+verweigert. Der vorhandene native Schema-0-Bestand wird NICHT umgestempelt:
+Version 0 ist für diese unveränderte Shared-API unzulässig. Ein erfolgreicher
+synthetischer Version-1-Test legitimiert keine native Schemaänderung. Die
+native Bereitschaftskorrektur ist unten begrenzt beschrieben; gemeinsame
+Schema0-/Credential-/FTS-Abdeckung und weitere Migrationsepochen bleiben offen.
+
+Dry-run veröffentlicht/löscht/verändert keine Dateien oder Verzeichnisse.
+Status ist immer lesend. Bei Snapshotpublikation mit anschließendem fehlendem
+Heartbeat wird error/snapshot-published-heartbeat-failed samt Snapshotbeleg
+ausgegeben; kein falscher Rollback. Sonstige Carrierfehler können Teileffekte
+hinterlassen und heißen carrier-call-failed-state-unknown. Calls sind synchron:
+keine begrenzte IO-Frist, Cancellation oder Retry zugesichert. Carrier-Uhr und
+Retention bleiben unverändert; die injizierte Uhr gilt für den Heartbeat.
+
+Die Korrekturen (Dry-run, Credential-/Sidecar-Verweigerung, Markerbesitz,
+verifizierter Status, gewählter Cleanupscope und fehlende Erstkopie) sind
+explizit klassifiziert, nicht als native Gleichwertigkeit gebucht. Der getestete
+Rückweg entfernt lediglich den expliziten Selector und erhält Shared-Artefakte;
+eine Legacy-State-Migration/Wiederherstellung ist damit nicht belegt.
+
+Grenze: lokaler API-Schnitt, keine dauerhafte Paket-/Runtimeabhängigkeit,
+BACH-IN/P8, Dreiweg-Parität, Migration/Rollback oder Fremdhostabnahme. Das
+Paritätsregister bleibt push/pull/sync = 3/9. Anforderungen an Deployment und
+Schema-0/Task1168 werden getrennt geschlossen, bevor echte Calls umgestellt werden.
+
+
+NATIVE BEREITSCHAFT (T903 / Task1168, 2026-09-30)
+=============================================
+Native init/ensure_local_db prüft ausschließlich den tatsächlich gewählten
+DB-Pfad. Keine Erstkopie aus stale data/bach.db oder Transitbackups, keine
+Anlage/Migration/Stempeländerung. Startup beachtet False; direkter Merge
+verweigert eine fehlende lokale DB. Konstruktion legt keine Verzeichnisse an.
+Vor Provider-, Heartbeat-, State- oder Backupvorbereitung wird Bereitschaft
+verlangt. Native Statusanzeige konstruiert keine neue Engine.
+
+Profil bach-schema-sql-v1: exakt sourcegebundene schema.sql-Struktur mit
+168 Tabellen einschließlich FTS, 146 Indizes, sechs Triggern und drei Views;
+optional exakt die kanonische _migrations-Tabelle aus core/db.py. Table_xinfo,
+Table_list und DDL werden vollständig verglichen. Native user_version=0 bleibt
+unverändert; höhere Werte, fehlende/Teil-/unbekannte Strukturen, Links und
+literal benannte WAL-/SHM-/Journal-Sidecars werden verweigert. Herkunftsstempel
+allein beweisen keine Frische. Weitere legitime Migrationsepochen und tatsächliche
+Hostkopien brauchen gesondert belegte Profile, keine pauschale Freigabe.
+
+Dry-run endet ohne Verzeichnis-, Marker-, Heartbeat-, State- oder Backupwrite;
+ein fehlender DB-Bestand wird auch in der Vorschau verweigert. Ein gültiger
+Datei-/Statreadback ist keine dauerhafte Writerexklusion. Dies ist ausschließlich
+ein Bereitschaftsschutz: keine neue Credentialprüfung, keine FTS-Coverage,
+kein Shared-Cutover und keine Runtime-/Host-/Gesamtparitätsabnahme. Bestehende
+native Backup-/Merge-/Retentionalgorithmen sind unverändert. Register bleibt 3/9.

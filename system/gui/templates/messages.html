@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <script src="/static/js/device-fetch.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH - Berichte & Abschlussberichte</title>
@@ -895,11 +896,11 @@
 
             const frontmatter = [
                 '---',
-                `title: "${(msg.subject || 'Bericht').replace(/"/g, '\\"')}"`,
-                `sender: "${msg.sender || 'system'}"`,
-                `recipient: "${msg.recipient || 'user'}"`,
-                `date: "${msg.created_at || new Date().toISOString()}"`,
-                `status: "${msg.status || 'read'}"`,
+                `title: ${JSON.stringify(msg.subject || 'Bericht')}`,
+                `sender: ${JSON.stringify(msg.sender || 'system')}`,
+                `recipient: ${JSON.stringify(msg.recipient || 'user')}`,
+                `date: ${JSON.stringify(msg.created_at || new Date().toISOString())}`,
+                `status: ${JSON.stringify(msg.status || 'read')}`,
                 '---',
                 '',
                 msg.body || ''

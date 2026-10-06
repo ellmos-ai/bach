@@ -2,6 +2,26 @@
 
 ## Offene Aufgaben
 
+### [BACH-SEC-DEPS-01] GUI-Abhängigkeitslücken vor dem nächsten Release schließen
+- **Ziel:** Die 14 offenen GitHub-Dependabot-Alerts vom 2026-10-03 abarbeiten, ohne den vorhandenen Update-PR zu duplizieren.
+- **Quelle:** [PR #188](https://github.com/ellmos-ai/bach/pull/188), Alerts #29–#42 für `system/gui/web/package-lock.json`; [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).
+- **Stand:** PR #188 enthält Astro 7.3.5, sharp 0.35.5 und esbuild 0.28.2 außerhalb der betroffenen Bereiche von 13 Alerts. `http-cache-semantics` bleibt dort bei 4.2.0; für Alert #42 nennt GitHub aktuell keine gepatchte Version. Die vorhandene CI prüft keinen Astro-Build.
+- **Akzeptanzkriterien:** PR #188 nach unabhängigem Review und erfolgreichem GUI-Build integrieren; verbleibenden Cache-Alert durch einen verifizierten Upstream-Fix oder eine überprüfte Entfernung des betroffenen Abhängigkeitspfads schließen. Anschließend Lockfile und GitHub-Alertstatus erneut prüfen.
+- **Offen:** Kein Abhängigkeitsupdate integriert, keine Ausnutzbarkeit im produktiven Deployment bewiesen. Der fehlende Patch ist ein Release-Blocker und keine Risikofreigabe.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+
+### [BACH-SEC-ROTATE-01] Widerruf des früher offengelegten GUI-Gerätetokens belegen
+- **Ziel:** Die im GUI-Deploymentbericht genannte frühere Token-Offenlegung operativ abschließen. Das Entfernen aus Quelltexten und Builds widerruft ein Credential nicht.
+- **Quelle:** `system/gui/GUI_DEPLOYMENT_RECEIPT_2026-10-03.md`, Abschnitt „Verbleibende Grenzen“; Release-Privacy-Audit vom 2026-10-03.
+- **Akzeptanzkriterien:** Verbraucher und zuständige Geräteidentität lokal zuordnen, Ersatz sicher hinterlegen, den Alt-Token widerrufen und dessen Ablehnung sowie den gültigen Ersatz prüfen. Nur redigierte Ergebnisbelege speichern, keine Tokens oder Token-Hashes.
+- **Offen:** Aktueller Widerruf- und Verbraucherstand ist nicht verifiziert. Dieser Quellcode-Audit hat keine produktiven Geräte oder Zugangsdaten geändert.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+
+
 ### ✅ [BACH-HERZ-01] Zuteilungsgrenze für einen Pfad: atomarer Claim, Rechteprüfung, Besetzungsprotokoll
 - **Ziel:** Eine zentrale Stelle, durch die genau ein produktiver Pfad läuft (Vorschlag: der Hintergrundplatz `buddha_always_on`). Sie reicht die bisherige Modellwahl **unverändert** durch, beansprucht die Aufgabe atomar, prüft das Rollenrecht, erzeugt eine `assignment_id` und protokolliert Start und Ende.
 - **Quelle:** `[Quelle: docs/MODELL-BACKEND-KONZEPT_2026-09-13.md, Abschnitte 4.2 und 8]` `[Programmkopf: ROADMAP.md "PROGRAMM: Modell-Backend = das Herz von BACH"]` `[Ticket: T-20260913-896336887]` `[Claim-Ticket: T-20260913-709822598, PR #59]` `[Zweitmeinung: _codex/ARCHITEKTUR-ANTWORT.md, F6 und F7]`

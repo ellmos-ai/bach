@@ -25,6 +25,7 @@ Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 import atexit
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,8 @@ _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+# GUI Host allowlist (DNS-rebinding gate): Starlette's TestClient talks to "testserver".
+os.environ["BACH_GUI_ALLOWED_HOSTS"] = "testserver"
 os.environ["BACH_LOCAL_DIR"] = str(_TEST_DB_DIR)
 os.environ["BACH_DB"] = str(_TEST_DB_DIR / "bach_test.db")
 os.environ["BACH_BACKUPS_DIR"] = str(_TEST_DB_DIR / "backups")
@@ -59,6 +62,72 @@ os.environ["BACH_FACKEL_PREFERENCE_PATH"] = str(
     _TEST_DB_DIR / "fackel_preference.json"
 )
 os.environ["BACH_SLOTS_CONFIG_PATH"] = str(_TEST_DB_DIR / "slots_config.json")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_distribution_manifest():
+    """Create distribution_manifest table and seed core system file hashes.
+
+    ``tools/fs_protection.py::check_integrity`` queries this table with
+    ``dist_type >= 1`` during some dry-run tests. The table and its rows are
+    normally maintained by the fs_protection tooling; for the test suite we
+    bootstrap it once per session with the current SHA256 hashes of all files
+    under ``system/`` so integrity checks do not fail on missing records.
+    """
+    import hashlib
+    import sqlite3
+
+    db_path = os.environ.get("BACH_DB")
+    if not db_path:
+        return
+
+    system_dir = Path(__file__).resolve().parent.parent
+    conn = sqlite3.connect(db_path)
+    schema_file = system_dir / "data" / "schema" / "schema.sql"
+    if schema_file.exists():
+        conn.executescript(schema_file.read_text(encoding="utf-8"))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribution_manifest (
+            path TEXT PRIMARY KEY,
+            template_hash TEXT,
+            dist_type INTEGER
+        )
+    """)
+    conn.commit()
+
+    if system_dir.exists():
+        for root, dirs, files in os.walk(system_dir):
+            dirs[:] = [d for d in dirs if d not in ("node_modules", "dist", ".git", ".astro", "__pycache__", ".pytest_cache")]
+            for file_name in sorted(files):
+                file_path = Path(root) / file_name
+                rel = file_path.relative_to(system_dir)
+                rel_path = f"system/{rel.as_posix()}"
+                file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                conn.execute(
+                    "INSERT OR REPLACE INTO distribution_manifest (path, template_hash, dist_type) VALUES (?, ?, ?)",
+                    (rel_path, file_hash, 1),
+                )
+    conn.commit()
+    conn.close()
+
+
+def pytest_configure(config):
+    """Redirect pytest's basetemp out of the protected source checkout.
+
+    Pytest registers an atexit cleanup for ``--basetemp`` that removes the
+    directory. When the user points that into ``system/data`` or similar
+    protected source-runtime roots, the audit hook blocks the cleanup writes
+    (``RuntimeError: source runtime write blocked: os.mkdir``) and the
+    ``_guard_source_runtime_dirs`` fixture fails its final assertion. We
+    therefore force basetemp into the per-test ``BACH_RUNTIME_DIR`` unless the
+    caller explicitly chose a location outside the protected checkout roots.
+    """
+    basetemp = config.getoption("basetemp")
+    if basetemp is not None and not _source_runtime_path(basetemp):
+        return
+    target = Path(os.environ["BACH_RUNTIME_DIR"])
+    target.mkdir(parents=True, exist_ok=True)
+    config.option.basetemp = str(target)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -137,28 +206,10 @@ def _destructive_process_reason(command):
     lowered = rendered.casefold()
     executable_lower = executable.casefold()
     executable_name = Path(executable_lower).name
-    unguarded_python = re.compile(
-        r"(?:^|[;&|]\s*)(?:\"[^\"]*python(?:\d+(?:\.\d+)*)?\.exe\"|"
-        r"[^\s\"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?)\s+"
-        r"(?:-[a-df-hj-rt-z0-9]+\s+)*(?<!-)-(?:[a-df-hj-rt-z0-9]*[eis][a-z0-9]*)(?:\s|$)",
-        re.IGNORECASE,
-    )
-    if unguarded_python.search(rendered):
+    from tests._test_process_guard.python_options import python_without_site_guard
+
+    if python_without_site_guard(command):
         return "Python child without inherited safety guard"
-    if executable_name.startswith("python") and isinstance(command, (list, tuple)):
-        options = []
-        for part in command[1:]:
-            s = str(part)
-            if s in {"-c", "-m"}:
-                break
-            if not s.startswith("-") or s == "-":
-                break
-            options.append(s)
-        if any(
-            not opt.startswith("--") and any(c in "eEisIS" for c in opt[1:])
-            for opt in options
-        ):
-            return "Python child without inherited safety guard"
     if "onedrive" in executable_lower and "/shutdown" in lowered:
         return "OneDrive shutdown"
     if any(token in executable_lower for token in (
@@ -523,3 +574,26 @@ def _guard_real_process_control(monkeypatch):
 
     monkeypatch.setattr(psutil.Process, "terminate", guarded_terminate)
     monkeypatch.setattr(psutil.Process, "kill", guarded_kill)
+
+
+@pytest.fixture
+def isolated_runtime(tmp_path, monkeypatch):
+    """Yield an isolated BACH runtime directory for a single test.
+
+    Mirrors the user's ~/.bach/.runtime into a temp directory if it exists,
+    sets BACH_RUNTIME_DIR to that directory, and restores the previous value
+    after the test.
+    """
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    user_runtime = Path.home() / ".bach" / ".runtime"
+    if user_runtime.exists():
+        if user_runtime.is_dir():
+            shutil.copytree(user_runtime, runtime_dir, dirs_exist_ok=True)
+        else:
+            shutil.copy2(user_runtime, runtime_dir / user_runtime.name)
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
+    yield runtime_dir

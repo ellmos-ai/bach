@@ -267,6 +267,40 @@ class TestList:
         assert ok is True
         assert "Keine Tasks" in output
 
+
+    def test_list_in_progress_and_open_filter(self, seeded_handler, seeded_env):
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("INSERT INTO tasks (id, title, status, priority, category, created_at, started_at) VALUES (5, 'Running task', 'in_progress', 'P2', 'dev', '2026-01-01', datetime('now'))")
+            conn.commit()
+
+        ok, output = seeded_handler.handle("list", ["in_progress"])
+        assert ok is True
+        assert "Running task" in output
+        assert "Fix critical bug" not in output
+
+        ok, output = seeded_handler.handle("list", ["open"])
+        assert ok is True
+        assert "Running task" in output
+        assert "Fix critical bug" in output
+        assert "Old task" not in output
+
+    def test_reap_operation_cli(self, seeded_handler, seeded_env):
+        from hub._services.task_schema import ensure_task_claim_columns
+        _, db_path = seeded_env
+        with sqlite3.connect(db_path) as conn:
+            ensure_task_claim_columns(conn)
+            conn.execute("INSERT INTO tasks (id, title, status, priority, category, created_at, started_at, claimed_at) VALUES (6, 'Abandoned task', 'in_progress', 'P1', 'dev', '2026-01-01', '2026-01-01', '2026-01-01')")
+            conn.commit()
+
+        ok, output = seeded_handler.handle("reap", [])
+        assert ok is True
+        assert "abgelaufene in_progress-Tasks zurueckgesetzt" in output
+
+        with sqlite3.connect(db_path) as conn:
+            status = conn.execute("SELECT status FROM tasks WHERE id = 6").fetchone()[0]
+        assert status == "pending"
+
     def test_list_shows_due_date(self, seeded_handler, seeded_env):
         _, db_path = seeded_env
         with sqlite3.connect(db_path) as conn:

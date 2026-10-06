@@ -54,6 +54,7 @@ from types import SimpleNamespace
 from typing import List, Dict, Optional, Tuple
 
 from .base import BaseHandler
+from .db_sync_readiness import DBSyncReadinessError, validate_native_db
 
 
 class DBSyncManager:
@@ -69,6 +70,24 @@ class DBSyncManager:
 
     def __init__(self, db_path: Path = None, transit_dir: Path = None):
         self.base_path = Path(__file__).parent.parent
+        if db_path is not None and transit_dir is not None:
+            # Explicit callers must not import path defaults or touch HOME.
+            self.db_path = Path(db_path)
+            self.transit_dir = Path(transit_dir)
+            self.local_bach_dir = self.db_path.parent
+        else:
+            self._resolve_default_paths(db_path, transit_dir)
+        self.hostname = socket.gethostname()
+        self.heartbeat_file = self.transit_dir / "heartbeat.json"
+        self._readiness_error = None
+
+        # No IO in construction: missing/stale DB and dry-run must not prepare
+        # directories, state, provider or heartbeat (T903 / Task1168).
+        self._external_engine = None
+        self._external_probed = False
+        self._external_error = None
+
+    def _resolve_default_paths(self, db_path, transit_dir):
         try:
             from .bach_paths import BACH_DB, PROSYNC_TRANSIT_DIR, LOCAL_BACH_DIR
             self.db_path = db_path or BACH_DB
@@ -80,17 +99,15 @@ class DBSyncManager:
             self.db_path = db_path or Path.home() / ".bach" / "bach.db"
             self.transit_dir = transit_dir or Path.home() / ".bach" / "transit"
             self.local_bach_dir = Path.home() / ".bach"
-        self.hostname = socket.gethostname()
-        self.heartbeat_file = self.transit_dir / "heartbeat.json"
 
+    def _require_ready(self):
+        if not self.ensure_local_db():
+            raise DBSyncReadinessError(f"Lokale DB nicht bereit: {self._readiness_error}")
+
+    def _prepare_io(self):
+        self._require_ready()
         self.transit_dir.mkdir(parents=True, exist_ok=True)
         self.local_bach_dir.mkdir(parents=True, exist_ok=True)
-
-        # Stufe-7-Seam (sqlite-transit-sync): lazy, fail-closed.
-        # None = legacy ProSync-Pfad; Fehler werden in _external_error sichtbar.
-        self._external_engine = None
-        self._external_probed = False
-        self._external_error = None
 
     def _get_external_engine(self):
         """Lazy TransitSync-Engine (MODULRUECKTRANSFER Stufe 7).
@@ -101,7 +118,9 @@ class DBSyncManager:
         Fehler wird protokolliert (siehe get_status) und der bewaehrte
         Legacy-Pfad bleibt aktiv (fail-closed, kein Datenverlust).
         """
+        self._require_ready()
         if not self._external_probed:
+            self._prepare_io()
             self._external_probed = True
             try:
                 from .transit_sync_provider import create_external_engine_if_active
@@ -264,36 +283,24 @@ class DBSyncManager:
         return m.group(1) if m else None
 
     def ensure_local_db(self) -> bool:
-        """Erstellt lokale DB falls nicht vorhanden (Initial-Population von OneDrive).
+        """Prüft nur den tatsächlichen DB-Pfad; keine Erstkopie oder Migration.
 
-        Die Quell-DB wird BEWUSST aus `base_path` abgeleitet und NICHT aus der zentralen
-        Registry (`ONEDRIVE_DB`) geholt: `base_path` ist hier — wie in `hub/base.py` — der
-        Injektionspunkt der Test-Fixtures. Zieht man die Quelle aus der Registry, schaut
-        diese Methode im Test nicht mehr in die tmp-Umgebung, sondern auf die ECHTE
-        OneDrive-DB — und `shutil.copy2` kopiert dann 81 MB Produktivdaten in ein
-        Testverzeichnis. Belegt am 2026-07-13 durch
-        `test_db_sync_handler.py::TestEnsureLocalDB::test_no_source_db`.
-
-        Hinweis: Die Quelle ist inhaltlich ohnehin die falsche — sie ist veraltet, waehrend
-        der Transit-Hub aktuelle Snapshots haelt. Umstellung auf den Transit: BACH-Task 1168.
+        Task1168: Eine fehlende DB darf weder aus stale data/bach.db noch aus
+        einem Transitbackup initialisiert werden. BACH besitzt die Erstellung.
+        Native user_version=0 ist im sourcegebundenen Profil legitim; unbekannte
+        Migrationsstrukturen bleiben verweigert statt frisch gestempelt.
         """
-        local_db = self.local_bach_dir / "bach.db"
-        if local_db.exists():
-            return True
-
-        onedrive_db = self.base_path / "data" / "bach.db"
-        if not onedrive_db.exists():
-            return False
-        import shutil
-        shutil.copy2(onedrive_db, local_db)
-        return True
+        result = validate_native_db(self.db_path)
+        self._readiness_error = None if result.ready else result.reason
+        return result.ready
 
     def sync_on_start(self) -> Tuple[bool, str]:
         """Pull: Beim Start neuere Backups aus Transit mergen."""
+        if not self.ensure_local_db():
+            return False, f"Lokale DB nicht bereit: {self._readiness_error}"
         engine = self._get_external_engine()
         if engine is not None:
             try:
-                self.ensure_local_db()
                 changed, names = engine.pull()
             except Exception as e:
                 self._update_heartbeat()
@@ -305,7 +312,6 @@ class DBSyncManager:
                 f"TransitSync Pull: {changed} Zeilen aus {len(names)} "
                 f"Snapshot(s) gemergt"
             )
-        self.ensure_local_db()
         newer = self.find_newer_backups()
         if not newer:
             self._update_heartbeat()
@@ -341,6 +347,8 @@ class DBSyncManager:
 
     def sync_on_exit(self) -> Tuple[bool, str]:
         """Push: Beim Exit Backup in Transit-Ordner erstellen."""
+        if not self.ensure_local_db():
+            return False, f"Lokale DB nicht bereit: {self._readiness_error}"
         engine = self._get_external_engine()
         if engine is not None:
             try:
@@ -397,15 +405,20 @@ class DBSyncManager:
 
     def _get_retention_days(self) -> int:
         """Liest backup_retention_days aus system_config (Default: 7)."""
+        conn = None
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
-                row = conn.execute(
-                    "SELECT value FROM system_config WHERE key = 'backup_retention_days'"
-                ).fetchone()
-                if row:
-                    return int(row[0])
+            self._require_ready()
+            conn = sqlite3.connect(self.db_path.as_uri() + "?mode=ro&immutable=1", uri=True)
+            row = conn.execute(
+                "SELECT value FROM system_config WHERE key = 'backup_retention_days'"
+            ).fetchone()
+            if row:
+                return int(row[0])
         except Exception:
             pass
+        finally:
+            if conn is not None:
+                conn.close()
         return 7
 
     def _has_backup_today(self) -> bool:
@@ -422,6 +435,7 @@ class DBSyncManager:
         Returns:
             Path zum Backup oder None wenn bereits vorhanden
         """
+        self._require_ready()
         if self._has_backup_today():
             return None
 
@@ -442,14 +456,16 @@ class DBSyncManager:
         Returns:
             Path zum erstellten Backup
         """
-        if not self.db_path.exists():
-            raise FileNotFoundError(f"DB nicht gefunden: {self.db_path}")
+        self._prepare_io()
 
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         filename = f"bach_{self.hostname}_{timestamp}.bachdb"
         backup_path = self.backup_dir / filename
 
-        src = sqlite3.connect(str(self.db_path))
+        # Preserve the legacy online-backup/WAL semantics while preventing
+        # SQLite from creating a disappeared source. A read-only WAL connection
+        # can leave its own WAL/SHM files behind on close; readiness is separate.
+        src = sqlite3.connect(self.db_path.as_uri() + "?mode=rw", uri=True)
         dst = sqlite3.connect(str(backup_path))
         try:
             with dst:
@@ -488,6 +504,7 @@ class DBSyncManager:
         Returns:
             Liste von Backup-Pfaden, sortiert nach Änderungszeit (neueste zuerst)
         """
+        self._require_ready()
         state = self._load_sync_state()
         now_ts = time.time()
         state_changed = self._prune_deferred_backups(state, now_ts=now_ts)
@@ -532,12 +549,7 @@ class DBSyncManager:
         """
         print(f"[DB SYNC] Merge Backup: {backup_path.name}")
 
-        if not self.db_path.exists():
-            # Keine lokale DB - einfach kopieren
-            import shutil
-            shutil.copy2(backup_path, self.db_path)
-            print(f"[DB SYNC] Initiale DB erstellt aus {backup_path.name}")
-            return {"_initial_copy": 1}
+        self._prepare_io()
 
         local = None
         remote = None
@@ -546,7 +558,7 @@ class DBSyncManager:
 
         try:
             staged_backup, cleanup_staged = self._stage_backup_for_merge(backup_path)
-            local = sqlite3.connect(str(self.db_path))
+            local = sqlite3.connect(self.db_path.as_uri() + "?mode=rw", uri=True)
             local.row_factory = sqlite3.Row
             remote = sqlite3.connect(str(staged_backup))
             remote.row_factory = sqlite3.Row
@@ -618,6 +630,8 @@ class DBSyncManager:
         Returns:
             (success, message)
         """
+        if not self.ensure_local_db():
+            return False, f"Lokale DB nicht bereit: {self._readiness_error}"
         # 0. Externe Engine (Stufe 7): verifizierte Snapshots, konfliktfreies
         #    Delta-Merge - der interaktive Heartbeat-Prompt entfaellt, da kein
         #    Ganz-DB-Ueberschreiben mehr stattfindet.
@@ -668,6 +682,7 @@ class DBSyncManager:
 
     def _update_heartbeat(self):
         """Aktualisiert Heartbeat (andere PCs sehen Aktivität)."""
+        self._prepare_io()
         # Bestehende Heartbeats laden
         if self.heartbeat_file.exists():
             try:
@@ -734,6 +749,7 @@ class DBSyncManager:
         Returns:
             Anzahl gelöschter Backups
         """
+        self._require_ready()
         cutoff = datetime.now() - timedelta(days=keep_days)
 
         # Gruppiere nach Hostname
@@ -763,6 +779,17 @@ class DBSyncManager:
                 except OSError:
                     pass
 
+        # Stufe-7 Seam: TransitSync-Snapshots bereinigen
+        engine = self._get_external_engine()
+        if engine is not None:
+            try:
+                res = engine.cleanup(
+                    keep_days=keep_days, keep_per_node=keep_per_host, dry_run=False
+                )
+                deleted += len(res.get("deleted", []))
+            except Exception:
+                pass
+
         return deleted
 
     # ==================== STATUS ====================
@@ -776,7 +803,10 @@ class DBSyncManager:
         )
 
         lines = ["[DB SYNC] Status:", ""]
-        engine = self._get_external_engine()
+        # Status never constructs a provider (its constructor may create state).
+        ready = self.ensure_local_db()
+        lines.append(f"DB bereit: {ready} ({self._readiness_error or 'bach-schema-sql-v1'})")
+        engine = self._external_engine
         if engine is not None:
             try:
                 pending = engine.pending()
@@ -847,14 +877,38 @@ class DBSyncHandler(BaseHandler):
             "pull": "Neuere Backups aus Transit mergen",
             "push": "Lokales Backup in Transit pushen",
             "status": "ProSync-Status anzeigen",
-            "init": "Lokale DB erstellen (Initial-Population von OneDrive)",
+            "init": "Vorhandene lokale DB lesend prüfen (keine Erstkopie)",
             "cleanup": "Alte Backups löschen",
             "enable": "Auto-Sync aktivieren (bei Startup/Exit)",
             "disable": "Auto-Sync deaktivieren",
         }
 
-    def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
-        manager = DBSyncManager()
+    def handle(self, operation: str, args: List[str], dry_run: bool = False,
+               *, shared_adapter=None) -> Tuple[bool, str]:
+        if shared_adapter is not None:
+            # Explicit source seam only: no native manager/path preparation,
+            # state migration or startup/exit cutover. Even refusal stays on
+            # this path; the native fallback must not become a second writer.
+            from .db_sync_adapter import OPERATIONS, SharedDBSyncAdapter
+            if not isinstance(shared_adapter, SharedDBSyncAdapter):
+                return False, "Shared dbsync refused: invalid-adapter"
+            if operation not in OPERATIONS:
+                return False, "Shared dbsync refused: operation-outside-shared-scope"
+            scope = None
+            if args:
+                if operation != "cleanup" or args not in (["--local-node"], ["--all-nodes"]):
+                    return False, "Shared dbsync refused: unsupported-arguments"
+                scope = "local-node" if args == ["--local-node"] else "all-nodes"
+            return shared_adapter.handler_result(operation, dry_run=dry_run, scope=scope)
+
+        manager = DBSyncManager(db_path=self._canonical_db)
+        known = self.get_operations()
+        if operation not in known:
+            return False, f"Unbekannte Operation: {operation}"
+        if operation not in {"status", "disable"} and not manager.ensure_local_db():
+            return False, f"Lokale DB nicht bereit: {manager._readiness_error}"
+        if dry_run and operation != "status":
+            return True, f"Dry-run: {operation}; keine Dateien oder Zustände geändert"
 
         if operation == "backup":
             try:
@@ -888,8 +942,8 @@ class DBSyncHandler(BaseHandler):
         elif operation == "init":
             try:
                 if manager.ensure_local_db():
-                    return True, f"Lokale DB bereit: {manager.local_bach_dir / 'bach.db'}"
-                return False, "Keine OneDrive-DB zum Kopieren gefunden"
+                    return True, f"Lokale DB bereit: {manager.db_path}"
+                return False, f"Lokale DB nicht bereit: {manager._readiness_error}"
             except Exception as e:
                 return False, f"Init fehlgeschlagen: {e}"
 

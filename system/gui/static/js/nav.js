@@ -60,48 +60,37 @@ if (typeof escapeHtml === 'undefined') {
     };
 }
 
-const NAV_ITEMS = [
-    { href: "/", label: "Dashboard" },
-    { label: "Aufgaben", children: [
-        { href: "/tasks-board", label: "Tasks" },
-        { href: "/routinen?tab=bach", label: "BACH-Routinen" },
-    ]},
-    { label: "Persönlicher Assistent", children: [
-        { href: "/persoenlich", label: "Dashboard" },
-        { href: "/chat", label: "Buddha Chat" },
-        { href: "/prompt-library", label: "Deine Prompts" },
-        { href: "/routinen?tab=personal", label: "Deine Routinen" },
-        { href: "/kontakte", label: "Kontakte" },
-        { href: "/denkarium", label: "Denkarium", external: true },
-        { href: "/wiki", label: "Wiki" },
-    ]},
-    { label: "Agenten", children: [
-        { href: "/chat", label: "Chats" },
-        { href: "/agents-board", label: "Agents Board" },
-        { href: "/reports", label: "📑 Berichte" },
-        { href: "/memory", label: "Memory" },
-        { href: "/tokens", label: "Tokens" },
-        { href: "#", portRel: 8081, path: "/activity", label: "Models", external: true },
-        { href: "/tools", label: "Tools" },
-    ]},
-    { label: "Meine Domänen", children: [
-        { href: "/financial", label: "Finanzen" },
-        { href: "/ati", label: "🛠️ ATI Entwickler" },
-        { href: "/steuer", label: "⚖️ Theodor Steuer" },
-        { href: "/gesundheit", label: "🩺 Gesundheit" },
-    ]},
-    { href: "/inbox", label: "Dateien" },
-    { label: "System", children: [
-        { href: "/settings", label: "Einstellungen" },
-        { href: "#", portRel: 8081, path: "/activity", label: "📊 Worker & Aktivität", external: true },
-        { href: "/usecases", label: "Use Cases" },
-        { href: "/daemon", label: "Automation" },
-        { href: "/control/", label: "Unified GUI", external: true },
-        { href: "/maintenance", label: "Wartung" },
-        { href: "/logs", label: "Logs" },
-        { href: "/help", label: "Help" },
-    ]},
-];
+let NAV_ITEMS = [{ id: 'dashboard', href: '/', label: 'Dashboard', icon: '🎵' }];
+let navigationState = 'loading';
+let navClickBound = false;
+
+function safeNavHref(href) {
+    if (typeof href !== 'string' || !href.startsWith('/') || /[\\\u0000-\u001f\u007f]/.test(href)) return '/';
+    try {
+        return new URL(href, window.location.href).origin === window.location.origin ? href : '/';
+    } catch (_) {
+        return '/';
+    }
+}
+
+async function loadNavigationConfig() {
+    try {
+        const response = await fetch('/api/nav/config');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const items = await response.json();
+        if (!Array.isArray(items) || items.length === 0 ||
+            items.some(item => !item || typeof item.label !== 'string' ||
+                !(typeof item.href === 'string' || Array.isArray(item.children)))) {
+            throw new Error('Ungültige Navigation');
+        }
+        NAV_ITEMS = items;
+        navigationState = 'ready';
+    } catch (error) {
+        NAV_ITEMS = [{ id: 'dashboard', href: '/', label: 'Dashboard', icon: '🎵' }];
+        navigationState = 'error';
+    }
+    initNavigation();
+}
 
 function initNavigation() {
     const header = document.getElementById('main-header');
@@ -131,44 +120,74 @@ function initNavigation() {
     }
 
     const navHtml = NAV_ITEMS.map(item => {
+        const iconHtml = item.icon ? `<span class="nav-icon">${escapeHtml(item.icon)}</span>` : '';
+        const fullLabel = item.label;
+        const shortLabel = item.shortLabel || item.label;
+        const labelHtml = item.shortLabel
+            ? `<span class="nav-label"><span class="nav-label-full">${escapeHtml(fullLabel)}</span><span class="nav-label-short">${escapeHtml(shortLabel)}</span></span>`
+            : `<span class="nav-label">${escapeHtml(fullLabel)}</span>`;
+
         if (item.children) {
             const parentActive = hasActiveChild(item) ? ' active' : '';
             const childHtml = item.children.map(child => {
                 const childActive = isActive(child.href) ? ' active' : '';
-                const target = child.external ? ' target="_blank" rel="noopener noreferrer"' : '';
-                let href = child.href;
+                const target = child.external || child.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
+                let href = safeNavHref(child.href);
                 if (child.portRel) {
                     const host = window.location.hostname || 'localhost';
-                    href = `http://${host}:${child.portRel}${child.path || ''}`;
+                    if (Number.isInteger(child.portRel) && child.portRel > 0 && child.portRel < 65536) {
+                        href = `http://${host}:${child.portRel}${safeNavHref(child.path || '/')}`;
+                    }
                 }
-                return `<a href="${href}"${target} class="dropdown-item${childActive}">${child.label}</a>`;
+                const childIcon = child.icon ? `<span class="dropdown-item-icon">${escapeHtml(child.icon)}</span>` : '';
+                const descHtml = child.description ? `<div class="dropdown-item-desc">${escapeHtml(child.description)}</div>` : '';
+                return `<a href="${escapeHtml(href)}"${target} class="dropdown-item${childActive}">
+                    ${childIcon}
+                    <div class="dropdown-item-text">
+                        <div class="dropdown-item-title">${escapeHtml(child.label)}</div>
+                        ${descHtml}
+                    </div>
+                </a>`;
             }).join('');
             return `<div class="nav-dropdown${parentActive}">
-                <button class="nav-item nav-dropdown-toggle${parentActive}">${item.label} <span class="dropdown-arrow">▾</span></button>
+                <button class="nav-item nav-dropdown-toggle${parentActive}" type="button">
+                    ${iconHtml}${labelHtml} <span class="dropdown-arrow">▾</span>
+                </button>
                 <div class="dropdown-menu">${childHtml}</div>
             </div>`;
         }
         const active = isActive(item.href) ? ' active' : '';
-        const target = item.external ? ' target="_blank" rel="noopener noreferrer"' : '';
-        let itemHref = item.href;
+        const target = item.external || item.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
+        let itemHref = safeNavHref(item.href);
         if (item.portRel) {
             const host = window.location.hostname || 'localhost';
-            itemHref = `http://${host}:${item.portRel}${item.path || ''}`;
+            if (Number.isInteger(item.portRel) && item.portRel > 0 && item.portRel < 65536) {
+                itemHref = `http://${host}:${item.portRel}${safeNavHref(item.path || '/')}`;
+            }
         }
-        return `<a href="${itemHref}"${target} class="nav-item${active}">${item.label}</a>`;
+        return `<a href="${escapeHtml(itemHref)}"${target} class="nav-item${active}">${iconHtml}${labelHtml}</a>`;
     }).join('\n            ');
+    const navNotice = navigationState === 'ready' ? '' :
+        `<span class="nav-item" role="status" style="cursor:default;">${navigationState === 'loading' ? 'Navigation lädt…' : 'Menü derzeit nicht verfügbar'}</span>`;
 
     const currentTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
     header.innerHTML = `
-        <div class="logo">
-            <span class="logo-icon">🎵</span>
-            <span class="logo-text">BACH v${BACH_VERSION}</span>
+        <div class="header-left">
+            <a href="/" class="logo" style="text-decoration:none;">
+                <span class="logo-icon">🎵</span>
+                <span class="logo-text">BACH <span style="font-size:0.75rem;opacity:0.6;font-weight:normal;">v${BACH_VERSION}</span></span>
+            </a>
+            <nav class="main-nav" aria-label="Hauptnavigation">
+                ${navNotice}
+                ${navHtml}
+            </nav>
         </div>
-        <nav class="main-nav">
-            ${navHtml}
-        </nav>
-        <div style="display:flex;align-items:center;">
+        <div class="header-right" style="display:flex;align-items:center;gap:0.75rem;">
+            <div class="quick-nav-actions" style="display:flex;align-items:center;gap:0.35rem;">
+                <a href="/life?tab=kalender" class="quick-action-btn" title="Kalender (Termine, Routinen & Aufgaben)" aria-label="Kalender">📅</a>
+                <a href="/kontakte" class="quick-action-btn" title="Kontakte & Netzwerk" aria-label="Kontakte">👥</a>
+            </div>
             <div class="theme-switcher" id="theme-switcher">
                 <button class="theme-btn${currentTheme === 'dark' ? ' active' : ''}" data-theme="dark" title="Dark">🌙</button>
                 <button class="theme-btn${currentTheme === 'light' ? ' active' : ''}" data-theme="light" title="Light">☀️</button>
@@ -206,11 +225,14 @@ function initNavigation() {
         });
     });
 
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.nav-dropdown')) {
-            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
-        }
-    });
+    if (!navClickBound) {
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.nav-dropdown')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
+        });
+        navClickBound = true;
+    }
 
     document.getElementById('theme-switcher').addEventListener('click', async (e) => {
         const btn = e.target.closest('.theme-btn');
@@ -316,6 +338,7 @@ async function loadNavStatus() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
+    loadNavigationConfig();
     loadThemePreference();
     loadNavStatus();
 });
@@ -324,6 +347,6 @@ if (typeof module !== 'undefined') {
     module.exports = {
         initNavigation, updateNavStatus, loadNavStatus, setTheme, previewTheme,
         commitTheme, persistThemePreference,
-        loadThemePreference, normalizeTheme, NAV_ITEMS, BACH_VERSION
+        loadThemePreference, normalizeTheme, loadNavigationConfig, safeNavHref, BACH_VERSION
     };
 }

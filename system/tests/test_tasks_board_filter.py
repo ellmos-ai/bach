@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Regressionstest für Task-Board-Filter (Task #1201).
 
 Prüft:
@@ -7,14 +6,15 @@ Prüft:
 - Prioritätsfilter gruppiert numerische/unbekannte Werte korrekt
 - Status-Gruppen im Board (pending/open/blocked, in_progress/progress, done/completed/closed)
 """
+import gc
 import os
-import sys
 import sqlite3
+import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-
 
 TASKS_SCHEMA = """
 CREATE TABLE tasks (
@@ -59,6 +59,7 @@ def client():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
+    original_db = os.environ.get("BACH_DB")
     os.environ["BACH_DB"] = db_path
     # Falls Modul schon importiert wurde, muss es neu geladen werden können
     # Wir löschen ggf. vorhandene server-Module aus dem Cache
@@ -86,17 +87,35 @@ def client():
     conn.close()
 
     # Import via 'system.gui.server' erzwingen, nicht 'hub.gui'
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     sys.path.insert(0, str(Path(__file__).parent.parent))
     # Eventuelle Import-Caches für 'gui' leeren
     for name in list(sys.modules.keys()):
         if name == "gui" or name.startswith("gui."):
             sys.modules.pop(name, None)
-    from system.gui.server import app
     from fastapi.testclient import TestClient
 
-    yield TestClient(app)
+    from system.gui import server
+
+    with patch.object(
+        server,
+        "validate_token",
+        side_effect=lambda token: {"id": 1}
+        if token == "tasks-board-fixture"
+        else None,
+    ):
+        yield TestClient(
+            server.app,
+            headers={"Authorization": "Bearer tasks-board-fixture"},
+        )
 
     # Cleanup
+    if original_db is None:
+        os.environ.pop("BACH_DB", None)
+    else:
+        os.environ["BACH_DB"] = original_db
+    sys.modules.pop("hub.bach_paths", None)
+    gc.collect()
     try:
         os.unlink(db_path)
     except FileNotFoundError:
@@ -168,3 +187,32 @@ def test_status_all_returns_everything(client):
     assert res.status_code == 200
     data = res.json()
     assert data["count"] == 8
+
+
+def test_nonterminal_filter_keeps_open_aliases_and_excludes_terminal_statuses(client):
+    db_path = os.environ["BACH_DB"]
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO tasks (title, status, priority, created_at) VALUES (?, ?, 'P4', datetime('now'))",
+            [("Cancelled Task", "cancelled"), ("Duplicate Task", "duplicate"),
+             ("Other Open Task", "awaiting_review")],
+        )
+    try:
+        response = client.get("/api/tasks?status=nonterminal")
+        assert response.status_code == 200
+        titles = {task["title"] for task in response.json()["tasks"]}
+        assert {"Open Task", "Pending Task", "Progress Task", "In Progress Task",
+                "Blocked Task", "Other Open Task"}.issubset(titles)
+        assert not titles.intersection({"Done Task", "Completed Task", "Closed Task",
+                                        "Cancelled Task", "Duplicate Task"})
+    finally:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DELETE FROM tasks WHERE title IN ('Cancelled Task', 'Duplicate Task', 'Other Open Task')")
+
+
+def test_nonterminal_pagination_exposes_remaining_open_tasks(client):
+    first = client.get("/api/tasks?status=nonterminal&limit=3&offset=0").json()
+    second = client.get("/api/tasks?status=nonterminal&limit=3&offset=3").json()
+    assert first["success"] is True and first["has_more"] is True and len(first["tasks"]) == 3
+    assert second["success"] is True and second["has_more"] is False and len(second["tasks"]) == 2
+    assert {row["id"] for row in first["tasks"]}.isdisjoint({row["id"] for row in second["tasks"]})

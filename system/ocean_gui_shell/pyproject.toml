@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocean-gui-shell"
+version = "0.1.0"
+description = "Backend-free Activity shell extracted from BACH"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["ocean_gui_shell"]
+package-dir = {ocean_gui_shell = "."}
+
+[tool.setuptools.package-data]
+ocean_gui_shell = ["templates/*.html"]

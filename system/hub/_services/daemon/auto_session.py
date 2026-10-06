@@ -65,6 +65,7 @@ _SYSTEM_ROOT = next(
 if str(_SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_ROOT))
 from hub.bach_paths import BACH_DB
+from hub._services.task_schema import unbound_task_filter
 
 # ============ PFADE ============
 
@@ -165,10 +166,11 @@ def get_tasks(profile: dict, limit: int = 5) -> list:
             """, (limit,)).fetchall()
         else:
             conn = sqlite3.connect(BACH_DB)
-            tasks = conn.execute("""
+            binding_filter = unbound_task_filter(conn)
+            tasks = conn.execute(f"""
                 SELECT category, title, priority, id
                 FROM tasks
-                WHERE status = 'open'
+                WHERE status = 'open' {binding_filter}
                 ORDER BY
                     CASE priority
                         WHEN 'P1' THEN 1
@@ -197,8 +199,9 @@ def count_tasks(profile: dict) -> int:
             ).fetchone()[0]
         else:
             conn = sqlite3.connect(BACH_DB)
+            binding_filter = unbound_task_filter(conn)
             count = conn.execute(
-                "SELECT COUNT(*) FROM tasks WHERE status = 'open'"
+                f"SELECT COUNT(*) FROM tasks WHERE status = 'open' {binding_filter}"
             ).fetchone()[0]
 
         conn.close()
