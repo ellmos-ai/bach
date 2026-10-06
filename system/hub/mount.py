@@ -88,6 +88,16 @@ class MountHandler(BaseHandler):
         target.relative_to(target_root)
         return target
 
+    def _is_source_within_allowed_roots(self, source: Path) -> bool:
+        src = Path(source).resolve(strict=False)
+        for root in self.allowed_roots:
+            try:
+                src.relative_to(root.resolve(strict=False))
+                return True
+            except ValueError:
+                continue
+        return False
+
     def _resolve_mount_source(self, value: str) -> Path:
         raw = str(value or "")
         if not raw or "\x00" in raw:
@@ -165,7 +175,7 @@ class MountHandler(BaseHandler):
     def _create_link(self, source: Path, target: Path):
         src = self._resolve_mount_source(str(source))
         tgt = Path(target).resolve(strict=False)
-        if not self._is_allowed_source(str(src)):
+        if not self._is_source_within_allowed_roots(src):
             raise ValueError("Quellpfad liegt außerhalb erlaubter Wurzeln")
         if os.name == "nt":
             subprocess.run(
