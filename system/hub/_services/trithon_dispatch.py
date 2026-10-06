@@ -25,6 +25,7 @@ Datenklassen
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,6 +46,8 @@ from hub._services.trithon.routing_contract import (
 )
 from hub._services.task_lease_client import TaskLeaseClient, LeaseDeniedError
 
+
+_LEASE_RENEWAL_MAX_WAIT_SECONDS = 60.0
 
 
 def _utc_now() -> str:
@@ -92,8 +95,16 @@ class NoopExecutor:
     def __init__(self, executor_type: str = "noop") -> None:
         self.executor_type = executor_type
 
-    def execute(self, run: Run, ticket: SyntheticTicket) -> Dict[str, Any]:
+    def execute(
+        self,
+        run: Run,
+        ticket: SyntheticTicket,
+        *,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Dict[str, Any]:
         """Führt einen simulierten Schritt aus und liefert Evidence."""
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("execution cancelled after lease loss")
         evidence: Dict[str, Any] = {
             "run_id": run.run_id,
             "ticket_id": ticket.ticket_id,
@@ -106,7 +117,60 @@ class NoopExecutor:
             "simulated": True,
             "timestamp": _utc_now(),
         }
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("execution cancelled after lease loss")
         return evidence
+
+
+def _execute_with_lease(client, lease_ack, executor, run, ticket):
+    """Renew the lease while executing and cancel work if it can no longer be held."""
+    lease_ack.assert_locally_valid()
+    cancelled = threading.Event()
+    completed = threading.Event()
+    result: Dict[str, Any] = {}
+
+    def execute() -> None:
+        try:
+            result["evidence"] = executor.execute(
+                run, ticket, cancel_event=cancelled
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = exc
+        finally:
+            completed.set()
+
+    worker = threading.Thread(target=execute, daemon=True)
+    worker.start()
+
+    while not completed.is_set():
+        try:
+            lease_ack.assert_locally_valid()
+            remaining = (
+                lease_ack.local_deadline - datetime.now(timezone.utc)
+            ).total_seconds()
+            wait_seconds = min(
+                _LEASE_RENEWAL_MAX_WAIT_SECONDS,
+                lease_ack.ttl_seconds / 3,
+                remaining / 2,
+            )
+            if completed.wait(max(0.05, wait_seconds)):
+                break
+            lease_ack.assert_locally_valid()
+            lease_ack = client.renew(
+                ticket.task_id,
+                lease_id=lease_ack.lease_id,
+                fence=lease_ack.fence,
+                task_version=lease_ack.task_version,
+            )
+        except Exception:
+            cancelled.set()
+            completed.wait()
+            raise
+
+    lease_ack.assert_locally_valid()
+    if "error" in result:
+        raise result["error"]
+    return result["evidence"], lease_ack
 
 
 def route_intent_v1(intent: Dict[str, Any]) -> tuple[str, NoopExecutor]:
@@ -279,7 +343,9 @@ def execute_intent_v1(
 
         # 4. Ausführen.
         _, executor = route_intent_v1(ticket.intent)
-        evidence = executor.execute(run, ticket)
+        evidence, lease_ack = _execute_with_lease(
+            client, lease_ack, executor, run, ticket
+        )
         run.ended_at = _utc_now()
 
         # 5. Outcome + Receipt (inklusive Fencing-Nachweis).
