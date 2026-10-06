@@ -184,6 +184,22 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Du agierst als beratender Reflexions- und Psycho-Assistent.\n"
         "Schwerpunkte: Strukturierung therapeutischer Reflexionen, Vorbereitung von Beratungsgesprächen und Verhaltensdokumentation."
     ),
+    "haushaltsmanagement": (
+        "Du bist der Haushalts- und Alltagsmanager im BACH-System.\n"
+        "Schwerpunkte: Einkaufslisten, Haushaltsroutinen, Vorratsmanagement, Inventar und alltägliche Haushaltslogistik."
+    ),
+    "aboservice": (
+        "Du bist der Vertrags- und Abo-Manager im BACH-System.\n"
+        "Schwerpunkte: Prüfung von Vertragslaufzeiten, Kündigungsfristen, Optimierungspotenzialen und monatlichen Fixkosten."
+    ),
+    "data-analysis": (
+        "Du bist der Datenanalyse- und Reporting-Experte im BACH-System.\n"
+        "Schwerpunkte: Strukturierte Auswertung von Kennzahlen, Logs, CSV-Dateien und Zeitreihen sowie visuelle Zusammenfassungen."
+    ),
+    "decision-briefing": (
+        "Du bist der Entscheidungs- und Strategieberater im BACH-System.\n"
+        "Schwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
+    ),
 }
 
 
@@ -536,6 +552,7 @@ CORE_SYSTEM_AGENT_ICONS = {
 CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
+    "enabled",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -555,6 +572,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
     for slot_id in CORE_SYSTEM_AGENT_IDS:
         slot = slots[slot_id]
         defaults = DEFAULT_CORE_SLOTS[slot_id]
+        pause_info = get_slot_pause_info(slot)
         public_slots.append({
             "id": slot_id,
             "system": True,
@@ -570,6 +588,10 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "pause_minutes": slot.get("pause_minutes"),
             "pause_basis": slot.get("pause_basis", defaults.get("pause_basis", "runs")),
             "configured_enabled": slot.get("enabled"),
+            "enabled": bool(slot.get("enabled", defaults.get("enabled", True))),
+            "status": slot.get("status", defaults.get("status", "idle")),
+            "current_activity": slot.get("current_activity", ""),
+            "pause_info": pause_info,
             "living": None,
             "running": None,
             "runtime_reason_code": "runtime_not_probed",
@@ -604,9 +626,9 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
-        elif field == "think":
+        elif field in {"think", "enabled"}:
             if not isinstance(value, bool):
-                raise ValueError("think muss wahr oder falsch sein")
+                raise ValueError(f"{field} muss wahr oder falsch sein")
         elif field == "pause_basis":
             if value not in {"runs", "tasks"}:
                 raise ValueError("pause_basis muss runs oder tasks sein")

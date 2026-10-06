@@ -152,6 +152,26 @@ import BachLayout from "../../layouts/BachLayout.astro";
         </div>
 
         <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Rollen-Vorlage wählen (Activity Board / Rollenkatalog)</label>
+          <select id="cb-role-preset" onchange="onCbRolePresetSelect(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+            <option value="">-- Keine Rollenvorlage / Eigene Vorgabe --</option>
+            <option value="entwickler">💻 Entwickler (Senior Python / TDD)</option>
+            <option value="bueroassistent">📂 Büroassistent (Organisation & Ablage)</option>
+            <option value="gesundheitsassistent">🩺 Gesundheitsassistent (Medizin & Dokumente)</option>
+            <option value="steuer">🧾 Steuer-Agent (Belege & Werbungskosten)</option>
+            <option value="foerderplaner">📋 Förderplaner (ICF & Pädagogik)</option>
+            <option value="recherche">🔬 Recherche-Experte (Wissenschaftliche Synthese)</option>
+            <option value="psycho-berater">🧠 Psycho-Berater (Therapeutische Reflexion)</option>
+            <option value="task-divider">✂️ Task-Divider (Aufgabenzerlegung in Teil-Tasks)</option>
+            <option value="ticket-master">🎫 Ticket-Master (Triage & Zuweisung)</option>
+            <option value="haushaltsmanagement">🛒 Haushaltsmanagement (Alltag & Vorräte)</option>
+            <option value="aboservice">📄 Vertrags- & Abo-Service (Fixkosten & Kündigungen)</option>
+            <option value="data-analysis">📊 Datenanalyse & Reporting (Kennzahlen & Logs)</option>
+            <option value="decision-briefing">⚖️ Entscheidungs-Briefing (Pro/Contra & Szenarien)</option>
+          </select>
+        </div>
+
+        <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Anzeigename</label>
           <input type="text" id="cb-title" placeholder="z. B. Test Auditor & Security Scout" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
         </div>
@@ -164,6 +184,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <div>
           <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">System-Prompt / Persönlichkeit (Persona)</label>
           <textarea id="cb-prompt" rows="4" placeholder="Du bist ein spezialisierter Agent für..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <label style="display:flex;align-items:center;gap:0.45rem;font-size:0.8rem;color:var(--text-muted);margin-top:0.35rem;cursor:pointer;">
+            <input type="checkbox" id="cb-include-sysprompt" checked style="width:auto;" />
+            <span>BACH-Systemprompt als Basis einbinden (an-/ausschaltbar)</span>
+          </label>
         </div>
 
         <div>
@@ -808,12 +832,94 @@ import BachLayout from "../../layouts/BachLayout.astro";
   }
 
   // ── MODAL: CREATE BLUEPRINT (WERKSTATT) ──
+  const ACTIVITY_ROLE_PROMPTS = {
+    entwickler: {
+      title: "Entwickler (Senior Python)",
+      role: "Senior Software-Entwickler",
+      prompt: "Du agierst als Senior Software-Entwickler für BACH und angebundene Repositories.\nSchwerpunkte: Python, System-Architektur, Test Driven Development (pytest), saubere Git-Commits und Fail-Closed Lock-Disziplin."
+    },
+    bueroassistent: {
+      title: "Büroassistent",
+      role: "Büro- und Organisations-Assistent",
+      prompt: "Du agierst als Büro- und Organisations-Experte im BACH-System.\nSchwerpunkte: Strukturierung von Aufgaben, Ablageordnung, Terminverwaltung, Korrespondenz und Dokumentation."
+    },
+    gesundheitsassistent: {
+      title: "Gesundheitsassistent",
+      role: "Gesundheits- und Dokumentations-Assistent",
+      prompt: "Du agierst als Gesundheits- und Dokumentations-Assistent.\nSchwerpunkte: Verwaltung medizinischer Dokumente, strukturierte Arztberichte, Laborwerte und Medikationspläne im Ordner user/gesundheit/."
+    },
+    steuer: {
+      title: "Steuer-Agent",
+      role: "Steuer- und Beleg-Experte",
+      prompt: "Du agierst als Steuer- und Beleg-Experte für BACH.\nSchwerpunkte: Prüfung, Zuordnung und Aufbereitung von Belegen, Rechnungen und Werbungskosten im Ordner user/buero/steuer/."
+    },
+    foerderplaner: {
+      title: "Förderplaner",
+      role: "Förderplaner und Pädagogik-Experte",
+      prompt: "Du agierst als Förderplaner- und Pädagogik-Experte.\nSchwerpunkte: ICF-basierte Zielformulierung, Förderdiagnostik, Materialrecherche und Förderberichte gemäß Richtlinien."
+    },
+    recherche: {
+      title: "Recherche-Experte",
+      role: "Wissenschaftlicher Recherche-Experte",
+      prompt: "Du agierst als wissenschaftlicher Recherche- und Analyse-Experte.\nSchwerpunkte: Fundierte Quellenauswertung, strukturierte Synthesen, Faktenprüfung und Ausarbeitung thematischer Dossiers."
+    },
+    "psycho-berater": {
+      title: "Psycho-Berater",
+      role: "Beratender Reflexions-Assistent",
+      prompt: "Du agierst als beratender Reflexions- und Psycho-Assistent.\nSchwerpunkte: Strukturierung therapeutischer Reflexionen, Vorbereitung von Beratungsgesprächen und Verhaltensdokumentation."
+    },
+    "task-divider": {
+      title: "Task-Divider",
+      role: "Aufgabenzerlegungs-Experte",
+      prompt: "Du agierst als Task-Divider und Dekompositions-Experte im BACH-System.\nSchwerpunkte: Methodische Analyse komplexer Großaufgaben, Zerlegung in handhabbare Teilpakete mit klaren Akzeptanzkriterien."
+    },
+    "ticket-master": {
+      title: "Ticket-Master",
+      role: "Ticket-Master und Triage-Experte",
+      prompt: "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\nSchwerpunkte: Sichtung offener Tickets, Prioritätenbewertung, Zuweisung zu den passenden Rollen."
+    },
+    haushaltsmanagement: {
+      title: "Haushaltsmanagement",
+      role: "Haushalts- und Alltagsmanager",
+      prompt: "Du bist der Haushalts- und Alltagsmanager im BACH-System.\nSchwerpunkte: Einkaufslisten, Haushaltsroutinen, Vorratsmanagement, Inventar und alltägliche Haushaltslogistik."
+    },
+    aboservice: {
+      title: "Vertrags- & Abo-Service",
+      role: "Vertrags- und Abo-Manager",
+      prompt: "Du bist der Vertrags- und Abo-Manager im BACH-System.\nSchwerpunkte: Prüfung von Vertragslaufzeiten, Kündigungsfristen, Optimierungspotenzialen und monatlichen Fixkosten."
+    },
+    "data-analysis": {
+      title: "Datenanalyse & Reporting",
+      role: "Datenanalyse- und Reporting-Experte",
+      prompt: "Du bist der Datenanalyse- und Reporting-Experte im BACH-System.\nSchwerpunkte: Strukturierte Auswertung von Kennzahlen, Logs, CSV-Dateien und Zeitreihen sowie visuelle Zusammenfassungen."
+    },
+    "decision-briefing": {
+      title: "Entscheidungs-Briefing",
+      role: "Entscheidungs- und Strategieberater",
+      prompt: "Du bist der Entscheidungs- und Strategieberater im BACH-System.\nSchwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
+    }
+  };
+
+  function onCbRolePresetSelect(roleKey) {
+    if (!roleKey || !ACTIVITY_ROLE_PROMPTS[roleKey]) return;
+    const r = ACTIVITY_ROLE_PROMPTS[roleKey];
+    const nameEl = document.getElementById('cb-name');
+    if (!nameEl.value.trim()) nameEl.value = roleKey;
+    document.getElementById('cb-title').value = r.title;
+    document.getElementById('cb-role').value = r.role;
+    document.getElementById('cb-prompt').value = r.prompt;
+  }
+
   function openCreateBlueprintModal() {
     document.getElementById('cb-name').value = '';
     document.getElementById('cb-title').value = '';
     document.getElementById('cb-role').value = '';
     document.getElementById('cb-prompt').value = '';
     document.getElementById('cb-skills').value = '';
+    const presetEl = document.getElementById('cb-role-preset');
+    if (presetEl) presetEl.value = '';
+    const sysEl = document.getElementById('cb-include-sysprompt');
+    if (sysEl) sysEl.checked = true;
     document.getElementById('modal-create-blueprint').style.display = 'flex';
   }
 
@@ -831,6 +937,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     const modus = document.getElementById('cb-modus').value;
     const turns = parseInt(document.getElementById('cb-turns').value) || 15;
     const govProfile = document.getElementById('cb-governance').value;
+    const includeSysPrompt = document.getElementById('cb-include-sysprompt')?.checked !== false;
 
     if (!name) {
       alert('Bitte einen gültigen Schablonen-Namen eingeben.');

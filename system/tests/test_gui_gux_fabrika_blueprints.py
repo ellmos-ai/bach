@@ -223,3 +223,21 @@ class TestFabrikaAndBlueprintsContract:
         synth_res = asyncio.run(unified_api.synthesize_prompt_endpoint({"blueprint": valid_bp}))
         assert synth_res["success"] is True
         assert synth_res["character_count"] > 100
+
+    def test_core_system_agents_live_status_and_toggle(self):
+        """Verifies core system slots include status, pause_info, enabled, and toggle works."""
+        from gui.api import core_system_agents
+        snapshot = asyncio.run(core_system_agents.list_core_system_agents())
+        assert snapshot["schema"] == "bach.core-system-agents.v1"
+        assert len(snapshot["agents"]) == 3
+        always_on = next(a for a in snapshot["agents"] if a["id"] == "buddha_always_on")
+        assert "status" in always_on
+        assert "pause_info" in always_on
+        assert "enabled" in always_on
+        initial_enabled = always_on["enabled"]
+        # Toggle
+        res = asyncio.run(core_system_agents.toggle_core_system_agent("buddha_always_on"))
+        assert res["ack"]["enabled"] == (not initial_enabled)
+        # Toggle back
+        res_back = asyncio.run(core_system_agents.toggle_core_system_agent("buddha_always_on"))
+        assert res_back["ack"]["enabled"] == initial_enabled

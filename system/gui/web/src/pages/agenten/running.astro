@@ -283,8 +283,43 @@ import BachLayout from "../../layouts/BachLayout.astro";
         </div>
 
         <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Konkreter Arbeitsauftrag / Task Prompt</label>
-          <textarea id="pickup-task-prompt" rows="3" placeholder="Konkrete Aufgabe für diesen Worker-Lauf eingeben..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Rollen-Vorlage wählen (Activity Board / Rollenkatalog)</label>
+          <select id="pickup-role-select" onchange="onPickupRoleSelect(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
+            <option value="">-- Keine Rollenvorlage / Eigene Vorgabe --</option>
+            <option value="entwickler">💻 Entwickler (Senior Python / TDD)</option>
+            <option value="bueroassistent">📂 Büroassistent (Organisation & Ablage)</option>
+            <option value="gesundheitsassistent">🩺 Gesundheitsassistent (Medizin & Dokumente)</option>
+            <option value="steuer">🧾 Steuer-Agent (Belege & Werbungskosten)</option>
+            <option value="foerderplaner">📋 Förderplaner (ICF & Pädagogik)</option>
+            <option value="recherche">🔬 Recherche-Experte (Wissenschaftliche Synthese)</option>
+            <option value="psycho-berater">🧠 Psycho-Berater (Therapeutische Reflexion)</option>
+            <option value="task-divider">✂️ Task-Divider (Aufgabenzerlegung in Teil-Tasks)</option>
+            <option value="ticket-master">🎫 Ticket-Master (Triage & Zuweisung)</option>
+            <option value="haushaltsmanagement">🛒 Haushaltsmanagement (Alltag & Vorräte)</option>
+            <option value="aboservice">📄 Vertrags- & Abo-Service (Fixkosten & Kündigungen)</option>
+            <option value="data-analysis">📊 Datenanalyse & Reporting (Kennzahlen & Logs)</option>
+            <option value="decision-briefing">⚖️ Entscheidungs-Briefing (Pro/Contra & Szenarien)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Individueller Systemprompt / Rollenregeln</label>
+          <textarea id="pickup-custom-prompt" rows="3" placeholder="Spezifische Verhaltensregeln oder Anweisungen für den Agenten (wird mit der Rolle synchronisiert)..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          <label style="display:flex;align-items:center;gap:0.45rem;font-size:0.8rem;color:var(--text-muted);margin-top:0.35rem;cursor:pointer;">
+            <input type="checkbox" id="pickup-include-sysprompt" checked style="width:auto;" />
+            <span>BACH-Systemprompt als Basis einbinden (an-/ausschaltbar)</span>
+          </label>
+        </div>
+
+        <div style="display:grid;grid-template-columns:120px 1fr;gap:0.75rem;">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Task-ID (optional)</label>
+            <input type="number" id="pickup-task-id" min="1" placeholder="z. B. 42" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Konkreter Arbeitsauftrag / Task-Prompt</label>
+            <textarea id="pickup-task-prompt" rows="2" placeholder="Konkrete Aufgabe für diesen Worker-Lauf eingeben..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
+          </div>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.75rem;">
@@ -595,11 +630,68 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const card = coreElement('article', undefined, 'core-agent-card');
         card.dataset.coreAgentId = agent.id;
         const slotName = SLOT_TITLES[agent.id] || `${agent.icon || '◇'} ${agent.name || agent.id}`;
-        card.append(coreElement('h3', slotName));
+
+        // Top Header mit Titel und Live-Statusbadge (analog Activity Board)
+        const headerDiv = document.createElement('div');
+        headerDiv.style.display = 'flex';
+        headerDiv.style.justifyContent = 'space-between';
+        headerDiv.style.alignItems = 'center';
+        headerDiv.style.marginBottom = '0.35rem';
+        headerDiv.style.flexWrap = 'wrap';
+        headerDiv.style.gap = '0.4rem';
+
+        const titleEl = document.createElement('h3');
+        titleEl.textContent = slotName;
+        titleEl.style.margin = '0';
+        headerDiv.append(titleEl);
+
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.style.fontSize = '0.75rem';
+        const pInfo = agent.pause_info || {};
+        if (agent.id === 'buddha_always_on') {
+          if (pInfo.is_paused) {
+            badge.textContent = `⏸ PAUSIERT (${pInfo.remaining_minutes || 0}m)`;
+            badge.style.background = '#f59e0b';
+            badge.style.color = '#fff';
+          } else if (agent.enabled !== false) {
+            badge.textContent = '● AKTIV · BEREIT';
+            badge.style.background = '#059669';
+            badge.style.color = '#fff';
+          } else {
+            badge.textContent = '⏸ DEAKTIVIERT';
+            badge.style.background = '#64748b';
+            badge.style.color = '#fff';
+          }
+        } else if (agent.id === 'buddha_chat') {
+          badge.textContent = '💬 BEREIT (Chat)';
+          badge.style.background = '#0284c7';
+          badge.style.color = '#fff';
+        } else {
+          badge.textContent = '● BEREIT (Konnektoren)';
+          badge.style.background = '#059669';
+          badge.style.color = '#fff';
+        }
+        headerDiv.append(badge);
+        card.append(headerDiv);
+
         card.append(coreElement('small', `System-Slot: ${agent.id} · Kanonischer Steckplatz`));
-        const state = agent.configured_enabled === true ? 'Konfiguration aktiviert' :
-          agent.configured_enabled === false ? 'Konfiguration deaktiviert' : 'Konfiguration vorhanden';
-        card.append(coreElement('small', `${state} · Bereit für Ausführung`));
+
+        // Live Aktivitäts-Anzeige (analog Activity Board)
+        const activityBox = document.createElement('div');
+        activityBox.style.background = 'var(--bg-card)';
+        activityBox.style.padding = '0.4rem 0.6rem';
+        activityBox.style.borderRadius = '4px';
+        activityBox.style.fontSize = '0.78rem';
+        activityBox.style.border = '1px solid var(--border)';
+        activityBox.style.margin = '0.25rem 0 0.5rem 0';
+        const actText = (agent.current_activity || '').trim();
+        if (actText) {
+          activityBox.innerHTML = `<span style="color:var(--accent);">⚡</span> <strong>Aktivität:</strong> ${escapeHtml(actText)}`;
+        } else {
+          activityBox.innerHTML = `<span style="color:var(--text-muted);">Ruht · Bereit für anstehende Aufgaben</span>`;
+        }
+        card.append(activityBox);
 
         const fields = coreElement('div', undefined, 'core-fields');
         coreField(fields, 'name', 'Anzeigename', agent.name);
@@ -613,6 +705,32 @@ import BachLayout from "../../layouts/BachLayout.astro";
         card.append(fields);
 
         const actions = coreElement('div', undefined, 'core-actions');
+
+        // Direkte Aktions-Buttons je nach Slot
+        if (agent.id === 'buddha_always_on') {
+          const isEnabled = agent.enabled !== false && !pInfo.is_paused;
+          const toggleBtn = coreElement('button', isEnabled ? '⏸ Pausieren' : '▶ Aktivieren', isEnabled ? 'btn btn-sm' : 'btn btn-sm btn-success');
+          toggleBtn.type = 'button';
+          if (isEnabled) {
+            toggleBtn.style.color = '#f59e0b';
+            toggleBtn.style.borderColor = '#f59e0b';
+          }
+          toggleBtn.addEventListener('click', () => toggleCoreSlot(agent.id));
+          actions.append(toggleBtn);
+        } else if (agent.id === 'buddha_chat') {
+          const chatLink = document.createElement('a');
+          chatLink.href = '/chat';
+          chatLink.className = 'btn btn-sm';
+          chatLink.textContent = '💬 Im Chat öffnen';
+          actions.append(chatLink);
+        } else if (agent.id === 'buddha_connector') {
+          const connLink = document.createElement('a');
+          connLink.href = '/routinen?tab=connectors';
+          connLink.className = 'btn btn-sm';
+          connLink.textContent = '📱 Kanäle prüfen';
+          actions.append(connLink);
+        }
+
         const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
         save.type = 'button';
         save.addEventListener('click', () => saveCoreSlot(agent.id));
@@ -704,6 +822,22 @@ import BachLayout from "../../layouts/BachLayout.astro";
         renderCoreAgents(data, slotId);
       } catch (e) {
         alert('Reset fehlgeschlagen: ' + e.message);
+      }
+    }
+
+    async function toggleCoreSlot(slotId) {
+      const feedback = document.getElementById('core-agent-feedback');
+      if (feedback) feedback.textContent = 'Umschalten des System-Agenten…';
+      try {
+        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/toggle', {
+          method: 'POST'
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        renderCoreAgents(data, slotId);
+        if (feedback) feedback.textContent = `Status für ${slotId} erfolgreich umgeschaltet.`;
+      } catch (e) {
+        if (feedback) feedback.textContent = 'Umschalten fehlgeschlagen: ' + e.message;
       }
     }
 
@@ -1184,16 +1318,49 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
     }
 
+    const ACTIVITY_ROLE_PROMPTS = {
+      entwickler: "Du agierst als Senior Software-Entwickler für BACH und angebundene Repositories.\nSchwerpunkte: Python, System-Architektur, Test Driven Development (pytest), saubere Git-Commits und Fail-Closed Lock-Disziplin.",
+      bueroassistent: "Du agierst als Büro- und Organisations-Experte im BACH-System.\nSchwerpunkte: Strukturierung von Aufgaben, Ablageordnung, Terminverwaltung, Korrespondenz und Dokumentation.",
+      gesundheitsassistent: "Du agierst als Gesundheits- und Dokumentations-Assistent.\nSchwerpunkte: Verwaltung medizinischer Dokumente, strukturierte Arztberichte, Laborwerte und Medikationspläne im Ordner user/gesundheit/.",
+      steuer: "Du agierst als Steuer- und Beleg-Experte für BACH.\nSchwerpunkte: Prüfung, Zuordnung und Aufbereitung von Belegen, Rechnungen und Werbungskosten im Ordner user/buero/steuer/.",
+      foerderplaner: "Du agierst als Förderplaner- und Pädagogik-Experte.\nSchwerpunkte: ICF-basierte Zielformulierung, Förderdiagnostik, Materialrecherche und Förderberichte gemäß Richtlinien.",
+      recherche: "Du agierst als wissenschaftlicher Recherche- und Analyse-Experte.\nSchwerpunkte: Fundierte Quellenauswertung, strukturierte Synthesen, Faktenprüfung und Ausarbeitung thematischer Dossiers.",
+      "psycho-berater": "Du agierst als beratender Reflexions- und Psycho-Assistent.\nSchwerpunkte: Strukturierung therapeutischer Reflexionen, Vorbereitung von Beratungsgesprächen und Verhaltensdokumentation.",
+      "task-divider": "Du agierst als Task-Divider und Dekompositions-Experte im BACH-System.\nSchwerpunkte: Methodische Analyse komplexer Großaufgaben, Zerlegung in handhabbare Teilpakete mit klaren Akzeptanzkriterien.",
+      "ticket-master": "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\nSchwerpunkte: Sichtung offener Tickets, Prioritätenbewertung, Zuweisung zu den passenden Rollen.",
+      haushaltsmanagement: "Du bist der Haushalts- und Alltagsmanager im BACH-System.\nSchwerpunkte: Einkaufslisten, Haushaltsroutinen, Vorratsmanagement, Inventar und alltägliche Haushaltslogistik.",
+      aboservice: "Du bist der Vertrags- und Abo-Manager im BACH-System.\nSchwerpunkte: Prüfung von Vertragslaufzeiten, Kündigungsfristen, Optimierungspotenzialen und monatlichen Fixkosten.",
+      "data-analysis": "Du bist der Datenanalyse- und Reporting-Experte im BACH-System.\nSchwerpunkte: Strukturierte Auswertung von Kennzahlen, Logs, CSV-Dateien und Zeitreihen sowie visuelle Zusammenfassungen.",
+      "decision-briefing": "Du bist der Entscheidungs- und Strategieberater im BACH-System.\nSchwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
+    };
+
+    function onPickupRoleSelect(roleKey) {
+      const promptEl = document.getElementById('pickup-custom-prompt');
+      if (!promptEl) return;
+      if (roleKey && ACTIVITY_ROLE_PROMPTS[roleKey]) {
+        promptEl.value = ACTIVITY_ROLE_PROMPTS[roleKey];
+      }
+    }
+
     async function confirmPickup(startImmediately) {
       const bpName = document.getElementById('pickup-bp-select').value;
       if (!bpName) { alert('Bitte eine Schablone wählen.'); return; }
       const bp = _allBlueprintsList.find(b => b.name === bpName);
       const backend = document.getElementById('pickup-backend-select').value;
       const model = document.getElementById('pickup-model-select').value;
-      const taskPrompt = document.getElementById('pickup-task-prompt').value.trim();
+      const customPrompt = (document.getElementById('pickup-custom-prompt')?.value || '').trim();
+      const taskPromptInput = (document.getElementById('pickup-task-prompt')?.value || '').trim();
+      const taskId = parseInt(document.getElementById('pickup-task-id')?.value) || null;
+      const includeSysPrompt = document.getElementById('pickup-include-sysprompt') ? document.getElementById('pickup-include-sysprompt').checked : true;
       const turns = parseInt(document.getElementById('pickup-turns').value) || 25;
       const mode = document.getElementById('pickup-mode').value;
       const think = document.getElementById('pickup-think').value === 'true';
+      const roleSelectVal = document.getElementById('pickup-role-select')?.value || '';
+
+      let taskPrompt = taskPromptInput;
+      if (customPrompt) {
+        taskPrompt = taskPrompt ? `${customPrompt}\n\nAuftrag:\n${taskPrompt}` : customPrompt;
+      }
 
       const payload = {
         name: bp ? (bp.title || bp.name) : bpName,
@@ -1202,13 +1369,15 @@ import BachLayout from "../../layouts/BachLayout.astro";
         max_tool_rounds: turns,
         mode,
         think,
+        task_id: taskId,
         task_prompt: taskPrompt,
         allow_tools: true,
-        include_system_prompt: true,
+        include_system_prompt: includeSysPrompt,
         pause_after: 5,
         pause_minutes: 1,
         pause_basis: 'runs',
-        sub_mode: 'hintergrund_worker',
+        sub_mode: roleSelectVal ? 'expert_role' : 'hintergrund_worker',
+        role_id: roleSelectVal || '',
         type: 'continuous'
       };
 
