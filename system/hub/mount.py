@@ -101,7 +101,9 @@ class MountHandler(BaseHandler):
 
         try:
             expanded = os.path.expandvars(os.path.expanduser(raw))
-            candidate = Path(expanded).resolve()
+            candidate = Path(expanded).resolve(strict=True)
+        except FileNotFoundError:
+            raise ValueError("Quellpfad existiert nicht")
         except (ValueError, OSError) as exc:
             raise ValueError(f"Ungueltiger Quellpfad: {exc}")
 
@@ -121,7 +123,7 @@ class MountHandler(BaseHandler):
                 "Quellpfad liegt außerhalb erlaubter Wurzeln; zusätzliche Wurzeln "
                 f"über {MOUNT_ALLOWED_ROOTS_ENV} konfigurieren"
             )
-        if candidate.exists() and not candidate.is_dir():
+        if not candidate.is_dir():
             raise ValueError("Quellpfad ist kein Ordner")
         return candidate
     
