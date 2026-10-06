@@ -3094,7 +3094,8 @@ async def api_add_mount(payload: MountAdd):
 
         handler = MountHandler(BACH_DIR)
 
-        success, output = handler._add_mount([payload.path, payload.alias], dry_run=False)
+        safe_source = str(handler._resolve_mount_source(payload.path))
+        success, output = handler._add_mount([safe_source, payload.alias], dry_run=False)
 
         if not success:
             raise HTTPException(status_code=500, detail=public_error_message())
