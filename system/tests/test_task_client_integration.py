@@ -70,12 +70,12 @@ def test_cli_lease_lifecycle(tmp_path: Path, monkeypatch):
     ok, show_msg = handler.handle("lease-show", [str(tid), "--lease-id", lease_id])
     assert ok is True
     assert f"Task {tid}: Status=in_progress, Leased=True, Fence=1" in show_msg
-    assert "[EIGENER LEASE BESTAETIGT]" in show_msg
+    assert "[EIGENER LEASE BESTÄTIGT]" in show_msg
 
     # 3. bach task lease-renew <tid> --lease-id <uuid> --fence 1
     ok, renew_msg = handler.handle("lease-renew", [str(tid), "--lease-id", lease_id, "--fence", "1"])
     assert ok is True
-    assert "verlaengert" in renew_msg
+    assert "verlängert" in renew_msg
 
     # 4. bach task lease-release <tid> --lease-id <uuid> --fence 1 --outcome done
     ok, rel_msg = handler.handle("lease-release", [str(tid), "--lease-id", lease_id, "--fence", "1", "--outcome", "done"])
