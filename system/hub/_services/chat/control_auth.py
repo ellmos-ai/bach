@@ -29,9 +29,19 @@ def get_control_api_token() -> str:
     if token_file:
         try:
             configured = Path(token_file).read_text(encoding="utf-8").strip()
+            if configured:
+                return configured
         except (OSError, UnicodeError):
-            return ""
-        return configured
+            pass
+
+    default_file = Path.home() / ".credentials" / "bach_control_api_token"
+    if default_file.exists():
+        try:
+            configured = default_file.read_text(encoding="utf-8").strip()
+            if configured:
+                return configured
+        except (OSError, UnicodeError):
+            pass
 
     try:
         from hub.secrets_handler import get_secret_value
