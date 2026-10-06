@@ -3262,6 +3262,18 @@ async def beseelen_team(team_id: int, payload: Dict[str, Any] = Body(default={})
         conn.close()
 
 
+@router.delete("/agenten/teams/{team_id}")
+async def delete_agent_team(team_id: int):
+    """Löscht ein konfiguriertes Multi-Agent-Team."""
+    conn = _get_conn()
+    try:
+        conn.execute("DELETE FROM agent_teams WHERE id = ?", (team_id,))
+        conn.commit()
+        return {"ok": True, "id": team_id}
+    finally:
+        conn.close()
+
+
 @router.post("/marblerun/chains/{chain_id}/beseelen")
 async def beseelen_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(default={})):
     """Beseelt eine Agenten-Staffel (MarbleRun Kette): Weist den Stations-Schritten Modelle zu."""

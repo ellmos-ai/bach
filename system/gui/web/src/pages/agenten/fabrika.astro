@@ -3,18 +3,21 @@
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
 
-<BachLayout title="Agenten-Fabrik" currentPath="/agenten/fabrika">
+<BachLayout title="Agenten-Werkstatt" currentPath="/agenten/fabrika">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
     <div>
       <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
-        🤖 Agenten-Fabrik
+        🤖 Agenten-Werkstatt
       </h1>
       <p style="color:var(--text-muted);font-size:0.875rem;">
-        Schablonen-Baukasten • Einzelagenten, Teambuilding (Swarm-AI) & Agenten-Staffeln
+        Schablonen-Baukasten & Werkstatt (Agenten-Fabrik) • Einzelagenten, Teambuilding (Swarm-AI) & Agenten-Staffeln
       </p>
     </div>
 
-    <div style="display:flex;gap:0.5rem;">
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <a href="/agenten/blueprints" class="btn">
+        <span>📐</span> Zu den Blueprints
+      </a>
       <a href="/agenten/running" class="btn">
         <span>⚡</span> Zu Living & Running
       </a>
