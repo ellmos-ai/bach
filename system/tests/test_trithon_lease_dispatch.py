@@ -119,6 +119,70 @@ def test_trithon_lease_success_and_evidence(trithon_ticket: SyntheticTicket):
     assert evidence.get("worker_id") == f"{TEST_ASSIGNMENT['agent_instance_id']}@{trithon_ticket.host}"
 
 
+def test_trithon_cancels_execution_when_lease_renewal_fails(
+    trithon_ticket: SyntheticTicket, monkeypatch
+):
+    from hub._services import trithon_dispatch
+
+    class BlockingExecutor:
+        cancelled = False
+
+        def execute(self, run, ticket, *, cancel_event):
+            self.cancelled = cancel_event.wait(timeout=1)
+            return {"simulated": True}
+
+    executor = BlockingExecutor()
+
+    def fail_renewal(self, *args, **kwargs):
+        raise RuntimeError("lease renewal failed")
+
+    monkeypatch.setattr(
+        trithon_dispatch, "_LEASE_RENEWAL_MAX_WAIT_SECONDS", 0.01
+    )
+    monkeypatch.setattr(trithon_dispatch.TaskLeaseClient, "renew", fail_renewal)
+    monkeypatch.setattr(
+        trithon_dispatch, "route_intent_v1", lambda intent: ("ticket", executor)
+    )
+
+    result = execute_intent_v1(trithon_ticket, **TEST_ASSIGNMENT)
+
+    assert result["success"] is False
+    assert result["status"] == "error"
+    assert executor.cancelled is True
+
+
+def test_trithon_renews_lease_during_execution(
+    trithon_ticket: SyntheticTicket, monkeypatch
+):
+    from hub._services import trithon_dispatch
+
+    class SlowExecutor:
+        def execute(self, run, ticket, *, cancel_event):
+            assert not cancel_event.wait(timeout=0.05)
+            return {"simulated": True}
+
+    original_renew = trithon_dispatch.TaskLeaseClient.renew
+    renewals = 0
+
+    def count_renewals(self, *args, **kwargs):
+        nonlocal renewals
+        renewals += 1
+        return original_renew(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        trithon_dispatch, "_LEASE_RENEWAL_MAX_WAIT_SECONDS", 0.01
+    )
+    monkeypatch.setattr(trithon_dispatch.TaskLeaseClient, "renew", count_renewals)
+    monkeypatch.setattr(
+        trithon_dispatch, "route_intent_v1", lambda intent: ("ticket", SlowExecutor())
+    )
+
+    result = execute_intent_v1(trithon_ticket, **TEST_ASSIGNMENT)
+
+    assert result["success"] is True
+    assert renewals >= 1
+
+
 def test_trithon_lease_stale_fence_fails_closed(trithon_ticket: SyntheticTicket, monkeypatch):
     """Wenn der Fence vor Abschluss manipuliert oder durch eine fremde Übernahme erhöht wird,
     muss execute_intent_v1 fail-closed abbrechen und darf den Task nicht auf done setzen."""
@@ -149,3 +213,6 @@ def test_trithon_lease_stale_fence_fails_closed(trithon_ticket: SyntheticTicket,
     row = conn.execute("SELECT * FROM tasks WHERE id = ?", (trithon_ticket.task_id,)).fetchone()
     conn.close()
     assert row["status"] != "done"
+
+    ledger = [json.loads(line) for line in trithon_ticket.ledger_path.read_text().splitlines() if line.strip()]
+    assert not any(entry.get("status") == "done" for entry in ledger)

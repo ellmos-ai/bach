@@ -25,6 +25,7 @@ Datenklassen
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -43,12 +44,10 @@ from hub._services.trithon.routing_contract import (
     claim_contract,
     record_receipt,
 )
-from hub._services.task_lease import (
-    acquire_lease,
-    ensure_task_lease_schema,
-    release_lease,
-)
-from hub.task_audit import claim_task_atomic
+from hub._services.task_lease_client import TaskLeaseClient, LeaseDeniedError
+
+
+_LEASE_RENEWAL_MAX_WAIT_SECONDS = 60.0
 
 
 def _utc_now() -> str:
@@ -96,8 +95,16 @@ class NoopExecutor:
     def __init__(self, executor_type: str = "noop") -> None:
         self.executor_type = executor_type
 
-    def execute(self, run: Run, ticket: SyntheticTicket) -> Dict[str, Any]:
+    def execute(
+        self,
+        run: Run,
+        ticket: SyntheticTicket,
+        *,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Dict[str, Any]:
         """Führt einen simulierten Schritt aus und liefert Evidence."""
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("execution cancelled after lease loss")
         evidence: Dict[str, Any] = {
             "run_id": run.run_id,
             "ticket_id": ticket.ticket_id,
@@ -110,7 +117,60 @@ class NoopExecutor:
             "simulated": True,
             "timestamp": _utc_now(),
         }
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("execution cancelled after lease loss")
         return evidence
+
+
+def _execute_with_lease(client, lease_ack, executor, run, ticket):
+    """Renew the lease while executing and cancel work if it can no longer be held."""
+    lease_ack.assert_locally_valid()
+    cancelled = threading.Event()
+    completed = threading.Event()
+    result: Dict[str, Any] = {}
+
+    def execute() -> None:
+        try:
+            result["evidence"] = executor.execute(
+                run, ticket, cancel_event=cancelled
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = exc
+        finally:
+            completed.set()
+
+    worker = threading.Thread(target=execute, daemon=True)
+    worker.start()
+
+    while not completed.is_set():
+        try:
+            lease_ack.assert_locally_valid()
+            remaining = (
+                lease_ack.local_deadline - datetime.now(timezone.utc)
+            ).total_seconds()
+            wait_seconds = min(
+                _LEASE_RENEWAL_MAX_WAIT_SECONDS,
+                lease_ack.ttl_seconds / 3,
+                remaining / 2,
+            )
+            if completed.wait(max(0.05, wait_seconds)):
+                break
+            lease_ack.assert_locally_valid()
+            lease_ack = client.renew(
+                ticket.task_id,
+                lease_id=lease_ack.lease_id,
+                fence=lease_ack.fence,
+                task_version=lease_ack.task_version,
+            )
+        except Exception:
+            cancelled.set()
+            completed.wait()
+            raise
+
+    lease_ack.assert_locally_valid()
+    if "error" in result:
+        raise result["error"]
+    return result["evidence"], lease_ack
 
 
 def route_intent_v1(intent: Dict[str, Any]) -> tuple[str, NoopExecutor]:
@@ -213,8 +273,11 @@ def execute_intent_v1(
         intent_summary=str(ticket.intent)[:200],
     )
 
-    conn = sqlite3.connect(str(ticket.db_path), timeout=10.0)
+    client = None
     try:
+        client = TaskLeaseClient.for_task_db(
+            lambda: sqlite3.connect(str(ticket.db_path), timeout=10.0)
+        )
         # 1 + 3. Rechteprüfung + Besetzung starten (begin_assignment ruft
         # authorize_role intern auf).
         assignment = begin_assignment(
@@ -237,34 +300,17 @@ def execute_intent_v1(
             else f"{assignment.agent_instance_id}@{ticket.host}"
         )
         host = worker_id.rsplit("@", 1)[1]
-        ensure_task_lease_schema(conn)
-        lease_res = acquire_lease(
-            conn,
-            ticket.task_id,
-            worker_id=worker_id,
-            host=host,
-            request_id=run_id,
-            intent=str(ticket.intent)[:500],
-        )
-        if not lease_res.granted:
-            finish_assignment(
-                assignment,
-                status="interrupted",
-                reason=f"task_claim_failed_{lease_res.payload.get('reason')}",
-                path=str(ticket.slots_path),
-            )
-            return {
-                "success": False,
-                "status": "claim_failed",
-                "reason": lease_res.payload.get("reason"),
-                "ticket_id": ticket.ticket_id,
-                "task_id": ticket.task_id,
-                "assignment_id": assignment.assignment_id,
-                "run_id": run_id,
-            }
-
-        lease_id = str(lease_res.payload["lease_id"])
-        fence = int(lease_res.payload["fence"])
+        try:
+            lease_ack = client.acquire(ticket.task_id, worker_id=worker_id, host=host,
+                                       request_id=run_id, intent=str(ticket.intent)[:500])
+        except LeaseDeniedError as exc:
+            finish_assignment(assignment, status="interrupted",
+                              reason=f"task_claim_failed_{exc.reason}", path=str(ticket.slots_path))
+            return dict(success=False, status="claim_failed", reason=exc.reason,
+                        ticket_id=ticket.ticket_id, task_id=ticket.task_id,
+                        assignment_id=assignment.assignment_id, run_id=run_id)
+        lease_id = lease_ack.lease_id
+        fence = lease_ack.fence
 
         # 2b. Atomares Claim des Tickets im Ledger.
         try:
@@ -297,7 +343,9 @@ def execute_intent_v1(
 
         # 4. Ausführen.
         _, executor = route_intent_v1(ticket.intent)
-        evidence = executor.execute(run, ticket)
+        evidence, lease_ack = _execute_with_lease(
+            client, lease_ack, executor, run, ticket
+        )
         run.ended_at = _utc_now()
 
         # 5. Outcome + Receipt (inklusive Fencing-Nachweis).
@@ -305,40 +353,26 @@ def execute_intent_v1(
         evidence_with_fence = dict(evidence)
         evidence_with_fence["lease_id"] = lease_id
         evidence_with_fence["claim_fence"] = fence
+        evidence_with_fence["task_version"] = lease_ack.task_version
         evidence_with_fence["worker_id"] = worker_id
         evidence_with_fence["host"] = host
         receipt = generate_receipt(run, assignment, outcome, evidence_with_fence)
 
-        # 6. Im Ledger recorden.
-        dispatch_to_ticket_master(ticket, receipt)
-
         # 6b. Task in DB via Lease-Release abschließen (Vertrag §5.4 / fail-closed)
         outcome_val = "done" if outcome.get("status") == "done" else "return"
-        lease_rel = release_lease(
-            conn,
-            ticket.task_id,
-            lease_id=lease_id,
-            fence=fence,
-            outcome=outcome_val,
-            result_ref=f"run:{run_id}",
-            note=f"Trithon dispatch receipt {receipt.signature}",
-        )
-        if lease_rel.http_status != 200 or not lease_rel.payload.get("released"):
-            finish_assignment(
-                assignment,
-                status="interrupted",
-                reason=f"lease_release_failed_{lease_rel.payload.get('reason')}",
-                path=str(ticket.slots_path),
-            )
-            return {
-                "success": False,
-                "status": "release_failed",
-                "reason": lease_rel.payload.get("reason"),
-                "ticket_id": ticket.ticket_id,
-                "task_id": ticket.task_id,
-                "assignment_id": assignment.assignment_id,
-                "run_id": run_id,
-            }
+        try:
+            client.release(ticket.task_id, lease_id=lease_id, fence=fence,
+                           task_version=lease_ack.task_version, outcome=outcome_val,
+                           result_ref=f"run:{run_id}", note=f"Trithon dispatch receipt {receipt.signature}")
+        except LeaseDeniedError as exc:
+            finish_assignment(assignment, status="interrupted",
+                              reason=f"lease_release_failed_{exc.reason}", path=str(ticket.slots_path))
+            return dict(success=False, status="release_failed", reason=exc.reason,
+                        ticket_id=ticket.ticket_id, task_id=ticket.task_id,
+                        assignment_id=assignment.assignment_id, run_id=run_id)
+
+        # Ledger is evidence only; terminal receipt follows authoritative release.
+        dispatch_to_ticket_master(ticket, receipt)
 
         # 7. Besetzung beenden.
         assignment_status = "completed" if outcome["status"] == "done" else "error"
@@ -397,4 +431,5 @@ def execute_intent_v1(
         }
 
     finally:
-        conn.close()
+        if client is not None:
+            client.__exit__(None, None, None)
