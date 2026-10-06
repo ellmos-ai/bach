@@ -22,6 +22,7 @@ Unterstützt konfigurierbare Branding-Parameter:
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -74,11 +75,19 @@ def _render_theme_css(theme_colors: dict[str, str]) -> str:
     lines = [":root {"]
     for key, val in theme_colors.items():
         var_name = key if key.startswith("--") else f"--{key}"
-        # Einfache Sanitisierung gegen CSS-Injection
-        clean_val = re.sub(r"[;}{]", "", str(val)).strip()
+        if not re.fullmatch(r"--[a-zA-Z_][a-zA-Z0-9_-]*", var_name):
+            continue
+        clean_val = str(val).strip()
+        if any(char in clean_val for char in "<>;{}"):
+            continue
         lines.append(f"  {var_name}: {clean_val};")
     lines.append("}")
     return "\n".join(lines)
+
+
+def _script_json(value: Any) -> str:
+    """Serializes a value for an inline script without allowing HTML termination."""
+    return json.dumps(str(value)).replace("<", "\\u003c")
 
 
 def render_activity_dashboard(
@@ -127,15 +136,20 @@ def render_activity_dashboard(
     # Text- & Branding-Platzhalter ersetzen
     replacements = {
         "{{ title }}": html.escape(str(cfg.get("title", ""))),
-        "{{ brand_icon }}": str(cfg.get("brand_icon", "")),
+        "{{ brand_icon }}": html.escape(str(cfg.get("brand_icon", ""))),
         "{{ brand_name }}": html.escape(str(cfg.get("brand_name", ""))),
         "{{ header_title }}": html.escape(str(cfg.get("header_title", ""))),
         "{{ subtitle }}": html.escape(str(cfg.get("subtitle", ""))),
         "{{ slot_chat_title }}": html.escape(str(cfg.get("slot_chat_title", ""))),
         "{{ slot_always_on_title }}": html.escape(str(cfg.get("slot_always_on_title", ""))),
         "{{ slot_connector_title }}": html.escape(str(cfg.get("slot_connector_title", ""))),
-        "{{ api_base }}": str(cfg.get("api_base", "")).replace("'", "\\'"),
-        "{{ token_storage_key }}": str(cfg.get("token_storage_key", "bach-control-api-token")).replace("'", "\\'"),
+        "{{ api_base_json }}": _script_json(cfg.get("api_base", "")),
+        "{{ token_storage_key_json }}": _script_json(
+            cfg.get("token_storage_key", "bach-control-api-token")
+        ),
+        "{{ slot_always_on_title_json }}": _script_json(
+            cfg.get("slot_always_on_title", "")
+        ),
     }
 
     for placeholder, value in replacements.items():

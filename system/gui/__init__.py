@@ -11,12 +11,12 @@ GUI_DIR = Path(__file__).parent
 TEMPLATES_DIR = GUI_DIR / "templates"
 STATIC_DIR = GUI_DIR / "static"
 
-from gui.activity_dashboard import (
+from .activity_dashboard import (
     DEFAULT_BRANDING,
     get_activity_dashboard_template,
     render_activity_dashboard,
 )
-from gui.board_renderers import (
+from .board_renderers import (
     DEFAULT_AGENTS_BOARD_BRANDING,
     DEFAULT_TASKS_BOARD_BRANDING,
     get_agents_board_template,

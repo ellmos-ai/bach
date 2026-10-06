@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>{{ title }}</title>
-    <script>!function(){var t=localStorage.getItem("{{ theme_storage_key }}");t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <script>!function(){var t=localStorage.getItem({{ theme_storage_key_json }});t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
     <link rel="stylesheet" href="/static/css/main.css?v=2">
     <style>
         /* THEME_OVERRIDES */
@@ -360,10 +360,10 @@
 
     <script>
         window.BOARD_CONFIG = {
-            apiBase: '{{ api_base }}',
-            tokenStorageKey: '{{ token_storage_key }}',
-            brandName: '{{ brand_name }}',
-            themeStorageKey: '{{ theme_storage_key }}'
+            apiBase: {{ api_base_json }},
+            tokenStorageKey: {{ token_storage_key_json }},
+            brandName: {{ brand_name_json }},
+            themeStorageKey: {{ theme_storage_key_json }}
         };
     </script>
     <script src="/static/js/api.js"></script>

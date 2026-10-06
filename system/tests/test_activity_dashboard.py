@@ -99,6 +99,22 @@ def test_custom_api_base():
     # Auch über das branding-Dict
     content2 = render_activity_dashboard(branding={"api_base": "/gateway/control-api"})
     assert "/gateway/control-api" in content2
+    assert "const API = _rawApiBase" in content2
+    assert "_rawApiBase.replace(/\\/+$/, '')" in content2
+
+
+def test_script_values_are_json_encoded_and_brand_icon_is_escaped():
+    content = render_activity_dashboard(
+        branding={
+            "api_base": "</script><script>window.__review_probe=1</script>",
+            "brand_icon": '<img src=x onerror="alert(1)">',
+            "slot_always_on_title": "A&B",
+        }
+    )
+    assert "</script><script>window.__review_probe" not in content
+    assert "\\u003c/script>" in content
+    assert '<span>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</span>' in content
+    assert 'const ALWAYS_ON_TITLE = "A&B";' in content
 
 
 def test_custom_nav_links():
@@ -128,12 +144,30 @@ def test_custom_theme_colors():
     assert "--accent: #6366f1;" in content
     assert "--bg-body: #0b0f19;" in content
     assert "--btn-primary: #4f46e5;" in content
+    assert ".card{background:var(--bg-card" in content
+    assert "input,select,textarea{background:var(--bg-input" in content
+    assert ".btn{background:var(--btn-primary" in content
+
+
+def test_theme_css_rejects_invalid_names_and_delimiters():
+    content = render_activity_dashboard(
+        branding={
+            "theme_colors": {
+                "accent": "#123456",
+                "bad;name": "red",
+                "probe": "</style><script>window.__review_probe=1</script>",
+            }
+        }
+    )
+    assert "--accent: #123456;" in content
+    assert "bad;name" not in content
+    assert "</style><script>window.__review_probe" not in content
 
 
 def test_custom_token_storage_key():
     """LocalStorage-Schlüssel für Control-Token muss konfigurierbar sein."""
     content = render_activity_dashboard(branding={"token_storage_key": "ellmos-admin-token"})
-    assert "const TOKEN_STORAGE_KEY = 'ellmos-admin-token';" in content
+    assert 'const TOKEN_STORAGE_KEY = "ellmos-admin-token";' in content
 
 
 class _ScriptExtractor(HTMLParser):
@@ -188,3 +222,14 @@ def test_template_missing_raises():
     import gui.activity_dashboard as ad_mod
     with patch.object(ad_mod, "TEMPLATE_PATH", Path("non_existent_file.html")), pytest.raises(FileNotFoundError):
         get_activity_dashboard_template()
+
+
+def test_system_gui_package_imports_from_repository_root():
+    result = subprocess.run(
+        [sys.executable, "-c", "import system.gui; import system.gui.activity_dashboard"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

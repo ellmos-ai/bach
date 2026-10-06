@@ -3,8 +3,10 @@
  * Zentrale Navigation mit Dropdown-Submenüs + Theme-System
  */
 
-const THEME_KEY = 'bach-theme';
-const CUSTOM_THEME_KEY = 'bach-theme-custom';
+const BOARD_CONFIG = window.BOARD_CONFIG || {};
+const THEME_KEY = BOARD_CONFIG.themeStorageKey || 'bach-theme';
+const CUSTOM_THEME_KEY = BOARD_CONFIG.customThemeStorageKey ||
+    (THEME_KEY === 'bach-theme' ? 'bach-theme-custom' : `${THEME_KEY}-custom`);
 const AVAILABLE_THEMES = ['dark', 'light', 'warm', 'custom'];
 const CUSTOM_THEME_PROPERTIES = [
     'bg_dark', 'bg_panel', 'bg_card', 'bg_elevated', 'accent',
@@ -46,8 +48,14 @@ function applyTheme(theme, custom = null) {
 }
 
 (function() {
-    applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+    const storedTheme = localStorage.getItem(THEME_KEY);
+    if (storedTheme) applyTheme(storedTheme);
 })();
+
+function themeSettingsUrl() {
+    const apiBase = String(BOARD_CONFIG.apiBase || '').replace(/\/+$/, '');
+    return apiBase ? `${apiBase}/settings/theme` : '/api/settings/theme';
+}
 
 const BACH_VERSION = "3.13.0";
 
@@ -224,7 +232,7 @@ function initNavigation() {
 
 async function saveThemePreference(theme, custom) {
     try {
-        const response = await fetch('/api/settings/theme', {
+        const response = await fetch(themeSettingsUrl(), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ theme, custom: custom || undefined })
@@ -277,7 +285,7 @@ function setTheme(theme, custom = null) {
 
 async function loadThemePreference() {
     try {
-        const response = await fetch('/api/settings/theme');
+        const response = await fetch(themeSettingsUrl());
         if (!response.ok) return null;
         const data = await response.json();
         if (!data.success) return null;

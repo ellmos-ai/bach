@@ -40,8 +40,8 @@ def test_default_agents_board_rendering():
     assert "<title>BACH - Agents Board</title>" in html_out
     assert 'localStorage.getItem("bach-theme")' in html_out
     assert "window.BOARD_CONFIG" in html_out
-    assert "brandName: 'BACH'" in html_out
-    assert "tokenStorageKey: 'bach-token'" in html_out
+    assert 'brandName: "BACH"' in html_out
+    assert 'tokenStorageKey: "bach-token"' in html_out
     assert "<h2>Agents Board</h2>" in html_out
     assert '<span class="icon">🎯</span>' in html_out
     assert 'src="/static/js/skills-board.js"' in html_out
@@ -64,15 +64,18 @@ def test_custom_agents_board_rendering():
     html_out = render_agents_board(branding=custom_branding, api_base="/gateway/control-api")
     assert "<title>OCEAN - Agents Hub</title>" in html_out
     assert 'localStorage.getItem("ocean-theme")' in html_out
-    assert "brandName: 'OCEAN'" in html_out
-    assert "tokenStorageKey: 'ocean-token'" in html_out
-    assert "apiBase: '/gateway/control-api'" in html_out
+    assert 'brandName: "OCEAN"' in html_out
+    assert 'tokenStorageKey: "ocean-token"' in html_out
+    assert 'apiBase: "/gateway/control-api"' in html_out
     assert "<h2>OCEAN Global Agents</h2>" in html_out
     assert '<span class="icon">🌊</span>' in html_out
     assert "--accent: #00e5ff;" in html_out
     assert "--bg-card: #0d1b2a;" in html_out
     assert 'href="/ocean/home"' in html_out
     assert "OCEAN Home" in html_out
+    assert "const THEME_KEY = BOARD_CONFIG.themeStorageKey || 'bach-theme';" in (
+        SYSTEM_ROOT / "gui" / "static" / "js" / "nav.js"
+    ).read_text(encoding="utf-8")
 
 
 def test_default_tasks_board_rendering():
@@ -83,8 +86,8 @@ def test_default_tasks_board_rendering():
     assert "<title>BACH - Tasks Board</title>" in html_out
     assert 'localStorage.getItem("bach-theme")' in html_out
     assert "window.BOARD_CONFIG" in html_out
-    assert "brandName: 'BACH'" in html_out
-    assert "tokenStorageKey: 'bach-token'" in html_out
+    assert 'brandName: "BACH"' in html_out
+    assert 'tokenStorageKey: "bach-token"' in html_out
     assert "<h1>Task Management Board</h1>" in html_out
     assert 'src="/static/js/api.js"' in html_out
 
@@ -106,14 +109,48 @@ def test_custom_tasks_board_rendering():
     html_out = render_tasks_board(branding=custom_branding, api_base="/remote/api")
     assert "<title>Unified GUI - Tasks</title>" in html_out
     assert 'localStorage.getItem("unified-theme")' in html_out
-    assert "brandName: 'Unified'" in html_out
-    assert "tokenStorageKey: 'unified-token'" in html_out
-    assert "apiBase: '/remote/api'" in html_out
+    assert 'brandName: "Unified"' in html_out
+    assert 'tokenStorageKey: "unified-token"' in html_out
+    assert 'apiBase: "/remote/api"' in html_out
     assert "<h1>Agile Kanban Board</h1>" in html_out
     assert "--primary: #3a86ff;" in html_out
     assert 'src="/custom_assets/js/api.js"' in html_out
     assert 'href="/panels"' in html_out
     assert "Back to Panels" in html_out
+
+
+def test_board_rendering_escapes_branding_and_script_values():
+    html_out = render_agents_board(
+        branding={
+            "brand_icon": '<img src=x onerror="alert(1)">',
+            "brand_name": "</script><script>window.__review_probe=1</script>",
+            "api_base": "</script><script>window.__review_probe=1</script>",
+            "theme_colors": {
+                "valid-name": "#123456",
+                "bad;name": "red",
+                "probe": "</style><script>window.__review_probe=1</script>",
+            },
+        }
+    )
+    assert '<span class="icon">&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</span>' in html_out
+    assert "</script><script>window.__review_probe" not in html_out
+    assert "\\u003c/script>" in html_out
+    assert "--valid-name: #123456;" in html_out
+
+
+def test_empty_navigation_list_removes_board_header():
+    html_out = render_agents_board(branding={"nav_links": []})
+    assert '<header class="main-header" id="main-header"></header>' not in html_out
+    assert "BACH v" not in html_out
+
+
+def test_theme_helpers_use_board_configuration():
+    nav_js = (SYSTEM_ROOT / "gui" / "static" / "js" / "nav.js").read_text(
+        encoding="utf-8"
+    )
+    assert "const THEME_KEY = BOARD_CONFIG.themeStorageKey || 'bach-theme';" in nav_js
+    assert "fetch(themeSettingsUrl()" in nav_js
+    assert "`${apiBase}/settings/theme`" in nav_js
 
 
 def test_template_missing_errors():
@@ -174,3 +211,48 @@ def test_fastapi_board_endpoints():
     assert resp_tasks.status_code == 200
     assert "<title>BACH - Tasks Board</title>" in resp_tasks.text
     assert "window.BOARD_CONFIG" in resp_tasks.text
+
+
+def test_skills_template_fallback_is_rendered_with_default_branding(tmp_path, monkeypatch):
+    from gui import board_renderers
+    from gui import server as server_module
+    from starlette.testclient import TestClient
+
+    (tmp_path / "skills-board.html").write_text(
+        get_agents_board_template(), encoding="utf-8"
+    )
+    monkeypatch.setattr(server_module, "TEMPLATES_DIR", tmp_path)
+    monkeypatch.setattr(
+        board_renderers,
+        "render_agents_board",
+        lambda: (_ for _ in ()).throw(RuntimeError("renderer unavailable")),
+    )
+    response = TestClient(server_module.app).get("/skills-board")
+    assert response.status_code == 200
+    assert "<title>BACH - Agents Board</title>" in response.text
+    assert "{{ api_base }}" not in response.text
+
+
+def test_board_rendering_failure_does_not_serve_unresolved_template(
+    tmp_path, monkeypatch
+):
+    from gui import board_renderers
+    from gui import server as server_module
+    from starlette.testclient import TestClient
+
+    (tmp_path / "tasks_board.html").write_text(
+        get_tasks_board_template(), encoding="utf-8"
+    )
+    monkeypatch.setattr(server_module, "TEMPLATES_DIR", tmp_path)
+    monkeypatch.setattr(
+        board_renderers,
+        "render_tasks_board",
+        lambda: (_ for _ in ()).throw(RuntimeError("renderer unavailable")),
+    )
+    monkeypatch.setattr(
+        board_renderers,
+        "_apply_common_replacements",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fallback failed")),
+    )
+    response = TestClient(server_module.app).get("/tasks-board")
+    assert response.status_code == 500

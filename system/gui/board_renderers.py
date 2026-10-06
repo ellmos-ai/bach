@@ -24,6 +24,7 @@ Unterstützt konfigurierbare Parameter:
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -103,10 +104,19 @@ def _render_theme_css(theme_colors: dict[str, str]) -> str:
     lines = [":root {"]
     for key, val in theme_colors.items():
         var_name = key if key.startswith("--") else f"--{key}"
-        clean_val = re.sub(r"[;}{]", "", str(val)).strip()
+        if not re.fullmatch(r"--[a-zA-Z_][a-zA-Z0-9_-]*", var_name):
+            continue
+        clean_val = str(val).strip()
+        if any(char in clean_val for char in "<>;{}"):
+            continue
         lines.append(f"  {var_name}: {clean_val};")
     lines.append("}")
     return "\n".join(lines)
+
+
+def _script_json(value: Any) -> str:
+    """Serializes a value for an inline script without allowing HTML termination."""
+    return json.dumps(str(value)).replace("<", "\\u003c")
 
 
 def _apply_common_replacements(
@@ -120,8 +130,8 @@ def _apply_common_replacements(
 
     # Navigationslinks ersetzen (falls explizit übergeben)
     nav_links = cfg.get("nav_links")
-    if isinstance(nav_links, list) and nav_links:
-        nav_html = _render_nav_links(nav_links)
+    if isinstance(nav_links, list):
+        nav_html = _render_nav_links(nav_links) if nav_links else ""
         nav_pattern = re.compile(
             r"<!--\s*NAV_LINKS_START\s*-->.*?<!--\s*NAV_LINKS_END\s*-->",
             re.DOTALL,
@@ -147,15 +157,16 @@ def _apply_common_replacements(
     replacements = {
         "{{ title }}": html.escape(str(cfg.get("title", ""))),
         "{{ brand_name }}": html.escape(str(cfg.get("brand_name", ""))),
-        "{{ brand_icon }}": str(cfg.get("brand_icon", "")),
+        "{{ brand_icon }}": html.escape(str(cfg.get("brand_icon", ""))),
         "{{ header_title }}": html.escape(str(cfg.get("header_title", ""))),
-        "{{ theme_storage_key }}": str(
+        "{{ theme_storage_key_json }}": _script_json(
             cfg.get("theme_storage_key", "bach-theme")
-        ).replace("'", "\\'"),
-        "{{ token_storage_key }}": str(
+        ),
+        "{{ token_storage_key_json }}": _script_json(
             cfg.get("token_storage_key", "bach-token")
-        ).replace("'", "\\'"),
-        "{{ api_base }}": str(cfg.get("api_base", "")).replace("'", "\\'"),
+        ),
+        "{{ brand_name_json }}": _script_json(cfg.get("brand_name", "")),
+        "{{ api_base_json }}": _script_json(cfg.get("api_base", "")),
     }
 
     for placeholder, value in replacements.items():
