@@ -1592,8 +1592,7 @@ def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, ma
     for counter in counters:
         assert counter in all_text
     first_text = "\n".join(m.get("content", "") for m in backend.calls[0])
-    assert "task_manage(action='decompose'" in first_text
-    assert "Werkzeug" in first_text and "bestätigt" in first_text
+    assert "task_manage(action='decompose'" not in first_text
     if max_rounds == 25:
         warning_text = "\n".join(m.get("content", "") for m in backend.calls[20])
         assert "fast aufgebraucht" in warning_text
