@@ -162,6 +162,8 @@ def test_core_running_receipts_use_actual_binding_and_disable_actions(core_file,
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     control = importlib.import_module("hub._services.chat.telegram_chat")
     ctrl = control._WorkerControl(CORE)
+    # This fixture models an API worker after its backend capability was admitted.
+    ctrl.supports_step_actions = True
     ctrl.thread = type("Alive", (), {"is_alive": lambda self: True})()
     mem_db.execute("INSERT INTO tasks (id,title,status) VALUES (42,'Core running','pending')")
     mem_db.commit()
