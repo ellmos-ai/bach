@@ -607,7 +607,10 @@ class BACHTray:
                 or slot.get("enabled") is not True):
             return False
         pause = slot.get("pause_info")
-        return isinstance(pause, dict) and pause.get("is_paused") is False
+        # Unattended pickup is local only. Cloud starts require a user action.
+        return (slot.get("backend") in {"ollama", "lmstudio"}
+                and ":cloud" not in str(slot.get("model") or "").lower()
+                and isinstance(pause, dict) and pause.get("is_paused") is False)
 
     def _idle_tick(self):
         if self.remote or self.idle_processing:

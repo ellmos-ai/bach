@@ -13,10 +13,12 @@ Manages configuration and live metadata for:
 from __future__ import annotations
 
 import hashlib
+import base64
 import inspect
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -123,6 +125,15 @@ WICHTIGSTE REGELN:
 """
 
 DEFAULT_ROLE_PROMPTS: dict[str, str] = {
+    "personal-assistant": (
+        "Du bist der persönliche Assistent. Unterstütze den Nutzer bei Planung, Recherche und Umsetzung. "
+        "Erstelle bei Bedarf eigene Agentenvorlagen, Skills und klar abgegrenzte Aufgaben. "
+        "Neue Agenten werden zunächst als Living konfiguriert; Cloud-Ausführung benötigt einen ausdrücklichen Nutzerstart."
+    ),
+    "connector": (
+        "Du bist der Kommunikationsassistent. Bearbeite den aktuellen Dialog und koordiniere die angebundenen Kanäle. "
+        "Versende Nachrichten an Dritte nur mit ausdrücklicher Nutzerautorisierung."
+    ),
     "hintergrund_worker": (
         "Du agierst als autonomer Hintergrundworker für das BACH-System.\n"
         "Deine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\n"
@@ -201,6 +212,62 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Schwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
     ),
 }
+
+# Roles are configuration, not evidence of a running process.
+for _core_id, _core_defaults in DEFAULT_CORE_SLOTS.items():
+    _core_defaults.setdefault("enabled", True)
+    _core_defaults.setdefault("include_system_prompt", True)
+    _core_defaults.setdefault("custom_system_prompt", "")
+    _core_defaults.setdefault("custom_role_prompt", "")
+    _core_defaults.setdefault("allow_tools", True)
+    _core_defaults.setdefault("avatar", "")
+    _core_defaults.setdefault("role_id", {
+        "buddha_chat": "personal-assistant", "buddha_connector": "connector",
+        "buddha_always_on": "hintergrund_worker",
+    }[_core_id])
+    _core_defaults.setdefault("sub_mode", "task_worker" if _core_id == "buddha_always_on" else "expert_role")
+
+SYSTEM_SLOT_PRESETS = {
+    "boss": {"name": "Boss · Koordination", "role_id": "boss_routing", "sub_mode": "boss_routing", "icon": "🧭"},
+    "developer": {"name": "Experte · Entwicklung", "role_id": "entwickler", "icon": "🛠️"},
+    "research": {"name": "Experte · Recherche", "role_id": "recherche", "icon": "🔎"},
+    "assistant": {"name": "Persönlicher Assistent", "role_id": "personal-assistant", "icon": "💬"},
+}
+
+
+def validate_agent_avatar(value: Any) -> str:
+    if value == "":
+        return ""
+    if not isinstance(value, str) or len(value) > 240_000:
+        raise ValueError("Agentenbild ist zu groß")
+    match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)", value)
+    if not match:
+        raise ValueError("Agentenbild muss PNG, JPEG oder WebP sein")
+    try:
+        raw = base64.b64decode(match[2], validate=True)
+    except ValueError as exc:
+        raise ValueError("Agentenbild ist ungültig") from exc
+    valid = {"png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+             "jpeg": raw.startswith(b"\xff\xd8\xff"),
+             "webp": raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"}
+    if len(raw) > 180_000 or not valid[match[1]]:
+        raise ValueError("Agentenbild hat kein gültiges Bildformat")
+    return value
+
+
+def get_system_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
+    config = load_slots_config(path, strict=True)
+    slot = config["slots"].get(slot_id)
+    if not isinstance(slot, dict) or slot.get("id") != slot_id:
+        return {}
+    if slot_id not in DEFAULT_CORE_SLOTS and slot.get("system") is not True:
+        return {}
+    return {**DEFAULT_CORE_SLOTS.get(slot_id, {}), **slot}
+
+
+def system_slot_chat_id(chat_id: str) -> str | None:
+    match = re.fullmatch(r"(?:agent:[1-9][0-9]*:)?slot:([A-Za-z0-9_-]{1,80}):[a-f0-9]{32}", str(chat_id))
+    return match[1] if match else None
 
 
 def _resolve_path(path: str | None = None) -> Path:
@@ -331,6 +398,8 @@ def is_slot_paused(slot: dict[str, Any]) -> bool:
 def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
     """Enforce task model and slot binding even when pickup filtering is off."""
     slot = slot or {}
+    if slot.get("require_assigned_slot") is True and task.get("assigned_slot") != slot.get("id"):
+        return False
     for task_key, slot_key in (("required_model", "model"), ("assigned_slot", "id")):
         required = str(task.get(task_key) or "").strip().casefold()
         if required and required != str(slot.get(slot_key) or "").strip().casefold():
@@ -568,7 +637,8 @@ CORE_SYSTEM_AGENT_ICONS = {
 CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
-    "enabled",
+    "enabled", "description", "include_system_prompt", "custom_system_prompt",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -584,17 +654,37 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
     if any(not isinstance(slots.get(slot_id), dict) for slot_id in CORE_SYSTEM_AGENT_IDS):
         raise ValueError("Mindestens eine feste System-Agenten-ID fehlt")
     version = hashlib.sha256(raw).hexdigest()
+    prompts = config.get("prompts", {})
+    if not isinstance(prompts, dict) or any(not isinstance(value, str) for value in prompts.values()):
+        raise ValueError("Promptkonfiguration ist ungültig")
     public_slots = []
-    for slot_id in CORE_SYSTEM_AGENT_IDS:
+    system_ids = list(CORE_SYSTEM_AGENT_IDS) + [
+        key for key, value in slots.items()
+        if key not in CORE_SYSTEM_AGENT_IDS and isinstance(value, dict) and value.get("system") is True
+    ]
+    for slot_id in system_ids:
         slot = slots[slot_id]
-        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        if slot.get("id") != slot_id:
+            raise ValueError("System-Steckplatz-ID stimmt nicht überein")
+        defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
         pause_info = get_slot_pause_info(slot)
         public_slots.append({
             "id": slot_id,
             "system": True,
-            "deletable": False,
+            "deletable": slot_id not in CORE_SYSTEM_AGENT_IDS,
             "name": slot.get("name", defaults["name"]),
-            "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS[slot_id]),
+            "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")),
+            "avatar": slot.get("avatar", ""),
+            "description": slot.get("description", defaults["description"]),
+            "execution_kind": ("worker" if slot_id == "buddha_always_on" else
+                               "connector" if slot_id == "buddha_connector" else
+                               slot.get("execution_kind", "chat")),
+            "include_system_prompt": slot.get("include_system_prompt", True),
+            "custom_system_prompt": slot.get("custom_system_prompt", ""),
+            "custom_role_prompt": slot.get("custom_role_prompt", ""),
+            "role_id": slot.get("role_id", defaults["role_id"]),
+            "sub_mode": slot.get("sub_mode", defaults["sub_mode"]),
+            "allow_tools": slot.get("allow_tools", True),
             "backend": slot.get("backend"),
             "model": slot.get("model"),
             "resolved_model": slot.get("resolved_model") or "",
@@ -619,6 +709,13 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         "updated_at": config.get("updated_at"),
         "agents": public_slots,
         "supported_backend_ids": sorted(CORE_KNOWN_BACKENDS),
+        "role_ids": list(DEFAULT_ROLE_PROMPTS),
+        "slot_presets": SYSTEM_SLOT_PRESETS,
+        "prompt_templates": {
+            "system_default": prompts.get("system_default", DEFAULT_SYSTEM_PROMPT),
+            "roles": {role: prompts.get("role_" + role, text)
+                      for role, text in DEFAULT_ROLE_PROMPTS.items()},
+        },
     }
 
 
@@ -633,7 +730,18 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
     result: dict[str, Any] = {}
     for field, value in changes.items():
-        if field in {"name", "icon", "backend", "model", "mode"}:
+        if field == "avatar":
+            value = validate_agent_avatar(value)
+        elif field in {"description", "custom_system_prompt", "custom_role_prompt"}:
+            if not isinstance(value, str) or len(value) > 20000 or "\x00" in value:
+                raise ValueError(f"{field} enthält ungültigen Text")
+        elif field == "role_id":
+            if value not in DEFAULT_ROLE_PROMPTS:
+                raise ValueError("Unbekannte Rollen-ID")
+        elif field == "sub_mode":
+            if value not in {"expert_role", "boss_routing", "task_worker", "hintergrund_worker"}:
+                raise ValueError("Unbekannter Rollenmodus")
+        elif field in {"name", "icon", "backend", "model", "mode"}:
             limit = 8 if field == "icon" else 120
             if (not isinstance(value, str) or not value.strip()
                     or len(value) > limit or any(ord(c) < 32 for c in value)):
@@ -643,7 +751,7 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
-        elif field in {"think", "enabled"}:
+        elif field in {"think", "enabled", "include_system_prompt", "allow_tools"}:
             if not isinstance(value, bool):
                 raise ValueError(f"{field} muss wahr oder falsch sein")
         elif field == "pause_basis":
@@ -664,7 +772,7 @@ def change_core_system_agent(
     *, reset: bool = False, path: str | None = None,
 ) -> dict[str, Any]:
     """Atomically update existing Core config only; never start a worker."""
-    if slot_id not in CORE_SYSTEM_AGENT_IDS:
+    if not get_system_slot(slot_id, path):
         raise KeyError("Unbekannte System-Agenten-ID")
     target = _resolve_path(path)
     raw = target.read_bytes()
@@ -676,14 +784,50 @@ def change_core_system_agent(
     if reset:
         if changes:
             raise ValueError("Reset akzeptiert keine gleichzeitigen Änderungen")
-        defaults = DEFAULT_CORE_SLOTS[slot_id]
+        defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
         updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
-        updates["icon"] = CORE_SYSTEM_AGENT_ICONS[slot_id]
+        updates["icon"] = CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")
     else:
         updates = _validated_core_edits(changes)
     slot.update(updates)
     save_slots_config(config, path)
     return core_system_agents_snapshot(path)
+
+
+@_serialized_mutation
+def create_system_slot(changes: dict[str, Any], expected_version: str, *,
+                       preset: str = "assistant", path: str | None = None) -> dict[str, Any]:
+    target = _resolve_path(path)
+    raw = target.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    if preset not in SYSTEM_SLOT_PRESETS:
+        raise ValueError("Unbekannte Steckplatzvorlage")
+    config = json.loads(raw.decode("utf-8"))
+    _core_snapshot_from_bytes(raw)
+    template = SYSTEM_SLOT_PRESETS[preset]
+    core = {**DEFAULT_CORE_SLOTS["buddha_chat"], **template,
+            "id": "system-" + uuid.uuid4().hex[:12], "system": True,
+            "type": "continuous", "execution_kind": "worker", "status": "idle",
+            "enabled": True, "sub_mode": template.get("sub_mode", "expert_role"), "require_assigned_slot": True,
+            "current_activity": "", "chat_id": "", "category": "all"}
+    core.update(_validated_core_edits(changes) if changes else {})
+    config["slots"][core["id"]] = core
+    save_slots_config(config, path)
+    return {"slot_id": core["id"], **core_system_agents_snapshot(path)}
+
+
+@_serialized_mutation
+def delete_system_slot(slot_id: str, expected_version: str, path: str | None = None) -> bool:
+    if slot_id in CORE_SYSTEM_AGENT_IDS or not get_system_slot(slot_id, path):
+        raise ValueError("Dieser Systemsteckplatz kann nicht gelöscht werden")
+    raw = _resolve_path(path).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    del config["slots"][slot_id]
+    save_slots_config(config, path)
+    return True
 
 
 def _core_prompt_definitions() -> dict[str, str]:
@@ -895,10 +1039,15 @@ def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) 
 
     # 1. System Default Prompt (if checkbox checked)
     if include_sys:
-        parts.append(sys_default_text.strip())
+        parts.append((custom_sys or sys_default_text).strip() if
+                     worker_dict.get("system") or worker_dict.get("id") in DEFAULT_CORE_SLOTS
+                     else sys_default_text.strip())
 
     # 2. Role Instruction
-    if sub_mode == "hintergrund_worker":
+    custom_role = str(worker_dict.get("custom_role_prompt") or "").strip()
+    if custom_role:
+        parts.append(f"--- ROLLE: {role_id or sub_mode} ---\n{custom_role}")
+    elif sub_mode == "hintergrund_worker":
         hw = role_templates.get("hintergrund_worker", {}).get("text", DEFAULT_ROLE_PROMPTS["hintergrund_worker"])
         parts.append(f"--- ROLLE: HINTERGRUNDWORKER ---\n{hw}")
 
@@ -927,7 +1076,8 @@ def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) 
         parts.append(f"--- ROLLE: TASK-WORKER ---\n{tw}")
 
     # 3. Custom addition or override
-    if custom_sys and custom_sys not in parts:
+    if custom_sys and custom_sys not in parts and not (
+            worker_dict.get("system") or worker_dict.get("id") in DEFAULT_CORE_SLOTS):
         parts.append(f"--- ZUSATZ-INSTRUKTION ---\n{custom_sys}")
 
     # 4. User Task Prompt

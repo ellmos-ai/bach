@@ -200,6 +200,7 @@ class _WorkerControl:
     worker_thread_started: bool = False
     start_error: Optional[str] = None
     admitted_worker: Optional[Dict[str, Any]] = None
+    slot_policy_reader: Any = None
     stop_status: Optional[str] = None
     stop_activity: str = "Manuell gestoppt"
     requested_at: Optional[str] = None
@@ -291,20 +292,25 @@ def _native_task_client():
 def _execution_worker_slot(worker_id: str) -> dict:
     if worker_id == "buddha_always_on":
         return get_always_on_execution_slot()
+    from hub._services.chat.slots_config import get_system_slot
+    system_slot = get_system_slot(worker_id)
+    if system_slot and system_slot.get("execution_kind") == "worker":
+        return {**system_slot, "type": "continuous", "system": True}
     return get_worker_slot(worker_id)
 
 
 def _execution_worker_configuration(slot: dict):
     configuration = _worker_configuration(slot)
-    if slot.get("id") == "buddha_always_on":
+    if slot.get("id") == "buddha_always_on" or slot.get("system"):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
-            ("enabled", "category", "pickup_filter", "workdir", "type")}}
+            ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
+             "custom_system_prompt", "custom_role_prompt", "role_id", "sub_mode")}}
     return configuration
 
 
 def _execution_slot_reader(slot: dict):
     worker_id = slot["id"]
-    if worker_id != "buddha_always_on":
+    if worker_id != "buddha_always_on" and not slot.get("system"):
         return lambda: _execution_worker_slot(worker_id)
 
     def policy(current):
@@ -317,7 +323,7 @@ def _execution_slot_reader(slot: dict):
     def read():
         current = _execution_worker_slot(worker_id)
         if policy(current) != admitted:
-            raise RuntimeError("Always-On-Konfiguration wurde während des Blocks geändert")
+            raise RuntimeError("Worker-Konfiguration wurde seit dem Start geändert; neuer Start erforderlich")
         return current
     return read
 
@@ -333,7 +339,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
     return WorkerLeaseBinding.acquire_next(
         _native_task_client(), slot, worker_id=f"{physical_worker_id}@{host}", host=host,
         generation=control.generation, is_current=is_current, stop_event=control.stop_event,
-        policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" else None,
+        policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
     )
 
 
@@ -429,10 +435,66 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
 def _worker_execution_snapshots() -> list[dict]:
     active = _active_worker_ids()
     workers = list_workers(include_expired=True, active_worker_ids=active)
-    if "buddha_always_on" in active:
-        workers.append({**_execution_worker_slot("buddha_always_on"),
-                        "system": True, "deletable": False})
+    from hub._services.chat.slots_config import core_system_agents_snapshot
+    try:
+        system_agents = core_system_agents_snapshot()["agents"]
+    except (OSError, ValueError, TypeError):
+        system_agents = []
+    for agent in system_agents:
+        if agent["execution_kind"] == "worker":
+            workers.append({**_execution_worker_slot(agent["id"]),
+                            "system": True, "deletable": agent["deletable"]})
     return [_worker_handoff_snapshot(worker) for worker in workers]
+
+
+def _system_slots_snapshot() -> dict:
+    """Configuration plus live controller/turn evidence; no provider is started."""
+    from hub._services.chat.slots_config import core_system_agents_snapshot, system_slot_chat_id
+    result = core_system_agents_snapshot()
+    with _runtime_state_lock:
+        sessions = list(runtime.sessions.items())
+    with runtime._chat_turn_gates_lock:
+        gates = dict(runtime._chat_turn_gates)
+    system_ids = {agent["id"] for agent in result["agents"]}
+    for agent in result["agents"]:
+        slot_id = agent["id"]
+        running_sessions = []
+        for chat_id, session in sessions:
+            mapped = (getattr(session, "system_slot_id", None) or system_slot_chat_id(chat_id))
+            if mapped is None:
+                if chat_id in system_ids:
+                    mapped = chat_id
+                elif str(chat_id).startswith("worker-"):
+                    continue
+                else:
+                    mapped = "buddha_connector" if str(chat_id).isdigit() or str(chat_id).startswith(
+                    ("tg:", "telegram", "wa:", "whatsapp", "signal:")) else "buddha_chat"
+            gate = gates.get(str(chat_id))
+            if mapped == slot_id and gate is not None:
+                with gate.condition:
+                    if gate.active_turns > 0:
+                        running_sessions.append(session)
+        with _WORKER_CONTROL_LOCK:
+            control = _WORKER_CONTROLS.get(slot_id)
+            execution = (worker_execution_receipt(slot_id, control.start_request_id)
+                         if control else None)
+            binding = getattr(control, "task_binding", None)
+            task_active = (control is not None and _thread_is_alive(control.thread)
+                           and binding is not None and not binding.closed)
+            task_id = binding.task_id if task_active else None
+        active_session = running_sessions[0] if running_sessions else None
+        agent.update({"runtime_verified": True, "living": agent["enabled"],
+                      "running": bool(task_active or running_sessions),
+                      "task_id": task_id, "execution": execution,
+                      "current_tool": getattr(active_session, "current_tool", ""),
+                      "tool_round": getattr(active_session, "tool_round", 0),
+                      "runtime_reason_code": "live_controller",
+                       "status": ("stopping" if execution and execution["state"] == "stopping" else
+                                  "starting" if execution and execution["state"] == "starting" else
+                                 "running" if task_active or running_sessions else
+                                 "paused" if not agent["enabled"] or agent["pause_info"]["is_paused"] else "ready")})
+    result["service_instance"] = _WORKER_SERVICE_INSTANCE
+    return result
 
 
 def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
@@ -957,7 +1019,7 @@ def _patched_get_session(chat_id: str):
     with _runtime_state_lock:
         session = _orig_get_session(chat_id)
         normalized = str(chat_id or "")
-        if (normalized == "buddha_always_on" and getattr(session, "require_task_binding", False)
+        if (getattr(session, "require_task_binding", False)
                 and _WORKER_CONTROLS.get(normalized) is not None):
             # Keep the current controller's policy reader through process().
             return session
@@ -1294,6 +1356,15 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
         cfg = {}
     slots = cfg.get("slots", {})
     str_id = str(chat_id)
+    from hub._services.chat.slots_config import get_system_slot, system_slot_chat_id
+    selected_id = system_slot_chat_id(str_id)
+    if str_id.startswith("slot:") and selected_id is None:
+        raise WorkerBindingError("Ungültige System-Steckplatz-Chat-ID")
+    if selected_id or str_id in slots:
+        selected = get_system_slot(selected_id or str_id)
+        if not selected or selected.get("enabled", True) is not True:
+            raise WorkerBindingError("Systemsteckplatz ist ausgeschaltet oder nicht verfügbar")
+        return selected
 
     # 1. Check dynamic workers by canonical ID only. Display names are not
     # routing keys: duplicate names must remain unambiguous.
@@ -1344,6 +1415,8 @@ def _registered_worker_slot(worker_id: str) -> Optional[dict]:
 
 def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = None) -> tuple[Any, str]:
     slot = slot if slot is not None else _resolve_slot_for_chat(chat_id)
+    if slot.get("enabled", True) is not True:
+        raise WorkerBindingError("Steckplatz ist ausgeschaltet")
     slot_backend_type = slot.get("backend") or "ollama"
     slot_model = slot.get("model") or ""
 
@@ -1363,7 +1436,16 @@ def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = No
         session.allow_tools = slot["allow_tools"] is True
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
-    if slot.get("system_prompt"):
+    from hub._services.chat.slots_config import compose_worker_prompt, get_system_slot, system_slot_chat_id
+    system_id = system_slot_chat_id(chat_id)
+    if system_id or slot.get("id") in DEFAULT_CORE_SLOTS or slot.get("system"):
+        session.custom_system_prompt = compose_worker_prompt(slot)
+        if system_id or slot.get("id") in {"buddha_chat", "buddha_connector"}:
+            session.system_slot_id = slot["id"]
+            session.system_slot_reader = lambda: get_system_slot(slot["id"])
+            from hub._services.chat.slots_config import CORE_EDITABLE_FIELDS
+            session.system_slot_configuration = {key: slot.get(key) for key in CORE_EDITABLE_FIELDS if key != "enabled"}
+    elif slot.get("system_prompt"):
         session.custom_system_prompt = slot["system_prompt"]
 
     return target_backend, session.model
@@ -2567,24 +2649,67 @@ def _get_session_model(chat_id: str) -> str:
         return configured_default or runtime.backend.get_default_model()
 
 
-def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
+def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None, read_only: bool = False):
     with _runtime_state_lock:
         normalized = str(chat_id or "")
         registered_worker = _registered_worker_slot(normalized)
+        from hub._services.chat.slots_config import system_slot_chat_id
+        selected_system_id = system_slot_chat_id(normalized)
         from hub._services.chat.agent_profile_context import profile_chat_id_agent
-        if profile_chat_id_agent(normalized) is not None:
-            if registered_worker is not None or _execution_worker_slot(normalized) is not None:
+        profile_chat = profile_chat_id_agent(normalized) is not None
+        if profile_chat:
+            collision = _execution_worker_slot(normalized)
+            if registered_worker is not None or isinstance(collision, dict) and collision.get("id") == normalized:
                 raise ValueError("Profil-Chat-ID ist bereits als Worker-Slot gebunden")
             if runtime.session_store is None:
                 raise ValueError("Profilstore fehlt")
-            if runtime.session_store.load_state(chat_id)["binding"] is None:
-                return runtime.backend, (_global_defaults.get("model") or runtime.backend.get_default_model())
+            runtime.session_store.load_state(chat_id)
         if (
             _is_strict_worker_id(normalized)
             and registered_worker is None
             and not _legacy_worker_binding_active(normalized)
         ):
             _resolve_slot_for_chat(normalized)
+        if not read_only:
+            with runtime._chat_turn_gates_lock:
+                gate = runtime._chat_turn_gates.get(normalized)
+            if gate is not None:
+                with gate.condition:
+                    active = gate.active_turns > 0
+                if active:
+                    session = runtime.sessions.get(normalized)
+                    if session is None or getattr(session, "backend", None) is None:
+                        raise WorkerBindingError("Aktive Turn-Konfiguration fehlt")
+                    problem = ChatRuntime._worker_backend_gate(session, session.backend, session.model)
+                    if problem is not None:
+                        raise WorkerBindingError(str(problem))
+                    return session.backend, session.model
+        if profile_chat:
+            # New and restored profile sessions are bound by process() first.
+            # Preparing a slot prompt here would precede verified profile text.
+            if selected_system_id:
+                selected = _resolve_slot_for_chat(normalized)
+                return _get_or_create_backend(selected["backend"], selected["model"]), selected["model"]
+            return runtime.backend, _get_session_model(chat_id)
+        if read_only:
+            # Readiness polls may run while an admitted turn waits for compute.
+            # Resolve availability without creating or reconfiguring its session.
+            selected_worker = worker_slot if worker_slot is not None else _execution_worker_slot(normalized)
+            if worker_slot is not None and (not isinstance(worker_slot, dict) or worker_slot.get("id") != normalized):
+                raise WorkerBindingError("Worker-Slot fehlt oder stimmt nicht überein")
+            dedicated = (registered_worker is not None or selected_system_id is not None
+                         or normalized in DEFAULT_CORE_SLOTS or normalized.startswith("slot:")
+                         or normalized.isdigit() or normalized.startswith(
+                             ("idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:")))
+            if isinstance(selected_worker, dict) and selected_worker.get("id") == normalized:
+                selected = selected_worker
+            elif dedicated:
+                selected = _resolve_slot_for_chat(normalized)
+            else:
+                return runtime.backend, _get_session_model(chat_id)
+            if selected.get("enabled", True) is not True:
+                raise WorkerBindingError("Systemsteckplatz ist ausgeschaltet oder nicht verfügbar")
+            return _get_or_create_backend(selected["backend"], selected["model"]), selected["model"]
         session = runtime.get_session(chat_id)
         if worker_slot is None and registered_worker is not None:
             worker_slot = registered_worker
@@ -2614,6 +2739,9 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
         uses_dedicated_slot = (
             is_dynamic_worker
             or registered_worker is not None
+            or normalized in DEFAULT_CORE_SLOTS
+            or normalized.startswith("slot:")
+            or selected_system_id is not None
             or normalized.isdigit()
             or normalized.startswith((
                 "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
@@ -2633,6 +2761,9 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None):
                 is_dynamic_worker
                 or registered_worker is not None
                 or _is_strict_worker_id(normalized)
+                or normalized in DEFAULT_CORE_SLOTS
+                or normalized.startswith("slot:")
+                or selected_system_id is not None
             ) and not _legacy_worker_binding_active(normalized):
                 raise
             return runtime.backend, _get_session_model(chat_id)
@@ -2993,7 +3124,8 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
         if slot.get("enabled", True) is not True:
             return rejected({"error": "Worker ist deaktiviert"}, 403)
         control = _WorkerControl(worker_id, start_request_id=request_id,
-                                 admitted_worker={"id": worker_id, "type": slot.get("type")})
+                                 admitted_worker={"id": worker_id, "type": slot.get("type")},
+                                 slot_policy_reader=_execution_slot_reader(slot))
         control.admission_handle = _WorkerAdmission()
         control.admission_pending = True
         control.thread = control.admission_handle
@@ -3025,6 +3157,9 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
 
 def _start_reserved_worker_execution(control, w, custom_prompt):
     worker_id = control.worker_id
+    # Admission fixes the provider and execution policy for this generation.
+    # A later edit requires an explicit new start, including while no task exists.
+    control.slot_policy_reader()
 
     # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
     # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
@@ -3115,7 +3250,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 run_count += 1
 
                 # Worker-State prüfen: wurde er pausiert oder gelöscht?
-                current_slot = _execution_worker_slot(worker_id)
+                current_slot = control.slot_policy_reader()
                 if current_slot and current_slot.get("enabled", True) is not True:
                     _update_worker_slot(control, {"status": "idle", "current_activity": "Worker ist deaktiviert"})
                     break
@@ -3191,6 +3326,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 ans = ""
                 try:
                     worker_session = runtime.get_session(worker_id)
+                    worker_session.worker_slot_reader = control.slot_policy_reader
                     worker_session.worker_handoff = control.handoff
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
@@ -3671,7 +3807,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             if agent_id is not None and not self._allow_control_request():
                 return
             try:
-                selected_backend, model = _snapshot_chat_backend(chat_id)
+                selected_backend, model = _snapshot_chat_backend(chat_id, read_only=True)
             except WorkerBindingError as exc:
                 self._json({"ok": False, "error": str(exc)}, 503)
                 return
@@ -3808,6 +3944,14 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/activity":
             self._html(render_activity_dashboard())
+
+        elif path == "/api/system-slots":
+            if not self._allow_control_request():
+                return
+            try:
+                self._json({"ok": True, **_system_slots_snapshot()})
+            except Exception:
+                self._json({"error": "System-Steckplätze nicht verifizierbar"}, 503)
 
         elif path == "/api/slots":
             if not self._allow_control_request():

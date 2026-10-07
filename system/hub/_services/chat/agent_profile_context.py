@@ -16,7 +16,7 @@ _PROFILES = {
     "bueroassistent": ("bueroassistent", "1.0.0", "ceb8b1cd6b20373e9e7cd4dfce5be724c471a6bdb27ed6c6a410c56218e33371"),
     "ati": ("ati-agent", "1.2.0", "7f0d775b9b51134fc4229543f0a14eb63cd1a5510c12493e986b71d92f6a29d4"),
 }
-_PROFILE_ID = re.compile(r"^agent:([1-9][0-9]*):([a-f0-9]{32})$")
+_PROFILE_ID = re.compile(r"^agent:([1-9][0-9]*):(?:slot:[A-Za-z0-9_-]{1,80}:)?([a-f0-9]{32})$")
 _FIELDS = ("context_class", "agent_id", "exact_slug", "db_version", "source_version", "profile_sha256")
 
 

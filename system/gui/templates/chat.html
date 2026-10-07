@@ -733,6 +733,10 @@
             animation: msgIn 0.2s ease-out;
             pointer-events: auto;
         }
+        .chat-slot-selection {display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid var(--border)}
+        .chat-slot-selection label {display:flex;align-items:center;gap:8px;font-size:.8rem}
+        .chat-slot-selection select {max-width:260px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text)}
+        #chat-slot-selection-state {font-size:.8rem;color:var(--text-muted)}
     </style>
 </head>
 <body>
@@ -771,6 +775,16 @@
 
         <!-- Main Chat -->
         <main class="chat-main">
+            <div class="chat-slot-selection">
+                <label>Steckplatz
+                    <select id="chat-slot-select" aria-label="Systemsteckplatz"><option value="buddha_chat">Persönlicher Assistent</option></select>
+                </label>
+                <label>Chat-Profil
+                    <select id="chat-profile-select" aria-label="Chat-Profil"><option value="">Steckplatzrolle verwenden</option></select>
+                </label>
+                <span id="chat-slot-selection-state" role="status" aria-live="polite"></span>
+            </div>
+
             <div class="chat-top-bar">
                 <div class="chat-top-left">
                     <button class="btn-sidebar-toggle" id="btn-sidebar-open" title="Seitenleiste öffnen" style="display: none;">
@@ -1147,14 +1161,33 @@
         const selectedAgentRaw = selectedAgentValues[0] || '';
         const profileAgentId = selectedAgentValues.length === 1 && /^[1-9][0-9]*$/.test(selectedAgentRaw)
             && Number.isSafeInteger(Number(selectedAgentRaw)) ? Number(selectedAgentRaw) : null;
-        const profileSelectionError = selectedAgentValues.length > 0 && profileAgentId === null;
-        const profileStorageKey = profileAgentId
-            ? 'bach_agent_chat_' + profileAgentId : 'bach_active_web_chat_id';
+        const selectedSlotValues = selectedAgentParams.getAll('slot_id');
+        const slotId = selectedSlotValues.length === 0 ? 'buddha_chat' : selectedSlotValues[0];
+        const slotSelectionError = selectedSlotValues.length > 1 || !/^[A-Za-z0-9_-]{1,80}$/.test(slotId);
+        const profileSelectionError = slotSelectionError || selectedAgentValues.length > 0 && profileAgentId === null;
+        const profileStorageKey = 'bach_slot_chat_' + slotId + '_' + (profileAgentId || 'role');
+        const selectedChatPrefix = (profileAgentId ? 'agent:' + profileAgentId + ':' : '') + 'slot:' + slotId + ':';
+        function isSelectedChatId(chatId) {
+            const id = String(chatId || '');
+            if (id.startsWith(selectedChatPrefix) && /^[a-f0-9]{32}$/.test(id.slice(selectedChatPrefix.length))) return true;
+            if (profileAgentId) return new RegExp('^agent:' + profileAgentId + ':[a-f0-9]{32}$').test(id);
+            return id === 'gui-web' || /^web[A-Za-z0-9_-]{0,120}$/.test(id);
+        }
+        function isVisibleWebSession(session) {
+            if ((session.session_id || '').includes(':archived:')) return false;
+            if (profileAgentId && (session.agent_id !== profileAgentId || session.context_class !== 'agent-profile')) return false;
+            if (!profileAgentId && session.context_class === 'agent-profile') return false;
+            if (session.chat_id) return isSelectedChatId(session.chat_id);
+            return !profileAgentId && (/^web/i.test(session.name || '') || /web/i.test(session.session_id || ''));
+        }
+        function showChatBindingInfo() {
+            document.getElementById('chat-slot-selection-state').textContent = currentChatId.startsWith(selectedChatPrefix)
+                ? '' : 'Bisheriger Chat mit seiner bisherigen Konfiguration. „Neuer Chat“ nutzt den gewählten Steckplatz.';
+        }
         function newProfileChatId() {
             const bytes = new Uint8Array(16);
             window.crypto.getRandomValues(bytes);
-            return 'agent:' + profileAgentId + ':'
-                + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+            return selectedChatPrefix + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
         }
         function profileQuery() {
             return profileAgentId ? '&agent_id=' + encodeURIComponent(profileAgentId) : '';
@@ -1170,12 +1203,11 @@
             return headers;
         }
         localStorage.removeItem('bach-control-api-token');
-        const rememberedChatId = localStorage.getItem(profileStorageKey);
-        const rememberedProfileChat = profileAgentId && rememberedChatId &&
-            new RegExp('^agent:' + profileAgentId + ':[a-f0-9]{32}$').test(rememberedChatId);
-        let currentChatId = profileSelectionError ? '' : (profileAgentId
-            ? (rememberedProfileChat ? rememberedChatId : newProfileChatId())
-            : (rememberedChatId || ('web-' + Date.now())));
+        const legacyStorageKey = profileAgentId ? 'bach_agent_chat_' + profileAgentId : 'bach_active_web_chat_id';
+        const rememberedChatId = localStorage.getItem(profileStorageKey)
+            || (selectedSlotValues.length === 0 ? localStorage.getItem(legacyStorageKey) : '');
+        const rememberedProfileChat = isSelectedChatId(rememberedChatId);
+        let currentChatId = profileSelectionError ? '' : (rememberedProfileChat ? rememberedChatId : newProfileChatId());
 
         const sidebar = document.getElementById('sidebar');
         const sidebarOpenBtn = document.getElementById('btn-sidebar-open');
@@ -1278,6 +1310,45 @@
             setSidebarState(true);
         }
 
+        async function loadChatSelectors() {
+            const slots = document.getElementById('chat-slot-select');
+            const profiles = document.getElementById('chat-profile-select');
+            try {
+                const [slotResponse, profileResponse] = await Promise.all([
+                    fetch('/api/system/core-agents', {headers:controlHeaders('GET')}),
+                    fetch('/api/agents', {headers:controlHeaders('GET')})
+                ]);
+                if (!slotResponse.ok || !profileResponse.ok) throw new Error('Geräteanmeldung oder Quelle fehlt');
+                const slotData = await slotResponse.json();
+                const profileData = await profileResponse.json();
+                slots.replaceChildren();
+                for (const slot of slotData.agents || []) {
+                    const option = new Option(slot.name + (slot.enabled ? '' : ' · ausgeschaltet'), slot.id);
+                    option.disabled = slot.enabled !== true;
+                    slots.add(option);
+                }
+                slots.value = slotId;
+                if (!Array.from(slots.options).some(option => option.value === slotId)) throw new Error('Steckplatz nicht verfügbar');
+                for (const profile of profileData.agents || []) {
+                    if (profile.profile_chat_ready === true) profiles.add(new Option(profile.display_name || profile.name, String(profile.id)));
+                }
+                profiles.value = profileAgentId ? String(profileAgentId) : '';
+                if (profileAgentId && profiles.value !== String(profileAgentId)) throw new Error('Profil nicht verfügbar');
+                showChatBindingInfo();
+            } catch (error) {document.getElementById('chat-slot-selection-state').textContent = error.message;}
+        }
+        function changeChatSelection() {
+            const target = new URL(window.location.href);
+            target.searchParams.set('slot_id', document.getElementById('chat-slot-select').value);
+            const profile = document.getElementById('chat-profile-select').value;
+            if (profile) target.searchParams.set('agent_id', profile);
+            else target.searchParams.delete('agent_id');
+            window.location.assign(target.toString());
+        }
+        document.getElementById('chat-slot-select').addEventListener('change', changeChatSelection);
+        document.getElementById('chat-profile-select').addEventListener('change', changeChatSelection);
+        loadChatSelectors();
+
         // ── Multi-Session Management ──
         async function loadWebSessions() {
             if (profileSelectionError) return;
@@ -1286,16 +1357,7 @@
                     { headers: controlHeaders('GET', false, true) });
                 const data = await resp.json();
                 if (data.ok && Array.isArray(data.sessions)) {
-                    // Filter specifically for web chats
-                    webSessions = data.sessions.filter(s => {
-                        if (profileAgentId) return s.agent_id === profileAgentId && s.context_class === "agent-profile"
-                            && !(s.session_id || "").includes(":archived:");
-                        const name = (s.name || '').toLowerCase();
-                        const sid = (s.session_id || '').toLowerCase();
-                        const cid = (s.chat_id || '').toLowerCase();
-                        return cid.startsWith('web') || cid === 'gui-web' ||
-                               name.startsWith('web') || sid.includes('web');
-                    });
+                    webSessions = data.sessions.filter(isVisibleWebSession);
                     renderSidebarSessions();
                 }
             } catch (e) {
@@ -1343,10 +1405,12 @@
         }
 
         async function selectWebSession(s) {
+            if (!isVisibleWebSession(s)) return;
             if (profileAgentId && (s.agent_id !== profileAgentId || s.context_class !== 'agent-profile')) return;
             const targetChatId = s.chat_id || ('web-snap-' + s.id);
             currentChatId = targetChatId;
             localStorage.setItem(profileStorageKey, currentChatId);
+            showChatBindingInfo();
 
             const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
             currentChatTitleEl.textContent = profileAgentId
@@ -1402,8 +1466,9 @@
 
         function startNewChat() {
             if (profileSelectionError) return;
-            currentChatId = profileAgentId ? newProfileChatId() : ('web-' + Date.now());
+            currentChatId = newProfileChatId();
             localStorage.setItem(profileStorageKey, currentChatId);
+            showChatBindingInfo();
             currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
 
             messagesEl.innerHTML = '';
