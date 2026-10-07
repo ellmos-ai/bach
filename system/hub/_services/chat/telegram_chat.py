@@ -292,11 +292,18 @@ def _native_task_client():
 def _execution_worker_slot(worker_id: str) -> dict:
     if worker_id == "buddha_always_on":
         return get_always_on_execution_slot()
+    worker = get_worker_slot(worker_id)
+    if worker:
+        return worker
+    # Dynamic IDs are already resolved by their strict canonical registry.
+    # Only an actual system-slot ID needs a second system-slot lookup.
+    if worker_id not in load_slots_config().get("slots", {}):
+        return {}
     from hub._services.chat.slots_config import get_system_slot
     system_slot = get_system_slot(worker_id)
     if system_slot and system_slot.get("execution_kind") == "worker":
         return {**system_slot, "type": "continuous", "system": True}
-    return get_worker_slot(worker_id)
+    return {}
 
 
 def _execution_worker_configuration(slot: dict):
