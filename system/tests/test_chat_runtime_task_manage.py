@@ -302,6 +302,35 @@ class TestTaskManageDecompose:
         assert parent["completed_at"]
         assert "Teilaufgaben zerlegt: [2]" in parent["description"]
 
+    def test_decompose_rejects_recursive_subtask_decomposition(self, db_path):
+        subtasks = [
+            {"title": "Teilschritt 1: Analyse", "description": "Lies Datei X"},
+        ]
+        res1 = exec_tool(
+            "task_manage",
+            {"action": "decompose", "task_id": 1, "subtasks": subtasks},
+            mode="safe",
+        )
+        assert "in 1 Teilaufgaben zerlegt" in res1
+        # Versuche nun die soeben erzeugte Teilaufgabe (Task 2) erneut zu zerlegen:
+        res2 = exec_tool(
+            "task_manage",
+            {"action": "decompose", "task_id": 2, "subtasks": [{"title": "Sub-Subtask"}]},
+            mode="safe",
+        )
+        assert "ist bereits eine Teilaufgabe oder wurde bereits zerlegt" in res2
+        assert "nicht weiter rekursiv aufgeteilt werden" in res2
+
+    def test_decompose_rejects_edit_or_subtask_prefix(self, db_path):
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute("INSERT INTO tasks (id, title, status) VALUES (99, 'Edit: test_server.py anpassen', 'pending')")
+        res = exec_tool(
+            "task_manage",
+            {"action": "decompose", "task_id": 99, "subtasks": [{"title": "Schritt"}]},
+            mode="safe",
+        )
+        assert "ist bereits eine Teilaufgabe oder wurde bereits zerlegt" in res
+
     def test_background_process_receives_real_decomposition_completion(self, db_path):
         import asyncio
 

@@ -1077,6 +1077,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         }:
                             return f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen."
                         parent_dict = dict(parent)
+                        p_desc = str(parent_dict.get("description") or "")
+                        p_title = str(parent_dict.get("title") or "").strip()
+                        if (
+                            "[Teilaufgabe zu #" in p_desc
+                            or ("[In " in p_desc and "Teilaufgaben zerlegt" in p_desc)
+                            or p_title.lower().startswith(("edit: ", "folge-task: ", "subtask: "))
+                        ):
+                            conn.rollback()
+                            return (
+                                f"Task #{tid} ('{p_title}') ist bereits eine Teilaufgabe oder wurde bereits zerlegt "
+                                "und kann nicht weiter rekursiv aufgeteilt werden. "
+                                "Bitte führe die Aufgabe direkt im Code aus oder aktualisiere sie mit action='update'."
+                            )
                         cat = args.get("category") or parent_dict.get("category") or ""
                         assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1085,6 +1098,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         for st in subtasks:
                             st_title = st["title"].strip()
                             st_desc = st.get("description", "")
+                            if f"[Teilaufgabe zu #{tid}]" not in st_desc:
+                                st_desc = f"[Teilaufgabe zu #{tid}] {st_desc}".strip()
                             st_prio = st.get("priority", parent_dict.get("priority") or "P3")
                             st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
                             st_assignee = st.get("assigned_to") or assignee

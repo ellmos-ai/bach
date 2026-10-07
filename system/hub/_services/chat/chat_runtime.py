@@ -1505,8 +1505,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         offered_tools = tools
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
-        if background_task and session.allow_tools is True and offered_tools:
-            msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
         msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
         while True:
             capability_error = self._refresh_worker_tools(session)
