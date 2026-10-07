@@ -2364,6 +2364,12 @@ class LeaseReleaseRequest(LeaseRefRequest):
     note: Optional[str] = None
 
 
+class LeaseUpdateRequest(LeaseRefRequest):
+    model_config = ConfigDict(extra="forbid")
+    task_version: StrictStr
+    changes: dict[StrictStr, StrictStr]
+
+
 class LeaseDecomposeRequest(LeaseRefRequest):
     model_config = ConfigDict(extra="forbid")
     task_version: StrictStr
@@ -2421,12 +2427,20 @@ async def renew_task_lease(task_id: int, body: LeaseRefRequest):
 
 @app.post("/api/tasks/{task_id}/lease/release")
 async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
-    """Rückgabe/Abschluss (Vertrag §5.4): outcome return|done|blocked."""
+    """Rückgabe/Abschluss (Vertrag §5.4): outcome return|done|blocked|review."""
     from hub._services.task_lease import release_lease
     return _run_lease_op(release_lease, task_id, lease_id=body.lease_id, fence=body.fence,
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "")
+
+
+@app.post("/api/tasks/{task_id}/lease/update")
+async def update_task_lease(task_id: int, body: LeaseUpdateRequest):
+    """Atomare Inhaltsänderung samt neuer Lease-Bindung."""
+    from hub._services.task_lease import update_lease
+    return _run_lease_op(update_lease, task_id, lease_id=body.lease_id, fence=body.fence,
+                         task_version=body.task_version, changes=body.changes)
 
 
 @app.post("/api/tasks/{task_id}/lease/decompose")

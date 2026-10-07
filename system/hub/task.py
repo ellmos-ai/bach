@@ -1150,11 +1150,11 @@ class TaskHandler(BaseHandler):
 
     def _lease_release(self, args: List[str]) -> Tuple[bool, str]:
         """Task-Lease freigeben oder abschließen (Vertrag §5.4 / BACH #1722).
-        Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked] [--ref <ref>] [--note <note>]
+        Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked|review] [--ref <ref>] [--note <note>]
         """
         task_id, rest = self._parse_single_task_args(args)
         if task_id is None:
-            return False, "Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked]"
+            return False, "Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked|review]"
 
         lease_id = None
         fence = None

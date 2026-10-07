@@ -10,9 +10,10 @@ Voraussetzungen:
 
 Start:
   python chat_tray.py [--port 8081] [--host lead.example]
-  BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menue)
+  BACH_IDLE_WORKER=0  -> Host startet keinen neuen Always-On-Lauf
 """
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -30,10 +31,7 @@ for _p in (_system_dir, _root_dir):
         sys.path.insert(0, _p)
 
 from hub._services.chat.control_auth import get_control_api_auth_header
-from hub._services.chat.slots_config import (
-    bump_pause_counter, get_slot, get_slot_pause_info, is_slot_paused,
-    match_task_to_pickup_filter, task_matches_slot_binding,
-)
+from hub._services.chat.tray_worker_execution import NativeWorkerObserver, WORKER_ID
 
 try:
     from hub._services.recurring.recurring_tasks import check_recurring_tasks
@@ -65,6 +63,12 @@ if hasattr(sys.stderr, 'reconfigure'):
 import time
 import urllib.error
 import urllib.request
+
+
+class _NoWorkerRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
 
 try:
     import pystray
@@ -242,11 +246,11 @@ class BACHTray:
     POLL_INTERVAL = 5
     IDLE_THRESHOLD = 1  # Always-On prüft direkt; kein Leerlauf- oder Sitzungsfenster
     IDLE_CHAT_ID = "idle-worker"
-    PENDING_TTL = 1800   # danach gilt ein Lauf ohne Antwort als verloren
+    PENDING_TTL = 1800   # Legacy-Metadatum; Ablauf beweist kein physisches Ende.
 
     def __init__(self, host="127.0.0.1", port=8081, gui_port=8000,
                  ollama_host="127.0.0.1", remote=False,
-                 activity_url=None, gui_url=None, brand="bach"):
+                 activity_url=None, gui_url=None, brand="bach", execution_state_path=None):
         self.brand = (brand or "bach").lower()
         self.host = host
         self.remote = remote
@@ -294,7 +298,13 @@ class BACHTray:
         self.idle_consecutive = 0
         self.idle_task_name = None
         self.idle_processing = False
-        self.idle_pending = None   # (task_id, seit, title, chat_id) nach Client-Timeout (#1303)
+        self.idle_pending = None   # Unbestätigte Legacy-Aufrufe bleiben gesperrt.
+        self._idle_run_lock = threading.Lock()
+        endpoint_key = hashlib.sha256(self.base_url.encode("utf-8")).hexdigest()[:24]
+        intent_path = execution_state_path or (
+            Path.home() / ".bach" / f"{self.brand}_worker_{endpoint_key}.json")
+        self._native_worker = NativeWorkerObserver(
+            self.base_url, intent_path, lambda *args: self._worker_request(*args))
         self._recurring_tick = 0
 
         self.max_status_failures = 3
@@ -322,6 +332,31 @@ class BACHTray:
                 return json.loads(resp.read())
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             return None
+
+    def _worker_request(self, method, path, body=None):
+        """Return status and JSON without redirects, retries or GUI fallback."""
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json"}
+        if self.control_api_auth_header:
+            headers["Authorization"] = self.control_api_auth_header
+        request = urllib.request.Request(
+            self.base_url + path, data=data, method=method, headers=headers)
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _NoWorkerRedirect())
+        try:
+            try:
+                response = opener.open(request, timeout=8)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                code = response.code
+                data = response.read(1024 * 1024 + 1)
+            if len(data) > 1024 * 1024:
+                return code, None
+            value = json.loads(data.decode("utf-8"))
+            return code, value if isinstance(value, dict) else None
+        except (urllib.error.URLError, OSError, ValueError):
+            return None, None
 
     def _check_url(self, url, timeout=2):
         try:
@@ -565,199 +600,36 @@ class BACHTray:
 
     # --- Idle Worker ---
 
+    def _always_on_can_start(self):
+        slot = self.slots.get(WORKER_ID)
+        if (self.remote or not self.idle_enabled or self.state.get("connected") is not True
+                or not isinstance(slot, dict) or slot.get("id") != WORKER_ID
+                or slot.get("enabled") is not True):
+            return False
+        pause = slot.get("pause_info")
+        return isinstance(pause, dict) and pause.get("is_paused") is False
+
     def _idle_tick(self):
-        always_on = self.slots.get("buddha_always_on", {})
-        if not self.idle_enabled or not always_on.get("enabled", True) or self.idle_processing:
+        if self.remote or self.idle_processing:
             return
-
-        # A logged-in or open chat session is not a reason to disarm Always-On.
-        # Respect the configured cooldown, then keep polling the shared TaskDB.
-        try:
-            if is_slot_paused(get_slot("buddha_always_on")):
-                return
-        except Exception as exc:
-            print(f"[Always-On] Pausenstatus nicht lesbar; TaskDB-Prüfung ausgesetzt: {exc}")
-            return
-
-        self.idle_consecutive += 1
-
-        self._recurring_tick += 1
-        if HAS_RECURRING and (self._recurring_tick % 180 == 0):  # alle ~15 Min
+        # A logged-in or open foreground session does not disarm Always-On.
+        # Disabled/cooling slots are still observed to settle owned starts.
+        if self._always_on_can_start():
+            self._recurring_tick += 1
+        if self._always_on_can_start() and HAS_RECURRING and self._recurring_tick % 180 == 0:
             try:
                 check_recurring_tasks()
             except Exception:
                 pass
-
-        if self.idle_consecutive >= self.IDLE_THRESHOLD:
-            threading.Thread(target=self._process_idle_task, daemon=True).start()
-
-    def _record_always_on_progress(self, *, task_completed: bool = False) -> bool:
-        """Count worker runs/tasks and persist the configured cooldown trigger."""
-        try:
-            paused = bump_pause_counter("buddha_always_on", event_type="runs")
-            if task_completed and not paused:
-                paused = bump_pause_counter("buddha_always_on", event_type="tasks")
-            if not paused:
-                return False
-
-            info = get_slot_pause_info(get_slot("buddha_always_on"))
-            minutes = info.get("pause_minutes", 0)
-            print(f"[Always-On] Automatische Pause gestartet ({minutes} min)")
-            if self.icon:
-                self.icon.notify(f"Automatische Pause: {minutes} Minuten", "BACH Always-On")
-            return True
-        except Exception as exc:
-            print(f"[Always-On] Pausentrigger konnte nicht gespeichert werden: {exc}")
-            return False
-
-    @staticmethod
-    def _resolve_role(assignee: str) -> tuple[str, str, str]:
-        """Normalisiert die Rolle und liefert (role_id, display_name, persona_desc)."""
-        if not assignee or assignee.upper() in ("BACH", "BUDDHA", "OLLAMA"):
-            return ("bach", "Buddha", "Universeller lokaler KI-Worker von BACH.")
-
-        clean = assignee.lower().replace("agent:", "").replace("-agent", "").strip()
-
-        PERSONA_MAP = {
-            "persoenlich": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
-            "persoenlicher-assistent": ("Paul", "Persoenlicher Assistent fuer Alltags- und Arbeitsorganisation"),
-            "aboservice": ("Anton", "Experte fuer Abonnements, Vertraege und wiederkehrende Zahlungen"),
-            "ati": ("Atlas", "Experte fuer Aufgaben-, Tool- und Code-Scanning"),
-            "bewerbungsexperte": ("Benjamin", "Experte fuer Bewerbungsunterlagen, Lebenslaeufe und Anschreiben"),
-            "bueroassistent": ("Clara", "Assistentin fuer Dokumente, Ablage und Schriftverkehr"),
-            "data-analysis": ("Diana", "Expertin fuer Datenanalyse, Auswertungen und Statistiken"),
-            "decision-briefing": ("Dietrich", "Experte fuer strukturierte Entscheidungsvorlagen und Briefings"),
-            "finanz-assistent": ("Felix", "Assistent fuer Finanzen, Belege und Budgetuebersichten"),
-            "foerderplaner": ("Florian", "Experte fuer Foerderberichte, Hilfebedarf und Paedagogik"),
-            "haushaltsmanagement": ("Martha", "Expertin fuer Haushaltsorganisation, Vorraete und Routinen"),
-            "ticket-master": ("Ticket-Master", "Triage- und Routing-Experte fuer die Zuweisung von Aufgaben an Rollen"),
-            "task-divider": ("Task-Divider", "Experte fuer die vorab-Zerlegung komplexer Aufgaben in handhabbare Teilpakete"),
-        }
-
-        display, desc = PERSONA_MAP.get(clean, (clean.capitalize(), f"Experten-Rolle '{clean}'."))
-        return (clean, display, desc)
-
-    def _auto_commit_task(self, task_id: int, title: str):
-        """Erzeugt einen sauberen, atomaren lokalen Git-Commit fuer alle durch
-        den Task modifizierten tracked Files.
-        Regel D-20260830-001: Rein lokaler Commit, NIEMALS push!
-        Niemals ungetrackte Runtime-Dateien (system/data/) stagen.
-        """
-        try:
-            repo_dir = _root_dir
-            res = subprocess.run(
-                ["git", "diff", "--name-only"],
-                cwd=repo_dir, capture_output=True, text=True, timeout=10
-            )
-            mod_files = [f.strip() for f in res.stdout.splitlines() if f.strip()]
-            valid_files = [f for f in mod_files if not f.startswith("system/data/") and not f.endswith(".wal") and not f.endswith(".lock")]
-            if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules or task_id == 42:
-                return
-
-            if not valid_files:
-                return
-
-            subprocess.run(
-                ["git", "add"] + valid_files,
-                cwd=repo_dir, capture_output=True, text=True, timeout=10, check=True
-            )
-
-            clean_title = title.replace('"', '').replace("'", "").strip()[:80]
-            commit_msg = f"bach(buddha): #{task_id} {clean_title}"
-            c_res = subprocess.run(
-                ["git", "commit", "-m", commit_msg],
-                cwd=repo_dir, capture_output=True, text=True, timeout=15
-            )
-            if c_res.returncode == 0:
-                print(f"[Idle] Auto-Commit erfolgreich: {commit_msg} ({len(valid_files)} Dateien)")
-            else:
-                print(f"[Idle] Auto-Commit Hinweis: {c_res.stderr.strip() or c_res.stdout.strip()}")
-        except Exception as e:
-            print(f"[Idle] Auto-Commit Fehler: {e}")
+        threading.Thread(target=self._process_idle_task, daemon=True).start()
 
     def _settle_pending_task(self) -> bool:
-        """Traegt nach, was nach dem Client-Timeout noch eintraf.
+        """Legacy chat/history cannot prove the physical caller has ended.
 
-        Der Lauf arbeitet serverseitig weiter und legt seine Antwort im
-        Transkript ab -- nur der Empfaenger hoerte nicht mehr zu, und der Task
-        blieb fuer immer in_progress (T-20260906-739766716). Bewertet wird die
-        Antwort nicht hier, sondern von der Runtime: `/api/history` liefert
-        dasselbe `ok` wie `/api/chat`, damit es eine Definition von Fehlschlag
-        gibt (T-20260906-743610852).
-
-        Rueckgabe: True, wenn der Weg fuer den naechsten Task frei ist.
+        Retain an unknown pre-migration call for controlled deployment drain;
+        neither elapsed time, TaskDB status nor model text authorizes restart.
         """
-        if not self.idle_pending:
-            return True
-
-        # #1303: chat_id aus dem Tupel (exakt wie beim Senden), nicht mehr
-        # hartkodiert 'idle-task-{id}' -- sonst sind Antworten >300s unauffindbar
-        task_id, seit, title, task_chat_id = _pending_fields(self.idle_pending)
-        hist = self._api("GET", f"/api/history?chat_id={task_chat_id}")
-        if not isinstance(hist, dict) or hist.get("ok") is False:
-            print(f"[Idle] Verlauf für Task #{task_id} nicht verifizierbar; warte")
-            return False
-        messages = (hist or {}).get("messages", [])
-        answer = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
-
-        if answer is None:
-            task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
-            if isinstance(task_now, dict) and task_now.get("status"):
-                is_done = bool(task_now.get("completed_at") or task_now.get("status") in ("done", "completed"))
-                if is_done or (_is_terminal_parked(task_now) and task_now.get("status") != "in_progress"):
-                    print(f"[Idle] Task #{task_id} terminal ({'done' if is_done else task_now.get('status')}); kein open-Reset (PATH A)")
-                    if is_done:
-                        self._record_always_on_progress(task_completed=True)
-                        self._auto_commit_task(task_id, title)
-                    self.idle_pending = None
-                    return True
-
-            if not messages or (time.time() - seit >= self.PENDING_TTL):
-                # Terminal-Waechter fuer PATH A (Client-Timeout ohne Antwort): auch hier
-                # darf ein geparkter Task (blocked / future due_date) NICHT auf 'open'
-                # zurueckgesetzt werden -- sonst Resurrektions-Loop (T-20260912-1240loop
-                # / #1235 4x-Claim / #1293 Option A). Gleicher Guard wie Antwort-Pfad L580
-                # und Scan-Pfad L648. Gleicher _is_terminal_parked-Helfer (8/8 getestet).
-                if not isinstance(task_now, dict) or not task_now.get("status"):
-                    task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
-                if not isinstance(task_now, dict) or not task_now.get("status"):
-                    return False
-                if _is_terminal_parked(task_now):
-                    print(f"[Idle] Task #{task_id} terminal (blocked/due_date); kein open-Reset (PATH A)")
-                    self.idle_pending = None
-                    return True
-                print(f"[Idle] Task #{task_id} ohne Antwort oder Transkript; auf open zurueckgesetzt")
-                self._api("PUT", f"/api/tasks/{task_id}", {"status": "open", "changed_by": "idle-worker"}, base=self.gui_url)
-                self.idle_pending = None
-                return True
-            print(f"[Idle] Task #{task_id} laeuft serverseitig weiter; warte")
-            return False
-
-        if _has_task_completion_receipt(answer, task_id):
-            self._record_always_on_progress(task_completed=True)
-            self._auto_commit_task(task_id, title)
-            self.idle_pending = None
-            return True
-          # Terminal-Wächter (T-20260912-1240loop / 7x #1241 / gesteckte
-          # #1246,#1247,#1252): ein Task, der bereits completed_at traegt, ist
-          # erledigt -> niemals auf 'open' zuruecksetzen. Der open-Reset loeschte
-          # completed_at nicht, der naechste idle-Zyklus zog den terminalen Task
-          # erneut -> Resurrektions-Loop bei operator-geblockten TO-DECIDE-Tasks,
-          # deren Antwort nie sauber FERTIG+ok wird (300s-Client-Timeout).
-        task_now = self._api("GET", f"/api/tasks/{task_id}", base=self.gui_url)
-        if not isinstance(task_now, dict) or not task_now.get("status"):
-            print(f"[Idle] Task #{task_id}: Status nicht verifizierbar; warte")
-            return False
-        if _is_terminal_parked(task_now):
-            print(f"[Idle] Task #{task_id} terminal (completed_at/blocked/due_date); kein open-Reset")
-            self.idle_pending = None
-            return True
-        status = "open"
-        self._record_always_on_progress()
-        self._api("PUT", f"/api/tasks/{task_id}", {"status": status, "changed_by": "idle-worker"}, base=self.gui_url)
-        print(f"[Idle] Task #{task_id} nach Timeout nachgetragen: {status}")
-        self.idle_pending = None
-        return True
+        return not self.idle_pending
 
     def _is_blocked_by_dep(self, task) -> bool:
         """Prueft fail-closed, ob ein Kandidat auf unerledigte Vorgaenger wartet.
@@ -782,208 +654,26 @@ class BACHTray:
         return True
 
     def _process_idle_task(self):
-        if self.idle_processing:
+        if not self._settle_pending_task():
+            return
+        if not self._idle_run_lock.acquire(blocking=False):
             return
         self.idle_processing = True
-        self._update_icon()
-
         try:
-            if not self._settle_pending_task():
-                return
-            # Tasks fuer den Worker tragen in der GUI/DB den Status 'open' ODER 'pending'
-            # (server.py zaehlt beide als offen); nur 'pending' zu fragen liess jeden
-            # 'open'-OLLAMA-Task liegen.
-            task = None
-            task_status = "open"
-
-            always_on = getattr(self, "slots", {}).get("buddha_always_on", {})
-            pickup_filter = always_on.get("pickup_filter", {})
-            filter_enabled = isinstance(pickup_filter, dict) and pickup_filter.get("enabled", False)
-
-            # 1. Gezielte Filter-Suche des Always-On-Slots (enabled + categories/priorities/tags/exclude_tags)
-            if filter_enabled:
-                for status in ("pending", "open"):
-                    tasks_resp = self._api(
-                        "GET", f"/api/tasks?status={status}", base=self.gui_url
-                    )
-                    if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                        for cand in tasks_resp["tasks"]:
-                            if _is_terminal_parked(cand) and not cand.get("completed_at"):
-                                continue
-                            if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
-                                print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
-                                continue
-                            if task_matches_slot_binding(cand, always_on) and match_task_to_pickup_filter(cand, always_on):
-                                task = cand
-                                task_status = status
-                                break
-                    if task:
-                        break
-
-            # 2. Bestehende Standard-Assignees pruefen (erfuellt auch Unit-Tests)
-            if not task:
-                for assignee in ("OLLAMA", "BUDDHA", "BACH"):
-                    for status in ("pending", "open"):
-                        tasks_resp = self._api(
-                            "GET", f"/api/tasks?assigned_to={assignee}&status={status}", base=self.gui_url
-                        )
-                        if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                            for cand in tasks_resp["tasks"]:
-                                if _is_terminal_parked(cand) and not cand.get("completed_at"):
-                                    continue
-                                if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
-                                    print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
-                                    continue
-                                if task_matches_slot_binding(cand, always_on):
-                                    task = cand
-                                    task_status = status   # Ausgangsstatus, um ihn notfalls zurueckzugeben
-                                    break
-                    if task:
-                        break
-
-            # 3. Universal-Worker Fallback: Alle Rollen/Personas abholen (Bosse & Experten)
-            if not task:
-                for status in ("pending", "open"):
-                    tasks_resp = self._api(
-                        "GET", f"/api/tasks?status={status}", base=self.gui_url
-                    )
-                    if tasks_resp and tasks_resp.get("success") and tasks_resp.get("tasks"):
-                        for cand in tasks_resp["tasks"]:
-                            if _is_terminal_parked(cand) and not cand.get("completed_at"):
-                                continue
-                            if not cand.get("completed_at") and self._is_blocked_by_dep(cand):
-                                print(f"[Idle] Task #{cand.get('id')} wartet auf Abhaengigkeit; skip")
-                                continue
-                            cand_assignee = (cand.get("assigned_to") or "").strip()
-                            # menschliche Tasks (user) und fremde Agenten (claude, gemini, codex, kimi) ueberspringen
-                            if (cand_assignee.lower() not in ("user", "claude", "gemini", "codex", "kimi", "operator", "blocked", "")
-                                    and task_matches_slot_binding(cand, always_on)):
-                                task = cand
-                                task_status = status
-                                break
-                    if task:
-                        break
-
-            if not task:
-                return
-
-             # Terminal-Wächter (T-20260912-1240loop): ein Task, der bereits
-             # completed_at trägt, ist erledigt und wird NIE wieder aufgezogen.
-             # Ein 'open'-Reset loescht completed_at nicht -> der Wächter bricht
-             # den Resurrektions-Loop open<->in_progress, der bei operator-
-             # geblockten TO-DECIDE-Tasks (Antwort liefert nicht sauber
-             # "FERTIG"+ok) den Task endlos neu zieht. Legitime Neuaufziehen via
-             # 'reopen' loeschen completed_at (clear_fields) und sind damit unbeherr.
-            if _is_terminal_parked(task) and not task.get("completed_at"):
-                  # geparkt (blocked / future due_date), aber NICHT erledigt ->
-                  # unbehandelt verlassen (nicht 'done' setzen, nicht claimen)
-                  # -- Fix #1235 4x-Claim / #1293 Option A
-                print(f"[Idle] Task #{task.get('id')} geparkt; idle-worker verlaesst unbehandelt")
-                return
-            if task.get("completed_at"):
-                tid = task.get("id")
-                print(f"[Idle] Task #{tid} traegt completed_at; terminal -> auf 'done' gesetzt, verlaesst open-Pool")
-                 # aktiv aus dem open-Pool entfernen (nur return liesse ihn in
-                 # 'open' hängen und er würde im naechsten Zyklus erneut gezogen)
-                self._api("PUT", f"/api/tasks/{tid}", {"status": "done", "changed_by": "idle-worker"}, base=self.gui_url)
-                return
-
-            task_id = task.get("id")
-            title = task.get("title", "Unbenannt")
-            desc = task.get("description", "")
-            assignee = task.get("assigned_to", "bach")
-            self.idle_task_name = title
-
-            role_id, role_display, role_desc = self._resolve_role(assignee)
-            # Isolate one run's transcript/receipts from a later reopened task.
-            task_chat_id = f"idle-{role_id}-{task_id}-{uuid.uuid4().hex}"
-
-            claim_resp = self._api("PUT", f"/api/tasks/{task_id}",
-                                   {"status": "in_progress", "changed_by": "idle-worker"},
-                                   base=self.gui_url)
-            if not claim_resp or claim_resp.get("status") == "claim_failed":
-                print(f"[Idle] Task #{task_id} bereits von anderem Taktgeber beansprucht -- ueberspringe.")
-                return
-
-            prompt = (
-                f"Du bearbeitest eine zugewiesene Aufgabe im vollen Ausfuehrungsmodus (Full-Mode mit Schreibrechten).\n\n"
-                f"ROLLE & IDENTITAET: Du agierst in dieser Session in der Rolle: '{role_display}' ({role_id}).\n"
-                f"Fachbereich / Profil: {role_desc}\n"
-                f"Handle und antworte aus der fachlichen Perspektive dieser Rolle!\n\n"
-                f"Task #{task_id}: {title}"
-            )
-            if desc:
-                prompt += f"\nBeschreibung: {desc}"
-            prompt += (
-                "\n\nAnweisung: Du hast ein begrenztes Kontingent an Werkzeugrunden. "
-                "Arbeite strikt nach dieser Prioritaeten-Reihenfolge:\n\n"
-                "1. DIREKTES LOESEN (Prioritaet 1): Wenn das Problem klar und ueberschaubar ist: Setze die Loesung direkt im Code um "
-                "(nutze edit_file, write_file oder execute_command). Teste deine Aenderung wenn moeglich. "
-                "Du darfst geaenderte Dateien bei Bedarf auch direkt lokal committen "
-                "(z. B. execute_command('git add <datei> && git commit -m \"...\"')). "
-                f"WICHTIG: Rein lokaler Commit, NIEMALS `git push` ausführen! Nach tatsächlicher Erledigung "
-                f"task_manage(action='done', task_id={task_id}) aufrufen; erst nach Werkzeugbestätigung FERTIG melden.\n\n"
-                "2. SELBST-ZERLEGUNG (Prioritaet 2): Jede Rolle zerlegt zu grosse Aufgaben eigenstaendig! "
-                "Wenn die Aufgabe komplex ist, aber die Schritte verstanden sind: Zerlege sie in handhabbare Teilaufgaben! "
-                f"Nutze `task_manage(action='decompose', task_id={task_id}, subtasks=[...], sequential=True)` "
-                "für konkrete Folge-Tasks. Erst wenn das Werkzeug Teilaufgaben angelegt und den Eltern-Task "
-                "geschlossen hat, gilt die Zerlegung als Abschluss. Dann FERTIG melden.\n\n"
-                "3. MEHRDEUTIGKEIT & UNKLARHEIT (Prioritaet 3 — Asynchrone Absichtsklaerung):\n"
-                "- Wenn die Aufgabe knapp oder ein Begriff mehrdeutig ist (z. B. 'Tab' = Browser-Tab vs. In-Page-Reiter, 'loeschen' = Archivieren vs. rm):\n"
-                "  a) Pruefe zuerst existierende Code-Praezedenzfaelle.\n"
-                "  b) Minimal-Invasivitaets-Gebot: Waehle immer die risikoaermere, kleinste Aenderung.\n"
-                "  c) Wenn du unsicher bleibst: Lege mit `task_manage(action='add', title='Entscheidung: ...', category='TO-DECIDE', "
-                f"description='Task #{task_id} Klaerung:\\nOption [A]: ...\\nOption [B]: ...')` eine praezise Auswahlfrage an, "
-                "setze den aktuellen Task auf 'open' und beende mit FERTIG.\n\n"
-                "4. DELEGIEREN AN ANDERE PROVIDER (Prioritaet 4 — Wenn die Aufgabe deine lokalen Grenzen uebersteigt):\n"
-                "- Du agierst als universeller lokaler First-Line Worker. Wenn die Anforderungen dieser Rolle deine lokalen Faehigkeiten "
-                "(qwen3.8:27b-mlx) oder deinen Kontext uebersteigen (z. B. tiefgreifende Algorithmen, Multi-Repo Refactorings oder externe Dependencies): "
-                "DELEGIERE die Aufgabe sauber! Nutze `delegate(target='claude', prompt='...', context='...')` "
-                "oder `delegate(target='codex', ...)` an die verfuegbaren staerkeren Provider. Begruende kurz deine Uebergabe."
-            )
-
-            result = self._api("POST", "/api/chat", {
-                "prompt": prompt,
-                "chat_id": task_chat_id,
-                "mode": "full",
-            }, timeout=300)
-
-            if result is None:
-                # #1303: chat_id mitvormerken, damit _settle_pending_task die
-                # echte Send-chat_id (idle-{role}-{id}) pollen kann
-                self.idle_pending = (task_id, time.time(), title, task_chat_id)
-                print(f"[Idle] Chat-Ergebnis fuer Task #{task_id} unbekannt; wird nachgelesen")
-            elif result.get("compute_locked"):
-                # Weder erledigt noch fehlgeschlagen: der Task wurde gar nicht
-                # bearbeitet, weil Rechenjobs laufen. Zurueck in den Ausgangs-
-                # status, damit ein spaeterer Tick ihn erneut zieht -- keine
-                # Nachlese-Vormerkung (T-20260907-440775748).
-                self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": task_status, "changed_by": "idle-worker"},
-                           base=self.gui_url)
-                print(f"[Idle] Compute-Lock aktiv; Task #{task_id} bleibt {task_status}")
-            elif result.get("ok"):
-                if _has_task_completion_receipt(result, task_id):
-                    # task_manage already committed the authoritative status.
-                    self._record_always_on_progress(task_completed=True)
-                    self._auto_commit_task(task_id, title)
-                    if self.icon:
-                        self.icon.notify(f"Erledigt: {title}", "BACH Idle")
-                else:
-                    # Reuse timeout settlement's terminal guard and fail-closed readback.
-                    self.idle_pending = (task_id, time.time(), title, task_chat_id)
-                    self._settle_pending_task()
-            else:
-                self._api("PUT", f"/api/tasks/{task_id}",
-                           {"status": "open", "changed_by": "idle-worker"},
-                           base=self.gui_url)
-
-        except Exception as e:
-            print(f"[Idle] Fehler: {e}")
+            slot = self.slots.get(WORKER_ID, {})
+            request_stop = not self.remote and (
+                not self.idle_enabled or isinstance(slot, dict) and slot.get("enabled") is False)
+            self._native_worker.step(allow_start=self._always_on_can_start(), request_stop=request_stop)
+        except Exception:
+            # Observation failure is not a task failure or permission to retry.
+            self._native_worker.status = "unconfirmed"
+            self._native_worker.execution = None
+            print("[Always-On] Laufstatus nicht bestätigt; kein erneuter Start")
         finally:
             self.idle_processing = False
             self.idle_task_name = None
             self.idle_consecutive = 0
+            self._idle_run_lock.release()
             self._update_icon()
 
     # --- Icons ---
@@ -1010,8 +700,8 @@ class BACHTray:
 
     @property
     def _icon_image(self):
-        if self.idle_processing:
-            return self._make_icon((90, 120, 220, 255))  # blue = idle working
+        if self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
+            return self._make_icon((90, 120, 220, 255))  # actual native inference
         if self.state["connected"]:
             if self.state.get("mode") == "full":
                 return self._make_icon((255, 165, 0, 255))  # orange = full
@@ -1268,7 +958,7 @@ class BACHTray:
             pystray.MenuItem(
                 "Buddha Always-On aktiviert",
                 lambda *_: self._toggle_slot_enabled("buddha_always_on"),
-                checked=lambda item: self.slots.get("buddha_always_on", {}).get("enabled", True) is True,
+                checked=lambda item: self.slots.get("buddha_always_on", {}).get("enabled") is True,
                 enabled=self.state.get("connected") is True,
             ),
         ]
@@ -1276,10 +966,6 @@ class BACHTray:
             idle_items.append(pystray.MenuItem("Einstellung wird auf dem verbundenen Server gespeichert", None, enabled=False))
         elif not self.idle_enabled:
             idle_items.append(pystray.MenuItem("Host-Worker durch BACH_IDLE_WORKER deaktiviert", None, enabled=False))
-        if self.idle_processing:
-            idle_items.append(pystray.MenuItem(
-                f"Bearbeitet: {self.idle_task_name or '?'}", None, enabled=False,
-            ))
         idle_items.append(pystray.MenuItem(
             f"Aufgabenprüfung alle {self.POLL_INTERVAL}s · unabhängig von Chats",
             None, enabled=False,
@@ -1382,25 +1068,35 @@ class BACHTray:
     def _always_on_runtime_label(self, slot):
         """Show configured Living state separately from live inference evidence."""
         if self.state.get("connected") is not True:
-            if self.idle_processing and not self.remote:
-                return f"Running · {self.idle_task_name or 'Aufgabenbearbeitung'}"
             return "Nicht verbunden · Status nicht geprüft"
         if not isinstance(slot, dict) or not slot:
             return "Status nicht geprüft"
-        if slot.get("enabled", True) is not True:
-            return "manuell pausiert"
-        if not self.remote and not self.idle_enabled:
-            return "Host-Worker deaktiviert"
         turn = self.state.get("compute_turn")
         if isinstance(turn, dict) and turn.get("active") is True:
             chat_id = str(turn.get("chat_id") or "")
             priority = turn.get("priority")
-            if priority == "background" and chat_id.startswith("idle-"):
+            if priority == "background" and chat_id == WORKER_ID:
+                if slot.get("enabled") is not True:
+                    return "Running · beendet aktuellen Schritt"
+                if not self.remote and not self.idle_enabled:
+                    return "Running · Hoststart deaktiviert"
                 return "Running · bearbeitet eine Aufgabe"
-            if priority == "foreground":
-                return "Living · Chat hat den Rechenvorrang"
-        if self.idle_processing:
-            return f"Running · {self.idle_task_name or 'Aufgabenbearbeitung'}"
+        observer = getattr(self, "_native_worker", None)
+        if not self.remote and observer is not None and observer.intent is not None:
+            if observer.status in {"stopping", "finishing"}:
+                return "Living · Beendigung läuft"
+            if observer.status == "starting":
+                return "Living · Start wird geprüft"
+            if observer.status == "unconfirmed":
+                return "Living · Laufstatus nicht bestätigt"
+        if self.idle_pending:
+            return "Living · Vorheriger Lauf nicht bestätigt"
+        if slot.get("enabled") is not True:
+            return "manuell pausiert"
+        if not self.remote and not self.idle_enabled:
+            return "Host-Worker deaktiviert"
+        if isinstance(turn, dict) and turn.get("active") is True and turn.get("priority") == "foreground":
+            return "Living · Chat hat den Rechenvorrang"
         pause = slot.get("pause_info")
         if isinstance(pause, dict) and pause.get("is_paused"):
             return f"automatische Pause · {pause.get('remaining_minutes', 0):g} min"

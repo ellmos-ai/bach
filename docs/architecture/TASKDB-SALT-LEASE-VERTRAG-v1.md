@@ -183,10 +183,13 @@ Ein abgelaufener Lease ist nie verlängerbar. Wer weiterarbeiten will, muss neu 
 | `return` | `pending` | Arbeit abgebrochen, Task wieder claimbar |
 | `done` | `done` | Akzeptanz erfüllt; Beleg in `result_ref` und `note` |
 | `blocked` | `blocked` | Blocker gefunden; Begründung in `note` |
+| `review` | `review` | PR bereit zur Prüfung; gültige GitHub-PR-URL in `result_ref`, kein Erledigungsbeleg |
 
 Gilt nur bei passendem `lease_id`/`fence` und lebendem Lease. Danach werden alle Lease-Spalten außer `claim_fence` geleert; `claim_fence` bleibt als Hochwassermarke stehen.
 
 `done` über diesen Pfad ist der **einzige** Weg, wie ein Worker eine geleaste Task abschließt. Ein generisches PUT mit `status` auf eine geleaste Task antwortet `409 lease_required`.
+
+Ergänzung Task #1729: `review` gibt den Lease nach bestätigter PR-Erstellung frei. Der Worker erhält dafür keinen Done-Beleg. WIP- und PR-Vermerke werden vor der Freigabe über das versionierte Lease-Inhaltsupdate geschrieben; bei fehlender Update- oder Release-Bestätigung wird nicht wiederholt oder spekulativ zurückgegeben. `result_ref` muss für `review` die Form `https://github.com/<owner>/<repo>/pull/<positive ID>` haben.
 
 ## 6. TTL-Profile
 

@@ -31,6 +31,7 @@ their versions (as tested), and their respective licenses.
 | `ftfy` | 6.3.1 | Apache-2.0 | Unicode/encoding repair |
 | `rapidfuzz` | 3.14.3 | MIT (see metadata) | Fuzzy string matching |
 | `markdown` | 3.10 | BSD (see metadata) | Markdown → HTML |
+| `regex` | 2026.6.28 | Apache-2.0 AND CNRI-Python | Timeout-bounded tool searches |
 | `watchdog` | 6.0.0 | Apache-2.0 | File system monitoring |
 | `psutil` | 7.0.0 | BSD-3-Clause | System/process info |
 | `GitPython` | 3.1.46 | BSD-3-Clause | Git operations |

@@ -95,6 +95,7 @@ def test_real_handoff_path_requires_nonempty_summary_and_current_run(empty, canc
 def test_controller_checks_current_run_status_and_expiry(monkeypatch, condition):
     from hub._services.chat import telegram_chat as controller
     control = controller._WorkerControl("worker-1")
+    control.supports_step_actions = True
     control.thread = type("Thread", (), {"is_alive": lambda self: True})()
     slot = {"id": "worker-1", "status": "paused" if condition == "paused" else "running"}
     if condition == "expired":

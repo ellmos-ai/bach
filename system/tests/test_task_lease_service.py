@@ -137,7 +137,7 @@ def _acq(conn, task_id, worker="agy-opus@ASUS-GEI", now=T0, **kw):
     return acquire_lease(conn, task_id, worker_id=worker, host=host, now=now, **kw)
 
 
-@pytest.mark.parametrize("operation", ["acquire", "renew", "release", "decompose"])
+@pytest.mark.parametrize("operation", ["acquire", "renew", "release", "decompose", "update"])
 def test_live_clock_is_read_after_waiting_for_write_lock(conn, db_path, monkeypatch, operation):
     import time
     from hub._services import task_lease as service
@@ -185,6 +185,8 @@ def test_live_clock_is_read_after_waiting_for_write_lock(conn, db_path, monkeypa
                 result = service.renew_lease(conn, tid, **ref, **kwargs)
             elif operation == "release":
                 result = service.release_lease(conn, tid, outcome="done", **ref, **kwargs)
+            elif operation == "update":
+                result = service.update_lease(conn, tid, changes={"description": "Too late"}, **ref, **kwargs)
             else:
                 result = service.decompose_lease(conn, tid, subtasks=[{"title": "child"}], **ref, **kwargs)
             assert result.http_status == 409 and result.payload["reason"] == "expired"
@@ -404,7 +406,7 @@ def test_parallel_fenced_decomposition_has_only_one_child_batch(db_path):
         c.close()
 
 
-@pytest.mark.parametrize("operation", ["acquire", "renew", "release"])
+@pytest.mark.parametrize("operation", ["acquire", "renew", "release", "update"])
 def test_failed_commit_never_returns_ack_and_rolls_back(db_path, operation):
     class RefuseCommit(sqlite3.Connection):
         refuse_action = None
@@ -429,6 +431,11 @@ def test_failed_commit_never_returns_ack_and_rolls_back(db_path, operation):
             elif operation == "renew":
                 renew_lease(first, task_id, lease_id=original["lease_id"], fence=original["fence"],
                             config=CFG, now=T0 + timedelta(seconds=1))
+            elif operation == "update":
+                from hub._services.task_lease import update_lease
+                update_lease(first, task_id, lease_id=original["lease_id"], fence=original["fence"],
+                             task_version=original["task_version"], changes={"description": "Uncommitted"},
+                             config=CFG, now=T0)
             else:
                 release_lease(first, task_id, lease_id=original["lease_id"], fence=original["fence"],
                               outcome="return", config=CFG, now=T0)
@@ -671,7 +678,7 @@ class TestRenew:
 
 class TestRelease:
     @pytest.mark.parametrize("outcome,status", [("return", "pending"), ("done", "done"),
-                                                ("blocked", "blocked")])
+                                                ("blocked", "blocked"), ("review", "review")])
     def test_release_outcomes_keep_fence(self, conn, outcome, status):
         tid = _insert(conn)
         ack = _acq(conn, tid).payload
@@ -875,6 +882,53 @@ def test_config_from_env():
 
 @pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="fastapi nicht installiert")
 class TestLeaseAPI:
+    def test_review_endpoint_requires_reference_and_has_no_completion_timestamp(self, client, db_path):
+        with _connect(db_path) as c:
+            tid = _insert(c)
+        version = client.get(f"/api/tasks/{tid}").json()["task_version"]
+        acquired = client.post(f"/api/tasks/{tid}/lease", json={**self._body(), "task_version": version})
+        assert acquired.status_code == 200
+        ack = acquired.json()
+        body = {"lease_id": ack["lease_id"], "fence": ack["fence"], "task_version": ack["task_version"],
+                "outcome": "review"}
+        path = f"/api/tasks/{tid}/lease/release"
+        assert client.post(path, json=body).status_code == 422
+        assert client.get(f"/api/tasks/{tid}").json()["status"] == "in_progress"
+        response = client.post(path, json={**body, "result_ref": "https://github.com/ellmos-ai/bach/pull/123"})
+        assert response.status_code == 200, response.text
+        assert response.json()["outcome"] == "review" and response.json()["status"] == "review"
+        snapshot = client.get(f"/api/tasks/{tid}").json()
+        assert snapshot["status"] == "review" and not snapshot["completed_at"]
+        assert client.post(path, json={**body, "result_ref": "https://github.com/ellmos-ai/bach/pull/123"}).status_code == 409
+
+    def test_atomic_update_endpoint_auth_version_and_status_guard(self, client, db_path):
+        with _connect(db_path) as c:
+            tid = _insert(c, description="Ursprünglich")
+        version = client.get(f"/api/tasks/{tid}").json()["task_version"]
+        ack = client.post(f"/api/tasks/{tid}/lease",
+                          json={**self._body(), "task_version": version}).json()
+        body = {"lease_id": ack["lease_id"], "fence": ack["fence"], "task_version": version,
+                "changes": {"description": "Geänderter Auftrag"}}
+        path = f"/api/tasks/{tid}/lease/update"
+        assert client.post(path, json=body,
+                           headers={"Authorization": "Bearer revoked-device"}).status_code in (401, 403)
+        assert client.post(path, json={**body, "fence": True}).status_code == 422
+        assert client.post(path, json={**body, "changes": {"status": "done"}}).status_code == 422
+        assert client.post(path, json={**body, "unexpected": True}).status_code == 422
+        changed = client.post(path, json=body)
+        assert changed.status_code == 200, changed.text
+        new_version = changed.json()["task_version"]
+        assert new_version != version
+        assert client.post(path, json=body).status_code == 409
+        snapshot = client.get(f"/api/tasks/{tid}").json()
+        assert snapshot["description"] == "Geänderter Auftrag"
+        assert snapshot["task_version"] == new_version
+        assert snapshot["status"] == "in_progress"
+        returned = client.post(f"/api/tasks/{tid}/lease/release", json={
+            "lease_id": ack["lease_id"], "fence": ack["fence"],
+            "task_version": new_version, "outcome": "return"})
+        assert returned.status_code == 200, returned.text
+
     def test_fenced_decomposition_endpoint_and_safe_snapshot(self, client, db_path):
         with _connect(db_path) as c:
             tid = _insert(c, description="Auftrag äöü")

@@ -18,6 +18,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -637,17 +638,20 @@ TOOLS_PLAN = [t for t in TOOLS_SAFE
               if t["function"]["name"] not in _NICHT_IM_PLAN]
 
 
-def tools_for_mode(mode: str) -> list:
+def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
     """Werkzeugliste zum Sitzungsmodus.
 
     Ein unbekannter Modus faellt bewusst auf `safe` zurueck und nicht auf
     `full`: Ein Tippfehler darf nie mehr Rechte geben als angefordert.
     """
-    if mode == "full":
-        return TOOLS_FULL
-    if mode == "plan":
-        return TOOLS_PLAN
-    return TOOLS_SAFE
+    tools = TOOLS_FULL if mode == "full" else TOOLS_PLAN if mode == "plan" else TOOLS_SAFE
+    if bound_worker:
+        # Native tasks may use their selected provider, never the legacy
+        # paid delegation fallback or destructive post-merge cleanup.
+        return [tool for tool in tools if tool["function"]["name"] not in {
+            "delegate", "cleanup_task_worktree",
+        }]
+    return tools
 
 
 # --- Delegation ---
@@ -685,12 +689,27 @@ def _delegate_claude_api(prompt: str, api_key: str,
 # --- Tool-Ausführung ---
 
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
-              default_model: str = "") -> str:
+              default_model: str = "", *, worker_task_binding=None,
+              require_task_binding: bool = False) -> str:
+    if require_task_binding and worker_task_binding is None:
+        return "Taskbindung fehlt; Werkzeug nicht ausgeführt."
+    if worker_task_binding is not None:
+        try:
+            worker_task_binding.assert_active()
+        except Exception:
+            return "BLOCKIERT: Taskbindung oder Workerlauf ist nicht mehr aktiv."
+        if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
+            return "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar."
     if isinstance(args, str):
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, TypeError):
             args = {}
+
+    if worker_task_binding is not None and name == "start_task_worktree":
+        if (not isinstance(args, dict) or type(args.get("task_id")) is not int
+                or args["task_id"] != worker_task_binding.task_id):
+            return "BLOCKIERT: Worktree gehört nicht zur gebundenen Task."
 
     try:
         if name == "list_directory":
@@ -750,6 +769,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
         if name == "search_text":
             pat = args.get("pattern", "")
+            if not isinstance(pat, str) or len(pat) > 1024:
+                return "BLOCKIERT: Suchmuster ist ungültig oder zu lang"
             p = Path(args.get("path", "."))
             resolved = _resolve(p)
             if not _fs_root_allowed(resolved):
@@ -757,15 +778,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if _is_secret_path(resolved):
                 return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
             recursive = args.get("recursive", True)
+            import regex
             try:
-                rx = re.compile(pat)
-            except re.error as e:
+                rx = regex.compile(pat, regex.VERSION0)
+            except regex.error as e:
                 return f"Ungueltiges Muster: {e}"
             files = resolved.rglob("*") if recursive and resolved.is_dir() else (
                 resolved.glob("*") if resolved.is_dir() else [resolved]
             )
             hits = []
+            deadline = time.monotonic() + 5
+            bytes_read = 0
             for n, f in enumerate(files):
+                if time.monotonic() >= deadline:
+                    return "BLOCKIERT: Suche hat das Zeitlimit erreicht"
                 if n >= 5000:
                     break
                 fr = _resolve(f)
@@ -775,11 +801,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     continue
                 try:
                     with open(fr, "r", encoding="utf-8", errors="replace") as fh:
-                        for i, line in enumerate(fh, start=1):
-                            if rx.search(line):
+                        i = 0
+                        while line := fh.readline(65536):
+                            i += 1
+                            bytes_read += len(line.encode("utf-8"))
+                            remaining = deadline - time.monotonic()
+                            if bytes_read > 8_388_608 or remaining <= 0:
+                                return "BLOCKIERT: Suche hat das Lese- oder Zeitlimit erreicht"
+                            if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
+                except TimeoutError:
+                    return "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
                 except OSError:
                     continue
             return ("\n".join(hits) or "(keine Treffer)")[:4000]
@@ -810,6 +844,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return "Unbekannte Aktion: " + act
 
         if name == "bach_command":
+            if worker_task_binding is not None and args.get("handler") == "task":
+                try:
+                    return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
+                except Exception:
+                    return "BLOCKIERT: Task-Befehl nicht bestätigt; gebundenes task_manage verwenden."
             if not bach_app:
                 return "BACH nicht verfügbar"
             _HANDLER_ALIASES = {
@@ -885,7 +924,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             msg = args.get("message", "")
             is_wip = bool(args.get("is_wip", False))
             try:
-                res = finish_task(tid, msg, is_wip=is_wip)
+                private = ({"worker_task_binding": worker_task_binding,
+                            "require_task_binding": require_task_binding}
+                           if worker_task_binding is not None or require_task_binding else {})
+                res = finish_task(tid, msg, is_wip=is_wip, **private)
                 return json.dumps(res, ensure_ascii=False)
             except Exception as e:
                 return f"Fehler bei finish_task: {e}"
@@ -938,6 +980,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return f"Suchfehler: {e}"
 
         if name == "task_manage":
+            if worker_task_binding is not None:
+                try:
+                    return worker_task_binding.execute_task_manage(args)
+                except Exception:
+                    # Private authority/capability details never become tool text.
+                    return "Taskoperation nicht bestätigt; Taskbindung prüfen."
+            if require_task_binding:
+                return "Taskbindung fehlt; Taskoperation nicht ausgeführt."
             action = args.get("action", "list")
             runtime_db = _current_runtime_db()
             task_audit_fn = _current_apply_task_field_changes()
@@ -1500,12 +1550,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             extract = args.get("extract_text", True)
             max_chars = min(int(args.get("max_chars", 4000)), 8000)
             try:
-                import httpx
-                r = httpx.get(url, follow_redirects=True, timeout=15,
-                              headers={"User-Agent": "BACH/3.9"})
+                # Use the existing provider seam with pinned public DNS,
+                # redirect validation and response limits. Never fetch a
+                # private Control API/cloud metadata address from tool input.
+                from hub.web_scrape import WebScrapeHandler
+                r, error = WebScrapeHandler(Path(BACH_SYSTEM_DIR))._request(url)
+                if r is None:
+                    return "BLOCKIERT: Webabruf nicht bestätigt: " + str(error)
                 ct = r.headers.get("content-type", "")
                 if "json" in ct:
-                    return json.dumps(r.json(), indent=2, ensure_ascii=False)[:max_chars]
+                    return json.dumps(json.loads(r.text), indent=2, ensure_ascii=False)[:max_chars]
                 text = r.text
                 if extract and "html" in ct.lower():
                     try:
@@ -1590,19 +1644,54 @@ class BachToolProvider:
     BACH's system prompt advertises.
     """
 
-    def __init__(self, bach_app=None, default_model: Callable[[], str] | None = None):
+    def __init__(self, bach_app=None, default_model: Callable[[], str] | None = None,
+                 *, worker_task_binding=None, require_task_binding=False, guard=None):
         self.bach_app = bach_app
         self._default_model = default_model
+        self._worker_task_binding = worker_task_binding
+        self._require_task_binding = require_task_binding
+        self._guard = guard
 
     def get_tools(self, mode) -> list[dict]:
-        m = as_mode(mode).value
-        return tools_for_mode(m)
+        if self._guard is not None:
+            try:
+                self._guard()
+            except Exception:
+                return []
+        if self._require_task_binding and self._worker_task_binding is None:
+            return []
+        if self._worker_task_binding is not None:
+            try:
+                self._worker_task_binding.assert_active()
+            except Exception:
+                return []
+        m = self._mode(mode)
+        return tools_for_mode(m, bound_worker=self._worker_task_binding is not None)
+
+    @staticmethod
+    def _mode(mode):
+        # BACH's planning mode is broader than the module's SAFE/FULL enum:
+        # it reads and creates tasks, without file writes or delegation.
+        if isinstance(mode, str) and mode.strip().lower() == "plan":
+            return "plan"
+        return as_mode(mode).value
 
     def execute(self, name: str, args: Any, mode) -> str:
+        if self._guard is not None:
+            try:
+                self._guard()
+            except Exception:
+                return "BLOCKIERT: Werkzeugfreigabe oder Workerlauf ist nicht mehr aktuell."
+        try:
+            selected_mode = self._mode(mode)
+        except ValueError:
+            return "BLOCKIERT: Unbekannter Werkzeugmodus."
         return exec_tool(
             name,
             args,
-            as_mode(mode).value,
+            selected_mode,
             bach_app=self.bach_app,
             default_model=self._default_model() if self._default_model else "",
+            worker_task_binding=self._worker_task_binding,
+            require_task_binding=self._require_task_binding,
         )

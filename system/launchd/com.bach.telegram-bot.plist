@@ -8,7 +8,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>mkdir -p "$HOME/Library/Logs/bach"; cd "$HOME/services/bach/system" || exit 1; export PATH="$HOME/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" PYTHONPATH="$HOME/services/bach/system"; exec "$HOME/.venvs/bach/bin/python" hub/_services/chat/telegram_chat.py &gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.log" 2&gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.err.log"</string>
+    <string>mkdir -p "$HOME/Library/Logs/bach"; cd "$HOME/services/bach/system" || exit 1; export PATH="$HOME/.venvs/bach/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" PYTHONPATH="$HOME/services/bach/system"; exec "$HOME/.venvs/bach/bin/python" -m hub._services.chat.telegram_chat &gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.log" 2&gt;&gt;"$HOME/Library/Logs/bach/telegram-bot.err.log"</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

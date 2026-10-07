@@ -176,7 +176,7 @@ def test_remote_invalid_device_fails_before_work(http_adapter,token):
         assert conn.execute("SELECT status FROM tasks WHERE id=?",(tid,)).fetchone()[0]=="open"
 
 
-@pytest.mark.parametrize("operation",["acquire","renew","release","decompose"])
+@pytest.mark.parametrize("operation",["acquire","renew","release","decompose","update"])
 def test_remote_timeout_never_retries_mutation(monkeypatch,operation):
     requests=[]
     def timeout(req,timeout):requests.append(req);raise TimeoutError("fixture-secret")
@@ -186,6 +186,7 @@ def test_remote_timeout_never_retries_mutation(monkeypatch,operation):
     with pytest.raises(LeaseError) as exc:
         if operation=="acquire":c.acquire(1,worker_id="worker@HOST",host="HOST")
         elif operation=="decompose":c.decompose(1,subtasks=[{"title":"child"}],**ref)
+        elif operation=="update":c.update(1,changes={"description":"changed"},**ref)
         else:getattr(c,operation)(1,**ref)
     assert len(requests)==1 and "fixture-secret" not in str(exc.value)
 
@@ -205,6 +206,36 @@ def test_committed_decomposition_lost_ack_stops_without_duplicate(http_adapter,m
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT count(*) FROM tasks").fetchone()[0]==2
         assert conn.execute("SELECT status FROM tasks WHERE id=?",(tid,)).fetchone()[0]=="done"
+
+
+def test_remote_snapshot_candidates_and_update_use_authenticated_lead(http_adapter):
+    c,tid,requests,db=http_adapter
+    snapshot=c.task_snapshot(tid)
+    assert any(item["id"]==tid for item in c.task_candidates()["tasks"])
+    ack=c.acquire(tid,worker_id="worker@HOST",host="HOST",task_version=snapshot["task_version"])
+    updated=c.update(tid,lease_id=ack.lease_id,fence=ack.fence,task_version=ack.task_version,
+                     changes={"description":"Auftrag überarbeitet"})
+    assert c.task_snapshot(tid)["task_version"]==updated.task_version
+    c.release(tid,lease_id=ack.lease_id,fence=ack.fence,task_version=updated.task_version,outcome="return")
+    assert all(headers.get("Authorization")=="Bearer fixture-secret" for _,_,headers in requests)
+
+
+def test_committed_update_lost_ack_never_retries(http_adapter,monkeypatch):
+    c,tid,requests,db=http_adapter
+    ack=c.acquire(tid,worker_id="worker@HOST",host="HOST")
+    original=module.urllib.request.urlopen
+    def lose(req,timeout):
+        reply=original(req,timeout)
+        if req.full_url.endswith("/update"):raise TimeoutError("lost ACK after commit")
+        return reply
+    monkeypatch.setattr(module.urllib.request,"urlopen",lose)
+    with pytest.raises(LeaseError):
+        c.update(tid,lease_id=ack.lease_id,fence=ack.fence,task_version=ack.task_version,
+                 changes={"description":"committed once"})
+    assert sum(path.endswith("/update") for _,path,_ in requests)==1
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT description FROM tasks WHERE id=?",(tid,)).fetchone()[0]=="committed once"
+        assert conn.execute("SELECT count(*) FROM task_history WHERE action='lease_update'").fetchone()[0]==1
 
 
 def test_operator_content_change_rejects_http_holder(http_adapter):

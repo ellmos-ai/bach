@@ -970,7 +970,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
             const toolRound = Number(w.tool_round) || 0;
             const maxRounds = Number(w.max_tool_rounds) || 25;
             return `
-              <div class="core-agent-card" style="border-color:#38bdf8;background:rgba(56,189,248,0.04);">
+              <div class="core-agent-card" data-worker-id="${escapeHtml(w.id)}" style="border-color:#38bdf8;background:rgba(56,189,248,0.04);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
                   <span class="badge" style="background:#0284c7;color:#fff;font-size:0.75rem;">⚡ RUNNING</span>
                   <small style="color:var(--accent);">Runde ${toolRound}/${maxRounds}</small>
@@ -992,26 +992,62 @@ import BachLayout from "../../layouts/BachLayout.astro";
             `;
           }).join('');
         }
+        runningList.querySelectorAll('[data-worker-id]').forEach(card => {
+          const worker = runningWorkers.find(item => item.id === card.dataset.workerId);
+          if (!worker || typeof worker.generation !== 'string') return;
+          const actions = document.createElement('div');
+          actions.className = 'core-actions';
+          for (const [action, label] of [['handoff', 'Kontext übergeben'], ['decompose', 'Task zerlegen']]) {
+            if (worker.action_capabilities?.[action] !== true) continue;
+            if (action === 'decompose' && !worker.task_action_binding) continue;
+            const button = coreElement('button', label, 'btn btn-sm');
+            button.type = 'button';
+            button.addEventListener('click', () => runWorkerAction(worker.id, action,
+              worker.generation, worker.task_action_binding));
+            actions.append(button);
+          }
+          if (worker.task_action_receipt) {
+            const receipt = worker.task_action_receipt;
+            actions.append(coreElement('small', 'Zerlegung: ' + receipt.state +
+              (receipt.state === 'confirmed' ? ' · ' + receipt.created_ids.map(id => '#' + id).join(', ') : '')));
+          }
+          card.append(actions);
+        });
       } catch (error) {
         summary.textContent = 'Workerstatus konnte nicht geladen werden.';
       }
     }
 
-    async function runWorkerAction(workerId, action, generation) {
+    async function runWorkerAction(workerId, action, generation, taskBinding) {
+      const summary = document.getElementById('worker-status-summary');
+      const safeActions = new Set(['start', 'pause', 'stop', 'handoff', 'decompose']);
+      if (!safeActions.has(action)) return;
+      summary.textContent = 'Aktion wird angefordert…';
       try {
         const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/${action}`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(action === 'handoff' ? {generation} : {})
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(action === 'decompose' ? {generation, ...taskBinding} :
+            action === 'handoff' ? {generation} : {})
         });
-        if (response.ok) {
-          loadBackgroundWorkers();
+        const data = await response.json();
+        if (!response.ok || data.ok !== true) throw new Error(data.detail || 'Aktion nicht bestätigt');
+        if (action === 'decompose') {
+          summary.textContent = data.receipt?.state === 'confirmed'
+            ? 'Teilaufgabenanlage durch den Lead bestätigt.'
+            : data.receipt?.state === 'error' ? 'Zerlegung ohne bestätigte Teilaufgaben beendet.'
+            : data.receipt?.state === 'cancelled' ? 'Zerlegungsanfrage abgebrochen.'
+            : 'Zerlegung angefordert · Bestätigung folgt im Workerstatus.';
+        } else if (action === 'handoff') {
+          summary.textContent = data.receipt?.state === 'confirmed'
+            ? 'Kontextübergabe durch die Laufzeit bestätigt.'
+            : 'Kontextübergabe angefordert · Bestätigung folgt im Workerstatus.';
         } else {
-          alert('Aktion konnte nicht ausgeführt werden.');
+          summary.textContent = 'Aktion bestätigt; Laufstatus wird neu gelesen.';
         }
-      } catch (e) {
-        alert('Netzwerkfehler: ' + e.message);
+      } catch (error) {
+        summary.textContent = error.message;
       }
+      await loadBackgroundWorkers();
     }
 
     async function deleteWorker(workerId) {

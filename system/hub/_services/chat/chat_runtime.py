@@ -441,6 +441,9 @@ class ChatSession(_ModuleChatSession):
         self.operator_control: Any = None
         self.worker_handoff: Any = None
         self.resolved_model: str = ""
+        self.worker_task_actions: Any = None
+        self.worker_task_binding: Any = None
+        self.require_task_binding: bool = False
 
     @property
     def mode(self) -> str:
@@ -552,6 +555,8 @@ class ChatRuntime(_ModuleChatRuntime):
             slot = reader()
             if not isinstance(slot, dict) or slot.get("id") != getattr(session, "chat_id", ""):
                 raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
+            if slot.get("enabled", True) is not True:
+                raise RuntimeError("Worker ist deaktiviert")
             session.allow_tools = slot.get("allow_tools", True) is True
             return None
         except Exception as exc:
@@ -559,10 +564,36 @@ class ChatRuntime(_ModuleChatRuntime):
             return FailedAnswer.from_exception(exc)
 
     @classmethod
-    def _worker_backend_gate(cls, session: ChatSession, backend: Any) -> FailedAnswer | None:
+    def _worker_backend_gate(cls, session: ChatSession, backend: Any, model: Any = None) -> FailedAnswer | None:
         capability_error = cls._refresh_worker_tools(session)
         if capability_error is not None:
             return capability_error
+        binding = getattr(session, "worker_task_binding", None)
+        if binding is None and getattr(session, "require_task_binding", False):
+            return FailedAnswer("Taskbindung fehlt; Workerlauf nicht verifizierbar")
+        if binding is not None:
+            try:
+                binding.assert_active()
+            except Exception:
+                return FailedAnswer("Taskbindung oder Workerlauf ist nicht mehr aktiv")
+            actions = getattr(session, "worker_task_actions", None)
+            if actions is not None:
+                try:
+                    actions.validate(binding)
+                except Exception:
+                    return FailedAnswer("Angeforderte Taskaktion oder Inhaltsversion ist nicht mehr aktuell")
+            from .slots_config import task_matches_slot_binding
+            if not task_matches_slot_binding(binding.task_snapshot(), {
+                    "id": getattr(session, "chat_id", ""), "model": model}):
+                return FailedAnswer("Task passt nicht zur aktuellen Slot- oder Modellauswahl")
+            if getattr(backend, "manages_own_tools", False):
+                from hub._services.llm.model_backend import CLIBackend
+                if not isinstance(backend, CLIBackend) or backend.cli_name != "claude":
+                    return FailedAnswer("Lease-Anbindung für die eigenen Backend-Werkzeuge fehlt")
+                handoff = getattr(session, "worker_handoff", None)
+                pending = [control.snapshot() for control in (actions, handoff) if control is not None]
+                if any(receipt and receipt.get("state") in {"pending", "running"} for receipt in pending):
+                    return FailedAnswer("Angeforderte Blockaktion ist für dieses CLI-Backend nicht verfügbar")
         if session.allow_tools is False and getattr(backend, "manages_own_tools", False):
             # Self-managed backends can dispatch tools outside BACH's tool
             # loop, so a worker downgrade must stop every backend boundary.
@@ -946,7 +977,7 @@ class ChatRuntime(_ModuleChatRuntime):
         return "foreground"
 
     @staticmethod
-    async def _enter_compute_turn(gate: _ComputeTurnGate, chat_id: str, priority: str) -> None:
+    async def _enter_compute_turn(gate: _ComputeTurnGate, chat_id: str, priority: str, *, check_ready=None) -> None:
         waiting_foreground = priority == "foreground"
         registered_waiter = False
         try:
@@ -955,6 +986,8 @@ class ChatRuntime(_ModuleChatRuntime):
                     gate.foreground_waiters += 1
                     registered_waiter = True
             while True:
+                if check_ready is not None:
+                    check_ready()
                 with gate.condition:
                     if not gate.active and (priority != "background" or gate.foreground_waiters == 0):
                         gate.active = True
@@ -984,15 +1017,36 @@ class ChatRuntime(_ModuleChatRuntime):
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         turn_context = self._compute_turn_context.get()
+        def check_binding():
+            if turn_context:
+                session = self.get_session(turn_context[0])
+                if (getattr(session, "worker_task_binding", None) is not None
+                        or getattr(session, "require_task_binding", False)):
+                    problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
+                    if problem is not None:
+                        raise RuntimeError(str(problem))
+        check_binding()
+        session = self.get_session(turn_context[0]) if turn_context else None
+        binding = getattr(session, "worker_task_binding", None)
+        if binding is not None and getattr(backend, "manages_own_tools", False):
+            return await backend.chat_bound(
+                *args, **kwargs, binding=binding, mode=session.mode,
+                guard=check_binding, bach_app=self.bach_app,
+            )
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
 
         chat_id, priority = turn_context or ("runtime", "foreground")
         from hub._services.chat.host_inference_gate import HostInferenceGate
 
-        async with HostInferenceGate().turn(chat_id, priority):
-            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority)
+        session = self.get_session(chat_id) if turn_context else None
+        guard = ({"check_ready": check_binding} if session is not None and (
+            getattr(session, "worker_task_binding", None) is not None
+            or getattr(session, "require_task_binding", False)) else {})
+        async with HostInferenceGate().turn(chat_id, priority, **guard):
+            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
             try:
+                check_binding()
                 return await backend.chat(*args, **kwargs)
             finally:
                 self._leave_compute_turn(self._compute_turn_gate)
@@ -1386,7 +1440,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             session.model = selected_model
             session.custom_system_prompt = self.build_system_prompt(
                 session, profile_context=session.profile_context_text)
-        capability_error = self._worker_backend_gate(session, selected_backend)
+        capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
         if capability_error is not None:
             session.messages.extend([
                 {"role": "user", "content": text},
@@ -1404,7 +1458,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
         total = sum(len(m.get("content", "")) for m in session.messages)
         if total > summarize_thresh or len(session.messages) > max_msgs:
-            capability_error = self._worker_backend_gate(session, selected_backend)
+            capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
                 self._persist_session(chat_id, session)
@@ -1436,7 +1490,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         if getattr(selected_backend, "manages_own_tools", False):
             if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
                 msgs[0]["content"] += "\n\n" + SELF_DECOMPOSE_INSTRUCTION
-            capability_error = self._worker_backend_gate(session, selected_backend)
+            capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
                 self._persist_session(chat_id, session)
@@ -1459,7 +1513,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
-            tools = tools_for_mode(session.mode) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
+            tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -1491,6 +1545,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
     async def _tool_loop(self, msgs: list, session: ChatSession,
                          tools: list, *, backend=None, model: str = "",
                          context_limit: int | None = None) -> str:
+        actions = getattr(session, "worker_task_actions", None)
+        try:
+            return await self._tool_loop_impl(msgs, session, tools, backend=backend, model=model,
+                                              context_limit=context_limit)
+        finally:
+            if actions is not None:
+                actions.end_block()
+
+    async def _tool_loop_impl(self, msgs: list, session: ChatSession,
+                             tools: list, *, backend=None, model: str = "",
+                             context_limit: int | None = None) -> str:
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
@@ -1543,6 +1608,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     # Steuerung darf den Lauf nie gefährden.
                     log.warning("Operator-Steuerung fehlgeschlagen (ignoriert): %s", e)
 
+            actions = getattr(session, "worker_task_actions", None)
+            if actions is not None:
+                try:
+                    actions.consume(getattr(session, "worker_task_binding", None),
+                                    backend=getattr(selected_backend, "name", type(selected_backend).__name__),
+                                    model=selected_model)
+                    if actions.instruction() is not None and (not tools or session.allow_tools is not True):
+                        raise ValueError("Zerlegung benötigt verfügbare Task-Werkzeuge")
+                except Exception as exc:
+                    return FailedAnswer.from_exception(exc)
+
             handoff_control = getattr(session, "worker_handoff", None)
             if handoff_control is not None and handoff_control.closed:
                 return FailedAnswer.from_exception(RuntimeError("Workerlauf beendet"))
@@ -1568,6 +1644,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception as exc:
                     handoff_control.finish(request_id, succeeded=False)
                     return FailedAnswer.from_exception(exc)
+
+            if actions is not None:
+                instruction = actions.instruction()
+                if instruction is not None and (not tools or session.allow_tools is not True):
+                    return FailedAnswer("Zerlegung benötigt verfügbare Task-Werkzeuge")
+                if instruction is not None and not any(
+                        message.get("role") == "user" and message.get("content") == instruction for message in msgs):
+                    msgs.append({"role": "user", "content": instruction})
 
             try:
                 result = await self._chat_with_compute_turn(
@@ -1662,7 +1746,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             round_num += 1
             session.tool_round = round_num
             for i, tc in enumerate(tool_calls):
-                capability_error = self._refresh_worker_tools(session)
+                capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
                 if capability_error is not None:
                     session.current_tool = ""
                     return capability_error
@@ -1690,7 +1774,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         pass
                 # Updating activity may race with (or itself trigger) a
                 # downgrade. Re-read immediately before dispatcher entry.
-                capability_error = self._refresh_worker_tools(session)
+                capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
                 if capability_error is not None:
                     session.current_tool = ""
                     return capability_error
@@ -1699,14 +1783,35 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     return FailedAnswer(
                         f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                     )
+                binding = getattr(session, "worker_task_binding", None)
+                tool_kwargs = {}
+                if binding is not None or getattr(session, "require_task_binding", False):
+                    tool_kwargs = {"worker_task_binding": binding,
+                                   "require_task_binding": getattr(session, "require_task_binding", False)}
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
                     default_model=selected_model,
+                    **tool_kwargs,
                 )
-                self._record_task_completion_receipt(
-                    getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
-                )
+                if binding is not None:
+                    actions = getattr(session, "worker_task_actions", None)
+                    if actions is not None and t_name == "task_manage":
+                        actions.confirm(binding)
+                    with self._task_completion_receipts_lock:
+                        receipts = self._task_completion_receipts.setdefault(str(session.chat_id), [])
+                        for task_id in binding.completed_task_ids:
+                            if task_id not in receipts:
+                                receipts.append(task_id)
+                    if binding.closed:
+                        # The task is already released at the authority. Return
+                        # its ACK receipt without further inference or mutations.
+                        session.current_tool = ""
+                        return str(t_result)
+                else:
+                    self._record_task_completion_receipt(
+                        getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
+                    )
                 tool_call_id = ""
                 if hasattr(selected_backend, "_last_tool_call_ids"):
                     ids = selected_backend._last_tool_call_ids

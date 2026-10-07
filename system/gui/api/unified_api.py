@@ -3159,6 +3159,24 @@ async def handoff_system_worker(worker_id: str, request: Request):
         raise HTTPException(status_code=400, detail="Ungültige Übergabeanfrage") from exc
 
 
+@router.post("/system/workers/{worker_id}/decompose")
+async def decompose_system_worker(worker_id: str, request: Request):
+    device_token = _require_memory_device_token(request)
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, request_worker_decomposition
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"generation", "task_id", "task_version"}:
+            raise HTTPException(400, "Aktueller Workerlauf und Task-Inhaltsversion erforderlich")
+        return await asyncio.to_thread(request_worker_decomposition, worker_id, body["generation"],
+                                       body["task_id"], body["task_version"], device_token=device_token)
+    except WorkerActionRejected as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(503, "Zerlegungsanfrage nicht verfügbar") from exc
+    except ValueError as exc:
+        raise HTTPException(400, "Ungültige Zerlegungsanfrage") from exc
+
+
 @router.post("/system/workers/{worker_id}/pause")
 async def pause_system_worker(worker_id: str, request: Request):
     """Request a confirmed cooperative pause for one live worker."""
