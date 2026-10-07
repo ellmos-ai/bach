@@ -36,6 +36,7 @@ id_rsa
 id_rsa.*
 id_ed25519
 id_ed25519.*
+.credentials/
 
 # === MAIL CREDENTIALS (NIEMALS COMMITTEN!) ===
 /system/hub/_services/mail/credentials/
@@ -53,6 +54,20 @@ id_ed25519.*
 /system/_backups/*.zip
 /system/storage/
 /system/storage/**
+
+# SQLite-Begleitdateien können User-Daten aus beliebigen DB-Pfaden enthalten.
+*.db-wal
+*.db-shm
+*.db-journal
+*.bachdb-wal
+*.bachdb-shm
+*.bachdb-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
 
 # === LOGS (Evaluierung, Translation-Tests, etc.) ===
 /logs/
@@ -149,6 +164,8 @@ id_ed25519.*
 * (conflicted copy)*
 *-WORKSTATION-LG.*
 *-ASUS-GEI.*
+*-IDEAPAD-GEI.*
+*-SURFACE-LAPTOP.*
 *-Mac Studio.*
 *-LAPTOP-*.*
 *-DESKTOP-*.*
@@ -338,7 +355,7 @@ token.json
 
 # === PFLEGELAEUFE (Pipeline-Material, kein Repo-Inhalt) ===
 /_after-care/
-/LOCK*.txt
+LOCK*.txt
 /system/tools/testing/results/
 
 # Codex-Zweitmeinung: Roh-Logs bleiben lokal, Fragen/Antwort werden committet

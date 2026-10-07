@@ -5,9 +5,10 @@
 ### [BACH-SEC-DEPS-01] GUI-Abhängigkeitslücken vor dem nächsten Release schließen
 - **Ziel:** Die 14 offenen GitHub-Dependabot-Alerts vom 2026-10-03 abarbeiten, ohne den vorhandenen Update-PR zu duplizieren.
 - **Quelle:** [PR #188](https://github.com/ellmos-ai/bach/pull/188), Alerts #29–#42 für `system/gui/web/package-lock.json`; [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).
-- **Stand:** PR #188 enthält Astro 7.3.5, sharp 0.35.5 und esbuild 0.28.2 außerhalb der betroffenen Bereiche von 13 Alerts. `http-cache-semantics` bleibt dort bei 4.2.0; für Alert #42 nennt GitHub aktuell keine gepatchte Version. Die vorhandene CI prüft keinen Astro-Build.
+- **Historischer Stand 2026-10-03:** PR #188 enthält Astro 7.3.5, sharp 0.35.5 und esbuild 0.28.2 außerhalb der betroffenen Bereiche von 13 Alerts. `http-cache-semantics` bleibt dort bei 4.2.0; für Alert #42 nennt GitHub aktuell keine gepatchte Version. Die vorhandene CI prüft keinen Astro-Build.
 - **Akzeptanzkriterien:** PR #188 nach unabhängigem Review und erfolgreichem GUI-Build integrieren; verbleibenden Cache-Alert durch einen verifizierten Upstream-Fix oder eine überprüfte Entfernung des betroffenen Abhängigkeitspfads schließen. Anschließend Lockfile und GitHub-Alertstatus erneut prüfen.
-- **Offen:** Kein Abhängigkeitsupdate integriert, keine Ausnutzbarkeit im produktiven Deployment bewiesen. Der fehlende Patch ist ein Release-Blocker und keine Risikofreigabe.
+- **Historisch offen 2026-10-03:** Kein Abhängigkeitsupdate integriert, keine Ausnutzbarkeit im produktiven Deployment bewiesen. Der fehlende Patch ist ein Release-Blocker und keine Risikofreigabe.
+- **Nachtrag 2026-10-07:** PR #188 wurde am 2026-10-04 integriert; der aktuelle GUI-Workflow prüft Installation, Tests und Build. Auf `origin/main` `9815de1b` war nur Alert #42 offen. Das am 2026-10-06 zurückgesetzte Astro-5-Manifest widersprach weiterhin dem Astro-7-Lockfile; Neuauflösung auf Astro 5 führte wieder zu kritischen Advisories. Dieser Korrekturkandidat gleicht das Manifest auf Astro 7.3.5 ab und aktualisiert `http-cache-semantics` auf das am 2026-10-04 veröffentlichte 4.3.0. `npm ci`, acht GUI-Tests, Build mit 17 Seiten und `npm audit --package-lock-only` (0 Befunde) sind lokal grün. Ein unvollständiges Funktionsduplikat in Fabrika wurde entfernt. Integration nach Review und anschließender GitHub-Alert-Readback bleiben offen; das Audit ist kein produktiver Ausnutzbarkeitsnachweis.
 - **Aufwand:** medium
 - **Reichweite:** local
 - **Priorität:** high
@@ -17,6 +18,7 @@
 - **Quelle:** `system/gui/GUI_DEPLOYMENT_RECEIPT_2026-10-03.md`, Abschnitt „Verbleibende Grenzen“; Release-Privacy-Audit vom 2026-10-03.
 - **Akzeptanzkriterien:** Verbraucher und zuständige Geräteidentität lokal zuordnen, Ersatz sicher hinterlegen, den Alt-Token widerrufen und dessen Ablehnung sowie den gültigen Ersatz prüfen. Nur redigierte Ergebnisbelege speichern, keine Tokens oder Token-Hashes.
 - **Offen:** Aktueller Widerruf- und Verbraucherstand ist nicht verifiziert. Dieser Quellcode-Audit hat keine produktiven Geräte oder Zugangsdaten geändert.
+- **Nachtrag 2026-10-07:** Weiterhin kein redigierter Widerrufbeleg im aktuellen Quellstand gefunden. Release-Gate bleibt offen; Identität und Verbraucher müssen vor einem gezielten Widerruf zugeordnet werden.
 - **Aufwand:** medium
 - **Reichweite:** local
 - **Priorität:** high

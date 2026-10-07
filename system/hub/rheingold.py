@@ -31,17 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 LEAD_CONFIG_FILE = Path.home() / ".bach" / "lead.json"
 
-DEFAULT_RHEINGOLD_HOSTS = [
-    "http://100.119.69.90:8000",
-    "http://macstudvonlukas:8000",
-    "http://macstudvonlukas.local:8000",
-]
-
-LEAD_HOSTNAMES = {
-    "macstudvonlukas",
-    "macstudvonlukas.local",
-    "mac-studio",
-}
+LEAD_HOSTNAMES = {"mac-studio"}
 
 
 class RheingoldTaskCollision(RuntimeError):
@@ -154,23 +144,20 @@ def get_rheingold_url(timeout: float = 1.2) -> Optional[str]:
     if cfg["mode"] != "worker" or not cfg["lead_url"]:
         return None
 
-    candidates: List[str] = [cfg["lead_url"]]
-    for fallback in DEFAULT_RHEINGOLD_HOSTS:
-        if fallback not in candidates:
-            candidates.append(fallback)
-
-    for url in candidates:
-        endpoint = f"{url}/api/tasks?limit=1"
-        try:
-            req = urllib.request.Request(
-                endpoint,
-                headers={"User-Agent": "BACH-RheingoldClient/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                if resp.status == 200:
-                    return url
-        except Exception:
-            continue
+    # An unavailable configured lead must never redirect task traffic to an
+    # undeclared host. Keep the worker offline until its configuration is fixed.
+    url = cfg["lead_url"]
+    endpoint = f"{url}/api/tasks?limit=1"
+    try:
+        req = urllib.request.Request(
+            endpoint,
+            headers={"User-Agent": "BACH-RheingoldClient/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return url
+    except Exception:
+        pass
 
     return None
 

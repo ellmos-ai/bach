@@ -2558,7 +2558,7 @@ def _control_chat_response(answer) -> tuple[dict, int]:
 
 def _is_trusted_host(host: str) -> bool:
     normalized = str(host or "").strip().strip("[]").lower()
-    if normalized in ("localhost", "127.0.0.1", "::1", "macstudvonlukas", "workstation-lg", "asus-gei"):
+    if normalized in ("localhost", "127.0.0.1", "::1", socket.gethostname().lower()):
         return True
     if normalized.endswith(".local") or normalized.endswith(".internal"):
         return True

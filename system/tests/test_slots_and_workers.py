@@ -1368,7 +1368,7 @@ class TestControlHandlerEndpoints:
         assert _is_allowed_origin("http://127.0.0.1:8081") is True
 
         # Tailscale CGNAT IP (100.64.0.0/10)
-        assert _is_allowed_origin("http://100.119.69.90:8081") is True
+        assert _is_allowed_origin("http://100.64.0.1:8081") is True
         assert _is_allowed_origin("http://100.108.34.112:8000") is True
 
         # Private LAN
@@ -1377,6 +1377,9 @@ class TestControlHandlerEndpoints:
 
         # Same-origin host match
         assert _is_allowed_origin("http://custom-box:8081", req_host="custom-box:8081") is True
+        assert _is_allowed_origin("http://custom-box:8081") is False
+        with patch("socket.gethostname", return_value="local-workstation"):
+            assert _is_allowed_origin("http://local-workstation:8081") is True
 
         # Untrusted external origin
         assert _is_allowed_origin("http://evil.com") is False

@@ -6,7 +6,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,6 +17,7 @@ if str(SYSTEM_ROOT) not in sys.path:
 from hub.rheingold import (
     RheingoldTaskCollision,
     generate_draft_hash,
+    get_rheingold_url,
     is_rheingold_lead,
     post_task_to_rheingold,
     sync_drafts_to_rheingold,
@@ -67,6 +68,25 @@ def test_is_rheingold_lead_with_env(monkeypatch):
     monkeypatch.setenv("BACH_IS_RHEINGOLD_LEAD", "0")
     monkeypatch.setattr("socket.gethostname", lambda: "WORKSTATION-LG")
     assert is_rheingold_lead() is False
+
+
+def test_unreachable_configured_lead_never_probes_another_host():
+    with patch("hub.rheingold.get_lead_config", return_value={
+        "mode": "worker", "lead_url": "http://lead.example:8000",
+    }), patch("hub.rheingold.urllib.request.urlopen", side_effect=OSError("offline")) as request:
+        assert get_rheingold_url() is None
+    request.assert_called_once()
+    assert request.call_args.args[0].full_url == "http://lead.example:8000/api/tasks?limit=1"
+
+
+def test_reachable_configured_lead_is_returned():
+    response = MagicMock()
+    response.__enter__.return_value.status = 200
+    with patch("hub.rheingold.get_lead_config", return_value={
+        "mode": "worker", "lead_url": "http://lead.example:8000",
+    }), patch("hub.rheingold.urllib.request.urlopen", return_value=response) as request:
+        assert get_rheingold_url() == "http://lead.example:8000"
+    request.assert_called_once()
 
 
 def test_generate_draft_hash_format():

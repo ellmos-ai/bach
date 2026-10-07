@@ -1,5 +1,7 @@
 # TaskDB Salt-Lease Abnahme- und Integrationsprotokoll (v1.0)
 
+> Privacy-Nachtrag 2026-10-07: Persönliche Netzwerkadressen wurden durch die Dokumentationsplatzhalter `lead.example` und `192.0.2.1` ersetzt. Die folgenden historischen Betriebsbefunde bestätigen keine aktuelle Erreichbarkeit dieser Platzhalter.
+
 **Referenz:** Task `#1723` (`[T793][LEASE 4/4] Mehrhost-Claim, Ablauf und Fencing isoliert abnehmen`)  
 **Übergeordnete Sammelaufgabe:** `#1696` (`[GUI-GUX][T793] TaskDB-/Lead-Authority, Salt-Leases und Task-Master-Rollen`)  
 **Ticket:** `T-20261003-793817309`  
@@ -91,7 +93,7 @@ Die Testsuite `system/tests/test_multi_host_lease_acceptance.py` umfasst 14 stru
 
 ## 4. Live Mac-Studio Lead Readback
 
-- **Tunnel & Erreichbarkeit:** SSH-Tunnel von `ASUS-GEI` (`127.0.0.1:8000`) zu Mac Studio Lead (`100.119.69.90:8000`) ist aktiv.
+- **Tunnel & Erreichbarkeit:** SSH-Tunnel von `ASUS-GEI` (`127.0.0.1:8000`) zu Mac Studio Lead (`192.0.2.1:8000`) ist aktiv.
 - **Lead API Status:**
   - Task `#1723` wurde auf der Lead TaskDB offiziell übernommen und zurückgelesen (`assigned_to: gemini@ASUS-GEI`, `claimed_by: api`).
   - Vorherige Kettenglieder: `#1720` (done), `#1721` (done), `#1725` (done), `#1726` (done), `#1722` (done).

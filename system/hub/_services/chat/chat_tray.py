@@ -9,7 +9,7 @@ Voraussetzungen:
   pip install pystray Pillow
 
 Start:
-  python chat_tray.py [--port 8081] [--host macstudvonlukas]
+  python chat_tray.py [--port 8081] [--host lead.example]
   BACH_IDLE_WORKER=1  -> Idle-Worker beim Start aktiv (sonst nur per Tray-Menue)
 """
 import argparse
