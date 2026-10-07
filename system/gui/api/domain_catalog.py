@@ -113,11 +113,13 @@ def module_root() -> Path:
     configured = os.environ.get("ELLMOS_MODULES_ROOT")
     if configured:
         return Path(configured).expanduser()
-    for candidate in [
-        Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES",
-        Path(r"C:\Users\User\OneDrive\.TOPICS\.AI\.MODULES"),
-        Path("/Users/lukas/OneDrive/.TOPICS/.AI/.MODULES"),
-    ]:
+    candidates = [
+        Path(value).expanduser() / ".TOPICS" / ".AI" / ".MODULES"
+        for key in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial")
+        if (value := os.environ.get(key))
+    ]
+    candidates.append(Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES")
+    for candidate in candidates:
         if candidate.exists():
             return candidate
     return Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES"

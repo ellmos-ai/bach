@@ -1,5 +1,7 @@
 # ARCHITEKTURKONZEPT: RHEINGOLD & BACHGRUND
 
+> Privacy-Nachtrag 2026-10-07: Persönliche Netzwerkadressen wurden durch die Dokumentationsplatzhalter `lead.example` und `192.0.2.1` ersetzt. Die folgenden historischen Betriebsbefunde bestätigen keine aktuelle Erreichbarkeit dieser Platzhalter.
+
 **Status:** IMPLEMENTIERT & VERIFIZIERT  
 **Datum:** 2026-09-11  
 **Geltungsbereich:** BACH LLM-OS (Multi-Host: Mac Studio, Workstation, Laptop)  
@@ -22,7 +24,7 @@ Analog zu **Trithon** und **Muschelgrund** in *Ocean* trennt *BACH* saubere Eben
 | **Persistente Datenbasis** | **Muschelgrund** (USMC Modus A) | **Bachgrund** (`bach.db`) | Das Flussbett des Baches. Ruhender Persistenz-Grund für Tasks, Gedächtnis und Domänendaten. |
 
 > **Warum „Rheingold“?**  
-> Nach der Mythologie ruht das reine Rheingold auf dem Grund des Stroms und verleiht Souveränität, unverbrüchliche Ordnung und Herrschaft über die Schätze des Stroms. In BACH verkörpert Rheingold die unteilbare atomare Autorität des 24/7-Lead-Servers (`macstudvonlukas`).
+> Nach der Mythologie ruht das reine Rheingold auf dem Grund des Stroms und verleiht Souveränität, unverbrüchliche Ordnung und Herrschaft über die Schätze des Stroms. In BACH verkörpert Rheingold die unteilbare atomare Autorität des 24/7-Lead-Servers (`lead.example`).
 
 ---
 
@@ -30,7 +32,7 @@ Analog zu **Trithon** und **Muschelgrund** in *Ocean* trennt *BACH* saubere Eben
 
 Bisher löste `system/hub/bach_paths.py` den Pfad `BACH_DB` auf jedem Rechner strikt host-lokal auf `~/.bach/bach.db` auf:
 1. **Inselkopien:** Ein Aufruf von `bach task add` auf der Workstation oder dem Laptop schrieb isoliert in die lokale Windows-SQLite-Datenbank.
-2. **Unsichtbarkeit:** Der 24/7-GUI-Server auf dem Mac Studio (`http://macstudvonlukas:8000/tasks-board`) sah davon nichts.
+2. **Unsichtbarkeit:** Der 24/7-GUI-Server auf dem Mac Studio (`http://lead.example:8000/tasks-board`) sah davon nichts.
 3. **Kollisionen bei Syncs:** Vergab die Workstation offline `id=1215` und der Mac Studio parallel `id=1215`, überschrieben sich Tasks bei OneDrive-Transit-Syncs (`INSERT OR REPLACE`) stillschweigend.
 
 ---
@@ -45,7 +47,7 @@ Bisher löste `system/hub/bach_paths.py` den Pfad `BACH_DB` auf jedem Rechner st
 
 ### B. Multi-Host-Federation (Kollaboration über Systemgrenzen)
 * **Grundsatz:** Sollen mehrere BACH-Instanzen auf verschiedenen Rechnern (Mac Studio, Workstation, Laptop) gemeinsam arbeiten, **MUSS ein Lead festgelegt werden**.
-* Der festgelegte Lead (Rheingold-Lead auf Mac Studio: `http://100.119.69.90:8000` bzw. `http://macstudvonlukas:8000`) ist die **alleinige Autorität für offizielle Integer-Task-IDs**.
+* Der festgelegte Lead (Rheingold-Lead auf Mac Studio: `http://192.0.2.1:8000` bzw. `http://lead.example:8000`) ist die **alleinige Autorität für offizielle Integer-Task-IDs**.
 * **Konfiguration:**
   - CLI:
     - `bach task lead` -> Zeigt Modus (`ISOLATED`, `LEAD`, `WORKER`), Lead-URL und Erreichbarkeit.

@@ -222,7 +222,7 @@ def test_control_context_rejects_non_loopback_target(monkeypatch):
     from gui import server as gui_server
 
     monkeypatch.setattr(
-        gui_server, "_chat_control_base_url", lambda: "http://100.119.69.90:18081/api",
+        gui_server, "_chat_control_base_url", lambda: "http://192.0.2.1:18081/api",
     )
     monkeypatch.setattr(
         gui_server, "_chat_control_payload_ready", lambda _payload: True,

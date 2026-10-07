@@ -306,23 +306,6 @@ if !ERRORLEVEL! equ 0 (
     set "CONTROL_ONLINE=1"
 )
 
-REM Fallback zu bekannter Tailscale-IP wenn Hostname nicht erreichbar war
-if "!HOST_ONLINE!"=="0" if "!BACH_HOST_TARGET!"=="macstudvonlukas" (
-    echo       [INFO] Probiere Tailscale-IP 100.119.69.90...
-    curl -s --max-time 3 "http://100.119.69.90:8000/api/status" >nul 2>&1
-    if !ERRORLEVEL! equ 0 (
-        set "BACH_HOST_TARGET=100.119.69.90"
-        set "HOST_ONLINE=1"
-        set "GUI_ONLINE=1"
-    )
-    curl -s --max-time 3 "http://100.119.69.90:8081/api/status" >nul 2>&1
-    if !ERRORLEVEL! equ 0 (
-        set "BACH_HOST_TARGET=100.119.69.90"
-        set "HOST_ONLINE=1"
-        set "CONTROL_ONLINE=1"
-    )
-)
-
 if "!HOST_ONLINE!"=="0" (
     echo.
     echo       [OFFLINE] !BACH_HOST_TARGET! nicht erreichbar.

@@ -6,7 +6,7 @@ auf DIESEM Branch. **NICHT pushen** — das übernimmt der Driver.
 
 ## Kontext
 
-- Nutzer-Vorgabe (wörtlich): "http://macstudvonlukas:8081/activity -> Design
+- Nutzer-Vorgabe (Endpoint am 2026-10-07 redigiert): "http://lead.example:8081/activity -> Design
   in das bach gui design ueberfuehren." Ergänzender Hinweis des Nutzers:
   "/activity funktioniert und ist gute Basis -> nur Design angleichen,
   Funktion 1:1 erhalten."

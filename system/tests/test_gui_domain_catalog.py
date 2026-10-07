@@ -1,15 +1,20 @@
 """The GUI may expose public manifest metadata, never infer installation."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from gui.api.domain_catalog import discover_domains
+from gui.api.domain_catalog import discover_domains, module_root
 
 
 class DomainCatalogTests(unittest.TestCase):
+    def _env(self, **values):
+        home = str(Path.home())
+        return {"HOME": home, "USERPROFILE": home, **values}
+
     def _manifest(self, root, name, **changes):
         directory = root / ".DOMAINS" / name
         directory.mkdir(parents=True, exist_ok=True)
@@ -25,6 +30,22 @@ class DomainCatalogTests(unittest.TestCase):
         }
         data.update(changes)
         (directory / "ellmos-module.v2.json").write_text(json.dumps(data), encoding="utf-8")
+
+    def test_explicit_module_root_takes_precedence(self):
+        with patch.dict(os.environ, self._env(ELLMOS_MODULES_ROOT="~/configured-modules"), clear=True):
+            self.assertEqual(module_root(), Path.home() / "configured-modules")
+
+    def test_configured_onedrive_account_is_discovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            account = Path(tmp) / "Business Account"
+            expected = account / ".TOPICS" / ".AI" / ".MODULES"
+            expected.mkdir(parents=True)
+            with patch.dict(os.environ, self._env(OneDriveCommercial=str(account)), clear=True):
+                self.assertEqual(module_root(), expected)
+
+    def test_missing_accounts_fall_back_to_current_home(self):
+        with patch.dict(os.environ, self._env(), clear=True), patch("pathlib.Path.exists", return_value=False):
+            self.assertEqual(module_root(), Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES")
 
     def test_missing_source_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
