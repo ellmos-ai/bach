@@ -168,3 +168,60 @@ def test_policy_downgrade_after_tools_list_blocks_actual_cli_mutation(bridge, mo
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=guard))
     assert result["content"] == "downgrade was denied"
     assert not bridge.binding.completed_task_ids
+
+
+@pytest.mark.parametrize("abort", [False, True])
+def test_private_cli_cannot_return_before_parent_and_owned_group_exit(monkeypatch, abort):
+    import subprocess
+    import time
+    import signal
+    from system.tests.test_model_backend import _CliProcess
+    from hub._services.llm import model_backend
+    exited, settling, returned = threading.Event(), threading.Event(), threading.Event()
+    process = _CliProcess(stdout=b"actual response", stdin_error=BrokenPipeError() if abort else None)
+    process.pid = 4242
+    process.poll = lambda: (1 if abort else 0) if exited.is_set() or not abort else None
+    def wait(timeout=None):
+        if abort and not exited.is_set():
+            raise subprocess.TimeoutExpired("owned-child", timeout)
+        return 1 if abort else 0
+    process.wait = wait
+    def signal_group(pid, sig):
+        assert pid == process.pid
+        settling.set()
+        if exited.is_set():
+            raise ProcessLookupError()
+        raise PermissionError("exit remains unconfirmed")
+    calls = []
+    monkeypatch.setattr(model_backend.sys, "platform", "darwin")
+    monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
+    monkeypatch.setattr(model_backend.os, "killpg", signal_group, raising=False)
+    monkeypatch.setattr(model_backend.subprocess, "Popen", lambda *_a, **kw: calls.append(kw) or process)
+    backend = CLIBackend(cli_name="claude", cli_path="not-started")
+    result = []
+    def invoke():
+        result.append(backend._run_subprocess(["not-started"], "task",
+                      {"BACH_WORKER_TOOL_GENERATION": "private-generation"}, 0))
+        returned.set()
+    thread = threading.Thread(target=invoke)
+    thread.start()
+    try:
+        assert settling.wait(3)
+        time.sleep(.1)
+        assert not returned.is_set()
+        assert calls[0]["start_new_session"] is True
+    finally:
+        exited.set()
+        thread.join(timeout=4)
+    assert returned.is_set() and not thread.is_alive()
+    if abort:
+        assert "Broken pipe" in result[0]["error"]
+
+
+def test_private_windows_cli_is_denied_before_any_process(monkeypatch):
+    from hub._services.llm import model_backend
+    monkeypatch.setattr(model_backend.sys, "platform", "win32")
+    monkeypatch.setattr(model_backend.subprocess, "Popen", lambda *_a, **_kw: pytest.fail("unverified Windows child"))
+    backend = CLIBackend(cli_name="claude", cli_path="not-started")
+    result = backend._run_subprocess(["not-started"], "task", {"BACH_WORKER_TOOL_GENERATION": "private"}, 0)
+    assert "Windows noch nicht abgenommen" in result["error"]

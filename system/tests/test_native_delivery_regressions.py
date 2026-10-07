@@ -116,3 +116,55 @@ def test_pending_action_after_backend_change_stops_private_cli(bridge, monkeypat
     monkeypatch.setattr(backend, "chat_bound", forbidden)
     answer = asyncio.run(runtime.process("Auftrag", "leased-chat", work_priority="background"))
     assert isinstance(answer, FailedAnswer)
+
+
+def test_backend_factory_failure_never_uses_global_paid_backend(monkeypatch):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat as controller
+    paid = object()
+    monkeypatch.setattr(controller, "runtime", SimpleNamespace(backend=paid))
+    monkeypatch.setattr(controller, "_backends_pool", {})
+    def failure(_config):
+        raise ValueError("unavailable configured provider")
+    monkeypatch.setattr(controller, "create_backend", failure)
+    with pytest.raises(controller.WorkerBindingError, match="kein Anbieterwechsel"):
+        controller._get_or_create_backend("unavailable", "requested-model")
+    assert controller._backends_pool == {}
+
+
+def test_ollama_cache_is_not_seeded_with_global_backend():
+    source = (Path(__file__).resolve().parents[1] / "hub/_services/chat/telegram_chat.py").read_text(encoding="utf-8")
+    assignment = next(n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.AnnAssign)
+                      and isinstance(n.target, ast.Name) and n.target.id == "_backends_pool")
+    assert isinstance(assignment.value, ast.Dict) and not assignment.value.keys
+
+
+@pytest.mark.parametrize("target", ["http://127.0.0.1:8000/api/tasks", "http://169.254.169.254/latest/meta-data"])
+def test_tool_fetch_refuses_private_network_targets(monkeypatch, target):
+    import requests
+    monkeypatch.setenv("BACH_WEB_SCRAPE_ENGINE", "bundled")
+    monkeypatch.setattr(requests, "Session", lambda: pytest.fail("private HTTP request"))
+    result = bach_tools.exec_tool("web_fetch", {"url": target}, "safe")
+    assert "BLOCKIERT" in result
+
+
+def test_tool_fetch_uses_selected_canonical_provider(monkeypatch):
+    from hub import web_scrape
+    from types import SimpleNamespace
+    calls = []
+    def request(_self, url):
+        calls.append(url)
+        return SimpleNamespace(headers={"content-type": "application/json"}, text='{"öffnen":true}'), ""
+    monkeypatch.setattr(web_scrape.WebScrapeHandler, "_request", request)
+    result = bach_tools.exec_tool("web_fetch", {"url": "https://example.com/data"}, "plan")
+    assert calls == ["https://example.com/data"] and "öffnen" in result
+
+
+def test_regex_tool_is_bounded_for_adversarial_pattern(monkeypatch, tmp_path):
+    import time
+    target = tmp_path / "input.txt"
+    target.write_text("a" * 20000 + "!", encoding="utf-8")
+    monkeypatch.setattr(bach_tools, "_ALLOWED_FS_ROOTS", (tmp_path,))
+    started = time.monotonic()
+    result = bach_tools.exec_tool("search_text", {"path": str(target), "pattern": "(a+)+$"}, "plan")
+    assert "Zeitlimit" in result and time.monotonic() - started < 2

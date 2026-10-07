@@ -30,6 +30,7 @@ emoji>=2.15.0             # Emoji handling & safe-stripping (policies)
 ftfy>=6.3.1               # Unicode/encoding repair (file ops)
 rapidfuzz>=3.14.3         # Fuzzy string matching (document redaction)
 markdown>=3.10            # Markdown -> HTML conversion (docs)
+regex>=2026.6.28          # Bounded regular-expression searches with timeouts
 
 # --- File System & Monitoring ---
 watchdog>=6.0.0           # File system event monitoring (scanner, watcher)

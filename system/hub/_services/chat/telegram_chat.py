@@ -1248,7 +1248,9 @@ def _check_api_key(name: str) -> str:
     return "Key vorhanden" if _load_api_key(name) else "Key fehlt"
 
 
-_backends_pool: dict[str, Any] = {"ollama": backend}
+# Each cache entry must come from its exact requested configuration. The
+# global chat backend can be a paid API and is never an Ollama alias.
+_backends_pool: dict[str, Any] = {}
 _backends_pool_lock = threading.Lock()
 
 
@@ -1281,8 +1283,8 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
             _backends_pool[cache_key] = b
             return b
         except Exception as e:
-            log.warning("Konnte Backend %s nicht erstellen (%s); Fallback auf runtime.backend", cache_key, e)
-            return runtime.backend
+            log.warning("Konfiguriertes Backend %s konnte nicht erstellt werden", cache_key)
+            raise WorkerBindingError("Konfiguriertes Backend ist nicht verfügbar; kein Anbieterwechsel") from e
 
 
 def _resolve_slot_for_chat(chat_id: str) -> dict:

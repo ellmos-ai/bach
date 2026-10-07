@@ -1228,6 +1228,9 @@ class CLIBackend(ModelBackend):
         close the failure path with the output collected so far.
         """
         proc = None
+        private_worker = bool(env.get("BACH_WORKER_TOOL_GENERATION"))
+        if private_worker and sys.platform == "win32":
+            return {"content": "", "error": "Privater CLI-Worker benötigt verifizierten Prozessgruppenschutz; Windows noch nicht abgenommen"}
         stdout_data: list[bytes] = []
         stderr_data: list[bytes] = []
         events: queue.Queue = queue.Queue()
@@ -1327,6 +1330,13 @@ class CLIBackend(ModelBackend):
             if stopped or proc is None:
                 return
             stopped = True
+            if private_worker:
+                # A bounded kill attempt is not terminal evidence. This
+                # invocation owns a new POSIX session and must settle both
+                # the CLI and its MCP descendants before releasing the run.
+                settle_private_process_group()
+                close_stream(getattr(proc, "stdin", None))
+                return
             try:
                 if proc.poll() is None:
                     proc.kill()
@@ -1348,6 +1358,35 @@ class CLIBackend(ModelBackend):
                     pass
             except Exception:
                 pass
+
+        def settle_private_process_group() -> None:
+            import signal
+            while True:
+                group_alive = True
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    group_alive = False
+                except OSError:
+                    pass
+                try:
+                    proc.wait(timeout=1)
+                except Exception:
+                    pass
+                try:
+                    os.killpg(proc.pid, 0)
+                    group_alive = True
+                except ProcessLookupError:
+                    group_alive = False
+                except OSError:
+                    group_alive = True
+                try:
+                    parent_exited = proc.poll() is not None
+                except Exception:
+                    parent_exited = False
+                if parent_exited and not group_alive:
+                    return
+                time.sleep(.05)
 
         def consume_events() -> None:
             nonlocal stdout_done, stderr_done, process_returncode
@@ -1422,6 +1461,7 @@ class CLIBackend(ModelBackend):
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, env=env, cwd=self.cwd,
                 creationflags=creation_flags,
+                **({"start_new_session": True} if private_worker else {}),
             )
         except FileNotFoundError:
             return {
@@ -1432,97 +1472,102 @@ class CLIBackend(ModelBackend):
             detail = f"{type(exc).__name__}: {exc}".rstrip(": ")
             return {"content": "", "error": f"CLI-Fehler: {detail}"}
 
-        for name, stream in (
-            ("stdout", getattr(proc, "stdout", None)),
-            ("stderr", getattr(proc, "stderr", None)),
-        ):
-            thread = threading.Thread(
-                target=read_stream,
-                args=(name, stream),
-                name=f"bach-cli-{name}-reader",
-                daemon=True,
-            )
-            thread.start()
-            reader_threads.append(thread)
-
-        last_activity = time.monotonic()
-        initial_returncode = proc.poll()
-        if initial_returncode is not None:
-            process_returncode = initial_returncode
-            stream_drain_deadline = time.monotonic() + 1.0
-        elif getattr(proc, "stdin", None) is not None:
-            thread = threading.Thread(
-                target=write_stdin,
-                args=(proc.stdin,),
-                name="bach-cli-stdin-writer",
-                daemon=True,
-            )
-            thread.start()
-            writer_threads.append(thread)
-
-        while True:
-            consume_events()
-            now = time.monotonic()
-
-            if output_error is not None:
-                return abort(error_message("CLI-Ausgabe fehlgeschlagen", output_error))
-            if input_error is not None:
-                return abort(error_message("CLI-Eingabe fehlgeschlagen", input_error))
-            if process_wait_error is not None:
-                if isinstance(process_wait_error, subprocess.TimeoutExpired):
-                    return abort("Timeout")
-                return abort(error_message("CLI-Wait fehlgeschlagen", process_wait_error))
-
-            if process_returncode is None:
-                observed_returncode = proc.poll()
-                if observed_returncode is not None:
-                    process_returncode = observed_returncode
-                    stream_drain_deadline = now + 1.0
-
-            if (
-                stdout_done
-                and process_returncode is None
-                and not process_wait_started
+        try:
+            for name, stream in (
+                ("stdout", getattr(proc, "stdout", None)),
+                ("stderr", getattr(proc, "stderr", None)),
             ):
-                process_wait_started = True
-                process_wait_deadline = now + 10.0
-                wait_thread = threading.Thread(
-                    target=wait_for_process,
-                    name="bach-cli-process-waiter",
+                thread = threading.Thread(
+                    target=read_stream,
+                    args=(name, stream),
+                    name=f"bach-cli-{name}-reader",
                     daemon=True,
                 )
-                wait_thread.start()
+                thread.start()
+                reader_threads.append(thread)
 
-            if process_returncode is None and not stdout_done:
-                if now - last_activity >= inactivity_timeout:
-                    return abort("Inaktivitäts-Timeout")
-            elif process_returncode is not None:
-                if stream_drain_deadline is None:
-                    stream_drain_deadline = now + 1.0
-                if (stdout_done and stderr_done) or now >= stream_drain_deadline:
-                    break
-            elif process_wait_deadline is not None and now >= process_wait_deadline:
-                return abort("Timeout")
+            last_activity = time.monotonic()
+            initial_returncode = proc.poll()
+            if initial_returncode is not None:
+                process_returncode = initial_returncode
+                stream_drain_deadline = time.monotonic() + 1.0
+            elif getattr(proc, "stdin", None) is not None:
+                thread = threading.Thread(
+                    target=write_stdin,
+                    args=(proc.stdin,),
+                    name="bach-cli-stdin-writer",
+                    daemon=True,
+                )
+                thread.start()
+                writer_threads.append(thread)
 
-            time.sleep(0.01)
+            while True:
+                consume_events()
+                now = time.monotonic()
 
-        consume_events()
-        if process_returncode != 0:
-            result: str | dict[str, str] = failure(
-                f"CLI exit {process_returncode}"
-            )
-        else:
-            result_text = partial_output()
-            result = result_text if result_text else failure("Leere Antwort")
+                if output_error is not None:
+                    return abort(error_message("CLI-Ausgabe fehlgeschlagen", output_error))
+                if input_error is not None:
+                    return abort(error_message("CLI-Eingabe fehlgeschlagen", input_error))
+                if process_wait_error is not None:
+                    if isinstance(process_wait_error, subprocess.TimeoutExpired):
+                        return abort("Timeout")
+                    return abort(error_message("CLI-Wait fehlgeschlagen", process_wait_error))
 
-        close_stream(getattr(proc, "stdin", None))
-        close_stream(getattr(proc, "stdout", None))
-        close_stream(getattr(proc, "stderr", None))
-        for thread in reader_threads + writer_threads:
-            thread.join(timeout=0.05)
-        if wait_thread is not None:
-            wait_thread.join(timeout=0.05)
-        return result
+                if process_returncode is None:
+                    observed_returncode = proc.poll()
+                    if observed_returncode is not None:
+                        process_returncode = observed_returncode
+                        stream_drain_deadline = now + 1.0
+
+                if (
+                    stdout_done
+                    and process_returncode is None
+                    and not process_wait_started
+                ):
+                    process_wait_started = True
+                    process_wait_deadline = now + 10.0
+                    wait_thread = threading.Thread(
+                        target=wait_for_process,
+                        name="bach-cli-process-waiter",
+                        daemon=True,
+                    )
+                    wait_thread.start()
+
+                if process_returncode is None and not stdout_done:
+                    if now - last_activity >= inactivity_timeout:
+                        return abort("Inaktivitäts-Timeout")
+                elif process_returncode is not None:
+                    if stream_drain_deadline is None:
+                        stream_drain_deadline = now + 1.0
+                    if (stdout_done and stderr_done) or now >= stream_drain_deadline:
+                        break
+                elif process_wait_deadline is not None and now >= process_wait_deadline:
+                    return abort("Timeout")
+
+                time.sleep(0.01)
+
+            consume_events()
+            if process_returncode != 0:
+                result: str | dict[str, str] = failure(
+                    f"CLI exit {process_returncode}"
+                )
+            else:
+                result_text = partial_output()
+                result = result_text if result_text else failure("Leere Antwort")
+
+            close_stream(getattr(proc, "stdin", None))
+            close_stream(getattr(proc, "stdout", None))
+            close_stream(getattr(proc, "stderr", None))
+            for thread in reader_threads + writer_threads:
+                thread.join(timeout=0.05)
+            if wait_thread is not None:
+                wait_thread.join(timeout=0.05)
+            return result
+
+        finally:
+            if private_worker:
+                settle_private_process_group()
 
     def list_models(self) -> list[str]:
         preset = self.KNOWN_CLIS.get(self.cli_name, {})

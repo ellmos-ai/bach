@@ -18,6 +18,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -768,6 +769,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
         if name == "search_text":
             pat = args.get("pattern", "")
+            if not isinstance(pat, str) or len(pat) > 1024:
+                return "BLOCKIERT: Suchmuster ist ungültig oder zu lang"
             p = Path(args.get("path", "."))
             resolved = _resolve(p)
             if not _fs_root_allowed(resolved):
@@ -775,15 +778,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if _is_secret_path(resolved):
                 return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
             recursive = args.get("recursive", True)
+            import regex
             try:
-                rx = re.compile(pat)
-            except re.error as e:
+                rx = regex.compile(pat, regex.VERSION0)
+            except regex.error as e:
                 return f"Ungueltiges Muster: {e}"
             files = resolved.rglob("*") if recursive and resolved.is_dir() else (
                 resolved.glob("*") if resolved.is_dir() else [resolved]
             )
             hits = []
+            deadline = time.monotonic() + 5
+            bytes_read = 0
             for n, f in enumerate(files):
+                if time.monotonic() >= deadline:
+                    return "BLOCKIERT: Suche hat das Zeitlimit erreicht"
                 if n >= 5000:
                     break
                 fr = _resolve(f)
@@ -793,11 +801,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     continue
                 try:
                     with open(fr, "r", encoding="utf-8", errors="replace") as fh:
-                        for i, line in enumerate(fh, start=1):
-                            if rx.search(line):
+                        i = 0
+                        while line := fh.readline(65536):
+                            i += 1
+                            bytes_read += len(line.encode("utf-8"))
+                            remaining = deadline - time.monotonic()
+                            if bytes_read > 8_388_608 or remaining <= 0:
+                                return "BLOCKIERT: Suche hat das Lese- oder Zeitlimit erreicht"
+                            if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
+                except TimeoutError:
+                    return "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
                 except OSError:
                     continue
             return ("\n".join(hits) or "(keine Treffer)")[:4000]
@@ -1534,12 +1550,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             extract = args.get("extract_text", True)
             max_chars = min(int(args.get("max_chars", 4000)), 8000)
             try:
-                import httpx
-                r = httpx.get(url, follow_redirects=True, timeout=15,
-                              headers={"User-Agent": "BACH/3.9"})
+                # Use the existing provider seam with pinned public DNS,
+                # redirect validation and response limits. Never fetch a
+                # private Control API/cloud metadata address from tool input.
+                from hub.web_scrape import WebScrapeHandler
+                r, error = WebScrapeHandler(Path(BACH_SYSTEM_DIR))._request(url)
+                if r is None:
+                    return "BLOCKIERT: Webabruf nicht bestätigt: " + str(error)
                 ct = r.headers.get("content-type", "")
                 if "json" in ct:
-                    return json.dumps(r.json(), indent=2, ensure_ascii=False)[:max_chars]
+                    return json.dumps(json.loads(r.text), indent=2, ensure_ascii=False)[:max_chars]
                 text = r.text
                 if extract and "html" in ct.lower():
                     try:
