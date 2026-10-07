@@ -358,3 +358,22 @@ def test_persisted_profile_slot_chat_resumes_after_runtime_restart(config_file, 
     assert context[1].strip() in backend.calls[0][0]["content"]
     assert restored.get_session(chat_id).profile_binding == context[0]
     assert len(restored.session_store.load_state(chat_id)["messages"]) == 4
+
+
+def test_dynamic_worker_uses_its_authority_without_an_unrelated_system_slot_read(tmp_path, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    absent = tmp_path / "absent-default-slots.json"
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(absent))
+    worker = {"id":"arbitrary-worker", "backend":"ollama", "model":"fixture-model"}
+    monkeypatch.setattr(control, "get_worker_slot", lambda ident: worker)
+    assert control._execution_worker_slot("arbitrary-worker") is worker
+    assert not absent.exists()
+
+
+def test_unknown_ordinary_chat_does_not_require_a_second_worker_authority(tmp_path, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    absent = tmp_path / "absent-default-slots.json"
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(absent))
+    monkeypatch.setattr(control, "get_worker_slot", lambda ident: {})
+    assert control._execution_worker_slot("api-delegate") == {}
+    assert not absent.exists()
