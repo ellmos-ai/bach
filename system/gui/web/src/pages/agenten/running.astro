@@ -173,25 +173,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
         Besetzung der System-Steckplätze:
       </h3>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
-        <strong>Hinweis zu Chat-Agenten & Boss-Agenten (Clara, Buddha):</strong> Diese sind als Persona-Rollen unter <em>Persönlicher Assistent</em> verankert. Für autonome Hintergrundaufgaben können sie in der Werkstatt als Schablone nachgebaut werden.
+        Jeder Steckplatz kann einen Chat führen. Boss- und Expertenrollen lassen sich als eigene Steckplätze anlegen. Lokale Modelle teilen eine Inferenz; der Vordergrund hat Vorrang.
       </p>
 
       <div id="core-agent-feedback" role="status" aria-live="polite"></div>
       <div id="core-agent-cards" class="core-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:1rem;">
         <p class="loading-state">System-Agenten werden geprüft…</p>
       </div>
-    </div>
-
-    <!-- Verifizierte Chat-Profile (Persona-Rollen für den Persönlichen Assistenten) -->
-    <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <h4 style="font-size:0.9rem;font-weight:700;margin:0;">💬 Chat-Profile (Persönlicher Assistent / Dialog-Agenten):</h4>
-        <a href="/chat" class="btn btn-sm">Zum Chat ↗</a>
-      </div>
-      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">
-        Chat-Agenten wie Buddha oder Clara laufen als interaktive Chatprofile. Sie sind keine Hintergrundworker-Kacheln.
-      </p>
-      <div id="trusted-profile-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;" role="status">Profile werden geprüft…</div>
     </div>
 
     <!-- Dynamisch laufende Worker (Running Agents) -->
@@ -417,7 +405,48 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
+  <dialog id="core-slot-editor" class="core-slot-modal">
+    <form onsubmit="event.preventDefault();saveCoreSlot()">
+      <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
+        <h2 id="core-slot-title">Steckplatz bearbeiten</h2>
+        <button type="button" class="btn btn-sm" onclick="document.getElementById('core-slot-editor').close()" aria-label="Schließen">✕</button>
+      </header>
+      <div id="core-slot-fields" class="core-fields"></div>
+      <label>Agentenbild
+        <input id="core-slot-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadCoreAvatar(this.files[0])" />
+      </label>
+      <input id="core-slot-avatar" type="hidden" />
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('core-slot-avatar').value='';document.getElementById('core-slot-editor-feedback').textContent='Standardbild wird mit Speichern übernommen.'">Standardbild verwenden</button>
+      <p id="core-slot-editor-feedback" role="status" aria-live="polite"></p>
+      <footer class="core-actions">
+        <button type="submit" class="btn btn-primary">Speichern</button>
+        <button id="core-slot-reset" type="button" class="btn" onclick="resetCoreSlot()">Werkstandard</button>
+        <button id="core-slot-delete" type="button" class="btn" onclick="deleteCoreSlot()">Steckplatz löschen</button>
+      </footer>
+    </form>
+  </dialog>
+
   <style>
+    #core-agent-cards :global(.core-agent-card) {display:flex;flex-direction:column;gap:.6rem;min-width:0;padding:1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-dark)}
+    #core-agent-cards :global(.core-slot-header), #core-agent-cards :global(.core-slot-identity) {display:flex;align-items:center;gap:.65rem;justify-content:space-between}
+    #core-agent-cards :global(.core-slot-identity) {justify-content:flex-start}
+    #core-agent-cards :global(.core-avatar) {width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none}
+    #core-agent-cards :global(.core-avatar-default) {display:grid;place-items:center;font-size:1.8rem;background:var(--bg-card)}
+    #core-agent-cards :global(h3) {margin:0;font-size:1rem}
+    #core-agent-cards :global(small) {color:var(--text-muted);overflow-wrap:anywhere}
+    #core-agent-cards :global(.core-slot-model) {overflow-wrap:anywhere;font-size:.85rem}
+    #core-agent-cards :global(.core-slot-toggle[data-enabled="true"]) {background:#166534;color:#fff;border-color:#16a34a}
+    #core-agent-cards :global(.core-slot-toggle[data-enabled="false"]) {background:#7f1d1d;color:#fff;border-color:#ef4444}
+    #core-agent-cards :global(.core-actions), #core-slot-editor .core-actions {display:flex;gap:.5rem;flex-wrap:wrap;margin-top:auto}
+    #core-agent-cards :global(.core-slot-add) {min-height:150px;border:1px dashed var(--accent)}
+    .core-slot-modal {width:min(800px,94vw);max-height:88vh;color:var(--text);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem}
+    .core-slot-modal::backdrop {background:rgba(0,0,0,.7)}
+    #core-slot-editor :global(.core-fields) {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:1rem;margin:1rem 0}
+    #core-slot-editor :global(label) {display:flex;flex-direction:column;gap:.3rem;font-size:.85rem}
+    #core-slot-editor :global(input), #core-slot-editor :global(select), #core-slot-editor :global(textarea) {min-width:0;width:100%;padding:.6rem;color:var(--text);background:var(--bg-dark);border:1px solid var(--border);border-radius:4px}
+    #core-slot-editor :global(.core-check) {flex-direction:row;align-items:center}
+    #core-slot-editor :global(.core-check input) {width:auto}
+    #core-slot-editor :global(.core-prompt-field) {grid-column:1/-1}
     .hardware-torch { margin-bottom: 1.5rem; }
     .torch-intro, .core-explanation { color: var(--text-muted); font-size: .85rem; margin: .4rem 0 1rem; }
     .torch-grid, .core-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: .85rem; }
@@ -614,240 +643,230 @@ import BachLayout from "../../layouts/BachLayout.astro";
       card.append(label);
     }
 
-    function renderCoreAgents(data, changedId = null) {
-      const target = document.getElementById('core-agent-cards');
+    let coreCatalog = {};
+    let coreEditorAgent = null;
+    let coreEditorVersion = null;
+
+    function renderCoreAgents(data) {
       coreConfigVersion = data.configuration_version;
       coreAgents = data.agents;
+      coreCatalog = data;
+      const target = document.getElementById('core-agent-cards');
       target.replaceChildren();
-
-      const SLOT_TITLES = {
-        buddha_chat: "🧘 Persönlicher Assistent",
-        buddha_always_on: "🛠️ Hintergrund-Worker",
-        buddha_connector: "🔌 Connector-Agent"
-      };
-
       for (const agent of coreAgents) {
         const card = coreElement('article', undefined, 'core-agent-card');
         card.dataset.coreAgentId = agent.id;
-        const slotName = SLOT_TITLES[agent.id] || `${agent.icon || '◇'} ${agent.name || agent.id}`;
-
-        // Top Header mit Titel und Live-Statusbadge (analog Activity Board)
-        const headerDiv = document.createElement('div');
-        headerDiv.style.display = 'flex';
-        headerDiv.style.justifyContent = 'space-between';
-        headerDiv.style.alignItems = 'center';
-        headerDiv.style.marginBottom = '0.35rem';
-        headerDiv.style.flexWrap = 'wrap';
-        headerDiv.style.gap = '0.4rem';
-
-        const titleEl = document.createElement('h3');
-        titleEl.textContent = slotName;
-        titleEl.style.margin = '0';
-        headerDiv.append(titleEl);
-
-        const badge = document.createElement('span');
-        badge.className = 'badge';
-        badge.style.fontSize = '0.75rem';
-        const pInfo = agent.pause_info || {};
-        if (agent.id === 'buddha_always_on') {
-          if (pInfo.is_paused) {
-            badge.textContent = `⏸ PAUSIERT (${pInfo.remaining_minutes || 0}m)`;
-            badge.style.background = '#f59e0b';
-            badge.style.color = '#fff';
-          } else if (agent.enabled !== false) {
-            badge.textContent = '● AKTIV · BEREIT';
-            badge.style.background = '#059669';
-            badge.style.color = '#fff';
-          } else {
-            badge.textContent = '⏸ DEAKTIVIERT';
-            badge.style.background = '#64748b';
-            badge.style.color = '#fff';
-          }
-        } else if (agent.id === 'buddha_chat') {
-          badge.textContent = '💬 BEREIT (Chat)';
-          badge.style.background = '#0284c7';
-          badge.style.color = '#fff';
+        const header = coreElement('div', undefined, 'core-slot-header');
+        const enabled = agent.enabled === true;
+        const toggle = coreElement('button', enabled ? '● AN' : '○ AUS', 'btn btn-sm core-slot-toggle');
+        toggle.type = 'button';
+        toggle.setAttribute('role', 'switch');
+        toggle.setAttribute('aria-checked', String(enabled));
+        toggle.setAttribute('aria-label', agent.name + ' ein- oder ausschalten');
+        toggle.dataset.enabled = String(enabled);
+        toggle.addEventListener('click', () => toggleCoreSlot(agent.id, !enabled));
+        header.append(toggle);
+        const badge = coreElement('span', agent.runtime_verified !== true ? 'Status unbekannt' :
+          agent.status === 'stopping' ? 'Wird beendet' :
+          agent.status === 'starting' ? 'Startet' :
+          agent.running === true ? 'Running' : enabled && !agent.pause_info?.is_paused ? 'Ready · Living' : 'Pausiert', 'badge');
+        header.append(badge);
+        card.append(header);
+        const identity = coreElement('div', undefined, 'core-slot-identity');
+        if (agent.avatar) {
+          const img = document.createElement('img');
+          img.src = agent.avatar;
+          img.alt = '';
+          img.className = 'core-avatar';
+          identity.append(img);
         } else {
-          badge.textContent = '● BEREIT (Konnektoren)';
-          badge.style.background = '#059669';
-          badge.style.color = '#fff';
+          identity.append(coreElement('span', agent.icon || '🤖', 'core-avatar core-avatar-default'));
         }
-        headerDiv.append(badge);
-        card.append(headerDiv);
-
-        card.append(coreElement('small', `System-Slot: ${agent.id} · Kanonischer Steckplatz`));
-
-        // Live Aktivitäts-Anzeige (analog Activity Board)
-        const activityBox = document.createElement('div');
-        activityBox.style.background = 'var(--bg-card)';
-        activityBox.style.padding = '0.4rem 0.6rem';
-        activityBox.style.borderRadius = '4px';
-        activityBox.style.fontSize = '0.78rem';
-        activityBox.style.border = '1px solid var(--border)';
-        activityBox.style.margin = '0.25rem 0 0.5rem 0';
-        const actText = (agent.current_activity || '').trim();
-        if (actText) {
-          activityBox.innerHTML = `<span style="color:var(--accent);">⚡</span> <strong>Aktivität:</strong> ${escapeHtml(actText)}`;
-        } else {
-          activityBox.innerHTML = `<span style="color:var(--text-muted);">Ruht · Bereit für anstehende Aufgaben</span>`;
-        }
-        card.append(activityBox);
-
-        const fields = coreElement('div', undefined, 'core-fields');
-        coreField(fields, 'name', 'Anzeigename', agent.name);
-        coreField(fields, 'backend', 'Backend-ID', agent.backend, 'select', data.supported_backend_ids || []);
-        coreField(fields, 'model', 'Modell-ID', agent.model, 'text', [], agent.backend);
-        coreField(fields, 'mode', 'Modus', agent.mode, 'select', ['safe', 'full']);
-        coreField(fields, 'think', 'Think', agent.think, 'checkbox');
-        coreField(fields, 'max_tool_rounds', 'Maximale Runden', agent.max_tool_rounds, 'number');
-        coreField(fields, 'pause_after', 'Pause nach Runden', agent.pause_after, 'number');
-        coreField(fields, 'pause_minutes', 'Pausendauer (Min)', agent.pause_minutes, 'number');
-        if (agent.resolved_model && agent.resolved_model !== agent.model) {
-          const resInfo = document.createElement('div');
-          resInfo.style.fontSize = '0.75rem';
-          resInfo.style.color = 'var(--accent)';
-          resInfo.style.marginTop = '-0.2rem';
-          resInfo.style.marginBottom = '0.4rem';
-          resInfo.innerHTML = `↳ <strong>Aufgelöstes Modell:</strong> <code>${escapeHtml(agent.resolved_model)}</code>`;
-          fields.append(resInfo);
-        }
-        card.append(fields);
-
+        identity.append(coreElement('h3', agent.name || agent.id));
+        card.append(identity);
+        const kind = ['ollama', 'lmstudio'].includes(agent.backend) && !String(agent.model).endsWith(':cloud')
+          ? 'Lokal' : ['claude', 'codex'].includes(agent.backend) ? 'Subscription / CLI' : 'Cloud / API';
+        card.append(coreElement('small', kind + ' · ' + agent.backend));
+        card.append(coreElement('div', agent.model || 'Modell fehlt', 'core-slot-model'));
+        if (agent.resolved_model && agent.resolved_model !== agent.model) card.append(coreElement('small', 'Ausgeführt: ' + agent.resolved_model));
+        card.append(coreElement('small', agent.runtime_verified === true
+          ? 'Tool: ' + (agent.current_tool || '—') + ' · Runde: ' + (agent.tool_round ?? 0) +
+            (agent.task_id ? ' · Task #' + agent.task_id : '')
+          : 'Tool / Runde: nicht bestätigt'));
         const actions = coreElement('div', undefined, 'core-actions');
-
-        // Direkte Aktions-Buttons je nach Slot
-        if (agent.id === 'buddha_always_on') {
-          const isEnabled = agent.enabled !== false && !pInfo.is_paused;
-          const toggleBtn = coreElement('button', isEnabled ? '⏸ Pausieren' : '▶ Aktivieren', isEnabled ? 'btn btn-sm' : 'btn btn-sm btn-success');
-          toggleBtn.type = 'button';
-          if (isEnabled) {
-            toggleBtn.style.color = '#f59e0b';
-            toggleBtn.style.borderColor = '#f59e0b';
-          }
-          toggleBtn.addEventListener('click', () => toggleCoreSlot(agent.id));
-          actions.append(toggleBtn);
-        } else if (agent.id === 'buddha_chat') {
-          const chatLink = document.createElement('a');
-          chatLink.href = '/chat';
-          chatLink.className = 'btn btn-sm';
-          chatLink.textContent = '💬 Im Chat öffnen';
-          actions.append(chatLink);
-        } else if (agent.id === 'buddha_connector') {
-          const connLink = document.createElement('a');
-          connLink.href = '/routinen?tab=connectors';
-          connLink.className = 'btn btn-sm';
-          connLink.textContent = '📱 Kanäle prüfen';
-          actions.append(connLink);
-        }
-
-        const save = coreElement('button', 'Einstellungen speichern', 'btn btn-sm btn-primary');
-        save.type = 'button';
-        save.addEventListener('click', () => saveCoreSlot(agent.id));
-        actions.append(save);
-
-        const reset = coreElement('button', 'Zurücksetzen', 'btn btn-sm');
-        reset.type = 'button';
-        reset.addEventListener('click', () => resetCoreSlot(agent.id));
-        actions.append(reset);
-
+        const edit = coreElement('button', 'Bearbeiten', 'btn btn-sm');
+        edit.addEventListener('click', () => openCoreEditor(agent.id));
+        actions.append(edit);
+        const chat = coreElement('a', 'Chat öffnen', 'btn btn-sm');
+        chat.href = '/chat?slot_id=' + encodeURIComponent(agent.id);
+        actions.append(chat);
         card.append(actions);
         target.append(card);
       }
+      const add = coreElement('button', '+ Systemsteckplatz', 'btn core-slot-add');
+      add.addEventListener('click', () => openCoreEditor());
+      target.append(add);
+    }
 
-      // Erweiterbarer System-Steckplatz Kachel (Ehrlicher STUB)
-      const stubCard = coreElement('article', undefined, 'core-agent-card');
-      stubCard.style.border = '1px dashed var(--accent)';
-      stubCard.style.background = 'rgba(56, 189, 248, 0.03)';
-      stubCard.append(coreElement('h3', '➕ Neuer Service-Steckplatz'));
-      stubCard.append(coreElement('small', '[STUB - Bereit für OS-Erweiterung]'));
-      stubCard.append(coreElement('p', 'Erweiterbarer Systemsteckplatz für weitere Dienst- und Daemon-Agenten (z. B. File-Watcher, Audio-Streamer).'));
-      const stubBtn = coreElement('button', '+ Systemsteckplatz anlegen [STUB]', 'btn btn-sm');
-      stubBtn.type = 'button';
-      stubBtn.onclick = () => alert('[STUB] Weitere native Systemsteckplätze werden mit dem nächsten OS-Daemon-Upgrade freigeschaltet. Nutze für spezifische Aufgaben die Werkstatt oder One-Off Workers.');
-      stubCard.append(stubBtn);
-      target.append(stubCard);
+    async function coreRequest(path, method = 'GET', body) {
+      const response = await fetch('/api/system/core-agents' + path, {
+        method, headers: body ? {'Content-Type': 'application/json'} : {},
+        ...(body ? {body: JSON.stringify(body)} : {})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + response.status);
+      if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents)) throw new Error('Steckplatzantwort ungültig');
+      return data;
     }
 
     async function loadCoreSlots() {
-      const target = document.getElementById('core-agent-cards');
-      try {
-        const res = await fetch('/api/system/core-agents');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        if (data.schema !== 'bach.core-system-agents.v1' || !Array.isArray(data.agents)) throw new Error('System-Agentenantwort ungültig');
-        renderCoreAgents(data);
-      } catch (error) {
+      try { renderCoreAgents(await coreRequest('')); }
+      catch (error) {
         coreConfigVersion = null;
-        target.replaceChildren(coreElement('p', 'System-Agentenkonfiguration derzeit nicht verfügbar: ' + error.message));
+        document.getElementById('core-agent-cards').replaceChildren(
+          coreElement('p', 'System-Agenten nicht verfügbar: ' + error.message));
       }
     }
 
-    async function saveCoreSlot(slotId) {
-      const card = [...document.querySelectorAll('[data-core-agent-id]')].find(node => node.dataset.coreAgentId === slotId);
-      if (!card || !coreConfigVersion) return;
-      const original = coreAgents.find(item => item.id === slotId);
-      if (!original) return;
-      const changes = {};
-      for (const input of card.querySelectorAll('[data-core-field]')) {
-        const field = input.dataset.coreField;
-        const previous = original[field];
-        if (input.type === 'checkbox') {
-          if (input.checked !== previous) changes[field] = input.checked;
-        } else if (input.type === 'number') {
-          const current = input.value.trim() === '' ? null : Number(input.value);
-          if (current !== previous) changes[field] = current;
-        } else {
-          const current = input.value.trim();
-          if (current !== String(previous ?? '').trim()) changes[field] = current;
-        }
+    function openCoreEditor(slotId = null) {
+      if (!coreConfigVersion) return;
+      coreEditorAgent = slotId ? coreAgents.find(agent => agent.id === slotId) : null;
+      coreEditorVersion = coreConfigVersion;
+      const source = coreEditorAgent || {...coreAgents.find(agent => agent.id === 'buddha_chat'), name: '', avatar: '', icon: '🤖'};
+      const form = document.getElementById('core-slot-fields');
+      form.replaceChildren();
+      document.getElementById('core-slot-title').textContent = slotId ? 'Steckplatz bearbeiten' : 'Systemsteckplatz anlegen';
+      if (!slotId) coreField(form, 'preset', 'Vorlage', 'assistant', 'select',
+        Object.entries(coreCatalog.slot_presets || {}).map(([value, item]) => ({value, label:item.name})));
+      coreField(form, 'name', 'Bezeichnung', source.name);
+      coreField(form, 'description', 'Beschreibung', source.description || '');
+      coreField(form, 'backend', 'Anbieter', source.backend, 'select', coreCatalog.supported_backend_ids || []);
+      coreField(form, 'model', 'Modell', source.model, 'text', [], source.backend);
+      coreField(form, 'mode', 'Arbeitsmodus', source.mode, 'select', ['safe', 'full']);
+      coreField(form, 'role_id', 'Rolle', source.role_id || 'personal-assistant', 'select', coreCatalog.role_ids || []);
+      coreField(form, 'sub_mode', 'Rollenmodus', source.sub_mode || 'expert_role', 'select',
+        ['expert_role', 'boss_routing', 'task_worker', 'hintergrund_worker']);
+      coreField(form, 'think', 'Denken', source.think, 'checkbox');
+      coreField(form, 'allow_tools', 'Werkzeuge erlauben', source.allow_tools !== false, 'checkbox');
+      coreField(form, 'max_tool_rounds', 'Maximale Tool-Runden', source.max_tool_rounds, 'number');
+      coreField(form, 'pause_after', 'Pause nach', source.pause_after, 'number');
+      coreField(form, 'pause_basis', 'Pausen zählen', source.pause_basis, 'select',
+        [{value:'runs', label:'Läufe'}, {value:'tasks', label:'Tasks'}]);
+      coreField(form, 'pause_minutes', 'Pausendauer (Minuten)', source.pause_minutes, 'number');
+      coreField(form, 'include_system_prompt', 'Systemprompt einbinden', source.include_system_prompt !== false, 'checkbox');
+      const templates = coreCatalog.prompt_templates || {system_default:'', roles:{}};
+      for (const [field, label, defaultText] of [
+        ['custom_system_prompt', 'Systemprompt', templates.system_default],
+        ['custom_role_prompt', 'Rollenprompt', templates.roles[source.sub_mode === 'task_worker' ? 'task_worker' :
+          source.sub_mode === 'hintergrund_worker' ? 'hintergrund_worker' :
+          source.sub_mode === 'boss_routing' ? 'boss_routing' : source.role_id] || '']
+      ]) {
+        const row = coreElement('label', label, 'core-prompt-field');
+        const input = document.createElement('textarea');
+        input.rows = 7; input.maxLength = 20000; input.dataset.coreField = field;
+        input.dataset.defaultText = defaultText;
+        input.dataset.wasCustom = source[field] ? 'true' : 'false';
+        input.value = source[field] || defaultText;
+        row.append(input);
+        const reset = coreElement('button', 'Standard verwenden', 'btn btn-sm');
+        reset.type = 'button';
+        reset.addEventListener('click', () => {input.value = input.dataset.defaultText; input.dataset.wasCustom = 'false';});
+        row.append(reset); form.append(row);
       }
-      const feedback = document.getElementById('core-agent-feedback');
-      if (Object.keys(changes).length === 0) {
-        feedback.textContent = 'Keine Änderungen zum Speichern.';
+      const roleInput = form.querySelector('[data-core-field="role_id"]');
+      const modeInput = form.querySelector('[data-core-field="sub_mode"]');
+      const updateRole = () => {
+        const input = form.querySelector('[data-core-field="custom_role_prompt"]');
+        const key = ['boss_routing', 'task_worker', 'hintergrund_worker'].includes(modeInput.value) ? modeInput.value : roleInput.value;
+        input.dataset.defaultText = templates.roles[key] || '';
+        if (input.dataset.wasCustom !== 'true') input.value = input.dataset.defaultText;
+      };
+      roleInput.addEventListener('change', updateRole);
+      modeInput.addEventListener('change', updateRole);
+      form.querySelector('[data-core-field="preset"]')?.addEventListener('change', event => {
+        const preset = coreCatalog.slot_presets[event.target.value];
+        if (!preset) return;
+        roleInput.value = preset.role_id;
+        modeInput.value = preset.sub_mode || 'expert_role';
+        if (!form.querySelector('[data-core-field="name"]').value) form.querySelector('[data-core-field="name"]').value = preset.name;
+        updateRole();
+      });
+      document.getElementById('core-slot-avatar').value = source.avatar || '';
+      document.getElementById('core-slot-avatar-file').value = '';
+      document.getElementById('core-slot-delete').hidden = !coreEditorAgent?.deletable;
+      document.getElementById('core-slot-reset').hidden = !coreEditorAgent;
+      document.getElementById('core-slot-editor-feedback').textContent = '';
+      document.getElementById('core-slot-editor').showModal();
+    }
+
+    async function uploadCoreAvatar(file) {
+      if (!file) return;
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+        document.getElementById('core-slot-editor-feedback').textContent = 'Bitte PNG, JPEG oder WebP bis 5 MB wählen.';
         return;
       }
-      feedback.textContent = 'Einstellungen werden gespeichert…';
+      const url = URL.createObjectURL(file);
       try {
-        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId), {
-          method: 'PUT', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({configuration_version: coreConfigVersion, changes})
-        });
-        const data = await res.json();
-        renderCoreAgents(data, slotId);
-        feedback.textContent = 'Konfiguration für ' + slotId + ' erfolgreich gespeichert.';
-      } catch (_error) {
-        feedback.textContent = 'Speichern fehlgeschlagen.';
-      }
+        const image = new Image(); image.src = url; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
+        const context = canvas.getContext('2d');
+        const size = Math.min(image.width, image.height);
+        context.drawImage(image, (image.width-size)/2, (image.height-size)/2, size, size, 0, 0, 256, 256);
+        document.getElementById('core-slot-avatar').value = canvas.toDataURL('image/webp', 0.85);
+        document.getElementById('core-slot-editor-feedback').textContent = 'Bild vorbereitet. Mit Speichern übernehmen.';
+      } catch (_error) { document.getElementById('core-slot-editor-feedback').textContent = 'Bild konnte nicht geladen werden.'; }
+      finally { URL.revokeObjectURL(url); }
     }
 
-    async function resetCoreSlot(slotId) {
-      if (!confirm('Einstellungen dieses System-Agenten auf Werkstandard zurücksetzen?')) return;
-      try {
-        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/reset', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({configuration_version: coreConfigVersion})
-        });
-        const data = await res.json();
-        renderCoreAgents(data, slotId);
-      } catch (e) {
-        alert('Reset fehlgeschlagen: ' + e.message);
+    async function saveCoreSlot() {
+      const form = document.getElementById('core-slot-fields');
+      const feedback = document.getElementById('core-slot-editor-feedback');
+      const changes = {};
+      let preset = 'assistant';
+      for (const input of form.querySelectorAll('[data-core-field]')) {
+        const field = input.dataset.coreField;
+        if (field === 'preset') {preset = input.value; continue;}
+        let value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        if (field.startsWith('custom_') && input.dataset.wasCustom !== 'true' && value === input.dataset.defaultText) value = '';
+        if (!coreEditorAgent || value !== coreEditorAgent[field]) changes[field] = value;
       }
+      const avatar = document.getElementById('core-slot-avatar').value;
+      if (!coreEditorAgent || avatar !== coreEditorAgent.avatar) changes.avatar = avatar;
+      if (!Object.keys(changes).length) {feedback.textContent = 'Keine Änderungen.'; return;}
+      try {
+        const data = await coreRequest(coreEditorAgent ? '/' + encodeURIComponent(coreEditorAgent.id) : '',
+          coreEditorAgent ? 'PUT' : 'POST', {configuration_version:coreEditorVersion, changes, preset});
+        renderCoreAgents(data);
+        document.getElementById('core-slot-editor').close();
+        document.getElementById('core-agent-feedback').textContent = 'Steckplatz gespeichert.';
+      } catch (error) {feedback.textContent = 'Speichern fehlgeschlagen: ' + error.message;}
     }
 
-    async function toggleCoreSlot(slotId) {
+    async function resetCoreSlot() {
+      if (!coreEditorAgent || !confirm('Steckplatz auf Werkstandard zurücksetzen?')) return;
+      try {
+        renderCoreAgents(await coreRequest('/' + encodeURIComponent(coreEditorAgent.id) + '/reset', 'POST', {configuration_version:coreEditorVersion}));
+        document.getElementById('core-slot-editor').close();
+      } catch (error) {document.getElementById('core-slot-editor-feedback').textContent = error.message;}
+    }
+
+    async function deleteCoreSlot() {
+      if (!coreEditorAgent?.deletable || !confirm('Diesen Systemsteckplatz löschen?')) return;
+      try {
+        renderCoreAgents(await coreRequest('/' + encodeURIComponent(coreEditorAgent.id), 'DELETE', {configuration_version:coreEditorVersion}));
+        document.getElementById('core-slot-editor').close();
+      } catch (error) {document.getElementById('core-slot-editor-feedback').textContent = error.message;}
+    }
+
+    async function toggleCoreSlot(slotId, enabled) {
       const feedback = document.getElementById('core-agent-feedback');
-      if (feedback) feedback.textContent = 'Umschalten des System-Agenten…';
       try {
-        const res = await fetch('/api/system/core-agents/' + encodeURIComponent(slotId) + '/toggle', {
-          method: 'POST'
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        renderCoreAgents(data, slotId);
-        if (feedback) feedback.textContent = `Status für ${slotId} erfolgreich umgeschaltet.`;
-      } catch (e) {
-        if (feedback) feedback.textContent = 'Umschalten fehlgeschlagen: ' + e.message;
-      }
+        const data = await coreRequest('/' + encodeURIComponent(slotId) + '/toggle', 'POST',
+          {configuration_version:coreConfigVersion, enabled});
+        renderCoreAgents(data);
+        feedback.textContent = enabled ? 'Steckplatz eingeschaltet; Live-Status wird geprüft.' :
+          'Steckplatz ausgeschaltet. Laufende Arbeit wird beendet; Status neu prüfen.';
+      } catch (error) {feedback.textContent = 'Schalter nicht bestätigt: ' + error.message; await loadCoreSlots();}
     }
 
     // ── OPENROUTER CATALOG ──
@@ -1261,58 +1280,30 @@ import BachLayout from "../../layouts/BachLayout.astro";
     async function refreshActivity() {
       const tbody = document.getElementById('activity-tbody');
       try {
-        const res = await fetch('/api/tasks?limit=10');
-        const data = await res.json();
-        const tasks = data.tasks || [];
-
-        if (tasks.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Keine aktuellen Tasks im Verlauf</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = tasks.slice(0, 10).map(t => {
-          const timeStr = t.created_at ? t.created_at.slice(11, 16) : '--:--';
-          const akteur = t.assigned_to || t.assigned_agent || 'Operator';
-          const model = t.required_model || 'Standard';
-          const st = t.status || 'todo';
-          const badgeClass = st === 'completed' || st === 'done' ? 'badge-success' : (st === 'running' ? 'badge-accent' : 'badge-warning');
-
-          return `
-            <tr>
-              <td style="color:var(--text-muted);font-family:monospace;font-size:0.8rem;">${escapeHtml(timeStr)}</td>
-              <td><strong>${escapeHtml(akteur)}</strong></td>
-              <td>${escapeHtml(t.title || 'Task')}</td>
-              <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent);">${escapeHtml(model)}</span></td>
-              <td><span class="badge ${badgeClass}">${escapeHtml(st)}</span></td>
-            </tr>
-          `;
-        }).join('');
-      } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);text-align:center;">Aktivitäten konnten nicht geladen werden.</td></tr>`;
-      }
-    }
-
-    // ── VERIFIZIERTE CHAT-PROFILE (PERSONA-ROLLEN FÜR PERSÖNLICHE ASSISTENTEN) ──
-    async function loadTrustedProfiles() {
-      const container = document.getElementById('trusted-profile-list');
-      try {
-        const response = await fetch('/api/agents');
+        const response = await fetch('/api/system/core-agents/timeline');
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
-        const profiles = (data.agents || []).filter(agent => agent.profile_chat_ready === true);
-
-        container.innerHTML = profiles.length
-          ? profiles.map(agent => `
-              <span style="background:var(--bg-dark);border:1px solid var(--border);padding:0.35rem 0.75rem;border-radius:20px;display:inline-flex;align-items:center;gap:0.4rem;">
-                <a href="/chat?agent_id=${Number(agent.id)}" style="text-decoration:none;color:var(--text);font-size:0.85rem;font-weight:600;">
-                  💬 ${escapeHtml(agent.display_name || agent.name)}
-                </a>
-                <span class="badge" style="font-size:0.68rem;padding:0.1rem 0.35rem;background:rgba(255,255,255,0.08);">Persona</span>
-              </span>
-            `).join('')
-          : '<span style="color:var(--text-muted);font-size:0.8rem;">Keine Chatprofile verfügbar.</span>';
-      } catch (error) {
-        container.textContent = 'Profile können derzeit nicht geladen werden: ' + error.message;
+        if (data.schema !== 'bach.agent-timeline.v1' || !Array.isArray(data.events)) throw new Error('Timeline-Antwort ungültig');
+        tbody.replaceChildren();
+        if (!data.events.length) {
+          const row = document.createElement('tr');
+          const cell = coreElement('td', 'Noch keine Session- oder Task-Ereignisse.');
+          cell.colSpan = 5; row.append(cell); tbody.append(row);
+        }
+        for (const event of data.events) {
+          const row = document.createElement('tr');
+          const stamp = Date.parse(event.timestamp || '');
+          const time = Number.isFinite(stamp) ? new Date(stamp).toLocaleString('de-DE') : 'Zeit unbekannt';
+          const description = event.task_id ? 'Task #' + event.task_id + ' · ' + (event.task_title || event.activity || event.event || '') :
+            (event.activity || event.event || 'Session') + (event.session_id ? ' · ' + event.session_id : '');
+          for (const value of [time, event.slot_id || event.source || 'System', description,
+            event.model_id || event.backend_id || '—', event.status || 'unknown']) row.append(coreElement('td', value));
+          tbody.append(row);
+        }
+      } catch (_error) {
+        const row = document.createElement('tr');
+        const cell = coreElement('td', 'Timeline derzeit nicht verfügbar.');
+        cell.colSpan = 5; row.append(cell); tbody.replaceChildren(row);
       }
     }
 
@@ -1633,7 +1624,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
 
     async function refreshAll(interactive = false) {
       await Promise.all([
-        loadTrustedProfiles(),
+
         loadClusterCockpit(),
         loadBackgroundWorkers(),
         loadTeamsBeseelen(),
@@ -1655,6 +1646,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       setInterval(loadClusterCockpit, 15000);
       setInterval(refreshActivity, 5000);
       setInterval(loadBackgroundWorkers, 6000);
+      setInterval(loadCoreSlots, 6000);
     });
   </script>
 </BachLayout>

@@ -1503,6 +1503,7 @@ class TestControlHandlerEndpoints:
         fake_runtime = MagicMock()
         fake_runtime.get_session.return_value = ChatSession()
         fake_runtime.backend = MagicMock()
+        fake_runtime._chat_turn_gates = {}
         selected_backend = MagicMock()
 
         with patch.object(telegram_chat, "runtime", fake_runtime), \

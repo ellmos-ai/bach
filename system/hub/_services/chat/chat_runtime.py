@@ -548,6 +548,20 @@ class ChatRuntime(_ModuleChatRuntime):
 
     @staticmethod
     def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
+        system_reader = getattr(session, "system_slot_reader", None)
+        if system_reader is not None:
+            try:
+                system_slot = system_reader()
+                if (not system_slot or system_slot.get("id") != session.system_slot_id
+                        or system_slot.get("enabled", True) is not True):
+                    raise RuntimeError("Systemsteckplatz ist ausgeschaltet oder nicht verfügbar")
+                expected = getattr(session, "system_slot_configuration", {})
+                if any(system_slot.get(key) != value for key, value in expected.items()):
+                    raise RuntimeError("Steckplatzkonfiguration hat sich während des Turns geändert")
+                session.allow_tools = system_slot.get("allow_tools", True) is True
+            except Exception as exc:
+                session.allow_tools = False
+                return FailedAnswer.from_exception(exc)
         reader = getattr(session, "worker_slot_reader", None)
         if reader is None:
             return None
@@ -1021,7 +1035,9 @@ class ChatRuntime(_ModuleChatRuntime):
             if turn_context:
                 session = self.get_session(turn_context[0])
                 if (getattr(session, "worker_task_binding", None) is not None
-                        or getattr(session, "require_task_binding", False)):
+                        or getattr(session, "require_task_binding", False)
+                        or getattr(session, "system_slot_reader", None) is not None
+                        or getattr(session, "worker_slot_reader", None) is not None):
                     problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
                     if problem is not None:
                         raise RuntimeError(str(problem))
@@ -1042,7 +1058,9 @@ class ChatRuntime(_ModuleChatRuntime):
         session = self.get_session(chat_id) if turn_context else None
         guard = ({"check_ready": check_binding} if session is not None and (
             getattr(session, "worker_task_binding", None) is not None
-            or getattr(session, "require_task_binding", False)) else {})
+            or getattr(session, "require_task_binding", False)
+            or getattr(session, "system_slot_reader", None) is not None
+            or getattr(session, "worker_slot_reader", None) is not None) else {})
         async with HostInferenceGate().turn(chat_id, priority, **guard):
             await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
             try:
@@ -1438,8 +1456,29 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if not session.profile_binding or not session.profile_context_text:
                 raise ValueError("Profilkontext fehlt vor Inferenz")
             session.model = selected_model
-            session.custom_system_prompt = self.build_system_prompt(
-                session, profile_context=session.profile_context_text)
+            from .slots_config import (system_slot_chat_id, get_system_slot,
+                compose_worker_prompt, CORE_EDITABLE_FIELDS)
+            system_id = system_slot_chat_id(chat_id)
+            if system_id:
+                from hub._services.llm.model_backend import backend_identifier
+                slot = get_system_slot(system_id)
+                if not slot or slot.get("enabled", True) is not True:
+                    raise ValueError("Systemsteckplatz ist ausgeschaltet")
+                expected_backend = "ollama" if slot["backend"] == "ollama-cloud" else slot["backend"]
+                if selected_model != slot["model"] or backend_identifier(selected_backend) != expected_backend:
+                    raise ValueError("Steckplatz-Anbieter oder Modell wurde inzwischen geändert")
+                session.mode = slot["mode"]
+                session.think = slot["think"]
+                session.allow_tools = slot.get("allow_tools", True) is True
+                session.max_tool_rounds = slot["max_tool_rounds"]
+                session.system_slot_id = system_id
+                session.system_slot_reader = lambda: get_system_slot(system_id)
+                session.system_slot_configuration = {key: slot.get(key) for key in CORE_EDITABLE_FIELDS if key != "enabled"}
+                session.custom_system_prompt = compose_worker_prompt({
+                    **slot, "custom_role_prompt": session.profile_context_text})
+            else:
+                session.custom_system_prompt = self.build_system_prompt(
+                    session, profile_context=session.profile_context_text)
         capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
         if capability_error is not None:
             session.messages.extend([
