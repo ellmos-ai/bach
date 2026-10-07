@@ -93,7 +93,7 @@ class HostInferenceGate:
         }
 
     @asynccontextmanager
-    async def turn(self, chat_id: str, priority: str):
+    async def turn(self, chat_id: str, priority: str, *, check_ready=None):
         if priority not in {"foreground", "background"}:
             raise ValueError("Ungültige Inferenzpriorität")
         self.root.mkdir(parents=True, exist_ok=True)
@@ -104,6 +104,8 @@ class HostInferenceGate:
             if marker:
                 self._write(marker, identity)
             while acquired is None:
+                if check_ready is not None:
+                    check_ready()
                 if priority == "background" and self._foreground_waiters():
                     await asyncio.sleep(.025)
                     continue

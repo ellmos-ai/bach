@@ -1062,6 +1062,10 @@ class CLIBackend(ModelBackend):
     async def chat(self, messages, tools=None, think=True, model=None):
         prompt = self._messages_to_prompt(messages)
         response = await self._run_cli(prompt, model=model)
+        return self._cli_result(response)
+
+    @staticmethod
+    def _cli_result(response):
         if isinstance(response, dict):
             content = response.get("content", "")
             error = response.get("error")
@@ -1082,6 +1086,78 @@ class CLIBackend(ModelBackend):
             "raw_message": {"content": response},
         }
 
+    async def chat_bound(self, messages, tools=None, think=True, model=None, *,
+                         binding, mode, guard, bach_app=None):
+        """One private invocation; never reuse a global CLI conversation.
+
+        Codex remains denied until its complete tool/config isolation is
+        verified. This method does not change any installed CLI settings.
+        """
+        if self.cli_name != "claude":
+            raise RuntimeError("Privater Werkzeugtransport für dieses CLI-Backend fehlt")
+        from hub._services.chat.worker_tool_bridge import WorkerToolBridge
+        guard()
+        relay = WorkerToolBridge(binding, mode=mode, guard=guard, bach_app=bach_app,
+                                 default_model=lambda: model or self.default_model)
+        relay.__enter__()
+        try:
+            environment = relay.private_environment()
+            response = await self._run_cli(self._messages_to_prompt(messages), model=model,
+                                            worker_environment=environment, worker_guard=guard)
+            # Child stderr/output is untrusted and may contain its environment.
+            def redact(value):
+                if isinstance(value, str):
+                    return value.replace(environment["BACH_WORKER_TOOL_TOKEN"], "[redacted]")
+                if isinstance(value, dict):
+                    return {key: redact(item) for key, item in value.items()}
+                return value
+            return self._cli_result(redact(response))
+        except Exception:
+            raise RuntimeError("Privater CLI-Aufruf konnte nicht bestätigt werden") from None
+        finally:
+            await self._await_cli_terminal(asyncio.create_task(asyncio.to_thread(relay.close)))
+
+    @staticmethod
+    async def _await_cli_terminal(future):
+        """Cancellation cannot manufacture a physical process/RPC exit."""
+        cancelled = None
+        while True:
+            try:
+                result = await asyncio.shield(future)
+                break
+            except asyncio.CancelledError as exc:
+                if future.cancelled():
+                    raise RuntimeError("Physisches Prozessende konnte nicht bestätigt werden") from None
+                cancelled = exc
+        if cancelled is not None:
+            raise cancelled
+        return result
+
+    def _bound_claude_command(self, model):
+        # Current primary contract: code.claude.com/docs/en/cli-reference and
+        # /mcp (explicit MCP config, ${VAR} env expansion, builtin tool removal).
+        script = Path(__file__).resolve().parents[1] / "chat" / "worker_tool_mcp.py"
+        variables = ("BACH_WORKER_TOOL_URL", "BACH_WORKER_TOOL_TOKEN",
+                     "BACH_WORKER_TOOL_GENERATION", "BACH_WORKER_TOOL_TASK_ID")
+        config = {"mcpServers": {"bach_worker": {
+            "type": "stdio", "command": sys.executable,
+            "args": ["-X", "utf8", str(script)],
+            "env": {key: "${" + key + "}" for key in variables},
+        }}}
+        cmd = [self.cli_path, "-p", "--output-format", "text", "--model", model,
+               "--tools", "", "--strict-mcp-config", "--mcp-config",
+               json.dumps(config, ensure_ascii=False), "--no-session-persistence",
+               "--setting-sources", "", "--settings",
+               json.dumps({"disableAllHooks": True, "enabledPlugins": {}}),
+               "--disable-slash-commands", "--no-chrome",
+               "--allowedTools", "mcp__bach_worker__*"]
+        # --bare would discard the selected subscription OAuth login and
+        # require API credentials. Keep the account; omit discovered settings
+        # and prohibit their hooks/plugins plus CLI builtins instead.
+        if self.max_turns > 0:
+            cmd += ["--max-turns", str(self.max_turns)]
+        return cmd
+
     def _messages_to_prompt(self, messages: list) -> str:
         parts = []
         for m in messages:
@@ -1097,7 +1173,8 @@ class CLIBackend(ModelBackend):
                 parts.append(f"[Vorherige Antwort]\n{content}")
         return "\n\n".join(parts)
 
-    async def _run_cli(self, prompt: str, model: str = None) -> str | dict[str, str]:
+    async def _run_cli(self, prompt: str, model: str = None, *,
+                       worker_environment=None, worker_guard=None) -> str | dict[str, str]:
         model = model or self.default_model
         preset = self.KNOWN_CLIS.get(self.cli_name, self.KNOWN_CLIS["claude"])
 
@@ -1119,14 +1196,22 @@ class CLIBackend(ModelBackend):
 
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        if worker_environment is not None:
+            if self.cli_name != "claude" or not callable(worker_guard):
+                raise RuntimeError("Privater Werkzeugtransport ist nicht verifizierbar")
+            cmd = self._bound_claude_command(model)
+            env.update(worker_environment)
         creation_flags = 0x08000000 if sys.platform == "win32" else 0
 
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: self._run_subprocess(cmd, prompt, env, creation_flags)
-        )
+        def invoke():
+            if worker_environment is not None:
+                worker_guard()
+            return self._run_subprocess(cmd, prompt, env, creation_flags)
+        future = loop.run_in_executor(None, invoke)
+        response = await self._await_cli_terminal(future)
 
-        if isinstance(response, str) and response and not response.startswith("Fehler:"):
+        if worker_environment is None and isinstance(response, str) and response and not response.startswith("Fehler:"):
             self._session_active = True
 
         return response

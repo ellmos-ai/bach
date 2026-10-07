@@ -756,8 +756,6 @@ class TestBACHTray:
             def start(self):
                 starts.append(self.target)
 
-        monkeypatch.setattr(chat_tray, "get_slot", lambda _slot_id: {"enabled": True})
-        monkeypatch.setattr(chat_tray, "is_slot_paused", lambda _slot: False)
         monkeypatch.setattr(chat_tray.threading, "Thread", FakeThread)
 
         tray._idle_tick()
@@ -1120,7 +1118,7 @@ class TestBACHTray:
 
         tray.state["connected"] = False
         tray.state["compute_turn"] = {
-            "active": True, "chat_id": "idle-worker", "priority": "background",
+            "active": True, "chat_id": "buddha_always_on", "priority": "background",
         }
         tray.slots = {"buddha_always_on": {"enabled": True}}
         pystray_mock = MagicMock()
@@ -1165,7 +1163,7 @@ class TestBACHTray:
         slot = {"enabled": True}
         tray.state["connected"] = True
         tray.state["compute_turn"] = {
-            "active": True, "chat_id": "idle-worker", "priority": "background",
+            "active": True, "chat_id": "buddha_always_on", "priority": "background",
         }
         assert tray._always_on_runtime_label(slot) == "Running · bearbeitet eine Aufgabe"
 
@@ -1267,24 +1265,37 @@ print(TRAY_LOCK_FILE)
 
 
 class TestTrayIdleWorker:
-    """Plan 1.1.3: the idle worker is the only OLLAMA/BUDDHA task executor and was unusable
-    on headless hosts (menu-only toggle) and blind to 'open' tasks."""
+    """The tray coordinates the native core; canonical leases select actual tasks.
+
+    Former GUI claims/chat/history/reset assertions are replaced by the native
+    start/readback contract. Completion, filters and cooldowns stay authoritative.
+    """
 
     @staticmethod
-    def _tray(monkeypatch, env):
-        for k in ("BACH_IDLE_WORKER",):
-            monkeypatch.delenv(k, raising=False)
-        for k, v in env.items():
-            monkeypatch.setenv(k, v)
+    def _tray(monkeypatch, env, state_path=None):
+        monkeypatch.delenv("BACH_IDLE_WORKER", raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
         with patch.dict('sys.modules', {
-            'pystray': MagicMock(),
-            'PIL': MagicMock(),
-            'PIL.Image': MagicMock(),
-            'PIL.ImageDraw': MagicMock(),
-            'PIL.ImageFont': MagicMock(),
+            'pystray': MagicMock(), 'PIL': MagicMock(), 'PIL.Image': MagicMock(),
+            'PIL.ImageDraw': MagicMock(), 'PIL.ImageFont': MagicMock(),
         }):
             from hub._services.chat.chat_tray import BACHTray
-            return BACHTray(host="testhost", port=9999)
+            tray = BACHTray(host="testhost", port=9999, execution_state_path=state_path)
+        tray.state["connected"] = True
+        tray.slots = {"buddha_always_on": {"id": "buddha_always_on", "enabled": True,
+                     "pause_info": {"is_paused": False}, "model": "actual-model", "mode": "safe"}}
+        tray._update_icon = MagicMock()
+        return tray
+
+    @staticmethod
+    def _receipt(state="idle", request_id=None):
+        return {"ok": True, "execution": {"schema": "bach.worker-execution.v1",
+            "service_instance": "a" * 32, "worker_id": "buddha_always_on",
+            "start_request_id": request_id, "generation": "c" * 32 if request_id else None,
+            "state": state, "terminal": state == "terminal",
+            "worker_thread_started": state in ("running", "terminal") if request_id else None,
+            "completed_task_ids": [], "reviewed_task_ids": []}}
 
     def test_idle_worker_is_on_by_default_and_off_via_env(self, monkeypatch):
         assert self._tray(monkeypatch, {}).idle_enabled is True
@@ -1292,294 +1303,113 @@ class TestTrayIdleWorker:
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "0"}).idle_enabled is False
         assert self._tray(monkeypatch, {"BACH_IDLE_WORKER": "off"}).idle_enabled is False
 
-    def test_idle_worker_picks_open_ollama_task_and_accepts_tool_receipt(self, monkeypatch):
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+    def test_idle_worker_uses_native_start_without_task_claim_or_chat(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
         calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET":
-                if path == "/api/tasks?assigned_to=OLLAMA&status=open":
-                    return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                return {"ok": True, "answer": "done", "completed_task_ids": [42]}
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        gets = [p for m, p, _ in calls if m == "GET"]
-        assert gets[:2] == ["/api/tasks?assigned_to=OLLAMA&status=pending", "/api/tasks?assigned_to=OLLAMA&status=open"]
-        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert puts == [("/api/tasks/42", "in_progress")]
+        def request(method, path, body=None):
+            calls.append((method, path, body))
+            return (200, self._receipt()) if method == "GET" else (
+                200, self._receipt("running", body["start_request_id"]))
+        tray._worker_request = request
+        tray._api = MagicMock(side_effect=AssertionError("No alternate executor"))
+        tray._process_idle_task()
+        assert [call[0] for call in calls] == ["GET", "POST"]
+        assert calls[-1][1] == "/api/workers/run"
         assert tray.idle_processing is False
+        tray._api.assert_not_called()
 
-    def test_idle_worker_keeps_task_in_progress_when_chat_outcome_is_unknown(self, monkeypatch):
-        """A local timeout does not prove that the server stopped processing the request."""
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
+    def test_unknown_start_reads_exact_request_without_retry(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        tray._worker_request = MagicMock(side_effect=[(200, self._receipt()), (None, None)])
+        tray._process_idle_task()
+        original = dict(tray._native_worker.intent)
+        tray._worker_request = MagicMock(return_value=(409, {"error": "Unknown start"}))
+        for _ in range(3):
+            tray._process_idle_task()
+        assert tray._native_worker.intent == original
+        assert all(call.args == ("GET", "/api/workers/execution?id=buddha_always_on&start_request_id="
+                                 + original["start_request_id"]) for call in tray._worker_request.call_args_list)
+
+    def test_confirmed_native_failure_never_reopens_task(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        def request(method, path, body=None):
+            if method == "GET": return 200, self._receipt()
+            result = self._receipt("terminal", body["start_request_id"])
+            result["execution"]["worker_thread_started"] = False
+            return 400, result
+        tray._worker_request = request
+        tray._api = MagicMock()
+        tray._process_idle_task()
+        assert tray._native_worker.intent is None and tray._native_worker.status == "terminal"
+        tray._api.assert_not_called()
+
+    def test_repeated_terminal_runs_use_different_request_ids(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        requests = []
+        def request(method, path, body=None):
+            if method == "GET": return 200, self._receipt()
+            requests.append(body["start_request_id"])
+            return 200, self._receipt("terminal", body["start_request_id"])
+        tray._worker_request = request
+        tray._process_idle_task()
+        tray._process_idle_task()
+        assert len(requests) == 2 and requests[0] != requests[1]
+
+    @pytest.mark.parametrize("outcome", ["completed_task_ids", "reviewed_task_ids"])
+    def test_late_native_terminal_receipt_has_no_second_task_write(self, monkeypatch, tmp_path, outcome):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        tray._worker_request = MagicMock(return_value=(200, self._receipt("running", "b" * 32)))
+        tray._process_idle_task()
+        result = self._receipt("terminal", "b" * 32)
+        result["execution"][outcome] = [42]
+        tray._worker_request = MagicMock(return_value=(200, result))
+        tray._api = MagicMock()
+        tray._process_idle_task()
+        assert tray._native_worker.intent is None
+        tray._api.assert_not_called()
+
+    def test_foreground_compute_keeps_native_worker_living_without_task_resets(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        tray.state["compute_turn"] = {"active": True, "priority": "foreground", "chat_id": "human"}
+        tray._worker_request = MagicMock(return_value=(200, self._receipt("running", "b" * 32)))
+        tray._api = MagicMock()
+        tray._process_idle_task()
+        assert tray._always_on_runtime_label(tray.slots["buddha_always_on"]) == "Living · Chat hat den Rechenvorrang"
+        assert tray._native_worker.intent is not None
+        tray._api.assert_not_called()
+
+    @pytest.mark.parametrize("pending", [(42, 0), (42, 0, "T"), (42, 0, "T", "idle-bach-42-old")])
+    def test_expired_legacy_pending_remains_owned(self, monkeypatch, tmp_path, pending):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        tray.idle_pending = pending
+        tray._api = MagicMock()
+        tray._worker_request = MagicMock()
+        tray._process_idle_task()
+        assert tray.idle_pending == pending
+        assert tray._settle_pending_task() is False
+        tray._api.assert_not_called()
+        tray._worker_request.assert_not_called()
+
+    def test_native_start_preserves_filter_model_and_mode_configuration(self, monkeypatch, tmp_path):
+        tray = self._tray(monkeypatch, {}, tmp_path / "intent.json")
+        slot = tray.slots["buddha_always_on"]
+        slot["pickup_filter"] = {"enabled": True, "categories": ["TEST"]}
+        original = dict(slot)
         calls = []
+        def request(method, path, body=None):
+            calls.append((method, path, body))
+            return (200, self._receipt()) if method == "GET" else (
+                200, self._receipt("running", body["start_request_id"]))
+        tray._worker_request = request
+        tray._process_idle_task()
+        assert slot == original
+        assert set(calls[-1][2]) == {"id", "start_request_id", "expected_service_instance"}
 
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET":
-                if path == "/api/tasks?assigned_to=OLLAMA&status=pending":
-                    return {"success": True, "tasks": [{"id": 42, "title": "T", "description": "D"}]}
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                assert kw["timeout"] == 300
-                return None
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert puts == [("/api/tasks/42", "in_progress")]
-        assert tray.idle_processing is False
-
-    def test_idle_worker_reopens_task_after_confirmed_chat_failure(self, monkeypatch):
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET":
-                if path == "/api/tasks?assigned_to=OLLAMA&status=pending":
-                    return {"success": True, "tasks": [{"id": 42, "title": "T"}]}
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                return {"error": "backend unavailable"}
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert puts == [("/api/tasks/42", "in_progress"), ("/api/tasks/42", "open")]
-
-    # --- Nachlese nach dem Client-Timeout (T-20260906-739766716) ---
-
-    def _tray_with_pending(self, monkeypatch, task_id=42):
-        """Erster Lauf laeuft in den Client-Timeout; der Task ist danach vorgemerkt."""
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-
-        def fake_api(method, path, data=None, **kw):
-            if method == "GET" and path.startswith("/api/tasks?"):
-                if "OLLAMA" in path and "status=pending" in path:
-                    return {"success": True,
-                            "tasks": [{"id": task_id, "title": "T", "description": "D"}]}
-                return {"success": True, "tasks": []}
-            return None if method == "POST" else {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-        assert tray.idle_pending[0] == task_id
-        return tray
-
-    def test_repeated_task_runs_use_different_timeout_sessions(self, monkeypatch):
-        first = self._tray_with_pending(monkeypatch).idle_pending[3]
-        second = self._tray_with_pending(monkeypatch).idle_pending[3]
-        assert first.startswith("idle-bach-42-")
-        assert second.startswith("idle-bach-42-")
-        assert first != second, "A new run must never consume an old run's completion"
-
-    @staticmethod
-    def _history(*answers):
-        messages = [{"role": "user", "content": "Idle-Modus. Task #42: T"}]
-        messages += [{"role": "assistant", "content": c, "ok": ok} for c, ok in answers]
-        return {"ok": True, "messages": messages}
-
-    def test_idle_worker_books_a_late_answer_after_the_client_timeout(self, monkeypatch):
-        """Der Lauf arbeitet nach dem Timeout weiter -- sein Ergebnis darf nicht verloren gehen."""
-        tray = self._tray_with_pending(monkeypatch)
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if path.startswith("/api/history"):
-                history = self._history(("Wartungscheck erledigt.", True))
-                history["messages"][-1]["completed_task_ids"] = [42]
-                return history
-            return {"success": True, "tasks": []}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == []
-        assert tray.idle_pending is None
-
-    def test_idle_worker_reopens_a_late_failure_instead_of_completing_it(self, monkeypatch):
-        """Die Bewertung kommt aus /api/history und ist dieselbe wie bei /api/chat."""
-        tray = self._tray_with_pending(monkeypatch)
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if path.startswith("/api/history"):
-                return self._history(("Backend-Fehler: Ollama weg", False))
-            if path == "/api/tasks/42":
-                return {"status": "in_progress"}
-            return {"success": True, "tasks": []}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [("/api/tasks/42", "open")]
-        assert tray.idle_pending is None
-
-    def test_idle_worker_waits_instead_of_starting_a_second_run(self, monkeypatch):
-        """Zwei Laeufe teilen sich die Session -- ihre Antworten waeren nicht zuzuordnen."""
-        tray = self._tray_with_pending(monkeypatch)
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if path.startswith("/api/history"):
-                return self._history()
-            return {"success": True, "tasks": []}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert [c for c in calls if c[0] in ("PUT", "POST")] == []
-        assert tray.idle_pending is not None
-
-    def test_compute_lock_leaves_the_task_in_its_original_status(self, monkeypatch):
-        """Kein Load, kein Ergebnis -- also weder completed noch open.
-
-        Der Task war nie in Arbeit; er geht in den Status zurueck, unter dem er
-        gezogen wurde, und wird NICHT zur Nachlese vorgemerkt
-        (T-20260907-440775748).
-        """
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET" and path.startswith("/api/tasks?"):
-                if "OLLAMA" in path and "status=pending" in path:
-                    return {"success": True,
-                            "tasks": [{"id": 42, "title": "T", "description": "D"}]}
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                return {"ok": False, "compute_locked": True,
-                        "answer": "Compute-Lock aktiv -- kein Modell-Load"}
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [
-            ("/api/tasks/42", "in_progress"), ("/api/tasks/42", "pending")]
-        assert tray.idle_pending is None
-
-    def test_compute_lock_leaves_fallback_task_in_original_status(self, monkeypatch):
-        """Fallback tasks (expert roles) must also retain task_status on compute lock."""
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET" and path.startswith("/api/tasks?"):
-                # Standard assignees return empty
-                if any(f"assigned_to={a}" in path for a in ("OLLAMA", "BUDDHA", "BACH")):
-                    return {"success": True, "tasks": []}
-                if "status=open" in path:
-                    return {"success": True, "tasks": [{"id": 99, "title": "Expert Work", "assigned_to": "foerderplaner"}]}
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                return {"ok": False, "compute_locked": True, "answer": "Compute-Lock aktiv"}
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert [(p, d["status"]) for m, p, d in calls if m == "PUT"] == [
-            ("/api/tasks/99", "in_progress"), ("/api/tasks/99", "open")]
-        assert tray.idle_pending is None
-
-    def test_expired_pending_stops_waiting_and_frees_the_worker(self, monkeypatch):
-        """Nach PENDING_TTL gilt wieder das Verhalten von vor dem Fix."""
-        tray = self._tray_with_pending(monkeypatch)
-        tray.idle_pending = (42, time.time() - tray.PENDING_TTL - 1)
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if path == "/api/tasks/42":
-                return {"status": "in_progress"}
-            return self._history() if path.startswith("/api/history") else {"success": True, "tasks": []}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        assert tray.idle_pending is None
-        assert any(p.startswith("/api/tasks?") for m, p, d in calls), "Worker sucht wieder Arbeit"
-
-    def test_idle_task_picks_filter_match_before_assignee_scan(self, monkeypatch):
-        """Ein aktivierter pickup_filter wird vor dem Standard-Assignee-Scan genutzt."""
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-        tray.slots = {
-            "buddha_always_on": {
-                "pickup_filter": {
-                    "enabled": True,
-                    "categories": ["TEST"],
-                    "priorities": [],
-                    "tags": [],
-                    "exclude_tags": [],
-                }
-            }
-        }
-        calls = []
-
-        def fake_api(method, path, data=None, **kw):
-            calls.append((method, path, data))
-            if method == "GET" and path == "/api/tasks?status=pending":
-                return {
-                    "success": True,
-                    "tasks": [
-                        {"id": 42, "title": "Filter Task", "description": "D", "category": "TEST"}
-                    ],
-                }
-            if method == "GET" and path.startswith("/api/tasks?"):
-                return {"success": True, "tasks": []}
-            if method == "POST":
-                return {"ok": True, "answer": "FERTIG"}
-            return {"success": True}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-
-        gets = [p for m, p, _ in calls if m == "GET"]
-        assert "/api/tasks?status=pending" in gets
-        assert not any("assigned_to=" in p for p in gets), "Assignee-Scan darf nicht durchlaufen"
-        puts = [(p, d["status"]) for m, p, d in calls if m == "PUT"]
-        assert ("/api/tasks/42", "in_progress") in puts
-        assert tray.idle_processing is False
-
-    @pytest.mark.parametrize("route", ["filter", "assignee", "universal"])
-    def test_idle_worker_skips_cloud_bound_task_on_every_route(self, monkeypatch, route):
-        tray = self._tray(monkeypatch, {"BACH_IDLE_WORKER": "1"})
-        tray.slots = {"buddha_always_on": {
-            "id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
-            "pickup_filter": {"enabled": route == "filter"},
-        }}
-        task = {"id": 99, "title": "cloud only", "assigned_to": "OLLAMA",
-                "required_model": "kimi-k3:cloud"}
-        calls = []
-
-        def fake_api(method, path, data=None, **_kw):
-            calls.append((method, path))
-            if method == "GET":
-                if route == "filter" and path == "/api/tasks?status=pending":
-                    return {"success": True, "tasks": [task]}
-                if route == "assignee" and path == "/api/tasks?assigned_to=OLLAMA&status=pending":
-                    return {"success": True, "tasks": [task]}
-                if route == "universal" and path == "/api/tasks?status=pending":
-                    return {"success": True, "tasks": [task]}
-            return {"success": True, "tasks": []}
-
-        with patch.object(tray, "_api", side_effect=fake_api):
-            tray._process_idle_task()
-        assert not any(method in ("PUT", "POST") for method, _ in calls)
+    @pytest.mark.parametrize("route", ["filter", "assignee", "explicit"])
+    def test_canonical_picker_skips_cloud_bound_task_on_every_route(self, monkeypatch, route):
+        from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+        slot = {"id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+                "pickup_filter": {"enabled": route == "filter"}}
+        task = {"id": 99, "assigned_to": "OLLAMA", "required_model": "kimi-k3:cloud"}
+        if route == "explicit": task["assigned_slot"] = "buddha_always_on"
+        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is False

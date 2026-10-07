@@ -70,7 +70,7 @@ XL_MIN_ESTIMATED_MINUTES = 480
 
 CLAIMABLE_STATUSES = frozenset({"pending", "open"})
 TERMINAL_STATUSES = frozenset({"done", "completed", "cancelled", "blocked"})
-RELEASE_OUTCOMES = {"return": "pending", "done": "done", "blocked": "blocked"}
+RELEASE_OUTCOMES = {"return": "pending", "done": "done", "blocked": "blocked", "review": "review"}
 
 #: Additive Lease-Spalten (Vertrag §4 + §11.1). Keine Daten werden umgeschrieben.
 LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -595,6 +595,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     if outcome not in RELEASE_OUTCOMES:
         raise LeaseValidationError(f"outcome muss einer von {sorted(RELEASE_OUTCOMES)} sein")
     result_ref = str(result_ref or "")[:500]
+    if outcome == "review" and not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", result_ref):
+        raise LeaseValidationError("Review-Abschluss braucht eine bestätigte GitHub-PR-Referenz")
     note = str(note or "")[:4000]
     ensure_task_lease_schema(conn)
 
@@ -654,6 +656,61 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             conn.rollback()
         raise
     return LeaseResult(ack)
+
+
+def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
+                 task_version: str, changes: dict[str, Any],
+                 config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Update content and its holder binding in one fenced transaction."""
+    from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes
+
+    cfg = config or LeaseConfig.from_env()
+    task_id = _validate_task_id(task_id)
+    lease_id, fence = _validate_lease_ref(lease_id, fence)
+    task_version = _validate_task_version(task_version, required=True)
+    allowed = ALLOWED_COLUMNS - {"status", "created_by"}
+    if not isinstance(changes, dict) or not changes or set(changes) - allowed:
+        raise LeaseValidationError("Unbekannte oder fehlende Inhaltsfelder")
+    if any(not isinstance(value, str) for value in changes.values()):
+        raise LeaseValidationError("Inhaltsfelder müssen Text sein")
+    if "title" in changes and not changes["title"].strip():
+        raise LeaseValidationError("Der Titel darf nicht leer sein")
+    ensure_task_lease_schema(conn)
+    _begin(conn)
+    try:
+        now = now if now is not None else _utcnow()
+        row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
+        if problem:
+            conn.rollback()
+            return _deny(task_id, problem, now)
+        if "depends_on" in changes:
+            dependencies = inspect_task_dependencies(conn, changes["depends_on"])
+            if dependencies["missing"] or dependencies["invalid"]:
+                raise LeaseValidationError("Ungültige oder fehlende Abhängigkeiten")
+        apply_task_field_changes(conn, task_id, row, changes,
+                                 changed_by=row.get("claimed_by") or "lease-holder",
+                                 now=_local_naive(now), lease_authorized=True)
+        version = task_content_version(_row(conn, task_id))
+        cursor = conn.execute(
+            "UPDATE tasks SET claim_task_version = ? "
+            "WHERE id = ? AND claim_id = ? AND claim_fence = ? AND claim_task_version = ?",
+            (version, task_id, lease_id, fence, task_version),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        _history(conn, task_id, "lease_update", row.get("claimed_by") or "lease-holder", now,
+                 {"fence": fence, "fields": sorted(changes),
+                  "previous_task_version": task_version, "task_version": version})
+        payload = {"updated": True, "task_id": task_id, "fence": fence,
+                   "previous_task_version": task_version, "task_version": version,
+                   "fields": sorted(changes), "server_now": _fmt(now)}
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    return LeaseResult(payload)
 
 
 def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,

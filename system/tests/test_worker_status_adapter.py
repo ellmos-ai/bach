@@ -7,6 +7,81 @@ import pytest
 from gui.api import worker_status_adapter as adapter
 
 
+def decomposition_receipt(state="pending"):
+    return {"kind": "worker-decompose", "worker_id": "worker-1", "generation": "a" * 32,
+            "request_id": "b" * 32, "task_id": 42, "task_version": "c" * 64,
+            "state": state, "requested_at": "now", "confirmed_at": "later" if state == "confirmed" else None,
+            "created_ids": [43], "parent_closed": True, "backend": "isolated", "model": "test-model"}
+
+
+def test_decomposition_status_projects_binding_and_ack_without_secrets():
+    receipt = decomposition_receipt("confirmed") | {"lease_id": "PRIVATE", "api_key": "SECRET"}
+    worker = adapter._project_worker({"id": "worker-1", "generation": "a" * 32,
+                                      "task_action_binding": {"task_id": 42, "task_version": "c" * 64,
+                                                              "lease_id": "PRIVATE"},
+                                      "task_action_receipt": receipt})
+    assert worker["task_action_binding"] == {"task_id": 42, "task_version": "c" * 64}
+    assert worker["task_action_receipt"]["created_ids"] == [43]
+    assert "PRIVATE" not in json.dumps(worker)
+    assert "SECRET" not in json.dumps(worker)
+
+
+@pytest.mark.parametrize("mutation", [{"created_ids": []}, {"created_ids": [True]},
+                                       {"created_ids": [43, 43]}, {"confirmed_at": None},
+                                       {"task_version": "bad"}, {"parent_closed": "true"}])
+def test_decomposition_projection_requires_actual_complete_ack(mutation):
+    worker = adapter._project_worker({"id": "worker-1", "task_action_receipt":
+                                      decomposition_receipt("confirmed") | mutation})
+    assert "task_action_receipt" not in worker
+
+
+def test_decomposition_request_checks_current_binding_and_exact_ack_readback(monkeypatch):
+    receipt = decomposition_receipt()
+    current = {"workers": [{"id": "worker-1", "status": "running", "generation": "a" * 32,
+                            "task_action_binding": {"task_id": 42, "task_version": "c" * 64},
+                            "task_action_receipt": receipt}]}
+    monkeypatch.setattr(adapter, "read_worker_status", lambda **kw: current)
+    calls = []
+    monkeypatch.setattr(adapter, "_request_control_api",
+                        lambda *args, **kw: calls.append((args, kw)) or {"ok": True, "receipt": receipt})
+    result = adapter.request_worker_decomposition("worker-1", "a" * 32, 42, "c" * 64,
+                                                   device_token="device-token")
+    assert result["receipt"]["state"] == "pending"
+    assert result["runtime_readback"] == "available"
+    assert calls[0][0] == ("POST", "workers/decompose")
+    assert calls[0][1]["body"] == {"id": "worker-1", "generation": "a" * 32,
+                                     "task_id": 42, "task_version": "c" * 64}
+    with pytest.raises(adapter.WorkerActionRejected):
+        adapter.request_worker_decomposition("worker-1", "a" * 32, 42, "d" * 64, device_token="token")
+    assert len(calls) == 1
+    receipt["task_id"] = 99
+    with pytest.raises(adapter.WorkerActionRejected):
+        adapter.request_worker_decomposition("worker-1", "a" * 32, 42, "c" * 64, device_token="token")
+
+
+@pytest.mark.parametrize("authenticated", [True, False])
+def test_gui_decomposition_route_requires_device_and_bound_request(monkeypatch, authenticated):
+    from fastapi import HTTPException
+    from gui.api import unified_api
+    def authorize(request):
+        if not authenticated: raise HTTPException(401, "Geräteanmeldung erforderlich")
+        return "device-token"
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", authorize)
+    calls = []
+    monkeypatch.setattr(adapter, "request_worker_decomposition",
+                        lambda *args, **kw: calls.append((args, kw)) or {"ok": True})
+    class Request:
+        async def json(self): return {"generation": "a" * 32, "task_id": 42, "task_version": "c" * 64}
+    if authenticated:
+        assert asyncio.run(unified_api.decompose_system_worker("worker-1", Request()))["ok"]
+        assert calls == [(("worker-1", "a" * 32, 42, "c" * 64), {"device_token": "device-token"})]
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(unified_api.decompose_system_worker("worker-1", Request()))
+        assert error.value.status_code == 401
+        assert not calls
+
+
 def test_handoff_projection_discards_secrets_and_keeps_receipt():
     receipt = {"kind": "worker-handoff", "worker_id": "worker-1", "generation": "a" * 32,
                "request_id": "b" * 32, "state": "pending", "requested_at": "now",

@@ -509,6 +509,22 @@ def get_worker_slot(worker_id: str, path: str | None = None) -> dict[str, Any]:
     return matches[0] if matches else {}
 
 
+def get_always_on_execution_slot(path: str | None = None) -> dict[str, Any]:
+    """Read the persisted core worker once, without defaults or dynamic aliases."""
+    with _config_lock:
+        config = json.loads(_resolve_path(path).read_text(encoding="utf-8"))
+    if (not isinstance(config, dict) or not isinstance(config.get("slots"), dict)
+            or not isinstance(config.get("dynamic_workers"), list)):
+        raise ValueError("Always-On-Konfiguration ist nicht verifizierbar")
+    slot = config["slots"].get("buddha_always_on")
+    if (not isinstance(slot, dict) or slot.get("id") != "buddha_always_on"
+            or type(slot.get("enabled")) is not bool
+            or any(not isinstance(worker, dict) for worker in config["dynamic_workers"])
+            or any(worker.get("id") == "buddha_always_on" for worker in config["dynamic_workers"])):
+        raise ValueError("Always-On-Slot fehlt oder ist nicht eindeutig")
+    return {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+
+
 @_serialized_mutation
 def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""

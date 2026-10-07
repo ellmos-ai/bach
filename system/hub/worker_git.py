@@ -18,8 +18,11 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
+import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -289,7 +292,51 @@ def task_has_file_changes(
     return False
 
 
-def finish_task(
+def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=None, db_path=None,
+                worker_task_binding=None, require_task_binding=False):
+    """Preserve private ownership through every Git mutation and task receipt."""
+    if require_task_binding and worker_task_binding is None:
+        return {"success": False, "error": "Taskbindung fehlt"}
+    if worker_task_binding is None:
+        # Explicit legacy/manual invocation still needs exclusive authority;
+        # it cannot turn a local projection or another holder into permission.
+        from hub._services.task_lease_client import TaskLeaseClient
+        from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+        from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
+        from hub.bach_paths import BACH_DB
+        binding = None
+        cleanup_confirmed = False
+        try:
+            if isinstance(task_id, bool) or not str(task_id).isdecimal() or int(task_id) <= 0:
+                raise ValueError("Task-ID ist ungültig")
+            generation = uuid.uuid4().hex
+            host = socket.gethostname()
+            binding = WorkerLeaseBinding.acquire(TaskLeaseClient(db_path=db_path or BACH_DB), int(task_id),
+                worker_id=f"worktree-finish-{generation}@{host}", host=host, generation=generation,
+                is_current=lambda: True, stop_event=threading.Event())
+            with WorkerLeaseSupervisor(binding):
+                result = finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests, repo_root=repo_root,
+                                     worker_task_binding=binding, require_task_binding=True)
+        except Exception:
+            result = {"success": False, "error": "Kanonische Worktree-Taskbindung nicht bestätigt"}
+        finally:
+            if binding is not None:
+                cleanup_confirmed = binding.closed or binding.return_lease()
+        if binding is not None and not cleanup_confirmed:
+            return {"success": False, "error": "Kanonische Taskfreigabe nicht bestätigt"}
+        return result
+    if worker_task_binding is not None:
+        try:
+            worker_task_binding.assert_active()
+            if isinstance(task_id, bool) or str(task_id) != str(worker_task_binding.task_id):
+                raise ValueError("Fremde Task")
+            return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
+                                repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding)
+        except Exception:
+            return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
+
+
+def _finish_task(
     task_id: int | str,
     message: str,
     *,
@@ -297,6 +344,7 @@ def finish_task(
     run_tests: bool = True,
     repo_root: Path | None = None,
     db_path: Path | None = None,
+    worker_task_binding=None,
 ) -> dict[str, Any]:
     """Schließt einen Task im Worktree ab oder sichert den WIP-Stand.
 
@@ -314,6 +362,14 @@ def finish_task(
     3. git push -u origin bach-task/<id> (ohne PR)
     4. Vermerk in Task
     """
+    if worker_task_binding is None:
+        return {"success": False, "error": "Private Taskbindung fehlt"}
+
+    def run_checked(cmd, **kwargs):
+        if worker_task_binding is not None:
+            worker_task_binding.assert_active()
+        return subprocess.run(cmd, **kwargs)
+
     task_id_str = str(task_id).strip()
     target_dir = get_worktrees_dir() / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
@@ -343,8 +399,8 @@ def finish_task(
     if is_wip:
         # WIP-Commit
         commit_msg = f"[WIP] [task {task_id_str}] {message}"
-        subprocess.run(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
-        res_commit = subprocess.run(
+        run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+        res_commit = run_checked(
             ["git", "commit", "-m", commit_msg],
             cwd=str(target_dir),
             capture_output=True,
@@ -352,7 +408,9 @@ def finish_task(
             check=False,
             timeout=15,
         )
-        res_push = subprocess.run(
+        if res_commit.returncode != 0 and "nothing to commit" not in (res_commit.stdout or ""):
+            return {"success": False, "error": "WIP-Commit nicht bestätigt"}
+        res_push = run_checked(
             ["git", "push", "-u", "origin", branch_name],
             cwd=str(target_dir),
             capture_output=True,
@@ -361,30 +419,16 @@ def finish_task(
             timeout=30,
         )
 
-        with _get_db(db_path) as conn:
-            now = _utc_now()
-            conn.execute(
-                """UPDATE tasks SET description =
-                    CASE WHEN description IS NULL OR description = ''
-                    THEN ? ELSE description || char(10) || char(10) || ? END,
-                    updated_at = ?
-                    WHERE id = ?""",
-                (f"[WIP] Stand auf {branch_name} gesichert", f"[WIP] Stand auf {branch_name} gesichert", now, int(task_id_str)),
-            )
-            conn.commit()
-
-        return {
-            "success": True,
-            "wip": True,
-            "branch": branch_name,
-            "status": "wip_pushed",
-        }
+        if res_push.returncode != 0:
+            return {"success": False, "error": "WIP-Push nicht bestätigt"}
+        worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert")
+        return {"success": True, "wip": True, "branch": branch_name, "status": "wip_pushed"}
 
     # Normaler Abschluss: Tests laufen lassen
     if run_tests:
         # Finde geänderte Dateien
         try:
-            diff_files = subprocess.run(
+            diff_files = run_checked(
                 ["git", "diff", "--name-only", "HEAD"],
                 cwd=str(target_dir),
                 capture_output=True,
@@ -398,7 +442,7 @@ def finish_task(
         test_files = [f for f in diff_files if "test_" in f and f.endswith(".py")]
         if test_files:
             cmd_test = ["pytest", "-q"] + test_files
-            test_res = subprocess.run(
+            test_res = run_checked(
                 cmd_test,
                 cwd=str(target_dir),
                 capture_output=True,
@@ -413,9 +457,9 @@ def finish_task(
                 }
 
     # Stage & Commit
-    subprocess.run(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
     commit_msg = f"[task {task_id_str}] {message}"
-    res_commit = subprocess.run(
+    res_commit = run_checked(
         ["git", "commit", "-m", commit_msg],
         cwd=str(target_dir),
         capture_output=True,
@@ -430,7 +474,7 @@ def finish_task(
         }
 
     # Push
-    res_push = subprocess.run(
+    res_push = run_checked(
         ["git", "push", "-u", "origin", branch_name],
         cwd=str(target_dir),
         capture_output=True,
@@ -451,7 +495,7 @@ def finish_task(
         "--title", commit_msg,
         "--body", f"Automatisierter PR für Task #{task_id_str}: {message}",
     ]
-    res_pr = subprocess.run(
+    res_pr = run_checked(
         cmd_pr,
         cwd=str(target_dir),
         capture_output=True,
@@ -469,7 +513,7 @@ def finish_task(
     else:
         # Vielleicht existiert der PR schon
         if "already exists" in (res_pr.stderr or ""):
-            pr_view = subprocess.run(
+            pr_view = run_checked(
                 ["gh", "pr", "view", branch_name, "--json", "url", "-q", ".url"],
                 cwd=str(target_dir),
                 capture_output=True,
@@ -484,31 +528,8 @@ def finish_task(
                 "error": f"gh pr create fehlgeschlagen: {res_pr.stderr}",
             }
 
-    # DB aktualisieren: Status auf review, PR-URL in description
-    with _get_db(db_path) as conn:
-        now = _utc_now()
-        conn.execute(
-            """UPDATE tasks SET
-                status = 'review',
-                description = CASE WHEN description IS NULL OR description = ''
-                              THEN ? ELSE description || char(10) || char(10) || ? END,
-                updated_at = ?
-                WHERE id = ?""",
-            (f"PR: {pr_url}", f"PR: {pr_url}", now, int(task_id_str)),
-        )
-        conn.execute(
-            """INSERT INTO task_history
-               (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
-               VALUES (?, 'status_change', 'status', 'in_progress', 'review', 'worker_git', ?)""",
-            (int(task_id_str), now),
-        )
-        conn.commit()
-
-    return {
-        "success": True,
-        "pr_url": pr_url,
-        "status": "review",
-    }
+    worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}", review=True, result_ref=pr_url)
+    return {"success": True, "pr_url": pr_url, "status": "review"}
 
 
 def cleanup_task_worktree(

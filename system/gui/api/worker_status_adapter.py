@@ -30,7 +30,7 @@ _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 _TOOL_ROUND_ACTIVITY = re.compile(r"^Tool \[(\d+)\]:")
 _MAX_RESPONSE_BYTES = 2_000_000
 _SAFE_TEXT_FIELDS = (
-    "name", "backend", "model", "mode", "sub_mode", "role_id", "status", "pause_basis",
+    "name", "backend", "model", "resolved_model", "mode", "sub_mode", "role_id", "status", "pause_basis",
     "current_activity", "created_at", "expires_at",
 )
 _NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
@@ -42,6 +42,7 @@ _ALLOWED_CONTROL = {
     ("POST", "workers/toggle"), ("POST", "workers/stop"),
     ("POST", "workers/delete"),
     ("POST", "workers/handoff"),
+    ("POST", "workers/decompose"),
     ("GET", "workers/configuration"), ("POST", "workers/configuration"),
 }
 _ACTIONS = {
@@ -120,9 +121,20 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     generation = raw.get("generation")
     if isinstance(generation, str) and _RUN_ID.fullmatch(generation):
         item["generation"] = generation
+    capabilities = raw.get("action_capabilities")
+    if isinstance(capabilities, dict):
+        item["action_capabilities"] = {
+            name: capabilities.get(name) is True for name in ("handoff", "decompose")
+        }
     receipt = _project_handoff_receipt(raw.get("handoff_receipt"), worker_id)
     if receipt is not None:
         item["handoff_receipt"] = receipt
+    binding = _project_task_action_binding(raw.get("task_action_binding"))
+    if binding is not None:
+        item["task_action_binding"] = binding
+    receipt = _project_task_action_receipt(raw.get("task_action_receipt"), worker_id)
+    if receipt is not None:
+        item["task_action_receipt"] = receipt
     return item
 
 
@@ -139,6 +151,71 @@ def _project_handoff_receipt(raw: Any, worker_id: str) -> dict[str, Any] | None:
     return {key: raw[key] for key in ("kind", "worker_id", "generation", "request_id", "state")} | {
         key: _text(raw.get(key), limit=80) for key in ("requested_at", "confirmed_at")
     }
+
+
+def _project_task_action_binding(raw):
+    if (not isinstance(raw, dict) or type(raw.get("task_id")) is not int or raw["task_id"] <= 0
+            or not isinstance(raw.get("task_version"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", raw["task_version"])):
+        return None
+    return {key: raw[key] for key in ("task_id", "task_version")}
+
+
+def _project_task_action_receipt(raw, worker_id):
+    if (not isinstance(raw, dict) or raw.get("kind") != "worker-decompose"
+            or raw.get("worker_id") != worker_id
+            or raw.get("state") not in {"pending", "running", "confirmed", "error", "cancelled"}
+            or _project_task_action_binding(raw) is None):
+        return None
+    for field in ("generation", "request_id"):
+        if not isinstance(raw.get(field), str) or not _RUN_ID.fullmatch(raw[field]):
+            return None
+    result = {key: raw[key] for key in ("kind", "worker_id", "generation", "request_id",
+                                        "task_id", "task_version", "state")}
+    result.update({key: _text(raw.get(key), limit=80) for key in ("requested_at", "confirmed_at")})
+    if raw["state"] == "confirmed":
+        ids = raw.get("created_ids")
+        if (not result["confirmed_at"] or not isinstance(ids, list) or not 1 <= len(ids) <= 100
+                or any(type(value) is not int or value <= 0 for value in ids)
+                or len(set(ids)) != len(ids) or type(raw.get("parent_closed")) is not bool
+                or not _text(raw.get("backend"), limit=80) or not _text(raw.get("model"), limit=160)):
+            return None
+        result.update(created_ids=list(ids), parent_closed=raw["parent_closed"])
+    for key in ("backend", "model"):
+        if _text(raw.get(key), limit=160):
+            result[key] = _text(raw[key], limit=160)
+    return result
+
+
+def request_worker_decomposition(worker_id, generation, task_id, task_version, *, device_token, timeout=8.0):
+    binding = _project_task_action_binding({"task_id": task_id, "task_version": task_version})
+    if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
+            or not isinstance(generation, str) or not _RUN_ID.fullmatch(generation) or binding is None):
+        raise WorkerActionRejected("Aktueller Workerlauf und Task-Inhaltsversion erforderlich", 400)
+    current = read_worker_status(device_token=device_token, timeout=timeout)
+    worker = next((w for w in current["workers"] if w["id"] == worker_id), None)
+    if (not worker or worker.get("status") != "running" or worker.get("generation") != generation
+            or worker.get("task_action_binding") != binding):
+        raise WorkerActionRejected("Workerlauf oder Auftrag ist nicht mehr aktuell", 409)
+    result = _request_control_api("POST", "workers/decompose", device_token=device_token,
+                                  body={"id": worker_id, "generation": generation, **binding}, timeout=timeout)
+    receipt = _project_task_action_receipt(result.get("receipt"), worker_id)
+    if (result.get("ok") is not True or receipt is None or receipt["generation"] != generation
+            or _project_task_action_binding(receipt) != binding):
+        raise WorkerActionRejected("Zerlegungsanfrage wurde nicht für diesen Auftrag bestätigt", 503)
+    observed = None
+    try:
+        snapshot = read_worker_status(device_token=device_token, timeout=timeout)
+        latest = next((w for w in snapshot["workers"] if w["id"] == worker_id), {})
+        candidate = _project_task_action_receipt(latest.get("task_action_receipt"), worker_id)
+        if (candidate and candidate["generation"] == generation
+                and candidate["request_id"] == receipt["request_id"]
+                and _project_task_action_binding(candidate) == binding):
+            observed = candidate
+    except WorkerStatusUnavailable:
+        pass
+    return {"ok": True, "action": "decompose", "receipt": observed or receipt,
+            "runtime_readback": "available" if observed else "unavailable"}
 
 
 def request_worker_handoff(worker_id: str, generation: str, *, device_token: str,

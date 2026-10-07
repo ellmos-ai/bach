@@ -492,6 +492,7 @@ class TestSlotsConfigCRUD:
         from hub._services.chat import telegram_chat
 
         control = telegram_chat._WorkerControl("worker-task-cooldown-test")
+        monkeypatch.setattr(telegram_chat, "_execution_worker_slot", lambda ident: {"id": ident})
         received = []
         monkeypatch.setattr(
             telegram_chat,
@@ -1004,6 +1005,20 @@ class TestDynamicContextScaling:
 
 
 class TestControlHandlerEndpoints:
+    @pytest.fixture(autouse=True)
+    def isolated_native_task_authority(self, tmp_path, monkeypatch):
+        from system.tests.test_task_lease_service import _create_db, _connect, _insert
+        from hub._services import task_lease_client as lease_module
+        database = tmp_path / "canonical-native-tasks.db"
+        _create_db(database)
+        connection = _connect(database)
+        _insert(connection, title="Isolated canonical task", assigned_to="BACH")
+        connection.close()
+        monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+        monkeypatch.setattr(lease_module, "get_lead_config", lambda: {"mode": "isolated"})
+        monkeypatch.setattr(telegram_chat, "_native_task_client",
+                            lambda: lease_module.TaskLeaseClient(db_path=database), raising=False)
+
     @pytest.mark.parametrize("route", ["/api/chat", "/api/workers/run"])
     def test_api_rejects_missing_worker_registry(self, tmp_path, monkeypatch, route):
         control = importlib.import_module("hub._services.chat.telegram_chat")
@@ -1111,7 +1126,7 @@ class TestControlHandlerEndpoints:
         assert replies[0][1] == 404
 
     @pytest.mark.parametrize("rounds, expected_status", [
-        (0, "completed"), ("ungültig", "error"),
+        (0, "idle"), ("ungültig", "error"),
     ])
     def test_api_worker_custom_id_binds_no_tools_fail_closed(
         self, monkeypatch, rounds, expected_status,
@@ -1150,7 +1165,14 @@ class TestControlHandlerEndpoints:
                 self.target = target
 
             def start(self):
-                self.target()
+                self.active = True
+                try:
+                    self.target()
+                finally:
+                    self.active = False
+
+            def is_alive(self):
+                return getattr(self, "active", False)
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
         handler = control.ControlHandler.__new__(control.ControlHandler)
@@ -1164,7 +1186,7 @@ class TestControlHandlerEndpoints:
         statuses = [change["status"] for change in updates if "status" in change]
         assert statuses[-1] == expected_status
         assert session.allow_tools is False
-        if expected_status == "completed":
+        if expected_status == "idle":
             assert process_calls == [False]
         else:
             assert process_calls == []
@@ -1245,7 +1267,14 @@ class TestControlHandlerEndpoints:
                 self.target = target
 
             def start(self):
-                self.target()
+                self.active = True
+                try:
+                    self.target()
+                finally:
+                    self.active = False
+
+            def is_alive(self):
+                return getattr(self, "active", False)
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
         handler = control.ControlHandler.__new__(control.ControlHandler)
@@ -1258,8 +1287,8 @@ class TestControlHandlerEndpoints:
 
         statuses = [change["status"] for change in updates if "status" in change]
         if answer_kind == "ok":
-            assert statuses[-1] == "completed"
-            assert activities[-1] == "ok"
+            assert statuses[-1] == "idle"
+            assert activities[-1] == "pending"
         else:
             assert statuses[-1] == "error"
             assert "completed" not in statuses
@@ -1723,7 +1752,14 @@ class TestControlHandlerEndpoints:
                 self.target = target
 
             def start(self):
-                self.target()
+                self.active = True
+                try:
+                    self.target()
+                finally:
+                    self.active = False
+
+            def is_alive(self):
+                return getattr(self, "active", False)
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
         handler = control.ControlHandler.__new__(control.ControlHandler)
@@ -1751,8 +1787,12 @@ class TestControlHandlerEndpoints:
         assert start_details["initiated_by"] == f"board:{worker_id}"
         match = [e for e in ended if e["details"]["assignment_id"] == asgn]
         assert match
-        assert match[0]["details"]["status"] == "completed"
-        assert match[0]["details"]["result"] == "task_done"
+        assert match[0]["details"]["status"] == "released"
+        actual = [event for event in started if event["details"].get("task_id") == 1]
+        assert actual
+        final = [event for event in ended if event["details"]["assignment_id"] == actual[0]["details"]["assignment_id"]]
+        assert final[0]["details"]["status"] == "released"
+        assert final[0]["details"]["result"] == "not_finished"
 
     def test_api_worker_run_denies_unknown_role_fail_closed(self, monkeypatch):
         control = importlib.import_module("hub._services.chat.telegram_chat")
@@ -1784,7 +1824,14 @@ class TestControlHandlerEndpoints:
                 self.target = target
 
             def start(self):
-                self.target()
+                self.active = True
+                try:
+                    self.target()
+                finally:
+                    self.active = False
+
+            def is_alive(self):
+                return getattr(self, "active", False)
 
         monkeypatch.setattr(control.threading, "Thread", _SynchronousThread)
         handler = control.ControlHandler.__new__(control.ControlHandler)

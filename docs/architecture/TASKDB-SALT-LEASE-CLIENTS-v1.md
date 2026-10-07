@@ -61,7 +61,7 @@ class TaskLeaseClient:
         *,
         lease_id: str,
         fence: int,
-        outcome: str = "done",  # "done" | "return" | "blocked"
+        outcome: str = "done",  # "done" | "return" | "blocked" | "review"
         result_ref: str = "",
         note: str = "",
     ) -> LeaseReleaseAck: ...
@@ -70,7 +70,7 @@ class TaskLeaseClient:
 #### Dataclasses:
 - `LeaseAck`: Enthält `task_id`, `lease_id`, `fence`, `worker_id`, `host`, `issued_at`, `expires_at`, `ttl_profile`, `server_now`, `local_receive_time`, `local_deadline`.
 - `LeaseHolderView`: Holder-Ansicht gemäss Vertrag §5.2. Verbirgt `lease_id` für Fremde; zeigt `own: True` nur bei Vorlage der passenden `lease_id`.
-- `LeaseReleaseAck`: Bestätigung über Statuswechsel (`done`, `pending`, `blocked`) und aktuellen Fence.
+- `LeaseReleaseAck`: Bestätigung über Statuswechsel (`done`, `pending`, `blocked`, `review`) und aktuellen Fence. `review` benötigt eine gültige GitHub-PR-Referenz und zählt nicht als Done.
 
 ### 2.2 CLI-Befehle (`system/hub/task.py`)
 
@@ -81,7 +81,7 @@ Folgende Subcommands stehen zur Verfügung:
 | `lease` | `bach task lease <id> --by <worker> [--host <host>] [--ttl S\|M\|L\|XL] [--intent <text>]` | Beansprucht die Task exklusiv und gibt `lease_id` und `fence` aus. |
 | `lease-show` | `bach task lease-show <id> [--lease-id <uuid>]` | Zeigt den aktuellen Halter und Prüfstatus an. |
 | `lease-renew` | `bach task lease-renew <id> --lease-id <uuid> --fence <int>` | Verlängert die Frist einer aktiven Lease. |
-| `lease-release`| `bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done\|return\|blocked] [--ref <ref>] [--note <note>]` | Gibt die Lease frei oder schließt sie ab. |
+| `lease-release`| `bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done\|return\|blocked\|review] [--ref <ref>] [--note <note>]` | Gibt die Lease frei oder schließt sie ab. `review` erfordert eine GitHub-PR-URL und bestätigt keine Erledigung. |
 
 ### 2.3 Python API (`system/bach_api.py`)
 

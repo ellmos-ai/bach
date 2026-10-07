@@ -17,6 +17,7 @@ import importlib.util
 from datetime import datetime, timedelta
 import os
 import pytest
+from system.tests.test_task_lease_client import mem_db, _insert_task
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _MOD_PATH = os.path.normpath(
@@ -133,76 +134,36 @@ def test_pending_fields_empty_none():
     assert f(()) == (None, 0.0, "", "")
 
 
-def test_send_path_stores_send_chat_id_on_timeout():
-    """E2E Send-Pfad: bei Client-Timeout (POST /api/chat -> None) muss das
-    idle_pending-Tupel die echte Send-chat_id als 4. Element vormerken."""
-    mod = _load_mod()
-    tray = object.__new__(mod.BACHTray)          # __init__ umgehen: keine GUI
-    tray.gui_url = "http://127.0.0.1:8000"
-    tray.idle_processing = False
-    tray.idle_pending = None
-    tray.idle_task_name = None
-    tray.idle_consecutive = 0
-    tray.icon = None
-    tray._update_icon = lambda *a, **k: None
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and "assigned_to=OLLAMA" in path:
-            return {"success": True, "tasks": [{
-                "id": 1241, "title": "T", "description": "",
-                "assigned_to": "OLLAMA", "status": "pending",
-            }]}
-        if method == "GET":
-            return {"status": "in_progress"}     # /api/tasks/{id}: nicht terminal
-        if method == "PUT":
-            return {"success": True}             # Claim ok
-        assert method == "POST", f"unerwarteter Call: {method} {path}"
-        return None                              # POST /api/chat: Client-Timeout
-
-    tray._api = fake_api
-    tray._process_idle_task()
-    assert tray.idle_pending is not None, "Client-Timeout muss idle_pending setzen"
-    assert len(tray.idle_pending) >= 4, f"Tupel muss chat_id tragen (#1303): {tray.idle_pending}"
-    assert tray.idle_pending[3].startswith("idle-bach-1241-"), \
-        f"Send-chat_id muss idle-{{role}}-{{id}} sein, ist aber: {tray.idle_pending[3]}"
-
-
-def test_settle_polls_send_chat_id_and_settles():
-    """E2E Settle-Pfad: nach Client-Timeout muss _settle_pending_task die
-    echte Send-chat_id pollen, die verspaetete Antwort finden und den Task
-    sauber abschliessen (vor #1303: PATH A 'ohne Antwort' -> stranded)."""
+def test_legacy_timeout_retains_the_exact_send_chat_id():
+    """No history or timeout can establish the old physical call's end."""
     mod = _load_mod()
     tray = object.__new__(mod.BACHTray)
-    tray.gui_url = "http://127.0.0.1:8000"
+    pending = (1241, 0, "T", "idle-bach-1241-old")
+    tray.idle_pending = pending
+    tray._api = lambda *_a, **_k: pytest.fail("No speculative TaskDB/history reads")
+    assert tray._settle_pending_task() is False
+    assert tray.idle_pending == pending
+    assert mod._pending_fields(tray.idle_pending)[3] == "idle-bach-1241-old"
+
+
+def test_late_tool_receipt_does_not_prove_legacy_physical_end():
+    mod = _load_mod()
+    tray = object.__new__(mod.BACHTray)
     tray.idle_pending = (1241, _time.time(), "T", "idle-bach-1241")
-    polled_history, puts = [], []
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and "/api/history" in path:
-            polled_history.append(path)
-            return {"messages": [{"role": "assistant", "content": "FERTIG. Erledigt.", "ok": True,
-                                  "completed_task_ids": [1241]}]}
-        if method == "GET":
-            return {"status": "in_progress"}     # task_now: nicht terminal
-        assert method == "PUT", f"unerwarteter Call: {method} {path}"
-        puts.append(body)
-        return {"success": True}
-
-    tray._api = fake_api
-    tray._auto_commit_task = lambda *a, **k: None
-    ok = tray._settle_pending_task()
-    assert ok is True
-    assert polled_history and "idle-bach-1241" in polled_history[0], \
-        f"Settle muss die Send-chat_id pollen, pollte aber: {polled_history}"
-    assert not polled_history or "idle-task-1241" not in polled_history[0], \
-        "hartkodierter idle-task-Praefix darf nicht mehr gepollt werden"
-    assert puts == [], "The tool already closed the task; tray must not write a second completion"
-    assert tray.idle_pending is None, "Nach erfolgreichem Settle muss idle_pending geleert sein"
+    calls = []
+    def api(*args, **kwargs):
+        calls.append(args)
+        return {"ok": True, "messages": [{"role": "assistant", "ok": True,
+                                          "completed_task_ids": [1241]}]}
+    tray._api = api
+    assert tray._settle_pending_task() is False
+    assert tray.idle_pending is not None
+    assert calls == []
 
 
 @pytest.mark.parametrize("answer", ["FERTIG", "Task #1241 analysiert", "Teilaufgaben geplant", "Antwort"])
 @pytest.mark.parametrize("pending", [False, True])
-def test_tray_never_closes_task_from_model_words(answer, pending):
+def test_tray_never_closes_task_from_model_words(answer, pending, tmp_path):
     mod = _load_mod()
     tray = object.__new__(mod.BACHTray)
     tray.gui_url = "http://127.0.0.1:8000"
@@ -226,6 +187,16 @@ def test_tray_never_closes_task_from_model_words(answer, pending):
             return {"status": "updated"}
         return {"ok": True, "answer": answer}
 
+    from hub._services.chat.tray_worker_execution import NativeWorkerObserver
+    import threading
+    tray._idle_run_lock = threading.Lock()
+    tray._native_worker = NativeWorkerObserver("http://testhost:8081", tmp_path / "intent.json",
+        lambda *_a: (200, {"ok": True, "answer": answer}))
+    tray.state = {"connected": True}
+    tray.remote = False
+    tray.idle_enabled = True
+    tray.slots = {"buddha_always_on": {"id": "buddha_always_on", "enabled": True,
+                                      "pause_info": {"is_paused": False}}}
     tray._api = fake_api
     tray._record_always_on_progress = lambda **kwargs: progress.append(kwargs)
     tray._auto_commit_task = lambda *_a: commits.append(True)
@@ -285,71 +256,40 @@ def test_history_outage_does_not_reset_pending_task(history):
     assert tray.idle_pending is not None
 
 
-def test_settle_legacy_tuple_uses_old_prefix():
-    """Negativ-Kontrolle: Legacy-3-Tupel (ohne chat_id) fallen auf den alten
-    Praefix zurueck -- genau deshalb muss der Send-Pfad die chat_id vormerken."""
+def test_legacy_tuple_retains_old_prefix_without_history_recovery():
     mod = _load_mod()
     tray = object.__new__(mod.BACHTray)
-    tray.gui_url = "http://127.0.0.1:8000"
-    tray.idle_pending = (1241, _time.time(), "T")   # Pre-#1303-Form
-    polled_history = []
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and "/api/history" in path:
-            polled_history.append(path)
-            return {"messages": []}              # idle-task-1241 existiert nicht
-        if method == "GET":
-            return {"status": "in_progress"}
-        return {"success": True}
-
-    tray._api = fake_api
-    tray._settle_pending_task()
-    assert polled_history and "idle-task-1241" in polled_history[0], \
-        "Legacy-Tupel pollt den alten Praefix (dokumentiert das Pre-#1303-Verhalten)"
+    tray.idle_pending = (1241, _time.time(), "T")
+    tray._api = lambda *_a, **_k: pytest.fail("History is not physical-end evidence")
+    assert tray._settle_pending_task() is False
+    assert mod._pending_fields(tray.idle_pending)[3] == "idle-task-1241"
 
 
-def test_idle_worker_skips_parked_task_and_picks_next_valid():
-    """Verifiziert, dass ein geparkter Task am Anfang der Liste nicht den ganzen Idle-Worker blockiert."""
-    mod = _load_mod()
-    tray = object.__new__(mod.BACHTray)
-    tray.gui_url = "http://127.0.0.1:8000"
-    tray.idle_processing = False
-    tray.idle_pending = None
-    tray.idle_task_name = None
-    tray.idle_consecutive = 0
-    tray.icon = None
-    tray.slots = {}
-    tray._update_icon = lambda *a, **k: None
-
-    claimed_ids = []
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and "assigned_to=OLLAMA" in path:
-            return {
-                "success": True,
-                "tasks": [
-                    {"id": 1729, "title": "Parked Task", "status": "blocked", "assigned_to": "OLLAMA"},
-                    {"id": 1730, "title": "Valid Task", "status": "pending", "assigned_to": "OLLAMA"},
-                ],
-            }
-        if method == "GET" and "/api/tasks/1730" in path:
-            return {"status": "in_progress"}
-        if method == "PUT" and "/api/tasks/1730" in path:
-            claimed_ids.append(1730)
-            return {"success": True}
-        if method == "POST" and "/api/chat" in path:
-            return {"ok": True, "chat_id": "idle-foerderplaner-1730"}
-        return {"success": True}
-
-    tray._api = fake_api
-    tray._process_idle_task()
-    assert 1730 in claimed_ids, "Idle-Worker muss den geparkten Task 1729 überspringen und Task 1730 beanspruchen"
-    assert 1729 not in claimed_ids, "Geparkter Task 1729 darf nicht beansprucht werden"
+def _native_pickup(conn):
+    import threading
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from system.tests.test_task_lease_client_review import T0
+    return WorkerLeaseBinding.acquire_next(
+        TaskLeaseClient(conn=conn), {"id": "buddha_always_on"},
+        worker_id="test-worker@HOST", host="HOST", generation="isolated-run",
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0,
+    )
 
 
-def test_settle_pending_task_settles_immediately_when_db_shows_done_without_waiting_ttl():
-    """Wenn die DB den Task bereits als done/completed ausweist (z. B. durch Tool call),
-    muss _settle_pending_task sofort abschliessen, ohne 30 Min PENDING_TTL abzuwarten."""
+def test_idle_worker_skips_parked_task_and_picks_next_valid(mem_db):
+    """Der native Controller überspringt geparkte Tasks vor dem Lease-Claim."""
+    parked = _insert_task(mem_db, "Parked", status="blocked")
+    ready = _insert_task(mem_db, "Ready", status="pending")
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
+    mem_db.commit()
+    binding = _native_pickup(mem_db)
+    assert binding.task_id == ready
+    assert mem_db.execute("SELECT claimed_by FROM tasks WHERE id=?", (parked,)).fetchone()[0] is None
+
+
+def test_legacy_pending_call_stays_unknown_even_when_task_db_reports_done():
+    """Taskstatus belegt kein physisches Ende eines alten HTTP-Aufrufs."""
     mod = _load_mod()
     tray = object.__new__(mod.BACHTray)
     tray.gui_url = "http://127.0.0.1:8000"
@@ -370,11 +310,11 @@ def test_settle_pending_task_settles_immediately_when_db_shows_done_without_wait
     tray._record_always_on_progress = lambda **kwargs: progress.append(kwargs)
     tray._auto_commit_task = lambda *a, **k: commits.append(a)
 
-    settled = tray._settle_pending_task()
-    assert settled is True, "Muss sofort True zurueckgeben, da Task in DB done ist"
-    assert tray.idle_pending is None, "idle_pending muss zurueckgesetzt sein"
-    assert any(p.get("task_completed") for p in progress), "Progress muss task_completed vermerken"
-    assert len(commits) == 1, "Auto-Commit muss aufgerufen werden"
+    assert tray._settle_pending_task() is False
+    assert tray.idle_pending is not None
+    assert progress == []
+    assert commits == []
+
 
 
 
@@ -404,51 +344,27 @@ def _idle_tray(mod, fake_api):
     return tray
 
 
-def test_idle_worker_skips_dependency_blocked_task_and_picks_next():
-    mod = _load_mod()
-    claimed_ids = []
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and "assigned_to=OLLAMA" in path:
-            return {
-                "success": True,
-                "tasks": [
-                    {"id": 1801, "title": "Waits", "status": "pending", "assigned_to": "OLLAMA",
-                     "depends_on": "1800", "is_blocked_by_dep": True},
-                    {"id": 1802, "title": "Ready", "status": "pending", "assigned_to": "OLLAMA",
-                     "depends_on": "1700", "is_blocked_by_dep": False},
-                ],
-            }
-        if method == "GET" and "/api/tasks/1802" in path:
-            return {"status": "in_progress"}
-        if method == "PUT" and "/api/tasks/" in path:
-            claimed_ids.append(int(path.rsplit("/", 1)[1]))
-            return {"success": True}
-        if method == "POST" and "/api/chat" in path:
-            return {"ok": True, "chat_id": "idle-x-1802"}
-        return {"success": True}
-
-    _idle_tray(mod, fake_api)._process_idle_task()
-    assert 1802 in claimed_ids
-    assert 1801 not in claimed_ids
+def test_idle_worker_skips_dependency_blocked_task_and_picks_next(mem_db):
+    predecessor = _insert_task(mem_db, "Predecessor")
+    waiting = _insert_task(mem_db, "Waiting", status="pending")
+    ready = _insert_task(mem_db, "Ready", status="pending")
+    mem_db.execute("UPDATE tasks SET assigned_to='codex' WHERE id=?", (predecessor,))
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH' WHERE id IN (?,?)", (waiting, ready))
+    mem_db.execute("UPDATE tasks SET depends_on=?,priority='P1' WHERE id=?", (str(predecessor), waiting))
+    mem_db.commit()
+    binding = _native_pickup(mem_db)
+    assert binding.task_id == ready
+    assert mem_db.execute("SELECT claimed_by FROM tasks WHERE id=?", (waiting,)).fetchone()[0] is None
 
 
-def test_idle_worker_never_claims_when_only_blocked_tasks_exist():
-    mod = _load_mod()
-    claimed_ids = []
-
-    def fake_api(method, path, body=None, base=None, timeout=8):
-        if method == "GET" and path.startswith("/api/tasks?"):
-            return {"success": True, "tasks": [
-                {"id": 1901, "title": "Waits", "status": "open", "assigned_to": "OLLAMA",
-                 "depends_on": "1900", "is_blocked_by_dep": True},
-            ]}
-        if method == "PUT":
-            claimed_ids.append(path)
-        return {"success": True}
-
-    _idle_tray(mod, fake_api)._process_idle_task()
-    assert claimed_ids == []
+def test_idle_worker_never_claims_when_only_blocked_tasks_exist(mem_db):
+    predecessor = _insert_task(mem_db, "Predecessor")
+    waiting = _insert_task(mem_db, "Waiting")
+    mem_db.execute("UPDATE tasks SET assigned_to='codex' WHERE id=?", (predecessor,))
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH',depends_on=? WHERE id=?", (str(predecessor), waiting))
+    mem_db.commit()
+    assert _native_pickup(mem_db) is None
+    assert mem_db.execute("SELECT claimed_by FROM tasks WHERE id=?", (waiting,)).fetchone()[0] is None
 
 
 @pytest.mark.parametrize("detail,expected", [

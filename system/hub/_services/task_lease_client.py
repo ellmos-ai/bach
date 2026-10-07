@@ -48,6 +48,9 @@ try:
         read_lease,
         release_lease,
         renew_lease,
+        update_lease,
+        ensure_task_lease_schema,
+        task_content_version,
     )
 except ImportError:  # pragma: no cover
     from .task_lease import (  # type: ignore
@@ -61,6 +64,9 @@ except ImportError:  # pragma: no cover
         read_lease,
         release_lease,
         renew_lease,
+        update_lease,
+        ensure_task_lease_schema,
+        task_content_version,
     )
 
 try:
@@ -282,6 +288,16 @@ class LeaseDecomposeAck:
     server_now: str
 
 
+@dataclass(frozen=True)
+class LeaseUpdateAck:
+    task_id: int
+    fence: int
+    previous_task_version: str
+    task_version: str
+    fields: tuple[str, ...]
+    server_now: str
+
+
 class TaskLeaseClient:
     """Role-bound authority adapter; never fall back from a worker to its projection."""
 
@@ -379,14 +395,14 @@ class TaskLeaseClient:
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
         if self.mode == "remote":
-            suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose"}[name]
+            suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
         else:
             conn = self._get_local_connection()
             try:
                 funcs = {"acquire": acquire_lease, "read": read_lease, "renew": renew_lease,
-                         "release": release_lease, "decompose": decompose_lease}
+                         "release": release_lease, "decompose": decompose_lease, "update": update_lease}
                 result = funcs[name](conn, task_id, **(payload or {}), config=config, now=now)
                 status, data = result.http_status, result.payload
             except (LeaseValidationError, TaskNotFound):
@@ -400,6 +416,90 @@ class TaskLeaseClient:
             raise LeaseProtocolError("ACK passt nicht zur angefragten Task")
         _wire_time(data.get("server_now"))
         return data
+
+    @staticmethod
+    def _public_snapshot(data, task_id=None):
+        if not isinstance(data, dict) or type(data.get("id")) is not int or data["id"] <= 0:
+            raise LeaseProtocolError("Ungültiger Task-Readback")
+        if task_id is not None and data["id"] != task_id:
+            raise LeaseProtocolError("Readback passt nicht zur angefragten Task")
+        _version(data.get("task_version"), required=True)
+        return {key: value for key, value in data.items()
+                if key not in {"claim_id", "claim_request_id", "claim_task_version"}}
+
+    def task_snapshot(self, task_id):
+        """Read canonical content and version together, without bearer capabilities."""
+        _identity(task_id)
+        if self.mode == "remote":
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}")
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            conn = self._get_local_connection()
+            try:
+                ensure_task_lease_schema(conn)
+                cursor = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    raise LeaseProtocolError("Task fehlt")
+                data = dict(row) if isinstance(row, sqlite3.Row) else dict(zip(
+                    (column[0] for column in cursor.description), row))
+                data["task_version"] = task_content_version(data)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        return self._public_snapshot(data, task_id)
+
+    def task_candidates(self, *, limit=100, offset=0):
+        """Canonical pending/open/in-progress page; Acquire decides claimability."""
+        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
+            raise LeaseProtocolError("Ungültige Task-Seite")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            query = urlencode({"status": "pending,in_progress", "limit": limit, "offset": offset})
+            status, data = self._http_request("GET", f"/api/tasks?{query}")
+            if status != 200:
+                self._raise_denied(0, data)
+        else:
+            conn = self._get_local_connection()
+            try:
+                ensure_task_lease_schema(conn)
+                where = "LOWER(TRIM(status)) IN ('pending', 'open', 'in_progress', 'progress')"
+                total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
+                # Legacy isolated schemas need not have created_at.
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+                order = ("CASE UPPER(TRIM(priority)) "
+                         "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
+                         "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
+                         "WHEN 'P3' THEN 3 WHEN '3' THEN 3 WHEN 'LOW' THEN 3 WHEN 'NIEDRIG' THEN 3 WHEN 'NORMAL' THEN 3 "
+                         "WHEN 'P4' THEN 4 WHEN '4' THEN 4 WHEN 'MINIMAL' THEN 4 ELSE 5 END, "
+                         if "priority" in columns else "")
+                order += "created_at DESC, id DESC" if "created_at" in columns else "id DESC"
+                cursor = conn.execute(f"SELECT * FROM tasks WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                                      (limit + 1, offset))
+                names = [column[0] for column in cursor.description]
+                rows = cursor.fetchall()
+                tasks = []
+                for row in rows[:limit]:
+                    item = dict(row) if isinstance(row, sqlite3.Row) else dict(zip(names, row))
+                    item["task_version"] = task_content_version(item)
+                    tasks.append(item)
+                data = {"success": True, "tasks": tasks, "count": len(tasks), "total": total,
+                        "has_more": len(rows) > limit, "offset": offset}
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or data.get("success") is not True
+                or not isinstance(data.get("tasks"), list) or len(data["tasks"]) > limit
+                or type(data.get("count")) is not int or data["count"] != len(data["tasks"])
+                or type(data.get("total")) is not int or data["total"] < data["count"]
+                or type(data.get("has_more")) is not bool
+                or type(data.get("offset")) is not int or data["offset"] != offset):
+            raise LeaseProtocolError("Ungültige kanonische Task-Seite")
+        tasks = [self._public_snapshot(item) for item in data["tasks"]]
+        if len({item["id"] for item in tasks}) != len(tasks):
+            raise LeaseProtocolError("Doppelte Task in kanonischer Seite")
+        return {"tasks": tasks, "total": data["total"], "has_more": data["has_more"], "offset": offset}
 
     def _grant(self, data, *, worker_id=None, host=None, lease_id=None, fence=None,
                task_version=None, receive_time):
@@ -455,12 +555,30 @@ class TaskLeaseClient:
         _version(task_version)
         data = self._call("release", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version,
                          outcome=outcome, result_ref=result_ref, note=note), config=config, now=now)
-        statuses = {"done": "done", "return": "pending", "blocked": "blocked"}
+        statuses = {"done": "done", "return": "pending", "blocked": "blocked", "review": "review"}
         if (data.get("released") is not True or type(data.get("fence")) is not int or data["fence"] != fence
                 or data.get("outcome") != outcome or data.get("status") != statuses.get(outcome)):
             raise LeaseProtocolError("Release-ACK passt nicht zur Anfrage")
         self._held.pop(task_id, None)
         return LeaseReleaseAck(True, task_id, outcome, data["status"], fence, data["server_now"])
+
+    def update(self, task_id, *, lease_id, fence, task_version, changes, config=None, now=None):
+        _identity(task_id, lease_id, fence)
+        _version(task_version, required=True)
+        if not isinstance(changes, dict) or not changes:
+            raise LeaseProtocolError("Inhaltsupdate braucht Felder")
+        data = self._call("update", task_id, dict(lease_id=lease_id, fence=fence,
+                         task_version=task_version, changes=changes), config=config, now=now)
+        version = _version(data.get("task_version"), required=True)
+        if (data.get("updated") is not True or type(data.get("fence")) is not int
+                or data["fence"] != fence or data.get("previous_task_version") != task_version
+                or data.get("fields") != sorted(changes)):
+            raise LeaseProtocolError("Inhaltsupdate-ACK passt nicht zur Anfrage")
+        previous = self._held.get(task_id)
+        if previous:
+            self._held[task_id] = replace(previous, task_version=version)
+        return LeaseUpdateAck(task_id, fence, task_version, version,
+                              tuple(data["fields"]), data["server_now"])
 
     def decompose(self, task_id, *, lease_id, fence, task_version, subtasks, close_parent=True, sequential=False, config=None, now=None):
         _identity(task_id, lease_id, fence)
