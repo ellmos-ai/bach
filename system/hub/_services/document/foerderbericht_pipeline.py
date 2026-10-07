@@ -9,6 +9,12 @@ Erstellt: 2026-03-11
 Orchestriert bestehende Services zu einer vollautomatischen Pipeline:
 data_roh/ -> data_ano/ -> data_bundled/ -> output_berichte/
 
+Modi (siehe foerderbericht_modi.py):
+  - lokal:  lokales Modell (Ollama) liest und schreibt, keine Anonymisierung
+  - cloud:  Anonymisierung -> Cloud-Modell -> De-Anonymisierung (bisheriger Weg)
+  - hybrid: Cloud-Modell plant/prueft nur anhand von Strukturdaten,
+            lokales Modell liest die Akte und schreibt den Bericht
+
 Standardwege (kein API-Key noetig):
   - Chat/Subagent: "Erstelle Foerderbericht" in Claude Code Session
   - Desktop .bat: Foerderbericht_Pipeline.bat (3x ENTER fuer Auto-Detect)
@@ -47,11 +53,21 @@ class PipelineResult:
     error: str = ""
     duration_s: float = 0.0
     steps_completed: List[str] = field(default_factory=list)
+    modus: str = "cloud"
 
 
 class PipelineError(Exception):
     """Fehler innerhalb der Pipeline."""
     pass
+
+
+def data_roh_namen(data_roh: Path) -> List[str]:
+    """Namen der Klienten-Ordner in data_roh/ ("Nachname, Vorname"); sie
+    gehoeren in die Datenschutz-Sperre. Dateinamen bleiben aussen vor, weil
+    sie meist Dokumenttypen tragen ("Hilfeplan"), die in den Strukturdaten
+    erlaubt sind."""
+    return [d.name for d in data_roh.iterdir()
+            if d.is_dir() and not d.name.startswith(".")]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -110,9 +126,16 @@ class FoerderberichtPipeline:
         model: str = "claude-sonnet-4-6",
         custom_instructions: str = "",
         auto_cleanup: bool = True,
+        modus: str = None,
+        lokal_modell: str = None,
     ) -> PipelineResult:
         """
         Ein Aufruf = komplette Pipeline von data_roh/ bis output_berichte/.
+
+        modus: "lokal", "cloud" oder "hybrid" (ohne Angabe:
+        BACH_FOERDERBERICHT_MODUS, sonst "cloud"). llm_backend/model gelten
+        fuer das Cloud-Modell (cloud, hybrid), lokal_modell fuer Ollama
+        (lokal, hybrid).
         Fuer vollautomatische Ausfuehrung (z.B. via .bat oder llmauto).
 
         Fuer den Chat/Subagent-Weg nutze stattdessen:
@@ -130,6 +153,7 @@ class FoerderberichtPipeline:
             additional_terms=additional_terms,
             whitelist=whitelist,
             custom_instructions=custom_instructions,
+            modus=modus,
         )
         if not result.success:
             return result
@@ -138,9 +162,10 @@ class FoerderberichtPipeline:
         start_llm = time.time()
         try:
             result.step = "llm"
-            prompt_file = self.base_path / "data_bundled" / "prompt.txt"
-            prompt = prompt_file.read_text(encoding="utf-8")
-            llm_response = self._call_llm(prompt, llm_backend, model)
+            prompt = result.output_path.read_text(encoding="utf-8")
+            llm_response = self._run_modus_llm(
+                result, prompt, llm_backend, model, lokal_modell
+            )
             from hub._services.document.report_workflow_service import ReportWorkflowService
             workflow = ReportWorkflowService(base_path=self.base_path)
             llm_response = workflow.sanitize_llm_response(llm_response)
@@ -183,18 +208,27 @@ class FoerderberichtPipeline:
         additional_terms: list = None,
         whitelist: list = None,
         custom_instructions: str = "",
+        modus: str = None,
     ) -> PipelineResult:
         """
-        Phase 1: data_roh/ -> anonymisierter Prompt in data_bundled/prompt.txt
+        Phase 1: data_roh/ -> Prompt in data_bundled/
 
-        Laeuft komplett OHNE AI-Beteiligung. Kein LLM sieht Rohdaten.
-        Nach Abschluss liegt der anonymisierte Prompt bereit fuer die AI.
+        Laeuft komplett OHNE AI-Beteiligung.
+          - cloud: anonymisierter Prompt in data_bundled/prompt.txt
+            (sicher fuer Cloud-Modelle)
+          - lokal/hybrid: Prompt MIT Klarnamen in
+            data_bundled/prompt_lokal.txt -- nur fuer das lokale Modell
 
         Returns:
-            PipelineResult (prompt_path zeigt auf data_bundled/prompt.txt)
+            PipelineResult (output_path zeigt auf die Prompt-Datei)
         """
+        from hub._services.document.foerderbericht_modi import (
+            resolve_modus, sensible_begriffe, struktur_uebersicht,
+        )
+
         result = PipelineResult()
         start_time = time.time()
+        result.modus = modus = resolve_modus(modus)
 
         # Lock-Datei: Verhindert parallele Durchlaeufe
         lock_file = self.base_path / ".pipeline_lock"
@@ -235,47 +269,71 @@ class FoerderberichtPipeline:
             if not geburtsdatum:
                 geburtsdatum = self._detect_geburtsdatum(data_roh, client_name)
 
-            # --- Schritt 2: Session + Profil ---
+            # --- Schritt 2: Session ---
             result.step = "profil"
-            from hub._services.document.report_workflow_service import ReportWorkflowService
+            from hub._services.document.report_workflow_service import (
+                ReportWorkflowService, TempAnonymProfile,
+            )
             workflow = ReportWorkflowService(base_path=self.base_path)
             session = workflow.start_session()
 
             # Dateien direkt registrieren (NICHT kopieren -- sie liegen bereits in data_roh/)
             session.status = "importing"
             session.input_files = list(data_roh.rglob("*"))
-
-            profile = workflow.create_temp_profile(
-                session, client_name, geburtsdatum,
-                additional_terms=additional_terms,
-                whitelist=whitelist,
-                scan_folder=data_roh,
-                parent_names=parent_names,
-                client_address=client_address,
-            )
-            result.tarnname = profile.tarnname
-            result.steps_completed.append(f"profil: Tarnname={profile.tarnname}")
-
-            # --- Schritt 3: Anonymisierung -> data_ano ---
-            result.step = "anonymisierung"
-            # anonymize_to_bundles schreibt direkt nach data_ano/
-            anon_result = workflow.anonymize_to_bundles(session)
-
             data_ano = self.base_path / "data_ano"
-            ano_count = len(list(data_ano.rglob("*"))) if data_ano.exists() else 0
-            result.steps_completed.append(
-                f"anonymisierung: {ano_count} Dateien, "
-                f"{getattr(anon_result, 'core_count', '?')} CORE"
-            )
 
-            # --- Schritt 4: Text buendeln -> data_bundled ---
-            result.step = "bundling"
-            bundle = workflow.extract_bundle_text(session)
+            if modus == "cloud":
+                profile = workflow.create_temp_profile(
+                    session, client_name, geburtsdatum,
+                    additional_terms=additional_terms,
+                    whitelist=whitelist,
+                    scan_folder=data_roh,
+                    parent_names=parent_names,
+                    client_address=client_address,
+                )
+                result.tarnname = profile.tarnname
+                result.steps_completed.append(f"profil: Tarnname={profile.tarnname}")
+
+                # --- Schritt 3: Anonymisierung -> data_ano ---
+                result.step = "anonymisierung"
+                # anonymize_to_bundles schreibt direkt nach data_ano/
+                anon_result = workflow.anonymize_to_bundles(session)
+
+                ano_count = len(list(data_ano.rglob("*"))) if data_ano.exists() else 0
+                result.steps_completed.append(
+                    f"anonymisierung: {ano_count} Dateien, "
+                    f"{getattr(anon_result, 'core_count', '?')} CORE"
+                )
+
+                # --- Schritt 4: Text buendeln -> data_bundled ---
+                result.step = "bundling"
+                bundle = workflow.extract_bundle_text(session)
+            else:
+                # lokal/hybrid: Die Akte verlaesst den Rechner nicht, also keine
+                # Anonymisierung. Alte anonymisierte Reste duerfen nicht in den
+                # Prompt geraten.
+                self._deep_cleanup(data_ano)
+                data_ano.mkdir(parents=True, exist_ok=True)
+                result.steps_completed.append(f"anonymisierung: entfaellt (Modus {modus})")
+
+                result.step = "bundling"
+                session.profile = None
+                bundle = workflow.extract_bundle_text(session, from_data=True)
+                profile = TempAnonymProfile(
+                    tarnname=client_name or "Klient",
+                    fake_geburtsdatum=geburtsdatum or "",
+                    mappings={},
+                    original_name=client_name or "",
+                )
+                session.profile = profile
+
             data_bundled = self.base_path / "data_bundled"
             self._deep_cleanup(data_bundled)
             data_bundled.mkdir(parents=True, exist_ok=True)
 
-            bundle_file = data_bundled / "bundle.txt"
+            bundle_file = data_bundled / (
+                "bundle.txt" if modus == "cloud" else "bundle_lokal.txt"
+            )
             bundle_text = ""
             if hasattr(bundle, 'core_text'):
                 bundle_text = bundle.core_text
@@ -290,20 +348,39 @@ class FoerderberichtPipeline:
                 session,
                 berichtszeitraum=berichtszeitraum,
                 custom_instructions=custom_instructions,
+                anonymisiert=(modus == "cloud"),
             )
-            prompt_file = data_bundled / "prompt.txt"
+            if modus == "cloud":
+                prompt_file = data_bundled / "prompt.txt"
+            else:
+                # Eigener Dateiname, damit kein Cloud-Weg (Chat/Subagent liest
+                # prompt.txt) versehentlich die Klardaten bekommt.
+                prompt_file = data_bundled / "prompt_lokal.txt"
             prompt_file.write_text(prompt, encoding="utf-8")
             result.steps_completed.append(f"prompt: {len(prompt)} Zeichen")
 
             # Session-Info speichern (fuer finish_report)
             import json
             session_info = {
+                "modus": modus,
                 "session_id": session.session_id,
                 "tarnname": profile.tarnname,
                 "original_name": profile.original_name,
                 "mappings": profile.mappings,
                 "fake_geburtsdatum": profile.fake_geburtsdatum,
             }
+            if modus == "hybrid":
+                # Strukturdaten fuer die Cloud-Steuerung (ohne Inhalt) und die
+                # Begriffe, die die Datenschutz-Sperre blockiert.
+                from hub._services.document.document_pipeline import DocumentPipeline
+                scan = DocumentPipeline().scan_folder(str(data_roh))
+                session_info["struktur"] = struktur_uebersicht(
+                    scan.documents, berichtszeitraum
+                )
+                session_info["sensibel"] = sensible_begriffe(
+                    client_name, geburtsdatum, parent_names, client_address,
+                    additional_terms, data_roh_namen(data_roh),
+                )
             session_file = data_bundled / "session_info.json"
             session_file.write_text(
                 json.dumps(session_info, ensure_ascii=False, indent=2),
@@ -401,9 +478,12 @@ class FoerderberichtPipeline:
             )
             result.tarnname = profile.tarnname
 
-            # Word-Bericht generieren (de-anonymisiert)
+            # Word-Bericht generieren (cloud: de-anonymisiert; lokal/hybrid
+            # enthaelt der Text bereits die echten Namen)
+            result.modus = session_info.get("modus", "cloud")
             clean_report = workflow.generate_report(
-                session, llm_response, auto_deanonymize=True
+                session, llm_response,
+                auto_deanonymize=(result.modus == "cloud"),
             )
             if clean_report:
                 output_dir = self.base_path / "output_berichte"
@@ -441,6 +521,38 @@ class FoerderberichtPipeline:
     # ─────────────────────────────────────────────────────────────
     # LLM-Integration
     # ─────────────────────────────────────────────────────────────
+
+    def _run_modus_llm(self, result: PipelineResult, prompt: str,
+                       llm_backend: str, model: str,
+                       lokal_modell: str = None) -> str:
+        """Phase 2 je nach Modus: Cloud, lokales Modell oder Hybrid."""
+        from hub._services.document.foerderbericht_modi import (
+            call_local_llm, lokal_modell as default_lokal, run_hybrid,
+        )
+        if result.modus == "cloud":
+            return self._call_llm(prompt, llm_backend, model)
+
+        lokal_name = default_lokal(lokal_modell)
+        def lokal(text):
+            return call_local_llm(text, lokal_name)
+        if result.modus == "lokal":
+            result.steps_completed.append(f"llm: lokal ({lokal_name})")
+            return lokal(prompt)
+
+        import json
+        session_file = self.base_path / "data_bundled" / "session_info.json"
+        session_info = json.loads(session_file.read_text(encoding="utf-8"))
+        result.steps_completed.append(
+            f"llm: hybrid (Steuerung {llm_backend}/{model}, lokal {lokal_name})"
+        )
+        return run_hybrid(
+            prompt,
+            uebersicht=session_info.get("struktur", {}),
+            sensible=session_info.get("sensibel", []),
+            cloud=lambda text: self._call_llm(text, llm_backend, model),
+            lokal=lokal,
+            log=result.steps_completed.append,
+        )
 
     def _call_llm(self, prompt: str, backend: str, model: str) -> str:
         """

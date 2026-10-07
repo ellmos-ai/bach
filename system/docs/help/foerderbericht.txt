@@ -19,15 +19,47 @@ ROLLENTRENNUNG (WICHTIG)
   Das Script meldet selbst: "Akte gefunden, Prozess gestartet" oder
   "Fehler: Keine Akte in data_roh/ eingestellt".
 
-VERWENDUNG (4 Standardwege)
-----------------------------
-  1. Chat:    "Erstelle Förderbericht" (empfohlen, Auto-Detect)
-  2. .bat:    Förderbericht_Pipeline.bat (3x ENTER für Auto-Detect)
-  3. Chain:   bach chain start förderbericht
-  4. CLI:     bach bericht pipeline (Auto-Detect)
+MODI (lokal / cloud / hybrid)
+-----------------------------
+  lokal    Ein lokales Modell (Ollama) liest die Akte und schreibt den Bericht.
+           Die Daten verlassen den Rechner nicht -> KEINE Anonymisierung.
+  cloud    Akte anonymisieren -> Cloud-Modell/Subscription schreibt ->
+           de-anonymisieren (bisheriger Weg).
+  hybrid   Ein Cloud-Modell steuert, das lokale Modell liest und schreibt.
+           Die Cloud sieht nur Strukturdaten (Dokumenttypen, Monat/Jahr,
+           Textlängen, Feldstatus, ICF-Codes), nie Akteninhalt. Sie plant
+           den Bericht und prüft den Entwurf; das lokale Modell setzt um
+           und bessert einmal nach. Eine Datenschutz-Sperre bricht ab,
+           falls Name, Geburtsdatum oder Ordnername in einer Nachricht an
+           die Cloud stünden.
+
+  Standardmodus:   BACH_FOERDERBERICHT_MODUS=lokal|cloud|hybrid (Default: cloud)
+  Lokales Modell:  BACH_FOERDERBERICHT_LOKAL_MODELL (Default: qwen3.8:27b-mlx)
+  Kontextgrenze:   BACH_FOERDERBERICHT_MAX_CTX (Default: 65536 Tokens; ist die
+                   Akte größer, bricht der lokale Lauf mit Hinweis ab statt
+                   still zu kürzen)
+  Ollama:          OLLAMA_URL (Default: http://localhost:11434)
+
+VERWENDUNG
+----------
+  1. Automatisch: bach bericht watch --modus lokal
+                  Akte in data_roh/ ablegen -> sobald sie 60 s unverändert
+                  ist, startet der Lauf. --once für Aufgabenplanung/cron,
+                  --intervall/--ruhe in Sekunden, --zeitraum wie unten.
+                  Nach einem Fehler wird dieselbe Akte erst nach einer
+                  Änderung erneut versucht.
+  2. CLI:         bach bericht pipeline --modus lokal|cloud|hybrid
+  3. Chat (BACH): Werkzeug foerderbericht, action=run (mit modus)
+                  action=prepare erzeugt immer den ANONYMISIERTEN Prompt,
+                  action=finish erstellt danach den Bericht aus
+                  data_bundled/llm_response.txt.
+  4. Chat in Claude Code: "Erstelle Förderbericht" (cloud, liest prompt.txt)
+  5. .bat:        Förderbericht_Pipeline.bat (ruft pipeline_runner.py, --modus möglich)
 
 OPTIONEN
 --------
+  --modus lokal|cloud|hybrid             Betriebsmodus (siehe oben)
+  --lokal-modell qwen3.8:27b-mlx         Ollama-Modell für lokal/hybrid
   --zeitraum "01.01.2025 - 31.12.2025"   Berichtszeitraum
   --backend claude_code|llmauto           LLM-Backend (default: claude_code)
   --model claude-sonnet-4-6              LLM-Modell
@@ -36,6 +68,10 @@ OPTIONEN
 
 ABLAUF (3-Phasen-Flow)
 ----------------------
+
+  (Beschreibung für den Modus cloud; lokal/hybrid überspringen Schritt 3-4,
+   lesen direkt aus data_roh/ und schreiben data_bundled/prompt_lokal.txt --
+   bewusst NICHT prompt.txt, damit kein Cloud-Weg die Klardaten bekommt.)
 
   Phase 1 -- prepare_prompt() [Python, ohne AI]:
     1. Validierung: data_roh/ darf nicht leer sein, Ein-Klient-Regel prüfen
@@ -75,19 +111,26 @@ HILFEPLAN-ZIELE (WICHTIG)
 
 SICHERHEIT
 ----------
-  - data_roh/ wird NIEMALS direkt von AI gelesen
-  - LLM sieht NUR anonymisierte Daten (Tarnnamen)
+  - cloud: data_roh/ wird NIEMALS direkt von AI gelesen, das LLM sieht
+    NUR anonymisierte Daten (Tarnnamen)
+  - lokal/hybrid: nur das lokale Modell liest data_roh/; die Cloud
+    (hybrid) bekommt ausschließlich Strukturdaten
+  - Ausgaben (Chat, Wächter) nennen den Berichts-Dateinamen nicht, weil er
+    den Klarnamen enthält
+  - ACHTUNG: Nach erfolgreichem Lauf wird data_roh/ geleert -- immer nur
+    eine KOPIE der Akte einlegen
   - De-Anonymisierung über session_info.json mit allen Mappings
   - Kein persistentes Profil (Session-basiert)
   - .pipeline_lock verhindert parallele Durchlaeufe
   - OneDrive-Sync wird automatisch pausiert/fortgesetzt
   - Cleanup löscht ALLE Zwischendaten + Legacy-Ordner
 
-LLM-BACKENDS
--------------
+LLM-BACKENDS (Cloud-Teil in cloud/hybrid)
+-----------------------------------------
   claude_code (DEFAULT)   Claude Code CLI als Subprocess
   llmauto                 llmauto Chain-System
   anthropic_sdk           Optional (braucht ANTHROPIC_API_KEY, nicht eingerichtet)
+  Lokaler Teil (lokal/hybrid): Ollama, siehe MODI
 
 TROUBLESHOOTING
 ---------------
@@ -100,6 +143,7 @@ DATEIEN
 -------
   Orchestrator:    hub/_services/document/foerderbericht_pipeline.py
   CLI-Runner:      hub/_services/document/pipeline_runner.py
-  CLI-Handler:     hub/bericht.py (Operation: pipeline)
-  Chain:           tools/llmauto/chains/foerderbericht.json
+  CLI-Handler:     hub/bericht.py (Operationen: pipeline, watch)
+  Modi:            hub/_services/document/foerderbericht_modi.py
+  Ordnerwächter:   hub/_services/document/foerderbericht_watch.py
   Template:        skills/_templates/bericht_template_geiger_universal.docx
