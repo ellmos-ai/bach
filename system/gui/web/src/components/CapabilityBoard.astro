@@ -1,0 +1,89 @@
+---
+interface Props { board: 'skills' | 'plugins' | 'mcp' | 'software' }
+const {board} = Astro.props;
+const titles = {skills:'Skill-Zentrale',plugins:'Plugins',mcp:'MCP-Connections',software:'Software'};
+const descriptions = {
+  skills:'Aktuelle Anleitungen lesen, anpassen und mit ihrer Historie vergleichen.',
+  plugins:'Plugin-Bibliotheken und Installationen deiner Agenten-Clients.',
+  mcp:'Serverkonfiguration deiner Agenten-Clients und passende Rezeptbücher.',
+  software:'Vorhandene Software und Module dieses Hosts.',
+};
+const tabs = [
+  {board:'plugins',label:'Plugins',href:'/skills/plugins'},
+  {board:'mcp',label:'MCP-Connections',href:'/skills/mcp'},
+  {board:'skills',label:'Skill-Zentrale',href:'/skills'},
+  {board:'software',label:'Software',href:'/skills/software'},
+];
+---
+<section id="capability-board" data-board={board}>
+  <header class="board-heading">
+    <div><p class="board-eyebrow">Skills & Software</p><h1>{titles[board]}</h1><p>{descriptions[board]}</p></div>
+    <div class="board-actions">
+      {board === 'skills' && <button type="button" class="btn btn-primary" id="skill-create">+ Neuer Skill</button>}
+      <button type="button" class="btn" id="board-refresh">Aktualisieren</button>
+    </div>
+  </header>
+  <nav class="board-tabs" aria-label="Skills & Software">
+    {tabs.map(tab=><a href={tab.href} class:list={['board-tab', {active:tab.board===board}]} aria-current={tab.board===board?'page':undefined}>{tab.label}</a>)}
+  </nav>
+  <div class="board-toolbar">
+    <label class="board-search">Suchen<input type="search" id="board-search" placeholder="Name oder Beschreibung" autocomplete="off" /></label>
+    {board==='skills' && <label>Kategorie<select id="board-category"><option value="">Alle Kategorien</option></select></label>}
+    <span id="board-count" class="badge">Quelle wird geladen …</span>
+  </div>
+  <p id="board-status" role="status" aria-live="polite">Einträge werden geladen …</p>
+  <div id="board-items" class="board-grid"></div>
+  {board==='mcp' && <section class="recipe-section" aria-labelledby="recipes-title">
+    <header><div><h2 id="recipes-title">Rezeptbibliothek</h2><p>Anleitungen für den Einsatz der MCP-Werkzeuge.</p></div></header>
+    <div id="recipe-books" class="recipe-shelf"></div>
+    <p id="recipe-status" role="status"></p>
+  </section>}
+  {board!=='skills' && <details class="board-sources"><summary>Quellen dieses Hosts</summary><div id="board-sources"></div></details>}
+</section>
+<dialog id="skill-editor" class="board-dialog" aria-labelledby="skill-editor-title">
+  <div class="dialog-heading"><div><p class="board-eyebrow">SKILL.md</p><h2 id="skill-editor-title">Skill bearbeiten</h2></div><button class="btn" type="button" id="skill-close" aria-label="Schließen">✕</button></div>
+  <label>Kennung<input id="skill-id" type="text" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,79}" required /></label>
+  <p id="skill-source-info"></p>
+  <label>Fassung als Vorlage<select id="skill-history"><option value="">Aktuelle Fassung</option></select></label>
+  <label>Anleitung<textarea id="skill-content" rows="18" spellcheck="false"></textarea></label>
+  <p class="editor-note">Die Versionsnummer steht im Kopf der Anleitung. Frühere Fassungen bleiben erhalten. Agenten mit einer älteren Skill-Bindung müssen nach einer Änderung neu eingerichtet werden.</p>
+  <p id="skill-editor-status" role="status" aria-live="polite"></p>
+  <div class="dialog-actions"><button type="button" class="btn" id="skill-reload">Aktuelle Fassung laden</button><button type="button" class="btn btn-primary" id="skill-save" disabled>Speichern</button></div>
+</dialog>
+<dialog id="recipe-editor" class="board-dialog" aria-labelledby="recipe-title">
+  <div class="dialog-heading"><h2 id="recipe-title">Rezeptbuch</h2><button type="button" class="btn" id="recipe-close" aria-label="Schließen">✕</button></div>
+  <p id="recipe-description"></p><div id="recipe-content"></div>
+</dialog>
+<style>
+  .board-heading,.dialog-heading,.board-actions,.board-toolbar,.dialog-actions {display:flex;align-items:center;gap:1rem;justify-content:space-between;flex-wrap:wrap}
+  .board-heading {margin-bottom:1.6rem}.board-heading h1 {font-size:1.9rem;margin:.25rem 0;font-weight:800}
+  .board-heading p,.recipe-section p,.editor-note,#skill-source-info {color:var(--text-muted);font-size:.88rem;line-height:1.5}
+  .board-eyebrow {font-size:.7rem!important;letter-spacing:.14em;text-transform:uppercase;margin:0}
+  .board-tabs {display:flex;gap:.3rem;padding:.35rem;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);flex-wrap:wrap}
+  .board-tab {padding:.7rem 1.1rem;color:var(--text-muted);text-decoration:none;border-radius:var(--radius-sm);font-size:.85rem;font-weight:600}
+  .board-tab.active {background:var(--bg-card);color:var(--accent);box-shadow:var(--shadow-sm)}
+  .board-toolbar {justify-content:flex-start;margin:1.4rem 0}.board-search {flex:1;min-width:200px}
+  label {display:flex;flex-direction:column;gap:.4rem;font-size:.8rem;color:var(--text-muted)}
+  input,select,textarea {background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem;font:inherit}
+  .board-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:1rem}
+  .board-grid :global(.capability-card) {padding:1.15rem;display:flex;flex-direction:column;gap:.6rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);min-width:0}
+  .board-grid :global(h3) {margin:0;font-size:1rem;overflow-wrap:anywhere}.board-grid :global(p) {font-size:.84rem;line-height:1.5;color:var(--text-muted);margin:0}
+  .board-grid :global(.card-meta) {display:flex;gap:.4rem;flex-wrap:wrap}.board-grid :global(.card-action) {margin-top:auto;align-self:flex-start}
+  .board-grid :global(.card-caption) {font-size:.75rem;color:var(--text-muted);overflow-wrap:anywhere}
+  .board-grid :global(details) {font-size:.76rem;color:var(--text-muted);overflow-wrap:anywhere}
+  .board-dialog {padding:1.5rem;color:var(--text);background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);width:min(920px,94vw);max-height:88vh;box-sizing:border-box}
+  .board-dialog::backdrop {background:rgba(0,0,0,.65);backdrop-filter:blur(5px)}
+  .board-dialog h2 {font-size:1.25rem;margin:0}.board-dialog label {margin:1rem 0}.board-dialog textarea {width:100%;box-sizing:border-box;font-family:var(--font-mono,monospace);font-size:.85rem;line-height:1.55;resize:vertical}
+  .dialog-actions {justify-content:flex-end}.editor-note {max-width:75ch}
+  .board-sources {margin-top:1.5rem;color:var(--text-muted);font-size:.8rem}.board-sources :global(p) {overflow-wrap:anywhere}
+  .recipe-section {margin-top:2.3rem}.recipe-section h2 {font-size:1.25rem;margin-bottom:.3rem}
+  .recipe-shelf {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:1rem;border-bottom:7px solid var(--border);padding:1rem 0}
+  .recipe-shelf :global(.recipe-book) {padding:1.25rem 1rem;border:1px solid var(--border);border-left:9px solid var(--accent);border-radius:5px 12px 12px 5px;background:var(--bg-card);color:var(--text);text-align:left;cursor:pointer;min-height:160px;display:flex;flex-direction:column;gap:.8rem;box-shadow:var(--shadow-sm)}
+  .recipe-shelf :global(.recipe-book:hover) {border-color:var(--accent);transform:translateY(-2px)}.recipe-shelf :global(strong) {font-size:.95rem}.recipe-shelf :global(small) {color:var(--text-muted)}
+  #recipe-content :global(article) {padding:1rem;border:1px solid var(--border);border-radius:var(--radius-sm);margin:1rem 0}
+  #recipe-content :global(pre) {white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem;background:var(--bg-dark);padding:.8rem}
+  #recipe-content :global(.copy-status) {font-size:.75rem;color:var(--text-muted)}
+</style>
+<script>
+  import '../lib/capability-board-ui.mjs';
+</script>

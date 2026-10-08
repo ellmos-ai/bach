@@ -14,7 +14,7 @@ from hub._services.mcp_cookbook_service import (
 )
 from starlette.testclient import TestClient
 
-from system.gui.api.unified_api import router as unified_router
+from gui.api.unified_api import router as unified_router
 
 
 @pytest.fixture
@@ -63,7 +63,8 @@ def test_mcp_cookbook_catalog_structure():
         p1 = pages["page_1_cover"]
         assert p1.get("command") or p1.get("server_command")
         assert p1["protocol_version"] == "2024-11-05"
-        assert p1["runtime_status"] in {"cli_detected", "active", "idle", "standby"}
+        assert p1["runtime_status"] == "unverified"
+        assert book["evidence"] == "instruction_template"
 
         # Page 2 checks
         p2 = pages["page_2_tools"]
@@ -122,15 +123,11 @@ def test_mcp_cookbook_api_endpoints(api_client):
     assert "detail" in res_unknown.json() or "error" in res_unknown.json()
 
 
-def test_mcp_disconnect_status_probe(api_client):
-    """Test status probe for MCP server process count."""
+def test_mcp_disconnect_status_probe(api_client, monkeypatch):
+    """Client-owned connections must not be inferred from process-name scans."""
+    monkeypatch.setattr(mcp_cookbook_service, "get_hard_disconnect_status", lambda *_: pytest.fail("Foreign process scan"))
     res = api_client.get("/api/capabilities/mcp/disconnect/status?server_id=filecommander")
-    assert res.status_code == 200
-    status_data = res.json()
-    assert status_data["server_id"] == "filecommander"
-    assert "active_processes_count" in status_data
-    assert "is_clean" in status_data
-    assert status_data["schema"] == DISCONNECT_RECEIPT_SCHEMA
+    assert res.status_code == 410
 
     # Missing server_id
     res_missing = api_client.get("/api/capabilities/mcp/disconnect/status")
@@ -138,32 +135,24 @@ def test_mcp_disconnect_status_probe(api_client):
 
 
 def test_mcp_hard_disconnect_execution(api_client, monkeypatch):
-    """Test authoritative hard disconnect returning HardDisconnectReceipt."""
-    # Avoid foreign process kills during test runs
+    """Even force=true cannot authorize killing another client's MCP processes."""
     monkeypatch.setattr(
         mcp_cookbook_service,
-        "find_server_processes",
-        lambda s: [],
+        "perform_hard_disconnect",
+        lambda *args, **kwargs: pytest.fail("Foreign process termination"),
     )
     res = api_client.post(
         "/api/capabilities/mcp/disconnect",
         json={"server_id": "filecommander", "force": True},
     )
-    assert res.status_code == 200
-    receipt = res.json()
-
-    assert receipt["schema"] == DISCONNECT_RECEIPT_SCHEMA
-    assert receipt["server_id"] == "filecommander"
-    assert receipt["active_processes_remaining"] == 0
-    assert receipt["verified_clean"] is True
-    assert "processes_terminated" in receipt
+    assert res.status_code == 410
 
     # Bad server_id
     res_bad = api_client.post(
         "/api/capabilities/mcp/disconnect",
         json={"server_id": "invalid-mcp-server-id"},
     )
-    assert res_bad.status_code == 400
+    assert res_bad.status_code == 410
 
 
 def test_mcp_hard_disconnect_service_unit(monkeypatch):
@@ -226,45 +215,16 @@ def test_mcp_hard_disconnect_with_simulated_process_kill(monkeypatch):
 
 
 def test_skills_astro_contract():
-    """Verify that skills.astro contains the full 4-page Fachbuch UI, navigation, and hard disconnect controls."""
+    """Four separate boards use one shared editor and no foreign-process controls."""
     astro_path = Path(__file__).resolve().parent.parent / "gui" / "web" / "src" / "pages" / "skills.astro"
     assert astro_path.exists(), f"Missing skills.astro at {astro_path}"
 
     content = astro_path.read_text(encoding="utf-8")
 
-    # Blätteransicht Navigation & Indicators
-    assert "btn-mcp-prev" in content
-    assert "btn-mcp-next" in content
-    assert "mcp-page-num" in content
-    assert "mcp-page-total" in content
-    assert "Seite <span id=\"mcp-page-num\"" in content
-
-    # 4 Chapter tabs
-    assert 'data-page="1"' in content
-    assert 'data-page="2"' in content
-    assert 'data-page="3"' in content
-    assert 'data-page="4"' in content
-    assert "1. Deckel" in content
-    assert "2. Zutaten" in content
-    assert "3. Rezepte" in content
-    assert "4. Absicherung" in content
-
-    # 4 Pages containers
-    assert 'id="mcp-page-1"' in content
-    assert 'id="mcp-page-2"' in content
-    assert 'id="mcp-page-3"' in content
-    assert 'id="mcp-page-4"' in content
-
-    # Hard-Disconnect controls
-    assert 'id="btn-hard-disconnect"' in content
-    assert 'id="chk-hard-disconnect-force"' in content
-    assert 'id="mcp-disconnect-receipt-box"' in content
-    assert 'id="receipt-details"' in content
-    assert "HardDisconnectReceipt" in content
-
-    # JavaScript functions
-    assert "function setMcpPage(pageNum)" in content
-    assert "function turnMcpPage(delta)" in content
-    assert "async function openMcpCookbook(bookId)" in content
-    assert "async function triggerHardDisconnect()" in content
-    assert "async function checkMcpProcessStatus(serverId)" in content
+    assert '<CapabilityBoard board="skills"' in content
+    shared = (astro_path.parent.parent / "components/CapabilityBoard.astro").read_text(encoding="utf-8")
+    for route in ("/skills/plugins", "/skills/mcp", "/skills/software"):
+        assert route in shared
+    assert 'id="skill-editor"' in shared
+    assert "btn-hard-disconnect" not in shared
+    assert "Sentinel" not in shared

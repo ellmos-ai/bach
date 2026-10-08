@@ -563,29 +563,35 @@ def _get_raw_catalog() -> list[dict[str, Any]]:
 
 
 def get_mcp_cookbooks() -> dict[str, Any]:
-    """Return the structured MCP Cookbooks catalog with 4-page pagination schema."""
+    """Return instruction templates; the catalog is not runtime discovery."""
     cookbooks = _get_raw_catalog()
+    for book in cookbooks:
+        book["evidence"] = "instruction_template"
+        book["pages"]["page_1_cover"]["runtime_status"] = "unverified"
+        governance = book["pages"]["page_4_governance"]
+        governance["hard_disconnect_capable"] = False
+        governance["safety_note"] = "Verbindungen und Rechte werden vom jeweiligen Agenten-Client verwaltet."
     return {
         "schema": COOKBOOK_SCHEMA,
         "cookbooks": cookbooks,
         "count": len(cookbooks),
         "total_count": len(cookbooks),
-        "source": "verified_mcp_catalog",
+        "source": "instruction_templates",
         "total_pages": 4,
         "page_navigation": {
             "page_1": "Buchdeckel & Identität",
             "page_2": "Zutaten (Werkzeuge)",
             "page_3": "Rezepte (Workflows)",
-            "page_4": "Absicherung & Hard-Disconnect",
+            "page_4": "Einsatzhinweise",
         },
         "checked_at": datetime.now(timezone.utc).isoformat(),
-        "live_discovery": True,
+        "live_discovery": False,
     }
 
 
 def get_mcp_cookbook_by_id(server_id: str) -> dict[str, Any] | None:
     """Return a single cookbook by server ID."""
-    cookbooks = _get_raw_catalog()
+    cookbooks = get_mcp_cookbooks()["cookbooks"]
     for book in cookbooks:
         if book.get("id") == server_id:
             return book

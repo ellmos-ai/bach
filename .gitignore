@@ -71,6 +71,7 @@ id_ed25519.*
 
 # === LOGS (Evaluierung, Translation-Tests, etc.) ===
 /logs/
+/output/playwright/
 
 # === PID-DATEIEN (Laufzeit) ===
 **/daemon.pid
