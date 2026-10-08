@@ -1,20 +1,22 @@
-# BACH - Textbasiertes Betriebssystem fuer LLMs
+# BACH - Textbasiertes Betriebssystem für LLMs
 
 **Version:** v3.14.0
 **Status:** Production-Ready
 **Lizenz:** MIT
 
-## Ueberblick
+## Überblick
 
-BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befaehigt, eigenstaendig zu arbeiten, zu lernen und sich zu organisieren. Es bietet eine umfassende Infrastruktur fuer Task-Management, Wissensmanagement, Automatisierung und LLM-Orchestrierung.
+BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befähigt, eigenständig zu arbeiten, zu lernen und sich zu organisieren. Es bietet eine umfassende Infrastruktur für Task-Management, Wissensmanagement, Automatisierung und LLM-Orchestrierung.
 
 ### Kernfunktionen
 
-- **5 KI-Agenten** - Spezialisierte Agenten fuer verschiedene Aufgabenbereiche
-- **302 Tools** - Umfangreiche Tool-Bibliothek fuer Dateiverarbeitung, Analyse, Automation
-- **950 Skills** - Wiederverwendbare Workflows und Templates
-- **0 Workflows** - Vorgefertigte Prozess-Protokolle
-- **Wissensspeicher** - 168 Lessons + 257 Facts
+- **Agenten und Blueprints** – Rollen, Experten, lokale Steckplätze und beobachtete Läufe
+- **Tools und Skills** – Aktuelle Quellen, Bearbeitung und Versionshistorie
+- **Aufgaben** – Zuweisung, atomare Leases und nachvollziehbare Bearbeitung
+- **Wissensspeicher** – Facts, Lessons und angebundene kanonische Quellen
+
+Verfügbarkeit hängt von den installierten Providern und der lokalen Konfiguration ab.
+Die [GUI-Integrationshilfe](system/docs/help/gui-integration.txt) erläutert den Unterschied zwischen registriertem Adapter und geprüftem Lauf.
 
 ## Installation
 
@@ -23,7 +25,7 @@ BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befa
 git clone https://github.com/ellmos-ai/bach.git
 cd bach
 
-# Abhaengigkeiten installieren
+# Abhängigkeiten installieren
 pip install -r requirements.txt
 
 # BACH initialisieren
@@ -49,30 +51,34 @@ python bach.py --shutdown
 ## Hauptkomponenten
 
 ### 1. Task-Management
-Vollstaendiges GTD-System mit Priorisierung, Deadlines, Tags und Context-Tracking.
+Vollständiges GTD-System mit Priorisierung, Deadlines, Tags und Context-Tracking.
 
 ### 2. Wissenssystem
 Strukturiertes Memory-System mit Facts, Lessons und automatischer Konsolidierung.
 
 ### 3. Agenten-Framework
-Boss-Agenten orchestrieren Experten fuer komplexe Aufgaben (Buero, Gesundheit, Produktion, etc.).
+Boss-Agenten orchestrieren Experten für komplexe Aufgaben (Büro, Gesundheit, Produktion, etc.).
 
 ### 4. Bridge-System
-Connector-Framework fuer externe Services (Telegram, Email, WhatsApp, etc.).
+Connector-Framework für externe Services (Telegram, Email, WhatsApp, etc.).
 
 ### 5. Automatisierung
-Scheduler fuer wiederkehrende Tasks und Event-basierte Workflows.
+Scheduler für wiederkehrende Tasks und Event-basierte Workflows.
 
 ## Dokumentation
 
-- **[Erste Schritte](docs/getting-started.md)** - Erste Schritte mit BACH
-- **[API-Referenz](docs/reference/)** - Vollstaendige API-Dokumentation
-- **[Skills-Katalog](SKILLS.md)** - Alle verfuegbaren Skills
-- **[Agenten-Katalog](AGENTS.md)** - Alle verfuegbaren Agenten
+- **[Gemeinsame GUI und Agenten](system/docs/help/gui-integration.txt)** – Bedienung und tatsächliche Adapterprüfung
+- **[Ocean–BACH-Transferplan](OCEAN-TRANSFER-PLAN.md)** – Installer, erster Modultransfer und weitere Aufgaben
+- **[Deprecation-Register](DEPRICATED.md)** – Ersatz, offene Abnahmen und Rollback
+
+- **[Erste Schritte](QUICKSTART.de.md)** - Erste Schritte mit BACH
+- **[Befehlsreferenz](BACH_HELP_REFERENCE.template.de.md)** - Vollständige API-Dokumentation
+- **[Skills-Katalog](SKILLS.template.de.md)** - Alle verfügbaren Skills
+- **[Agenten-Katalog](AGENTS.template.de.md)** - Alle verfügbaren Agenten
 
 ## Lizenz
 
-MIT License - siehe [LICENSE](LICENSE) fuer Details.
+MIT License - siehe [LICENSE](LICENSE) für Details.
 
 ## Support
 
@@ -83,4 +89,4 @@ MIT License - siehe [LICENSE](LICENSE) fuer Details.
 
 English version: [README.md](README.md)
 
-*Generiert mit `bach docs generate readme --lang de`*
+*Deutschsprachiger Einstieg; die operative Modul- und Transferdokumentation ist oben verlinkt.*

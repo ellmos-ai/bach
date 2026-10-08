@@ -164,12 +164,9 @@ except ImportError:
 
 STATIC_DIR = GUI_DIR / "static"
 
-_CANDIDATE_DIST_DIRS = [
-    GUI_DIR / "web" / "dist",
-    Path(os.environ.get("ELLMOS_SYSTEM_GUI_DIST", "")) if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") else None,
-    Path("C:/_Local_DEV/repos/ellmos-system-gui/dist"),
-]
-ASTRO_DIST_DIR = next((p for p in _CANDIDATE_DIST_DIRS if p and p.is_dir()), GUI_DIR / "web" / "dist")
+from hub._services.gui_contract_service import resolve_gui_distribution
+
+ASTRO_DIST_DIR = resolve_gui_distribution(GUI_DIR, os.environ.get("ELLMOS_SYSTEM_GUI_DIST"))
 
 HELP_DIR = BACH_DIR / "docs" / "help"
 WIKI_DIR = BACH_DIR / "wiki"
@@ -438,6 +435,7 @@ class TaskUpdate(BaseModel):
     due_date: Optional[str] = None
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
+    assignment_configuration_version: Optional[str] = None
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
     allow_reopen: Optional[bool] = False
@@ -1582,6 +1580,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/steuer-assistent",
         "/workflow-tuev",
         "/favicon.ico",
+        "/device-fetch.js",
     })
     # Static assets (JS/CSS/images/fonts) without data.
     PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/")
@@ -1730,6 +1729,23 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         )
 
 
+class SharedGUIReleaseMiddleware(BaseHTTPMiddleware):
+    """An explicit shared release cannot silently render a legacy page."""
+
+    async def dispatch(self, request: Request, call_next):
+        if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") and request.method in {"GET", "HEAD"}:
+            from gui.api.gui_capabilities import PAGE_READS
+            page = request.url.path.rstrip("/") or "/"
+            if page in PAGE_READS:
+                filename = "index.html" if page == "/" else page.lstrip("/") + ".html"
+                target = ASTRO_DIST_DIR / filename
+                if not target.is_file() or target.is_symlink():
+                    return JSONResponse({"detail": "Configured shared GUI page is unavailable",
+                                         "reason_code": "shared_gui_page_missing"}, status_code=503)
+        return await call_next(request)
+
+
+app.add_middleware(SharedGUIReleaseMiddleware)
 app.add_middleware(DeviceAuthMiddleware)
 
 
@@ -1773,6 +1789,10 @@ try:
     from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
     app.include_router(core_system_agents_router)
     app.include_router(prompt_router)
+    from gui.api.task_assignment import router as task_assignment_router
+    app.include_router(task_assignment_router)
+    from gui.api.governance_registry import router as governance_registry_router
+    app.include_router(governance_registry_router)
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
@@ -1795,6 +1815,15 @@ async def get_gui_backend_origin():
     from gui.api import unified_api
 
     return observe_backend_origin(BACH_DB, unified_api.BACH_DB)
+
+
+@app.get("/device-fetch.js", include_in_schema=False)
+async def get_device_fetch_script():
+    """Serve the shared kit's fixed public auth bootstrap without a path parameter."""
+    script = ASTRO_DIST_DIR / "device-fetch.js"
+    if not script.is_file() or script.is_symlink():
+        raise HTTPException(404, "GUI-Geräteanmeldungsskript nicht installiert")
+    return FileResponse(script, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/gui/brand")
@@ -1857,15 +1886,14 @@ async def get_gui_capabilities():
         "dist_page_count": dist_info.get("page_count", 0),
     }
 
-    return {
-        "schema": "ellmos-system-gui.capabilities.v1",
-        "schema_version": 1,
-        "kit": kit_status,
-        "brand": read_gui_brand(),
-        "modules": modules,
-        "missing_adapters": ["hardware_fackel_holder", "task_claim_authority"],
-        "observed_at": observed,
-    }
+    from gui.api.gui_capabilities import declaration
+    from hub._services.policy_registry_adapter import provider_status
+    policy = provider_status()
+    modules["policy-registry"] = {"adapter_registered": "/api/governance/policy-registry" in registered_paths,
+        "runtime_verified": False, "available": None if policy["verified"] else False,
+        "reason_code": policy["reason"], "observed_at": observed}
+    return declaration(app.routes, kit_status, read_gui_brand(), modules,
+                       public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS, module_sources=[policy])
 
 
 @app.get("/api/gui/kit-manifest")
@@ -2245,63 +2273,65 @@ async def api_get_tasks(
 async def api_post_task(payload: dict = Body(...)):
     """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
     try:
-        conn = get_bach_db()
-        from hub._services.task_schema import (
-            ensure_task_creation_origin,
-            ensure_task_slot_columns,
-        )
-        ensure_task_slot_columns(conn)
-        ensure_task_creation_origin(conn)
-        draft_source = payload.get("source") or payload.get("draft_hash")
-        if draft_source:
-            existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
-            if existing:
-                conn.close()
-                return {"success": True, "id": existing[0], "status": "already_present"}
-
-        due_date = payload.get("due_date")
-        if due_date is not None:
-            if isinstance(due_date, str) and not due_date.strip():
-                due_date = None
-            else:
-                clean_due = str(due_date).strip()
-                try:
-                    from datetime import datetime as _dt
-                    if "T" in clean_due or " " in clean_due:
-                        _dt.fromisoformat(clean_due.replace(" ", "T"))
-                    else:
-                        _dt.strptime(clean_due, "%Y-%m-%d")
-                    due_date = clean_due
-                except ValueError:
+        from gui.api.task_assignment import assignment_write_guard
+        with assignment_write_guard(payload):
+            conn = get_bach_db()
+            from hub._services.task_schema import (
+                ensure_task_creation_origin,
+                ensure_task_slot_columns,
+            )
+            ensure_task_slot_columns(conn)
+            ensure_task_creation_origin(conn)
+            draft_source = payload.get("source") or payload.get("draft_hash")
+            if draft_source:
+                existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
+                if existing:
                     conn.close()
-                    raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
+                    return {"success": True, "id": existing[0], "status": "already_present"}
 
-        now = datetime.now().isoformat()
-        cursor = conn.execute("""
-            INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            payload.get("title"),
-            payload.get("description", ""),
-            payload.get("priority", "P3"),
-            payload.get("category") or payload.get("project") or "general",
-            payload.get("status", "pending"),
-            now,
-            payload.get("created_by", "user"),
-            payload.get("assigned_to") or payload.get("assignee") or DEFAULT_TASK_ASSIGNEE,
-            payload.get("depends_on"),
-            payload.get("image"),
-            due_date,
-            draft_source,
-            payload.get("required_model") or None,
-            payload.get("assigned_slot") or None,
-            payload.get("creation_origin") or None,
-        ))
+            due_date = payload.get("due_date")
+            if due_date is not None:
+                if isinstance(due_date, str) and not due_date.strip():
+                    due_date = None
+                else:
+                    clean_due = str(due_date).strip()
+                    try:
+                        from datetime import datetime as _dt
+                        if "T" in clean_due or " " in clean_due:
+                            _dt.fromisoformat(clean_due.replace(" ", "T"))
+                        else:
+                            _dt.strptime(clean_due, "%Y-%m-%d")
+                        due_date = clean_due
+                    except ValueError:
+                        conn.close()
+                        raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
 
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return {"success": True, "id": task_id, "status": "created"}
+            now = datetime.now().isoformat()
+            cursor = conn.execute("""
+                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                payload.get("title"),
+                payload.get("description", ""),
+                payload.get("priority", "P3"),
+                payload.get("category") or payload.get("project") or "general",
+                payload.get("status", "pending"),
+                now,
+                payload.get("created_by", "user"),
+                payload.get("assigned_to") or payload.get("assignee") or DEFAULT_TASK_ASSIGNEE,
+                payload.get("depends_on"),
+                payload.get("image"),
+                due_date,
+                draft_source,
+                payload.get("required_model") or None,
+                payload.get("assigned_slot") or None,
+                payload.get("creation_origin") or None,
+            ))
+
+            task_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            return {"success": True, "id": task_id, "status": "created"}
     except HTTPException:
         raise
     except Exception as e:
@@ -2472,92 +2502,94 @@ async def update_task(task_id: int, update: TaskUpdate):
     conn = get_bach_db()
     try:
         from hub._services.task_schema import ensure_task_slot_columns
-        if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
-            ensure_task_slot_columns(conn)
         existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         existing_row = row_to_dict(existing)
+        from gui.api.task_assignment import assignment_write_guard
+        with assignment_write_guard(update.model_dump(exclude_unset=True), existing_row):
+            if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
+                ensure_task_slot_columns(conn)
 
-        # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
-        # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
-        # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
-        changed_by = update.changed_by or "api"
+            # changed_by: vom Aufrufer mitgegeben (z.B. Idle-Worker meldet sich als
+            # "idle-worker"), sonst generischer API-Default -- Schema-Default waere 'user',
+            # das waere hier irrefuehrend, da die meisten PUTs programmatisch erfolgen.
+            changed_by = update.changed_by or "api"
 
-        # T-20260913-709822598: Atomarer Claim bei Neu-Uebergang auf 'in_progress'
-        # bzw. Claim-Versuch gegen fremd beanspruchten Task
-        is_new_claim = (
-            update.status == "in_progress"
-            and not (
-                existing_row.get("status") == "in_progress"
-                and existing_row.get("claimed_by") == changed_by
+            # T-20260913-709822598: Atomarer Claim bei Neu-Uebergang auf 'in_progress'
+            # bzw. Claim-Versuch gegen fremd beanspruchten Task
+            is_new_claim = (
+                update.status == "in_progress"
+                and not (
+                    existing_row.get("status") == "in_progress"
+                    and existing_row.get("claimed_by") == changed_by
+                )
             )
-        )
 
-        did_update = False
-        if is_new_claim:
-            if not claim_task_atomic(conn, task_id, changed_by):
-                return {"status": "claim_failed", "success": False}
-            did_update = True
-
-        # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
-        # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
-        field_values = {}
-        if update.title is not None:
-            field_values["title"] = update.title
-        if update.description is not None:
-            field_values["description"] = update.description
-        if update.priority is not None:
-            field_values["priority"] = update.priority
-        if update.status is not None and not is_new_claim:
-            field_values["status"] = update.status
-        if update.project is not None:
-            field_values["category"] = update.project
-        if update.category is not None:
-            field_values["category"] = update.category
-        if update.assigned_to is not None:
-            field_values["assigned_to"] = update.assigned_to
-        if update.created_by is not None:
-            field_values["created_by"] = update.created_by
-        if update.depends_on is not None:
-            field_values["depends_on"] = update.depends_on
-        if "due_date" in update.model_fields_set:
-            raw_due = update.due_date
-            if raw_due is None or (isinstance(raw_due, str) and not raw_due.strip()):
-                field_values["due_date"] = None
-            else:
-                clean_due = str(raw_due).strip()
-                try:
-                    from datetime import datetime as _dt
-                    if "T" in clean_due or " " in clean_due:
-                        _dt.fromisoformat(clean_due.replace(" ", "T"))
-                    else:
-                        _dt.strptime(clean_due, "%Y-%m-%d")
-                    field_values["due_date"] = clean_due
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
-        if "required_model" in update.model_fields_set:
-            field_values["required_model"] = update.required_model or None
-        if "assigned_slot" in update.model_fields_set:
-            field_values["assigned_slot"] = update.assigned_slot or None
-
-        try:
-            # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von
-            # gate-geparkten Tasks -- Reopen ohne allow_reopen wird blockiert.
-            if apply_task_field_changes(conn, task_id, existing_row, field_values,
-                                        changed_by=changed_by,
-                                        allow_reopen=bool(update.allow_reopen)):
+            did_update = False
+            if is_new_claim:
+                if not claim_task_atomic(conn, task_id, changed_by):
+                    return {"status": "claim_failed", "success": False}
                 did_update = True
-        except LeaseRequired as exc:
-            # BACH #1721: lebender Lease -> nur /lease/release darf den Status aendern.
-            raise HTTPException(status_code=409, detail={"reason": exc.reason, "message": str(exc)})
-        except (GateReopenBlocked, ValueError) as exc:
-            # Business-rule conflicts (for example the missing-PR completion guard)
-            # are client-resolvable conflicts, not internal server errors.
-            raise HTTPException(status_code=409, detail=str(exc))
 
-        if did_update:
-            conn.commit()
+            # field_values: {DB-Spalte: neuer_wert} -- `project` ist ein GUI-Alias fuer
+            # die tatsaechliche Spalte `category`, muss also VOR dem Aufruf aufgeloest werden.
+            field_values = {}
+            if update.title is not None:
+                field_values["title"] = update.title
+            if update.description is not None:
+                field_values["description"] = update.description
+            if update.priority is not None:
+                field_values["priority"] = update.priority
+            if update.status is not None and not is_new_claim:
+                field_values["status"] = update.status
+            if update.project is not None:
+                field_values["category"] = update.project
+            if update.category is not None:
+                field_values["category"] = update.category
+            if update.assigned_to is not None:
+                field_values["assigned_to"] = update.assigned_to
+            if update.created_by is not None:
+                field_values["created_by"] = update.created_by
+            if update.depends_on is not None:
+                field_values["depends_on"] = update.depends_on
+            if "due_date" in update.model_fields_set:
+                raw_due = update.due_date
+                if raw_due is None or (isinstance(raw_due, str) and not raw_due.strip()):
+                    field_values["due_date"] = None
+                else:
+                    clean_due = str(raw_due).strip()
+                    try:
+                        from datetime import datetime as _dt
+                        if "T" in clean_due or " " in clean_due:
+                            _dt.fromisoformat(clean_due.replace(" ", "T"))
+                        else:
+                            _dt.strptime(clean_due, "%Y-%m-%d")
+                        field_values["due_date"] = clean_due
+                    except ValueError:
+                        raise HTTPException(status_code=400, detail="Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD")
+            if "required_model" in update.model_fields_set:
+                field_values["required_model"] = update.required_model or None
+            if "assigned_slot" in update.model_fields_set:
+                field_values["assigned_slot"] = update.assigned_slot or None
+
+            try:
+                # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von
+                # gate-geparkten Tasks -- Reopen ohne allow_reopen wird blockiert.
+                if apply_task_field_changes(conn, task_id, existing_row, field_values,
+                                            changed_by=changed_by,
+                                            allow_reopen=bool(update.allow_reopen)):
+                    did_update = True
+            except LeaseRequired as exc:
+                # BACH #1721: lebender Lease -> nur /lease/release darf den Status aendern.
+                raise HTTPException(status_code=409, detail={"reason": exc.reason, "message": str(exc)})
+            except (GateReopenBlocked, ValueError) as exc:
+                # Business-rule conflicts (for example the missing-PR completion guard)
+                # are client-resolvable conflicts, not internal server errors.
+                raise HTTPException(status_code=409, detail=str(exc))
+
+            if did_update:
+                conn.commit()
     finally:
         conn.close()
 
@@ -5648,32 +5680,10 @@ async def foerderplaner_dashboard_page():
 
 @app.get("/agents-board", response_class=HTMLResponse)
 @app.get("/skills-board", response_class=HTMLResponse)
-async def skills_board_page():
-    """Agents Board - Hierarchie- und Agenten-Verwaltung."""
-    try:
-        from gui.board_renderers import render_agents_board
-        return HTMLResponse(render_agents_board())
-    except Exception as render_error:
-        try:
-            from gui.board_renderers import (
-                DEFAULT_AGENTS_BOARD_BRANDING,
-                _apply_common_replacements,
-            )
-            for filename in ("agents-board.html", "skills-board.html"):
-                board_file = TEMPLATES_DIR / filename
-                if board_file.is_file():
-                    rendered = _apply_common_replacements(
-                        board_file.read_text(encoding="utf-8"),
-                        dict(DEFAULT_AGENTS_BOARD_BRANDING),
-                    )
-                    return HTMLResponse(rendered)
-        except Exception as fallback_error:
-            raise HTTPException(status_code=500, detail="Agents Board konnte nicht gerendert werden") from fallback_error
-        if not (TEMPLATES_DIR / "agents-board.html").exists() and not (
-            TEMPLATES_DIR / "skills-board.html"
-        ).exists():
-            raise HTTPException(status_code=404, detail="Template agents-board.html / skills-board.html nicht gefunden")
-        raise HTTPException(status_code=500, detail="Agents Board konnte nicht gerendert werden") from render_error
+async def skills_board_page(request: Request):
+    """Deprecated aliases; editing and chains live in the shared GUI."""
+    target = "/skills" if request.url.path == "/skills-board" else "/agenten/blueprints"
+    return RedirectResponse(target, status_code=307)
 
 
 @app.get("/skills")

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import threading
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from .sequence_store import SequenceConflict, SequenceStore, definition, digest, encoded
 from .slots_config import core_system_agents_snapshot, sequence_profile_snapshot, materialize_sequence_slot
@@ -35,15 +35,31 @@ def embedded_module():
         raise RuntimeError("Gepinntes MarbleRun-Modul nicht verfügbar") from exc
 
 
+@dataclass(frozen=True)
+class _SequenceCreatorAuthority:
+    """Private admission reference; content, slots and public start APIs never carry it."""
+    store: SequenceStore
+    run_id: str
+    cursor: int
+    service_instance: str
+
+    def bind(self, **identity):
+        return self.store.bind_creator_delegation(self.run_id, self.cursor, self.service_instance, **identity)
+
+    def revoke(self):
+        self.store.stop(self.run_id, self.service_instance)
+
+
 class NativeGateway:
     def __init__(self, *, service_instance, start, observe, result, stop, slot):
         self.service_instance = service_instance
         self.start_worker, self.observe_worker = start, observe
         self.worker_result, self.stop_worker, self.worker_slot = result, stop, slot
 
-    def dispatch(self, worker_id, request_id, configuration_version, prompt, module):
+    def dispatch(self, worker_id, request_id, configuration_version, prompt, module, *, creator_authority):
         response, status = self.start_worker(worker_id, custom_prompt=prompt, start_request_id=request_id,
-            expected_service_instance=self.service_instance, expected_configuration_version=configuration_version)
+            expected_service_instance=self.service_instance, expected_configuration_version=configuration_version,
+            _creator_authority=creator_authority)
         receipt = response.get("execution")
         if (status not in {200, 202} or not isinstance(receipt, dict)
                 or receipt.get("service_instance") != self.service_instance
@@ -117,6 +133,8 @@ class NativeSequences:
         self.store, self.gateway, self.engine_loader = store, gateway, engine_loader
         self._lock = threading.RLock()
         self._threads = {}
+        self._stop_wakeups = set()
+        self._retiring = set()
 
     def catalog(self):
         core = core_system_agents_snapshot()
@@ -209,8 +227,9 @@ class NativeSequences:
 
     def _launch(self, run_id, module):
         thread = self._threads.get(run_id)
-        if thread is not None and thread.is_alive():
+        if thread is not None and thread.is_alive() and run_id not in self._retiring:
             return
+        self._retiring.discard(run_id)
         thread = threading.Thread(target=self._execute, args=(run_id, module), name="MarbleRun-" + run_id[:8], daemon=True)
         self._threads[run_id] = thread
         try:
@@ -226,6 +245,7 @@ class NativeSequences:
                 raise SequenceConflict("Lauf stammt von einem anderen Controller; physisches Ende ungeklärt")
             self.store.stop(run_id, self.gateway.service_instance)
             if row["phase"] not in _TERMINAL:
+                self._stop_wakeups.add(run_id)
                 self._launch(run_id, self.engine_loader())
             return {"accepted": True, "run": self.get_run(run_id)}
 
@@ -248,6 +268,23 @@ class NativeSequences:
         return recovered
 
     def _execute(self, run_id, module):
+        while True:
+            with self._lock:
+                self._stop_wakeups.discard(run_id)
+            self._execute_once(run_id, module)
+            with self._lock:
+                pending = run_id in self._stop_wakeups
+                self._stop_wakeups.discard(run_id)
+                if pending:
+                    saved = self.store.run(run_id)
+                    if saved["phase"] not in _TERMINAL and saved["owner_service"] == self.gateway.service_instance:
+                        continue
+                # A later Stop may replace this thread once it has no gateway work left.
+                if self._threads.get(run_id) is threading.current_thread():
+                    self._retiring.add(run_id)
+                return
+
+    def _execute_once(self, run_id, module):
         try:
             row = self.store.run(run_id)
             plan = row["plan"]
@@ -274,10 +311,13 @@ class NativeSequences:
                     if self.store.run(run_id)["stop_requested"]:
                         raise SequenceConflict("Stop vor der Schrittzulassung angefordert")
                     prepared = self.store.prepare_step(run_id, cursor, request_id, worker_id,
-                        plan["chain_title"] + " · " + info["label"], prompt, profile["model"], backend=profile["backend"])
+                        plan["chain_title"] + " · " + info["label"], prompt, profile["model"],
+                        backend=profile["backend"], service=self.gateway.service_instance)
                     materialized = materialize_sequence_slot(run_id, cursor, profile, prepared["task_id"],
                         source_slot=info["agent_slot"], expected_profile_digest=info["profile_digest"])
-                    handle = self.gateway.dispatch(worker_id, request_id, materialized["configuration_version"], prompt, module)
+                    creator = _SequenceCreatorAuthority(self.store, run_id, cursor, self.gateway.service_instance)
+                    handle = self.gateway.dispatch(worker_id, request_id, materialized["configuration_version"], prompt,
+                        module, creator_authority=creator)
                     self.store.bind_execution(run_id, cursor, handle)
                     return handle
 

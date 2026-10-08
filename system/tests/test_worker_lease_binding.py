@@ -344,3 +344,27 @@ def test_automatic_selection_reaches_eligible_work_beyond_first_thousand_candida
         worker_id="physical-worker@HOST", host="HOST", generation="current",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     assert chosen.task_snapshot()["title"] == "Actual work"
+
+
+def test_returned_version_is_deferred_but_changed_content_can_be_picked(mem_db):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    first = _insert_task(mem_db, "Returned")
+    second = _insert_task(mem_db, "Next")
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
+    mem_db.execute("UPDATE tasks SET priority='P1' WHERE id=?", (first,))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
+                is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    bound.execute_task_manage({"action": "update", "task_id": first, "status": "pending"})
+    deferred = {first: bound.task_snapshot()["task_version"]}
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    assert next_task.task_id == second
+    next_task.execute_task_manage({"action": "done", "task_id": second})
+    assert WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args) is None
+    mem_db.execute("UPDATE tasks SET description='Neue Voraussetzung' WHERE id=?", (first,))
+    mem_db.commit()
+    changed = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    assert changed.task_id == first
+    assert changed.task_snapshot()["task_version"] != deferred[first]

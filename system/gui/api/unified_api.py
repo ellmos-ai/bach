@@ -1032,42 +1032,23 @@ async def get_agents_map():
 
 @router.get("/governance/status")
 async def get_governance_status():
-    """Live-Status fuer Governance: Locks, P-Policies, Decisions und Systems."""
-    decisions = []
-    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
-        d_dir = CONTROL_ROOT / "_DECISIONS"
-        for df in sorted(d_dir.glob("*.md"), reverse=True)[:15]:
-            decisions.append({
-                "filename": df.name,
-                "title": df.stem.replace("_", " ").title(),
-                "source": "decision_register"
-            })
-
+    """Observe locks and canonical policy pointers; unavailable sources stay unknown."""
+    from .governance_registry import read_registry
+    try:
+        governance = await read_registry()
+    except HTTPException as exc:
+        governance = {"availability": "unavailable", "reason": exc.detail, "entries": [], "count": None}
     snapshot = _lock_cache_snapshot()
-
+    entries = governance["entries"]
     return {
         "status": "observed" if snapshot["availability"] == "available" else "unknown",
-        "timestamp": snapshot["checked_at"],
-        "source": snapshot["source"],
-        "availability": snapshot["availability"],
-        "scanned_at": snapshot["scanned_at"],
-        "error": snapshot["error"],
-        "recent_decisions": decisions,
-        "active_locks": snapshot["locks"][:25],
-        "lock_count": snapshot["count"],
-        "policies": [
-            {"id": policy_id, "title": title, "status": "unverified", "level": level,
-             "source": "configured_policy_list", "enforcement_verified": False}
-            for policy_id, title, level in (
-                ("P-001", "Fail-Closed Git Protection", "critical"),
-                ("P-002", "Two-Tree Rule (OneDrive & Local Clone)", "critical"),
-                ("P-003", "Device Token Long-Lived Auth", "high"),
-                ("P-004", "Automations Memory & Log Archiving", "medium"),
-                ("P-005", "Credential Protection & Fail-Closed Scans", "critical"),
-                ("P-006", "Mermaid Diagram Syntax Guardrails", "medium"),
-                ("P-007", "Proof-Note Release in Research Repos", "high"),
-            )
-        ]
+        "timestamp": snapshot["checked_at"], "source": snapshot["source"],
+        "availability": snapshot["availability"], "scanned_at": snapshot["scanned_at"], "error": snapshot["error"],
+        "recent_decisions": [entry for entry in entries if entry["kind"] == "decision"][:15],
+        "active_locks": snapshot["locks"][:25], "lock_count": snapshot["count"],
+        "policies": [entry for entry in entries if entry["kind"] in {"policy", "rule"}],
+        "policies_availability": governance["availability"], "policies_reason": governance.get("reason"),
+        "policy_source": "policy-registry", "enforcement_verified": False,
     }
 
 
@@ -1120,37 +1101,20 @@ async def list_governance_locks():
 
 @router.get("/governance/decisions")
 async def list_governance_decisions():
-    """Listet archivierte und offene Entscheidungen (Decisions)."""
-    decisions = []
-    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
-        for f in sorted((CONTROL_ROOT / "_DECISIONS").glob("*.md"), reverse=True):
-            decisions.append({
-                "id": f.stem,
-                "title": f.stem.replace("_", " ").title(),
-                "path": str(f)
-            })
-    return {"decisions": decisions, "count": len(decisions)}
+    """Canonical decision pointers. DecisionClicker adoption remains a separate action."""
+    from .governance_registry import read_registry
+    result = await read_registry(kind="decision")
+    return {**result, "decisions": result["entries"]}
 
 
 @router.get("/governance/policies")
 async def list_governance_policies():
-    """Kanonische Richtlinienliste (P-001 bis P-007)."""
-    policies = [
-        {"id": "P-001", "name": "Fail-Closed Git Protection", "scope": "Git & Repos", "enforcement": "Strict", "desc": "Kein automatischer Push ohne Pruefung aller Gates."},
-        {"id": "P-002", "name": "Two-Tree Rule", "scope": "Filesystem", "enforcement": "Strict", "desc": "Trennung zwischen lokalem Klon und OneDrive-Transfer."},
-        {"id": "P-003", "name": "Device Token Long-Lived Auth", "scope": "Cluster & Network", "enforcement": "Strict", "desc": "Sichere Token-Authentifizierung ohne Passwort-Leaks."},
-        {"id": "P-004", "name": "Automation Log Archiving", "scope": "Logging", "enforcement": "Medium", "desc": "Logs gehoeren ins zentrale Logbuch, nicht in CLAUDE.md."},
-        {"id": "P-005", "name": "Credential Protection", "scope": "Security", "enforcement": "Strict", "desc": "Niemals API-Keys oder Zugangsdaten im Chat oder Klartext ausgeben."},
-        {"id": "P-006", "name": "Mermaid Syntax Guardrails", "scope": "Documentation", "enforcement": "Medium", "desc": "Diagramme sauber quotieren vor Commit/Push."},
-        {"id": "P-007", "name": "Proof-Note Freigabe", "scope": "Research", "enforcement": "High", "desc": "Proof-Notes nur mit Kuration und Gate freigeben."}
-    ]
-    for policy in policies:
-        policy["configured_level"] = policy.pop("enforcement")
-        policy["enforcement"] = "unverified"
-        policy["enforcement_verified"] = False
-    return {"policies": policies, "count": len(policies),
-            "source": "configured_policy_list",
-            "checked_at": datetime.now(timezone.utc).isoformat()}
+    """Canonical policies and rules; no hardcoded enforcement claims."""
+    from .governance_registry import read_registry
+    result = await read_registry()
+    policies = [{**entry, "name": entry["title"], "desc": "Quellenmetadaten aus policy-registry",
+                 "enforcement": "unverified"} for entry in result["entries"] if entry["kind"] in {"policy", "rule"}]
+    return {**result, "policies": policies, "count": len(policies)}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1553,7 +1517,7 @@ async def get_capabilities_tiers():
 
 @router.post("/capabilities/skills/version")
 async def save_skill_version(payload: Dict[str, Any] = Body(...)):
-    """Speichert eine neue Version eines Skills (SentinelFleet-Muster)."""
+    """Speichert eine neue Version eines Skills mit kanonischer Versionshistorie."""
     skill_name = payload.get("skill_name")
     if not skill_name:
         raise HTTPException(status_code=400, detail="skill_name erforderlich")
@@ -1904,7 +1868,7 @@ async def get_cognitive_state():
             },
             "user_profile": {
                 "user": "Lukas (System-Architekt)",
-                "context_anchors": ["OneDrive .TOPICS", "Mac Studio Cluster", "SentinelFleet-Architektur"]
+                "context_anchors": ["OneDrive .TOPICS", "Mac Studio Cluster", "Native Agentenketten"]
             }
         },
         "prozedurales_gedaechtnis": {

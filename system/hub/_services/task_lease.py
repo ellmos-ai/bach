@@ -100,6 +100,22 @@ _TICKET_RE = re.compile(r"ticket:(T-\d{8}-[A-Za-z0-9-]+)")
 
 
 @dataclass(frozen=True)
+class _NativeCreatorBinding:
+    """Private local authority; never accepted by the public lease endpoint."""
+    run_id: str
+    cursor: int
+    task_id: int
+    task_version: str
+    slot_id: str
+    start_request_id: str
+    service_instance: str
+    generation: str
+    worker_id: str
+    host: str
+    acquire_request_id: str
+
+
+@dataclass(frozen=True)
 class LeaseConfig:
     """Serverseitig konfigurierbare Lease-Parameter (Vertrag §6, §8.6)."""
 
@@ -398,6 +414,68 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
                   device: str | None = None, config: LeaseConfig | None = None,
                   now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
+    return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
+        request_id=request_id, ttl_profile=ttl_profile, intent=intent,
+        task_version=task_version, device=device, config=config, now=now)
+
+
+def _native_creator_grant(conn, binding, row, version):
+    """Inspect the exact one-shot grant under the acquire write lock."""
+    if not isinstance(binding, _NativeCreatorBinding):
+        return None, "creator_delegation_invalid"
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_sequence_creator_delegations'").fetchone() is None:
+        return None, "creator_delegation_invalid"
+    cur = conn.execute("""SELECT * FROM native_sequence_creator_delegations
+        WHERE run_id=? AND cursor=? AND task_id=?""", (binding.run_id, binding.cursor, row["id"]))
+    saved = cur.fetchone()
+    if saved is None:
+        return None, "creator_delegation_invalid"
+    grant = dict(saved) if isinstance(saved, sqlite3.Row) else dict(zip((c[0] for c in cur.description), saved))
+    keys = ("run_id", "cursor", "task_id", "task_version", "slot_id", "start_request_id",
+            "service_instance", "generation", "worker_id", "host", "acquire_request_id")
+    if (any(grant[key] != getattr(binding, key) for key in keys)
+            or version != binding.task_version or row.get("assigned_slot") != binding.slot_id
+            or row.get("source") != f"marblerun:{binding.run_id}:{binding.cursor}"):
+        return None, "creator_delegation_invalid"
+    run = conn.execute("""SELECT owner_service,stop_requested,phase,state_json
+        FROM native_sequence_runs WHERE run_id=?""", (binding.run_id,)).fetchone()
+    step = conn.execute("""SELECT worker_id,request_id,generation,authority_id
+        FROM native_sequence_steps WHERE run_id=? AND cursor=? AND task_id=?""",
+        (binding.run_id, binding.cursor, binding.task_id)).fetchone()
+    if (run is None or step is None or run[0] != binding.service_instance
+            or tuple(step[:2]) != (binding.slot_id, binding.start_request_id)
+            or step[2] not in (None, binding.generation)
+            or step[3] not in (None, binding.service_instance)):
+        return None, "creator_delegation_invalid"
+    if grant["revoked_at"] is not None or run[1] or run[2] in {"complete", "failed", "stopped"}:
+        return None, "creator_delegation_revoked"
+    state = json.loads(run[3]) if run[3] else {}
+    if state.get("cursor", 0) != binding.cursor:
+        return None, "creator_delegation_invalid"
+    return grant, None
+
+
+def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
+                                 task_version, config=None, now=None):
+    """Internal local entry; a persisted grant is required even outside the creator window."""
+    if (not isinstance(delegation, _NativeCreatorBinding)
+            or (task_id, worker_id, host, task_version) !=
+               (delegation.task_id, delegation.worker_id, delegation.host, delegation.task_version)
+            or type(delegation.cursor) is not int or delegation.cursor < 0
+            or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value)
+                   for value in (delegation.run_id, delegation.start_request_id,
+                                 delegation.service_instance, delegation.generation))):
+        raise LeaseValidationError("Private Creator-Delegation stimmt nicht mit dem Workerlauf überein")
+    return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
+        request_id=delegation.acquire_request_id, task_version=task_version,
+        config=config, now=now, creator_delegation=delegation)
+
+
+def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
+                   request_id: str, ttl_profile: str | None = None, intent: str = "",
+                   task_version: str | None = None, device: str | None = None,
+                   config: LeaseConfig | None = None, now: datetime | None = None,
+                   creator_delegation: _NativeCreatorBinding | None = None) -> LeaseResult:
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
@@ -419,10 +497,24 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
             conn.rollback()
             return _deny(task_id, "stale_task_version", now)
         state = _lease_state(row, now, cfg)
+        grant = None
+        if creator_delegation is not None:
+            grant, reason = _native_creator_grant(conn, creator_delegation, row, version)
+            if reason is not None:
+                conn.rollback()
+                return _deny(task_id, reason, now)
+            replay = (state["live"] and state["kind"] == "lease"
+                      and row.get("claimed_by") == worker_id and row.get("claim_host") == host
+                      and row.get("claim_request_id") == request_id
+                      and grant["consumed_fence"] == int(row.get("claim_fence") or 0))
+            if grant["consumed_at"] is not None and not replay:
+                conn.rollback()
+                return _deny(task_id, "creator_delegation_consumed", now)
 
         if state["live"]:
             if (state["kind"] == "lease" and row.get("claimed_by") == worker_id
-                    and row.get("claim_request_id") == request_id):
+                    and row.get("claim_request_id") == request_id
+                    and (grant is None or grant["consumed_at"] is not None)):
                 conn.rollback()
                 if row.get("claim_task_version") != version:
                     return _deny(task_id, "stale_task_version", now)
@@ -446,7 +538,7 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
         created = parse_ts(row.get("created_at"))
         if created is not None and cfg.creator_window_seconds > 0 and created <= now + timedelta(seconds=60):
             until = created + timedelta(seconds=cfg.creator_window_seconds)
-            if now < until and not _is_creator(worker_id, row.get("created_by")):
+            if now < until and not _is_creator(worker_id, row.get("created_by")) and grant is None:
                 conn.rollback()
                 return _deny(task_id, "creator_priority", now, until=_fmt(until))
 
@@ -472,7 +564,21 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
         if cursor.rowcount != 1:  # unter BEGIN IMMEDIATE nicht erwartbar; fail-closed
             conn.rollback()
             return _deny(task_id, "conflict", now)
+        delegated_detail = {}
+        if grant is not None:
+            consumed = conn.execute("""UPDATE native_sequence_creator_delegations
+                SET consumed_at=?,consumed_fence=?
+                WHERE run_id=? AND cursor=? AND task_id=? AND acquire_request_id=?
+                      AND consumed_at IS NULL AND revoked_at IS NULL""",
+                (issued, old_fence + 1, creator_delegation.run_id, creator_delegation.cursor,
+                 task_id, request_id))
+            if consumed.rowcount != 1:
+                conn.rollback()
+                return _deny(task_id, "creator_delegation_consumed", now)
+            delegated_detail["creator_delegation"] = {key: grant[key] for key in
+                ("run_id", "cursor", "slot_id", "start_request_id", "service_instance", "generation")}
         _history(conn, task_id, "lease_acquire", worker_id, now, {
+            **delegated_detail,
             "fence": old_fence + 1, "host": host, "ttl_profile": profile, "expires_at": expires,
             "requested_profile": (ttl_profile or cfg.default_profile).upper(),
             "took_over": state["kind"], "device": device,

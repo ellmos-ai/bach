@@ -1,0 +1,47 @@
+Gemeinsame GUI, Agenten und Ocean-Transfer
+==========================================
+
+Die Oberflächenquelle liegt in ellmos-system-gui. BACH konsumiert ein geprüftes
+Releasearchiv; system/gui/kit_manifest.json bindet Quellcommit und Archivhash.
+
+ANSICHTEN
+/agenten/running       Living-Steckplätze und tatsächlich beobachtete Läufe
+/agenten/blueprints    Vorlagen, Rollen und Blueprint-Instanzen
+/agenten/marblerun     Native Agentenketten und geordnete Skillketten
+/tasks                Aufgaben und verfügbare typisierte Zuweisungsziele
+/skills               Aktuelle Skillquellen und Versionshistorie
+/skills/plugins       Plugin-Board
+/skills/mcp           MCP-Board
+/skills/software      Software-Board
+
+Die ehemaligen URLs /agents-board und /skills-board sind Weiterleitungen.
+Fabrika führt zum konsolidierten Blueprint-Editor.
+
+PRÜFUNG
+GET /api/gui/backend-origin   Tatsächliches Backend und Instanzbindung
+GET /api/gui/capabilities     Registrierte Adapter und offene Abnahmen
+GET /api/gui/kit-manifest     GUI-Pin und installierte Dateiprüfung
+GET /api/task-assignees       Tatsächliche Zuweisungsziele und Konfigurationsversion
+
+Ein registrierter Adapter ist kein Nachweis eines produktiven Laufs.
+Living bedeutet verfügbar; Running benötigt einen beobachteten Lauf.
+Die Modellbezeichnung allein bestätigt keine erfolgreiche Inferenz.
+Ein lokal gestarteter Worker teilt sich den tatsächlichen Compute-Besitz.
+Cloud-Worker werden ausdrücklich gestartet.
+
+ZUWEISUNG
+Native Zuweisungen verwenden assigned_slot, assigned_to und required_model.
+Änderungen einschließlich Freigeben einer bisherigen nativen Zuweisung benötigen
+die aktuelle assignment_configuration_version. Ein Konflikt erfordert neues
+Einlesen; es gibt keinen stillen Wiederholungsversuch oder automatischen Start.
+
+GOVERNANCE
+BACH_POLICY_REGISTRY_ENABLED=1 aktiviert den optionalen kanonischen Reader.
+Die Registry wird vom Provider über POLICY_REGISTRY_PATH oder dessen eigenen
+Standard gefunden. Fehlende Registry oder falsche Provenienz ergibt einen Fehler.
+Lesen: /api/governance/policy-registry und /api/governance/effective-policy.
+Der DecisionClicker-Schreibpfad ist eine gesondert freizugebende Fähigkeit.
+
+WEITERLESEN
+Root: OCEAN-TRANSFER-PLAN.md, DEPRICATED.md und TODO.md.
+Aufgabenstatus wird in der TaskDB geführt.

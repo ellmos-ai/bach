@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +24,14 @@ BRAND_SCHEMA = "ellmos-system-gui.brand.v1"
 ORIGIN_SCHEMA = "ellmos-system-gui.backend-origin.v1"
 KIT_SCHEMA = "ellmos-system-gui.kit-manifest.v1"
 DIST_SCHEMA = "ellmos-system-gui.dist.v1"
-CAPABILITIES_SCHEMA = "ellmos-system-gui.capabilities.v1"
+CAPABILITIES_SCHEMA = "ellmos.gui.capabilities.v1"
+
+
+def resolve_gui_distribution(gui_dir: Path, configured: str | None = None) -> Path:
+    """An explicit consumer release remains authoritative, including when missing."""
+    if configured:
+        return Path(os.path.expandvars(configured)).expanduser()
+    return gui_dir / "web" / "dist"
 
 
 def get_pinned_kit_manifest(manifest_path: Path = KIT_MANIFEST_PATH) -> dict[str, Any]:
@@ -41,12 +50,22 @@ def get_pinned_kit_manifest(manifest_path: Path = KIT_MANIFEST_PATH) -> dict[str
         }
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if data.get("schema") != KIT_SCHEMA:
+        if not isinstance(data, dict) or data.get("schema") != KIT_SCHEMA:
             return {
                 "schema": KIT_SCHEMA,
                 "verified": False,
                 "error": "invalid_kit_manifest_schema",
             }
+        if (not re.fullmatch(r"[0-9a-f]{40}", str(data.get("pinned_source_commit", "")))
+                or not re.fullmatch(r"[0-9a-f]{64}", str(data.get("release_archive_sha256", "")))
+                or data.get("dist_manifest_schema") != DIST_SCHEMA
+                or type(data.get("expected_page_count")) is not int
+                or data["expected_page_count"] < 1
+                or not isinstance(data.get("version"), str) or not data["version"]
+                or not isinstance(data.get("release_archive"), str) or not data["release_archive"].endswith(".zip")
+                or Path(data["release_archive"]).name != data["release_archive"]):
+            return {"schema": KIT_SCHEMA, "verified": False, "error": "invalid_release_identity"}
+        # Valid identity metadata. Installed byte verification happens separately.
         data["verified"] = True
         return data
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
@@ -78,7 +97,7 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
 
     try:
         dist_meta = json.loads(manifest_file.read_text(encoding="utf-8"))
-        if dist_meta.get("schema") != DIST_SCHEMA:
+        if not isinstance(dist_meta, dict) or dist_meta.get("schema") != DIST_SCHEMA:
             return {
                 "installed": True,
                 "verified": False,
@@ -86,6 +105,8 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
                 "page_count": 0,
             }
 
+        if not re.fullmatch(r"[0-9a-f]{40}", str(dist_meta.get("source_commit", ""))):
+            return {"installed": True, "verified": False, "reason_code": "invalid_source_commit", "page_count": 0}
         files_map = dist_meta.get("files", {})
         if not isinstance(files_map, dict) or not files_map:
             return {
@@ -105,15 +126,32 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
                 "page_count": len(files_map),
             }
 
+        root = dist_dir.resolve()
+        actual_files = set()
+        for item in dist_dir.rglob("*"):
+            if item.is_symlink():
+                return {"installed": True, "verified": False, "reason_code": "dist_symlink", "page_count": 0}
+            if item.is_file() and item != manifest_file:
+                actual_files.add(item.relative_to(dist_dir).as_posix())
         mismatches: list[str] = []
         for rel_path, expected_digest in files_map.items():
+            if (not isinstance(rel_path, str) or not rel_path or "\\" in rel_path
+                    or ":" in rel_path or rel_path.startswith("/")
+                    or any(part in {"", ".", ".."} for part in rel_path.split("/"))
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(expected_digest))):
+                return {"installed": True, "verified": False, "reason_code": "invalid_dist_entry", "page_count": 0}
             fpath = dist_dir / rel_path
-            if not fpath.exists():
+            if not fpath.resolve().is_relative_to(root):
+                return {"installed": True, "verified": False, "reason_code": "invalid_dist_entry", "page_count": 0}
+            if not fpath.is_file():
                 mismatches.append(f"missing: {rel_path}")
                 continue
             actual_digest = hashlib.sha256(fpath.read_bytes()).hexdigest()
             if actual_digest != expected_digest:
                 mismatches.append(f"digest_mismatch: {rel_path}")
+
+        if actual_files != set(files_map):
+            mismatches.append("file_set_mismatch")
 
         if mismatches:
             return {

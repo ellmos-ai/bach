@@ -109,16 +109,13 @@ def test_continuous_worker_advances_task_binding_and_assignment(tmp_path, monkey
     assert responses[-1][1] == 200
     if receipt_kind in {"blocked", "returned"}:
         assert get_worker_slot(wid, path=path)["task_id"] is None
-        assert len(calls) == len(ends) == 1
+        assert len(calls) == len(ends) == 2
+        assert [assignment["task_id"] for assignment in starts] == [42, 43]
         assert ends[0][1]["result"] == "task_returned"
+        assert ends[1][1]["result"] == "task_done"
+        assert pauses == ["runs", "tasks"]
         assert mem_db.execute("SELECT status FROM tasks WHERE id=42").fetchone()[0] == (
             "blocked" if receipt_kind == "blocked" else "pending")
-        if receipt_kind == "blocked":
-            if entrypoint == "http":
-                handler.do_POST()
-            else:
-                control.start_worker_execution(wid)
-            assert len(calls) == 2 and starts[-1]["task_id"] == 43
         return
     if worker_type == "once" and receipt_kind == "review":
         assert len(calls) == len(starts) == len(ends) == 1

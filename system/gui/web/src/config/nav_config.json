@@ -188,12 +188,6 @@
         "label": "Software",
         "icon": "💻",
         "description": "Vorhandene Software und Module"
-      },
-      {
-        "href": "/agents-board",
-        "label": "Agents-Board",
-        "icon": "📊",
-        "description": "Bisheriger Hierarchie-Editor"
       }
     ]
   },

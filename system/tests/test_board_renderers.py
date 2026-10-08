@@ -190,22 +190,22 @@ def test_api_js_contract():
     assert "Bearer" in content
 
 
-def test_fastapi_board_endpoints():
+def test_fastapi_board_endpoints(tmp_path, monkeypatch):
     """Prüft die FastAPI-Routen /agents-board, /skills-board und /tasks-board."""
     from gui.server import app
     from starlette.testclient import TestClient
 
+    from gui import server as server_module
+    monkeypatch.setattr(server_module, "ASTRO_DIST_DIR", tmp_path / "absent-dist")
     client = TestClient(app)
 
-    resp_agents = client.get("/agents-board")
-    assert resp_agents.status_code == 200
-    assert "<title>BACH - Agents Board</title>" in resp_agents.text
-    assert "window.BOARD_CONFIG" in resp_agents.text
+    resp_agents = client.get("/agents-board", follow_redirects=False)
+    assert resp_agents.status_code == 307
+    assert resp_agents.headers["location"] == "/agenten/blueprints"
 
-    resp_skills = client.get("/skills-board")
-    assert resp_skills.status_code == 200
-    assert "<title>BACH - Agents Board</title>" in resp_skills.text
-    assert "window.BOARD_CONFIG" in resp_skills.text
+    resp_skills = client.get("/skills-board", follow_redirects=False)
+    assert resp_skills.status_code == 307
+    assert resp_skills.headers["location"] == "/skills"
 
     resp_tasks = client.get("/tasks-board")
     assert resp_tasks.status_code == 200
@@ -213,7 +213,7 @@ def test_fastapi_board_endpoints():
     assert "window.BOARD_CONFIG" in resp_tasks.text
 
 
-def test_skills_template_fallback_is_rendered_with_default_branding(tmp_path, monkeypatch):
+def test_deprecated_skills_board_never_renders_legacy_template(tmp_path, monkeypatch):
     from gui import board_renderers
     from gui import server as server_module
     from starlette.testclient import TestClient
@@ -227,10 +227,10 @@ def test_skills_template_fallback_is_rendered_with_default_branding(tmp_path, mo
         "render_agents_board",
         lambda: (_ for _ in ()).throw(RuntimeError("renderer unavailable")),
     )
-    response = TestClient(server_module.app).get("/skills-board")
-    assert response.status_code == 200
-    assert "<title>BACH - Agents Board</title>" in response.text
-    assert "{{ api_base }}" not in response.text
+    response = TestClient(server_module.app).get("/skills-board", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/skills"
+    assert "window.BOARD_CONFIG" not in response.text
 
 
 def test_board_rendering_failure_does_not_serve_unresolved_template(
@@ -244,6 +244,7 @@ def test_board_rendering_failure_does_not_serve_unresolved_template(
         get_tasks_board_template(), encoding="utf-8"
     )
     monkeypatch.setattr(server_module, "TEMPLATES_DIR", tmp_path)
+    monkeypatch.setattr(server_module, "ASTRO_DIST_DIR", tmp_path / "absent-dist")
     monkeypatch.setattr(
         board_renderers,
         "render_tasks_board",

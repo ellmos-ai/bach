@@ -23,7 +23,8 @@ from system.tests.test_worker_lease_binding import binding
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
+    monkeypatch.delenv("BACH_TASK_LEASE_CREATOR_WINDOW", raising=False)
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     _init_db(db)
@@ -67,8 +68,11 @@ class IsolatedNative:
         slot=slots.get_system_slot(worker_id);generation=uuid.uuid4().hex
         db=sqlite3.connect(self.store.path);db.row_factory=sqlite3.Row
         client=TaskLeaseClient(conn=db)
-        binding=WorkerLeaseBinding.acquire(client,slot["task_id"],worker_id="isolated-native@test",host="test",
-            generation=generation,is_current=lambda:True,stop_event=threading.Event())
+        physical_worker="worker-"+uuid.uuid4().hex+"@test"
+        delegated=kwargs["_creator_authority"].bind(task_id=slot["task_id"],slot_id=worker_id,
+            start_request_id=kwargs["start_request_id"],generation=generation,worker_id=physical_worker,host="test")
+        binding=WorkerLeaseBinding.acquire(client,slot["task_id"],worker_id=physical_worker,host="test",slot=slot,
+            generation=generation,is_current=lambda:True,stop_event=threading.Event(),_creator_delegation=delegated)
         output="Ergebnis "+str(len(self.calls))+" · Müller & Söhne"
         binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
         self.results[worker_id]=binding.completion_result
@@ -146,8 +150,11 @@ def test_real_engine_uses_result_and_exactly_one_native_start_per_step(store,pro
     assert run["completed"][1]["output"].startswith("Ergebnis 2")
     assert slots.sequence_profile_snapshot(list(before))["profiles"]==before
     with store.connection() as db:
-        tasks=db.execute("SELECT status,assigned_slot FROM tasks ORDER BY id").fetchall()
-        assert len(tasks)==2 and all(row["status"]=="done" for row in tasks)
+        tasks=db.execute("SELECT status,assigned_slot,created_by FROM tasks ORDER BY id").fetchall()
+        assert len(tasks)==2 and all(row["status"]=="done" and row["created_by"]=="user" for row in tasks)
+        grants=db.execute("SELECT consumed_at,consumed_fence,worker_id FROM native_sequence_creator_delegations").fetchall()
+        assert len(grants)==2 and all(row["consumed_at"] and row["consumed_fence"]==1
+                                     and row["worker_id"].startswith("worker-") for row in grants)
     replay=controller.start(chain["id"],payload)
     assert replay["replayed"] is True and len(transport.calls)==2
 
@@ -282,6 +289,40 @@ def test_pending_409_stop_keeps_observing_until_physical_terminal(store,profiles
     assert run["phase"]=="stopped" and observations_after_stop==4 and len(transport.calls)==1
 
 
+@pytest.mark.parametrize("fault",["observation","checkpoint"])
+def test_stop_at_supervisor_exit_is_handed_over_without_second_click(store,profiles,monkeypatch,fault):
+    controller,transport=service(store,profiles);transport.hold=True
+    exited=threading.Event();release_exit=threading.Event();fired=False
+    original_once=controller._execute_once;original_observe=transport.gateway.observe_worker;original_checkpoint=store.checkpoint
+    def observe(*args):
+        nonlocal fired
+        if fault=="observation" and not fired:
+            fired=True;raise ValueError("Transient observation failure")
+        return original_observe(*args)
+    def checkpoint(state,service_id):
+        nonlocal fired
+        if fault=="checkpoint" and state.phase=="running" and not fired:
+            fired=True;raise RuntimeError("Lost running checkpoint")
+        return original_checkpoint(state,service_id)
+    once_count=0
+    def execute_once(*args):
+        nonlocal once_count
+        once_count+=1;original_once(*args)
+        if once_count==1:
+            exited.set();assert release_exit.wait(5)
+    monkeypatch.setattr(controller,"_execute_once",execute_once)
+    monkeypatch.setattr(transport.gateway,"observe_worker",observe);monkeypatch.setattr(store,"checkpoint",checkpoint)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    try:
+        assert exited.wait(5)
+        assert controller.get_run(payload["request_id"])["phase"]=="unconfirmed"
+        controller.stop(payload["request_id"])
+    finally:release_exit.set()
+    run=wait(controller,payload["request_id"])
+    assert run["phase"]=="stopped" and once_count==2
+    assert len(transport.calls)==1 and transport.cancelled==[transport.calls[0][0]]
+
+
 @pytest.mark.parametrize("fault",["outcome","generation","controller"])
 def test_unrelated_409_stop_never_counts_as_pending_acceptance(store,profiles,monkeypatch,fault):
     controller,transport=service(store,profiles);transport.hold=True;original=transport.stop
@@ -316,8 +357,10 @@ def test_stop_reconciliation_rejects_a_foreign_admission(store,profiles,monkeypa
 
 
 def test_exact_binding_retry_is_idempotent_but_another_generation_is_rejected(store):
-    store.initialize();request="b"*32
-    step=store.prepare_step("a"*32,0,request,"worker","Analyse","Isoliert","model",backend="openrouter")
+    chain=store.save_chain(draft());request="b"*32
+    store.create_run("a"*32,chain["id"],chain["version"],"f"*64,"d"*32,native.MARBLERUN_COMMIT,{"steps":[{}]})
+    step=store.prepare_step("a"*32,0,request,"system-sequence-"+"a"*32+"-0","Analyse","Isoliert","model",
+        backend="openrouter",service="d"*32)
     handle=embedded.ExecutionHandle(request,"c"*32,"d"*32)
     store.bind_execution("a"*32,0,handle);store.bind_execution("a"*32,0,handle)
     with pytest.raises(SequenceConflict):store.bind_execution("a"*32,0,embedded.ExecutionHandle(request,"e"*32,"d"*32))
@@ -335,10 +378,14 @@ def test_restart_reports_unconfirmed_and_does_not_replay_dispatch(store,profiles
 
 
 def test_task_and_step_binding_roll_back_together(store):
-    store.initialize()
+    chain=store.save_chain(draft())
+    store.create_run("a"*32,chain["id"],chain["version"],"f"*64,"d"*32,native.MARBLERUN_COMMIT,{"steps":[{}]})
     with store.connection(write=True) as db:db.execute("CREATE TRIGGER refuse_step BEFORE INSERT ON native_sequence_steps BEGIN SELECT RAISE(ABORT,'fixture'); END")
-    with pytest.raises(sqlite3.IntegrityError):store.prepare_step("a"*32,0,"b"*32,"worker","Analyse","Isoliert","model")
-    with store.connection() as db:assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]==0
+    with pytest.raises(sqlite3.IntegrityError):
+        store.prepare_step("a"*32,0,"b"*32,"system-sequence-"+"a"*32+"-0","Analyse","Isoliert","model",service="d"*32)
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]==0
+        assert db.execute("SELECT COUNT(*) FROM native_sequence_creator_delegations").fetchone()[0]==0
 
 
 def test_semantic_output_is_atomic_with_the_done_release(binding,mem_db):

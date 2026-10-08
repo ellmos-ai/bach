@@ -58,7 +58,7 @@ DASHBOARDS (Erweitert)
 /gesundheit    Gesundheits-Tracking
 /kontakte      Kontaktverwaltung
 /routinen      Routinen-Editor
-/skills-board  Skills-Board
+/skills        Skill-Zentrale; /skills-board ist eine Weiterleitung
 /tasks_board   Kanban Task-Board
 /logs          Log-Viewer
 /denkarium     Denkarium (Logbuch + Ideen-Sammlung)
@@ -518,3 +518,8 @@ bach --help messages        Nachrichten-CLI
 bach --help connector       Connector-System
 gui/api/headless.py         Headless API Source
 gui/api/messages_api.py     Messages-API Router
+
+GEMEINSAME GUI UND OCEAN
+-----------------------
+Aktueller Vertrag: siehe gui-integration.txt. Root-Plan: OCEAN-TRANSFER-PLAN.md.
+Registrierung und tatsächlich geprüfter Laufzustand werden getrennt ausgewiesen.

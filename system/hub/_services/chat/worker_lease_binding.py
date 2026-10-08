@@ -42,18 +42,28 @@ class WorkerLeaseBinding:
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
-                stop_event, clock=None, slot=None, automatic=False, policy_guard=None):
+                stop_event, clock=None, slot=None, automatic=False, policy_guard=None, _creator_delegation=None,
+                deferred_versions=None):
         if not generation or not is_current() or stop_event.is_set():
             raise LeaseProtocolError("Workerlauf ist nicht mehr aktiv")
         if policy_guard is not None:
             policy_guard()
         snapshot = client.task_snapshot(task_id)
+        if automatic and (deferred_versions or {}).get(task_id) == snapshot["task_version"]:
+            raise _TaskDoesNotMatch("Zurückgegebene Task-Version wartet auf eine Inhaltsänderung")
         matches = cls._automatic_matches_slot if automatic else cls._matches_slot
         if slot is not None and not matches(snapshot, slot):
             raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
-        ack = client.acquire(task_id, worker_id=worker_id, host=host,
-                             task_version=snapshot["task_version"], **kwargs)
+        if _creator_delegation is None:
+            ack = client.acquire(task_id, worker_id=worker_id, host=host,
+                                 task_version=snapshot["task_version"], **kwargs)
+        else:
+            if (_creator_delegation.task_id != task_id or _creator_delegation.generation != generation
+                    or _creator_delegation.worker_id != worker_id or _creator_delegation.host != host):
+                raise LeaseProtocolError("Creator-Delegation gehört nicht zu dieser privaten Workergeneration")
+            ack = client._acquire_native_creator(task_id, delegation=_creator_delegation,
+                worker_id=worker_id, host=host, task_version=snapshot["task_version"], **kwargs)
         return cls(client, snapshot, ack, generation=generation, is_current=is_current,
                    stop_event=stop_event, clock=clock, policy_guard=policy_guard)
 
@@ -89,6 +99,8 @@ class WorkerLeaseBinding:
             if isinstance(explicit, str) and explicit.isdecimal():
                 explicit = int(explicit)
             return cls.acquire(client, explicit, slot=slot, **kwargs)
+        if kwargs.get("_creator_delegation") is not None:
+            raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
         offset = 0
         while True:
             if not kwargs["is_current"]() or kwargs["stop_event"].is_set():

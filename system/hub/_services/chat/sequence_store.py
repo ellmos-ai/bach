@@ -122,6 +122,13 @@ class SequenceStore:
                 run_id TEXT NOT NULL, cursor INTEGER NOT NULL, task_id INTEGER NOT NULL,
                 worker_id TEXT NOT NULL UNIQUE, request_id TEXT NOT NULL UNIQUE,
                 generation TEXT, authority_id TEXT, PRIMARY KEY(run_id,cursor))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS native_sequence_creator_delegations (
+                run_id TEXT NOT NULL, cursor INTEGER NOT NULL, task_id INTEGER NOT NULL UNIQUE,
+                task_version TEXT NOT NULL, slot_id TEXT NOT NULL, start_request_id TEXT NOT NULL UNIQUE,
+                service_instance TEXT NOT NULL, generation TEXT, worker_id TEXT, host TEXT,
+                acquire_request_id TEXT UNIQUE, created_at TEXT NOT NULL,
+                consumed_at TEXT, consumed_fence INTEGER, revoked_at TEXT,
+                PRIMARY KEY(run_id,cursor))""")
 
     @staticmethod
     def _chain(row):
@@ -234,31 +241,115 @@ class SequenceStore:
             cur = db.execute("UPDATE native_sequence_runs SET stop_requested=1,updated_at=? WHERE run_id=? AND owner_service=?", (now(),run_id,service))
             if cur.rowcount != 1:
                 raise SequenceConflict("Lauf gehört nicht zu diesem Controller")
+            if self._exists(db, "native_sequence_creator_delegations"):
+                db.execute("""UPDATE native_sequence_creator_delegations SET revoked_at=?
+                    WHERE run_id=? AND service_instance=? AND consumed_at IS NULL AND revoked_at IS NULL""",
+                    (now(), run_id, service))
 
     def error(self, run_id, service, reason):
         with self.connection(write=True) as db:
             db.execute("UPDATE native_sequence_runs SET error=? WHERE run_id=? AND owner_service=?", (reason,run_id,service))
 
-    def prepare_step(self, run_id, cursor, request_id, worker_id, title, description, model, *, backend="ollama"):
-        """Task creation and its run binding commit together; no duplicate on retry."""
+    @staticmethod
+    def _live_run(db, run_id, service, cursor):
+        if (not isinstance(run_id, str) or not re.fullmatch(r"[0-9a-f]{32}", run_id)
+                or not isinstance(service, str) or not re.fullmatch(r"[0-9a-f]{32}", service)
+                or type(cursor) is not int or cursor < 0):
+            raise SequenceConflict("Ungültige private Schrittzulassung")
+        run = db.execute("SELECT * FROM native_sequence_runs WHERE run_id=?", (run_id,)).fetchone()
+        if (run is None or run["owner_service"] != service or run["stop_requested"]
+                or run["phase"] in {"complete", "failed", "stopped"}):
+            raise SequenceConflict("Schritt gehört nicht zu einem aktiven Lauf dieses Controllers")
+        state = json.loads(run["state_json"]) if run["state_json"] else {}
+        if state.get("cursor", 0) != cursor:
+            raise SequenceConflict("Laufcursor inzwischen geändert")
+        plan = json.loads(run["plan_json"])
+        if cursor >= len(plan.get("steps", [])):
+            raise SequenceConflict("Schritt außerhalb des bestätigten Laufplans")
+        return run
+
+    def prepare_step(self, run_id, cursor, request_id, worker_id, title, description, model,
+                     *, backend="ollama", service):
+        """Task, step and one creator grant commit together; preparation grants no lease."""
         from hub._services.task_schema import ensure_task_slot_columns, ensure_task_creation_origin
+        from hub._services.task_lease import task_content_version
+        if (not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id)
+                or worker_id != f"system-sequence-{run_id}-{cursor}"):
+            raise SequenceConflict("Ungültige Schritt-Startkennung oder dedizierter Sequenzsteckplatz")
         with self.connection(write=True) as db:
+            self._live_run(db, run_id, service, cursor)
             existing = db.execute("SELECT * FROM native_sequence_steps WHERE run_id=? AND cursor=?", (run_id,cursor)).fetchone()
             if existing is not None:
-                if existing["request_id"] != request_id or existing["worker_id"] != worker_id:
-                    raise SequenceConflict("Schrittbindung geändert")
+                grant = db.execute("""SELECT * FROM native_sequence_creator_delegations
+                    WHERE run_id=? AND cursor=?""", (run_id, cursor)).fetchone()
+                if (existing["request_id"] != request_id or existing["worker_id"] != worker_id
+                        or grant is None or grant["task_id"] != existing["task_id"]
+                        or grant["start_request_id"] != request_id or grant["slot_id"] != worker_id
+                        or grant["service_instance"] != service or grant["revoked_at"] is not None):
+                    raise SequenceConflict("Schrittbindung oder Creator-Delegation geändert")
                 return dict(existing)
             ensure_task_slot_columns(db)
             ensure_task_creation_origin(db)
             source = f"marblerun:{run_id}:{cursor}"
             if db.execute("SELECT 1 FROM tasks WHERE source=?", (source,)).fetchone():
                 raise SequenceConflict("Ungebundene Task mit dieser Startkennung vorhanden")
+            stamp = now()
             cur = db.execute("""INSERT INTO tasks
                 (title,description,priority,category,status,created_at,created_by,assigned_to,source,required_model,assigned_slot,creation_origin)
                 VALUES (?,?,'P3','marblerun','pending',?,'user',?,?,?,?,'user')""",
-                (title,description,now(),backend.upper(),source,model,worker_id))
-            db.execute("INSERT INTO native_sequence_steps (run_id,cursor,task_id,worker_id,request_id) VALUES (?,?,?,?,?)", (run_id,cursor,cur.lastrowid,worker_id,request_id))
+                (title,description,stamp,backend.upper(),source,model,worker_id))
+            task_id = cur.lastrowid
+            db.execute("INSERT INTO native_sequence_steps (run_id,cursor,task_id,worker_id,request_id) VALUES (?,?,?,?,?)",
+                (run_id,cursor,task_id,worker_id,request_id))
+            version = task_content_version(dict(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()))
+            db.execute("""INSERT INTO native_sequence_creator_delegations
+                (run_id,cursor,task_id,task_version,slot_id,start_request_id,service_instance,created_at)
+                VALUES (?,?,?,?,?,?,?,?)""", (run_id,cursor,task_id,version,worker_id,request_id,service,stamp))
             return dict(db.execute("SELECT * FROM native_sequence_steps WHERE run_id=? AND cursor=?", (run_id,cursor)).fetchone())
+
+    def bind_creator_delegation(self, run_id, cursor, service, *, task_id, slot_id,
+                                start_request_id, generation, worker_id, host):
+        """Bind an existing grant to the actual private controller before its first acquire."""
+        from hub._services.task_lease import _NativeCreatorBinding, _validate_worker, task_content_version
+        _validate_worker(worker_id, host)
+        if (type(task_id) is not int or task_id <= 0 or slot_id != f"system-sequence-{run_id}-{cursor}"
+                or not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation)
+                or not isinstance(start_request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", start_request_id)):
+            raise SequenceConflict("Ungültige Controller-Generation")
+        with self.connection(write=True) as db:
+            self._live_run(db, run_id, service, cursor)
+            saved = db.execute("""SELECT * FROM native_sequence_creator_delegations
+                WHERE run_id=? AND cursor=?""", (run_id, cursor)).fetchone()
+            step = db.execute("SELECT * FROM native_sequence_steps WHERE run_id=? AND cursor=?", (run_id, cursor)).fetchone()
+            task = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if (saved is None or step is None or task is None
+                    or (saved["task_id"], saved["slot_id"], saved["start_request_id"], saved["service_instance"])
+                        != (task_id, slot_id, start_request_id, service)
+                    or (step["task_id"], step["worker_id"], step["request_id"]) != (task_id, slot_id, start_request_id)
+                    or step["generation"] not in (None, generation)
+                    or step["authority_id"] not in (None, service)
+                    or saved["revoked_at"] is not None
+                    or task["assigned_slot"] != slot_id
+                    or task_content_version(dict(task)) != saved["task_version"]):
+                raise SequenceConflict("Creator-Delegation passt nicht zum zugelassenen Workerlauf")
+            physical = (generation, worker_id, host)
+            if saved["generation"] is None:
+                request_id = digest({"run_id": run_id, "cursor": cursor, "slot_id": slot_id,
+                    "start_request_id": start_request_id, "service_instance": service,
+                    "generation": generation, "worker_id": worker_id, "host": host})
+                changed = db.execute("""UPDATE native_sequence_creator_delegations
+                    SET generation=?,worker_id=?,host=?,acquire_request_id=?
+                    WHERE run_id=? AND cursor=? AND generation IS NULL
+                          AND consumed_at IS NULL AND revoked_at IS NULL""",
+                    (*physical, request_id, run_id, cursor))
+                if changed.rowcount != 1:
+                    raise SequenceConflict("Creator-Delegation nicht bestätigt")
+            else:
+                if (saved["generation"], saved["worker_id"], saved["host"]) != physical:
+                    raise SequenceConflict("Creator-Delegation ist bereits an einen anderen Workerlauf gebunden")
+                request_id = saved["acquire_request_id"]
+            return _NativeCreatorBinding(run_id, cursor, task_id, saved["task_version"], slot_id,
+                start_request_id, service, generation, worker_id, host, request_id)
 
     def bind_execution(self, run_id, cursor, handle):
         with self.connection(write=True) as db:

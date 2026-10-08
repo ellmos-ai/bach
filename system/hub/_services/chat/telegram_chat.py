@@ -206,6 +206,9 @@ class _WorkerControl:
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
     task_binding: Any = None
+    sequence_creator_authority: Any = None
+    creator_delegation: Any = None
+    deferred_task_versions: dict[int, str] = field(default_factory=dict)
     completed_task_ids: list[int] = field(default_factory=list)
     completed_task_results: dict[int, dict] = field(default_factory=dict)
     reviewed_task_ids: list[int] = field(default_factory=list)
@@ -382,10 +385,24 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         return (_WORKER_CONTROLS.get(control.worker_id) is control
                 and not control.done_event.is_set())
     host = socket.gethostname()
+    client = _native_task_client()
+    if control.sequence_creator_authority is not None:
+        if client.mode != "local":
+            raise RuntimeError("Private Sequenzzulassung benötigt den lokalen TaskDB-Lead")
+        with _WORKER_CONTROL_LOCK:
+            if not is_current() or control.stop_event.is_set():
+                raise RuntimeError("Sequenz-Workerlauf nicht mehr aktuell")
+            if control.creator_delegation is None:
+                control.creator_delegation = control.sequence_creator_authority.bind(
+                    task_id=slot.get("task_id"), slot_id=control.worker_id,
+                    start_request_id=control.start_request_id, generation=control.generation,
+                    worker_id=f"{physical_worker_id}@{host}", host=host)
     return WorkerLeaseBinding.acquire_next(
-        _native_task_client(), slot, worker_id=f"{physical_worker_id}@{host}", host=host,
+        client, slot, worker_id=f"{physical_worker_id}@{host}", host=host,
         generation=control.generation, is_current=is_current, stop_event=control.stop_event,
         policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
+        _creator_delegation=control.creator_delegation,
+        deferred_versions=control.deferred_task_versions,
     )
 
 
@@ -860,6 +877,10 @@ def _request_worker_revocation(
             return True, updated, receipt, 200
 
         if not control.stop_event.is_set():
+            if control.sequence_creator_authority is not None:
+                # The persistent Stop flag and all unused grants share one write lock.
+                # A racing acquire either commits before this Stop or sees revocation.
+                control.sequence_creator_authority.revoke()
             control.stop_status = final_status
             control.stop_activity = activity
             control.requested_at = datetime.now(timezone.utc).isoformat()
@@ -3165,6 +3186,25 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            start_request_id: str | None = None,
                            expected_service_instance: str | None = None,
                            expected_configuration_version: str | None = None) -> tuple[dict, int]:
+    """Public admission never accepts creator authority from content or request fields."""
+    return _start_worker_execution(worker_id, custom_prompt=custom_prompt, start_request_id=start_request_id,
+        expected_service_instance=expected_service_instance,
+        expected_configuration_version=expected_configuration_version)
+
+
+def _start_sequence_worker_execution(worker_id, *, _creator_authority, **kwargs):
+    from hub._services.chat.native_sequences import _SequenceCreatorAuthority
+    if (not isinstance(_creator_authority, _SequenceCreatorAuthority)
+            or _creator_authority.service_instance != _WORKER_SERVICE_INSTANCE):
+        raise ValueError("Private Sequenzzulassung gehört nicht zu diesem Controller")
+    return _start_worker_execution(worker_id, _creator_authority=_creator_authority, **kwargs)
+
+
+def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
+                           start_request_id: str | None = None,
+                           expected_service_instance: str | None = None,
+                           expected_configuration_version: str | None = None,
+                           _creator_authority=None) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
@@ -3211,7 +3251,8 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
                 control = _WorkerControl(worker_id, start_request_id=request_id,
                                          admitted_worker={"id": worker_id, "type": slot.get("type")},
-                                         slot_policy_reader=_execution_slot_reader(slot))
+                                         slot_policy_reader=_execution_slot_reader(slot),
+                                         sequence_creator_authority=_creator_authority)
                 control.admission_handle = _WorkerAdmission()
                 control.admission_pending = True
                 control.thread = control.admission_handle
@@ -3474,10 +3515,23 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     finish_assignment(current_assignment, status="released",
                                       result="task_returned", reason="verified_lease_ack")
                     assignment_open = False
-                    changes = {"status": "idle", "current_activity": "Task zurückgegeben oder blockiert"}
                     if current_slot.get("type") in {"continuous", "persistent"}:
-                        changes["task_id"] = None
-                    _update_worker_slot(control, changes)
+                        returned = control.task_binding.task_snapshot()
+                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        if control.lease_supervisor is not None:
+                            control.lease_supervisor.close()
+                            control.lease_supervisor = None
+                        worker_session.worker_task_binding = None
+                        control.task_binding = None
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": "Task zurückgegeben oder blockiert; suche nächste passende Aufgabe"}) is None:
+                            break
+                        _record_worker_activity(control, "Task zurückgegeben; unveränderte Version für diesen Lauf zurückgestellt", "pending")
+                        if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
+                            break
+                        prompt_to_run = initial_prompt
+                        continue
+                    _update_worker_slot(control, {"status": "idle", "current_activity": "Task zurückgegeben oder blockiert"})
                     return
 
                 # Einzellauf endet nach einem abgeschlossenen Block.
@@ -3702,7 +3756,7 @@ def _native_sequences():
             if _native_task_client().mode != "local":
                 raise RuntimeError("Native Ketten werden auf dem konfigurierten TaskDB-Lead ausgeführt")
             database = Path(_current_runtime_db())
-            gateway = NativeGateway(service_instance=_WORKER_SERVICE_INSTANCE, start=start_worker_execution,
+            gateway = NativeGateway(service_instance=_WORKER_SERVICE_INSTANCE, start=_start_sequence_worker_execution,
                 observe=worker_execution_receipt, result=worker_execution_result,
                 stop=_request_worker_revocation, slot=_execution_worker_slot)
             _NATIVE_SEQUENCES = NativeSequences(SequenceStore(database,
