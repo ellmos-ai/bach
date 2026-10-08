@@ -823,6 +823,12 @@ def sequence_profile_snapshot(slot_ids, expected_version=None, *, path=None):
     if expected_version is not None and snapshot["configuration_version"] != expected_version:
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
+    return {"configuration_version": snapshot["configuration_version"],
+            "profiles": _sequence_profiles_from_config(config, slot_ids)}
+
+
+def _sequence_profiles_from_config(config, slot_ids):
+    """Derive permissions from the same configuration image used for a write."""
     result = {}
     for slot_id in slot_ids:
         slot = config["slots"].get(slot_id)
@@ -839,11 +845,11 @@ def sequence_profile_snapshot(slot_ids, expected_version=None, *, path=None):
         fields["custom_system_prompt"] = fields.get("custom_system_prompt") or config.get("prompts", {}).get("system_default", DEFAULT_SYSTEM_PROMPT)
         fields["custom_role_prompt"] = fields.get("custom_role_prompt") or config.get("prompts", {}).get("role_" + str(role), DEFAULT_ROLE_PROMPTS.get(role, ""))
         result[slot_id] = _validated_core_edits(fields)
-    return {"configuration_version": snapshot["configuration_version"], "profiles": result}
+    return result
 
 
 @_serialized_mutation
-def materialize_sequence_slot(run_id, cursor, profile, task_id, *, path=None):
+def materialize_sequence_slot(run_id, cursor, profile, task_id, *, source_slot, expected_profile_digest, path=None):
     """Create a run-owned once worker; preserve user profiles and existing runs."""
     if (not isinstance(run_id, str) or not re.fullmatch(r"[0-9a-f]{32}", run_id)
             or type(cursor) is not int or not 0 <= cursor < 32
@@ -854,6 +860,10 @@ def materialize_sequence_slot(run_id, cursor, profile, task_id, *, path=None):
     raw = _resolve_path(path).read_bytes()
     _core_snapshot_from_bytes(raw)
     config = json.loads(raw.decode("utf-8"))
+    from .sequence_store import digest
+    current = _sequence_profiles_from_config(config, [source_slot])[source_slot]
+    if digest(current) != expected_profile_digest:
+        raise ValueError("Quellprofil seit der Startfreigabe geändert")
     existing = config["slots"].get(slot_id)
     profile_digest = hashlib.sha256(json.dumps(edits, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     if existing is not None:

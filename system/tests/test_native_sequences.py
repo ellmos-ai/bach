@@ -4,6 +4,8 @@ import json
 import sqlite3
 import threading
 import uuid
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +15,9 @@ from hub._services.chat.sequence_store import SequenceStore, SequenceConflict, d
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 from hub._services.task_lease_client import TaskLeaseClient, LeaseConnectionError, LeaseProtocolError
 from hub._services import skill_source_service
+
+# The focused Mac run starts in system/, whereas CI starts at repository root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from system.tests.test_task_lease_client import _init_db, mem_db
 from system.tests.test_worker_lease_binding import binding
 
@@ -44,7 +49,7 @@ def draft(mode="agents"):
 
 
 def fast_engine():
-    fields = {key: getattr(embedded, key) for key in ("SequenceStep", "SequenceState", "ExecutionHandle", "ExecutionObservation")}
+    fields = {key: getattr(embedded, key) for key in ("SequenceStep", "SequenceState", "ExecutionHandle", "ExecutionObservation", "request_id_for")}
     return SimpleNamespace(**fields, run_sequence=lambda *args, **kw: embedded.run_sequence(*args, **kw, poll_interval=.01))
 
 
@@ -88,7 +93,9 @@ class IsolatedNative:
         assert expected["generation"]==self.receipts[worker_id]["generation"]
         assert expected["start_request_id"]==self.receipts[worker_id]["start_request_id"]
         self.cancelled.append(worker_id)
-        return True,{}, {},200
+        return True,{}, {"kind":"worker-revocation", "worker_id":worker_id,
+            "generation":expected["generation"], "confirmed":True, "outcome":"revocation-confirmed",
+            "execution":dict(self.receipts[worker_id])},200
 
 
 def service(store, profiles):
@@ -189,6 +196,133 @@ def test_stale_living_cas_fails_before_task_or_run_creation(store,profiles):
     slots.change_core_system_agent("buddha_research",payload["configuration_version"],{"name":"Andere Besetzung"})
     with pytest.raises(RuntimeError):controller.start(chain["id"],payload)
     assert store.runs()==[] and transport.calls==[]
+
+
+@pytest.mark.parametrize("change", [{"enabled":False},{"allowed_tools":["skill_manage"]},{"custom_role_prompt":"Neue Freigabe"}])
+def test_source_change_between_precheck_and_materialization_never_starts_worker(store,profiles,monkeypatch,change):
+    controller,transport=service(store,profiles);chain=store.save_chain(draft());payload=start_payload(chain)
+    original=native.materialize_sequence_slot
+    def changed(*args,**kwargs):
+        snapshot=slots.core_system_agents_snapshot()
+        slots.change_core_system_agent("buddha_research",snapshot["configuration_version"],change)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(native,"materialize_sequence_slot",changed)
+    controller.start(chain["id"],payload);run=wait(controller,payload["request_id"])
+    assert run["phase"]=="unconfirmed" and transport.calls==[]
+    assert not any(item.get("sequence_run_id") for item in slots.core_system_agents_snapshot()["agents"])
+
+
+@pytest.mark.parametrize("fault",["before-checkpoint","after-checkpoint","before-bind","after-bind","after-admission"])
+def test_stop_recovers_exact_admission_after_lost_checkpoint_or_binding_ack(store,profiles,monkeypatch,fault):
+    controller,transport=service(store,profiles);transport.hold=True
+    original_checkpoint=store.checkpoint;original_bind=store.bind_execution
+    fired=False
+    def checkpoint(state,service_id):
+        nonlocal fired
+        if "checkpoint" in fault and state.phase=="running" and not fired:
+            fired=True
+            if fault=="after-checkpoint":original_checkpoint(state,service_id)
+            raise RuntimeError("Lost checkpoint ACK")
+        return original_checkpoint(state,service_id)
+    def bind(*args):
+        nonlocal fired
+        if "bind" in fault and not fired:
+            fired=True
+            if fault=="after-bind":original_bind(*args)
+            raise RuntimeError("Lost binding ACK")
+        return original_bind(*args)
+    if fault=="after-admission":
+        original_start=transport.gateway.start_worker
+        def start(*args,**kwargs):
+            original_start(*args,**kwargs)
+            raise RuntimeError("Lost native start ACK")
+        monkeypatch.setattr(transport.gateway,"start_worker",start)
+    monkeypatch.setattr(store,"checkpoint",checkpoint);monkeypatch.setattr(store,"bind_execution",bind)
+    chain=store.save_chain(draft());payload=start_payload(chain)
+    controller.start(chain["id"],payload);run=wait(controller,payload["request_id"])
+    assert run["phase"]=="unconfirmed" and len(transport.calls)==1
+    controller.stop(payload["request_id"]);run=wait(controller,payload["request_id"])
+    assert run["phase"]=="stopped" and run["stop_requested"] is True
+    assert len(transport.calls)==1 and transport.cancelled==[transport.calls[0][0]]
+
+
+def test_stop_racing_with_failed_running_checkpoint_needs_no_second_click(store,profiles,monkeypatch):
+    controller,transport=service(store,profiles);transport.hold=True;original=store.checkpoint;fired=False
+    def checkpoint(state,service_id):
+        nonlocal fired
+        if state.phase=="running" and not fired:
+            fired=True;store.stop(state.run_id,service_id)
+            raise RuntimeError("Running checkpoint lost during stop")
+        return original(state,service_id)
+    monkeypatch.setattr(store,"checkpoint",checkpoint)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    run=wait(controller,payload["request_id"])
+    assert run["phase"]=="stopped" and len(transport.calls)==1 and len(transport.cancelled)==1
+
+
+def test_pending_409_stop_keeps_observing_until_physical_terminal(store,profiles,monkeypatch):
+    controller,transport=service(store,profiles);transport.hold=True;original_stop=transport.stop;original_observe=transport.observe
+    observations_after_stop=0
+    def stop(*args,**kwargs):
+        _,worker,receipt,_=original_stop(*args,**kwargs)
+        receipt.update(confirmed=False,outcome="revocation-pending")
+        receipt["execution"].update(terminal=False,state="stopping")
+        return False,worker,receipt,409
+    def observe(worker_id,request):
+        nonlocal observations_after_stop
+        receipt=original_observe(worker_id,request)
+        if worker_id in transport.cancelled:
+            observations_after_stop+=1
+            if observations_after_stop<=3:receipt.update(terminal=False,state="finishing")
+        return receipt
+    monkeypatch.setattr(transport.gateway,"stop_worker",stop);monkeypatch.setattr(transport.gateway,"observe_worker",observe)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    assert transport.observed.wait(5);controller.stop(payload["request_id"])
+    run=wait(controller,payload["request_id"])
+    assert run["phase"]=="stopped" and observations_after_stop==4 and len(transport.calls)==1
+
+
+@pytest.mark.parametrize("fault",["outcome","generation","controller"])
+def test_unrelated_409_stop_never_counts_as_pending_acceptance(store,profiles,monkeypatch,fault):
+    controller,transport=service(store,profiles);transport.hold=True;original=transport.stop
+    def stop(*args,**kwargs):
+        _,worker,receipt,_=original(*args,**kwargs)
+        receipt.update(confirmed=False,outcome="revocation-pending")
+        receipt["execution"].update(terminal=False,state="stopping")
+        if fault=="outcome":receipt["outcome"]="execution-conflict"
+        elif fault=="generation":receipt["execution"]["generation"]="f"*32
+        else:receipt["execution"]["service_instance"]="f"*32
+        return False,worker,receipt,409
+    monkeypatch.setattr(transport.gateway,"stop_worker",stop)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    assert transport.observed.wait(5);controller.stop(payload["request_id"])
+    run=wait(controller,payload["request_id"])
+    assert run["phase"]=="unconfirmed" and "cancellation_unconfirmed" in run["reason"] and len(transport.calls)==1
+
+
+@pytest.mark.parametrize("field,value",[("generation","f"*32),("service_instance","f"*32),("start_request_id","f"*32)])
+def test_stop_reconciliation_rejects_a_foreign_admission(store,profiles,monkeypatch,field,value):
+    controller,transport=service(store,profiles);transport.hold=True;original=store.checkpoint;fired=False
+    def checkpoint(state,service_id):
+        nonlocal fired
+        if state.phase=="running" and not fired:
+            fired=True;raise RuntimeError("Checkpoint lost")
+        return original(state,service_id)
+    monkeypatch.setattr(store,"checkpoint",checkpoint)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    wait(controller,payload["request_id"]);worker_id=transport.calls[0][0];transport.receipts[worker_id][field]=value
+    controller.stop(payload["request_id"]);run=wait(controller,payload["request_id"])
+    assert run["phase"]=="unconfirmed" and transport.cancelled==[] and len(transport.calls)==1
+
+
+def test_exact_binding_retry_is_idempotent_but_another_generation_is_rejected(store):
+    store.initialize();request="b"*32
+    step=store.prepare_step("a"*32,0,request,"worker","Analyse","Isoliert","model",backend="openrouter")
+    handle=embedded.ExecutionHandle(request,"c"*32,"d"*32)
+    store.bind_execution("a"*32,0,handle);store.bind_execution("a"*32,0,handle)
+    with pytest.raises(SequenceConflict):store.bind_execution("a"*32,0,embedded.ExecutionHandle(request,"e"*32,"d"*32))
+    with store.connection() as db:
+        assert db.execute("SELECT assigned_to FROM tasks WHERE id=?",(step["task_id"],)).fetchone()[0]=="OPENROUTER"
 
 
 def test_restart_reports_unconfirmed_and_does_not_replay_dispatch(store,profiles):

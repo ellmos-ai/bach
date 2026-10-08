@@ -19,6 +19,10 @@ Erst bestätigter Taskabschluss, fachliches Ergebnis, übereinstimmende Request-
 
 Ein Stop wird vor der Cancellation dauerhaft gespeichert. Er betrifft ausschließlich die korrelierte native Generation. Bei Controllerwechsel, unklarer Zulassung oder verlorenem Checkpoint wird kein weiterer Schritt gestartet. Ein alter ungeklärter Lauf wird nach einem Neustart weder als abgeschlossen angezeigt noch automatisch wiederholt; die Betriebsprüfung muss sein tatsächliches Ende klären.
 
+Wenn innerhalb derselben Controllerinstanz ein Startbeleg oder der anschließende Checkpoint verloren geht, kann ein ausdrücklicher Stop die gespeicherte Schrittbindung gegen den exakten nativen Zulassungsbeleg abgleichen. Der rekonstruierte Handle wird vor der Cancellation dauerhaft gespeichert; die Zulassung wird nicht wiederholt. Ein korrelierter `revocation-pending`-Beleg bedeutet, dass der Stop angefordert wurde und das physische Ende weiterhin beobachtet wird. Ein fremder Beleg oder eine andere Generation bleibt ungeklärt.
+
+Die Quellfreigaben werden beim Anlegen jedes Laufsteckplatzes unter derselben Konfigurationssperre erneut geprüft. Eine inzwischen deaktivierte Quelle, reduzierte Werkzeugfreigabe oder geänderte Rolle erlaubt keinen Start mit einem früheren Profil.
+
 ## Quellen und API
 
 - `GET /api/marblerun/catalog`: echte Ketten, Living-Profile, aktuelle Skill-Quellen und Laufbelege.

@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import threading
+from dataclasses import replace
 
 from .sequence_store import SequenceConflict, SequenceStore, definition, digest, encoded
 from .slots_config import core_system_agents_snapshot, sequence_profile_snapshot, materialize_sequence_slot
@@ -79,11 +80,36 @@ class NativeGateway:
         worker = self.worker_slot(step["worker_id"])
         if not worker:
             raise SequenceConflict("Gebundener Laufsteckplatz nicht verfügbar")
-        _, _, _, status = self.stop_worker(step["worker_id"], worker, activity="MarbleRun-Stop angefordert",
+        _, _, receipt, status = self.stop_worker(step["worker_id"], worker, activity="MarbleRun-Stop angefordert",
             expected_execution={"service_instance": handle.authority_id,
                                 "start_request_id": handle.request_id, "generation": handle.job_id})
-        if status not in {200, 202}:
+        execution = receipt.get("execution", {})
+        correlated = (receipt.get("kind") == "worker-revocation"
+            and receipt.get("worker_id") == step["worker_id"] and receipt.get("generation") == handle.job_id
+            and execution.get("service_instance") == handle.authority_id
+            and execution.get("worker_id") == step["worker_id"]
+            and execution.get("generation") == handle.job_id and execution.get("start_request_id") == handle.request_id
+            and type(execution.get("terminal")) is bool)
+        pending = (status == 409 and receipt.get("outcome") == "revocation-pending"
+                   and receipt.get("confirmed") is False and execution.get("terminal") is False)
+        confirmed = status in {200, 202} and receipt.get("confirmed") is True
+        if not correlated or not (confirmed or pending):
             raise SequenceConflict("Stop dieser Generation nicht bestätigt")
+
+    def reconcile_stop(self, step, module):
+        """Recover only the exact admitted generation, never repeat admission."""
+        receipt = self.observe_worker(step["worker_id"], step["request_id"])
+        generation = receipt.get("generation")
+        if (receipt.get("schema") != "bach.worker-execution.v1"
+                or receipt.get("service_instance") != self.service_instance
+                or receipt.get("worker_id") != step["worker_id"]
+                or receipt.get("start_request_id") != step["request_id"]
+                or not isinstance(generation, str) or not _RUN_ID.fullmatch(generation)
+                or type(receipt.get("terminal")) is not bool
+                or step["generation"] not in {None, generation}
+                or step["authority_id"] not in {None, self.service_instance}):
+            raise SequenceConflict("Stop-Rekonstruktion ohne exakten nativen Zulassungsbeleg abgewiesen")
+        return module.ExecutionHandle(step["request_id"], generation, self.service_instance)
 
 
 class NativeSequences:
@@ -203,6 +229,24 @@ class NativeSequences:
                 self._launch(run_id, self.engine_loader())
             return {"accepted": True, "run": self.get_run(run_id)}
 
+    def _stop_initial(self, row, module):
+        initial = module.SequenceState.from_record(row["state"]) if row["state"] else None
+        if not row["stop_requested"] or initial is None or initial.active is not None or initial.phase not in {"starting", "unconfirmed"}:
+            return initial
+        if row["owner_service"] != self.gateway.service_instance:
+            raise SequenceConflict("Stop-Rekonstruktion über eine andere Controllerinstanz abgewiesen")
+        matches = [step for step in row["steps"] if step["cursor"] == initial.cursor]
+        if (len(matches) != 1 or matches[0]["request_id"] != module.request_id_for(row["run_id"], initial.cursor)
+                or matches[0]["worker_id"] != f"system-sequence-{row['run_id']}-{initial.cursor}"):
+            raise SequenceConflict("Dauerhafte Schrittbindung für Stop nicht bestätigt")
+        handle = self.gateway.reconcile_stop(matches[0], module)
+        self.store.bind_execution(row["run_id"], initial.cursor, handle)
+        recovered = replace(initial, phase="running", active=handle, stop_requested=True,
+                            revision=initial.revision + 1, reason="stop_admission_reconciled")
+        module.SequenceState.from_record(recovered.as_record())
+        self.store.checkpoint(recovered, self.gateway.service_instance)
+        return recovered
+
     def _execute(self, run_id, module):
         try:
             row = self.store.run(run_id)
@@ -230,8 +274,9 @@ class NativeSequences:
                     if self.store.run(run_id)["stop_requested"]:
                         raise SequenceConflict("Stop vor der Schrittzulassung angefordert")
                     prepared = self.store.prepare_step(run_id, cursor, request_id, worker_id,
-                        plan["chain_title"] + " · " + info["label"], prompt, profile["model"])
-                    materialized = materialize_sequence_slot(run_id, cursor, profile, prepared["task_id"])
+                        plan["chain_title"] + " · " + info["label"], prompt, profile["model"], backend=profile["backend"])
+                    materialized = materialize_sequence_slot(run_id, cursor, profile, prepared["task_id"],
+                        source_slot=info["agent_slot"], expected_profile_digest=info["profile_digest"])
                     handle = self.gateway.dispatch(worker_id, request_id, materialized["configuration_version"], prompt, module)
                     self.store.bind_execution(run_id, cursor, handle)
                     return handle
@@ -244,12 +289,25 @@ class NativeSequences:
                     raise SequenceConflict("Dauerhafte Schrittbindung nicht bestätigt")
                 return matches[0]
 
-            initial = module.SequenceState.from_record(row["state"]) if row["state"] else None
-            module.run_sequence(run_id, steps, dispatch=dispatch,
+            callbacks = dict(dispatch=dispatch,
                 observe=lambda handle: self.gateway.observe(bound_step(handle), handle, module),
                 cancel=lambda handle: self.gateway.cancel(bound_step(handle), handle),
                 checkpoint=lambda state: self.store.checkpoint(state, self.gateway.service_instance),
-                should_stop=lambda: bool(self.store.run(run_id)["stop_requested"]), initial_state=initial)
+                should_stop=lambda: bool(self.store.run(run_id)["stop_requested"]))
+            initial = self._stop_initial(row, module)
+            try:
+                outcome = module.run_sequence(run_id, steps, initial_state=initial, **callbacks)
+            except Exception:
+                saved = self.store.run(run_id)
+                if not saved["stop_requested"]:
+                    raise
+                recovered = self._stop_initial(saved, module)
+                module.run_sequence(run_id, steps, initial_state=recovered, **callbacks)
+            else:
+                saved = self.store.run(run_id)
+                if outcome.phase == "unconfirmed" and outcome.active is None and saved["stop_requested"]:
+                    recovered = self._stop_initial(saved, module)
+                    module.run_sequence(run_id, steps, initial_state=recovered, **callbacks)
         except Exception as exc:
             log.exception("Native sequence %s lacks a confirmed checkpoint", run_id)
             try:

@@ -239,7 +239,7 @@ class SequenceStore:
         with self.connection(write=True) as db:
             db.execute("UPDATE native_sequence_runs SET error=? WHERE run_id=? AND owner_service=?", (reason,run_id,service))
 
-    def prepare_step(self, run_id, cursor, request_id, worker_id, title, description, model):
+    def prepare_step(self, run_id, cursor, request_id, worker_id, title, description, model, *, backend="ollama"):
         """Task creation and its run binding commit together; no duplicate on retry."""
         from hub._services.task_schema import ensure_task_slot_columns, ensure_task_creation_origin
         with self.connection(write=True) as db:
@@ -255,15 +255,18 @@ class SequenceStore:
                 raise SequenceConflict("Ungebundene Task mit dieser Startkennung vorhanden")
             cur = db.execute("""INSERT INTO tasks
                 (title,description,priority,category,status,created_at,created_by,assigned_to,source,required_model,assigned_slot,creation_origin)
-                VALUES (?,?,'P3','marblerun','pending',?,'user','OLLAMA',?,?,?,'user')""",
-                (title,description,now(),source,model,worker_id))
+                VALUES (?,?,'P3','marblerun','pending',?,'user',?,?,?,?,'user')""",
+                (title,description,now(),backend.upper(),source,model,worker_id))
             db.execute("INSERT INTO native_sequence_steps (run_id,cursor,task_id,worker_id,request_id) VALUES (?,?,?,?,?)", (run_id,cursor,cur.lastrowid,worker_id,request_id))
             return dict(db.execute("SELECT * FROM native_sequence_steps WHERE run_id=? AND cursor=?", (run_id,cursor)).fetchone())
 
     def bind_execution(self, run_id, cursor, handle):
         with self.connection(write=True) as db:
+            saved = db.execute("SELECT * FROM native_sequence_steps WHERE run_id=? AND cursor=?", (run_id,cursor)).fetchone()
+            if saved is not None and (saved["request_id"],saved["generation"],saved["authority_id"]) == (handle.request_id,handle.job_id,handle.authority_id):
+                return
             cur = db.execute("""UPDATE native_sequence_steps SET generation=?,authority_id=?
-                WHERE run_id=? AND cursor=? AND request_id=? AND generation IS NULL""",
+                WHERE run_id=? AND cursor=? AND request_id=? AND generation IS NULL AND authority_id IS NULL""",
                 (handle.job_id,handle.authority_id,run_id,cursor,handle.request_id))
             if cur.rowcount != 1:
                 raise SequenceConflict("Schritt-Ausführungsbeleg nicht gespeichert")
