@@ -218,3 +218,12 @@ def test_blueprint_delete_serializes_slot_inspection_with_materialization(state,
     assert result['success'] is True
     assert observed == [f"system-blueprint-{bp['id']}"]
     assert state.execute('SELECT count(*) FROM agent_blueprints WHERE id=?', (bp['id'],)).fetchone()[0] == 0
+
+
+def test_completed_once_blueprint_releases_its_acquired_task_for_reuse():
+    from hub._services.chat import telegram_chat as control
+    slot = {'id':'system-blueprint-7','system':True,'blueprint_id':7,'task_id':42,'type':'once'}
+    assert control._worker_once_completion_changes(slot, (42,))['task_id'] is None
+    assert 'task_id' not in control._worker_once_completion_changes(slot, ())
+    assert 'task_id' not in control._worker_once_completion_changes(slot, (99,))
+    assert 'task_id' not in control._worker_once_completion_changes({**slot,'system':False}, (42,))

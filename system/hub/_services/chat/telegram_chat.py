@@ -660,6 +660,16 @@ def _worker_task_completed(slot: Dict[str, Any], completed_task_ids: Any) -> boo
         return False
 
 
+def _worker_once_completion_changes(slot: Dict[str, Any], completed_task_ids: Any) -> dict:
+    changes = {"status": "completed", "current_activity": "Abgeschlossen"}
+    # A reusable blueprint owns its acquired task ID. A verified Done must
+    # allow the next assigned task; an unfinished block keeps its continuation.
+    if (slot.get("system") is True and slot.get("blueprint_id") is not None
+            and _worker_task_completed(slot, completed_task_ids)):
+        changes["task_id"] = None
+    return changes
+
+
 def _update_worker_slot(
     control: _WorkerControl,
     updates: Dict[str, Any],
@@ -3424,7 +3434,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             "pending",
                         )
                         return
-                    _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
+                    _update_worker_slot(control, _worker_once_completion_changes(current_slot, completion_receipts))
                     return
 
                 # Fortlaufende Profile dürfen ohne TTL bis zum manuellen
