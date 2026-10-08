@@ -162,9 +162,12 @@ def test_tool_fetch_uses_selected_canonical_provider(monkeypatch):
 
 def test_regex_tool_is_bounded_for_adversarial_pattern(monkeypatch, tmp_path):
     import time
+    from hub._services.chat import chat_runtime
     target = tmp_path / "input.txt"
     target.write_text("a" * 20000 + "!", encoding="utf-8")
     monkeypatch.setattr(bach_tools, "_ALLOWED_FS_ROOTS", (tmp_path,))
+    # The tool resolves the runtime's effective roots when that module is loaded.
+    monkeypatch.setattr(chat_runtime, "_ALLOWED_FS_ROOTS", (tmp_path.resolve(),))
     started = time.monotonic()
     result = bach_tools.exec_tool("search_text", {"path": str(target), "pattern": "(a+)+$"}, "plan")
     assert "Zeitlimit" in result and time.monotonic() - started < 2

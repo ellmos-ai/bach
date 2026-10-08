@@ -23,6 +23,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -339,6 +340,34 @@ def _serialized_mutation(func):
             return func(*args, **kwargs)
 
     return guarded
+
+
+@contextmanager
+def worker_admission_transaction(path: str | None = None):
+    """Serialize a native admission with every configuration CAS mutation.
+
+    The controller holds its admission lock before entering this context. It
+    reads and validates the worker, advances the revision, then publishes the
+    RAM reservation before leaving. Assignment, provider work and thread
+    launch belong outside this short transaction. The nonce is a revision,
+    never execution evidence, and must not be rolled back on denial/terminal.
+    """
+    target = _resolve_path(path)
+    with _exclusive_lock(target), _config_lock:
+        published = False
+
+        def advance_revision():
+            nonlocal published
+            if published:
+                raise RuntimeError("Admission revision already advanced")
+            raw = target.read_bytes()
+            _core_snapshot_from_bytes(raw)
+            config = json.loads(raw.decode("utf-8"))
+            config["admission_revision"] = uuid.uuid4().hex
+            save_slots_config(config, path)
+            published = True
+
+        yield advance_revision
 
 
 def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[str, Any]:

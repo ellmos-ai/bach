@@ -477,7 +477,23 @@ def _worker_execution_snapshots() -> list[dict]:
 def _system_slots_snapshot() -> dict:
     """Configuration plus live controller/turn evidence; no provider is started."""
     from hub._services.chat.slots_config import core_system_agents_snapshot, system_slot_chat_id
-    result = core_system_agents_snapshot()
+    # Capture the file revision and RAM admissions together. A snapshot taken
+    # before admission has an obsolete CAS token; one taken afterwards must
+    # contain that admission, including the physical thread's cleanup tail.
+    with _WORKER_CONTROL_LOCK:
+        result = core_system_agents_snapshot()
+        worker_states = {}
+        for agent in result["agents"]:
+            slot_id = agent["id"]
+            control = _WORKER_CONTROLS.get(slot_id) or _WORKER_EXECUTIONS.get(slot_id)
+            _, thread = _active_worker_control(slot_id)
+            execution = (worker_execution_receipt(slot_id, control.start_request_id)
+                         if control else worker_execution_receipt(slot_id)
+                         if _thread_is_alive(thread) else None)
+            binding = getattr(control, "task_binding", None)
+            task_active = (control is not None and _thread_is_alive(control.thread)
+                           and binding is not None and not binding.closed)
+            worker_states[slot_id] = (execution, task_active, binding.task_id if task_active else None)
     with _runtime_state_lock:
         sessions = list(runtime.sessions.items())
     with runtime._chat_turn_gates_lock:
@@ -501,14 +517,7 @@ def _system_slots_snapshot() -> dict:
                 with gate.condition:
                     if gate.active_turns > 0:
                         running_sessions.append(session)
-        with _WORKER_CONTROL_LOCK:
-            control = _WORKER_CONTROLS.get(slot_id)
-            execution = (worker_execution_receipt(slot_id, control.start_request_id)
-                         if control else None)
-            binding = getattr(control, "task_binding", None)
-            task_active = (control is not None and _thread_is_alive(control.thread)
-                           and binding is not None and not binding.closed)
-            task_id = binding.task_id if task_active else None
+        execution, task_active, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
         agent.update({"runtime_verified": True, "living": agent["enabled"],
                       "running": bool(task_active or running_sessions),
@@ -3171,26 +3180,30 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 response["receipt"] = current.receipt
             return rejected(response, 409)
         try:
-            if expected_configuration_version is not None:
-                from hub._services.chat.slots_config import system_worker_at_version
-                slot = system_worker_at_version(worker_id, expected_configuration_version)
-            else:
-                slot = _execution_worker_slot(worker_id)
+            from hub._services.chat.slots_config import worker_admission_transaction, system_worker_at_version
+            with worker_admission_transaction() as advance_revision:
+                if expected_configuration_version is not None:
+                    slot = system_worker_at_version(worker_id, expected_configuration_version)
+                else:
+                    slot = _execution_worker_slot(worker_id)
+                if not slot or slot.get("id") != worker_id:
+                    return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                if slot.get("enabled", True) is not True:
+                    return rejected({"error": "Worker ist deaktiviert"}, 403)
+                control = _WorkerControl(worker_id, start_request_id=request_id,
+                                         admitted_worker={"id": worker_id, "type": slot.get("type")},
+                                         slot_policy_reader=_execution_slot_reader(slot))
+                control.admission_handle = _WorkerAdmission()
+                control.admission_pending = True
+                control.thread = control.admission_handle
+                # No RAM admission is published unless the durable revision
+                # write succeeds. Keep the file lock until all registries agree.
+                advance_revision()
+                _WORKER_CONTROLS[worker_id] = control
+                _ACTIVE_WORKER_THREADS[worker_id] = control.thread
+                _WORKER_EXECUTIONS[worker_id] = control
         except Exception as exc:
             return rejected({"error": f"Worker-Slot nicht verifizierbar: {exc}"}, 503)
-        if not slot or slot.get("id") != worker_id:
-            return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
-        if slot.get("enabled", True) is not True:
-            return rejected({"error": "Worker ist deaktiviert"}, 403)
-        control = _WorkerControl(worker_id, start_request_id=request_id,
-                                 admitted_worker={"id": worker_id, "type": slot.get("type")},
-                                 slot_policy_reader=_execution_slot_reader(slot))
-        control.admission_handle = _WorkerAdmission()
-        control.admission_pending = True
-        control.thread = control.admission_handle
-        _WORKER_CONTROLS[worker_id] = control
-        _ACTIVE_WORKER_THREADS[worker_id] = control.thread
-        _WORKER_EXECUTIONS[worker_id] = control
     try:
         response, status = _start_reserved_worker_execution(control, slot, custom_prompt)
         if status != 200:
