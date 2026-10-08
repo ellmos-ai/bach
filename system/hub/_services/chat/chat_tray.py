@@ -878,8 +878,7 @@ class BACHTray:
             items.append(pystray.Menu.SEPARATOR)
 
             # Fackel (Ressourcen-Priorität)
-            current_fackel = self.state.get("fackel_preference", "compute")
-            fackel_label = "Fackel: Ollama" if current_fackel == "ollama" else "Fackel: Rechenjobs"
+            fackel_label = self._fackel_runtime_label()
             fackel_items = [
                 pystray.MenuItem(
                     "Ollama / Chat & Worker bevorzugen",
@@ -896,7 +895,7 @@ class BACHTray:
 
             # Laufende Agenten & Werkstatt
             items.append(pystray.MenuItem("📊 Laufende Agenten & Worker...", self._open_running))
-            items.append(pystray.MenuItem("🛠 Agenten-Werkstatt & Vorlagen...", self._open_blueprints))
+            items.append(pystray.MenuItem("🛠 Agentenvorlagen & Blueprints...", self._open_blueprints))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -983,7 +982,7 @@ class BACHTray:
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
         items.append(pystray.MenuItem(chat_label, self._open_webchat))
         items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
-        items.append(pystray.MenuItem("Agenten-Werkstatt", self._open_blueprints))
+        items.append(pystray.MenuItem("Agenten-Blueprints", self._open_blueprints))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
 
         items.append(pystray.Menu.SEPARATOR)
@@ -1067,6 +1066,22 @@ class BACHTray:
         # Compatibility callback: the tray and GUI both change the persistent
         # Core-Agent setting; no process-local toggle can diverge from Running.
         self._toggle_slot_enabled("buddha_always_on")
+
+
+    def _fackel_runtime_label(self):
+        """Separate actual local inference ownership from its configured priority."""
+        preference = self.state.get("fackel_preference")
+        preferred = {"ollama": "Ollama", "compute": "Rechenjobs"}.get(preference, "nicht geprüft")
+        turn = self.state.get("compute_turn")
+        if (self.state.get("connected") is not True or not isinstance(turn, dict)
+                or type(turn.get("active")) is not bool):
+            owner = "Status nicht geprüft"
+        elif not turn["active"]:
+            owner = "lokale Inferenz frei"
+        else:
+            owner = {"foreground": "Chat", "background": "Hintergrundworker"}.get(
+                turn.get("priority"), "lokale Inferenz belegt")
+        return f"Fackel: {owner} · Priorität: {preferred}"
 
     def _always_on_runtime_label(self, slot):
         """Show configured Living state separately from live inference evidence."""
@@ -1266,6 +1281,8 @@ class BACHTray:
             self.state.get("mode"),
             self.state.get("think"),
             self.state.get("fackel_preference"),
+            self._fackel_runtime_label(),
+            self._always_on_runtime_label(self.slots.get("buddha_always_on")),
             self.state.get("current_backend"),
             self.state.get("current_model"),
             len(getattr(self, "models", [])),
