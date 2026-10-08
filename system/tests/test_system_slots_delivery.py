@@ -511,3 +511,94 @@ def test_portrait_preset_is_valid_but_arbitrary_asset_paths_are_not(preset):
     assert slots.validate_agent_avatar("preset:" + preset) == "preset:" + preset
     for value in ("preset:unknown", "/_astro/foreign.png", "https://example.org/image.png"):
         with pytest.raises(ValueError): slots.validate_agent_avatar(value)
+
+
+def _legacy_always_on_config(config_file):
+    """Persist the older valid core-worker shape, without injected UI defaults."""
+    from pathlib import Path
+    path = Path(config_file)
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["slots"]["buddha_always_on"] = {
+        "id": "buddha_always_on", "name": "Buddha Always-On", "enabled": True,
+        "backend": "ollama", "model": "fixture-model", "mode": "full",
+        "think": True, "max_tool_rounds": 25, "category": "all",
+        "status": "idle", "current_activity": "", "pause_after": 5,
+        "pause_minutes": 1, "pause_basis": "runs", "pause_counter": 0,
+        "pause_started_at": "",
+        "pickup_filter": {"enabled": True, "categories": ["INBOX", "WORKER"],
+                          "priorities": ["P1", "P2"], "tags": [],
+                          "exclude_tags": ["delegated", "waiting"]},
+    }
+    path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    return path, config
+
+
+def test_fixed_always_on_cas_admission_accepts_unchanged_persisted_policy(config_file):
+    from hub._services.chat import telegram_chat as control
+    path, _ = _legacy_always_on_config(config_file)
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    admitted = slots.system_worker_at_version("buddha_always_on", version)
+    reader = control._execution_slot_reader(admitted)
+    current = reader()  # The real first gate before assignment or thread launch.
+    assert current["id"] == "buddha_always_on"
+    assert current["model"] == "fixture-model"
+    assert current["type"] == "continuous" and current["sub_mode"] == "task_worker"
+    assert "custom_system_prompt" not in admitted and "skill_refs" not in admitted
+    assert json.loads(path.read_text(encoding="utf-8"))["slots"]["buddha_always_on"]["status"] == "idle"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("backend", "openrouter"), ("enabled", False),
+    ("custom_system_prompt", ""), ("custom_role_prompt", ""),
+    ("role_id", "hintergrund_worker"), ("skill_refs", []),
+], ids=["provider", "disabled", "system-prompt", "role-prompt", "role", "skills"])
+def test_fixed_always_on_cas_reader_rejects_later_authority_change(config_file, field, value):
+    from hub._services.chat import telegram_chat as control
+    path, config = _legacy_always_on_config(config_file)
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    admitted = slots.system_worker_at_version("buddha_always_on", version)
+    reader = control._execution_slot_reader(admitted)
+    assert reader()["model"] == "fixture-model"
+    config["slots"]["buddha_always_on"][field] = value
+    path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="neuer Start erforderlich"):
+        reader()
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        slots.system_worker_at_version("buddha_always_on", version)
+
+
+def test_fixed_always_on_cas_uses_only_its_one_verified_file_image(config_file, monkeypatch):
+    from pathlib import Path
+    path, _ = _legacy_always_on_config(config_file)
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    original_read = Path.read_bytes
+    reads = []
+    def read_once(target):
+        assert target == path
+        reads.append(target)
+        assert len(reads) == 1
+        return original_read(target)
+    def no_second_read(*args, **kwargs):
+        pytest.fail("CAS admission must not reread the persisted configuration")
+    monkeypatch.setattr(Path, "read_bytes", read_once)
+    monkeypatch.setattr(Path, "read_text", no_second_read)
+    admitted = slots.system_worker_at_version("buddha_always_on", version)
+    assert admitted["model"] == "fixture-model"
+    assert admitted["sub_mode"] == "task_worker"
+    assert "role_id" not in admitted
+    assert len(reads) == 1
+
+
+@pytest.mark.parametrize("invalid", ["enabled", "shadow", "type"])
+def test_fixed_always_on_cas_preserves_strict_admission_checks(config_file, invalid):
+    path, config = _legacy_always_on_config(config_file)
+    if invalid == "enabled":
+        config["slots"]["buddha_always_on"]["enabled"] = 1
+    elif invalid == "shadow":
+        config["dynamic_workers"].append({"id": "buddha_always_on", "type": "continuous"})
+    else:
+        config["slots"]["buddha_always_on"]["type"] = "persistent"
+    path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    with pytest.raises(ValueError):
+        slots.system_worker_at_version("buddha_always_on", version)
