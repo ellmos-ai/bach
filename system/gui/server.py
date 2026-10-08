@@ -84,7 +84,7 @@ except ImportError:
 
 try:
 
-    from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query, WebSocket, WebSocketDisconnect, Body
+    from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query, WebSocket, WebSocketDisconnect, Body, Depends
 
     from fastapi.staticfiles import StaticFiles
 
@@ -2129,8 +2129,28 @@ async def api_tasks_meta():
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
+def require_device(request: Request) -> dict:
+    """Device-Token-Dependency für geschützte GET-/API-Aufrufe.
+
+    Liest den Bearer-Token aus dem Authorization-Header oder den
+    Cookie `bach_device_token`, validiert ihn ueber validate_token()
+    und liefert das gertaegte Device-Dict zurueck. Ohne Token: 401,
+    ungueltiges/revoked Token: 403.
+    """
+    auth_header = request.headers.get("Authorization", "").strip()
+    token = (auth_header[7:].strip() if auth_header.startswith("Bearer ")
+             else request.cookies.get("bach_device_token", "").strip())
+    if not token:
+        raise HTTPException(status_code=401, detail="Geräteanmeldung erforderlich")
+    device = validate_token(token)
+    if not device:
+        raise HTTPException(status_code=403, detail="Geräteschlüssel ungültig oder widerrufen")
+    return device
+
+
 @app.get("/api/tasks")
 async def api_get_tasks(
+    device: dict = Depends(require_device),
     status: str = "all",
     project: str = None,
     category: str = None,
@@ -2305,7 +2325,7 @@ async def api_post_task(payload: dict = Body(...)):
         return {"success": False, "error": public_error_message()}
 
 @app.get("/api/tasks/{task_id}")
-async def get_task(task_id: int):
+async def get_task(task_id: int, device: dict = Depends(require_device)):
     """Holt einzelnen Task aus bach.db."""
     conn = get_bach_db()
     try:
