@@ -1557,6 +1557,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/skills/plugins",
         "/skills/mcp",
         "/skills/software",
+        "/skills/ocean",
         "/finanzen",
         "/steuer",
         "/gesundheit",
@@ -2166,11 +2167,14 @@ async def api_get_tasks(
     project: str = None,
     category: str = None,
     assigned_to: str = None,
+    assignment_group: str = "all",
     priority: str = None,
     limit: int = 100,
     offset: int = 0
 ):
-    """Liefert Tasks mit erweitertem Filter und Blockierungs-Check."""
+    """Liefert Tasks mit kombiniertem Filter vor Zählung und Pagination."""
+    if assignment_group not in {"all", "user", "auto", "unassigned"}:
+        raise HTTPException(400, "Ungültige Task-Zuordnung")
     try:
         conn = get_bach_db()
 
@@ -2215,6 +2219,12 @@ async def api_get_tasks(
         if target_cat:
             query += " AND UPPER(category) = UPPER(?)"
             params.append(target_cat)
+        if assignment_group == "user":
+            query += " AND LOWER(TRIM(COALESCE(assigned_to, ''))) = 'user'"
+        elif assignment_group == "auto":
+            query += " AND TRIM(COALESCE(assigned_to, '')) <> '' AND LOWER(TRIM(assigned_to)) <> 'user'"
+        elif assignment_group == "unassigned":
+            query += " AND TRIM(COALESCE(assigned_to, '')) = ''"
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
@@ -2265,7 +2275,8 @@ async def api_get_tasks(
 
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
-                "offset": max(0, offset)}
+                "offset": max(0, offset),
+                "applied_filters": {"assignment_group": assignment_group, "status": status}}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -5702,10 +5713,11 @@ async def skills_page():
 @app.get("/skills/plugins")
 @app.get("/skills/mcp")
 @app.get("/skills/software")
+@app.get("/skills/ocean")
 async def capability_board_page(request: Request):
     """Separate static boards; all host inventories require device authentication."""
     name = request.url.path.rsplit("/", 1)[-1]
-    if name not in {"plugins", "mcp", "software"}:
+    if name not in {"plugins", "mcp", "software", "ocean"}:
         raise HTTPException(404, "Board nicht gefunden")
     page = ASTRO_DIST_DIR / "skills" / (name + ".html")
     if not page.is_file():

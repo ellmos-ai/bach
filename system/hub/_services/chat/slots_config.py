@@ -256,7 +256,10 @@ SYSTEM_SLOT_PRESETS = {
 }
 
 AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset:connector",
-                                "preset:coordinator", "preset:engineer", "preset:researcher"})
+                                "preset:coordinator", "preset:engineer", "preset:researcher",
+                                "preset:gemini-claude-friendly", "preset:gemini-claude-neon",
+                                "preset:gemini-claude-opus", "preset:gemini-copilot",
+                                "preset:gemini-gemini", "preset:gemini-gemini-umbruch"})
 
 
 def validate_agent_avatar(value: Any) -> str:

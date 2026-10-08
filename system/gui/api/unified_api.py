@@ -802,6 +802,15 @@ async def get_actual_mcp_connections():
         raise HTTPException(503, "MCP-Konfiguration nicht lesbar") from exc
 
 
+@router.get("/capabilities/ocean")
+async def get_actual_ocean_inventory():
+    from hub._services.capability_inventory_service import ocean_inventory
+    try:
+        return await asyncio.to_thread(ocean_inventory)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, "Ocean-Quellen nicht lesbar") from exc
+
+
 @router.get("/capabilities/software")
 async def get_actual_software_inventory():
     from hub._services.capability_inventory_service import software_inventory

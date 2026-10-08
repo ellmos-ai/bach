@@ -255,7 +255,7 @@ def mcp_inventory(configs: list[Path] | None = None) -> dict:
     return result
 
 
-def software_inventory(roots: list[Path] | None = None) -> dict:
+def ocean_inventory(roots: list[Path] | None = None) -> dict:
     home = Path.home()
     if "BACH_REPOSITORIES_ROOT" in os.environ and not os.environ["BACH_REPOSITORIES_ROOT"].strip():
         raise ValueError("BACH_REPOSITORIES_ROOT darf nicht leer sein")
@@ -265,10 +265,12 @@ def software_inventory(roots: list[Path] | None = None) -> dict:
     legacy = Path("C:/_Local_DEV/repos")
     if "BACH_REPOSITORIES_ROOT" not in os.environ and legacy.is_dir():
         repository_roots.append(legacy)
-    roots = roots if roots is not None else _roots("BACH_SOFTWARE_ROOTS", repository_roots)
+    roots = roots if roots is not None else _roots(
+        "BACH_OCEAN_ROOTS" if "BACH_OCEAN_ROOTS" in os.environ else "BACH_SOFTWARE_ROOTS", repository_roots)
     if any(not p.is_absolute() for p in roots):
         raise ValueError("Software-Wurzeln müssen absolut sein")
-    result = _base("software", roots)
+    result = _base("ocean", roots)
+    result["catalog"] = "ocean-host-sources"
     seen = set()
     for root in roots:
         if not root.is_dir() or root.is_symlink():
@@ -300,5 +302,96 @@ def software_inventory(roots: list[Path] | None = None) -> dict:
                     "path": str(folder)})
         except OSError as exc:
             result["errors"].append({"source": str(root), "reason": type(exc).__name__})
+    result["count"] = len(result["items"])
+    return result
+
+
+def _catalog_link(value):
+    """Catalogue links never execute project launch commands."""
+    if not isinstance(value, str) or len(value) > 1000:
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme not in {"https", "http"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            return None
+        return value
+    except ValueError:
+        return None
+
+
+def software_inventory(roots: list[Path] | None = None) -> dict:
+    """Read .SOFTWARE application metadata; publication status is declared only."""
+    home = Path.home()
+    onedrive = Path(os.environ.get("OneDrive") or home / "OneDrive").expanduser()
+    roots = roots if roots is not None else _roots(
+        "BACH_APPLICATION_ROOTS", [onedrive / ".TOPICS/.SOFTWARE"])
+    if any(not p.is_absolute() for p in roots):
+        raise ValueError("Anwendungswurzeln müssen absolut sein")
+    result = _base("software", roots)
+    result["catalog"] = "software-applications"
+    result["sources"] = []
+    seen = set()
+    for root in roots:
+        registry = root / "releases.json"
+        source = {"path": str(registry), "available": False, "source_version": None}
+        result["sources"].append(source)
+        if root.is_symlink():
+            result["errors"].append({"source": str(registry), "reason": "SymlinkSource"})
+            continue
+        try:
+            data, revision = _document(registry)
+            projects = data.get("projects")
+            if not isinstance(projects, list):
+                raise ValueError("Software-Register benötigt eine Projektliste")
+            source.update(available=True, source_version=revision)
+            if len(projects) > MAX_ITEMS:
+                result["truncated"] = True
+            for project in projects[:MAX_ITEMS]:
+                if len(result["items"]) >= MAX_ITEMS:
+                    result["truncated"] = True
+                    break
+                if not isinstance(project, dict):
+                    raise ValueError("Ungültiger Software-Projekteintrag")
+                name = _text(project.get("name"), 180)
+                relative = project.get("path")
+                if (not name or not isinstance(relative, str) or not relative
+                        or "\\" in relative or ":" in relative or "\x00" in relative
+                        or relative.startswith("/") or ".." in relative.split("/")):
+                    raise ValueError("Ungültiger Software-Projektpfad")
+                folder = root / relative
+                key = hashlib.sha256((str(registry) + ":" + relative).encode()).hexdigest()[:24]
+                if key in seen:
+                    continue
+                targets = project.get("targets", [])
+                if not isinstance(targets, list):
+                    raise ValueError("Software-Veröffentlichungen benötigen eine Liste")
+                publications = []
+                for target in targets[:30]:
+                    if not isinstance(target, dict):
+                        continue
+                    publications.append({
+                        "type": _text(target.get("type"), 80),
+                        "platform": _text(target.get("platform"), 80),
+                        "declared_status": _text(target.get("status"), 80),
+                        "version": _text(target.get("version"), 100) or None,
+                        "url": _catalog_link(target.get("release_url"))
+                               or _catalog_link(target.get("url")),
+                        "live_verified": False})
+                seen.add(key)
+                result["items"].append({
+                    "id": key, "name": name,
+                    "description": _text(project.get("description")),
+                    "version": _text(project.get("version"), 100) or None,
+                    "category": relative.split("/", 1)[0],
+                    "lifecycle": _text(project.get("lifecycle"), 80),
+                    "source_version": revision, "source": str(registry),
+                    "code_present": folder.resolve().is_relative_to(root.resolve())
+                                    and folder.is_dir() and not folder.is_symlink(),
+                    "installed": None, "runtime_active": None,
+                    "evidence": "software_release_catalog", "publications": publications})
+        except (OSError, UnicodeError, ValueError) as exc:
+            result["errors"].append({"source": str(registry), "reason": type(exc).__name__})
+    result["items"].sort(key=lambda x: x["name"].casefold())
     result["count"] = len(result["items"])
     return result

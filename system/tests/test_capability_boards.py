@@ -72,7 +72,7 @@ def test_mcp_project_scopes_are_distinct(tmp_path):
     assert {item["scope"] for item in result["items"]} == {"global", "/workspace"}
 
 
-@pytest.mark.parametrize("variable,runner", [("BACH_PLUGIN_ROOTS",inventory.plugin_inventory), ("BACH_MCP_CONFIGS",inventory.mcp_inventory), ("BACH_SOFTWARE_ROOTS",inventory.software_inventory)])
+@pytest.mark.parametrize("variable,runner", [("BACH_PLUGIN_ROOTS",inventory.plugin_inventory), ("BACH_MCP_CONFIGS",inventory.mcp_inventory), ("BACH_OCEAN_ROOTS",inventory.ocean_inventory), ("BACH_APPLICATION_ROOTS",inventory.software_inventory)])
 def test_explicit_inventory_configuration_is_authoritative(monkeypatch, variable, runner):
     monkeypatch.setenv(variable, "[]")
     assert runner()["count"] == 0
@@ -85,7 +85,7 @@ def test_software_files_do_not_claim_installed_runtime(tmp_path):
     root = tmp_path / "repos"
     write_json(root / "actual/package.json", {"name":"Actual", "version":"2.1.0"})
     (root / "empty").mkdir()
-    result = inventory.software_inventory([root])
+    result = inventory.ocean_inventory([root])
     assert result["count"] == 1
     item = result["items"][0]
     assert item["version"] == "2.1.0"
@@ -96,7 +96,7 @@ def test_inventory_symlinks_and_invalid_sources_are_not_followed(tmp_path):
     write_json(tmp_path / "outside/package.json", {"name":"Outside"})
     root = tmp_path / "repos"; root.mkdir()
     (root / "escape").symlink_to(tmp_path / "outside", target_is_directory=True)
-    assert inventory.software_inventory([root])["count"] == 0
+    assert inventory.ocean_inventory([root])["count"] == 0
     bad = tmp_path / "bad.json"; bad.write_text("not json", encoding="utf-8")
     assert inventory.mcp_inventory([bad])["errors"]
 
@@ -126,16 +126,74 @@ def test_current_skill_library_and_immutable_history(tmp_path, monkeypatch):
 def test_board_shells_and_host_inventory_perimeter(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
     (tmp_path / "skills").mkdir()
-    for name in ("plugins", "mcp", "software"):
+    for name in ("plugins", "mcp", "software", "ocean"):
         (tmp_path / "skills" / (name + ".html")).write_text('<h1>Board</h1>', encoding="utf-8")
     client = TestClient(server.app)
-    for name in ("plugins", "mcp", "software"):
+    for name in ("plugins", "mcp", "software", "ocean"):
         assert client.get("/skills/" + name).status_code == 200
-    for path in ("/api/capabilities/skills/library", "/api/capabilities/plugins/inventory", "/api/capabilities/mcp/connections", "/api/capabilities/software", "/api/capabilities/skills/example/history"):
+    for path in ("/api/capabilities/skills/library", "/api/capabilities/plugins/inventory", "/api/capabilities/mcp/connections", "/api/capabilities/software", "/api/capabilities/ocean", "/api/capabilities/skills/example/history"):
         assert client.get(path).status_code == 401
     monkeypatch.setattr(server, "validate_token", lambda token:{"id":1} if token == "board-test" else None)
     monkeypatch.setenv("BACH_MCP_CONFIGS", "[]")
     observed = client.get("/api/capabilities/mcp/connections", headers={"Authorization":"Bearer board-test"})
     assert observed.status_code == 200 and observed.json()["count"] == 0
+    monkeypatch.setenv("BACH_APPLICATION_ROOTS", "[]")
+    monkeypatch.setenv("BACH_OCEAN_ROOTS", "[]")
+    for kind, catalog in (("software", "software-applications"), ("ocean", "ocean-host-sources")):
+        reply = client.get("/api/capabilities/" + kind, headers={"Authorization": "Bearer board-test"})
+        assert reply.status_code == 200 and reply.json()["catalog"] == catalog
+        assert reply.json()["kind"] == kind and reply.json()["count"] == 0
     monkeypatch.setenv("BACH_MCP_CONFIGS", "bad")
     assert client.get("/api/capabilities/mcp/connections", headers={"Authorization":"Bearer board-test"}).status_code == 503
+
+
+def test_application_catalog_is_separate_from_ocean_sources(tmp_path):
+    root = tmp_path / ".SOFTWARE"
+    write_json(root / "releases.json", {"projects": [
+        {"name": "Routinika", "path": "ASSISTENT/Routinika", "version": "2.2",
+         "lifecycle": "RDY", "notes": "PRIVATE_FAKE_NOTE",
+         "targets": [{"type": "windows_store", "platform": "windows",
+                      "status": "live", "url": "https://example.org/app"}]}]})
+    (root / "ASSISTENT/Routinika").mkdir(parents=True)
+    result = inventory.software_inventory([root])
+    assert result["kind"] == "software" and result["catalog"] == "software-applications"
+    assert result["count"] == 1
+    item = result["items"][0]
+    assert item["name"] == "Routinika" and item["version"] == "2.2"
+    assert item["category"] == "ASSISTENT" and item["code_present"] is True
+    assert item["installed"] is None and item["runtime_active"] is None
+    assert item["publications"][0]["declared_status"] == "live"
+    assert item["publications"][0]["live_verified"] is False
+    assert "PRIVATE_FAKE_NOTE" not in json.dumps(result)
+    assert result["sources"][0]["source_version"] == hashlib.sha256(
+        (root / "releases.json").read_bytes()).hexdigest()
+    assert inventory.ocean_inventory([root])["catalog"] == "ocean-host-sources"
+
+
+@pytest.mark.parametrize("url", [
+    "file:///private/app", "javascript:alert(1)", "https://user:FAKE_SECRET@example.org",
+    "https://example.org/?token=FAKE_SECRET", "https://example.org/#FAKE_SECRET"])
+def test_application_catalog_excludes_unsafe_links(tmp_path, url):
+    root = tmp_path / "apps"
+    write_json(root / "releases.json", {"projects": [
+        {"name": "App", "path": "DATA/App", "targets": [{"url": url}]}]})
+    result = inventory.software_inventory([root])
+    assert result["items"][0]["publications"][0]["url"] is None
+    assert "FAKE_SECRET" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("relative", ["../outside", "/outside", "C:/outside", "DATA\\outside"])
+def test_application_catalog_rejects_path_escape(tmp_path, relative):
+    root = tmp_path / "apps"
+    write_json(root / "releases.json", {"projects": [{"name": "App", "path": relative}]})
+    result = inventory.software_inventory([root])
+    assert result["count"] == 0 and result["errors"]
+
+
+def test_application_catalog_missing_registry_does_not_fall_back_to_repositories(tmp_path):
+    root = tmp_path / "repos"
+    write_json(root / "module/package.json", {"name": "Module"})
+    result = inventory.software_inventory([root])
+    assert result["count"] == 0 and result["errors"]
+    assert result["sources"][0]["available"] is False
+    assert inventory.ocean_inventory([root])["count"] == 1
