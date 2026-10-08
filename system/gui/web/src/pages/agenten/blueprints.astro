@@ -1,8 +1,12 @@
 ---
 import BachLayout from "../../layouts/BachLayout.astro";
+import portraitAtlas from '../../assets/agent-portraits.png';
+import '../../styles/agent-avatars.css';
+import '../../styles/ticket-symbols.css';
+import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
 ---
 <BachLayout title="Blueprints & Agenten" currentPath="/agenten/blueprints">
-  <header class="studio-header">
+  <header class="studio-header" data-portrait-atlas={portraitAtlas.src} data-ticket-symbols={JSON.stringify(TICKET_SYMBOL_URLS)} id="studio-portrait-source">
     <div><p class="studio-eyebrow">Agenten</p><h1>Blueprints</h1><p class="studio-lead">Rollen vorbereiten, Steckplätze einrichten und Aufgaben zuweisen.</p></div>
     <div class="studio-actions">
       <button class="btn" id="studio-refresh">Aktualisieren</button>
@@ -81,7 +85,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <details class="studio-group">
           <summary><span>04</span> Bild & Promptvorschau</summary>
           <div class="studio-group-body">
-            <div class="studio-avatar-row"><img id="bp-avatar-preview" alt="Agentenbild" hidden /><label>Eigenes Bild hochladen<input id="bp-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" /></label><button type="button" class="btn" id="bp-avatar-clear">Standardbild</button></div>
+            <div class="studio-avatar-row"><span id="bp-avatar-preview"></span><label>Eigenes Bild hochladen<input id="bp-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" /></label><button type="button" class="btn" id="bp-avatar-clear">Standardbild</button></div>
+            <div id="bp-avatar-presets" class="avatar-preset-picker" aria-label="Porträtvorlagen"></div>
+            <label>Symbol aus Ticket-Master<div id="bp-symbols" class="symbol-picker"></div></label>
             <p class="studio-note">PNG, JPEG oder WebP, maximal 180 KB.</p>
             <button type="button" class="btn" id="bp-preview">Startprompt anzeigen</button>
             <pre id="bp-preview-text" class="studio-prompt-preview" hidden></pre>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Chip body -->
+  <rect x="18" y="18" width="28" height="28" rx="3" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Inner grid -->
+  <rect x="24" y="24" width="16" height="16" rx="1" stroke="#e2e4eb" stroke-width="1.5"/>
+  <!-- Left pins -->
+  <line x1="10" y1="24" x2="18" y2="24" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="10" y1="32" x2="18" y2="32" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="10" y1="40" x2="18" y2="40" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Right pins -->
+  <line x1="46" y1="24" x2="54" y2="24" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="46" y1="32" x2="54" y2="32" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="46" y1="40" x2="54" y2="40" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Top pins -->
+  <line x1="24" y1="10" x2="24" y2="18" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="32" y1="10" x2="32" y2="18" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="40" y1="10" x2="40" y2="18" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Bottom pins -->
+  <line x1="24" y1="46" x2="24" y2="54" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="32" y1="46" x2="32" y2="54" stroke="#e2e4eb" stroke-width="2"/>
+  <line x1="40" y1="46" x2="40" y2="54" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Center dot -->
+  <circle cx="32" cy="32" r="3" fill="#e2e4eb"/>
+</svg>

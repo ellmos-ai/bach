@@ -509,6 +509,17 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     if not persona_prompt and not persona_role and kind in {"agent", "role"}:
         raise ValueError("Blueprint unvollstaendig: Weder Persona-Prompt noch Persona-Rolle angegeben.")
 
+    if isinstance(contractus, dict) and "execution" in contractus:
+        execution = contractus["execution"]
+        if not isinstance(execution, dict):
+            raise ValueError("Blueprint-Ausführungskonfiguration ist ungültig")
+        from .chat.slots_config import validate_agent_avatar
+        from .display_assets import validate_symbol
+        if "avatar" in execution:
+            validate_agent_avatar(execution["avatar"])
+        if "symbol" in execution:
+            validate_symbol(execution["symbol"])
+
     # Serialize the revision check with its write across SQLite writers.
     conn.execute("BEGIN IMMEDIATE")
     existing = conn.execute("SELECT id, is_template, version FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
@@ -649,7 +660,7 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
     prompt = bp["persona_prompt"]
     from .skill_source_service import pin_skills
     skill_refs = pin_skills(skills)
-    changes = {key: execution[key] for key in ("backend", "model", "mode", "think", "avatar",
+    changes = {key: execution[key] for key in ("backend", "model", "mode", "think", "avatar", "symbol",
         "include_system_prompt", "custom_system_prompt", "pause_after", "pause_minutes", "pause_basis") if key in execution}
     changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
         "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",

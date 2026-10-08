@@ -1,0 +1,6 @@
+.ticket-symbol {width:24px;height:24px;object-fit:contain;flex:none;vertical-align:middle}
+h3 .ticket-symbol {margin-right:.55rem}
+.symbol-picker {display:grid;grid-template-columns:repeat(auto-fit,minmax(42px,1fr));gap:.4rem;margin:.7rem 0}
+.symbol-choice {display:grid;place-items:center;padding:.55rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer}
+.symbol-choice[aria-pressed=true] {border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.symbol-choice:hover {border-color:var(--accent)}

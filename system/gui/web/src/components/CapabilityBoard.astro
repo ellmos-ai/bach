@@ -1,4 +1,6 @@
 ---
+import {TICKET_SYMBOL_URLS} from '../lib/ticket-symbol-assets.mjs';
+import '../styles/ticket-symbols.css';
 interface Props { board: 'skills' | 'plugins' | 'mcp' | 'software' }
 const {board} = Astro.props;
 const titles = {skills:'Skill-Zentrale',plugins:'Plugins',mcp:'MCP-Connections',software:'Software'};
@@ -15,7 +17,7 @@ const tabs = [
   {board:'software',label:'Software',href:'/skills/software'},
 ];
 ---
-<section id="capability-board" data-board={board}>
+<section id="capability-board" data-board={board} data-ticket-symbols={JSON.stringify(TICKET_SYMBOL_URLS)}>
   <header class="board-heading">
     <div><p class="board-eyebrow">Skills & Software</p><h1>{titles[board]}</h1><p>{descriptions[board]}</p></div>
     <div class="board-actions">
@@ -45,6 +47,7 @@ const tabs = [
   <label>Kennung<input id="skill-id" type="text" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,79}" required /></label>
   <p id="skill-source-info"></p>
   <label>Fassung als Vorlage<select id="skill-history"><option value="">Aktuelle Fassung</option></select></label>
+  <label>Symbol aus Ticket-Master<div id="skill-symbols" class="symbol-picker"></div></label>
   <label>Anleitung<textarea id="skill-content" rows="18" spellcheck="false"></textarea></label>
   <p class="editor-note">Die Versionsnummer steht im Kopf der Anleitung. Frühere Fassungen bleiben erhalten. Agenten mit einer älteren Skill-Bindung müssen nach einer Änderung neu eingerichtet werden.</p>
   <p id="skill-editor-status" role="status" aria-live="polite"></p>

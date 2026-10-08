@@ -34,7 +34,7 @@ _SAFE_TEXT_FIELDS = (
     "current_activity", "created_at", "expires_at",
 )
 _NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
-_BOOL_FIELDS = ("auto_paused",)
+_BOOL_FIELDS = ("auto_paused", "system", "deletable")
 _ALLOWED_CONTROL = {
     ("GET", "status"), ("GET", "auth/check"), ("GET", "workers"), ("GET", "system-slots"), ("GET", "activity"),
     ("GET", "models"), ("GET", "readiness"),
@@ -93,6 +93,14 @@ def _project_worker(raw: Any) -> dict[str, Any]:
         raise WorkerStatusUnavailable("Workerantwort enthält eine ungültige ID")
 
     item: dict[str, Any] = {"id": worker_id}
+    from hub._services.chat.slots_config import validate_agent_avatar
+    from hub._services.display_assets import validate_symbol
+    for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):
+        if field in raw:
+            try:
+                item[field] = validator(raw[field])
+            except ValueError:
+                item[field] = ""
     for field in _SAFE_TEXT_FIELDS:
         value = _text(raw.get(field), limit=240 if field == "current_activity" else 160)
         if value is not None:
@@ -248,7 +256,7 @@ def request_worker_handoff(worker_id: str, generation: str, *, device_token: str
 
 
 def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, Any]:
-    from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS, DEFAULT_ROLE_PROMPTS
+    from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS, DEFAULT_ROLE_PROMPTS, _validated_core_edits
     version = result.get("configuration_version")
     configuration = result.get("configuration")
     if (result.get("ok") is not True or result.get("id") != worker_id
@@ -263,7 +271,18 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
             if key == "task_id":
                 projected[key] = None
             continue
-        if key == "expert_models":
+        if key == "skill_refs":
+            from hub._services.skill_source_service import validate_skill_refs
+            try:
+                projected[key] = validate_skill_refs(value)
+            except ValueError as exc:
+                raise WorkerStatusUnavailable("Gespeicherte Skill-Bindung ist ungültig") from exc
+        elif key in {"avatar", "symbol", "allowed_tools"}:
+            try:
+                projected[key] = _validated_core_edits({key: value})[key]
+            except (ValueError, RuntimeError) as exc:
+                raise WorkerStatusUnavailable("Worker-Bild oder Capability-Konfiguration ist ungültig") from exc
+        elif key == "expert_models":
             if (not isinstance(value, dict) or len(value) > 10 or any(
                     role not in {*DEFAULT_ROLE_PROMPTS, "default"} or not isinstance(model, str)
                     or len(model) > 180 for role, model in value.items())):
@@ -281,7 +300,9 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
             if not isinstance(value, str) or len(value) > (20000 if key == "task_prompt" else 180) or "\x00" in value:
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
             projected[key] = value
-    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected}
+    from hub._services.skill_source_service import skill_binding_status
+    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
+            "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
 
 
 def read_worker_configuration(worker_id: str, *, device_token: str, timeout: float = 8.0):

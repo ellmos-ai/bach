@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Code-Klammern </> -->
+  <!-- Linke spitze Klammer < -->
+  <polyline points="20,18 8,32 20,46" stroke="#e2e4eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Rechte spitze Klammer > -->
+  <polyline points="44,18 56,32 44,46" stroke="#e2e4eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Schrägstrich / -->
+  <line x1="38" y1="14" x2="26" y2="50" stroke="#e2e4eb" stroke-width="3" stroke-linecap="round"/>
+</svg>

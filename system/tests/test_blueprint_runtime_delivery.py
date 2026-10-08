@@ -47,6 +47,25 @@ def test_update_requires_the_displayed_revision(state):
     assert state.execute('SELECT persona_prompt FROM agent_blueprints').fetchone()[0] == 'Aktuelle Revision'
 
 
+@pytest.mark.parametrize('execution', [None, {'avatar': 'https://bad'}, {'symbol': 'unknown'}])
+def test_blueprint_rejects_invalid_images_before_opening_write_transaction(state, execution):
+    with pytest.raises(ValueError):
+        save(state, contractus={'execution': execution})
+    assert not state.in_transaction
+    assert state.execute('SELECT count(*) FROM agent_blueprints').fetchone()[0] == 0
+
+
+def test_blueprint_portrait_and_symbol_are_copied_into_the_real_slot(state):
+    execution = {'backend': 'ollama', 'model': 'test-local', 'avatar': 'preset:researcher', 'symbol': 'topics_research'}
+    bp = save(state, contractus={'turns': 8, 'execution': execution})
+    saved = service._execution_blueprint(state, bp['id'], bp['version'])
+    copied = service.blueprint_slot_changes(saved, execution)
+    assert copied['avatar'] == 'preset:researcher' and copied['symbol'] == 'topics_research'
+    result = service.materialize_blueprint(state, bp['id'], expected_version=bp['version'], execution=execution,
+        configuration_version=slots.core_system_agents_snapshot()['configuration_version'])
+    assert slots.get_system_slot(result['slot_id'])['avatar'] == 'preset:researcher'
+
+
 def test_seeding_populated_db_is_additive_and_does_not_overwrite(state):
     bp = save(state)
     service.seed_default_blueprints(state)

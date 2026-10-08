@@ -1,8 +1,10 @@
 import {INVENTORIES, SKILL_ID, loadSkill, saveSkill, requestJson, confirmSkillReplacement} from './capability-board-client.mjs';
+import {createSymbol,mountSymbolPicker,withSkillSymbol} from './ticket-symbol.mjs';
 
 const board = document.getElementById('capability-board');
 if (board) {
   const kind = board.dataset.board;
+  const symbolUrls=JSON.parse(board.dataset.ticketSymbols);
   const byId = id => document.getElementById(id);
   const node = (tag, text, className) => {
     const element = document.createElement(tag);
@@ -29,7 +31,9 @@ if (board) {
     for (const item of visible) {
       const card = node('article', null, 'capability-card');
       card.dataset.id = item.id;
-      card.append(node('h3', item.name || item.id), node('p', item.description || 'Keine Beschreibung in der Quelle.'));
+      const title=node('h3',item.name||item.id);title.prepend(createSymbol(document,item.symbol,symbolUrls,
+        {skills:'wissen',plugins:'topics_ai',mcp:'scripts',software:'topics_software'}[kind]));
+      card.append(title, node('p', item.description || 'Keine Beschreibung in der Quelle.'));
       const meta = node('div', null, 'card-meta');
       if (kind !== 'mcp') meta.append(badge(item.version || 'Ohne Versionsnummer'));
       if (kind === 'skills') {
@@ -102,6 +106,16 @@ if (board) {
     byId('skill-history').disabled = value || !currentSource || currentSource.source_version === '0';
     byId('skill-reload').disabled = value || !currentSource || currentSource.source_version === '0';
     byId('skill-save').disabled = value || !currentSource;
+    for(const button of byId('skill-symbols').querySelectorAll('button'))button.disabled=value||!currentSource;
+  }
+  function drawSkillSymbols(source=currentSource) {
+    mountSymbolPicker(byId('skill-symbols'),source?.symbol,symbolUrls,value=>{
+      if(editorBusy||!currentSource)return;
+      try {
+        byId('skill-content').value=withSkillSymbol(byId('skill-content').value,value);
+        drawSkillSymbols({symbol:value});
+      } catch(error) {byId('skill-editor-status').textContent=error.message;}
+    },'wissen');
   }
   function describeSource() {
     byId('skill-source-info').textContent = currentSource?.source_version === '0' ? 'Neue lokale Anleitung. Eine bestehende Kennung wird nicht überschrieben.'
@@ -126,7 +140,7 @@ if (board) {
     try {
       const source = await loadSkill(id);
       if (generation !== editorGeneration) return;
-      currentSource = source; originalContent = source.content; byId('skill-content').value = source.content; describeSource();
+      currentSource = source; originalContent = source.content; byId('skill-content').value = source.content; describeSource();drawSkillSymbols();
       try { await loadHistory(); }
       catch (error) { byId('skill-editor-status').textContent = 'Aktuelle Fassung geladen. Historie nicht lesbar: ' + error.message; }
     } catch (error) { byId('skill-editor-status').textContent = 'Bearbeitung nicht freigegeben: ' + error.message; }
@@ -146,7 +160,7 @@ if (board) {
     byId('skill-editor-title').textContent = 'Neuer Skill'; byId('skill-id').value = '';
     byId('skill-content').value = originalContent; byId('skill-editor-status').textContent = '';
     byId('skill-history').replaceChildren(new Option('Aktuelle Fassung', ''));
-    describeSource(); busy(false); editor.showModal(); byId('skill-id').focus();
+    describeSource();drawSkillSymbols(); busy(false); editor.showModal(); byId('skill-id').focus();
   });
   byId('skill-reload').addEventListener('click', async () => {
     if (!currentSource || editorBusy) return;
@@ -154,7 +168,7 @@ if (board) {
     busy(true);
     try {
       currentSource = await loadSkill(currentSource.id); originalContent = currentSource.content;
-      byId('skill-content').value = originalContent; describeSource(); await loadHistory();
+      byId('skill-content').value = originalContent; describeSource();drawSkillSymbols(); await loadHistory();
       byId('skill-editor-status').textContent = 'Aktuelle Fassung geladen.';
     } catch (error) { byId('skill-editor-status').textContent = error.message; }
     finally { busy(false); }
@@ -171,6 +185,7 @@ if (board) {
       const source = revision ? await requestJson('/api/capabilities/skills/' + encodeURIComponent(currentSource.id) + '/history/' + encodeURIComponent(revision)) : currentSource;
       if (typeof source.content !== 'string' || (revision && source.source_version !== revision)) throw new Error('Historische Quelle konnte nicht bestätigt werden.');
       byId('skill-content').value = source.content;
+      drawSkillSymbols(source);
       selectedHistory = revision;
       byId('skill-editor-status').textContent = revision ? 'Frühere Fassung als Vorlage geladen. Speichern erzeugt die neue aktuelle Fassung.' : 'Geladene aktuelle Fassung wieder eingesetzt.';
     } catch (error) { byId('skill-history').value = selectedHistory; byId('skill-editor-status').textContent = error.message; }
@@ -183,7 +198,7 @@ if (board) {
     busy(true); byId('skill-editor-status').textContent = 'Quelle wird gespeichert und erneut gelesen …';
     try {
       currentSource = await saveSkill({...currentSource,id}, byId('skill-content').value);
-      originalContent = currentSource.content; describeSource();
+      originalContent = currentSource.content; describeSource();drawSkillSymbols();
       byId('skill-editor-title').textContent = 'Skill bearbeiten';
       byId('skill-editor-status').textContent = 'Gespeicherte aktuelle Fassung bestätigt.';
       try { await loadHistory(); } catch (error) { byId('skill-editor-status').textContent += ' Historie nicht geladen: ' + error.message; }
