@@ -75,6 +75,58 @@ def test_create_materialize_list_and_start_use_real_state(state):
     assert state.guard.call_count >= 5
 
 
+def test_native_catalog_survives_progress_but_keeps_current_runtime_state(state):
+    bp = create(state)
+    catalog = invoke(state, {"action": "list"})
+    slots.update_slot("buddha_boss", {"status": "running", "current_activity": "Werkzeug ausgeführt",
+                                      "current_tool": "agent_manage", "tool_round": 3})
+    config = slots.load_slots_config(state.path, strict=True)
+    config["activity_history"].append({"source": "buddha_boss", "activity": "Katalog gelesen"})
+    slots.save_slots_config(config, state.path)
+    configured = invoke(state, {"action": "materialize", "blueprint_id": bp["id"],
+        "expected_version": bp["version"], "configuration_version": catalog["configuration_version"],
+        "execution": {"backend": "ollama", "model": "owned-local", "mode": "safe"}})
+    current = slots.load_slots_config(state.path, strict=True)["slots"]["buddha_boss"]
+    assert current["status"] == "running" and current["tool_round"] == 3
+    catalog = invoke(state, {"action": "list"})
+    slots.update_slot("buddha_boss", {"current_tool": "task_manage", "tool_round": 4})
+    invoke(state, {"action": "start_local", "slot_id": configured["slot_id"],
+                   "configuration_version": catalog["configuration_version"]})
+    assert state.start.called
+
+
+@pytest.mark.parametrize("field,value", [
+    ("enabled", False), ("model", "changed-local"), ("backend", "openrouter"),
+    ("mode", "full"), ("allowed_tools", ["write_file"]), ("task_id", 7),
+    ("require_assigned_slot", True), ("pause_minutes", 17),
+    ("resolved_model", "model:cloud"), ("future_authority", {"policy": "changed"}),
+])
+def test_native_catalog_rejects_changed_authority(state, field, value):
+    bp = create(state)
+    catalog = invoke(state, {"action": "list"})
+    slots.update_slot("buddha_chat", {field: value})
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        invoke(state, {"action": "materialize", "blueprint_id": bp["id"],
+            "expected_version": bp["version"], "configuration_version": catalog["configuration_version"],
+            "execution": {"backend": "ollama", "model": "owned-local", "mode": "safe"}})
+    assert not slots.get_system_slot(f"system-blueprint-{bp['id']}")
+    state.start.assert_not_called()
+
+
+def test_prompt_and_dynamic_worker_authority_remain_versioned(state):
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    config = slots.load_slots_config(state.path, strict=True)
+    config.setdefault("prompts", {})["system_default"] = "Geänderte Anweisung"
+    slots.save_slots_config(config, state.path)
+    assert slots.core_system_agents_snapshot()["configuration_version"] != before
+    worker = slots.add_worker({"name": "Bound", "backend": "ollama", "model": "owned-local"}, state.path)
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    slots.update_slot(worker["id"], {"current_activity": "Fortschritt", "status": "running"})
+    assert slots.core_system_agents_snapshot()["configuration_version"] == before
+    slots.update_slot(worker["id"], {"allowed_tools": ["task_manage"]})
+    assert slots.core_system_agents_snapshot()["configuration_version"] != before
+
+
 def test_agent_cannot_edit_existing_blueprint_or_slot(state):
     bp, configured = configure(state)
     with pytest.raises(RuntimeError, match="version_conflict"):
