@@ -33,13 +33,14 @@ class _OwnedServer(ThreadingHTTPServer):
 
 class WorkerToolBridge:
     def __init__(self, binding, *, mode, bach_app=None, default_model=None, guard=None,
-                 allowed_tools=None):
+                 allowed_tools=None, agent_operations=None):
         if mode not in {"safe", "plan", "full"}:
             raise ValueError("Ungültiger Worker-Werkzeugmodus")
         self.binding = binding
         self._mode = mode
         self._provider = BachToolProvider(bach_app, default_model, worker_task_binding=binding,
-                                         require_task_binding=True, guard=guard, allowed_tools=allowed_tools)
+                                         require_task_binding=True, guard=guard, allowed_tools=allowed_tools,
+                                         agent_operations=agent_operations)
         self._token = secrets.token_urlsafe(32)
         self._closing = threading.Event()
         self._calls = threading.RLock()

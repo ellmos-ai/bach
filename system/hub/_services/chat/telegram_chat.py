@@ -206,6 +206,8 @@ class _WorkerControl:
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
     task_binding: Any = None
+    completed_task_ids: list[int] = field(default_factory=list)
+    reviewed_task_ids: list[int] = field(default_factory=list)
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     handoff: WorkerHandoff = field(init=False)
@@ -269,8 +271,20 @@ def _control_execution_receipt(control: _WorkerControl) -> dict:
             "worker_thread_started": (None if control.launch_attempted and not control.worker_thread_started
                                       and not terminal else control.worker_thread_started),
             "worker_status": status, "error_code": control.start_error,
-            "completed_task_ids": list(binding.completed_task_ids) if binding is not None else [],
-            "reviewed_task_ids": list(binding.reviewed_task_ids) if binding is not None else []}
+            "completed_task_ids": sorted(set(control.completed_task_ids) | (set(binding.completed_task_ids) if binding is not None else set())),
+            "reviewed_task_ids": sorted(set(control.reviewed_task_ids) | (set(binding.reviewed_task_ids) if binding is not None else set()))}
+
+
+def _retain_worker_task_receipts(control: _WorkerControl) -> None:
+    """Keep canonical Release ACKs before replacing the current task binding."""
+    binding = control.task_binding
+    if binding is None:
+        return
+    completed = tuple(binding.completed_task_ids)
+    reviewed = tuple(binding.reviewed_task_ids)
+    with _WORKER_CONTROL_LOCK:
+        control.completed_task_ids = sorted(set(control.completed_task_ids) | set(completed))
+        control.reviewed_task_ids = sorted(set(control.reviewed_task_ids) | set(reviewed))
 
 
 def _native_task_client():
@@ -315,7 +329,7 @@ def _execution_worker_configuration(slot: dict):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
              "custom_system_prompt", "custom_role_prompt", "role_id", "sub_mode",
-             "allowed_tools", "blueprint_id", "blueprint_version")}}
+              "allowed_tools", "skill_refs", "blueprint_id", "blueprint_version")}}
     return configuration
 
 
@@ -335,6 +349,8 @@ def _execution_slot_reader(slot: dict):
         current = _execution_worker_slot(worker_id)
         if policy(current) != admitted:
             raise RuntimeError("Worker-Konfiguration wurde seit dem Start geändert; neuer Start erforderlich")
+        from hub._services.skill_source_service import load_skill_instructions
+        load_skill_instructions(current.get("skill_refs", []))
         return current
     return read
 
@@ -974,6 +990,21 @@ try:
 except Exception as e:
     log.warning("Chat-SessionStore konnte nicht initialisiert werden: %s", e)
 
+def _native_agent_operations(args, *, mode, allowed_tools):
+    from hub.rheingold import get_lead_config
+    from hub._services.agent_manage_service import AgentManager
+    from hub._services.chat.bach_tools import _current_runtime_db
+    if get_lead_config().get("mode") != "lead":
+        raise RuntimeError("Agentenverwaltung benötigt den kanonischen Lead-Controller")
+    def local_provider(slot):
+        selected, _ = _snapshot_chat_backend(slot["id"], worker_slot=slot)
+        return ChatRuntime._uses_local_compute(selected)
+    manager = AgentManager(db_path=_current_runtime_db(),
+        execution_receipt=worker_execution_receipt, start_worker=start_worker_execution,
+        local_provider=local_provider)
+    return manager(args, mode=mode, allowed_tools=allowed_tools)
+
+
 runtime = ChatRuntime(
     backend=backend,
     system_prompt=system_prompt,
@@ -981,6 +1012,7 @@ runtime = ChatRuntime(
     memory_fn=_memory if HAS_BACH else None,
     injector=_injector if HAS_BACH else None,
     session_store=session_store,
+    agent_operations=_native_agent_operations,
 )
 
 _global_defaults = {
@@ -3309,6 +3341,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.supports_step_actions = not getattr(target_backend, "manages_own_tools", False)
 
                 if control.task_binding is None or control.task_binding.closed:
+                    _retain_worker_task_receipts(control)
                     if control.lease_supervisor is not None:
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
@@ -3402,6 +3435,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 # Only this run's authoritative Release/Decompose ACK
                 # may complete the task; legacy string receipts cannot.
                 completion_receipts = control.task_binding.completed_task_ids
+                _retain_worker_task_receipts(control)
                 task_completed = _worker_task_completed(current_slot, completion_receipts)
                 task_reviewed = control.task_binding.task_id in control.task_binding.reviewed_task_ids
                 if control.task_binding.closed and not task_completed and not task_reviewed:
@@ -4596,6 +4630,8 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 def start_control_api():
     try:
+        from hub._services.chat.slots_config import initialize_system_slots
+        initialize_system_slots()
         # Reconcile any frozen running worker states from previous process runs
         try:
             reconcile_workers(active_worker_ids=_active_worker_ids())

@@ -15,8 +15,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
 
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-      <a href="/agenten/fabrika" class="btn">
-        <span>🏭</span> Zur Agenten-Werkstatt
+      <a href="/agenten/blueprints?new=1" class="btn">
+        <span>＋</span> Blueprint anlegen
       </a>
       <a href="/agenten/blueprints" class="btn">
         <span>📐</span> Zu den Blueprints
@@ -33,12 +33,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
       <div>
         <h2 style="font-size:1.2rem;font-weight:700;margin:0 0 0.25rem 0;">🚀 Agenten & Teams in Betrieb nehmen</h2>
         <p style="font-size:0.825rem;color:var(--text-muted);margin:0;">
-          Zwei Pfade: Aus der Werkstatt abholen & vorbereiten oder maßgeschneiderte Einzelanfertigung erstellen.
+          Vorlage übernehmen oder einen eigenen Blueprint mit Rolle, Skills und Modell anlegen.
         </p>
       </div>
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
         <button class="btn btn-primary" onclick="openPickupWerkstattModal()">
-          <span>🏭</span> Aus Werkstatt abholen & vorbereiten
+          <span>🏭</span> Vorlage auswählen
         </button>
         <button class="btn" style="background:var(--bg-dark);border-color:var(--accent);" onclick="openOneOffModal()">
           <span>✨</span> Eigene Einzelanfertigung erstellen
@@ -164,7 +164,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
           Status und Besetzung der Systemsteckplätze sowie dynamisch aktive Worker
         </p>
       </div>
-      <span class="badge badge-accent">3 feste Systemslots + Erweiterungsplätze</span>
+      <span class="badge badge-accent">Systemagenten + eigene Steckplätze</span>
     </div>
 
     <!-- Systemsteckplätze (Persönlicher Assistent, Hintergrundworker, Connector, Erweiterungsplatz) -->
@@ -819,7 +819,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
           readyGrid.innerHTML = `
             <div style="grid-column:1/-1;text-align:center;padding:2rem;background:var(--bg-dark);border:1px dashed var(--border);border-radius:var(--radius-sm);">
               <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine einsatzbereiten Workerprofile vorhanden.</p>
-              <button class="btn btn-sm btn-primary" onclick="openPickupWerkstattModal()">+ Aus Werkstatt abholen</button>
+              <button class="btn btn-sm btn-primary" onclick="openPickupWerkstattModal()">+ Vorlage auswählen</button>
             </div>
           `;
         } else {
@@ -990,7 +990,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const teams = data.teams || [];
 
         if (teams.length === 0) {
-          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Teams vorhanden. Erstelle eines in der Werkstatt!</p>';
+          container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Teams vorhanden. Lege ein Team unter Blueprints an.</p>';
           return;
         }
 

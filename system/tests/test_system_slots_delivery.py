@@ -25,7 +25,8 @@ def config_file(tmp_path, monkeypatch):
 
 def test_system_defaults_include_transparent_personal_assistant(config_file):
     snapshot = slots.core_system_agents_snapshot()
-    assert len(snapshot["agents"]) == 3
+    assert len(snapshot["agents"]) == 6
+    assert {"buddha_boss", "buddha_developer", "buddha_research"} <= {a["id"] for a in snapshot["agents"]}
     assert all(agent["include_system_prompt"] for agent in snapshot["agents"])
     assert snapshot["agents"][0]["role_id"] == "personal-assistant"
     assert snapshot["prompt_templates"]["roles"]["personal-assistant"]

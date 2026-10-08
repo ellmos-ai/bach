@@ -481,6 +481,20 @@ BACH_COMMAND_HANDLERS = (
 )
 
 TOOLS_SAFE = [
+    _tool("agent_manage", "Agenten und Blueprints anlegen, als Living einrichten und lokale Worker starten. Cloud-Worker startet ausschließlich der Nutzer.", {
+        "action": {"type": "string", "enum": ["list", "blueprint_create", "materialize", "start_local"]},
+        "blueprint": {"type": "object", "description": "Neuer Blueprint mit name, title, persona_role, persona_prompt, skills, governance und expected_version=0"},
+        "blueprint_id": {"type": "integer"},
+        "expected_version": {"type": "integer"},
+        "configuration_version": {"type": "string", "description": "Aktuelle Konfigurationsversion aus action=list"},
+        "execution": {"type": "object", "description": "Expliziter Anbieter, Modell und Modus für den neuen Living-Steckplatz"},
+        "slot_id": {"type": "string"},
+    }, ["action"]),
+    _tool("skill_create", "SKILL.md als lokale Anleitung anlegen. Änderungen benötigen die aktuelle Quellenversion; Skills erteilen keine Werkzeugrechte.", {
+        "name": {"type": "string", "description": "Skill-ID"},
+        "content": {"type": "string", "description": "Vollständige SKILL.md mit Beschreibung und Ablauf"},
+        "source_version": {"type": "string", "description": "0 für eine neue ID; SHA256 für eine ausdrücklich gewünschte Änderung"},
+    }, ["name", "content", "source_version"]),
     _tool("list_directory", "Dateien und Ordner in einem Verzeichnis auflisten", {
         "path": {"type": "string", "description": "Verzeichnispfad"},
         "details": {"type": "boolean", "description": "Ausführlich mit Rechten und Größe"},
@@ -523,6 +537,9 @@ TOOLS_SAFE = [
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
         "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
+        "assigned_to": {"type": "string", "description": "Zuständige Fachrolle oder Agentenkennung"},
+        "assigned_slot": {"type": "string", "description": "Verfügbarer Steckplatz aus agent_manage action=list"},
+        "required_model": {"type": "string", "description": "Optionale feste Modellbindung"},
         "subtasks": {
             "type": "array",
             "items": {
@@ -531,7 +548,10 @@ TOOLS_SAFE = [
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "priority": {"type": "string"},
-                    "depends_on": {"type": "string"}
+                    "depends_on": {"type": "string"},
+                    "assigned_slot": {"type": "string"},
+                    "required_model": {"type": "string"},
+                    "assigned_to": {"type": "string"},
                 },
                 "required": ["title"]
             },
@@ -624,7 +644,7 @@ _NICHT_IM_PLAN = frozenset({
     # veraendern das Dateisystem
     "edit_file", "move_file", "copy_file", "recycle", "create_directory",
     # veraendern BACH-Zustand jenseits der Tasks
-    "bach_command", "maintain", "foerderbericht",
+    "bach_command", "maintain", "foerderbericht", "agent_manage", "skill_create",
     # startet einen fremden Agenten, der diese Grenze nicht kennt
     "delegate",
     # Worker-Git-Werkzeuge gehoeren nicht in den Planmodus
@@ -688,9 +708,24 @@ def _delegate_claude_api(prompt: str, api_key: str,
 
 # --- Tool-Ausführung ---
 
+def _task_route_fields(conn, payload):
+    """Persist requested dispatch bindings; an old schema must never ignore them."""
+    result = {key: payload[key] for key in ("assigned_slot", "required_model") if key in payload}
+    if any(not isinstance(value, str) or len(value) > 200 or "\x00" in value for value in result.values()):
+        raise ValueError("Task-Zuweisung benötigt gültige Textwerte")
+    if result:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if set(result) - columns:
+            raise ValueError("TaskDB unterstützt diese Steckplatz-Zuweisung noch nicht")
+    return result
+
+
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               default_model: str = "", *, worker_task_binding=None,
-              require_task_binding: bool = False) -> str:
+              require_task_binding: bool = False, agent_operations=None,
+              allowed_tools=None) -> str:
+    if allowed_tools is not None and name not in allowed_tools:
+        return "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben."
     if require_task_binding and worker_task_binding is None:
         return "Taskbindung fehlt; Werkzeug nicht ausgeführt."
     if worker_task_binding is not None:
@@ -712,6 +747,23 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return "BLOCKIERT: Worktree gehört nicht zur gebundenen Task."
 
     try:
+        if name in {"agent_manage", "skill_create"} and mode not in {"safe", "full"}:
+            return "BLOCKIERT: Agenten- und Skillverwaltung ist in diesem Modus nicht verfügbar."
+        if name == "agent_manage":
+            if agent_operations is None:
+                return "BLOCKIERT: Nativer Agentencontroller ist nicht angebunden."
+            grants = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=worker_task_binding is not None)}
+            if allowed_tools is not None:
+                grants &= set(allowed_tools)
+            return json.dumps(agent_operations(args, mode=mode, allowed_tools=grants), ensure_ascii=False)
+
+        if name == "skill_create":
+            if not isinstance(args, dict) or set(args) != {"name", "content", "source_version"}:
+                return "BLOCKIERT: Skill benötigt ID, vollständigen Inhalt und Quellenversion."
+            from hub._services.skill_source_service import save_skill
+            saved = save_skill(args["name"], args["content"], args["source_version"])
+            return json.dumps({k: v for k, v in saved.items() if k != "content"}, ensure_ascii=False)
+
         if name == "list_directory":
             # Kein Subprocess/Shell mehr (frueher: run_shell("ls ..." per
             # shell=True) mit shlex.quote() auf den Pfad - shlex.quote()
@@ -1013,13 +1065,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         prio = args.get("priority", "P3")
                         assignee = args.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        cur = conn.execute(
-                            "INSERT INTO tasks (title, description, category, depends_on, "
-                            "priority, status, assigned_to, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                            (title, args.get("description", ""), args.get("category", ""),
-                             args.get("depends_on", ""), prio, assignee, now, now)
-                        )
+                        values = {"title": title, "description": args.get("description", ""),
+                            "category": args.get("category", ""), "depends_on": args.get("depends_on", ""),
+                            "priority": prio, "status": "pending", "assigned_to": assignee,
+                            "created_at": now, "updated_at": now, **_task_route_fields(conn, args)}
+                        cur = conn.execute("INSERT INTO tasks (" + ", ".join(values) + ") VALUES ("
+                            + ", ".join("?" for _ in values) + ")", list(values.values()))
                         conn.commit()
                         zusatz = f" [{args['category']}]" if args.get("category") else ""
                         return f"Task #{cur.lastrowid} erstellt: {title} ({prio}){zusatz}"
@@ -1077,6 +1128,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
                             if fld in args and args[fld] is not None:
                                 updates[fld] = args[fld]
+                        updates.update(_task_route_fields(conn, args))
                         if not updates:
                             return "Keine Felder zum Aktualisieren angegeben"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1153,12 +1205,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             st_prio = st.get("priority", parent_dict.get("priority") or "P3")
                             st_dep = st.get("depends_on") or (str(prev_id) if (args.get("sequential") and prev_id) else "")
                             st_assignee = st.get("assigned_to") or assignee
-                            cur = conn.execute(
-                                "INSERT INTO tasks (title, description, category, depends_on, "
-                                "priority, status, assigned_to, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                                (st_title, st_desc, cat, st_dep, st_prio, st_assignee, now, now)
-                            )
+                            routing = {key: args[key] for key in ("assigned_slot", "required_model") if key in args}
+                            routing.update({key: st[key] for key in ("assigned_slot", "required_model") if key in st})
+                            values = {"title": st_title, "description": st_desc, "category": cat,
+                                "depends_on": st_dep, "priority": st_prio, "status": "pending",
+                                "assigned_to": st_assignee, "created_at": now, "updated_at": now,
+                                **_task_route_fields(conn, routing)}
+                            cur = conn.execute("INSERT INTO tasks (" + ", ".join(values) + ") VALUES ("
+                                + ", ".join("?" for _ in values) + ")", list(values.values()))
                             prev_id = cur.lastrowid
                             created_ids.append(prev_id)
                         if not created_ids:
@@ -1645,13 +1699,15 @@ class BachToolProvider:
     """
 
     def __init__(self, bach_app=None, default_model: Callable[[], str] | None = None,
-                 *, worker_task_binding=None, require_task_binding=False, guard=None, allowed_tools=None):
+                 *, worker_task_binding=None, require_task_binding=False, guard=None, allowed_tools=None,
+                 agent_operations=None):
         self.bach_app = bach_app
         self._default_model = default_model
         self._worker_task_binding = worker_task_binding
         self._require_task_binding = require_task_binding
         self._guard = guard
         self._allowed_tools = None if allowed_tools is None else frozenset(allowed_tools)
+        self._agent_operations = agent_operations
 
     def get_tools(self, mode) -> list[dict]:
         if self._guard is not None:
@@ -1699,4 +1755,6 @@ class BachToolProvider:
             default_model=self._default_model() if self._default_model else "",
             worker_task_binding=self._worker_task_binding,
             require_task_binding=self._require_task_binding,
+            agent_operations=self._agent_operations,
+            allowed_tools=self._allowed_tools,
         )

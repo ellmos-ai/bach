@@ -511,13 +511,14 @@ class ChatRuntime(_ModuleChatRuntime):
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
-                 session_store=None):
+                 session_store=None, agent_operations=None):
         self.backend = backend
         self.base_system = system_prompt
         self.bach_app = bach_app
         self.memory = memory_fn
         self.injector = injector
         self.session_store = session_store
+        self.agent_operations = agent_operations
         self.compute_gate = None
         self._sessions = {}
         self._session_locks = {}
@@ -541,7 +542,8 @@ class ChatRuntime(_ModuleChatRuntime):
             backend,
             system_prompt=system_prompt,
             store=_SnapshotStoreAdapter(self),
-            registry=BachToolProvider(bach_app, backend.get_default_model if hasattr(backend, "get_default_model") else None),
+            registry=BachToolProvider(bach_app, backend.get_default_model if hasattr(backend, "get_default_model") else None,
+                                      agent_operations=agent_operations),
             memory_fn=memory_fn,
             injector=injector,
         )
@@ -560,6 +562,8 @@ class ChatRuntime(_ModuleChatRuntime):
                     raise RuntimeError("Steckplatzkonfiguration hat sich während des Turns geändert")
                 session.allow_tools = system_slot.get("allow_tools", True) is True
                 session.allowed_tools = system_slot.get("allowed_tools")
+                from hub._services.skill_source_service import load_skill_instructions
+                load_skill_instructions(system_slot.get("skill_refs", []))
             except Exception as exc:
                 session.allow_tools = False
                 return FailedAnswer.from_exception(exc)
@@ -1050,10 +1054,12 @@ class ChatRuntime(_ModuleChatRuntime):
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
         if binding is not None and getattr(backend, "manages_own_tools", False):
+            agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
             return await backend.chat_bound(
                 *args, **kwargs, binding=binding, mode=session.mode,
                 guard=check_binding, bach_app=self.bach_app,
                 allowed_tools=getattr(session, "allowed_tools", None),
+                **agent_kwargs,
             )
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
@@ -1836,9 +1842,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = {}
+                if self.agent_operations is not None:
+                    tool_kwargs = {"agent_operations": self.agent_operations, "allowed_tools": grants}
                 if binding is not None or getattr(session, "require_task_binding", False):
-                    tool_kwargs = {"worker_task_binding": binding,
-                                   "require_task_binding": getattr(session, "require_task_binding", False)}
+                    tool_kwargs.update({"worker_task_binding": binding,
+                                   "require_task_binding": getattr(session, "require_task_binding", False)})
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,

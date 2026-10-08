@@ -78,7 +78,7 @@ def test_materialization_creates_a_real_slot_without_process_or_presence(state):
         materialize(state, bp)
     repeated = materialize(state, bp, terminal_verified=True)
     assert repeated['slot_id'] == result['slot_id']
-    assert len(slots.core_system_agents_snapshot()['agents']) == 4
+    assert len(slots.core_system_agents_snapshot()['agents']) == 7
 
 
 def test_materialization_stale_revision_and_stale_config_do_not_create_instances(state):
@@ -89,7 +89,7 @@ def test_materialization_stale_revision_and_stale_config_do_not_create_instances
     with pytest.raises(RuntimeError, match='configuration_version_conflict'):
         service.materialize_blueprint(state, bp['id'], expected_version=1,
             execution={'backend': 'ollama', 'model': 'test-local'}, configuration_version='a'*64)
-    assert len(slots.core_system_agents_snapshot()['agents']) == 3
+    assert len(slots.core_system_agents_snapshot()['agents']) == 6
 
 
 def test_no_dispatcher_cannot_fabricate_a_running_agent(state):

@@ -1087,7 +1087,7 @@ class CLIBackend(ModelBackend):
         }
 
     async def chat_bound(self, messages, tools=None, think=True, model=None, *,
-                         binding, mode, guard, bach_app=None, allowed_tools=None):
+                         binding, mode, guard, bach_app=None, allowed_tools=None, agent_operations=None):
         """One private invocation; never reuse a global CLI conversation.
 
         Codex remains denied until its complete tool/config isolation is
@@ -1099,7 +1099,7 @@ class CLIBackend(ModelBackend):
         guard()
         relay = WorkerToolBridge(binding, mode=mode, guard=guard, bach_app=bach_app,
                                  default_model=lambda: model or self.default_model,
-                                 allowed_tools=allowed_tools)
+                                 allowed_tools=allowed_tools, agent_operations=agent_operations)
         relay.__enter__()
         try:
             environment = relay.private_environment()

@@ -44,8 +44,15 @@ def client(tmp_path, monkeypatch):
     slots_path = str(tmp_path / "slots.json")
     slots_config.initialize_slots_config(slots_path)
     monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", slots_path)
-    monkeypatch.setattr(blueprint_service, "SKILLS_SEARCH_PATHS", [])
-    monkeypatch.setattr(skill_capabilities_service, "SKILLS_SEARCH_PATHS", [])
+    from hub._services import skill_source_service
+    skill_root = tmp_path / "skills"
+    user_skills = tmp_path / "local-skills"
+    monkeypatch.setenv("BACH_USER_SKILLS_ROOT", str(user_skills))
+    for skill_id in ("think", "decide"):
+        skill_file = skill_root / skill_id / "SKILL.md"
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("# " + skill_id + "\nPrüfe den nächsten Schritt.\n", encoding="utf-8")
+    monkeypatch.setattr(skill_source_service, "skill_roots", lambda: [user_skills, skill_root])
     from gui.api import core_system_agents
     monkeypatch.setattr(core_system_agents, "_snapshot", lambda: slots_config.core_system_agents_snapshot())
     for name in ("DOMAINS_ROOT", "TOOLS_ROOT", "MCP_ROOT", "CONTROL_ROOT",
@@ -64,6 +71,27 @@ def client(tmp_path, monkeypatch):
         unified_api._ensure_marblerun_tables(conn)
         conn.commit()
     return TestClient(app, headers={"Authorization": f"Bearer {token}"})
+
+
+def test_skill_editor_reads_current_source_and_saves_with_revision(client, monkeypatch):
+    from hub._services import skill_source_service as source
+    monkeypatch.setattr(source, "check_write_locks", lambda path: None)
+    route = "/api/capabilities/skills/think/source"
+    current = client.get(route)
+    assert current.status_code == 200 and "Prüfe den nächsten Schritt." in current.json()["content"]
+    payload = {"content": current.json()["content"] + "\nÄnderung prüfen.\n", "source_version": current.json()["source_version"]}
+    saved = client.put(route, json=payload)
+    assert saved.status_code == 200 and saved.json()["receipt"]["source_saved"] is True
+    assert client.get(route).json()["content"] == payload["content"]
+    assert client.put(route, json=payload).status_code == 409
+    assert client.get("/api/capabilities/skills/absent/source").status_code == 404
+    def blocked(path): raise PermissionError("Ungeprüft")
+    monkeypatch.setattr(source, "check_write_locks", blocked)
+    payload["source_version"] = saved.json()["source_version"]
+    assert client.put(route, json=payload).status_code == 423
+    unauthenticated = TestClient(app)
+    assert unauthenticated.get(route).status_code in {401, 403}
+    assert unauthenticated.put(route, json=payload).status_code in {401, 403}
 
 
 def test_agent_studio_blueprints(client):
