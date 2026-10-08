@@ -242,3 +242,74 @@ def test_chat_task_creation_update_and_decomposition_persist_slot_binding(tmp_pa
         rows = conn.execute("SELECT assigned_slot, required_model, depends_on FROM tasks ORDER BY id").fetchall()
     assert rows == [("buddha_research", "explicit-model", ""), ("buddha_research", None, ""),
         ("buddha_developer", "another-model", "2")]
+
+
+def test_materialize_race_cannot_validate_one_revision_and_use_another(state, monkeypatch):
+    bp = create(state)
+    original_connect = sqlite3.connect
+    class Connection:
+        def __init__(self, *args, **kwargs): self.conn = original_connect(*args, **kwargs)
+        def __enter__(self): return self
+        def __exit__(self, *args): return self.conn.__exit__(*args)
+        def __getattr__(self, name): return getattr(self.conn, name)
+        def execute(self, query, *args):
+            cursor = self.conn.execute(query, *args)
+            if query.startswith("SELECT governance_json"):
+                previous = cursor.fetchone()
+                with original_connect(state.database) as other:
+                    blueprint_service.save_blueprint(other, {"name": "created-expert", "title": "Eigene Expertin",
+                        "persona_prompt": "Prüfe den Auftrag.", "expected_version": 1,
+                        "governance": {"tool_whitelist": ["read_file", "write_file"]}})
+                return SimpleNamespace(fetchone=lambda: previous)
+            return cursor
+    monkeypatch.setattr(sqlite3, "connect", Connection)
+    with pytest.raises(RuntimeError, match="blueprint_version_conflict"):
+        invoke(state, {"action": "materialize", "blueprint_id": bp["id"], "expected_version": 2,
+            "configuration_version": slots.core_system_agents_snapshot()["configuration_version"],
+            "execution": {"backend": "ollama", "model": "local", "mode": "safe"}})
+    assert not slots.get_system_slot(f"system-blueprint-{bp['id']}")
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({"details": {"format": "safetensors"}, "model_info": {"general.parameter_count": 27800000000}}, True),
+    ({"details": {"format": "gguf"}, "model_info": {"general.parameter_count": 4}, "remote_host": "https://ollama.com"}, False),
+    ({"details": {"format": "gguf"}, "model_info": {"general.parameter_count": 4}, "remote_model": "paid-upstream"}, False),
+    ({}, False), ({"details": {"format": "gguf"}, "model_info": {}}, False),
+    ({"details": {"format": "unknown"}, "model_info": {"general.parameter_count": 4}}, False),
+    ([], False), (None, False)])
+def test_local_ollama_model_verification_uses_remote_metadata_even_for_renamed_alias(monkeypatch, payload, expected):
+    import httpx
+    from hub._services.agent_manage_service import verified_local_agent_model
+    from hub._services.llm.model_backend import OllamaBackend
+    request = Mock(return_value=SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload))
+    monkeypatch.setattr(httpx, "post", request)
+    assert verified_local_agent_model(OllamaBackend(base_url="http://localhost:11434"), "friendly-alias") is expected
+    assert request.call_args.kwargs["json"] == {"model": "friendly-alias"}
+    assert request.call_args.kwargs["follow_redirects"] is False
+
+
+def test_unknown_or_remote_provider_never_gets_an_agent_model_request(monkeypatch):
+    import httpx
+    from hub._services.agent_manage_service import verified_local_agent_model
+    from hub._services.llm.model_backend import OllamaBackend, OpenRouterBackend
+    request = Mock()
+    monkeypatch.setattr(httpx, "post", request)
+    assert not verified_local_agent_model(OllamaBackend(base_url="https://ollama.com"), "renamed")
+    assert not verified_local_agent_model(OllamaBackend(), "auto")
+    assert not verified_local_agent_model(OpenRouterBackend(api_key="fixture-only"), "openrouter/free")
+    request.assert_not_called()
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({"models": [{"key": "local", "type": "llm", "size_bytes": 1000000}]}, True),
+    ({"models": [{"key": "local", "type": "llm", "size_bytes": 0}]}, False),
+    ({"models": [{"key": "local", "type": "llm", "size_bytes": 1000000, "remote_model": "paid"}]}, False),
+    ({"models": []}, False)])
+def test_lmstudio_native_model_inventory_confirms_local_downloads(monkeypatch, payload, expected):
+    import httpx
+    from hub._services.agent_manage_service import verified_local_agent_model
+    from hub._services.llm.model_backend import LMStudioBackend
+    request = Mock(return_value=SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: payload))
+    monkeypatch.setattr(httpx, "get", request)
+    assert verified_local_agent_model(LMStudioBackend(), "local") is expected
+    assert request.call_args.args == ("http://localhost:1234/api/v1/models",)

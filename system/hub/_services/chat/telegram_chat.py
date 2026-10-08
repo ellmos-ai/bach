@@ -992,13 +992,13 @@ except Exception as e:
 
 def _native_agent_operations(args, *, mode, allowed_tools):
     from hub.rheingold import get_lead_config
-    from hub._services.agent_manage_service import AgentManager
+    from hub._services.agent_manage_service import AgentManager, verified_local_agent_model
     from hub._services.chat.bach_tools import _current_runtime_db
     if get_lead_config().get("mode") != "lead":
         raise RuntimeError("Agentenverwaltung benötigt den kanonischen Lead-Controller")
     def local_provider(slot):
-        selected, _ = _snapshot_chat_backend(slot["id"], worker_slot=slot)
-        return ChatRuntime._uses_local_compute(selected)
+        selected, model = _snapshot_chat_backend(slot["id"], worker_slot=slot, read_only=True)
+        return verified_local_agent_model(selected, model)
     manager = AgentManager(db_path=_current_runtime_db(),
         execution_receipt=worker_execution_receipt, start_worker=start_worker_execution,
         local_provider=local_provider)

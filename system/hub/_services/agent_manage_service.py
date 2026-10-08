@@ -10,8 +10,66 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from hub._services.skill_source_service import check_write_locks
+
+
+def verified_local_agent_model(backend, model: str) -> bool:
+    """Confirm actual local model metadata; a loopback proxy can serve cloud aliases."""
+    from hub._services.llm.model_backend import backend_identifier
+    import httpx
+    identifier = backend_identifier(backend)
+    base = str(getattr(backend, "base_url", ""))
+    parsed = urlsplit(base)
+    if (identifier not in {"ollama", "lmstudio"} or parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or not isinstance(model, str) or not model or model.lower() in {"auto", "default", "local-model"}):
+        return False
+    try:
+        if identifier == "ollama":
+            # Ollama ShowResponse: remote_host/remote_model identify remote models.
+            response = httpx.post(base.rstrip("/") + "/api/show", json={"model": model}, timeout=3,
+                                  follow_redirects=False)
+            response.raise_for_status()
+            item = response.json()
+            if not isinstance(item, dict) or item.get("remote_host") or item.get("remote_model"):
+                return False
+            details, info = item.get("details"), item.get("model_info")
+            return (isinstance(details, dict) and details.get("format") in {"gguf", "safetensors", "mlx"}
+                and isinstance(info, dict) and type(info.get("general.parameter_count")) is int
+                and info["general.parameter_count"] > 0)
+        native_path = parsed.path.rstrip("/").removesuffix("/v1")
+        origin = urlunsplit((parsed.scheme, parsed.netloc, native_path, "", ""))
+        key = getattr(backend, "api_key", "")
+        headers = {"Authorization": "Bearer " + key} if key else {}
+        response = httpx.get(origin + "/api/v1/models", headers=headers, timeout=3, follow_redirects=False)
+        if response.status_code == 404:
+            # Compatibility with LM Studio 0.3.6+; both endpoints list downloaded local models.
+            response = httpx.get(origin + "/api/v0/models", headers=headers, timeout=3, follow_redirects=False)
+            response.raise_for_status()
+            payload = response.json()
+            items = payload.get("data", []) if isinstance(payload, dict) else []
+            return isinstance(items, list) and any(isinstance(item, dict) and item.get("id") == model
+                and item.get("type") in {"llm", "vlm"} and item.get("state") in {"loaded", "not-loaded"}
+                and item.get("compatibility_type") in {"gguf", "mlx"}
+                and not item.get("remote_host") and not item.get("remote_model") for item in items)
+        response.raise_for_status()
+        payload = response.json()
+        items = payload.get("models", []) if isinstance(payload, dict) else []
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            if not isinstance(item, dict) or item.get("type") != "llm":
+                continue
+            instances = item.get("loaded_instances", [])
+            names = {item.get("key")} | {instance.get("id") for instance in instances if isinstance(instance, dict)}
+            if (model in names and type(item.get("size_bytes")) is int and item["size_bytes"] > 0
+                    and not item.get("remote_host") and not item.get("remote_model")):
+                return True
+        return False
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        return False
 
 
 class AgentManager:
@@ -80,9 +138,11 @@ class AgentManager:
             from hub._services.chat.slots_config import _resolve_path
             self.guard(_resolve_path(self.slots_path))
             with sqlite3.connect(self.db_path, timeout=5) as conn:
-                row = conn.execute("SELECT governance_json FROM agent_blueprints WHERE id=?", (blueprint_id,)).fetchone()
+                row = conn.execute("SELECT governance_json, version FROM agent_blueprints WHERE id=?", (blueprint_id,)).fetchone()
                 if not row:
                     raise KeyError("Blueprint fehlt")
+                if type(args["expected_version"]) is not int or args["expected_version"] != row[1]:
+                    raise RuntimeError("blueprint_version_conflict")
                 grants = json.loads(row[0] or "{}").get("tool_whitelist", ["read_file", "list_directory", "search_text", "task_manage"])
                 if not isinstance(grants, list) or any(tool not in allowed_tools for tool in grants):
                     raise PermissionError("Blueprint überschreitet die Werkzeugrechte seines Erstellers")
@@ -104,7 +164,8 @@ class AgentManager:
                 slot = {**worker, "execution_kind": "worker"} if worker else {}
             if (not slot or slot.get("execution_kind") != "worker" or slot.get("enabled", True) is not True
                     or slot.get("backend") not in {"ollama", "lmstudio"}
-                    or not slot.get("model") or ":cloud" in str(slot.get("model")).lower()
+                    or not slot.get("model") or str(slot.get("model")).lower() in {"auto", "default", "local-model"}
+                    or ":cloud" in str(slot.get("model")).lower()
                     or ":cloud" in str(slot.get("resolved_model", "")).lower()):
                 raise PermissionError("Agenten starten ausschließlich verfügbare lokale Worker")
             if slot.get("mode", "safe") not in {"safe", mode}:

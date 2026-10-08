@@ -318,13 +318,13 @@ class WorkerLeaseBinding:
                     close_parent = False
                 else:
                     allowed = {"action", "task_id", "subtasks", "close_parent", "sequential",
-                               "category", "assigned_to"}
+                               "category", "assigned_to", "assigned_slot", "required_model"}
                     if set(args) - allowed:
                         raise LeaseProtocolError("Unbekannte Zerlegungsfelder")
                     subtasks = args.get("subtasks")
                     close_parent = args.get("close_parent", True)
                     if isinstance(subtasks, list):
-                        subtasks = [{**{key: args[key] for key in ("category", "assigned_to")
+                        subtasks = [{**{key: args[key] for key in ("category", "assigned_to", "assigned_slot", "required_model")
                                        if key in args}, **item} if isinstance(item, dict) else item
                                     for item in subtasks]
                 previous_version = self._snapshot["task_version"]

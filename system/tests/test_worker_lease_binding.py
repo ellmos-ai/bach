@@ -107,6 +107,16 @@ def test_add_uses_parent_fenced_decomposition_without_completion_receipt(binding
     assert binding.task_snapshot()["task_version"] != previous
 
 
+def test_bound_decomposition_inherits_top_level_routing_and_preserves_child_overrides(binding, mem_db):
+    result = binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
+        "assigned_slot": "buddha_research", "required_model": "chosen-model", "close_parent": False,
+        "subtasks": [{"title": "Recherche"}, {"title": "Umsetzung", "assigned_slot": "buddha_developer"}]})
+    assert "in 2 Teilaufgaben" in result
+    rows = mem_db.execute("SELECT assigned_slot, required_model FROM tasks WHERE id<>? ORDER BY id", (binding.task_id,)).fetchall()
+    assert [tuple(row) for row in rows] == [("buddha_research", "chosen-model"), ("buddha_developer", "chosen-model")]
+    assert not binding.closed
+
+
 def test_stopped_worker_can_return_lease_without_completion_receipt(binding):
     binding._stop_event.set()
     assert binding.return_lease()

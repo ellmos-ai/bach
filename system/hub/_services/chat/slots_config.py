@@ -945,6 +945,14 @@ def system_worker_at_version(slot_id: str, expected_version: str,
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     slot = config["slots"].get(slot_id)
+    dynamic = [worker for worker in config.get("dynamic_workers", []) if worker.get("id") == slot_id]
+    if dynamic:
+        if slot is not None or slot_id in DEFAULT_CORE_SLOTS or len(dynamic) != 1:
+            raise ValueError("Worker ist nicht eindeutig vorhanden")
+        worker = dynamic[0]
+        if worker.get("type") not in {"once", "continuous", "persistent"}:
+            raise ValueError("Worker-Laufbegrenzung ist ungültig")
+        return dict(worker)
     if (not isinstance(slot, dict) or slot.get("id") != slot_id
             or (slot_id != "buddha_always_on" and
                 (slot.get("system") is not True or slot.get("execution_kind") != "worker"))
