@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Gamepad / Controller -->
+  <!-- Gehäuse -->
+  <path d="M10 26 Q8 26 8 32 L10 46 Q11 52 18 52 L24 48 Q28 46 32 46 Q36 46 40 48 L46 52 Q53 52 54 46 L56 32 Q56 26 54 26 Z" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Linkes D-Pad -->
+  <line x1="20" y1="30" x2="20" y2="42" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round"/>
+  <line x1="14" y1="36" x2="26" y2="36" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round"/>
+  <!-- Rechte Tasten (ABXY) -->
+  <circle cx="44" cy="34" r="3" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="38" cy="40" r="3" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="50" cy="40" r="3" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="44" cy="46" r="3" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Mitteltaste -->
+  <circle cx="32" cy="38" r="3" stroke="#e2e4eb" stroke-width="1.5" fill="#e2e4eb" opacity="0.3"/>
+  <!-- Schultertasten -->
+  <path d="M10 28 Q14 20 22 22" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round"/>
+  <path d="M54 28 Q50 20 42 22" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round"/>
+</svg>

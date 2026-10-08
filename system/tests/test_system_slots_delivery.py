@@ -77,6 +77,18 @@ def test_avatar_is_bounded_and_rejects_active_or_invalid_formats(bad):
         slots.validate_agent_avatar(bad)
 
 
+def test_slot_symbol_and_portrait_roundtrip_use_configuration_cas(config_file):
+    before = slots.core_system_agents_snapshot()
+    result = slots.change_core_system_agent("buddha_chat", before["configuration_version"],
+                                            {"avatar": "preset:companion", "symbol": "topics_ai"})
+    item = next(item for item in result["agents"] if item["id"] == "buddha_chat")
+    assert (item["avatar"], item["symbol"]) == ("preset:companion", "topics_ai")
+    with pytest.raises(RuntimeError, match="conflict"):
+        slots.change_core_system_agent("buddha_chat", before["configuration_version"], {"symbol": "wissen"})
+    with pytest.raises(ValueError, match="Symbol"):
+        slots.change_core_system_agent("buddha_chat", result["configuration_version"], {"symbol": "https://bad"})
+
+
 def test_slot_chat_identity_keeps_profile_and_slot_separate():
     suffix = "a" * 32
     assert slots.system_slot_chat_id("slot:buddha_chat:" + suffix) == "buddha_chat"
@@ -378,3 +390,10 @@ def test_unknown_ordinary_chat_does_not_require_a_second_worker_authority(tmp_pa
     monkeypatch.setattr(control, "get_worker_slot", lambda ident: {})
     assert control._execution_worker_slot("api-delegate") == {}
     assert not absent.exists()
+
+
+@pytest.mark.parametrize("preset", ["companion", "guardian", "connector", "coordinator", "engineer", "researcher"])
+def test_portrait_preset_is_valid_but_arbitrary_asset_paths_are_not(preset):
+    assert slots.validate_agent_avatar("preset:" + preset) == "preset:" + preset
+    for value in ("preset:unknown", "/_astro/foreign.png", "https://example.org/image.png"):
+        with pytest.raises(ValueError): slots.validate_agent_avatar(value)

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Top server unit -->
+  <rect x="10" y="10" width="44" height="12" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="46" cy="16" r="2.5" fill="#e2e4eb"/>
+  <line x1="16" y1="16" x2="36" y2="16" stroke="#e2e4eb" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Middle server unit -->
+  <rect x="10" y="26" width="44" height="12" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="46" cy="32" r="2.5" fill="#e2e4eb"/>
+  <line x1="16" y1="32" x2="36" y2="32" stroke="#e2e4eb" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Bottom server unit -->
+  <rect x="10" y="42" width="44" height="12" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="46" cy="48" r="2.5" fill="#e2e4eb"/>
+  <line x1="16" y1="48" x2="36" y2="48" stroke="#e2e4eb" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Small indicator dots -->
+  <circle cx="40" cy="16" r="1.5" stroke="#e2e4eb" stroke-width="1.5"/>
+  <circle cx="40" cy="32" r="1.5" stroke="#e2e4eb" stroke-width="1.5"/>
+  <circle cx="40" cy="48" r="1.5" stroke="#e2e4eb" stroke-width="1.5"/>
+</svg>

@@ -22,6 +22,17 @@ def test_catalog_uses_real_version_and_excludes_archive(tmp_path):
     assert len(catalog["example"]["source_version"]) == 64
 
 
+def test_skill_symbol_is_current_source_metadata_and_part_of_historical_version(tmp_path, monkeypatch):
+    own = tmp_path / 'own'
+    monkeypatch.setenv('BACH_USER_SKILLS_ROOT', str(own))
+    first = '---\nname: Grüße\nsymbol: wissen\n---\n# Inhalt\n'
+    saved = source.save_skill('example', first, '0', roots=[], write_root=own, guard=lambda p: None)
+    assert saved['symbol'] == 'wissen'
+    source.save_skill('example', first.replace('wissen', 'scripts'), saved['source_version'],
+                      roots=[own], write_root=own, guard=lambda p: None)
+    assert source.read_skill_history('example', saved['source_version'])['symbol'] == 'wissen'
+
+
 def test_pinned_skill_content_is_in_actual_worker_prompt(tmp_path, monkeypatch):
     root = tmp_path / "skills"
     make_skill(root, text="Nutze echte Umlaute: ä ö ü ß.\n")

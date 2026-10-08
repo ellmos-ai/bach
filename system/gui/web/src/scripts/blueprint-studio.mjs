@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 // One editor for the former factory and the real blueprint/controller contracts.
+import {createAvatar,mountAvatarPicker} from '../lib/agent-avatar.mjs';
+import {createSymbol,mountSymbolPicker} from '../lib/ticket-symbol.mjs';
 export const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
 export function blueprintState(blueprint) {
@@ -47,13 +49,15 @@ function initializeStudio() {
   const $ = id => document.getElementById(id);
   const state = {blueprints:[], teams:[], skills:[], tools:[], contracts:[], governance:[], core:null,
     prompts:null, library:"custom", edit:null, instance:null, instanceVersion:null, instanceConfig:null, promptVersion:null,
-    team:null, avatar:"", modelRequest:0};
+    team:null, avatar:"", symbol:"", modelRequest:0};
   const labels = {agent:"Agent",role:"Rolle",skill:"Skill-Vorlage",workflow:"Workflow-Vorlage",service:"Service-Vorlage",contractus:"Arbeitsvertrag"};
   const icons = {agent:"🤖",role:"🎭",skill:"🧩",workflow:"⛓",service:"⚙",contractus:"📜"};
   const notify = (id,text,error=false) => { $(id).textContent=text; $(id).dataset.error=String(error); };
   const close = id => $(id).close();
   const byId = id => state.blueprints.find(bp => Number(bp.id) === Number(id));
   const currentLocal = () => state.core?.agents?.find(slot => slot.id === "buddha_chat") || {};
+  const atlasUrl = $("studio-portrait-source").dataset.portraitAtlas;
+  const symbolUrls=JSON.parse($("studio-portrait-source").dataset.ticketSymbols);
   async function api(path, options={}) {
     const response = await fetch(path, {...options,headers:{"Content-Type":"application/json",...options.headers}});
     let data; try { data = await response.json(); } catch { throw new Error("Antwort nicht lesbar (HTTP "+response.status+")"); }
@@ -85,10 +89,7 @@ function initializeStudio() {
       [bp.title,bp.name,bp.description,bp.persona_role].join(" ").toLocaleLowerCase("de").includes(query));
     $("studio-grid").innerHTML=items.map(bp=>{
       const id=Number(bp.id), slot=bp.instance, canExecute=["agent","role"].includes(bp.kind);
-      const avatar=slot?.avatar||bp.contractus?.execution?.avatar;
-      const image=typeof avatar==="string"&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar)
-        ? '<img class="studio-card-avatar" alt="" src="'+escapeHtml(avatar)+'" />'
-        : '<span class="studio-card-icon" aria-hidden="true">'+icons[bp.kind]+'</span>';
+      const image=canExecute?'<span data-portrait-blueprint="'+id+'"></span>':'<span data-symbol-blueprint="'+id+'"></span>';
       const model=slot?.model||bp.contractus?.execution?.model;
       return '<article class="studio-card"><div class="studio-card-top">'+image+'<span class="studio-state" data-running="'+String(slot?.running===true)+'">'+escapeHtml(blueprintState(bp))+'</span></div>'+
         '<div><h3>'+escapeHtml(bp.title||bp.name)+'</h3><p>'+escapeHtml(bp.description||bp.persona_role||labels[bp.kind])+'</p></div>'+
@@ -100,6 +101,15 @@ function initializeStudio() {
         (slot&&slot.runtime_verified===true&&slot.running===false&&slot.enabled!==false?'<button class="btn btn-primary" data-start="'+id+'">'+startLabel(slot)+'</button>':"")+
         (!bp.is_template&&!slot?'<button class="btn" data-delete="'+id+'">Entfernen</button>':"")+'</div></article>';
     }).join("") || '<div class="studio-empty">'+(query||kind?"Keine passenden Blueprints.":"Noch keine eigenen Blueprints. Lege einen an oder übernimm eine Vorlage.")+'</div>';
+    for(const target of $("studio-grid").querySelectorAll('[data-portrait-blueprint]')) {
+      const bp=byId(target.dataset.portraitBlueprint),slot=bp.instance;
+      target.replaceChildren(createAvatar(document,slot?.avatar||bp.contractus?.execution?.avatar,slot||bp,atlasUrl,'studio-card-avatar'));
+    }
+    for(const target of $("studio-grid").querySelectorAll('[data-symbol-blueprint]')) {
+      const bp=byId(target.dataset.symbolBlueprint);
+      target.replaceChildren(createSymbol(document,bp.contractus?.execution?.symbol,symbolUrls,
+        {skill:'wissen',workflow:'scripts',service:'server',contractus:'office'}[bp.kind]||'topics_ai'));
+    }
   }
   async function loadData() {
     notify("studio-status","Bibliothek wird geladen…");
@@ -117,12 +127,17 @@ function initializeStudio() {
     const roles=Object.keys(state.prompts?.prompts||{}).filter(key=>key.startsWith("role_")).map(key=>({value:key.slice(5),label:key.slice(5).replaceAll("_"," ")}));
     selectOptions($("bp-role"),[{value:"task_worker",label:"Eigene Rolle"},...roles],value||"personal-assistant");
   }
-  function drawAvatar() {const image=$("bp-avatar-preview");image.hidden=!state.avatar; if(state.avatar)image.src=state.avatar;else image.removeAttribute("src");}
+  function drawAvatar() {
+    const identity={persona_role:$("bp-role").value};
+    $("bp-avatar-preview").replaceChildren(createAvatar(document,state.avatar,identity,atlasUrl,'agent-avatar-preview'));
+    mountAvatarPicker($("bp-avatar-presets"),state.avatar,identity,atlasUrl,value=>{state.avatar=value;drawAvatar();});
+    mountSymbolPicker($("bp-symbols"),state.symbol,symbolUrls,value=>{state.symbol=value;drawAvatar();});
+  }
   function editorPayload() {
     const previous=state.edit||{};
     const execution={backend:$("bp-backend").value,model:$("bp-model").value.trim(),mode:$("bp-mode").value,
       think:$("bp-think").checked,include_system_prompt:$("bp-include-system").checked,
-      custom_system_prompt:$("bp-system").value,avatar:state.avatar,
+      custom_system_prompt:$("bp-system").value,avatar:state.avatar,symbol:state.symbol,
       pause_after:Number($("bp-pause-after").value),pause_minutes:Number($("bp-pause-minutes").value),pause_basis:$("bp-pause-basis").value};
     return {name:$("bp-name").value.trim().toLowerCase(),title:$("bp-title").value.trim(),kind:$("bp-kind").value,
       description:$("bp-description").value,persona_role:$("bp-role").value,persona_prompt:$("bp-persona").value,
@@ -147,7 +162,7 @@ function initializeStudio() {
     $("bp-turns").value=bp.contractus?.turns||bp.contractus?.max_turns||20;
     $("bp-pause-after").value=config.pause_after??5;$("bp-pause-minutes").value=config.pause_minutes??1;
     choose($("bp-pause-basis"),config.pause_basis||"runs");choose($("bp-modus"),bp.modus||"casualis");
-    state.avatar=config.avatar||"";drawAvatar();
+    state.avatar=config.avatar||"";state.symbol=config.symbol||"";drawAvatar();
     selectOptions($("bp-contractus-preset"),[{value:"",label:"Eigener Arbeitsvertrag"},...state.contracts.map(p=>({value:p.id,label:p.title,disabled:p.execution_supported===false}))],"");
     selectOptions($("bp-governance"),state.governance.map(p=>({value:p.id,label:p.name})),bp.governance?.profile||"fail_closed_standard");
     const skillItems=state.skills.map(skill=>({id:skill.id,name:skill.name||skill.id,description:skill.evidence_type==="filesystem_present"?"Dateisystem · "+(skill.category||""):"Katalogeintrag · Installation nicht bestätigt"}));
@@ -225,7 +240,7 @@ function initializeStudio() {
     if(attr==="edit")openEditor(bp);else if(attr==="copy")openEditor(bp,true);else if(attr==="instance")await openInstance(bp);else if(attr==="start")await runBlueprint(bp,button);
     else if(confirm("Blueprint „"+(bp.title||bp.name)+"“ entfernen?")){await api("/api/agent-studio/blueprints/"+bp.id+"?expected_version="+encodeURIComponent(bp.version),{method:"DELETE"});await loadData();}
   });
-  handle("bp-role","change",()=>{const prompt=state.prompts?.prompts?.["role_"+$("bp-role").value]?.effective;if(prompt)$("bp-persona").value=prompt;},"editor-status");
+  handle("bp-role","change",()=>{const prompt=state.prompts?.prompts?.["role_"+$("bp-role").value]?.effective;if(prompt)$("bp-persona").value=prompt;drawAvatar();},"editor-status");
   handle("bp-include-system","change",()=>{$("bp-system").disabled=!$("bp-include-system").checked;},"editor-status");
   handle("bp-backend","change",()=>loadModels("bp"),"editor-status");
   handle("bp-skill-search","input",()=>{const query=$("bp-skill-search").value.toLowerCase();$("bp-skills").querySelectorAll("label").forEach(label=>label.hidden=!label.textContent.toLowerCase().includes(query));},"editor-status");

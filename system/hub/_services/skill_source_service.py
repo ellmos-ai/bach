@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from hub._services.user_config_store import _exclusive_lock
+from hub._services.display_assets import TICKET_SYMBOL_IDS
 
 SKILL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 REVISION = re.compile(r"^[a-f0-9]{64}$")
@@ -107,6 +108,7 @@ def source_catalog(roots: list[Path] | None = None) -> dict[str, dict]:
                 "category": str(meta.get("category") or (parent.parent.name if parent.parent != root else "general")),
                 "role": str(meta.get("description") or "")[:300],
                 "version": str(meta.get("version") or "ohne Versionsnummer"),
+                "symbol": meta.get("symbol") if isinstance(meta.get("symbol"), str) and meta["symbol"] in TICKET_SYMBOL_IDS else "",
                 "source_version": hashlib.sha256(data).hexdigest(),
                 "evidence_type": "filesystem_present", "source_kind": "local_override" if root == user_skills_root() else "factory",
                 "path": path, "root": root,
@@ -156,8 +158,10 @@ def read_skill_history(skill_id: str, revision: str) -> dict:
     raw = _source_bytes(path, root)
     if hashlib.sha256(raw).hexdigest() != revision:
         raise ValueError("Skill-Historie stimmt nicht mit ihrer Quellenversion überein")
+    meta = _metadata(raw.decode("utf-8"))
     return {"id": skill_id, "source_version": revision, "content": raw.decode("utf-8"),
-            "version": str(_metadata(raw.decode("utf-8")).get("version") or "ohne Versionsnummer"),
+            "version": str(meta.get("version") or "ohne Versionsnummer"),
+            "symbol": meta.get("symbol") if isinstance(meta.get("symbol"), str) and meta["symbol"] in TICKET_SYMBOL_IDS else "",
             "archived_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
 
 

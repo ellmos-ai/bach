@@ -254,10 +254,15 @@ SYSTEM_SLOT_PRESETS = {
     "assistant": {"name": "Persönlicher Assistent", "role_id": "personal-assistant", "icon": "💬"},
 }
 
+AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset:connector",
+                                "preset:coordinator", "preset:engineer", "preset:researcher"})
+
 
 def validate_agent_avatar(value: Any) -> str:
     if value == "":
         return ""
+    if isinstance(value, str) and value in AGENT_AVATAR_PRESETS:
+        return value
     if not isinstance(value, str) or len(value) > 240_000:
         raise ValueError("Agentenbild ist zu groß")
     match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)", value)
@@ -659,7 +664,7 @@ CORE_SYSTEM_AGENT_ICONS = {
     "buddha_connector": "📱",
 }
 CORE_EDITABLE_FIELDS = frozenset({
-    "name", "icon", "backend", "model", "mode", "think",
+    "name", "icon", "symbol", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
@@ -699,6 +704,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "name": slot.get("name", defaults["name"]),
             "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")),
             "avatar": slot.get("avatar", ""),
+            "symbol": slot.get("symbol", ""),
             "description": slot.get("description", defaults["description"]),
             "execution_kind": ("worker" if slot_id == "buddha_always_on" else
                                "connector" if slot_id == "buddha_connector" else
@@ -798,6 +804,9 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
         elif field == "avatar":
             value = validate_agent_avatar(value)
+        elif field == "symbol":
+            from hub._services.display_assets import validate_symbol
+            value = validate_symbol(value)
         elif field in {"description", "custom_system_prompt", "custom_role_prompt"}:
             if not isinstance(value, str) or len(value) > 20000 or "\x00" in value:
                 raise ValueError(f"{field} enthält ungültigen Text")
@@ -1288,6 +1297,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
 
     worker = {
         "id": worker_id,
+        "avatar": validate_agent_avatar(worker_data.get("avatar", "")),
+        "symbol": _validated_core_edits({"symbol": worker_data.get("symbol", "")})["symbol"],
         "name": name,
         "role": role,
         "backend": backend,
@@ -1401,7 +1412,7 @@ def record_activity(
 
 
 WORKER_EDITABLE_FIELDS = frozenset({
-    "name", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
     "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -1444,7 +1455,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():
-        if field in {"allowed_tools", "skill_refs"}:
+        if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:
             edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
             raise ValueError(f"{field} muss wahr oder falsch sein")

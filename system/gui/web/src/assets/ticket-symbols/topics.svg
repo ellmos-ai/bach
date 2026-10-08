@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Ordner-Baum / Sitemap -->
+  <!-- Wurzel-Knoten -->
+  <rect x="26" y="8" width="12" height="8" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Verbindungslinie vertikal -->
+  <line x1="32" y1="16" x2="32" y2="26" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Horizontale Linie -->
+  <line x1="16" y1="26" x2="48" y2="26" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Linker Zweig -->
+  <line x1="16" y1="26" x2="16" y2="34" stroke="#e2e4eb" stroke-width="2"/>
+  <rect x="10" y="34" width="12" height="8" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Mittlerer Zweig -->
+  <line x1="32" y1="26" x2="32" y2="34" stroke="#e2e4eb" stroke-width="2"/>
+  <rect x="26" y="34" width="12" height="8" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Rechter Zweig -->
+  <line x1="48" y1="26" x2="48" y2="34" stroke="#e2e4eb" stroke-width="2"/>
+  <rect x="42" y="34" width="12" height="8" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Blatt-Knoten unter links -->
+  <line x1="16" y1="42" x2="16" y2="50" stroke="#e2e4eb" stroke-width="2"/>
+  <rect x="10" y="50" width="12" height="6" rx="1" fill="#e2e4eb" opacity="0.4"/>
+  <!-- Blatt-Knoten unter mitte -->
+  <line x1="32" y1="42" x2="32" y2="50" stroke="#e2e4eb" stroke-width="2"/>
+  <rect x="26" y="50" width="12" height="6" rx="1" fill="#e2e4eb" opacity="0.4"/>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Zahnrad -->
+  <path d="M32 20a12 12 0 1 0 0 24 12 12 0 0 0 0-24z" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="32" cy="32" r="4" fill="#e2e4eb"/>
+  <!-- Zahnrad-Zähne -->
+  <rect x="30" y="8" width="4" height="6" rx="1" fill="#e2e4eb"/>
+  <rect x="30" y="50" width="4" height="6" rx="1" fill="#e2e4eb"/>
+  <rect x="8" y="30" width="6" height="4" rx="1" fill="#e2e4eb"/>
+  <rect x="50" y="30" width="6" height="4" rx="1" fill="#e2e4eb"/>
+  <rect x="14.1" y="14.1" width="6" height="4" rx="1" transform="rotate(45 17.1 16.1)" fill="#e2e4eb"/>
+  <rect x="43.9" y="43.9" width="6" height="4" rx="1" transform="rotate(45 46.9 45.9)" fill="#e2e4eb"/>
+  <rect x="43.9" y="14.1" width="6" height="4" rx="1" transform="rotate(-45 46.9 16.1)" fill="#e2e4eb"/>
+  <rect x="14.1" y="43.9" width="6" height="4" rx="1" transform="rotate(-45 17.1 45.9)" fill="#e2e4eb"/>
+  <!-- Terminal-Prompt -->
+  <path d="M20 38 l5-3-5-3" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="27" y1="38" x2="34" y2="38" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round"/>
+</svg>

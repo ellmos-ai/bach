@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Mikroskop -->
+  <!-- Okular oben -->
+  <rect x="28" y="6" width="8" height="5" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Tubus -->
+  <line x1="32" y1="11" x2="32" y2="24" stroke="#e2e4eb" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Arm schräg -->
+  <line x1="32" y1="24" x2="26" y2="34" stroke="#e2e4eb" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Objektiv -->
+  <circle cx="26" cy="37" r="4" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Probentisch -->
+  <line x1="16" y1="42" x2="40" y2="42" stroke="#e2e4eb" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Säule / Stativ -->
+  <line x1="26" y1="42" x2="26" y2="52" stroke="#e2e4eb" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Fuß -->
+  <line x1="16" y1="54" x2="42" y2="54" stroke="#e2e4eb" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Reagenzglas rechts -->
+  <rect x="46" y="12" width="6" height="22" rx="3" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Flüssigkeit im Reagenzglas -->
+  <rect x="47" y="26" width="4" height="7" rx="2" fill="#e2e4eb" opacity="0.5"/>
+  <!-- Bläschen -->
+  <circle cx="49" cy="22" r="1" fill="#e2e4eb" opacity="0.7"/>
+  <circle cx="51" cy="19" r="0.8" fill="#e2e4eb" opacity="0.5"/>
+</svg>

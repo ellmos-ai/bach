@@ -1,6 +1,10 @@
 ---
 // running.astro - Living & Running: Einsatzbereite Agenten, Teams, Running Slots & Konnektivität
 import BachLayout from "../../layouts/BachLayout.astro";
+import portraitAtlas from '../../assets/agent-portraits.png';
+import '../../styles/agent-avatars.css';
+import '../../styles/ticket-symbols.css';
+import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
 ---
 
 <BachLayout title="Living & Running" currentPath="/agenten/running">
@@ -194,13 +198,10 @@ import BachLayout from "../../layouts/BachLayout.astro";
   </section>
 
   <!-- 6. VERLAUF SESSIONS & LÄUFE (TIMELINE) -->
-  <section class="card" style="margin-bottom:1.5rem;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-      <h2 class="card-title">📜 Verlauf: Sessions & Task-Läufe (Timeline)</h2>
-      <button class="btn btn-sm" onclick="refreshActivity()">Neu laden</button>
-    </div>
-
-    <div style="overflow-x:auto;margin-top:0.75rem;">
+  <details class="card" id="activity-timeline" style="margin-bottom:1.5rem;">
+    <summary class="card-header" style="cursor:pointer;">📜 Verlauf: Sessions & Task-Läufe <span id="activity-count" class="badge">Wird geladen</span></summary>
+    <button class="btn btn-sm" type="button" onclick="refreshActivity()">Neu laden</button>
+    <div style="overflow:auto;max-height:420px;margin-top:0.75rem;">
       <table class="data-table" style="width:100%;">
         <thead>
           <tr>
@@ -216,7 +217,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         </tbody>
       </table>
     </div>
-  </section>
+  </details>
 
   <!-- 7. OPENROUTER FREE TIER KATALOG -->
   <section class="card" aria-labelledby="openrouter-title" style="margin-bottom:1.5rem;">
@@ -247,6 +248,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
       <div style="padding:1.25rem;overflow-y:auto;flex:1;">
         <p id="worker-blueprint-description" class="worker-control-note">Vorlage wird aus der BACH-Rollendefinition geladen…</p>
         <form id="worker-blueprint-form" class="worker-blueprint-form">
+          <details><summary>Bild & Symbol</summary>
+            <input id="worker-avatar" type="hidden" /><input id="worker-symbol" type="hidden" />
+            <div id="worker-avatar-preview"></div><div id="worker-avatar-presets" class="avatar-preset-picker"></div>
+            <label>Eigenes Bild (PNG, JPEG oder WebP bis 180 KB)<input id="worker-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadWorkerAvatar(this.files[0])" /></label>
+            <div id="worker-symbols" class="symbol-picker"></div>
+          </details>
           <label>Anzeigename<input id="worker-blueprint-name" type="text" maxlength="120" value="BACH Hintergrundworker" required></label>
           <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
           <label>Ausführung<select id="worker-blueprint-run-mode"><option value="continuous">Fortlaufend bis Stopp</option><option value="once">Einzellauf</option></select></label>
@@ -299,18 +306,22 @@ import BachLayout from "../../layouts/BachLayout.astro";
     </div>
   </div>
 
-  <dialog id="core-slot-editor" class="core-slot-modal">
+  <dialog id="core-slot-editor" class="core-slot-modal" data-portrait-atlas={portraitAtlas.src} data-ticket-symbols={JSON.stringify(TICKET_SYMBOL_URLS)}>
     <form onsubmit="event.preventDefault();saveCoreSlot()">
       <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
         <h2 id="core-slot-title">Steckplatz bearbeiten</h2>
         <button type="button" class="btn btn-sm" onclick="document.getElementById('core-slot-editor').close()" aria-label="Schließen">✕</button>
       </header>
       <div id="core-slot-fields" class="core-fields"></div>
+      <input type="hidden" id="core-slot-symbol" />
+      <label>Symbol aus Ticket-Master<div id="core-slot-symbols" class="symbol-picker"></div></label>
       <label>Agentenbild
         <input id="core-slot-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadCoreAvatar(this.files[0])" />
       </label>
       <input id="core-slot-avatar" type="hidden" />
-      <button type="button" class="btn btn-sm" onclick="document.getElementById('core-slot-avatar').value='';document.getElementById('core-slot-editor-feedback').textContent='Standardbild wird mit Speichern übernommen.'">Standardbild verwenden</button>
+      <div id="core-slot-avatar-preview"></div>
+      <div id="core-slot-avatar-presets" class="avatar-preset-picker" aria-label="Porträtvorlagen"></div>
+      <button type="button" class="btn btn-sm" onclick="selectCoreAvatar('')">Standardbild verwenden</button>
       <p id="core-slot-editor-feedback" role="status" aria-live="polite"></p>
       <footer class="core-actions">
         <button type="submit" class="btn btn-primary">Speichern</button>
@@ -382,6 +393,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
   </style>
 
+  <script>import '../../lib/agent-avatar.mjs';import '../../lib/ticket-symbol.mjs';</script>
   <script is:inline>
     function escapeHtml(t) {
       if (t == null) return '';
@@ -567,17 +579,13 @@ import BachLayout from "../../layouts/BachLayout.astro";
         header.append(badge);
         card.append(header);
         const identity = coreElement('div', undefined, 'core-slot-identity');
-        if (agent.avatar) {
-          const img = document.createElement('img');
-          img.src = agent.avatar;
-          img.alt = '';
-          img.className = 'core-avatar';
-          identity.append(img);
-        } else {
-          identity.append(coreElement('span', agent.icon || '🤖', 'core-avatar core-avatar-default'));
-        }
+        identity.append(window.BachAvatars.createAvatar(document, agent.avatar, agent,
+          document.getElementById('core-slot-editor').dataset.portraitAtlas, 'core-avatar'));
         identity.append(coreElement('h3', agent.name || agent.id));
+        identity.append(window.BachSymbols.createSymbol(document,agent.symbol,
+          JSON.parse(document.getElementById('core-slot-editor').dataset.ticketSymbols)));
         card.append(identity);
+        card.append(coreElement('small', agent.id, 'core-slot-id'));
         const kind = ['ollama', 'lmstudio'].includes(agent.backend) && !String(agent.model).endsWith(':cloud')
           ? 'Lokal' : ['claude', 'codex'].includes(agent.backend) ? 'Subscription / CLI' : 'Cloud / API';
         card.append(coreElement('small', kind + ' · ' + agent.backend));
@@ -674,6 +682,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const key = ['boss_routing', 'task_worker', 'hintergrund_worker'].includes(modeInput.value) ? modeInput.value : roleInput.value;
         input.dataset.defaultText = templates.roles[key] || '';
         if (input.dataset.wasCustom !== 'true') input.value = input.dataset.defaultText;
+        drawCoreAvatar();
       };
       roleInput.addEventListener('change', updateRole);
       modeInput.addEventListener('change', updateRole);
@@ -686,11 +695,34 @@ import BachLayout from "../../layouts/BachLayout.astro";
         updateRole();
       });
       document.getElementById('core-slot-avatar').value = source.avatar || '';
+      document.getElementById('core-slot-symbol').value = source.symbol || '';
+      drawCoreSymbols();
+      drawCoreAvatar();
       document.getElementById('core-slot-avatar-file').value = '';
       document.getElementById('core-slot-delete').hidden = !coreEditorAgent?.deletable;
       document.getElementById('core-slot-reset').hidden = !coreEditorAgent;
       document.getElementById('core-slot-editor-feedback').textContent = '';
       document.getElementById('core-slot-editor').showModal();
+    }
+
+    function drawCoreAvatar() {
+      const value = document.getElementById('core-slot-avatar').value;
+      const identity = {...coreEditorAgent,role_id:document.querySelector('[data-core-field="role_id"]')?.value};
+      const atlas = document.getElementById('core-slot-editor').dataset.portraitAtlas;
+      document.getElementById('core-slot-avatar-preview').replaceChildren(window.BachAvatars.createAvatar(document,value,identity,atlas,'agent-avatar-preview'));
+      window.BachAvatars.mountAvatarPicker(document.getElementById('core-slot-avatar-presets'),value,identity,atlas,selectCoreAvatar);
+    }
+
+    function selectCoreAvatar(value) {
+      document.getElementById('core-slot-avatar').value = value;
+      drawCoreAvatar();
+      document.getElementById('core-slot-editor-feedback').textContent = 'Bild vorbereitet. Mit Speichern übernehmen.';
+    }
+
+    function drawCoreSymbols() {
+      const input=document.getElementById('core-slot-symbol');
+      window.BachSymbols.mountSymbolPicker(document.getElementById('core-slot-symbols'),input.value,
+        JSON.parse(document.getElementById('core-slot-editor').dataset.ticketSymbols),value=>{input.value=value;drawCoreSymbols();});
     }
 
     async function uploadCoreAvatar(file) {
@@ -707,6 +739,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const size = Math.min(image.width, image.height);
         context.drawImage(image, (image.width-size)/2, (image.height-size)/2, size, size, 0, 0, 256, 256);
         document.getElementById('core-slot-avatar').value = canvas.toDataURL('image/webp', 0.85);
+        drawCoreAvatar();
         document.getElementById('core-slot-editor-feedback').textContent = 'Bild vorbereitet. Mit Speichern übernehmen.';
       } catch (_error) { document.getElementById('core-slot-editor-feedback').textContent = 'Bild konnte nicht geladen werden.'; }
       finally { URL.revokeObjectURL(url); }
@@ -726,6 +759,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
       }
       const avatar = document.getElementById('core-slot-avatar').value;
       if (!coreEditorAgent || avatar !== coreEditorAgent.avatar) changes.avatar = avatar;
+      const symbol = document.getElementById('core-slot-symbol').value;
+      if (!coreEditorAgent || symbol !== coreEditorAgent.symbol) changes.symbol = symbol;
       if (!Object.keys(changes).length) {feedback.textContent = 'Keine Änderungen.'; return;}
       try {
         const data = await coreRequest(coreEditorAgent ? '/' + encodeURIComponent(coreEditorAgent.id) : '',
@@ -807,7 +842,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const response = await fetch('/api/system/workers');
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
-        const workers = data.workers || [];
+        const workers = (data.workers || []).filter(worker=>worker.system!==true);
 
         const runningWorkers = workers.filter(w => String(w.status).toLowerCase() === 'running');
         const readyWorkers = workers.filter(w => String(w.status).toLowerCase() !== 'running');
@@ -826,7 +861,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
           readyGrid.innerHTML = readyWorkers.map(w => {
             const isPaused = w.status === 'paused';
             return `
-              <div class="core-agent-card" style="display:flex;flex-direction:column;justify-content:space-between;">
+              <div class="core-agent-card" data-appearance-worker="${escapeHtml(w.id)}" style="display:flex;flex-direction:column;justify-content:space-between;">
                 <div>
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
                     <span class="badge" style="background:${isPaused ? '#f59e0b' : '#059669'};color:#fff;font-size:0.75rem;">
@@ -883,7 +918,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
             const toolRound = Number(w.tool_round) || 0;
             const maxRounds = Number(w.max_tool_rounds) || 25;
             return `
-              <div class="core-agent-card" data-worker-id="${escapeHtml(w.id)}" style="border-color:#38bdf8;background:rgba(56,189,248,0.04);">
+              <div class="core-agent-card" data-appearance-worker="${escapeHtml(w.id)}" data-worker-id="${escapeHtml(w.id)}" style="border-color:#38bdf8;background:rgba(56,189,248,0.04);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
                   <span class="badge" style="background:#0284c7;color:#fff;font-size:0.75rem;">⚡ RUNNING</span>
                   <small style="color:var(--accent);">Runde ${toolRound}/${maxRounds}</small>
@@ -904,6 +939,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
               </div>
             `;
           }).join('');
+        }
+        for(const card of document.querySelectorAll('[data-appearance-worker]')) {
+          const worker=workers.find(item=>item.id===card.dataset.appearanceWorker);
+          const heading=card.querySelector('h3');
+          if(worker&&heading)heading.prepend(window.BachAvatars.createAvatar(document,worker.avatar,worker,
+            document.getElementById('core-slot-editor').dataset.portraitAtlas,'agent-avatar-preview'));
         }
         runningList.querySelectorAll('[data-worker-id]').forEach(card => {
           const worker = runningWorkers.find(item => item.id === card.dataset.workerId);
@@ -1178,6 +1219,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
         if (data.schema !== 'bach.agent-timeline.v1' || !Array.isArray(data.events)) throw new Error('Timeline-Antwort ungültig');
+        document.getElementById('activity-count').textContent = data.events.length + ' jüngste Ereignisse';
         tbody.replaceChildren();
         if (!data.events.length) {
           const row = document.createElement('tr');
@@ -1205,9 +1247,12 @@ import BachLayout from "../../layouts/BachLayout.astro";
     function openPickupTeamModal() { location.assign('/agenten/blueprints?tab=teams'); }
 
     // ── ONE-OFF MODAL & BLUEPRINT FORM ──
-    function openOneOffModal() {
+    async function openOneOffModal() {
+      editingWorker=null;
+      document.getElementById('worker-blueprint-form').reset();
+      document.getElementById('worker-blueprint-create').textContent='Workerprofil anlegen';
       document.getElementById('modal-create-oneoff').style.display = 'flex';
-      loadBackgroundWorkerBlueprint();
+      await loadBackgroundWorkerBlueprint();
     }
 
     function closeOneOffModal() {
@@ -1222,6 +1267,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
         backgroundWorkerBlueprint = data;
+        document.getElementById('worker-avatar').value='';document.getElementById('worker-symbol').value='';drawWorkerAppearance();
         const modeSelect = document.getElementById('worker-blueprint-sub-mode');
         modeSelect.replaceChildren(...data.sub_modes.map(item => new Option(item.label, item.id)));
         modeSelect.value = data.sub_mode || 'hintergrund_worker';
@@ -1243,6 +1289,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
         document.getElementById('worker-blueprint-allow-tools').checked = data.defaults.allow_tools === true;
         updateWorkerRunModeFields();
         updateWorkerCreationModeFields();
+        drawWorkerAppearance();
         description.textContent = `${data.description} Konfigurationsquelle: ${data.defaults_source}. Profil wird idle angelegt.`;
         create.disabled = false;
         await loadWorkerBlueprintModels();
@@ -1297,6 +1344,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
       const multiRole = document.getElementById('worker-blueprint-multi-role').checked;
 
       const payload = {
+        ...(editingWorker?.capabilities||{}),
+        avatar:document.getElementById('worker-avatar').value,
+        symbol:document.getElementById('worker-symbol').value,
         name: document.getElementById('worker-blueprint-name').value.trim(),
         backend,
         model,
@@ -1318,6 +1368,9 @@ import BachLayout from "../../layouts/BachLayout.astro";
         include_system_prompt: document.getElementById('worker-blueprint-system-prompt').checked,
         allow_tools: document.getElementById('worker-blueprint-allow-tools').checked
       };
+
+      try {payload.expert_models=JSON.parse(document.getElementById('worker-blueprint-expert-models').value||'{}');}
+      catch(_error) {status.textContent='Modellzuordnung muss ein gültiges JSON-Objekt sein.';return;}
 
       button.disabled = true;
       status.textContent = 'Workerprofil wird angelegt…';
@@ -1341,7 +1394,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
     }
 
     async function editWorkerConfiguration(workerId) {
-      openOneOffModal();
+      await openOneOffModal();
+      document.getElementById('worker-blueprint-create').disabled=true;
       const status = document.getElementById('worker-blueprint-model-status');
       try {
         const response = await fetch(`/api/system/workers/${encodeURIComponent(workerId)}/configuration`);
@@ -1350,9 +1404,22 @@ import BachLayout from "../../layouts/BachLayout.astro";
         const config = data.configuration;
         document.getElementById('worker-blueprint-name').value = config.name || '';
         document.getElementById('worker-blueprint-backend').value = config.backend || 'ollama';
-        document.getElementById('worker-blueprint-turns').value = config.max_tool_rounds || 25;
+        document.getElementById('worker-blueprint-turns').value = config.max_tool_rounds ?? 25;
         document.getElementById('worker-blueprint-task-prompt').value = config.task_prompt || '';
-        editingWorker = { id: workerId, version: data.configuration_version };
+        const fields={sub_mode:'sub-mode',role_id:'role',mode:'mode',think:'think',pause_after:'pause-after',
+          pause_basis:'pause-basis',pause_minutes:'pause-minutes',max_experts:'max-experts',task_id:'task-id'};
+        for(const [field,id] of Object.entries(fields)) {
+          const input=document.getElementById('worker-blueprint-'+id);
+          if(input)input.value=config[field]!=null?String(config[field]):'';
+        }
+        for(const [field,id] of Object.entries({multi_role:'multi-role',include_system_prompt:'system-prompt',allow_tools:'allow-tools'}))
+          document.getElementById('worker-blueprint-'+id).checked=config[field]===true;
+        document.getElementById('worker-avatar').value=config.avatar||'';
+        document.getElementById('worker-blueprint-expert-models').value=JSON.stringify(config.expert_models||{});
+        document.getElementById('worker-symbol').value=config.symbol||'';drawWorkerAppearance();
+        updateWorkerCreationModeFields();
+        editingWorker = { id: workerId, version: data.configuration_version,
+          capabilities:Object.fromEntries(['allowed_tools','skill_refs'].filter(key=>key in config).map(key=>[key,config[key]])) };
         document.getElementById('worker-blueprint-create').textContent = 'Einstellungen speichern';
         await loadWorkerBlueprintModels(config.model);
       } catch (e) {
@@ -1370,6 +1437,25 @@ import BachLayout from "../../layouts/BachLayout.astro";
       bossFields.hidden = subMode !== 'boss_routing';
       roleSelect.required = subMode === 'expert_role' && !multiRole.checked;
       roleSelect.disabled = subMode !== 'expert_role' || multiRole.checked;
+    }
+
+    function drawWorkerAppearance() {
+      const modal=document.getElementById('core-slot-editor'),atlas=modal.dataset.portraitAtlas;
+      const avatar=document.getElementById('worker-avatar'),symbol=document.getElementById('worker-symbol');
+      const identity={role_id:document.getElementById('worker-blueprint-role').value};
+      document.getElementById('worker-avatar-preview').replaceChildren(window.BachAvatars.createAvatar(document,avatar.value,identity,atlas,'agent-avatar-preview'));
+      window.BachAvatars.mountAvatarPicker(document.getElementById('worker-avatar-presets'),avatar.value,identity,atlas,value=>{avatar.value=value;drawWorkerAppearance();});
+      window.BachSymbols.mountSymbolPicker(document.getElementById('worker-symbols'),symbol.value,JSON.parse(modal.dataset.ticketSymbols),value=>{symbol.value=value;drawWorkerAppearance();});
+    }
+
+    async function uploadWorkerAvatar(file) {
+      if(!file)return;
+      const status=document.getElementById('worker-blueprint-model-status');
+      if(file.size>180000||!['image/png','image/jpeg','image/webp'].includes(file.type)){status.textContent='Bitte PNG, JPEG oder WebP bis 180 KB verwenden.';return;}
+      try {
+        document.getElementById('worker-avatar').value=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
+        drawWorkerAppearance();
+      }catch(_error){status.textContent='Bild konnte nicht geladen werden.';}
     }
 
     function updateWorkerRunModeFields() {

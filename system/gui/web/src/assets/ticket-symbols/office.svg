@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Briefcase body -->
+  <rect x="8" y="24" width="48" height="32" rx="4" stroke="#e2e4eb" stroke-width="2"/>
+  <!-- Handle -->
+  <path d="M22 24 L22 18 Q22 14 26 14 L38 14 Q42 14 42 18 L42 24" stroke="#e2e4eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Center divider -->
+  <line x1="8" y1="38" x2="56" y2="38" stroke="#e2e4eb" stroke-width="1.5"/>
+  <!-- Clasp -->
+  <rect x="27" y="34" width="10" height="8" rx="2" stroke="#e2e4eb" stroke-width="2"/>
+  <circle cx="32" cy="38" r="1.5" fill="#e2e4eb"/>
+</svg>
