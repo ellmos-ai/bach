@@ -11,7 +11,7 @@ from .base import BaseHandler
 from ._services.user_config_store import load_user_config, update_user_config
 
 
-AVAILABLE_THEMES = ("dark", "light", "warm", "custom")
+AVAILABLE_THEMES = ("dark", "light", "ocean", "warm", "custom")
 CUSTOM_THEME_DEFAULTS = {
     "bg_dark": "#140e28",
     "bg_panel": "#1c1438",
@@ -55,7 +55,7 @@ class ThemeHandler(BaseHandler):
     def get_operations(self) -> dict:
         return {
             "status": "Aktuelles GUI-Theme anzeigen",
-            "set": "GUI-Theme setzen: dark|light|warm|custom",
+            "set": "GUI-Theme setzen: dark|light|ocean|warm|custom",
         }
 
     def _load_config(self) -> dict:
@@ -141,7 +141,7 @@ class ThemeHandler(BaseHandler):
             if operation != "set":
                 return False, "Unbekannte Operation. Nutze: bach theme status|set"
             if not args:
-                return False, "Usage: bach theme set dark|light|warm|custom"
+                return False, "Usage: bach theme set dark|light|ocean|warm|custom"
 
             theme = args[0]
             colors = {}

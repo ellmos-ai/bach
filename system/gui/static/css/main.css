@@ -125,7 +125,7 @@ body {
     display: flex;
     gap: 0.15rem;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     min-width: 0;
     max-width: 100%;
     flex: 1 1 auto;
@@ -1286,4 +1286,24 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
     background: var(--accent-glow);
     opacity: 1;
     box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* ── Ocean Theme ── */
+[data-theme="ocean"] {
+    --bg-dark: #070d18;
+    --bg-panel: #0c1728;
+    --bg-card: #11223b;
+    --bg-elevated: #182e4e;
+    --accent: #0ea5e9;
+    --accent-light: #38bdf8;
+    --accent-blue: #0284c7;
+    --accent-glow: rgba(14, 165, 233, 0.15);
+    --border: #1a3455;
+    --border-hover: #264a75;
+    --text: #e0f2fe;
+    --text-muted: #7ba3cd;
+    --text-dim: #456b94;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #f43f5e;
 }

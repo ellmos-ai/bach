@@ -7,7 +7,7 @@ const BOARD_CONFIG = window.BOARD_CONFIG || {};
 const THEME_KEY = BOARD_CONFIG.themeStorageKey || 'bach-theme';
 const CUSTOM_THEME_KEY = BOARD_CONFIG.customThemeStorageKey ||
     (THEME_KEY === 'bach-theme' ? 'bach-theme-custom' : `${THEME_KEY}-custom`);
-const AVAILABLE_THEMES = ['dark', 'light', 'warm', 'custom'];
+const AVAILABLE_THEMES = ['dark', 'light', 'ocean', 'warm', 'custom'];
 const CUSTOM_THEME_PROPERTIES = [
     'bg_dark', 'bg_panel', 'bg_card', 'bg_elevated', 'accent',
     'accent_light', 'accent_blue', 'text', 'text_muted', 'border',
@@ -199,6 +199,7 @@ function initNavigation() {
             <div class="theme-switcher" id="theme-switcher">
                 <button class="theme-btn${currentTheme === 'dark' ? ' active' : ''}" data-theme="dark" title="Dark">🌙</button>
                 <button class="theme-btn${currentTheme === 'light' ? ' active' : ''}" data-theme="light" title="Light">☀️</button>
+                <button class="theme-btn${currentTheme === 'ocean' ? ' active' : ''}" data-theme="ocean" title="Ocean">🌊</button>
                 <button class="theme-btn${currentTheme === 'warm' ? ' active' : ''}" data-theme="warm" title="Warm">🕯️</button>
                 <button class="theme-btn${currentTheme === 'custom' ? ' active' : ''}" data-theme="custom" title="Custom">🎨</button>
             </div>

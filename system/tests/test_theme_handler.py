@@ -24,7 +24,7 @@ def test_theme_defaults_without_user_config(tmp_path):
     assert result["theme"] == "dark"
     assert result["configured"] is False
     assert result["custom"] == CUSTOM_THEME_DEFAULTS
-    assert result["available"] == ["dark", "light", "warm", "custom"]
+    assert result["available"] == ["dark", "light", "ocean", "warm", "custom"]
 
 
 def test_set_theme_preserves_unrelated_user_config(tmp_path):
@@ -163,3 +163,32 @@ def test_typed_bach_api_theme_accepts_structured_custom_palette(tmp_path, monkey
     assert result["theme"] == "custom"
     assert result["custom"]["accent"] == "#aabbcc"
     assert bach_api.theme.status()["configured"] is True
+
+def test_ocean_theme_roundtrip_preserves_unrelated_config(tmp_path):
+    handler = ThemeHandler(tmp_path)
+    config = tmp_path / "data" / "user_config.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(json.dumps({"startup_mode": "silent", "gui": {"density": "compact"}}), encoding="utf-8")
+    assert handler.set_theme("ocean")["theme"] == "ocean"
+    assert handler.get_theme()["theme"] == "ocean"
+    assert json.loads(config.read_text(encoding="utf-8"))["startup_mode"] == "silent"
+    assert json.loads(config.read_text(encoding="utf-8"))["gui"]["density"] == "compact"
+    assert handler.handle("set", ["ocean"])[0] is True
+
+
+def test_ocean_theme_legacy_assets_share_native_contract():
+    nav = (SYSTEM_ROOT / "gui/static/js/nav.js").read_text(encoding="utf-8")
+    css = (SYSTEM_ROOT / "gui/static/css/main.css").read_text(encoding="utf-8")
+    settings = (SYSTEM_ROOT / "gui/templates/settings.html").read_text(encoding="utf-8")
+    assert "'ocean'" in nav
+    assert 'data-theme="ocean"' in nav
+    assert '[data-theme="ocean"]' in css
+    assert 'data-theme-option="ocean"' in settings
+
+def test_navigation_and_finance_tabs_wrap_without_hiding_content():
+    css = (SYSTEM_ROOT / "gui/static/css/main.css").read_text(encoding="utf-8")
+    finance = (SYSTEM_ROOT / "gui/templates/financial.html").read_text(encoding="utf-8")
+    nav_rules = css[css.index(".main-nav {"):css.index(".nav-item {")]
+    assert "flex-wrap: wrap" in nav_rules
+    tabs = finance[finance.index(".tabs {"):finance.index(".tab {")]
+    assert "flex-wrap: wrap" in tabs
