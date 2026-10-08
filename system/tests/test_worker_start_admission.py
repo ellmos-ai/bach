@@ -1,5 +1,10 @@
 """Observe actual native admission/worker lifetime without live inference."""
 import importlib
+from contextlib import contextmanager
+import os
+from pathlib import Path
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -248,3 +253,195 @@ def test_missing_cleanup_after_thread_exit_is_unconfirmed(admission, monkeypatch
     ctrl.done_event.clear()  # Simulate missing proof of the complete cleanup.
     observed = control.worker_execution_receipt(worker["id"], "5" * 32)
     assert observed["state"] == "unconfirmed" and observed["terminal"] is False
+
+
+def _system_fixture_worker():
+    from hub._services.chat import slots_config as slots
+    result = slots.materialize_system_blueprint(811, 1,
+        {"worker_type": "once", "model": "owned-local", "mode": "safe"},
+        slots.core_system_agents_snapshot()["configuration_version"])
+    return slots.get_system_slot(result["slot_id"])
+
+
+@pytest.mark.parametrize("mutation", ["delete", "materialize"])
+@pytest.mark.parametrize("versioned_start", [False, True])
+def test_admission_invalidates_idle_mutation_before_worker_status_write(
+        admission, monkeypatch, mutation, versioned_start):
+    from hub._services.chat import slots_config as slots
+    control, _ = admission
+    worker = _system_fixture_worker()
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    entered, release = threading.Event(), threading.Event()
+    results = []
+
+    def begin(**kw):
+        entered.set()
+        assert release.wait(10)
+        return kw
+
+    monkeypatch.setattr(control, "begin_assignment", begin)
+    monkeypatch.setattr(control, "finish_assignment", lambda *a, **kw: None)
+    caller = threading.Thread(target=lambda: results.append(control.start_worker_execution(
+        worker["id"], start_request_id="7" * 32,
+        expected_configuration_version=before if versioned_start else None)))
+    caller.start()
+    try:
+        assert entered.wait(3), results
+        assert slots.get_system_slot(worker["id"])["status"] == "idle"
+        assert slots.core_system_agents_snapshot()["configuration_version"] != before
+        observed = control._system_slots_snapshot()
+        current = next(a for a in observed["agents"] if a["id"] == worker["id"])
+        assert current["execution"]["state"] == "starting"
+        assert current["execution"]["terminal"] is False
+        with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+            if mutation == "delete":
+                slots.delete_system_slot(worker["id"], before)
+            else:
+                slots.materialize_system_blueprint(811, 2, {"worker_type": "once"}, before)
+        assert slots.get_system_slot(worker["id"])["blueprint_version"] == 1
+    finally:
+        release.set()
+        caller.join(3)
+        execution = control._WORKER_EXECUTIONS.get(worker["id"])
+        if execution and hasattr(execution.thread, "join"):
+            execution.thread.join(3)
+    assert not caller.is_alive() and results[0][1] == 200
+
+
+def test_snapshot_waits_for_revision_and_ram_admission_publication(admission, monkeypatch):
+    from hub._services.chat import slots_config as slots
+    control, _ = admission
+    worker = _system_fixture_worker()
+    original = slots.worker_admission_transaction
+    written, release, attempted, observed = (threading.Event() for _ in range(4))
+    results, snapshots = [], []
+
+    @contextmanager
+    def transaction(*a, **kw):
+        with original(*a, **kw) as advance:
+            def held_advance():
+                advance()
+                written.set()
+                assert release.wait(10)
+            yield held_advance
+
+    monkeypatch.setattr(slots, "worker_admission_transaction", transaction)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kw: (_ for _ in ()).throw(ValueError("fixture denial")))
+
+    def snapshot():
+        attempted.set()
+        snapshots.append(control._system_slots_snapshot())
+        observed.set()
+
+    caller = threading.Thread(target=lambda: results.append(control.start_worker_execution(
+        worker["id"], start_request_id="8" * 32)))
+    reader = threading.Thread(target=snapshot)
+    caller.start()
+    try:
+        assert written.wait(3)
+        reader.start()
+        assert attempted.wait(3)
+        assert not observed.wait(.05)
+    finally:
+        release.set()
+        caller.join(3)
+        if reader.ident is not None:
+            reader.join(3)
+    assert not caller.is_alive() and not reader.is_alive()
+    assert results[0][1] == 400
+    instance = next(a for a in snapshots[0]["agents"] if a["id"] == worker["id"])
+    assert instance["execution"]["start_request_id"] == "8" * 32
+    assert instance["execution"]["state"] in {"starting", "terminal"}
+
+
+def test_revision_write_failure_prevents_any_ram_admission(admission, monkeypatch):
+    from hub._services.chat import slots_config as slots
+    control, worker = admission
+    monkeypatch.setattr(slots, "save_slots_config", lambda *a, **kw: (_ for _ in ()).throw(OSError("fixture write denied")))
+    monkeypatch.setattr(control, "begin_assignment", lambda **kw: pytest.fail("No admission without durable revision"))
+    result, code = control.start_worker_execution(worker["id"], start_request_id="9" * 32)
+    assert code == 503 and result["admission"]["admitted"] is False
+    assert not control._WORKER_CONTROLS and not control._WORKER_EXECUTIONS
+    assert not control._ACTIVE_WORKER_THREADS
+
+
+def test_denied_admission_does_not_restore_old_token_and_replay_does_not_revise(admission, monkeypatch):
+    from hub._services.chat import slots_config as slots
+    control, worker = admission
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    monkeypatch.setattr(control, "begin_assignment", lambda **kw: (_ for _ in ()).throw(ValueError("fixture denial")))
+    assert control.start_worker_execution(worker["id"], start_request_id="a" * 32)[1] == 400
+    after = slots.core_system_agents_snapshot()["configuration_version"]
+    assert before != after
+    assert control.start_worker_execution(worker["id"], start_request_id="a" * 32)[1] == 200
+    assert slots.core_system_agents_snapshot()["configuration_version"] == after
+    assert control.start_worker_execution(worker["id"], start_request_id="b" * 32)[1] == 400
+    assert slots.core_system_agents_snapshot()["configuration_version"] != after
+
+
+def test_system_snapshot_keeps_receipt_until_physical_cleanup_tail_ends(admission, monkeypatch):
+    control, _ = admission
+    worker = _system_fixture_worker()
+    retained = control._WorkerControl(worker["id"], start_request_id="c" * 32)
+    class Tail:
+        alive = True
+        def is_alive(self):
+            return self.alive
+    retained.thread = Tail()
+    retained.worker_thread_started = True
+    retained.done_event.set()
+    control._WORKER_EXECUTIONS[worker["id"]] = retained
+    assert worker["id"] not in control._WORKER_CONTROLS
+    current = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == worker["id"])
+    assert current["execution"]["state"] == "finishing" and current["execution"]["terminal"] is False
+    retained.thread.alive = False
+    current = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == worker["id"])
+    assert current["execution"]["terminal"] is True
+    never_started = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == "buddha_chat")
+    assert never_started["execution"] is None
+
+
+def test_admission_lock_blocks_a_separate_process_until_ram_publication_boundary(admission):
+    from hub._services.chat import slots_config as slots
+    _system_fixture_worker()
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    script = """import sys
+from hub._services.chat import slots_config as slots
+print('ready', flush=True)
+try:
+    slots.delete_system_slot('system-blueprint-811', sys.argv[2], path=sys.argv[1])
+except RuntimeError as exc:
+    assert str(exc) == 'configuration_version_conflict'
+    print('conflict', flush=True)
+else:
+    raise AssertionError('Obsolete admission token accepted')
+"""
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1",
+           "PYTHONPATH": str(Path(slots.__file__).resolve().parents[3])}
+    child = None
+    ready = threading.Event()
+    reader = None
+    try:
+        with slots.worker_admission_transaction() as advance:
+            advance()
+            child = subprocess.Popen([sys.executable, "-c", script, slots.DEFAULT_SLOTS_FILE, before],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            def read_ready():
+                if child.stdout.readline().strip() == "ready":
+                    ready.set()
+            reader = threading.Thread(target=read_ready, daemon=True)
+            reader.start()
+            assert ready.wait(5)
+            reader.join(1)
+            with pytest.raises(subprocess.TimeoutExpired):
+                child.wait(timeout=.05)
+        stdout, stderr = child.communicate(timeout=5)
+        assert child.returncode == 0, stderr
+        assert stdout.strip() == "conflict"
+        assert slots.get_system_slot("system-blueprint-811")
+    finally:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.communicate(timeout=5)
+        if reader is not None:
+            reader.join(1)
