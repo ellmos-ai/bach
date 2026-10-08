@@ -742,6 +742,10 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
     Prueft, dass Blueprints auf dieselben Skill-IDs und Versionen referenzieren
     (GUX-031: kein Duplikat-Store, einheitliches Skillmodell).
     """
+    if not skills:
+        return {"valid": True, "total_referenced": 0, "matched_count": 0,
+                "unmatched_count": 0, "matched": [], "unmatched": [], "missing": [],
+                "canonical_registry_size": len(CANONICAL_CORE_SKILLS)}
     # Sammle alle bekannten Skills
     known_skills = {s["id"]: s for s in CANONICAL_CORE_SKILLS}
     for s_root in SKILLS_SEARCH_PATHS:

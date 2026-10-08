@@ -148,6 +148,10 @@ jobs:
             system/tests/test_gui_domain_catalog.py \
             system/tests/test_gui_mounts_contract.py \
             system/tests/test_gui_prompt_manager.py \
+            system/tests/test_blueprint_runtime_delivery.py \
+            system/tests/test_blueprint_teams_delivery.py \
+            system/tests/test_gui_gux_fabrika_blueprints.py \
+            system/tests/test_system_slots_delivery.py \
             system/tests/test_gui_privacy_boundary.py \
             system/tests/test_gui_server_smoke.py \
             system/tests/test_gui_server.py \

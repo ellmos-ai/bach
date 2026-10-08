@@ -367,12 +367,22 @@ async def list_agent_blueprints(
                 templates.append(item)
             else:
                 blueprints.append(item)
+        from .core_system_agents import _snapshot as core_snapshot
+        try:
+            slots = await asyncio.to_thread(core_snapshot)
+        except HTTPException:
+            slots = {"agents": [], "configuration_version": None}
+        by_blueprint = {slot["blueprint_id"]: slot for slot in slots["agents"]
+                        if type(slot.get("blueprint_id")) is int}
+        for item in templates + blueprints:
+            item["instance"] = by_blueprint.get(item["id"])
         return {
             "templates": templates,
             "blueprints": blueprints,
             "total_templates": len(templates),
             "total_blueprints": len(blueprints),
             "total": len(templates) + len(blueprints),
+            "configuration_version": slots["configuration_version"],
         }
     finally:
         conn.close()
@@ -416,173 +426,192 @@ async def save_agent_blueprint(payload: Dict[str, Any]):
         return res
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError:
+        raise HTTPException(status_code=409, detail="Blueprint wurde inzwischen geändert")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
 
 
+@router.post("/agent-studio/bootstrap")
+async def bootstrap_agent_templates():
+    """Explicit additive initialization; GET endpoints never seed data."""
+    conn = _get_conn()
+    try:
+        seed_default_blueprints(conn)
+        return {"success": True, "source": "BACH role templates"}
+    finally:
+        conn.close()
+
+
+@router.get("/agent-studio/tools")
+async def blueprint_tool_catalog():
+    from hub._services.chat.bach_tools import tools_for_mode
+    return {"source": "BACH native tool registry", "tools": [
+        {"name": tool["function"]["name"], "description": tool["function"]["description"]}
+        for tool in tools_for_mode("full", bound_worker=True)]}
+
+
 @router.get("/agent-studio/governance-presets")
 async def get_governance_presets():
-    """Liefert Standard-Governance-Profile und Sicherheits-Leitplanken fuer die Agenten-Fabrika."""
-    return {
-        "presets": [
-            {
-                "id": "fail_closed_standard",
-                "name": "🛡️ Fail-Closed Standard (P-001 & P-004)",
-                "description": "Standard fuer lokale Agenten: Kein Git Push ohne Freigabe, strikte Lock-Beachtung, Read-Only fuer gesperrte Bereiche.",
-                "tool_whitelist": ["read_files", "search_content", "directory_list", "run_tests", "code_analyze"],
-                "tool_blacklist": ["git_push", "rm_rf_root", "cloud_overwrite"],
-                "allowed_paths": ["C:\\_Local_DEV\\repos", "C:\\Users\\User\\OneDrive"],
-                "hooker_monitoring": "Vollstaendiges Governance-Audit fuer alle nachtraeglichen Injektionen",
-                "max_tokens_per_turn": 8000
-            },
-            {
-                "id": "read_only_research",
-                "name": "🔬 Read-Only Rechercheur",
-                "description": "Reiner Lese- und Analysemodus fuer Wissensgewinnung und Literatur-Recherche.",
-                "tool_whitelist": ["read_files", "search_content", "directory_list", "web_fetch", "arxiv_api"],
-                "tool_blacklist": ["write_files", "execute_command", "git_push"],
-                "allowed_paths": ["C:\\Users\\User\\OneDrive\\.TOPICS\\.RESEARCH"],
-                "hooker_monitoring": "Strikte Sanitization aller Web- und Dokumenten-Inhalte vor Injektion ins Kontextfenster",
-                "max_tokens_per_turn": 4000
-            },
-            {
-                "id": "full_dev_guarded",
-                "name": "⚡ Entwicklungs-Operator (Guarded CLI)",
-                "description": "Volle Code-Bearbeitung und Test-Ausfuehrung, jedoch PreToolUse-Guard vor jedem destruktiven Befehl.",
-                "tool_whitelist": ["read_files", "write_files", "execute_command", "run_tests", "python_cli", "npm_cli"],
-                "tool_blacklist": ["git_push_main_unauthorized", "delete_production_db"],
-                "allowed_paths": ["C:\\_Local_DEV\\repos"],
-                "hooker_monitoring": "PreToolUse-Guard blockiert Git-Pushes und unberechtigte Remote-Aktionen",
-                "max_tokens_per_turn": 12000
-            }
-        ],
-        "default_lock_rules": ["P-001 Fail-Closed Git", "P-002 Dual-Tree-Regel", "P-004 Lock-Master (LOCK.user / LOCK.team)"]
-    }
+    """Profiles reference the tools enforced by the native worker bridge."""
+    from hub._services.chat.bach_tools import tools_for_mode
+    full = [tool["function"]["name"] for tool in tools_for_mode("full", bound_worker=True)]
+    read = ["read_file", "list_directory", "search_text", "web_fetch", "system_status", "ollama_info", "task_manage"]
+    return {"presets": [
+        {"id": "fail_closed_standard", "name": "Standard · gebundene Aufgaben",
+         "tool_whitelist": ["read_file", "list_directory", "search_text", "task_manage"],
+         "description": "Lesen und Aufgabenverwaltung innerhalb der aktiven Task-Lease."},
+        {"id": "read_only_research", "name": "Recherche · Dateien lesen",
+         "tool_whitelist": read, "description": "Lesezugriff und Recherche; keine Dateiänderungen."},
+        {"id": "full_dev_guarded", "name": "Entwicklung · Task-Worktree",
+         "tool_whitelist": full, "description": "Native Werkzeuge mit Task-Lease und Worktree-Prüfung."},
+    ], "source": "BACH native tool registry", "enforcement": {
+        "tool_whitelist": True, "worker_task_binding": True, "hooker_verified": False}}
 
 
 @router.delete("/agent-studio/blueprints/{blueprint_id}")
-async def delete_agent_blueprint(blueprint_id: int):
+async def delete_agent_blueprint(blueprint_id: int, expected_version: int = Query(...)):
     """Loescht einen benutzerdefinierten Blueprint (Templates sind geschuetzt)."""
     conn = _get_conn()
     try:
         _ensure_agent_studio_tables(conn)
-        row = conn.execute("SELECT is_template FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
+        from hub._services.chat.slots_config import get_system_slot
+        if get_system_slot(f"system-blueprint-{blueprint_id}"):
+            raise HTTPException(409, "Zuerst den zugehörigen Living-Steckplatz entfernen")
+        row = conn.execute("SELECT is_template, version FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Blueprint nicht gefunden")
         if row[0] == 1:
             raise HTTPException(status_code=403, detail="Vordefinierte System-Vorlagen koennen nicht geloescht werden")
-        conn.execute("DELETE FROM agent_blueprints WHERE id = ?", (blueprint_id,))
+        cursor = conn.execute("DELETE FROM agent_blueprints WHERE id = ? AND version = ?",
+                               (blueprint_id, expected_version))
+        if cursor.rowcount != 1:
+            raise HTTPException(409, "Blueprint wurde inzwischen geändert")
         conn.commit()
         return {"success": True, "id": blueprint_id}
     finally:
         conn.close()
 
 
+def _studio_execution_error(exc):
+    from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable
+    if isinstance(exc, WorkerActionRejected):
+        return HTTPException(exc.status_code, str(exc))
+    if isinstance(exc, KeyError):
+        return HTTPException(404, "Blueprint nicht gefunden")
+    if isinstance(exc, RuntimeError) and not isinstance(exc, WorkerStatusUnavailable):
+        return HTTPException(409, str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(400, str(exc))
+    return HTTPException(503, "Agenten-Ausführung derzeit nicht bestätigbar")
+
+
 @router.post("/agent-studio/blueprints/{blueprint_id}/materialize")
-async def materialize_blueprint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
-    """Materialisiert einen Blueprint in die Living & Running Welt als living (nicht running)."""
-    conn = _get_conn()
+async def materialize_blueprint(blueprint_id: int, request: Request,
+                                payload: Dict[str, Any] = Body(...)):
+    """Create a real Living slot, with no worker or cloud start."""
+    _require_memory_device_token(request)
+
+    def configure():
+        from .core_system_agents import _snapshot, _version
+        snapshot = _snapshot()
+        if snapshot["configuration_version"] != _version(payload):
+            raise RuntimeError("configuration_version_conflict")
+        previous = next((slot for slot in snapshot["agents"]
+                         if slot.get("id") == f"system-blueprint-{blueprint_id}"), None)
+        terminal = False
+        if previous is not None:
+            execution = previous.get("execution")
+            if (previous.get("runtime_verified") is not True
+                    or previous.get("running") is not False):
+                raise RuntimeError("worker_terminal_state_required")
+            if execution is not None and execution.get("terminal") is not True:
+                raise RuntimeError("worker_terminal_state_required")
+            terminal = True
+        conn = _get_conn()
+        try:
+            result = svc_materialize_blueprint(conn, blueprint_id,
+                expected_version=payload.get("expected_version"),
+                execution=payload.get("execution"),
+                configuration_version=payload["configuration_version"],
+                terminal_verified=terminal)
+        finally:
+            conn.close()
+        observed = _snapshot()
+        result["instance"] = next((slot for slot in observed["agents"]
+                                   if slot["id"] == result["slot_id"]), None)
+        result["is_living"] = (result["instance"] or {}).get("living")
+        return result
     try:
-        _ensure_agent_studio_tables(conn)
-        model = payload.get("model") if payload else None
-        res = svc_materialize_blueprint(conn, blueprint_id, model=model)
-        return {
-            "success": True,
-            "message": f"Blueprint {res['title']} ({res['name']}) als Living aktiviert. Kein Worker gestartet.",
-            "name": res["name"],
-            "status": "living",
-            "is_living": True,
-            "is_running": False,
-            "blueprint": res,
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    finally:
-        conn.close()
+        return await asyncio.to_thread(configure)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _studio_execution_error(exc)
 
 
 @router.post("/agent-studio/blueprints/{blueprint_id}/start")
-async def start_blueprint_worker_endpoint(blueprint_id: int, payload: Optional[Dict[str, Any]] = None):
-    """Startet einen Worker für den Blueprint und erzeugt authentische JobExecution/Heartbeat-Receipts."""
-    task = (payload.get("task") if payload else None) or "Standard-Worker Task"
-    conn = _get_conn()
+async def start_blueprint_worker_endpoint(blueprint_id: int, request: Request,
+                                         payload: Dict[str, Any] = Body(...)):
+    """Explicit user start through the same native controller as Running."""
+    token = _require_memory_device_token(request)
+    from .core_system_agents import _version
+    configuration_version = _version(payload)
+
+    def start():
+        from .worker_status_adapter import dispatch_blueprint_worker
+        conn = _get_agent_studio_ro_conn()
+        try:
+            return svc_start_blueprint_worker(conn, blueprint_id, task=payload.get("task"),
+                expected_version=payload.get("expected_version"),
+                configuration_version=configuration_version,
+                dispatcher=lambda slot_id, version: dispatch_blueprint_worker(slot_id, version,
+                    device_token=token, start_request_id=payload.get("start_request_id")))
+        finally:
+            conn.close()
     try:
-        _ensure_agent_studio_tables(conn)
-        res = svc_start_blueprint_worker(conn, blueprint_id, task=task)
-        return {
-            "success": True,
-            "message": f"Worker für {res['title']} ({res['name']}) gestartet.",
-            "name": res["name"],
-            "status": "running",
-            "is_living": True,
-            "is_running": True,
-            "job_receipt": res["job_receipt"],
-            "heartbeat_receipt": res["heartbeat_receipt"],
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    finally:
-        conn.close()
+        return await asyncio.to_thread(start)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _studio_execution_error(exc)
 
 
 @router.get("/agent-studio/living")
 async def get_living_agents():
-    """Gibt alle aktiven Kreaturen / Living & Running Agenten inkl. Praesenz und Animus-Typ zurueck."""
+    """Blueprint instances use controller evidence; legacy flags stay configured."""
     conn = _get_agent_studio_ro_conn()
     try:
         _read_schema_ready(conn, ("agent_blueprints", "partner_presence"))
-        # Blueprints & Presence verknuepfen
-        bp_rows = conn.execute("SELECT * FROM agent_blueprints WHERE is_materialized = 1").fetchall()
-        presence_rows = conn.execute("SELECT * FROM partner_presence").fetchall()
-        presence_map = {p["partner_name"].lower(): dict(p) for p in presence_rows}
-
-        living = []
-        for r in bp_rows:
-            bp = dict(r)
-            name = bp["name"].lower()
-            pres = presence_map.get(name, {})
-            living.append({
-                "id": bp["id"],
-                "name": bp["name"],
-                "title": bp["title"],
-                "role": bp["persona_role"],
-                "animus": bp["animus_type"],
-                "modus": bp["modus"],
-                "status": pres.get("status", "configured"),
-                "current_task": pres.get("current_task"),
-                "last_heartbeat": pres.get("last_heartbeat"),
-                "is_avatar": "avatar" in name or bp["animus_type"] in ("subscription", "cli")
-            })
-
-        # Zusaetzliche Avatar-Proxies falls nicht im Blueprint
-        known_names = {a["name"].lower() for a in living}
-        avatars = [
-            ("claude", "Claude Code (Subscription)", "subscription"),
-            ("gemini", "Gemini Antigravity (Subscription)", "subscription"),
-            ("codex", "Codex / GPT (Subscription)", "subscription"),
-            ("kimi", "Kimi Code (CLI)", "cli"),
-        ]
-        for av_name, av_title, av_animus in avatars:
-            if av_name not in known_names:
-                pres = presence_map.get(av_name, {})
-                living.append({
-                    "id": f"avatar_{av_name}",
-                    "name": av_name,
-                    "title": av_title,
-                    "role": "Avatar Proxy",
-                    "animus": av_animus,
-                    "modus": "casualis",
-                    "status": pres.get("status", "offline"),
-                    "current_task": pres.get("current_task"),
-                    "last_heartbeat": pres.get("last_heartbeat"),
-                    "is_avatar": True
-                })
-
-        return {"living_agents": living, "count": len(living)}
+        rows = conn.execute("SELECT * FROM agent_blueprints").fetchall()
+        blueprints = [dict(row) for row in rows]
     finally:
         conn.close()
+    from .core_system_agents import _snapshot
+    try:
+        snapshot = await asyncio.to_thread(_snapshot)
+    except HTTPException:
+        snapshot = {"agents": []}
+    slots = {slot["blueprint_id"]: slot for slot in snapshot["agents"]
+             if type(slot.get("blueprint_id")) is int}
+    living = []
+    for bp in blueprints:
+        slot = slots.get(bp["id"])
+        if not slot and not bp["is_materialized"]:
+            continue
+        living.append({"id": bp["id"], "name": bp["name"], "title": bp["title"],
+            "role": bp["persona_role"], "animus": bp["animus_type"], "modus": bp["modus"],
+            "slot_id": slot["id"] if slot else None,
+            "status": slot["status"] if slot and slot.get("runtime_verified") else "configured",
+            "is_living": slot.get("living") if slot else None,
+            "is_running": slot.get("running") if slot else False,
+            "runtime_verified": bool(slot and slot.get("runtime_verified")),
+            "execution": slot.get("execution") if slot else None,
+            "current_task": slot.get("task_id") if slot else None,
+            "last_heartbeat": None, "is_avatar": False})
+    return {"living_agents": living, "count": len(living)}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -709,23 +738,31 @@ async def get_capabilities_skills(
 
 @router.post("/capabilities/bind")
 async def bind_agent_capabilities(payload: Dict[str, Any]):
-    """Bindet Skills, MCPs oder Tools an einen Agenten-Blueprint."""
+    """Bind skills through the same revision and template checks as the editor."""
     agent_id = payload.get("agent_id")
-    capabilities = payload.get("capabilities", [])
-    if agent_id is None:
-        raise HTTPException(status_code=400, detail="agent_id erforderlich")
-
+    if not ((type(agent_id) is int and agent_id > 0) or
+            (isinstance(agent_id, str) and re.fullmatch(r"[a-zA-Z0-9._-]{1,100}", agent_id))):
+        raise HTTPException(400, "Gültige Blueprint-ID erforderlich")
     conn = _get_conn()
+    conn.row_factory = sqlite3.Row
     try:
-        _ensure_agent_studio_tables(conn)
-        now = datetime.now().isoformat()
-        conn.execute("""
-            UPDATE agent_blueprints
-            SET skills_json = ?, updated_at = ?
-            WHERE id = ? OR name = ?
-        """, (json.dumps(capabilities), now, str(agent_id), str(agent_id)))
-        conn.commit()
-        return {"success": True, "agent_id": agent_id, "bound_capabilities": capabilities}
+        ensure_blueprint_schema(conn)
+        row = conn.execute("SELECT * FROM agent_blueprints WHERE id=? OR name=?", (agent_id, str(agent_id))).fetchone()
+        if row is None:
+            raise HTTPException(404, "Blueprint nicht gefunden")
+        updated = dict(row)
+        updated["skills"] = payload.get("capabilities", [])
+        updated["contractus"] = json.loads(row["contractus_json"] or "{}")
+        updated["governance"] = json.loads(row["governance_json"] or "{}")
+        updated["expected_version"] = payload.get("expected_version")
+        result = svc_save_blueprint(conn, updated)
+        return {**result, "agent_id": row["id"], "bound_capabilities": updated["skills"]}
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
+    except RuntimeError:
+        raise HTTPException(409, "Blueprint wurde inzwischen geändert")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     finally:
         conn.close()
 
@@ -2575,85 +2612,112 @@ async def get_artefakte(request: Request):
             "observed_at": data.get("observed_at")}
 
 
+def _ensure_agent_teams_schema(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS agent_teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT,
+        leader_agent TEXT, member_agents TEXT, strategy TEXT DEFAULT 'swarm_parallel',
+        member_models TEXT DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT)""")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(agent_teams)")}
+    for name, definition in (("member_models", "TEXT DEFAULT '{}'"), ("version", "INTEGER NOT NULL DEFAULT 1")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE agent_teams ADD COLUMN {name} {definition}")
+    conn.commit()
+
+
 @router.get("/agenten/teams")
 async def get_agent_teams():
-    """Liefert alle konfigurierten Multi-Agent-Teams (Swarm-AI)."""
+    """Only stored configurations; no demo teams or writes from GET."""
+    conn = _get_agent_studio_ro_conn()
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_teams'").fetchone() is None:
+            return {"teams": [], "count": 0, "source": "task_database"}
+        rows = conn.execute("SELECT * FROM agent_teams ORDER BY id DESC").fetchall()
+        teams = []
+        for row in rows:
+            item = dict(row)
+            item["version"] = item.get("version", 1)
+            try:
+                item["member_models"] = json.loads(item.get("member_models") or "{}")
+            except (ValueError, TypeError):
+                item["member_models"] = {}
+            teams.append(item)
+        return {"teams": teams, "count": len(teams), "source": "task_database"}
+    finally:
+        conn.close()
+
+
+def _save_agent_team(payload, team_id=None):
+    for key in ("name", "description", "leader_agent", "member_agents", "strategy"):
+        value = payload.get(key, "")
+        if not isinstance(value, str) or len(value) > 20000 or "\x00" in value:
+            raise HTTPException(400, "Ungültige Teamkonfiguration")
+    name = payload.get("name", "").strip()
+    if not name or len(name) > 120:
+        raise HTTPException(400, "Teamname erforderlich (maximal 120 Zeichen)")
+    members = [part.strip() for part in payload.get("member_agents", "").split(",") if part.strip()]
+    if not members or len(members) > 100 or len(members) != len(set(members)):
+        raise HTTPException(400, "Eindeutige Teammitglieder erforderlich")
+    leader = payload.get("leader_agent", "")
+    strategy = payload.get("strategy", "swarm_parallel")
+    if leader not in members or strategy not in {"swarm_parallel", "swarm_hierarchy", "sequential_pipeline"}:
+        raise HTTPException(400, "Koordination oder Strategie ist ungültig")
     conn = _get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS agent_teams (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            description TEXT,
-            leader_agent TEXT,
-            member_agents TEXT,
-            strategy TEXT DEFAULT 'swarm_parallel',
-            member_models TEXT DEFAULT '{}',
-            created_at TEXT
-        )
-    """)
-    cols = [c[1] for c in conn.execute("PRAGMA table_info(agent_teams)").fetchall()]
-    if "member_models" not in cols:
-        conn.execute("ALTER TABLE agent_teams ADD COLUMN member_models TEXT DEFAULT '{}'")
-    conn.commit()
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM agent_teams ORDER BY id DESC").fetchall()
-    teams = []
-    for r in rows:
-        t = dict(r)
+    try:
+        _ensure_agent_teams_schema(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute("SELECT version, member_models FROM agent_teams WHERE id = ?", (team_id,)).fetchone() if team_id else None
+        if team_id and not existing:
+            raise HTTPException(404, "Team nicht gefunden")
+        current = existing[0] if existing else 0
+        if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != current:
+            raise HTTPException(409, "Team wurde inzwischen geändert")
+        configured = {row[0] for row in conn.execute("SELECT name FROM agent_blueprints WHERE kind IN ('agent','role')")}
+        if not set(members) <= configured:
+            raise HTTPException(400, "Teammitglied ist kein vorhandener Agenten-Blueprint")
+        duplicate = conn.execute("SELECT id FROM agent_teams WHERE name = ? AND id != ?", (name, team_id or -1)).fetchone()
+        if duplicate:
+            raise HTTPException(409, "Ein Team mit diesem Namen existiert bereits")
         try:
-            t["member_models"] = json.loads(t.get("member_models") or "{}")
-        except Exception:
-            t["member_models"] = {}
-        teams.append(t)
-    conn.close()
-    if not teams:
-        # Default Vorlagen
-        teams = [
-            {
-                "id": 1,
-                "name": "Audit & Code-Review Schwarm",
-                "description": "Parallele Code-Pruefung, Linting und Sicherheitsanalyse",
-                "leader_agent": "Auditor-Prime",
-                "member_agents": "CodeCommander, FileCommander, Security-Guard",
-                "strategy": "swarm_parallel",
-                "member_models": {"CodeCommander": "claude-3-7-sonnet", "FileCommander": "ollama/qwen3.8:27b-mlx", "Security-Guard": "gemini-2.0-flash"},
-                "created_at": "2026-10-01T12:00:00"
-            },
-            {
-                "id": 2,
-                "name": "Fachmodul Entwicklungsteam",
-                "description": "Hierarchische Arbeitsteilung: Architektur -> Frontend -> Backend -> Tests",
-                "leader_agent": "Architect-Lead",
-                "member_agents": "Astro-Coder, FastAPI-Dev, Pytest-Tester",
-                "strategy": "swarm_hierarchy",
-                "member_models": {"Astro-Coder": "claude-3-7-sonnet", "FastAPI-Dev": "codex-cli", "Pytest-Tester": "ollama/qwen3.8:27b-mlx"},
-                "created_at": "2026-10-02T15:30:00"
-            }
-        ]
-    return {"teams": teams, "count": len(teams)}
+            stored_models = json.loads(existing[1] or "{}") if existing else {}
+            models = payload.get("member_models", {key: value for key, value in stored_models.items() if key in members})
+        except (ValueError, TypeError):
+            models = {}
+        if (not isinstance(models, dict) or any(key not in members or not isinstance(value, str) or len(value) > 120 for key, value in models.items())):
+            raise HTTPException(400, "Ungültige Mitgliedermodelle")
+        values = (name, payload.get("description", ""), leader, ", ".join(members), strategy, json.dumps(models), current + 1)
+        if existing:
+            conn.execute("UPDATE agent_teams SET name=?,description=?,leader_agent=?,member_agents=?,strategy=?,member_models=?,version=? WHERE id=?", (*values, team_id))
+        else:
+            cursor = conn.execute("INSERT INTO agent_teams (name,description,leader_agent,member_agents,strategy,member_models,version,created_at) VALUES (?,?,?,?,?,?,?,?)", (*values, datetime.now(timezone.utc).isoformat()))
+            team_id = cursor.lastrowid
+        conn.commit()
+        return {"status": "saved", "id": team_id, "name": name, "version": current + 1, "worker_started": False}
+    finally:
+        conn.close()
 
 
 @router.post("/agenten/teams")
 async def create_agent_team(payload: Dict[str, Any]):
-    """Erstellt ein neues Agenten-Team (Swarm-AI)."""
-    name = payload.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Teamname erforderlich")
-    description = payload.get("description", "")
-    leader_agent = payload.get("leader_agent", "Operator")
-    member_agents = payload.get("member_agents", "")
-    strategy = payload.get("strategy", "swarm_parallel")
+    return await asyncio.to_thread(_save_agent_team, payload)
+
+
+@router.post("/agenten/teams/{team_id}")
+async def update_agent_team(team_id: int, payload: Dict[str, Any]):
+    return await asyncio.to_thread(_save_agent_team, payload, team_id)
+
+
+@router.delete("/agenten/teams/{team_id}")
+async def delete_agent_team(team_id: int, expected_version: int = Query(...)):
     conn = _get_conn()
-    cursor = conn.cursor()
-    now = datetime.now().isoformat()
-    cursor.execute("""
-        INSERT INTO agent_teams (name, description, leader_agent, member_agents, strategy, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (name, description, leader_agent, member_agents, strategy, now))
-    new_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return {"status": "created", "id": new_id, "name": name}
+    try:
+        _ensure_agent_teams_schema(conn)
+        cursor = conn.execute("DELETE FROM agent_teams WHERE id=? AND version=?", (team_id, expected_version))
+        if cursor.rowcount != 1:
+            raise HTTPException(409, "Team wurde inzwischen geändert oder entfernt")
+        conn.commit()
+        return {"success": True, "worker_started": False}
+    finally:
+        conn.close()
 
 
 @router.get("/setup/ocean-map")
@@ -3265,31 +3329,20 @@ async def set_fackel_priority(request: Request, payload: Dict[str, Any] = Body(d
 
 
 @router.post("/agenten/teams/{team_id}/beseelen")
-async def beseelen_team(team_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Beseelt ein Team: Weist den Mitgliedern Modelle zu (Claude, Gemini, Codex, Ollama)."""
-    member_models = payload.get("member_models", {})
-    conn = _get_conn()
+async def beseelen_team(team_id: int, payload: Dict[str, Any] = Body(...)):
+    """Compatibility model editor, using the same revision check as teams."""
+    conn = _get_agent_studio_ro_conn()
     try:
-        cols = [c[1] for c in conn.execute("PRAGMA table_info(agent_teams)").fetchall()]
-        if "member_models" not in cols:
-            conn.execute("ALTER TABLE agent_teams ADD COLUMN member_models TEXT DEFAULT '{}'")
-        conn.execute("UPDATE agent_teams SET member_models = ? WHERE id = ?", (json.dumps(member_models), team_id))
-        conn.commit()
-        return {"ok": True, "team_id": team_id, "member_models": member_models}
+        row = conn.execute("SELECT * FROM agent_teams WHERE id=?", (team_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Team nicht gefunden")
+        updated = dict(row)
     finally:
         conn.close()
-
-
-@router.delete("/agenten/teams/{team_id}")
-async def delete_agent_team(team_id: int):
-    """Löscht ein konfiguriertes Multi-Agent-Team."""
-    conn = _get_conn()
-    try:
-        conn.execute("DELETE FROM agent_teams WHERE id = ?", (team_id,))
-        conn.commit()
-        return {"ok": True, "id": team_id}
-    finally:
-        conn.close()
+    updated["member_models"] = payload.get("member_models", {})
+    updated["expected_version"] = payload.get("expected_version")
+    result = await asyncio.to_thread(_save_agent_team, updated, team_id)
+    return {**result, "ok": True, "team_id": team_id, "member_models": updated["member_models"]}
 
 
 @router.post("/marblerun/chains/{chain_id}/beseelen")

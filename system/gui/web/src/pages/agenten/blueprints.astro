@@ -1,1257 +1,156 @@
 ---
-// blueprints.astro - Vorlagen-Bibliothek, Teams & Werkstatt-Integration (GUX-024..027)
 import BachLayout from "../../layouts/BachLayout.astro";
 ---
-
-<BachLayout title="Blueprints (Vorlagen-Bibliothek)" currentPath="/agenten/blueprints">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
-    <div>
-      <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
-        📐 Blueprints & Vorlagen-Bibliothek
-      </h1>
-      <p style="color:var(--text-muted);font-size:0.875rem;">
-        Zentrale Vorlagen für Agenten, Rollen, Teams, Staffeln, Skills, Workflows, Services und Contractus
-      </p>
+<BachLayout title="Blueprints & Agenten" currentPath="/agenten/blueprints">
+  <header class="studio-header">
+    <div><p class="studio-eyebrow">Agenten</p><h1>Blueprints</h1><p class="studio-lead">Rollen vorbereiten, Steckplätze einrichten und Aufgaben zuweisen.</p></div>
+    <div class="studio-actions">
+      <button class="btn" id="studio-refresh">Aktualisieren</button>
+      <button class="btn btn-primary" id="studio-new">Neuer Blueprint</button>
+      <a class="btn" href="/agenten/running">Living & Running</a>
+      <a class="btn" href="/agenten/marblerun">Ketten</a>
     </div>
-
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="openCreateBlueprintModal()">
-        <span>✨</span> Neuen Blueprint anlegen
-      </button>
-      <a href="/agenten/fabrika" class="btn">
-        <span>🏭</span> Zur Agenten-Werkstatt
-      </a>
-      <a href="/agenten/running" class="btn">
-        <span>⚡</span> Living & Running
-      </a>
-    </div>
+  </header>
+  <p id="studio-status" class="studio-message" role="status" aria-live="polite">Blueprints werden geladen…</p>
+  <div class="studio-toolbar">
+    <label class="studio-search">Suchen<input id="studio-search" type="search" placeholder="Name, Rolle oder Beschreibung" /></label>
+    <label>Typ<select id="studio-kind"><option value="">Alle Typen</option><option value="agent">Agenten</option><option value="role">Rollen</option><option value="skill">Skill-Vorlagen</option><option value="workflow">Workflow-Vorlagen</option><option value="service">Service-Vorlagen</option><option value="contractus">Arbeitsverträge</option></select></label>
+    <button class="btn" id="studio-prompts">System- und Rollenvorlagen</button>
   </div>
-
-  <!-- Status- & Filter-Leiste -->
-  <div class="card" style="margin-bottom:1.5rem;padding:1rem;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
-      <!-- Suchfeld -->
-      <div style="flex:1;min-width:240px;position:relative;">
-        <input
-          type="text"
-          id="bp-search"
-          placeholder="Blueprints nach Name, Rolle, Skills durchsuchen..."
-          oninput="filterBlueprints()"
-          style="width:100%;padding:0.6rem 2.2rem 0.6rem 0.8rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;"
-        />
-        <span id="search-clear" onclick="clearSearch()" style="position:absolute;right:0.6rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;">✕</span>
-      </div>
-
-      <!-- Vorlagen vs Eigene Filter -->
-      <div style="display:flex;gap:0.5rem;align-items:center;">
-        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
-          <input type="checkbox" id="filter-templates-only" onchange="filterBlueprints()" />
-          Nur System-Vorlagen
-        </label>
-        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
-          <input type="checkbox" id="filter-custom-only" onchange="filterBlueprints()" />
-          Nur eigene Blueprints
-        </label>
-      </div>
-    </div>
-
-    <!-- Kind-Filter Tabs inklusive Teams-Reiter -->
-    <div class="bp-tabs" style="display:flex;gap:0.4rem;margin-top:1rem;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:0.75rem;">
-      <button class="bp-tab active" data-kind="all" onclick="selectKind('all')">
-        Alle <span class="badge" id="count-all">0</span>
-      </button>
-      <button class="bp-tab" data-kind="agent" onclick="selectKind('agent')">
-        🤖 Agenten <span class="badge" id="count-agent">0</span>
-      </button>
-      <button class="bp-tab" data-kind="teams" onclick="selectKind('teams')">
-        👥 Teams & Staffeln <span class="badge" id="count-teams">0</span>
-      </button>
-      <button class="bp-tab" data-kind="role" onclick="selectKind('role')">
-        🎭 Rollen <span class="badge" id="count-role">0</span>
-      </button>
-      <button class="bp-tab" data-kind="skill" onclick="selectKind('skill')">
-        🧩 Skills <span class="badge" id="count-skill">0</span>
-      </button>
-      <button class="bp-tab" data-kind="workflow" onclick="selectKind('workflow')">
-        ⛓️ Workflows <span class="badge" id="count-workflow">0</span>
-      </button>
-      <button class="bp-tab" data-kind="service" onclick="selectKind('service')">
-        ⚙️ Services <span class="badge" id="count-service">0</span>
-      </button>
-      <button class="bp-tab" data-kind="contractus" onclick="selectKind('contractus')">
-        📜 Contractus <span class="badge" id="count-contractus">0</span>
-      </button>
-    </div>
+  <div class="studio-tabs" role="tablist" aria-label="Blueprint-Bibliothek">
+    <button role="tab" aria-selected="true" data-library="custom">Eigene Blueprints <span id="count-custom">–</span></button>
+    <button role="tab" aria-selected="false" data-library="templates">Vorlagen <span id="count-templates">–</span></button>
+    <button role="tab" aria-selected="false" data-library="teams">Teams <span id="count-teams">–</span></button>
   </div>
+  <section id="studio-grid" class="studio-grid" aria-label="Blueprints"></section>
+  <section id="studio-teams" hidden>
+    <div class="studio-section-heading"><h2>Teams</h2><button id="studio-new-team" class="btn">Team anlegen</button></div>
+    <p class="studio-note">Mitglieder und Koordination werden gespeichert. Ausführbare Abläufe und ihre Aufgaben stehen unter <a href="/agenten/marblerun">Ketten</a>.</p>
+    <div id="studio-team-grid" class="studio-grid"></div>
+  </section>
 
-  <!-- Standard Blueprints Grid (für agent, role, skill, workflow, service, contractus) -->
-  <div id="blueprints-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
-    <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;">
-      Lade Blueprints...
-    </p>
-  </div>
-
-  <!-- Dedizierter Teams- & Staffeln-Bereich (wird bei Kind 'teams' aktiv) -->
-  <div id="teams-view-container" style="display:none;flex-direction:column;gap:1.5rem;">
-    <!-- Unterkategorien: Teams (Swarm-AI) vs. Agentenstaffeln (MarbleRun) -->
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;background:var(--bg-dark);padding:0.75rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--border);">
-      <div style="display:flex;gap:0.5rem;align-items:center;">
-        <button id="btn-subcat-teams" class="btn btn-sm btn-primary" onclick="selectTeamsSubcat('teams')">
-          👥 Teams (Swarm-AI)
-        </button>
-        <button id="btn-subcat-staffeln" class="btn btn-sm" onclick="selectTeamsSubcat('staffeln')">
-          ⛓️ Agentenstaffeln (MarbleRun)
-        </button>
-      </div>
-
-      <div id="teams-action-bar">
-        <button class="btn btn-sm btn-primary" id="btn-create-subcat" onclick="triggerSubcatCreate()">
-          <span>+</span> Team bilden (Werkstatt)
-        </button>
-      </div>
-    </div>
-
-    <!-- Unterkategorie 1: Teams Grid -->
-    <div id="pane-teams-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
-      <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;">Lade Teams...</p>
-    </div>
-
-    <!-- Unterkategorie 2: Staffeln Grid -->
-    <div id="pane-staffeln-grid" style="display:none;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:1.25rem;">
-      <p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;">Lade Agentenstaffeln...</p>
-    </div>
-  </div>
-
-  <!-- POP-UP MODAL 1: WERKSTATT - NEUEN BLUEPRINT / VORLAGE ANLEGEN -->
-  <div id="modal-create-blueprint" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
-    <div class="card" style="max-width:650px;width:92%;margin:auto;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h2 class="card-title" style="margin:0;">🏭 Agenten-Werkstatt: Neuen Blueprint anlegen</h2>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere eine neue Schablone für Agenten, Rollen oder Workflows</p>
+  <dialog id="blueprint-editor" class="studio-dialog" aria-labelledby="editor-title">
+    <form id="blueprint-form">
+      <header class="studio-dialog-header"><div><p class="studio-eyebrow" id="editor-revision">Neuer Blueprint</p><h2 id="editor-title">Blueprint anlegen</h2></div><button type="button" class="btn" data-close="blueprint-editor" aria-label="Editor schließen">Schließen</button></header>
+      <div class="studio-dialog-body">
+        <div class="studio-fields">
+          <label>Name (ID)<input name="name" id="bp-name" required maxlength="100" pattern="[A-Za-z0-9._-]+" placeholder="mein-assistent" /></label>
+          <label>Bezeichnung<input id="bp-title" required maxlength="120" /></label>
+          <label>Typ<select id="bp-kind"><option value="agent">Agent</option><option value="role">Rolle</option><option value="skill">Skill-Vorlage</option><option value="workflow">Workflow-Vorlage</option><option value="service">Service-Vorlage</option><option value="contractus">Arbeitsvertrag</option></select></label>
+          <label>Beschreibung<input id="bp-description" maxlength="20000" /></label>
         </div>
-        <button class="btn btn-sm" onclick="closeCreateBlueprintModal()">✕</button>
-      </div>
-      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Schablonen-Name (ID, z.B. test-auditor)</label>
-            <input type="text" id="cb-name" placeholder="z. B. test-auditor" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        <details open class="studio-group">
+          <summary><span>01</span> Rolle & Systemprompt</summary>
+          <div class="studio-group-body">
+            <label>Vorhandene Rolle<select id="bp-role"></select></label>
+            <label>Rollenprompt<textarea id="bp-persona" rows="7" required maxlength="20000"></textarea></label>
+            <label class="studio-check"><input id="bp-include-system" type="checkbox" checked /> Systemprompt verwenden</label>
+            <label>Eigener Systemprompt <span class="studio-note">(leer = aktive Systemvorlage)</span><textarea id="bp-system" rows="5" maxlength="20000"></textarea></label>
+            <details><summary>Aktiven Systemstandard anzeigen</summary><pre id="bp-system-default" class="studio-prompt-preview"></pre></details>
           </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Blueprint-Typ (Kind)</label>
-            <select id="cb-kind" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
-              <option value="agent">🤖 Agent (Eigenständige Instanz)</option>
-              <option value="role">🎭 Rolle (Verhaltensmaske)</option>
-              <option value="skill">🧩 Skill (Fähigkeit)</option>
-              <option value="workflow">⛓️ Workflow (Ablauf)</option>
-              <option value="service">⚙️ Service (Dienst)</option>
-              <option value="contractus">📜 Contractus (Arbeitsvertrag)</option>
-            </select>
+        </details>
+        <details class="studio-group">
+          <summary><span>02</span> Skills & Tools</summary>
+          <div class="studio-group-body">
+            <p class="studio-note">Skills liefern Anleitungen. Die folgenden Toolfreigaben begrenzen die tatsächlich verfügbaren Werkzeuge.</p>
+            <label>Skills filtern<input id="bp-skill-search" type="search" placeholder="Skill suchen" /></label>
+            <div id="bp-skills" class="studio-options"></div>
+            <label>Freigabeprofil<select id="bp-governance"></select></label>
+            <div id="bp-tools" class="studio-options"></div>
+            <p class="studio-note" id="bp-tools-source"></p>
           </div>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Rollen-Vorlage wählen (Activity Board / Rollenkatalog)</label>
-          <select id="cb-role-preset" onchange="onCbRolePresetSelect(this.value)" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
-            <option value="">-- Keine Rollenvorlage / Eigene Vorgabe --</option>
-            <option value="entwickler">💻 Entwickler (Senior Python / TDD)</option>
-            <option value="bueroassistent">📂 Büroassistent (Organisation & Ablage)</option>
-            <option value="gesundheitsassistent">🩺 Gesundheitsassistent (Medizin & Dokumente)</option>
-            <option value="steuer">🧾 Steuer-Agent (Belege & Werbungskosten)</option>
-            <option value="foerderplaner">📋 Förderplaner (ICF & Pädagogik)</option>
-            <option value="recherche">🔬 Recherche-Experte (Wissenschaftliche Synthese)</option>
-            <option value="psycho-berater">🧠 Psycho-Berater (Therapeutische Reflexion)</option>
-            <option value="task-divider">✂️ Task-Divider (Aufgabenzerlegung in Teil-Tasks)</option>
-            <option value="ticket-master">🎫 Ticket-Master (Triage & Zuweisung)</option>
-            <option value="haushaltsmanagement">🛒 Haushaltsmanagement (Alltag & Vorräte)</option>
-            <option value="aboservice">📄 Vertrags- & Abo-Service (Fixkosten & Kündigungen)</option>
-            <option value="data-analysis">📊 Datenanalyse & Reporting (Kennzahlen & Logs)</option>
-            <option value="decision-briefing">⚖️ Entscheidungs-Briefing (Pro/Contra & Szenarien)</option>
-          </select>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Anzeigename</label>
-          <input type="text" id="cb-title" placeholder="z. B. Test Auditor & Security Scout" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Persona-Rolle</label>
-          <input type="text" id="cb-role" placeholder="z. B. Sicherheitsprüfer & Code-Reviewer" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">System-Prompt / Persönlichkeit (Persona)</label>
-          <textarea id="cb-prompt" rows="4" placeholder="Du bist ein spezialisierter Agent für..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
-          <label style="display:flex;align-items:center;gap:0.45rem;font-size:0.8rem;color:var(--text-muted);margin-top:0.35rem;cursor:pointer;">
-            <input type="checkbox" id="cb-include-sysprompt" checked style="width:auto;" />
-            <span>BACH-Systemprompt als Basis einbinden (an-/ausschaltbar)</span>
-          </label>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Skills (Kommasepariert)</label>
-          <input type="text" id="cb-skills" placeholder="git-hygiene, lock-master, pipeline-optimizer" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Modus</label>
-            <select id="cb-modus" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
-              <option value="casualis">Casualis (Auf Zuruf)</option>
-              <option value="usus">Usus (Dauerläufer)</option>
-              <option value="impetus">Impetus (Triggerbasiert)</option>
-              <option value="contractus">Contractus (Streng)</option>
-            </select>
+        </details>
+        <details class="studio-group">
+          <summary><span>03</span> Modell & Arbeitsvertrag</summary>
+          <div class="studio-group-body">
+            <div class="studio-fields">
+              <label>Anbieter<select id="bp-backend"><option value="ollama">Ollama · lokal</option><option value="lmstudio">LM Studio · lokal</option><option value="hermes">Hermes · lokal</option><option value="ollama-cloud">Ollama Cloud</option><option value="openrouter">OpenRouter</option><option value="claude-api">Claude API</option><option value="openai">OpenAI API</option><option value="claude">Claude CLI · Subscription</option><option value="codex">Codex CLI · Subscription</option></select></label>
+              <label>Modell<input id="bp-model" list="bp-models" autocomplete="off" maxlength="120" /><datalist id="bp-models"></datalist></label>
+              <label>Arbeitsvertrag<select id="bp-contractus-preset"></select></label>
+              <label>Modus<select id="bp-mode"><option value="safe">Safe</option><option value="full">Full</option></select></label>
+              <label>Arbeitsweise<select id="bp-modus"><option value="casualis">Aufgabenbezogen</option><option value="usus">Dauerläufer</option><option value="impetus_temporal">Zeitlich begrenzt</option></select></label>
+              <label>Toolrunden<input id="bp-turns" type="number" min="1" max="100" value="20" /></label>
+              <label>Pause nach<input id="bp-pause-after" type="number" min="0" max="1440" value="5" /></label>
+              <label>Pause in Minuten<input id="bp-pause-minutes" type="number" min="0" max="1440" value="1" /></label>
+              <label>Pausenbasis<select id="bp-pause-basis"><option value="runs">Worker-Läufe</option><option value="tasks">Aufgaben</option></select></label>
+              <label class="studio-check"><input id="bp-think" type="checkbox" checked /> Think</label>
+            </div>
+            <p class="studio-note">Das Modell wird bei der Instanziierung ausdrücklich festgelegt. Cloud- und API-Worker starten über den Startknopf.</p>
           </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Max. Turns</label>
-            <input type="number" id="cb-turns" value="15" min="1" max="100" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
+        </details>
+        <details class="studio-group">
+          <summary><span>04</span> Bild & Promptvorschau</summary>
+          <div class="studio-group-body">
+            <div class="studio-avatar-row"><img id="bp-avatar-preview" alt="Agentenbild" hidden /><label>Eigenes Bild hochladen<input id="bp-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" /></label><button type="button" class="btn" id="bp-avatar-clear">Standardbild</button></div>
+            <p class="studio-note">PNG, JPEG oder WebP, maximal 180 KB.</p>
+            <button type="button" class="btn" id="bp-preview">Startprompt anzeigen</button>
+            <pre id="bp-preview-text" class="studio-prompt-preview" hidden></pre>
           </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Governance</label>
-            <select id="cb-governance" style="width:100%;padding:0.5rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
-              <option value="fail_closed_standard">Fail-Closed Standard</option>
-              <option value="read_only_research">Read-Only Research</option>
-              <option value="full_dev_guarded">Full-Dev Guarded</option>
-            </select>
-          </div>
-        </div>
+        </details>
+        <p id="editor-status" class="studio-message" role="status"></p>
       </div>
-      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
-        <button class="btn" onclick="closeCreateBlueprintModal()">Abbrechen</button>
-        <button class="btn btn-primary" onclick="submitCreateBlueprint()">Blueprint in Werkstatt speichern</button>
+      <footer class="studio-dialog-footer"><button type="button" class="btn" data-close="blueprint-editor">Abbrechen</button><button type="submit" class="btn btn-primary" id="bp-save">Blueprint speichern</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="instance-editor" class="studio-dialog studio-dialog-small" aria-labelledby="instance-title">
+    <form id="instance-form">
+      <header class="studio-dialog-header"><h2 id="instance-title">Steckplatz einrichten</h2><button type="button" class="btn" data-close="instance-editor">Schließen</button></header>
+      <div class="studio-dialog-body">
+        <p id="instance-description"></p>
+        <div class="studio-fields">
+          <label>Anbieter<select id="instance-backend"></select></label>
+          <label>Modell<input id="instance-model" list="instance-models" required maxlength="120" /><datalist id="instance-models"></datalist></label>
+          <label>Modus<select id="instance-mode"><option value="safe">Safe</option><option value="full">Full</option></select></label>
+        </div>
+        <p class="studio-note">Der Steckplatz wird als Living konfiguriert. Einen Worker startest du anschließend ausdrücklich; Aufgaben weist du im Taskboard zu.</p>
+        <p id="instance-status" class="studio-message" role="status"></p>
       </div>
+      <footer class="studio-dialog-footer"><button type="button" class="btn" data-close="instance-editor">Abbrechen</button><button type="submit" class="btn btn-primary" id="instance-save">Steckplatz einrichten</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="prompt-editor" class="studio-dialog" aria-labelledby="prompt-title">
+    <header class="studio-dialog-header"><h2 id="prompt-title">System- und Rollenvorlagen</h2><button class="btn" data-close="prompt-editor">Schließen</button></header>
+    <div class="studio-dialog-body">
+      <label>Vorlage<select id="prompt-key"></select></label>
+      <label>Aktiver Prompt<textarea id="prompt-effective" rows="12"></textarea></label>
+      <details><summary>Werkstandard anzeigen</summary><pre id="prompt-default" class="studio-prompt-preview"></pre></details>
+      <p id="prompt-status" role="status" class="studio-message"></p>
     </div>
-  </div>
+    <footer class="studio-dialog-footer"><button class="btn" id="prompt-reset">Werkstandard wiederherstellen</button><button class="btn btn-primary" id="prompt-save">Anpassung speichern</button></footer>
+  </dialog>
 
-  <!-- POP-UP MODAL 2: WERKSTATT - TEAM BILDEN (SWARM-AI) -->
-  <div id="modal-create-team" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
-    <div class="card" style="max-width:580px;width:90%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h2 class="card-title" style="margin:0;">👥 Agenten-Werkstatt: Team bilden (Swarm-AI)</h2>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere ein kollaboratives Multi-Agenten-Team</p>
-        </div>
-        <button class="btn btn-sm" onclick="closeCreateTeamModal()">✕</button>
+  <dialog id="team-editor" class="studio-dialog studio-dialog-small" aria-labelledby="team-title">
+    <form id="team-form">
+      <header class="studio-dialog-header"><h2 id="team-title">Team anlegen</h2><button type="button" class="btn" data-close="team-editor">Schließen</button></header>
+      <div class="studio-dialog-body">
+        <label>Name<input id="team-name" required maxlength="120" /></label>
+        <label>Beschreibung<textarea id="team-description" rows="3" maxlength="20000"></textarea></label>
+        <label>Strategie<select id="team-strategy"><option value="swarm_parallel">Gleiche Aufgabe, verschiedene Perspektiven</option><option value="swarm_hierarchy">Koordination und Teilaufgaben</option><option value="sequential_pipeline">Schrittweise Übergabe</option></select></label>
+        <p class="studio-note">Mitglieder auswählen</p><div id="team-members" class="studio-options"></div>
+        <div id="team-models" class="studio-fields" aria-label="Modelle der Teammitglieder"></div>
+        <p class="studio-note">Modellvorgaben je Mitglied; leer übernimmt dessen Steckplatzkonfiguration.</p>
+        <label>Koordination<select id="team-leader"></select></label>
+        <p id="team-status" class="studio-message" role="status"></p>
       </div>
-      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Team-Name</label>
-          <input type="text" id="ct-name" placeholder="z. B. Audit & Refactoring Schwarm" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Kooperations-Strategie</label>
-            <select id="ct-strategy" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;">
-              <option value="swarm_parallel">Parallele Arbeit (Schwarm)</option>
-              <option value="swarm_hierarchy">Hierarchie (Leader + Spezialisten)</option>
-              <option value="swarm_consensus">Konsens & Abstimmung</option>
-              <option value="swarm_specialist">Spezialisten-Zuweisung</option>
-            </select>
-          </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Leader-Agent</label>
-            <input type="text" id="ct-leader" value="Operator" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-          </div>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Mitglieder-Agenten (kommasepariert)</label>
-          <input type="text" id="ct-members" placeholder="z. B. CodeCommander, FileCommander, Sentinel" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung / Zweck des Teams</label>
-          <textarea id="ct-desc" rows="3" placeholder="Gemeinsame Zielsetzung für diesen Verbund..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;"></textarea>
-        </div>
-      </div>
-      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
-        <button class="btn" onclick="closeCreateTeamModal()">Abbrechen</button>
-        <button class="btn btn-primary" onclick="submitCreateTeam()">Team in Werkstatt anlegen</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- POP-UP MODAL 3: WERKSTATT - AGENTENSTAFFEL ANLEGEN (MARBLERUN) -->
-  <div id="modal-create-staffel" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
-    <div class="card" style="max-width:600px;width:90%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h2 class="card-title" style="margin:0;">⛓️ Agenten-Werkstatt: Neue Staffel anlegen (MarbleRun)</h2>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0.2rem 0 0 0;">Definiere eine sequenzielle Übergabe-Kette mit getypten Stationen</p>
-        </div>
-        <button class="btn btn-sm" onclick="closeCreateStaffelModal()">✕</button>
-      </div>
-      <div style="padding:1.25rem;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:1rem;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Staffel-ID (technisch)</label>
-            <input type="text" id="cs-name" placeholder="z. B. review-to-deploy" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-          </div>
-          <div>
-            <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Titel / Anzeigename</label>
-            <input type="text" id="cs-title" placeholder="z. B. Review bis Deployment Staffel" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-          </div>
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Beschreibung</label>
-          <input type="text" id="cs-desc" placeholder="Kette für automatische Qualitäts- und Buildprüfung" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;" />
-        </div>
-
-        <div>
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">Stationen-Definition (JSON):</label>
-          <textarea id="cs-steps" rows="5" placeholder='[&#10;  {"step": 1, "action": "Research & Analyse", "agent": "Research Scout", "model": "gemini-2.0-flash"}&#10;]' style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:#a7f3d0;font-size:0.8rem;font-family:monospace;"></textarea>
-        </div>
-      </div>
-      <div style="padding:1rem;display:flex;justify-content:flex-end;gap:0.5rem;border-top:1px solid var(--border);">
-        <button class="btn" onclick="closeCreateStaffelModal()">Abbrechen</button>
-        <button class="btn btn-primary" onclick="submitCreateStaffel()">Staffel in Werkstatt anlegen</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- BESEELEN MODAL FÜR TEAMS -->
-  <div id="modal-team-beseelen" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
-    <div class="card" style="max-width:540px;width:90%;margin:auto;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 class="card-title">✨ Team beseelen (Modelle zuweisen)</h2>
-        <button class="btn btn-sm" onclick="closeTeamBeseelenModal()">✕</button>
-      </div>
-      <div style="padding:1.25rem;">
-        <input type="hidden" id="tb-team-id" />
-        <h3 id="tb-team-name" style="font-size:1.05rem;font-weight:700;margin-bottom:0.75rem;"></h3>
-        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">
-          Weise jedem Teammitglied das passende Modell für seine Spezialaufgabe zu:
-        </p>
-        <div id="tb-members-container" style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1.5rem;"></div>
-        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
-          <button class="btn" onclick="closeTeamBeseelenModal()">Abbrechen</button>
-          <button class="btn btn-primary" onclick="confirmTeamBeseelen()">Beseelung speichern ✨</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Materialisieren Modal (Living Aktivierung für Einzel-Blueprints) -->
-  <div id="modal-materialize" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
-    <div class="card" style="max-width:500px;width:90%;margin:auto;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 class="card-title">✨ Blueprint als Living aktivieren</h2>
-        <button class="btn btn-sm" onclick="closeMaterializeModal()">✕</button>
-      </div>
-      <div style="padding:1rem;">
-        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
-          Die Materialisierung bindet ein KI-Modell an den Blueprint. Der Status wechselt zu <strong>Living</strong> (konfiguriert). Es wird <em>kein</em> Worker gestartet (GUX-027).
-        </p>
-        <div style="margin-bottom:1rem;">
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Ziel-Blueprint</label>
-          <input type="text" id="mat-bp-name" readonly style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
-          <input type="hidden" id="mat-bp-id" />
-        </div>
-        <div style="margin-bottom:1rem;">
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Modell zuweisen</label>
-          <select id="mat-model-select" style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;">
-            <option value="buddha-local">buddha-local (Ollama Qwen 35B / Mac Studio)</option>
-            <option value="claude-3-5-sonnet">claude-3-5-sonnet (Subscription / Claude CLI)</option>
-            <option value="gemini-2.5-pro">gemini-2.5-pro (Subscription / Antigravity)</option>
-            <option value="gpt-4o">gpt-4o (Subscription / Codex CLI)</option>
-            <option value="qwen2.5-coder:32b">qwen2.5-coder:32b (Ollama Local)</option>
-            <option value="openrouter/free">openrouter/free (Kostenlos)</option>
-          </select>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem;">
-          <button class="btn" onclick="closeMaterializeModal()">Abbrechen</button>
-          <button class="btn btn-primary" onclick="confirmMaterialize()">Living aktivieren ✨</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Worker Starten Modal (Running Aktivierung) -->
-  <div id="modal-start-worker" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
-    <div class="card" style="max-width:540px;width:90%;margin:auto;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 class="card-title">⚡ Worker starten (Running Aktivierung)</h2>
-        <button class="btn btn-sm" onclick="closeStartWorkerModal()">✕</button>
-      </div>
-      <div style="padding:1rem;">
-        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
-          Startet einen aktiven Ausführungs-Worker. Erzeugt einen authentischen <strong>JobExecutionReceipt</strong> und registriert die Präsenz via <strong>HeartbeatReceipt</strong> (GUX-027).
-        </p>
-        <div style="margin-bottom:1rem;">
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Blueprint</label>
-          <input type="text" id="start-bp-name" readonly style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.9rem;" />
-          <input type="hidden" id="start-bp-id" />
-        </div>
-        <div style="margin-bottom:1rem;">
-          <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.25rem;">Arbeitsauftrag / Task Prompt</label>
-          <textarea id="start-task-prompt" rows="3" placeholder="Konkrete Aufgabe für diesen Worker-Lauf eingeben..." style="width:100%;padding:0.6rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem;font-family:monospace;"></textarea>
-        </div>
-        <div id="start-receipt-info" style="display:none;padding:0.75rem;background:#064e3b;border:1px solid #10b981;border-radius:6px;margin-bottom:1rem;color:#d1fae5;font-size:0.8rem;"></div>
-        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem;">
-          <button class="btn" onclick="closeStartWorkerModal()">Abbrechen</button>
-          <button class="btn btn-primary" id="btn-confirm-start" onclick="confirmStartWorker()">▶ Worker starten</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Startprompt Vorschau Drawer / Modal -->
-  <div id="modal-prompt-preview" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
-    <div class="card" style="max-width:680px;width:92%;margin:auto;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 class="card-title">🚀 Startprompt-Vorschau ([Boot:Agent], [Boot:System], [Boot:Aufgabe])</h2>
-        <button class="btn btn-sm" onclick="closePromptPreview()">✕</button>
-      </div>
-      <div style="padding:1rem;overflow-y:auto;flex:1;">
-        <pre id="prompt-preview-content" style="white-space:pre-wrap;font-family:monospace;font-size:0.78rem;background:var(--bg-dark);padding:1rem;border-radius:6px;border:1px solid var(--border);color:#a7f3d0;max-height:50vh;overflow-y:auto;"></pre>
-      </div>
-      <div style="padding:0.75rem 1rem;display:flex;justify-content:flex-end;border-top:1px solid var(--border);">
-        <button class="btn btn-sm" onclick="closePromptPreview()">Schließen</button>
-      </div>
-    </div>
-  </div>
+      <footer class="studio-dialog-footer"><button type="button" class="btn" data-close="team-editor">Abbrechen</button><button type="submit" class="btn btn-primary">Team speichern</button></footer>
+    </form>
+  </dialog>
 </BachLayout>
 
+<script>import "../../scripts/blueprint-studio.mjs";</script>
+
 <style>
-  .bp-tab {
-    padding: 0.35rem 0.75rem;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    transition: all 0.15s ease;
-  }
-  .bp-tab:hover {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-  .bp-tab.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
-  .bp-tab .badge {
-    background: rgba(255,255,255,0.15);
-    color: inherit;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 10px;
-  }
-  .bp-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    transition: transform 0.15s ease, border-color 0.15s ease;
-  }
-  .bp-card:hover {
-    border-color: var(--accent);
-    transform: translateY(-2px);
-  }
-  .modal-backdrop {
-    display: flex;
-  }
+  .studio-header,.studio-actions,.studio-toolbar,.studio-section-heading,.studio-dialog-header,.studio-dialog-footer,.studio-avatar-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
+  .studio-header{margin-bottom:1rem}.studio-header h1{font-size:2rem;letter-spacing:-.04em}.studio-eyebrow{text-transform:uppercase;font-size:.7rem;letter-spacing:.15em;color:var(--text-muted);margin-bottom:.4rem}.studio-lead{color:var(--text-muted);font-size:.9rem;margin-top:.5rem}
+  .studio-actions{justify-content:flex-end}.studio-toolbar{justify-content:flex-start;padding:1rem 0;gap:1rem}.studio-search{flex:1;min-width:220px}.studio-toolbar>label{margin:0}
+  label{display:flex;flex-direction:column;gap:.35rem;font-size:.8rem;color:var(--text-muted)}input,select,textarea{width:100%;padding:.65rem;background:var(--bg-dark);color:var(--text);border:1px solid var(--border);border-radius:6px;font:inherit}textarea{resize:vertical;line-height:1.55}input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .studio-tabs{display:flex;gap:.3rem;border-bottom:1px solid var(--border);margin-bottom:1.4rem}.studio-tabs button{padding:.8rem 1rem;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--text-muted);cursor:pointer;font:inherit}.studio-tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}.studio-tabs span{margin-left:.4rem;font-size:.75rem;color:var(--text-muted)}
+  [hidden]{display:none!important}.studio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:1rem}.studio-section-heading{margin-bottom:1rem}.studio-note{color:var(--text-muted);font-size:.78rem;line-height:1.6}.studio-message{font-size:.85rem;min-height:1.3rem;color:var(--text-muted)}.studio-message[data-error=true]{color:var(--error)}
+  .studio-dialog{margin:auto;padding:0;width:min(880px,94vw);max-height:90vh;overflow:hidden;color:var(--text);background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 24px 80px #0008}.studio-dialog::backdrop{background:#020617b8;backdrop-filter:blur(3px)}.studio-dialog-small{width:min(620px,94vw)}.studio-dialog-header,.studio-dialog-footer{padding:1rem 1.4rem;border-bottom:1px solid var(--border)}.studio-dialog-footer{justify-content:flex-end;border-bottom:0;border-top:1px solid var(--border)}.studio-dialog h2{font-size:1.2rem}.studio-dialog-body{padding:1.2rem 1.4rem;max-height:66vh;overflow-y:auto;display:flex;flex-direction:column;gap:1rem}
+  .studio-fields{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.studio-group{border-top:1px solid var(--border);padding-top:.5rem}.studio-group>summary{font-weight:600;font-size:.9rem;padding:.6rem 0;cursor:pointer}.studio-group>summary span{color:var(--text-muted);font-size:.72rem;margin-right:.5rem}.studio-group-body{display:flex;flex-direction:column;gap:.9rem;padding:.4rem 0 .6rem}
+  .studio-check{flex-direction:row;align-items:center;gap:.5rem}.studio-check input{width:auto}.studio-options{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;max-height:240px;overflow:auto}.studio-avatar-row{justify-content:flex-start}.studio-avatar-row img{width:64px;height:64px;object-fit:cover;border-radius:10px}.studio-prompt-preview{padding:1rem;background:var(--bg-dark);border:1px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem;line-height:1.6;max-height:320px;overflow:auto}details>summary{cursor:pointer}
+  :global(.studio-card){display:flex;flex-direction:column;gap:.8rem;border:1px solid var(--border);background:var(--bg-panel);padding:1.1rem;border-radius:10px;min-height:240px}:global(.studio-card-top){display:flex;align-items:center;justify-content:space-between;gap:.5rem}:global(.studio-card-avatar){width:44px;height:44px;object-fit:cover;border-radius:8px}:global(.studio-card-icon){font-size:1.7rem}:global(.studio-card h3){font-size:1.03rem}:global(.studio-card p){font-size:.8rem;color:var(--text-muted);line-height:1.5}:global(.studio-card-details){display:flex;flex-wrap:wrap;gap:.35rem;font-size:.73rem;color:var(--text-muted)}:global(.studio-card-actions){display:flex;flex-wrap:wrap;gap:.45rem;margin-top:auto}:global(.studio-card-actions .btn){font-size:.76rem;padding:.45rem .7rem}:global(.studio-empty){grid-column:1/-1;padding:2rem;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted)}:global(.studio-state){padding:.25rem .45rem;border:1px solid var(--border);border-radius:4px;font-size:.72rem}:global(.studio-state[data-running=true]){border-color:var(--success);color:var(--success)}:global(.studio-option){display:flex;flex-direction:row;align-items:flex-start;gap:.45rem;color:var(--text);padding:.4rem}:global(.studio-option input){width:auto;margin-top:.15rem}:global(.studio-option small){display:block;font-size:.7rem;color:var(--text-muted)}
+  @media(max-width:640px){.studio-fields,.studio-options{grid-template-columns:1fr}.studio-actions{justify-content:flex-start}.studio-toolbar{align-items:stretch}.studio-tabs button{padding:.75rem .6rem;font-size:.83rem}.studio-dialog-header,.studio-dialog-footer,.studio-dialog-body{padding:1rem}}
 </style>
-
-<script is:inline>
-  let _allBlueprints = [];
-  let _allTeams = [];
-  let _allChains = [];
-  let _currentKind = 'all';
-  let _currentTeamsSubcat = 'teams';
-
-  const KIND_ICONS = {
-    agent: '🤖',
-    role: '🎭',
-    skill: '🧩',
-    workflow: '⛓️',
-    service: '⚙️',
-    contractus: '📜',
-    teams: '👥'
-  };
-
-  const KIND_LABELS = {
-    agent: 'Agent',
-    role: 'Rolle',
-    skill: 'Skill',
-    workflow: 'Workflow',
-    service: 'Service',
-    contractus: 'Contractus',
-    teams: 'Teams & Staffeln'
-  };
-
-  const MODEL_OPTIONS = [
-    { id: "claude-3-7-sonnet", label: "🧠 Claude 3.7 Sonnet (Anthropic)" },
-    { id: "gemini-2.0-flash", label: "⚡ Gemini 2.0 Flash (Google)" },
-    { id: "codex-cli", label: "💻 Codex / GPT-4o (OpenAI)" },
-    { id: "ollama/qwen3.8:27b-mlx", label: "🦙 Ollama: Qwen 3.8 27B (Mac Studio)" },
-    { id: "ollama/kimi-k3:cloud", label: "☁️ Kimi K3 Cloud (131k)" },
-    { id: "openrouter/free", label: "🆓 OpenRouter (Kostenlos / Free Tier)" }
-  ];
-
-  async function loadBlueprintsData() {
-    try {
-      const [bpRes, teamsRes, chainsRes] = await Promise.all([
-        fetch('/api/agent-studio/blueprints'),
-        fetch('/api/agenten/teams').catch(() => ({ ok: false })),
-        fetch('/api/marblerun/chains').catch(() => ({ ok: false }))
-      ]);
-
-      if (bpRes.ok) {
-        const data = await bpRes.json();
-        const templates = data.templates || [];
-        const custom = data.blueprints || [];
-        _allBlueprints = [...templates, ...custom];
-      }
-
-      if (teamsRes.ok) {
-        const teamsData = await teamsRes.json();
-        _allTeams = teamsData.teams || [];
-      }
-
-      if (chainsRes.ok) {
-        const chainsData = await chainsRes.json();
-        _allChains = chainsData.chains || [];
-      }
-
-      updateCounts();
-      filterBlueprints();
-    } catch (e) {
-      document.getElementById('blueprints-grid').innerHTML = `
-        <p style="grid-column:1/-1;text-align:center;color:var(--error);padding:2rem;">
-          Fehler beim Laden der Blueprints: ${e.message}
-        </p>
-      `;
-    }
-  }
-
-  function updateCounts() {
-    const counts = { all: _allBlueprints.length, agent: 0, role: 0, skill: 0, workflow: 0, service: 0, contractus: 0 };
-    for (const b of _allBlueprints) {
-      const k = (b.kind || 'agent').toLowerCase();
-      if (counts[k] !== undefined) counts[k]++;
-    }
-    for (const [k, v] of Object.entries(counts)) {
-      const el = document.getElementById('count-' + k);
-      if (el) el.textContent = v;
-    }
-    const teamsBadge = document.getElementById('count-teams');
-    if (teamsBadge) teamsBadge.textContent = (_allTeams.length + _allChains.length);
-  }
-
-  function selectKind(kind) {
-    _currentKind = kind;
-    document.querySelectorAll('.bp-tab').forEach(t => {
-      t.classList.toggle('active', t.getAttribute('data-kind') === kind);
-    });
-
-    const grid = document.getElementById('blueprints-grid');
-    const teamsContainer = document.getElementById('teams-view-container');
-
-    if (kind === 'teams') {
-      grid.style.display = 'none';
-      teamsContainer.style.display = 'flex';
-      renderTeamsView();
-    } else {
-      teamsContainer.style.display = 'none';
-      grid.style.display = 'grid';
-      filterBlueprints();
-    }
-  }
-
-  function clearSearch() {
-    const input = document.getElementById('bp-search');
-    input.value = '';
-    document.getElementById('search-clear').style.display = 'none';
-    filterBlueprints();
-  }
-
-  function filterBlueprints() {
-    if (_currentKind === 'teams') {
-      renderTeamsView();
-      return;
-    }
-
-    const search = (document.getElementById('bp-search').value || '').trim().toLowerCase();
-    document.getElementById('search-clear').style.display = search ? 'block' : 'none';
-    const templatesOnly = document.getElementById('filter-templates-only').checked;
-    const customOnly = document.getElementById('filter-custom-only').checked;
-
-    const filtered = _allBlueprints.filter(b => {
-      const k = (b.kind || 'agent').toLowerCase();
-      if (_currentKind !== 'all' && k !== _currentKind) return false;
-      if (templatesOnly && !b.is_template) return false;
-      if (customOnly && b.is_template) return false;
-      if (search) {
-        const text = `${b.name} ${b.title || ''} ${b.description || ''} ${b.persona_role || ''}`.toLowerCase();
-        if (!text.includes(search)) return false;
-      }
-      return true;
-    });
-
-    renderBlueprints(filtered);
-  }
-
-  function renderBlueprints(list) {
-    const grid = document.getElementById('blueprints-grid');
-    if (!list || list.length === 0) {
-      grid.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:3rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
-          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine passenden Blueprints gefunden.</p>
-          <button onclick="openCreateBlueprintModal()" class="btn btn-sm btn-primary">+ Neuen Blueprint in Werkstatt anlegen</button>
-        </div>
-      `;
-      return;
-    }
-
-    grid.innerHTML = list.map(b => {
-      const kind = (b.kind || 'agent').toLowerCase();
-      const icon = KIND_ICONS[kind] || '📐';
-      const kindLabel = KIND_LABELS[kind] || kind;
-      const skills = b.skills || [];
-      const isLiving = !!b.is_materialized;
-      const isTemplate = !!b.is_template;
-
-      return `
-        <div class="bp-card">
-          <div>
-            <!-- Header Badges -->
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-              <span class="badge" style="background:var(--bg-dark);border:1px solid var(--border);font-size:0.75rem;padding:0.2rem 0.5rem;">
-                ${icon} ${kindLabel}
-              </span>
-              <div style="display:flex;gap:0.35rem;align-items:center;">
-                ${isTemplate ? '<span class="badge badge-accent" style="font-size:0.7rem;">Vorlage</span>' : '<span class="badge" style="background:#3b82f6;color:#fff;font-size:0.7rem;">Eigen</span>'}
-                <span class="badge" style="background:${isLiving ? '#059669' : '#4b5563'};color:#fff;font-size:0.7rem;">
-                  ${isLiving ? '● Living' : '○ Schablone'}
-                </span>
-              </div>
-            </div>
-
-            <!-- Title & ID -->
-            <h3 style="font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">
-              ${escapeHtml(b.title || b.name)}
-            </h3>
-            <div style="font-size:0.75rem;color:var(--text-muted);font-family:monospace;margin-bottom:0.6rem;">
-              ID: ${escapeHtml(b.name)} • v${escapeHtml(b.version || '1.0.0')}
-            </div>
-
-            <!-- Description -->
-            <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.85rem;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
-              ${escapeHtml(b.description || b.persona_role || 'Keine Beschreibung hinterlegt.')}
-            </p>
-
-            <!-- Skills Pills -->
-            ${skills.length > 0 ? `
-              <div style="margin-bottom:0.85rem;">
-                <span style="font-size:0.7rem;color:var(--text-muted);display:block;margin-bottom:0.25rem;">Skills (${skills.length}):</span>
-                <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
-                  ${skills.slice(0, 4).map(s => `<span class="badge" style="font-size:0.68rem;padding:0.1rem 0.4rem;background:rgba(255,255,255,0.06);">${escapeHtml(s)}</span>`).join('')}
-                  ${skills.length > 4 ? `<span class="badge" style="font-size:0.68rem;padding:0.1rem 0.4rem;background:rgba(255,255,255,0.06);">+${skills.length - 4}</span>` : ''}
-                </div>
-              </div>
-            ` : ''}
-          </div>
-
-          <!-- Actions Footer -->
-          <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">
-            <button class="btn btn-sm" style="font-size:0.75rem;" onclick="previewStartPrompt('${escapeHtml(b.name)}')">
-              Vorschau 🚀
-            </button>
-            <div style="display:flex;gap:0.35rem;">
-              <a href="/agenten/fabrika?load=${encodeURIComponent(b.name)}" class="btn btn-sm" style="font-size:0.75rem;">
-                Werkstatt 🏭
-              </a>
-              <button class="btn btn-sm" style="font-size:0.75rem;background:#1e3a8a;color:#93c5fd;border-color:#3b82f6;" onclick="openMaterializeModal(${Number(b.id)}, '${escapeHtml(b.name)}')">
-                Beseelen ✨
-              </button>
-              <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="openStartWorkerModal(${Number(b.id)}, '${escapeHtml(b.name)}')">
-                Start ▶
-              </button>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  // ── TEAMS & STAFFELN SUB-VIEW ──
-  function selectTeamsSubcat(subcat) {
-    _currentTeamsSubcat = subcat;
-    const btnTeams = document.getElementById('btn-subcat-teams');
-    const btnStaffeln = document.getElementById('btn-subcat-staffeln');
-    const paneTeams = document.getElementById('pane-teams-grid');
-    const paneStaffeln = document.getElementById('pane-staffeln-grid');
-    const btnCreate = document.getElementById('btn-create-subcat');
-
-    if (subcat === 'teams') {
-      btnTeams.classList.add('btn-primary');
-      btnStaffeln.classList.remove('btn-primary');
-      paneTeams.style.display = 'grid';
-      paneStaffeln.style.display = 'none';
-      btnCreate.innerHTML = '<span>+</span> Team bilden (Werkstatt)';
-    } else {
-      btnStaffeln.classList.add('btn-primary');
-      btnTeams.classList.remove('btn-primary');
-      paneTeams.style.display = 'none';
-      paneStaffeln.style.display = 'grid';
-      btnCreate.innerHTML = '<span>+</span> Staffel anlegen (Werkstatt)';
-    }
-  }
-
-  function triggerSubcatCreate() {
-    if (_currentTeamsSubcat === 'teams') {
-      openCreateTeamModal();
-    } else {
-      openCreateStaffelModal();
-    }
-  }
-
-  function renderTeamsView() {
-    const paneTeams = document.getElementById('pane-teams-grid');
-    const paneStaffeln = document.getElementById('pane-staffeln-grid');
-
-    // 1. Render Teams
-    if (_allTeams.length === 0) {
-      paneTeams.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:2.5rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
-          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine Teams konfiguriert.</p>
-          <button class="btn btn-sm btn-primary" onclick="openCreateTeamModal()">+ Team bilden (Swarm-AI)</button>
-        </div>
-      `;
-    } else {
-      paneTeams.innerHTML = _allTeams.map(t => {
-        const members = (t.member_agents || '').split(',').map(m => m.trim()).filter(Boolean);
-        const models = t.member_models || {};
-        return `
-          <div class="bp-card">
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                <span class="badge" style="background:#1e3a8a;color:#93c5fd;font-size:0.75rem;">👥 Team</span>
-                <span class="badge badge-accent" style="font-size:0.7rem;">${escapeHtml(t.strategy || 'swarm_parallel')}</span>
-              </div>
-              <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(t.name)}</h3>
-              <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">${escapeHtml(t.description || 'Keine Beschreibung hinterlegt.')}</p>
-
-              <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Mitglieder (${members.length}):</div>
-              <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
-                ${members.map(m => {
-                  const mod = models[m] ? `<span style="opacity:0.65;font-size:0.68rem;"> (${escapeHtml(models[m])})</span>` : '';
-                  return `<span class="badge" style="background:var(--bg-dark);border:1px solid var(--border);font-size:0.72rem;">🤖 ${escapeHtml(m)}${mod}</span>`;
-                }).join('')}
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
-              <button class="btn btn-sm" style="font-size:0.75rem;color:var(--error);" onclick="deleteTeam(${t.id})">
-                🗑️
-              </button>
-              <div style="display:flex;gap:0.35rem;">
-                <a href="/agenten/fabrika" class="btn btn-sm" style="font-size:0.75rem;">Werkstatt 🏭</a>
-                <button class="btn btn-sm btn-primary" style="font-size:0.75rem;" onclick="openTeamBeseelenModal(${t.id}, '${escapeHtml(t.name)}')">
-                  Beseelen ✨
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // 2. Render Staffeln
-    if (_allChains.length === 0) {
-      paneStaffeln.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:2.5rem;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
-          <p style="color:var(--text-muted);margin-bottom:0.75rem;">Keine Agentenstaffeln hinterlegt.</p>
-          <button class="btn btn-sm btn-primary" onclick="openCreateStaffelModal()">+ Staffel anlegen (MarbleRun)</button>
-        </div>
-      `;
-    } else {
-      paneStaffeln.innerHTML = _allChains.map(c => {
-        let steps = [];
-        try { steps = typeof c.steps_json === 'string' ? JSON.parse(c.steps_json) : (c.steps || []); } catch(e) {}
-        return `
-          <div class="bp-card">
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                <span class="badge" style="background:#3b1e8a;color:#d8b4fe;font-size:0.75rem;">⛓️ Staffel</span>
-                <span class="badge badge-accent" style="font-size:0.7rem;">${steps.length} Stationen</span>
-              </div>
-              <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(c.title || c.name)}</h3>
-              <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">${escapeHtml(c.description || '')}</p>
-
-              <div style="display:flex;flex-direction:column;gap:0.3rem;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);margin-bottom:0.75rem;">
-                ${steps.map(s => `
-                  <div style="font-size:0.75rem;display:flex;justify-content:space-between;">
-                    <span><strong>Station ${s.step}:</strong> ${escapeHtml(s.action)}</span>
-                    <span style="color:var(--accent);">${escapeHtml(s.agent || 'Agent')}</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
-              <button class="btn btn-sm" style="font-size:0.75rem;color:var(--error);" onclick="deleteStaffel(${c.id})">
-                🗑️
-              </button>
-              <div style="display:flex;gap:0.35rem;">
-                <a href="/agenten/marblerun" class="btn btn-sm" style="font-size:0.75rem;">Editor ↗</a>
-                <a href="/agenten/running" class="btn btn-sm btn-primary" style="font-size:0.75rem;">
-                  Running ⚡
-                </a>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, m => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    })[m]);
-  }
-
-  // ── MODAL: CREATE BLUEPRINT (WERKSTATT) ──
-  const ACTIVITY_ROLE_PROMPTS = {
-    entwickler: {
-      title: "Entwickler (Senior Python)",
-      role: "Senior Software-Entwickler",
-      prompt: "Du agierst als Senior Software-Entwickler für BACH und angebundene Repositories.\nSchwerpunkte: Python, System-Architektur, Test Driven Development (pytest), saubere Git-Commits und Fail-Closed Lock-Disziplin."
-    },
-    bueroassistent: {
-      title: "Büroassistent",
-      role: "Büro- und Organisations-Assistent",
-      prompt: "Du agierst als Büro- und Organisations-Experte im BACH-System.\nSchwerpunkte: Strukturierung von Aufgaben, Ablageordnung, Terminverwaltung, Korrespondenz und Dokumentation."
-    },
-    gesundheitsassistent: {
-      title: "Gesundheitsassistent",
-      role: "Gesundheits- und Dokumentations-Assistent",
-      prompt: "Du agierst als Gesundheits- und Dokumentations-Assistent.\nSchwerpunkte: Verwaltung medizinischer Dokumente, strukturierte Arztberichte, Laborwerte und Medikationspläne im Ordner user/gesundheit/."
-    },
-    steuer: {
-      title: "Steuer-Agent",
-      role: "Steuer- und Beleg-Experte",
-      prompt: "Du agierst als Steuer- und Beleg-Experte für BACH.\nSchwerpunkte: Prüfung, Zuordnung und Aufbereitung von Belegen, Rechnungen und Werbungskosten im Ordner user/buero/steuer/."
-    },
-    foerderplaner: {
-      title: "Förderplaner",
-      role: "Förderplaner und Pädagogik-Experte",
-      prompt: "Du agierst als Förderplaner- und Pädagogik-Experte.\nSchwerpunkte: ICF-basierte Zielformulierung, Förderdiagnostik, Materialrecherche und Förderberichte gemäß Richtlinien."
-    },
-    recherche: {
-      title: "Recherche-Experte",
-      role: "Wissenschaftlicher Recherche-Experte",
-      prompt: "Du agierst als wissenschaftlicher Recherche- und Analyse-Experte.\nSchwerpunkte: Fundierte Quellenauswertung, strukturierte Synthesen, Faktenprüfung und Ausarbeitung thematischer Dossiers."
-    },
-    "psycho-berater": {
-      title: "Psycho-Berater",
-      role: "Beratender Reflexions-Assistent",
-      prompt: "Du agierst als beratender Reflexions- und Psycho-Assistent.\nSchwerpunkte: Strukturierung therapeutischer Reflexionen, Vorbereitung von Beratungsgesprächen und Verhaltensdokumentation."
-    },
-    "task-divider": {
-      title: "Task-Divider",
-      role: "Aufgabenzerlegungs-Experte",
-      prompt: "Du agierst als Task-Divider und Dekompositions-Experte im BACH-System.\nSchwerpunkte: Methodische Analyse komplexer Großaufgaben, Zerlegung in handhabbare Teilpakete mit klaren Akzeptanzkriterien."
-    },
-    "ticket-master": {
-      title: "Ticket-Master",
-      role: "Ticket-Master und Triage-Experte",
-      prompt: "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\nSchwerpunkte: Sichtung offener Tickets, Prioritätenbewertung, Zuweisung zu den passenden Rollen."
-    },
-    haushaltsmanagement: {
-      title: "Haushaltsmanagement",
-      role: "Haushalts- und Alltagsmanager",
-      prompt: "Du bist der Haushalts- und Alltagsmanager im BACH-System.\nSchwerpunkte: Einkaufslisten, Haushaltsroutinen, Vorratsmanagement, Inventar und alltägliche Haushaltslogistik."
-    },
-    aboservice: {
-      title: "Vertrags- & Abo-Service",
-      role: "Vertrags- und Abo-Manager",
-      prompt: "Du bist der Vertrags- und Abo-Manager im BACH-System.\nSchwerpunkte: Prüfung von Vertragslaufzeiten, Kündigungsfristen, Optimierungspotenzialen und monatlichen Fixkosten."
-    },
-    "data-analysis": {
-      title: "Datenanalyse & Reporting",
-      role: "Datenanalyse- und Reporting-Experte",
-      prompt: "Du bist der Datenanalyse- und Reporting-Experte im BACH-System.\nSchwerpunkte: Strukturierte Auswertung von Kennzahlen, Logs, CSV-Dateien und Zeitreihen sowie visuelle Zusammenfassungen."
-    },
-    "decision-briefing": {
-      title: "Entscheidungs-Briefing",
-      role: "Entscheidungs- und Strategieberater",
-      prompt: "Du bist der Entscheidungs- und Strategieberater im BACH-System.\nSchwerpunkte: Ausgewogene Pro-Contra-Analysen, Risikobewertungen, Szenarienvergleiche und fundierte Entscheidungsvorlagen."
-    }
-  };
-
-  function onCbRolePresetSelect(roleKey) {
-    if (!roleKey || !ACTIVITY_ROLE_PROMPTS[roleKey]) return;
-    const r = ACTIVITY_ROLE_PROMPTS[roleKey];
-    const nameEl = document.getElementById('cb-name');
-    if (!nameEl.value.trim()) nameEl.value = roleKey;
-    document.getElementById('cb-title').value = r.title;
-    document.getElementById('cb-role').value = r.role;
-    document.getElementById('cb-prompt').value = r.prompt;
-  }
-
-  function openCreateBlueprintModal() {
-    document.getElementById('cb-name').value = '';
-    document.getElementById('cb-title').value = '';
-    document.getElementById('cb-role').value = '';
-    document.getElementById('cb-prompt').value = '';
-    document.getElementById('cb-skills').value = '';
-    const presetEl = document.getElementById('cb-role-preset');
-    if (presetEl) presetEl.value = '';
-    const sysEl = document.getElementById('cb-include-sysprompt');
-    if (sysEl) sysEl.checked = true;
-    document.getElementById('modal-create-blueprint').style.display = 'flex';
-  }
-
-  function closeCreateBlueprintModal() {
-    document.getElementById('modal-create-blueprint').style.display = 'none';
-  }
-
-  async function submitCreateBlueprint() {
-    const name = document.getElementById('cb-name').value.trim().toLowerCase();
-    const kind = document.getElementById('cb-kind').value;
-    const title = document.getElementById('cb-title').value.trim() || name;
-    const role = document.getElementById('cb-role').value.trim();
-    const prompt = document.getElementById('cb-prompt').value.trim();
-    const skills = document.getElementById('cb-skills').value.split(',').map(s => s.trim()).filter(Boolean);
-    const modus = document.getElementById('cb-modus').value;
-    const turns = parseInt(document.getElementById('cb-turns').value) || 15;
-    const govProfile = document.getElementById('cb-governance').value;
-    const includeSysPrompt = document.getElementById('cb-include-sysprompt')?.checked !== false;
-
-    if (!name) {
-      alert('Bitte einen gültigen Schablonen-Namen eingeben.');
-      return;
-    }
-    if (!prompt && !role && (kind === 'agent' || kind === 'role')) {
-      alert('Bitte entweder eine Persona-Rolle oder einen System-Prompt angeben.');
-      return;
-    }
-
-    const payload = {
-      name,
-      kind,
-      title,
-      persona_role: role,
-      persona_prompt: prompt,
-      skills,
-      modus,
-      contractus: { turns, cooldown_seconds: 30 },
-      governance: { profile: govProfile }
-    };
-
-    try {
-      const res = await fetch('/api/agent-studio/blueprints', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Fehler beim Speichern');
-      alert(`✅ Blueprint '${name}' erfolgreich in der Werkstatt angelegt!`);
-      closeCreateBlueprintModal();
-      loadBlueprintsData();
-    } catch (e) {
-      alert('Fehler: ' + e.message);
-    }
-  }
-
-  // ── MODAL: CREATE TEAM (WERKSTATT) ──
-  function openCreateTeamModal() {
-    document.getElementById('ct-name').value = '';
-    document.getElementById('ct-members').value = '';
-    document.getElementById('ct-desc').value = '';
-    document.getElementById('modal-create-team').style.display = 'flex';
-  }
-
-  function closeCreateTeamModal() {
-    document.getElementById('modal-create-team').style.display = 'none';
-  }
-
-  async function submitCreateTeam() {
-    const name = document.getElementById('ct-name').value.trim();
-    const strategy = document.getElementById('ct-strategy').value;
-    const leader = document.getElementById('ct-leader').value.trim();
-    const members = document.getElementById('ct-members').value.trim();
-    const desc = document.getElementById('ct-desc').value.trim();
-
-    if (!name) {
-      alert('Bitte einen Teamnamen angeben.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/agenten/teams', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, strategy, leader_agent: leader, member_agents: members, description: desc })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Fehler beim Anlegen');
-      alert(`✅ Team '${name}' erfolgreich gebildet!`);
-      closeCreateTeamModal();
-      loadBlueprintsData();
-    } catch (e) {
-      alert('Fehler: ' + e.message);
-    }
-  }
-
-  async function deleteTeam(teamId) {
-    if (!confirm('Dieses Team wirklich löschen?')) return;
-    try {
-      const res = await fetch(`/api/agenten/teams/${teamId}`, { method: 'DELETE' });
-      if (res.ok) {
-        loadBlueprintsData();
-      } else {
-        alert('Fehler beim Löschen des Teams.');
-      }
-    } catch (e) {
-      alert('Netzwerkfehler: ' + e.message);
-    }
-  }
-
-  // ── MODAL: CREATE STAFFEL (WERKSTATT) ──
-  function openCreateStaffelModal() {
-    document.getElementById('cs-name').value = '';
-    document.getElementById('cs-title').value = '';
-    document.getElementById('cs-desc').value = '';
-    document.getElementById('cs-steps').value = JSON.stringify([
-      { step: 1, action: "Research & Analyse", agent: "Research Scout", model: "gemini-2.0-flash" },
-      { step: 2, action: "Code & Architektur", agent: "Ati Architekt", model: "claude-3-7-sonnet" },
-      { step: 3, action: "Audit & P-001 Check", agent: "Sentinel Auditor", model: "codex-cli" }
-    ], null, 2);
-    document.getElementById('modal-create-staffel').style.display = 'flex';
-  }
-
-  function closeCreateStaffelModal() {
-    document.getElementById('modal-create-staffel').style.display = 'none';
-  }
-
-  async function submitCreateStaffel() {
-    const name = document.getElementById('cs-name').value.trim().toLowerCase();
-    const title = document.getElementById('cs-title').value.trim();
-    const desc = document.getElementById('cs-desc').value.trim();
-    let steps = [];
-    try {
-      steps = JSON.parse(document.getElementById('cs-steps').value);
-    } catch(e) {
-      alert('Ungültiges JSON im Stationen-Feld.');
-      return;
-    }
-
-    if (!name) {
-      alert('Bitte eine Staffel-ID angeben.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/marblerun/chains', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, title, description: desc, steps })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Fehler beim Anlegen');
-      alert(`✅ Staffel '${title || name}' erfolgreich angelegt!`);
-      closeCreateStaffelModal();
-      loadBlueprintsData();
-    } catch (e) {
-      alert('Fehler: ' + e.message);
-    }
-  }
-
-  async function deleteStaffel(chainId) {
-    if (!confirm('Diese Staffel wirklich löschen?')) return;
-    try {
-      const res = await fetch(`/api/marblerun/chains/${chainId}`, { method: 'DELETE' });
-      if (res.ok) {
-        loadBlueprintsData();
-      } else {
-        alert('Fehler beim Löschen der Staffel.');
-      }
-    } catch (e) {
-      alert('Netzwerkfehler: ' + e.message);
-    }
-  }
-
-  // ── MODAL: TEAM BESEELEN ──
-  function openTeamBeseelenModal(teamId, teamName) {
-    const team = _allTeams.find(t => t.id === teamId);
-    if (!team) return;
-
-    document.getElementById('tb-team-id').value = teamId;
-    document.getElementById('tb-team-name').textContent = teamName || team.name;
-
-    const members = (team.member_agents || '').split(',').map(m => m.trim()).filter(Boolean);
-    const models = team.member_models || {};
-    const container = document.getElementById('tb-members-container');
-
-    container.innerHTML = members.map(m => {
-      const curMod = models[m] || 'ollama/qwen3.8:27b-mlx';
-      return `
-        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-dark);padding:0.6rem;border-radius:4px;border:1px solid var(--border);">
-          <strong style="font-size:0.85rem;">🤖 ${escapeHtml(m)}</strong>
-          <select class="tb-member-select" data-member="${escapeHtml(m)}" style="padding:0.35rem 0.6rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">
-            ${MODEL_OPTIONS.map(opt => `<option value="${opt.id}" ${opt.id === curMod ? 'selected' : ''}>${opt.label}</option>`).join('')}
-          </select>
-        </div>
-      `;
-    }).join('');
-
-    document.getElementById('modal-team-beseelen').style.display = 'flex';
-  }
-
-  function closeTeamBeseelenModal() {
-    document.getElementById('modal-team-beseelen').style.display = 'none';
-  }
-
-  async function confirmTeamBeseelen() {
-    const teamId = document.getElementById('tb-team-id').value;
-    const selects = document.querySelectorAll('.tb-member-select');
-    const member_models = {};
-    selects.forEach(sel => {
-      const mem = sel.getAttribute('data-member');
-      member_models[mem] = sel.value;
-    });
-
-    try {
-      const res = await fetch(`/api/agenten/teams/${teamId}/beseelen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ member_models })
-      });
-      if (res.ok) {
-        alert('✨ Team-Beseelung erfolgreich gespeichert!');
-        closeTeamBeseelenModal();
-        loadBlueprintsData();
-      } else {
-        alert('Fehler beim Beseelen.');
-      }
-    } catch (e) {
-      alert('Netzwerkfehler: ' + e.message);
-    }
-  }
-
-  // ── MATERIALIZE MODAL ──
-  function openMaterializeModal(id, name) {
-    document.getElementById('mat-bp-id').value = id;
-    document.getElementById('mat-bp-name').value = name;
-    document.getElementById('modal-materialize').style.display = 'flex';
-  }
-
-  function closeMaterializeModal() {
-    document.getElementById('modal-materialize').style.display = 'none';
-  }
-
-  async function confirmMaterialize() {
-    const id = document.getElementById('mat-bp-id').value;
-    const model = document.getElementById('mat-model-select').value;
-    try {
-      const res = await fetch(`/api/agent-studio/blueprints/${id}/materialize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Fehler beim Materialisieren');
-      alert(`✨ ${data.message || 'Blueprint als Living aktiviert!'}`);
-      closeMaterializeModal();
-      loadBlueprintsData();
-    } catch (e) {
-      alert(`Fehler: ${e.message}`);
-    }
-  }
-
-  // ── START WORKER MODAL ──
-  function openStartWorkerModal(id, name) {
-    document.getElementById('start-bp-id').value = id;
-    document.getElementById('start-bp-name').value = name;
-    document.getElementById('start-task-prompt').value = `Standardauftrag für ${name}: System- und Aufgabenprüfung ausführen.`;
-    document.getElementById('start-receipt-info').style.display = 'none';
-    document.getElementById('btn-confirm-start').disabled = false;
-    document.getElementById('modal-start-worker').style.display = 'flex';
-  }
-
-  function closeStartWorkerModal() {
-    document.getElementById('modal-start-worker').style.display = 'none';
-  }
-
-  async function confirmStartWorker() {
-    const id = document.getElementById('start-bp-id').value;
-    const task = document.getElementById('start-task-prompt').value;
-    const btn = document.getElementById('btn-confirm-start');
-    const info = document.getElementById('start-receipt-info');
-    btn.disabled = true;
-
-    try {
-      const res = await fetch(`/api/agent-studio/blueprints/${id}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Worker-Start fehlgeschlagen');
-
-      info.style.display = 'block';
-      info.innerHTML = `
-        <strong>✅ Worker erfolgreich gestartet!</strong><br>
-        Receipt-ID: <code>${data.job_receipt?.receipt_id || 'N/A'}</code><br>
-        Status: <strong>${data.status}</strong> • Living: <code>${data.is_living}</code> • Running: <code>${data.is_running}</code>
-      `;
-      setTimeout(() => {
-        closeStartWorkerModal();
-        loadBlueprintsData();
-      }, 2500);
-    } catch (e) {
-      alert(`Fehler beim Starten: ${e.message}`);
-      btn.disabled = false;
-    }
-  }
-
-  // ── PROMPT PREVIEW ──
-  async function previewStartPrompt(name) {
-    const bp = _allBlueprints.find(b => b.name === name);
-    if (!bp) return;
-
-    try {
-      const res = await fetch('/api/agent-studio/synthesize-prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blueprint: bp })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Fehler bei Prompt-Synthese');
-
-      document.getElementById('prompt-preview-content').textContent = data.start_prompt;
-      document.getElementById('modal-prompt-preview').style.display = 'flex';
-    } catch (e) {
-      alert(`Startprompt-Fehler: ${e.message}`);
-    }
-  }
-
-  function closePromptPreview() {
-    document.getElementById('modal-prompt-preview').style.display = 'none';
-  }
-
-  document.addEventListener('DOMContentLoaded', loadBlueprintsData);
-</script>

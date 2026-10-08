@@ -21,6 +21,8 @@ from fastapi.testclient import TestClient
 from gui.server import app
 from gui import device_auth
 from gui.api import compare_race_adapter, unified_api
+from hub._services.chat import slots_config
+from hub._services import blueprint_service, skill_capabilities_service
 
 
 @pytest.fixture
@@ -39,6 +41,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(unified_api, "BACH_DB", db_path)
     monkeypatch.setattr(unified_api, "_agent_studio_tables_ready", False)
     monkeypatch.setattr(unified_api, "_marblerun_tables_ready", False)
+    slots_path = str(tmp_path / "slots.json")
+    slots_config.initialize_slots_config(slots_path)
+    monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", slots_path)
+    monkeypatch.setattr(blueprint_service, "SKILLS_SEARCH_PATHS", [])
+    monkeypatch.setattr(skill_capabilities_service, "SKILLS_SEARCH_PATHS", [])
+    from gui.api import core_system_agents
+    monkeypatch.setattr(core_system_agents, "_snapshot", lambda: slots_config.core_system_agents_snapshot())
     for name in ("DOMAINS_ROOT", "TOOLS_ROOT", "MCP_ROOT", "CONTROL_ROOT",
                  "REPOS_ROOT", "SKILLS_ROOT"):
         monkeypatch.setattr(unified_api, name, None)
@@ -80,7 +89,7 @@ def test_agent_studio_blueprints(client):
         "skills": ["think", "decide"],
         "animus_type": "api",
         "contractus": {"max_turns": 20},
-        "modus": "trigger"
+        "modus": "casualis"
     }
     create_resp = client.post("/api/agent-studio/blueprints", json=new_bp)
     assert create_resp.status_code == 200
@@ -93,18 +102,24 @@ def test_agent_studio_blueprints(client):
 
     # 4. Materialize custom blueprint
     custom_item = next(b for b in resp2.json()["blueprints"] if b["name"] == "test_researcher")
-    mat_resp = client.post(f"/api/agent-studio/blueprints/{custom_item['id']}/materialize")
+    mat_resp = client.post(f"/api/agent-studio/blueprints/{custom_item['id']}/materialize", json={
+        "expected_version": custom_item["version"],
+        "configuration_version": slots_config.core_system_agents_snapshot()["configuration_version"],
+        "execution": {"backend":"ollama", "model":"fixture-model"}})
     assert mat_resp.status_code == 200
     assert mat_resp.json()["success"] is True
     assert mat_resp.json()["status"] == "configured"
 
     # 5. Delete custom blueprint
-    del_resp = client.delete(f"/api/agent-studio/blueprints/{custom_item['id']}")
+    del_resp = client.delete(f"/api/agent-studio/blueprints/{custom_item['id']}?expected_version={custom_item['version']}")
+    assert del_resp.status_code == 409
+    slots_config.delete_system_slot(mat_resp.json()["slot_id"], slots_config.core_system_agents_snapshot()["configuration_version"])
+    del_resp = client.delete(f"/api/agent-studio/blueprints/{custom_item['id']}?expected_version={custom_item['version']}")
     assert del_resp.status_code == 200
 
     # 6. Deleting a template must fail with 403
     template_item = resp2.json()["templates"][0]
-    del_template_resp = client.delete(f"/api/agent-studio/blueprints/{template_item['id']}")
+    del_template_resp = client.delete(f"/api/agent-studio/blueprints/{template_item['id']}?expected_version={template_item['version']}")
     assert del_template_resp.status_code == 403
 
 
@@ -114,8 +129,8 @@ def test_living_agents(client):
     data = resp.json()
     assert "living_agents" in data
     assert data["count"] > 0
-    names = [a["name"] for a in data["living_agents"]]
-    assert any("claude" in n for n in names)
+    assert all(agent["status"] == "configured" and agent["is_running"] is False for agent in data["living_agents"])
+    assert all(agent["execution"] is None and agent["last_heartbeat"] is None for agent in data["living_agents"])
 
 
 def test_capabilities_hub(client):
@@ -132,8 +147,7 @@ def test_capabilities_hub(client):
         "agent_id": "buddha",
         "capabilities": ["think", "decide", "brainstorm"]
     })
-    assert bind_resp.status_code == 200
-    assert bind_resp.json()["success"] is True
+    assert bind_resp.status_code == 409
 
 
 def test_marblerun_chains_and_agents_map(client):

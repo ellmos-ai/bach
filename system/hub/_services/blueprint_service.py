@@ -22,7 +22,7 @@ import os
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -172,10 +172,6 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
 def seed_default_blueprints(conn: sqlite3.Connection) -> None:
     """Befuellt Core-Vorlagen fuer alle Kinds (GUX-015, GUX-023, GUX-025)."""
     ensure_blueprint_schema(conn)
-    count = conn.execute("SELECT COUNT(*) FROM agent_blueprints").fetchone()[0]
-    if count > 0:
-        return
-
     now = datetime.now(timezone.utc).isoformat()
     seeds = [
         # AGENTS (GUX-015)
@@ -314,6 +310,20 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
         ),
     ]
 
+    from .chat.slots_config import DEFAULT_ROLE_PROMPTS
+    for role, title in (("personal-assistant", "Persönlicher Assistent"),
+                        ("boss_routing", "Boss · Koordination"),
+                        ("task-divider", "Boss · Aufgabenzerlegung"),
+                        ("ticket-master", "Boss · Triage"),
+                        ("entwickler", "Experte · Entwicklung"),
+                        ("recherche", "Experte · Recherche")):
+        seeds.append(("template_" + role.replace("-", "_"), title,
+            "Instanz aus einer vorhandenen BACH-Rolle erstellen.",
+            role, DEFAULT_ROLE_PROMPTS[role], "[]", "api",
+            json.dumps({"turns": 20, "cooldown_seconds": 30}), "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard"}),
+            "agent", "", 1, now, now))
+
     conn.executemany("""
         INSERT OR IGNORE INTO agent_blueprints (
             name, title, description, persona_role, persona_prompt,
@@ -434,7 +444,8 @@ def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None
 - Sicherheitsleitplanken & Governance: P-001 (Fail-Closed No Direct Main Push), P-002 (Zwei-Bäume-Regel), P-004 (Lock-Master)
 - Governance-Profil: {gov_profile}
 - Tool-Whitelist: {tool_whitelist}
-- Kommunikationsregel: Aktiver Dateisystem-Pull für Regelwerke (CLAUDE.md / GEMINI.md). Alle Injektionen unterliegen Hooker-Audit.
+- Kommunikationsregel: Vor Änderungen die aktuellen Repository-Regeln und Locks prüfen.
+- Ausführungsnachweis: Ein Workerstart zählt erst mit dem korrelierten Beleg des Controllers. Hooker-Audits werden hier nicht bestätigt.
 
 ## [Boot:Aufgabe]
 {task_desc}
@@ -518,12 +529,14 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     """Erstellt oder aktualisiert einen Blueprint mit Validierung (GUX-025, GUX-029)."""
     ensure_blueprint_schema(conn)
 
-    name = (payload.get("name") or "").strip().lower()
+    if not isinstance(payload.get("name"), str):
+        raise ValueError("Blueprint-Name muss Text sein")
+    name = payload["name"].strip().lower()
     if not name or not _ID.fullmatch(name):
         raise ValueError("Ungültiger oder fehlender Blueprint-Name (nur Alphanumerik, .-_)")
 
     kind = payload.get("kind", "agent")
-    if kind not in ALLOWED_KINDS:
+    if not isinstance(kind, str) or kind not in ALLOWED_KINDS:
         raise ValueError(f"Ungültiger Kind '{kind}'. Erlaubt: {', '.join(sorted(ALLOWED_KINDS))}")
 
     title = payload.get("title") or name.replace("-", " ").title()
@@ -535,20 +548,44 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     contractus = payload.get("contractus", {})
     modus = payload.get("modus", "casualis")
     governance = payload.get("governance", {})
-    is_template = int(payload.get("is_template", 0))
+    if payload.get("is_template", 0) not in (0, False):
+        raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
+    is_template = 0
 
     # GUX-029: Static/leere Stubs duerfen keinen Erfolg melden
     if not persona_prompt and not persona_role and kind in {"agent", "role"}:
         raise ValueError("Blueprint unvollstaendig: Weder Persona-Prompt noch Persona-Rolle angegeben.")
 
-    # Template-Schutz: Vorlagen koennen nicht ueberschrieben werden
+    # Serialize the revision check with its write across SQLite writers.
+    conn.execute("BEGIN IMMEDIATE")
     existing = conn.execute("SELECT id, is_template, version FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
     if existing:
         is_tmpl = existing[1] if isinstance(existing, tuple) else existing["is_template"]
-        if is_tmpl == 1 and not is_template:
+        if is_tmpl == 1:
+            conn.rollback()
             raise PermissionError(f"Vorlage '{name}' ist schreibgeschützt (GUX-026). Bitte wähle einen eigenen Namen.")
 
+    if is_template:
+        conn.rollback()
+        raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
     curr_version = (existing[2] if isinstance(existing, tuple) else existing["version"]) if existing else 0
+    if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
+        conn.rollback()
+        raise RuntimeError("blueprint_version_conflict")
+    if any(not isinstance(text, str) or len(text) > 20000 or "\x00" in text
+           for text in (title, desc, persona_role, persona_prompt)):
+        conn.rollback()
+        raise ValueError("Blueprint enthält ungültigen Text")
+    if (len(title) > 120 or not isinstance(animus, str) or animus not in {"api", "cli", "subscription", "local"}
+            or not isinstance(modus, str) or modus not in {"casualis", "usus", "impetus_temporal"}):
+        conn.rollback()
+        raise ValueError("Blueprint-Titel oder Arbeitsmodus ist ungültig")
+    if (not isinstance(skills, list) or len(skills) > 100
+            or any(not isinstance(skill, str) or not _ID.fullmatch(skill) for skill in skills)
+            or not isinstance(contractus, dict) or not isinstance(governance, dict)
+            or len(json.dumps([contractus, governance])) > 300000):
+        conn.rollback()
+        raise ValueError("Blueprint-Konfiguration ist ungültig")
     version = (curr_version + 1) if curr_version else 1
     now = datetime.now(timezone.utc).isoformat()
 
@@ -598,6 +635,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
 
     return {
         "success": True,
+        "id": conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()[0],
         "name": name,
         "title": title,
         "kind": kind,
@@ -608,119 +646,116 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     }
 
 
-def materialize_blueprint(
-    conn: sqlite3.Connection,
-    blueprint_id: int,
-    model: str | None = None
-) -> dict[str, Any]:
-    """Materialisiert Blueprint als Living-Agent (GUX-013, GUX-027). Keinesfalls Running!"""
-    ensure_blueprint_schema(conn)
+def _execution_blueprint(conn, blueprint_id, expected_version):
+    conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
-    if not row:
-        raise ValueError(f"Blueprint #{blueprint_id} nicht gefunden")
-
+    if row is None:
+        raise KeyError("Blueprint nicht gefunden")
     bp = dict(row)
-    now = datetime.now(timezone.utc).isoformat()
-
-    contractus = {}
-    try:
-        contractus = json.loads(bp["contractus_json"])
-    except (ValueError, TypeError):
-        pass
-
-    if model:
-        contractus["model"] = model
-
-    conn.execute("""
-        UPDATE agent_blueprints
-        SET is_materialized = 1, contractus_json = ?, updated_at = ?
-        WHERE id = ?
-    """, (json.dumps(contractus), now, blueprint_id))
-    conn.commit()
-
-    return {
-        "success": True,
-        "id": blueprint_id,
-        "name": bp["name"],
-        "title": bp["title"],
-        "status": "living",
-        "is_materialized": True,
-        "is_living": True,
-        "is_running": False,
-        "message": f"Agent '{bp['title']}' ({bp['name']}) als Living-Agent konfiguriert. Kein Worker gestartet.",
-        "animus": bp["animus_type"],
-        "model": contractus.get("model", "standard")
-    }
+    if type(expected_version) is not int or expected_version != bp.get("version"):
+        raise RuntimeError("blueprint_version_conflict")
+    if bp.get("kind", "agent") not in {"agent", "role"}:
+        raise ValueError("Dieser Vorlagentyp wird über seinen eigenen Dienst ausgeführt")
+    if not isinstance(bp.get("persona_prompt"), str) or not bp["persona_prompt"].strip():
+        raise ValueError("Ein Rollenprompt ist erforderlich")
+    return bp
 
 
-def start_blueprint_worker(
-    conn: sqlite3.Connection,
-    blueprint_id: int,
-    task: str | None = None
-) -> dict[str, Any]:
-    """Startet einen Worker mit echtem JobExecutionReceipt und Heartbeat (GUX-027)."""
+def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
+    """Translate the saved role and real tool grants into controller config."""
+    from .chat.slots_config import DEFAULT_ROLE_PROMPTS
+    from .chat.bach_tools import TOOLS_FULL
+    if not isinstance(execution, dict) or not execution.get("backend") or not execution.get("model"):
+        raise ValueError("Anbieter und konkretes Modell sind erforderlich")
+    governance = json.loads(bp.get("governance_json") or "{}")
+    contractus = json.loads(bp.get("contractus_json") or "{}")
+    skills = json.loads(bp.get("skills_json") or "[]")
+    if not isinstance(governance, dict) or not isinstance(contractus, dict) or not isinstance(skills, list):
+        raise ValueError("Gespeicherte Blueprint-Konfiguration ist ungültig")
+    known = {tool["function"]["name"] for tool in TOOLS_FULL}
+    aliases = {"read_files": ["read_file", "list_directory"], "search_content": ["search_text"],
+               "directory_list": ["list_directory"], "write_files": ["write_file", "edit_file", "create_directory"],
+               "execute_command": ["safe_shell"], "run_tests": ["safe_shell"],
+               "git_guarded_p001": ["start_task_worktree", "finish_task"],
+               "code_analyze": ["read_file", "search_text"], "web_fetch": ["web_fetch"]}
+    raw_tools = governance.get("tool_whitelist")
+    if raw_tools is None:
+        raw_tools = ["read_file", "list_directory", "search_text", "task_manage"]
+    if not isinstance(raw_tools, list) or len(raw_tools) > 100:
+        raise ValueError("Ungültige Toolfreigabe")
+    allowed = set()
+    for name in raw_tools:
+        if not isinstance(name, str) or name not in known | aliases.keys():
+            raise ValueError("Toolfreigabe enthält ein unbekanntes Werkzeug")
+        allowed.update([name] if name in known else aliases[name])
+    allowed &= known
+    role = bp["persona_role"] if bp["persona_role"] in DEFAULT_ROLE_PROMPTS else "task_worker"
+    prompt = bp["persona_prompt"]
+    if skills:
+        prompt += "\n\nGewählte Skills (Anleitungen, keine Toolfreigabe): " + ", ".join(skills)
+    changes = {key: execution[key] for key in ("backend", "model", "mode", "think", "avatar",
+        "include_system_prompt", "custom_system_prompt", "pause_after", "pause_minutes", "pause_basis") if key in execution}
+    changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
+        "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",
+        "custom_role_prompt": prompt, "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
+        "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True})
+    if governance.get("profile") == "read_only_research":
+        changes["mode"] = "safe"
+        changes["allowed_tools"] = sorted(allowed & {"read_file", "list_directory", "search_text", "web_fetch", "system_status", "ollama_info", "task_manage"})
+        changes["allow_tools"] = bool(changes["allowed_tools"])
+    return changes
+
+
+def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
+                          expected_version: int, execution: dict,
+                          configuration_version: str, terminal_verified: bool = False,
+                          slots_path: str | None = None) -> dict[str, Any]:
+    from .chat.slots_config import get_system_slot, materialize_system_blueprint
     ensure_blueprint_schema(conn)
-    row = conn.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
-    if not row:
-        raise ValueError(f"Blueprint #{blueprint_id} nicht gefunden")
-
-    bp = dict(row)
-    now_dt = datetime.now(timezone.utc)
-    now = now_dt.isoformat()
-    deadline = (now_dt + timedelta(minutes=5)).isoformat()
-
-    contractus = {}
+    conn.execute("BEGIN IMMEDIATE")
     try:
-        contractus = json.loads(bp["contractus_json"])
-    except (ValueError, TypeError):
-        pass
+        bp = _execution_blueprint(conn, blueprint_id, expected_version)
+        slot_id = f"system-blueprint-{blueprint_id}"
+        if get_system_slot(slot_id, slots_path) and not terminal_verified:
+            raise RuntimeError("worker_terminal_state_required")
+        result = materialize_system_blueprint(blueprint_id, expected_version,
+            blueprint_slot_changes(bp, execution), configuration_version, path=slots_path)
+        conn.execute("UPDATE agent_blueprints SET is_materialized = 1 WHERE id = ? AND version = ?",
+                     (blueprint_id, expected_version))
+        conn.commit()
+        return {"success": True, "id": blueprint_id, "name": bp["name"], "title": bp["title"],
+                "status": "configured", "is_materialized": True, "is_living": None,
+                "is_running": False, "worker_started": False, "slot_id": slot_id,
+                "configuration_version": result["configuration_version"]}
+    except Exception:
+        conn.rollback()
+        raise
 
-    model = contractus.get("model") or "ollama/default"
-    job_id = f"job-{bp['name']}-{uuid.uuid4().hex[:8]}"
-    current_task = task or f"Execution task for {bp['name']}"
 
-    # In partner_presence als aktiver Worker registrieren
-    conn.execute("""
-        INSERT INTO partner_presence (partner_name, status, clocked_in, last_heartbeat, current_task, session_id, updated_at)
-        VALUES (?, 'running', ?, ?, ?, ?, ?)
-        ON CONFLICT(partner_name) DO UPDATE SET
-            status = 'running',
-            clocked_in = excluded.clocked_in,
-            last_heartbeat = excluded.last_heartbeat,
-            current_task = excluded.current_task,
-            session_id = excluded.session_id,
-            updated_at = excluded.updated_at
-    """, (bp["name"], now, now, current_task, job_id, now))
-    conn.commit()
-
-    receipt_id = f"rcpt-exec-{bp['name']}-{uuid.uuid4().hex[:8]}"
-    job_receipt = {
-        "receipt_id": receipt_id,
-        "job_id": job_id,
-        "agent_name": bp["name"],
-        "model": model,
-        "status": "running",
-        "started_at": now,
-        "task_summary": current_task,
-        "evidence_kind": "live_process",
-    }
-    heartbeat_receipt = {
-        "heartbeat_id": f"hb-{bp['name']}-{uuid.uuid4().hex[:8]}",
-        "agent_name": bp["name"],
-        "recorded_at": now,
-        "deadline": deadline,
-        "status": "alive"
-    }
-
-    return {
-        "success": True,
-        "id": blueprint_id,
-        "name": bp["name"],
-        "title": bp.get("title", bp["name"]),
-        "status": "running",
-        "is_living": True,
-        "is_running": True,
-        "job_receipt": job_receipt,
-        "heartbeat_receipt": heartbeat_receipt,
-        "receipt": job_receipt
-    }
+def start_blueprint_worker(conn: sqlite3.Connection, blueprint_id: int, task: str | None = None,
+                           *, expected_version: int | None = None,
+                           configuration_version: str | None = None, dispatcher=None,
+                           slots_path: str | None = None) -> dict[str, Any]:
+    """Return only the controller's correlated physical run receipt."""
+    if dispatcher is None:
+        raise RuntimeError("worker_dispatcher_required")
+    if task:
+        raise ValueError("Aufträge zuerst über die TaskDB zuweisen")
+    bp = _execution_blueprint(conn, blueprint_id, expected_version)
+    from .chat.slots_config import get_system_slot
+    slot_id = f"system-blueprint-{blueprint_id}"
+    slot = get_system_slot(slot_id, slots_path)
+    if (not slot or slot.get("blueprint_id") != blueprint_id
+            or slot.get("blueprint_version") != expected_version):
+        raise RuntimeError("blueprint_instance_not_current")
+    execution = dispatcher(slot_id, configuration_version)
+    if (not isinstance(execution, dict) or execution.get("schema") != "bach.worker-execution.v1"
+            or execution.get("worker_id") != slot_id
+            or type(execution.get("worker_thread_started")) is not bool
+            or type(execution.get("terminal")) is not bool):
+        raise RuntimeError("worker_execution_not_confirmed")
+    running = execution["worker_thread_started"] is True and execution["terminal"] is False
+    return {"success": True, "id": blueprint_id, "name": bp["name"], "title": bp["title"],
+            "slot_id": slot_id, "status": execution["state"], "is_running": running,
+            "runtime_verified": True, "execution": execution, "job_receipt": execution,
+            "heartbeat_receipt": None, "receipt": execution}

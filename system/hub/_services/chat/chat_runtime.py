@@ -559,6 +559,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 if any(system_slot.get(key) != value for key, value in expected.items()):
                     raise RuntimeError("Steckplatzkonfiguration hat sich während des Turns geändert")
                 session.allow_tools = system_slot.get("allow_tools", True) is True
+                session.allowed_tools = system_slot.get("allowed_tools")
             except Exception as exc:
                 session.allow_tools = False
                 return FailedAnswer.from_exception(exc)
@@ -572,6 +573,7 @@ class ChatRuntime(_ModuleChatRuntime):
             if slot.get("enabled", True) is not True:
                 raise RuntimeError("Worker ist deaktiviert")
             session.allow_tools = slot.get("allow_tools", True) is True
+            session.allowed_tools = slot.get("allowed_tools")
             return None
         except Exception as exc:
             session.allow_tools = False
@@ -608,6 +610,9 @@ class ChatRuntime(_ModuleChatRuntime):
                 pending = [control.snapshot() for control in (actions, handoff) if control is not None]
                 if any(receipt and receipt.get("state") in {"pending", "running"} for receipt in pending):
                     return FailedAnswer("Angeforderte Blockaktion ist für dieses CLI-Backend nicht verfügbar")
+        if (getattr(session, "allowed_tools", None) is not None and binding is None
+                and getattr(backend, "manages_own_tools", False)):
+            return FailedAnswer("Toolfreigaben für dieses CLI benötigen einen gebundenen Task")
         if session.allow_tools is False and getattr(backend, "manages_own_tools", False):
             # Self-managed backends can dispatch tools outside BACH's tool
             # loop, so a worker downgrade must stop every backend boundary.
@@ -1048,6 +1053,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return await backend.chat_bound(
                 *args, **kwargs, binding=binding, mode=session.mode,
                 guard=check_binding, bach_app=self.bach_app,
+                allowed_tools=getattr(session, "allowed_tools", None),
             )
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
@@ -1553,6 +1559,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 answer = FailedAnswer.from_exception(e)
         else:
             tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
+            grants = getattr(session, "allowed_tools", None)
+            if grants is not None:
+                tools = [tool for tool in tools if tool["function"]["name"] in grants]
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -1823,6 +1832,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                     )
                 binding = getattr(session, "worker_task_binding", None)
+                grants = getattr(session, "allowed_tools", None)
+                if grants is not None and t_name not in grants:
+                    return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = {}
                 if binding is not None or getattr(session, "require_task_binding", False):
                     tool_kwargs = {"worker_task_binding": binding,
