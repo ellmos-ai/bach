@@ -681,9 +681,10 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     Tool progress and history change during the very operation that reads
     the catalog. They must not invalidate a later configuration CAS. The
     exclusions are explicit: unknown fields, task bindings, pause controls,
-    resolved providers, prompts and grants remain part of the token.
+    resolved providers, prompts, grants and execution status remain part of
+    the token. Status changes invalidate terminal-state admission snapshots.
     """
-    progress = frozenset({"status", "current_activity", "current_tool", "tool_round"})
+    progress = frozenset({"current_activity", "current_tool", "tool_round"})
     content = {key: value for key, value in config.items()
                if key not in {"updated_at", "activity_history"}}
     content["slots"] = {
@@ -693,7 +694,7 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     workers = config.get("dynamic_workers")
     if isinstance(workers, list):
         content["dynamic_workers"] = [
-            {field: value for field, value in worker.items() if field not in progress}
+            {field: value for field, value in worker.items() if field not in progress | {"history"}}
             if isinstance(worker, dict) else worker for worker in workers
         ]
     encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")

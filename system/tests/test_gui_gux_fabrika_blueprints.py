@@ -91,6 +91,7 @@ class TestFabrikaAndBlueprintsContract:
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text(f"---\nname: fixture-skill-{index}\ndescription: Test-Anleitung\n---\nPrüfe die Aufgabe.", encoding="utf-8")
         monkeypatch.setattr(unified_api, "SKILLS_ROOT", tmp_path)
+        monkeypatch.setenv("BACH_USER_SKILLS_ROOT", str(tmp_path / "isolated-user-skills"))
         data = asyncio.run(unified_api.get_capabilities_skills())
         assert "skills" in data
         installed = [skill for skill in data["skills"] if skill["evidence_type"] == "filesystem_present"]

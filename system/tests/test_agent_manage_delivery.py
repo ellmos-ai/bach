@@ -3,6 +3,7 @@ import importlib
 import json
 import sqlite3
 import threading
+from contextlib import closing
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -77,17 +78,16 @@ def test_create_materialize_list_and_start_use_real_state(state):
 
 def test_native_catalog_survives_progress_but_keeps_current_runtime_state(state):
     bp = create(state)
+    slots.update_slot("buddha_boss", {"status": "running"})
     catalog = invoke(state, {"action": "list"})
-    slots.update_slot("buddha_boss", {"status": "running", "current_activity": "Werkzeug ausgeführt",
-                                      "current_tool": "agent_manage", "tool_round": 3})
-    config = slots.load_slots_config(state.path, strict=True)
-    config["activity_history"].append({"source": "buddha_boss", "activity": "Katalog gelesen"})
-    slots.save_slots_config(config, state.path)
+    slots.update_slot("buddha_boss", {"current_tool": "agent_manage", "tool_round": 3})
+    slots.record_activity("buddha_boss", "Katalog gelesen", path=state.path)
     configured = invoke(state, {"action": "materialize", "blueprint_id": bp["id"],
         "expected_version": bp["version"], "configuration_version": catalog["configuration_version"],
         "execution": {"backend": "ollama", "model": "owned-local", "mode": "safe"}})
     current = slots.load_slots_config(state.path, strict=True)["slots"]["buddha_boss"]
     assert current["status"] == "running" and current["tool_round"] == 3
+    assert current["current_activity"] == "Katalog gelesen"
     catalog = invoke(state, {"action": "list"})
     slots.update_slot("buddha_boss", {"current_tool": "task_manage", "tool_round": 4})
     invoke(state, {"action": "start_local", "slot_id": configured["slot_id"],
@@ -120,11 +120,47 @@ def test_prompt_and_dynamic_worker_authority_remain_versioned(state):
     slots.save_slots_config(config, state.path)
     assert slots.core_system_agents_snapshot()["configuration_version"] != before
     worker = slots.add_worker({"name": "Bound", "backend": "ollama", "model": "owned-local"}, state.path)
+    slots.update_slot(worker["id"], {"status": "running"})
     before = slots.core_system_agents_snapshot()["configuration_version"]
-    slots.update_slot(worker["id"], {"current_activity": "Fortschritt", "status": "running"})
+    slots.record_activity(worker["id"], "Fortschritt", path=state.path)
     assert slots.core_system_agents_snapshot()["configuration_version"] == before
+    current = next(item for item in slots.load_slots_config(state.path, strict=True)["dynamic_workers"]
+                   if item["id"] == worker["id"])
+    assert current["current_activity"] == "Fortschritt" and current["history"][0]["activity"] == "Fortschritt"
     slots.update_slot(worker["id"], {"allowed_tools": ["task_manage"]})
     assert slots.core_system_agents_snapshot()["configuration_version"] != before
+
+
+@pytest.mark.parametrize("status", ["running", "paused", "revocation_requested"])
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_execution_status_remains_versioned(state, status, dynamic):
+    slot_id = (slots.add_worker({"name": "Bound", "backend": "ollama", "model": "owned-local"}, state.path)["id"]
+               if dynamic else "buddha_chat")
+    before = slots.core_system_agents_snapshot()["configuration_version"]
+    slots.update_slot(slot_id, {"status": status})
+    assert slots.core_system_agents_snapshot()["configuration_version"] != before
+
+
+@pytest.mark.parametrize("action", ["delete", "materialize"])
+def test_stale_terminal_snapshot_cannot_remove_or_overwrite_started_slot(state, action):
+    bp, configured = configure(state)
+    slot_id = configured["slot_id"]
+    version = configured["configuration_version"]
+    slots.update_slot(slot_id, {"status": "running"})
+    before = slots.load_slots_config(state.path, strict=True)
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        if action == "delete":
+            slots.delete_system_slot(slot_id, version)
+        else:
+            with closing(sqlite3.connect(state.database)) as conn:
+                conn.row_factory = sqlite3.Row
+                blueprint_service.materialize_blueprint(
+                    conn, bp["id"], expected_version=bp["version"],
+                    execution={"backend": "ollama", "model": "changed-local", "mode": "safe"},
+                    configuration_version=version, terminal_verified=True)
+    assert slots.load_slots_config(state.path, strict=True) == before
+    assert slots.get_system_slot(slot_id)["status"] == "running"
+    state.start.assert_not_called()
 
 
 def test_agent_cannot_edit_existing_blueprint_or_slot(state):
