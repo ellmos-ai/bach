@@ -2954,7 +2954,7 @@ async def get_cluster_cockpit():
     """Read-only observations: owner, priority, compute report and capacity."""
     from gui.api.cluster_status import build_cluster_cockpit
 
-    return build_cluster_cockpit(Path(BACH_DB))
+    return await asyncio.to_thread(build_cluster_cockpit, Path(BACH_DB))
 
 
 @router.get("/system/openrouter/status")
