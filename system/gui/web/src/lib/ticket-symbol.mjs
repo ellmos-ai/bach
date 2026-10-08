@@ -33,9 +33,11 @@ export function withSkillSymbol(content,symbol) {
   const header=/^(---\r?\n)([\s\S]*?)(\r?\n---(?=\r?\n|$))/.exec(content);
   if(!header)return '---'+newline+'symbol: '+symbol+newline+'---'+newline+content;
   const first=header[2].split(/\r?\n/).find(line=>line.trim()&&!/^\s*#/.test(line));
-  if((first&&!/^[A-Za-z_][A-Za-z0-9_-]*\s*:/.test(first))||/^["'?%]|^\.\.\./m.test(header[2]))
+  const simpleKey=/^[A-Za-z_][A-Za-z0-9_-]*\s*:/;
+  const rootLines=header[2].split(/\r?\n/).filter(line=>line.trim()&&!/^\s|^#/.test(line));
+  if((first&&!simpleKey.test(first))||rootLines.some(line=>!simpleKey.test(line)))
     throw new Error('Der YAML-Kopf verwendet eine komplexe Form. Bitte das Symbol direkt in der Anleitung bearbeiten.');
-  if(/^symbol\s*:[^\r\n]*[|>\[\{&*]/m.test(header[2])||/^symbol\s*:[ \t]*\r?\n[ \t]+\S/m.test(header[2]))
+  if(/^symbol\s*:[^\r\n]*[|>\[\{&*]/m.test(header[2])||/^symbol\s*:[^\r\n]*\r?\n[ \t]+\S/m.test(header[2]))
     throw new Error('Das vorhandene Symbolfeld ist mehrzeilig. Bitte in der Anleitung bearbeiten.');
   const lines=header[2].split(/\r?\n/).filter(line=>!/^symbol\s*:/.test(line));
   return header[1]+['symbol: '+symbol,...lines].join(newline)+header[3]+content.slice(header[0].length);
