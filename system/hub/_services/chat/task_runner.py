@@ -106,9 +106,9 @@ def offene_tasks(
             continue
         if effective_slot:
             p_filter = (
-                effective_slot
-                if "enabled" in effective_slot
-                else effective_slot.get("pickup_filter")
+                effective_slot.get("pickup_filter")
+                if "pickup_filter" in effective_slot
+                else effective_slot
             )
             if isinstance(p_filter, dict) and p_filter.get("enabled"):
                 if not match_task_to_pickup_filter(t, effective_slot):
