@@ -20,7 +20,7 @@ PAGE_READS = {
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
     "/skills/ocean": ["/api/capabilities/ocean"],
-    "/inbox": ["/api/user-inbox"],
+    "/user-inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
     "/artefakte": ["/api/artifacts"],

@@ -1534,6 +1534,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/inbox",
         "/daemon",
         "/tasks",
+        "/user-inbox",
         "/messages",
         "/reports",
         "/help",
@@ -5417,7 +5418,7 @@ async def tasks_page():
 
 
 
-@app.get("/inbox", response_class=HTMLResponse)
+@app.get("/user-inbox", response_class=HTMLResponse)
 async def user_inbox_page():
     """Nachrichten an den Nutzer; Chats und Läufe haben eigene Ansichten."""
     page = ASTRO_DIST_DIR / "inbox.html"
@@ -5429,7 +5430,7 @@ async def user_inbox_page():
 @app.get("/messages", response_class=HTMLResponse)
 async def messages_page():
     """Compatibility redirect for old bookmarks."""
-    return RedirectResponse(url="/inbox", status_code=307)
+    return RedirectResponse(url="/user-inbox", status_code=307)
 
 
 @app.get("/reports", response_class=HTMLResponse)
