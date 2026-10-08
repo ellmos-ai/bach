@@ -253,6 +253,8 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
             <div id="worker-avatar-preview"></div><div id="worker-avatar-presets" class="avatar-preset-picker"></div>
             <label>Eigenes Bild (PNG, JPEG oder WebP bis 180 KB)<input id="worker-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadWorkerAvatar(this.files[0])" /></label>
             <div id="worker-symbols" class="symbol-picker"></div>
+            <p id="worker-skill-state" role="status"></p>
+            <button type="button" class="btn btn-sm" id="worker-refresh-skills" disabled onclick="refreshWorkerSkills()">Gebundene Skills auf aktuelle Fassung setzen</button>
           </details>
           <label>Anzeigename<input id="worker-blueprint-name" type="text" maxlength="120" value="BACH Hintergrundworker" required></label>
           <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
@@ -1249,6 +1251,8 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
     // ── ONE-OFF MODAL & BLUEPRINT FORM ──
     async function openOneOffModal() {
       editingWorker=null;
+      document.getElementById('worker-refresh-skills').disabled=true;
+      document.getElementById('worker-skill-state').textContent='';
       document.getElementById('worker-blueprint-form').reset();
       document.getElementById('worker-blueprint-create').textContent='Workerprofil anlegen';
       document.getElementById('modal-create-oneoff').style.display = 'flex';
@@ -1420,6 +1424,10 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         updateWorkerCreationModeFields();
         editingWorker = { id: workerId, version: data.configuration_version,
           capabilities:Object.fromEntries(['allowed_tools','skill_refs'].filter(key=>key in config).map(key=>[key,config[key]])) };
+        document.getElementById('worker-refresh-skills').disabled=!(config.skill_refs?.length);
+        document.getElementById('worker-skill-state').textContent=(data.skill_bindings||[]).some(item=>item.state!=='current')
+          ? 'Mindestens eine Skill-Quelle wurde geändert oder fehlt. Die gespeicherte Bindung bleibt sichtbar; vor dem Start neu binden.'
+          : (config.skill_refs?.length||0)+' gebundene Skill-Anleitungen.';
         document.getElementById('worker-blueprint-create').textContent = 'Einstellungen speichern';
         await loadWorkerBlueprintModels(config.model);
       } catch (e) {
@@ -1456,6 +1464,22 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         document.getElementById('worker-avatar').value=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
         drawWorkerAppearance();
       }catch(_error){status.textContent='Bild konnte nicht geladen werden.';}
+    }
+
+    async function refreshWorkerSkills() {
+      if(!editingWorker)return;
+      const current=editingWorker,status=document.getElementById('worker-skill-state');
+      try {
+        const pins=[];
+        for(const pin of current.capabilities.skill_refs||[]) {
+          const response=await fetch('/api/capabilities/skills/'+encodeURIComponent(pin.id)+'/source');
+          const source=await response.json();
+          if(!response.ok||source.id!==pin.id||!/^[a-f0-9]{64}$/.test(source.source_version))throw new Error('Aktuelle Skill-Quelle fehlt: '+pin.id);
+          pins.push({id:pin.id,source_version:source.source_version,version:source.version});
+        }
+        if(editingWorker!==current)return;
+        current.capabilities.skill_refs=pins;status.textContent='Aktuelle Skill-Bindungen vorbereitet. Mit Speichern übernehmen.';
+      } catch(error) {status.textContent=error.message;}
     }
 
     function updateWorkerRunModeFields() {

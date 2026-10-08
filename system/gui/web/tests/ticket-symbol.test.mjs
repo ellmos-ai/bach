@@ -27,3 +27,12 @@ test('the skill symbol lives in frontmatter and preserves the remaining source a
   assert.equal(withSkillSymbol('# Neu\n','wissen'),'---\nsymbol: wissen\n---\n# Neu\n');
   assert.throws(()=>withSkillSymbol('---\nsymbol: |\n  alt\n---\n# X','scripts'),/mehrzeilig/);
 });
+
+test('quoted, escaped and indented YAML root keys are rejected without changing source',()=>{
+  for(const header of ['"symbol": wissen\nname: X','name: X\n\'symbol\': wissen',
+    'name: X\n"sy\\u006dbol": wissen','  name: X\n  symbol: wissen','? symbol\n: wissen','- symbol: wissen']) {
+    const source='---\n'+header+'\n---\n# Inhalt';
+    assert.throws(()=>withSkillSymbol(source,'scripts'),/komplexe Form/);
+    assert.equal(source,'---\n'+header+'\n---\n# Inhalt');
+  }
+});

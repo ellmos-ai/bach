@@ -271,7 +271,13 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
             if key == "task_id":
                 projected[key] = None
             continue
-        if key in {"avatar", "symbol", "allowed_tools", "skill_refs"}:
+        if key == "skill_refs":
+            from hub._services.skill_source_service import validate_skill_refs
+            try:
+                projected[key] = validate_skill_refs(value)
+            except ValueError as exc:
+                raise WorkerStatusUnavailable("Gespeicherte Skill-Bindung ist ungültig") from exc
+        elif key in {"avatar", "symbol", "allowed_tools"}:
             try:
                 projected[key] = _validated_core_edits({key: value})[key]
             except (ValueError, RuntimeError) as exc:
@@ -294,7 +300,9 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
             if not isinstance(value, str) or len(value) > (20000 if key == "task_prompt" else 180) or "\x00" in value:
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
             projected[key] = value
-    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected}
+    from hub._services.skill_source_service import skill_binding_status
+    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
+            "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
 
 
 def read_worker_configuration(worker_id: str, *, device_token: str, timeout: float = 8.0):

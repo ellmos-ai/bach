@@ -198,13 +198,10 @@ def pin_skills(ids: list[str], *, roots: list[Path] | None = None) -> list[dict]
     return pins
 
 
-def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None) -> str:
+def validate_skill_refs(pins: list[dict]) -> list[dict]:
+    """Validate saved pin metadata without requiring its source to remain current."""
     if not isinstance(pins, list) or len(pins) > 30:
         raise ValueError("Ungültige Skill-Bindung")
-    if not pins:
-        return ""
-    catalog = source_catalog(roots)
-    parts = []
     seen = set()
     for pin in pins:
         if (not isinstance(pin, dict) or set(pin) != {"id", "source_version", "version"}
@@ -213,6 +210,30 @@ def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None
                 or not isinstance(pin["version"], str) or pin["id"] in seen):
             raise ValueError("Skill benötigt eine gültige Quellenversion")
         seen.add(pin["id"])
+    return [dict(pin) for pin in pins]
+
+
+def skill_binding_status(pins: list[dict], *, roots: list[Path] | None = None) -> list[dict]:
+    refs = validate_skill_refs(pins)
+    if not refs:
+        return []
+    try:
+        catalog = source_catalog(roots)
+    except (OSError, ValueError, RuntimeError):
+        catalog = None
+    return [{"id": pin["id"], "source_version": pin["source_version"], "state":
+             "unavailable" if catalog is None else "missing" if pin["id"] not in catalog else
+             "current" if catalog[pin["id"]]["source_version"] == pin["source_version"] else "source_changed"}
+            for pin in refs]
+
+
+def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None) -> str:
+    refs = validate_skill_refs(pins)
+    if not refs:
+        return ""
+    catalog = source_catalog(roots)
+    parts = []
+    for pin in refs:
         item = catalog.get(pin["id"])
         if item is None:
             raise ValueError("Gebundene Skill-Quelle fehlt: " + pin["id"])
