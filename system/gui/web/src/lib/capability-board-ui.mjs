@@ -31,7 +31,7 @@ if (board) {
       card.dataset.id = item.id;
       card.append(node('h3', item.name || item.id), node('p', item.description || 'Keine Beschreibung in der Quelle.'));
       const meta = node('div', null, 'card-meta');
-      meta.append(badge(item.version || 'Ohne Versionsnummer'));
+      if (kind !== 'mcp') meta.append(badge(item.version || 'Ohne Versionsnummer'));
       if (kind === 'skills') {
         meta.append(badge(item.category || 'Allgemein'));
         card.append(meta, node('p', item.id, 'card-caption'), button('Anleitung bearbeiten', () => openSkill(item.id), 'btn card-action'));

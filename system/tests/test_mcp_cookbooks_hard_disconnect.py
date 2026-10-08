@@ -14,7 +14,7 @@ from hub._services.mcp_cookbook_service import (
 )
 from starlette.testclient import TestClient
 
-from system.gui.api.unified_api import router as unified_router
+from gui.api.unified_api import router as unified_router
 
 
 @pytest.fixture
