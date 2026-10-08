@@ -154,7 +154,7 @@ def tray(tmp_path, monkeypatch):
     client = BACHTray(host="testhost", execution_state_path=tmp_path / "intent.json")
     client.state["connected"] = True
     client.slots = {WORKER: {"id": WORKER, "enabled": True, "pause_info": {"is_paused": False},
-                           "model": "actual-model", "mode": "safe", "max_tool_rounds": 7}}
+                           "backend": "ollama", "model": "actual-model", "mode": "safe", "max_tool_rounds": 7}}
     client._update_icon = Mock()
     return client
 

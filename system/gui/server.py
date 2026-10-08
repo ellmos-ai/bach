@@ -10553,21 +10553,9 @@ class PromptUpdateRequest(BaseModel):
 
 
 def _promptboard_library_paths():
-    """Kandidaten fuer PromptBoard library.json (gleiche Logik wie chat_tray.py)."""
-    candidates = []
-    env_path = os.environ.get("BACH_PROMPTBOARD_LIBRARY")
-    if env_path:
-        candidates.append(Path(env_path).expanduser())
-    candidates.append(Path.home() / ".promptboard" / "library.json")
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        candidates.append(Path(appdata) / "PromptBoard" / "library.json")
-    user_profile = os.environ.get("USERPROFILE")
-    if user_profile:
-        project_dir = (Path(user_profile) / "OneDrive" / ".TOPICS" / ".SOFTWARE"
-                       / "LLM" / "REL-PUB_PromptBoard")
-        candidates.extend([project_dir / "library.json", project_dir / "data" / "library.json"])
-    return candidates
+    """Compatibility wrapper for the handler's shared library discovery."""
+    from hub.prompt import promptboard_library_paths
+    return promptboard_library_paths()
 
 
 @app.get("/prompt-library", response_class=HTMLResponse)
@@ -10697,55 +10685,15 @@ async def delete_prompt_library_entry(prompt_id: int):
 
 @app.post("/api/prompt-library/import-promptboard")
 async def import_promptboard_library():
-    """Importiert PromptBoard library.json in die BACH-Prompt-DB (idempotent per Name)."""
+    """Import through the same handler used by CLI and library API."""
+    from hub.prompt import PromptHandler
     library_path = next((p for p in _promptboard_library_paths() if p.exists()), None)
     if library_path is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Keine PromptBoard library.json gefunden (BACH_PROMPTBOARD_LIBRARY, "
-                   "~/.promptboard, %APPDATA%/PromptBoard, REL-PUB_PromptBoard)",
-        )
+        raise HTTPException(status_code=404, detail="Keine PromptBoard library.json gefunden")
     try:
-        payload = json.loads(library_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=422, detail=f"library.json nicht lesbar: {e}")
-
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        raise HTTPException(status_code=422, detail="Unerwartetes Format: 'items'-Liste fehlt")
-
-    now = datetime.now().isoformat()
-    imported, skipped = 0, 0
-    conn = get_bach_db()
-    try:
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            content = str(item.get("content") or "").strip()
-            if not name or not content:
-                continue
-            category = str(item.get("category") or item.get("item_type") or "PromptBoard").strip()
-            tags = item.get("tags")
-            if isinstance(tags, list):
-                tags = ",".join(str(t) for t in tags)
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO prompt_templates "
-                "(name, purpose, text, tags, category, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (name, item.get("description"), content, tags, category, now, now),
-            )
-            if cur.rowcount:
-                imported += 1
-            else:
-                skipped += 1
-        conn.commit()
-        return {"ok": True, "source": str(library_path), "imported": imported, "skipped": skipped}
-    finally:
-        conn.close()
-
-
-
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")

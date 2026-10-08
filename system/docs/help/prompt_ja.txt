@@ -120,3 +120,14 @@ DATABASE
   bach --help tasks        タスク システム
   bach --help memory       メモリ システム
   bach --help skills       SKILL.md システム
+
+PROMPTBOARD のインポート
+-----------------------
+  bach prompt import-promptboard [library.json] --dry-run
+  bach prompt import-promptboard [library.json]
+  API: bach_api.prompt.import_promptboard("library.json", "--dry-run")
+パスを省略すると BACH_PROMPTBOARD_LIBRARY などから検索します。
+プレビューは書き込みません。同名の既存テンプレートは保持されます。
+空の項目は無効として数え、フィールド型が不正ならインポートを中止します。
+新規テンプレートはすべて保存されるか、すべてロールバックされます。
+GUI、CLI、API は同じハンドラーを使用します。

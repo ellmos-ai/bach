@@ -174,3 +174,14 @@ SIEHE AUCH
   bach --help tasks        Task-System
   bach --help memory       Memory-System
   bach --help skills       SKILL.md-System
+
+PROMPTBOARD-IMPORT
+-----------------
+  bach prompt import-promptboard [library.json] --dry-run
+  bach prompt import-promptboard [library.json]
+  API: bach_api.prompt.import_promptboard("library.json", "--dry-run")
+Ohne Pfad wird unter anderem BACH_PROMPTBOARD_LIBRARY verwendet.
+Die Vorschau schreibt nichts. Bestehende Namen bleiben erhalten.
+Leere Einträge werden als ungültig gezählt; falsche Feldtypen brechen den
+Import ab. Gültige neue Vorlagen werden gemeinsam oder gar nicht gespeichert.
+GUI, CLI und API verwenden denselben Handler.
