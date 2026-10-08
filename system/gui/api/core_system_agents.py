@@ -33,7 +33,7 @@ def _snapshot() -> dict[str, Any]:
         if (live.get("configuration_version") == result["configuration_version"]
                 and isinstance(live.get("agents"), list)):
             by_id = {item["id"]: item for item in live["agents"] if isinstance(item, dict) and "id" in item}
-            fields = ("living", "running", "runtime_verified", "runtime_reason_code", "status",
+            fields = ("living", "running", "worker_active", "runtime_verified", "runtime_reason_code", "status",
                       "current_tool", "tool_round", "execution", "task_id")
             for agent in result["agents"]:
                 current = by_id.get(agent["id"], {})

@@ -124,7 +124,7 @@ def test_stored_running_status_is_not_a_running_receipt(config_file, monkeypatch
 
 
 @pytest.mark.parametrize("kind", ["fixed", "custom"])
-def test_live_continuous_worker_waiting_for_task_is_running(config_file, monkeypatch, kind):
+def test_live_continuous_worker_waiting_is_living_without_task_running(config_file, monkeypatch, kind):
     from hub._services.chat import telegram_chat as control
     ident = "buddha_boss"
     if kind == "custom":
@@ -146,7 +146,8 @@ def test_live_continuous_worker_waiting_for_task_is_running(config_file, monkeyp
     agent = next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
     assert agent["execution"]["state"] == "running"
     assert agent["execution"]["worker_thread_started"] is True
-    assert agent["living"] is True and agent["running"] is True and agent["status"] == "running"
+    assert agent["living"] is True and agent["running"] is False and agent["status"] == "ready"
+    assert agent["worker_active"] is True
     assert agent["task_id"] is None
     assert agent["current_tool"] == "" and agent["tool_round"] == 0
     assert control.runtime.compute_turn_status()["active"] is False
@@ -155,10 +156,10 @@ def test_live_continuous_worker_waiting_for_task_is_running(config_file, monkeyp
 @pytest.mark.parametrize(
     "state,alive,started,admission_pending,stop,done,expected_running",
     [
-        ("starting", True, False, True, False, False, True),
-        ("stopping", True, True, False, True, False, True),
-        ("finishing", True, True, False, False, True, True),
-        ("unconfirmed", True, False, False, False, False, True),
+        ("starting", True, False, True, False, False, False),
+        ("stopping", True, True, False, True, False, False),
+        ("finishing", True, True, False, False, True, False),
+        ("unconfirmed", True, False, False, False, False, None),
         ("unconfirmed", False, True, False, False, False, None),
         ("unconfirmed", False, False, True, False, False, None),
         ("terminal", False, True, False, False, True, False),
@@ -212,7 +213,8 @@ def test_disabled_worker_stays_living_until_physical_cleanup_finishes(config_fil
         return next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
     agent = snapshot()
     assert agent["enabled"] is False
-    assert agent["living"] is True and agent["running"] is True and agent["status"] == "finishing"
+    assert agent["living"] is True and agent["running"] is False and agent["status"] == "finishing"
+    assert agent["worker_active"] is True
     assert agent["execution"]["terminal"] is False
     assert agent["current_tool"] == "" and agent["tool_round"] == 0
     alive["value"] = False
@@ -232,7 +234,8 @@ def test_untracked_live_worker_is_unconfirmed_instead_of_ready(config_file, monk
                         {ident: SimpleNamespace(is_alive=lambda: True)})
     agent = next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
     assert agent["execution"]["state"] == "unconfirmed"
-    assert agent["living"] is True and agent["running"] is True and agent["status"] == "unconfirmed"
+    assert agent["living"] is True and agent["running"] is None and agent["status"] == "unconfirmed"
+    assert agent["worker_active"] is True
     assert agent["task_id"] is None
     assert agent["current_tool"] == "" and agent["tool_round"] == 0
 
@@ -253,6 +256,7 @@ def test_core_api_keeps_runtime_unknown_when_control_is_unavailable(config_file,
     monkeypatch.setattr(adapter, "_request_control_api", unavailable)
     result = asyncio.run(api.list_core_system_agents())
     assert all(agent["running"] is None for agent in result["agents"])
+    assert all(agent["worker_active"] is None for agent in result["agents"])
     assert all(item["runtime_state"] == "unknown" for item in result["blueprints"])
 
 
@@ -602,3 +606,46 @@ def test_fixed_always_on_cas_preserves_strict_admission_checks(config_file, inva
     version = slots.core_system_agents_snapshot()["configuration_version"]
     with pytest.raises(ValueError):
         slots.system_worker_at_version("buddha_always_on", version)
+
+
+@pytest.mark.parametrize("closed,alive,expected_running", [
+    (False, True, True), (True, True, False), (False, False, False),
+], ids=["bound-task", "released-task", "dead-process"])
+def test_running_requires_a_live_open_task_binding(config_file, monkeypatch, closed, alive, expected_running):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_always_on"
+    # A persisted task ID cannot substitute for an observed live binding.
+    slots.update_slot(ident, {"status": "running", "task_id": 42})
+    ctrl = control._WorkerControl(ident)
+    ctrl.thread = SimpleNamespace(is_alive=lambda: alive)
+    ctrl.worker_thread_started = True
+    ctrl.task_binding = SimpleNamespace(task_id=42, closed=closed,
+                                        completed_task_ids=[], reviewed_task_ids=[])
+    if not alive:
+        ctrl.done_event.set()
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {ident: ctrl})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: ctrl})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {ident: ctrl.thread})
+    monkeypatch.setattr(control.runtime, "compute_turn_status", lambda: {"active": False})
+    agent = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+    assert agent["running"] is expected_running
+    assert agent["worker_active"] is alive
+    assert agent["task_id"] == (42 if expected_running else None)
+    assert agent["status"] == ("running" if expected_running else "ready")
+
+
+def test_gui_forwards_work_and_process_states_separately(config_file, monkeypatch):
+    baseline = slots.core_system_agents_snapshot()
+    def request(*args, **kwargs):
+        return {"configuration_version": baseline["configuration_version"],
+                "agents": [{"id": "buddha_always_on", "living": True, "running": False,
+                            "worker_active": True, "runtime_verified": True, "status": "ready",
+                            "task_id": None}]}
+    monkeypatch.setattr(adapter, "_request_control_api", request)
+    observed = api._snapshot()
+    worker = next(a for a in observed["agents"] if a["id"] == "buddha_always_on")
+    assert worker["living"] is True and worker["running"] is False
+    assert worker["worker_active"] is True and worker["status"] == "ready"
+    assert worker["task_id"] is None

@@ -558,14 +558,19 @@ def _system_slots_snapshot() -> dict:
         execution, thread_alive, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
         execution_state = execution["state"] if execution else None
-        # A continuous worker remains running while it waits for a task.
-        # Neither a free compute gate nor an empty task binding proves its end.
-        running = bool(thread_alive or running_sessions or execution_state in {
+        # Process liveness protects admission and cleanup; Running describes
+        # actual work. An idle continuous worker remains available (Living).
+        worker_active = bool(thread_alive or execution_state in {
             "starting", "running", "stopping", "finishing"})
-        if not running and execution_state == "unconfirmed":
-            running = None
-        agent.update({"runtime_verified": True, "living": agent["enabled"] or running is True,
-                      "running": running,
+        running = bool(task_id is not None or running_sessions)
+        if execution_state == "unconfirmed":
+            if not worker_active:
+                worker_active = None
+            if not running:
+                running = None
+        agent.update({"runtime_verified": True,
+                      "living": agent["enabled"] or worker_active is True or running is True,
+                      "running": running, "worker_active": worker_active,
                       "task_id": task_id, "execution": execution,
                       "current_tool": getattr(active_session, "current_tool", ""),
                       "tool_round": getattr(active_session, "tool_round", 0),
