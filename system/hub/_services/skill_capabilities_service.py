@@ -746,23 +746,9 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
         return {"valid": True, "total_referenced": 0, "matched_count": 0,
                 "unmatched_count": 0, "matched": [], "unmatched": [], "missing": [],
                 "canonical_registry_size": len(CANONICAL_CORE_SKILLS)}
-    # Sammle alle bekannten Skills
+    from .skill_source_service import source_catalog, skill_roots
     known_skills = {s["id"]: s for s in CANONICAL_CORE_SKILLS}
-    for s_root in SKILLS_SEARCH_PATHS:
-        if not s_root.exists():
-            continue
-        try:
-            for skill_md in s_root.rglob("SKILL.md"):
-                s_id = skill_md.parent.name
-                if _ID_PATTERN.fullmatch(s_id) and s_id not in known_skills:
-                    known_skills[s_id] = {
-                        "id": s_id,
-                        "name": s_id.replace("-", " ").title(),
-                        "category": skill_md.parent.parent.name if skill_md.parent.parent != s_root else "general",
-                        "version": "v1.0.0"
-                    }
-        except OSError:
-            pass
+    known_skills.update(source_catalog(skill_roots()))
 
     matched = []
     unmatched = []
@@ -778,7 +764,8 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
                 "id": s_id,
                 "name": info.get("name", s_id),
                 "category": info.get("category", "general"),
-                "version": info.get("version", "v1.0.0"),
+                "version": info.get("version", "ohne Versionsnummer"),
+                "source_version": info.get("source_version"),
                 "matched": True
             })
         else:

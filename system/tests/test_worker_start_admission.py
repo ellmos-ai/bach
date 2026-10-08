@@ -29,6 +29,8 @@ def admission(tmp_path, monkeypatch):
     control = importlib.import_module("hub._services.chat.telegram_chat")
     path = str(tmp_path / "slots.json")
     initialize_slots_config(path)
+    from hub._services.chat import slots_config
+    monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", path)
     worker = add_worker({"name": "Admission", "type": "once"}, path)
     monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
     monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
@@ -42,6 +44,28 @@ def admission(tmp_path, monkeypatch):
     async def forbidden(*args, **kw): pytest.fail("No inference without actual Task Acquire")
     monkeypatch.setattr(control.runtime, "process", forbidden)
     return control, worker
+
+
+def test_agent_manager_starts_dynamic_worker_through_actual_controller(admission, tmp_path, monkeypatch):
+    import sqlite3
+    from hub._services.agent_manage_service import AgentManager
+    from hub._services.chat import slots_config
+    control, worker = admission
+    update_slot(worker["id"], {"mode": "safe", "allowed_tools": ["read_file"]})
+    database = tmp_path / "canonical.db"
+    with sqlite3.connect(database) as conn: conn.execute("CREATE TABLE fixture (id INTEGER)")
+    monkeypatch.setattr(control, "begin_assignment", lambda **kw: kw)
+    monkeypatch.setattr(control, "finish_assignment", lambda *args, **kw: None)
+    manager = AgentManager(db_path=database, execution_receipt=control.worker_execution_receipt,
+        start_worker=control.start_worker_execution, local_provider=lambda slot: True, guard=lambda path: None)
+    result = manager({"action": "start_local", "slot_id": worker["id"],
+        "configuration_version": slots_config.core_system_agents_snapshot()["configuration_version"]},
+        mode="safe", allowed_tools={"read_file"})
+    assert result["execution"]["worker_thread_started"] is True
+    execution = control._WORKER_EXECUTIONS[worker["id"]]
+    execution.thread.join(3)
+    receipt = control.worker_execution_receipt(worker["id"], result["execution"]["start_request_id"])
+    assert receipt["terminal"] is True and receipt["completed_task_ids"] == []
 
 
 def test_pending_role_admission_is_visible_and_serialized(admission, monkeypatch):

@@ -743,6 +743,33 @@ async def get_capabilities_skills(
     }
 
 
+@router.get("/capabilities/skills/{skill_id}/source")
+async def get_current_skill_source(skill_id: str):
+    """Current source bytes and CAS revision; declarations have no fake content."""
+    from hub._services.skill_source_service import read_skill
+    try:
+        return await asyncio.to_thread(read_skill, skill_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.put("/capabilities/skills/{skill_id}/source")
+async def save_current_skill_source(skill_id: str, payload: Dict[str, Any] = Body(...)):
+    from hub._services.skill_source_service import save_skill
+    if set(payload) != {"content", "source_version"}:
+        raise HTTPException(400, "Inhalt und aktuelle Quellenversion erforderlich")
+    try:
+        return await asyncio.to_thread(save_skill, skill_id, payload["content"], payload["source_version"])
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    except PermissionError as exc:
+        raise HTTPException(423, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @router.post("/capabilities/bind")
 async def bind_agent_capabilities(payload: Dict[str, Any]):
     """Bind skills through the same revision and template checks as the editor."""

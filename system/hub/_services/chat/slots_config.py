@@ -129,6 +129,7 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Du bist der persönliche Assistent. Unterstütze den Nutzer bei Planung, Recherche und Umsetzung. "
         "Erstelle bei Bedarf eigene Agentenvorlagen, Skills und klar abgegrenzte Aufgaben. "
         "Neue Agenten werden zunächst als Living konfiguriert; Cloud-Ausführung benötigt einen ausdrücklichen Nutzerstart."
+        " Nutze agent_manage mit list, blueprint_create, materialize und start_local sowie skill_create für SKILL.md."
     ),
     "connector": (
         "Du bist der Kommunikationsassistent. Bearbeite den aktuellen Dialog und koordiniere die angebundenen Kanäle. "
@@ -154,6 +155,9 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Wenn eine Anforderung komplex oder vielschichtig ist, zerlege sie in logische Teilaufgaben (task_manage action='decompose')\n"
         "und weise sie den passenden Experten zu. Führe selbst keine riskanten Massenänderungen aus, sondern koordiniere,\n"
         "überwache den Fortschritt und stelle die Gesamterfüllung des Ziels sicher."
+        " Nutze agent_manage(action='list') für verfügbare Steckplätze und aktuelle Konfigurationsversion."
+        " Eigene Vorlagen entstehen mit blueprint_create, Living-Steckplätze mit materialize; start_local startet lokale Worker."
+        " Weise Teilaufgaben mit assigned_slot zu. skill_create legt eine versionierte SKILL.md an und erteilt keine Werkzeugrechte."
     ),
     "task-divider": (
         "Du agierst als Task-Divider und Dekompositions-Experte im BACH-System.\n"
@@ -165,7 +169,7 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
     "ticket-master": (
         "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\n"
         "Deine Aufgabe ist es, heimatlose, unzugewiesene oder unsortierte Tickets zu sichten, Prioritäten zu bewerten,\n"
-        "Kategorien zu schärfen und die Aufgaben der jeweils passenden Persona/Fachrolle zuzuweisen (task_manage action='assign')."
+        "Kategorien zu schärfen und die Aufgaben der jeweils passenden Persona/Fachrolle zuzuweisen (task_manage action='update', assigned_to=...)."
     ),
     "entwickler": (
         "Du agierst als Senior Software-Entwickler für BACH und angebundene Repositories.\n"
@@ -213,18 +217,34 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
     ),
 }
 
+for _default_id, _name, _role, _icon, _sub_mode in (
+    ("buddha_boss", "Boss · Koordination", "boss_routing", "🧭", "boss_routing"),
+    ("buddha_developer", "Experte · Entwicklung", "entwickler", "🛠️", "expert_role"),
+    ("buddha_research", "Experte · Recherche", "recherche", "🔎", "expert_role"),
+):
+    DEFAULT_CORE_SLOTS[_default_id] = {
+        **DEFAULT_CORE_SLOTS["buddha_chat"], "id": _default_id, "name": _name,
+        "description": "Voreingerichteter Systemagent; beginnt nach ausdrücklich zugewiesener Aufgabe und Nutzerstart.",
+        "system": True, "icon": _icon, "role_id": _role, "sub_mode": _sub_mode,
+        "execution_kind": "worker", "type": "continuous", "require_assigned_slot": True,
+        "status": "idle", "enabled": True, "chat_id": "", "category": "all", "task_id": None,
+        "allowed_tools": ["read_file", "list_directory", "search_text", "task_manage", "agent_manage", "skill_create"]
+            if _role == "boss_routing" else ["read_file", "list_directory", "search_text", "task_manage", "web_search", "web_fetch"],
+    }
+
 # Roles are configuration, not evidence of a running process.
 for _core_id, _core_defaults in DEFAULT_CORE_SLOTS.items():
     _core_defaults.setdefault("enabled", True)
     _core_defaults.setdefault("include_system_prompt", True)
     _core_defaults.setdefault("custom_system_prompt", "")
     _core_defaults.setdefault("custom_role_prompt", "")
+    _core_defaults.setdefault("skill_refs", [])
     _core_defaults.setdefault("allow_tools", True)
     _core_defaults.setdefault("avatar", "")
     _core_defaults.setdefault("role_id", {
         "buddha_chat": "personal-assistant", "buddha_connector": "connector",
         "buddha_always_on": "hintergrund_worker",
-    }[_core_id])
+    }.get(_core_id, "task_worker"))
     _core_defaults.setdefault("sub_mode", "task_worker" if _core_id == "buddha_always_on" else "expert_role")
 
 SYSTEM_SLOT_PRESETS = {
@@ -601,6 +621,9 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
+    if capability_edits:
+        updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
     slots = cfg.setdefault("slots", {})
     workers = cfg.setdefault("dynamic_workers", [])
@@ -629,6 +652,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
 
 
 CORE_SYSTEM_AGENT_IDS = tuple(DEFAULT_CORE_SLOTS)
+REQUIRED_CORE_SYSTEM_AGENT_IDS = ("buddha_chat", "buddha_always_on", "buddha_connector")
 CORE_SYSTEM_AGENT_ICONS = {
     "buddha_chat": "💬",
     "buddha_always_on": "⚡",
@@ -638,7 +662,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
-    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -651,14 +675,14 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
     if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
         raise ValueError("System-Agentenkonfiguration hat kein gültiges Slots-Schema")
     slots = config["slots"]
-    if any(not isinstance(slots.get(slot_id), dict) for slot_id in CORE_SYSTEM_AGENT_IDS):
+    if any(not isinstance(slots.get(slot_id), dict) for slot_id in REQUIRED_CORE_SYSTEM_AGENT_IDS):
         raise ValueError("Mindestens eine feste System-Agenten-ID fehlt")
     version = hashlib.sha256(raw).hexdigest()
     prompts = config.get("prompts", {})
     if not isinstance(prompts, dict) or any(not isinstance(value, str) for value in prompts.values()):
         raise ValueError("Promptkonfiguration ist ungültig")
     public_slots = []
-    system_ids = list(CORE_SYSTEM_AGENT_IDS) + [
+    system_ids = [key for key in CORE_SYSTEM_AGENT_IDS if key in slots] + [
         key for key, value in slots.items()
         if key not in CORE_SYSTEM_AGENT_IDS and isinstance(value, dict) and value.get("system") is True
     ]
@@ -682,6 +706,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "include_system_prompt": slot.get("include_system_prompt", True),
             "custom_system_prompt": slot.get("custom_system_prompt", ""),
             "custom_role_prompt": slot.get("custom_role_prompt", ""),
+            "skill_refs": slot.get("skill_refs", []),
             "role_id": slot.get("role_id", defaults["role_id"]),
             "sub_mode": slot.get("sub_mode", defaults["sub_mode"]),
             "allow_tools": slot.get("allow_tools", True),
@@ -729,12 +754,42 @@ def core_system_agents_snapshot(path: str | None = None) -> dict[str, Any]:
     return _core_snapshot_from_bytes(target.read_bytes())
 
 
+@_serialized_mutation
+def initialize_system_slots(path: str | None = None) -> bool:
+    """Add factory slots at controller boot; preserve every existing user slot."""
+    target = _resolve_path(path)
+    if not target.exists():
+        config = _fresh_slots_config()
+        save_slots_config(config, path)
+        return True
+    raw = json.loads(target.read_text(encoding="utf-8"))
+    slots = raw.get("slots")
+    if not isinstance(slots, dict) or any(not isinstance(slots.get(key), dict)
+            for key in ("buddha_chat", "buddha_always_on", "buddha_connector")):
+        raise ValueError("Vorhandene Systemsteckplätze sind nicht vollständig lesbar")
+    changed = False
+    for key in ("buddha_boss", "buddha_developer", "buddha_research"):
+        if key not in slots:
+            slot = dict(DEFAULT_CORE_SLOTS[key])
+            for field in ("backend", "model", "think"):
+                slot[field] = slots["buddha_chat"].get(field, slot[field])
+            slots[key] = slot
+            changed = True
+    if changed:
+        save_slots_config(raw, path)
+    return changed
+
+
 def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(changes, dict) or not changes or set(changes) - CORE_EDITABLE_FIELDS:
         raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
     result: dict[str, Any] = {}
     for field, value in changes.items():
-        if field == "allowed_tools":
+        if field == "skill_refs":
+            from hub._services.skill_source_service import load_skill_instructions
+            load_skill_instructions(value)
+            value = json.loads(json.dumps(value))
+        elif field == "allowed_tools":
             from .bach_tools import TOOLS_FULL
             known = {tool["function"]["name"] for tool in TOOLS_FULL}
             if (value is not None and (not isinstance(value, list) or len(value) > 100
@@ -890,6 +945,14 @@ def system_worker_at_version(slot_id: str, expected_version: str,
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     slot = config["slots"].get(slot_id)
+    dynamic = [worker for worker in config.get("dynamic_workers", []) if worker.get("id") == slot_id]
+    if dynamic:
+        if slot is not None or slot_id in DEFAULT_CORE_SLOTS or len(dynamic) != 1:
+            raise ValueError("Worker ist nicht eindeutig vorhanden")
+        worker = dynamic[0]
+        if worker.get("type") not in {"once", "continuous", "persistent"}:
+            raise ValueError("Worker-Laufbegrenzung ist ungültig")
+        return dict(worker)
     if (not isinstance(slot, dict) or slot.get("id") != slot_id
             or (slot_id != "buddha_always_on" and
                 (slot.get("system") is not True or slot.get("execution_kind") != "worker"))
@@ -1155,6 +1218,10 @@ def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) 
     if task_prompt:
         parts.append(f"--- AUFTRAG / AUFGABE ---\n{task_prompt}")
 
+    from hub._services.skill_source_service import load_skill_instructions
+    skill_text = load_skill_instructions(worker_dict.get("skill_refs", []))
+    if skill_text:
+        parts.append("Skill-Anleitungen ändern keine Werkzeugfreigaben.\n" + skill_text)
     return "\n\n".join(parts)
 
 
@@ -1185,6 +1252,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs") if key in worker_data}
+    capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
     worker_type = worker_data.get("type", "once" if task_id else "persistent")
@@ -1208,6 +1277,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "expert_models": expert_models,
         "task_prompt": task_prompt,
         "custom_system_prompt": custom_system_prompt,
+        "skill_refs": capabilities.get("skill_refs", []),
     }, path)
 
     expires_at = worker_data.get("expires_at")
@@ -1227,6 +1297,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "allow_tools": allow_tools,
+        "allowed_tools": capabilities.get("allowed_tools"),
+        "skill_refs": capabilities.get("skill_refs", []),
         "system_prompt": composed_prompt,
         "custom_system_prompt": custom_system_prompt,
         "task_prompt": task_prompt,
@@ -1330,6 +1402,7 @@ def record_activity(
 
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
 })
@@ -1371,6 +1444,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():
+        if field in {"allowed_tools", "skill_refs"}:
+            edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
             raise ValueError(f"{field} muss wahr oder falsch sein")
         if field in ranges:

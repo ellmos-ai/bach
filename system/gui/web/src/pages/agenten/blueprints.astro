@@ -34,7 +34,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       <header class="studio-dialog-header"><div><p class="studio-eyebrow" id="editor-revision">Neuer Blueprint</p><h2 id="editor-title">Blueprint anlegen</h2></div><button type="button" class="btn" data-close="blueprint-editor" aria-label="Editor schließen">Schließen</button></header>
       <div class="studio-dialog-body">
         <div class="studio-fields">
-          <label>Name (ID)<input name="name" id="bp-name" required maxlength="100" pattern="[A-Za-z0-9._-]+" placeholder="mein-assistent" /></label>
+          <label>Name (ID)<input name="name" id="bp-name" required maxlength="80" pattern="[A-Za-z0-9._\-]+" placeholder="mein-assistent" /></label>
           <label>Bezeichnung<input id="bp-title" required maxlength="120" /></label>
           <label>Typ<select id="bp-kind"><option value="agent">Agent</option><option value="role">Rolle</option><option value="skill">Skill-Vorlage</option><option value="workflow">Workflow-Vorlage</option><option value="service">Service-Vorlage</option><option value="contractus">Arbeitsvertrag</option></select></label>
           <label>Beschreibung<input id="bp-description" maxlength="20000" /></label>

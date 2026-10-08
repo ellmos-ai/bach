@@ -341,69 +341,22 @@ def get_available_skills(
     search: str | None = None
 ) -> list[dict[str, Any]]:
     """Liest echte Skills aus dem Dateisystem oder liefert Core-Skills (GUX-022)."""
-    skills_map: dict[str, dict[str, Any]] = {}
-
-    search_roots = [skills_root] if skills_root else SKILLS_SEARCH_PATHS
-    found_filesystem = False
-
-    for root in search_roots:
-        if not root or not root.is_dir():
-            continue
-        try:
-            for skill_file in root.rglob("SKILL.md"):
-                found_filesystem = True
-                skill_id = skill_file.parent.name
-                if not _ID.fullmatch(skill_id) or skill_id in skills_map:
-                    continue
-
-                cat = skill_file.parent.parent.name if skill_file.parent.parent != root else "general"
-                name = skill_id.replace("-", " ").title()
-                role = f"Skill aus {cat}"
-                version = "v1.0.0"
-
-                # Ggf. Frontmatter kurz pruefen
-                try:
-                    head = skill_file.read_text(encoding="utf-8", errors="ignore")[:600]
-                    desc_match = re.search(r"description:\s*([^\n\r]+)", head)
-                    if desc_match:
-                        role = desc_match.group(1).strip().strip('"\'')[:120]
-                    name_match = re.search(r"name:\s*([^\n\r]+)", head)
-                    if name_match:
-                        name = name_match.group(1).strip().strip('"\'')
-                except (OSError, ValueError):
-                    pass
-
-                skills_map[skill_id] = {
-                    "id": skill_id,
-                    "name": name,
-                    "category": cat,
-                    "role": role,
-                    "version": version,
-                    "evidence_type": "filesystem_present",
-                }
-        except OSError as err:
-            logger.debug("Fehler beim Scannen von Skills in %s: %s", root, err)
-
-    # Wenn Filesystem nicht vorhanden/leer: Core-Skills ergaenzen
-    if not found_filesystem:
-        for s in FALLBACK_CORE_SKILLS:
-            skills_map[s["id"]] = {**s, "evidence_type": "core_fallback"}
-    else:
-        # Core-Skills einpflegen falls noch nicht vorhanden
-        for s in FALLBACK_CORE_SKILLS:
-            if s["id"] not in skills_map:
-                skills_map[s["id"]] = {**s, "evidence_type": "core_declared"}
-
+    from .skill_source_service import source_catalog, skill_roots, user_skills_root
+    roots = [user_skills_root(), skills_root] if skills_root else skill_roots()
+    catalog = source_catalog(roots)
+    skills_map = {key: {k: v for k, v in item.items() if k not in {"path", "root"}}
+                  for key, item in catalog.items()}
+    for item in FALLBACK_CORE_SKILLS:
+        if item["id"] not in skills_map:
+            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None}
     result = list(skills_map.values())
-
     if category:
         result = [s for s in result if s.get("category") == category]
     if search:
         q = search.lower()
-        result = [s for s in result if q in s["id"].lower() or q in s["name"].lower() or q in s.get("role", "").lower()]
-
-    result.sort(key=lambda x: (x.get("category", ""), x["id"]))
-    return result
+        result = [s for s in result if q in s["id"].lower() or q in s["name"].lower()
+                  or q in s.get("role", "").lower()]
+    return sorted(result, key=lambda item: (item.get("category", ""), item["id"]))
 
 
 def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None = None) -> str:
@@ -694,13 +647,14 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
     allowed &= known
     role = bp["persona_role"] if bp["persona_role"] in DEFAULT_ROLE_PROMPTS else "task_worker"
     prompt = bp["persona_prompt"]
-    if skills:
-        prompt += "\n\nGewählte Skills (Anleitungen, keine Toolfreigabe): " + ", ".join(skills)
+    from .skill_source_service import pin_skills
+    skill_refs = pin_skills(skills)
     changes = {key: execution[key] for key in ("backend", "model", "mode", "think", "avatar",
         "include_system_prompt", "custom_system_prompt", "pause_after", "pause_minutes", "pause_basis") if key in execution}
     changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
         "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",
-        "custom_role_prompt": prompt, "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
+        "custom_role_prompt": prompt, "skill_refs": skill_refs,
+        "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
         "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True,
         "worker_type": "once" if modus == "casualis" else "continuous"})
     if governance.get("profile") == "read_only_research":

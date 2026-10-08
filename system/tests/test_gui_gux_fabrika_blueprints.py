@@ -172,8 +172,15 @@ class TestFabrikaAndBlueprintsContract:
             assert "[Boot:Agent]" in res["start_prompt"]
             assert "[Boot:System]" in res["start_prompt"]
 
-    def test_gux027_materialization_needs_a_real_slot_and_dispatcher(self, temp_bach_db, tmp_path):
+    def test_gux027_materialization_needs_a_real_slot_and_dispatcher(self, temp_bach_db, tmp_path, monkeypatch):
         from hub._services.chat import slots_config
+        from hub._services import skill_source_service
+        skill_root = tmp_path / "skills"
+        for name in ("gespraechsfuehrung-basis", "selbstmanagement", "decide"):
+            path = skill_root / name / "SKILL.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(f"# {name}\nNutze diese Test-Anleitung.\n", encoding="utf-8")
+        monkeypatch.setattr(skill_source_service, "skill_roots", lambda: [skill_root])
         slots_path = str(tmp_path / "slots.json")
         slots_config.initialize_slots_config(slots_path)
         with closing(sqlite3.connect(temp_bach_db)) as conn:
@@ -187,6 +194,8 @@ class TestFabrikaAndBlueprintsContract:
             assert result["worker_started"] is False and result["is_running"] is False
             assert result["is_living"] is None
             assert slots_config.get_system_slot(result["slot_id"], slots_path)["blueprint_id"] == row["id"]
+            assert {ref["id"] for ref in slots_config.get_system_slot(result["slot_id"], slots_path)["skill_refs"]} == {
+                "gespraechsfuehrung-basis", "selbstmanagement", "decide"}
             with pytest.raises(RuntimeError, match="worker_dispatcher_required"):
                 blueprint_service.start_blueprint_worker(conn, row["id"])
             assert conn.execute("SELECT COUNT(*) FROM partner_presence").fetchone()[0] == 0
@@ -256,7 +265,9 @@ class TestFabrikaAndBlueprintsContract:
         monkeypatch.setattr(worker_status_adapter, "start_worker", lambda *args, **kwargs: {"ok": True, "start_acknowledged": True})
         snapshot = asyncio.run(core_system_agents.list_core_system_agents())
         assert snapshot["schema"] == "bach.core-system-agents.v1"
-        assert len(snapshot["agents"]) == 3
+        assert {agent["id"] for agent in snapshot["agents"]} == {
+            "buddha_chat", "buddha_always_on", "buddha_connector",
+            "buddha_boss", "buddha_developer", "buddha_research"}
         always_on = next(a for a in snapshot["agents"] if a["id"] == "buddha_always_on")
         assert "status" in always_on
         assert "pause_info" in always_on
