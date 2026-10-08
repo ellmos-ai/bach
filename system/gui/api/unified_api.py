@@ -392,7 +392,8 @@ async def list_agent_blueprints(
 async def get_contractus_presets():
     """Liefert Contractus-, Modus- und Trigger-Presets für Fabrika und Blueprints."""
     return {
-        "presets": CONTRACTUS_PRESETS,
+        "presets": [{**preset, "execution_supported": preset["modus"] in {"casualis", "usus"}}
+                    for preset in CONTRACTUS_PRESETS],
         "count": len(CONTRACTUS_PRESETS),
     }
 
@@ -478,6 +479,9 @@ async def delete_agent_blueprint(blueprint_id: int, expected_version: int = Quer
     try:
         _ensure_agent_studio_tables(conn)
         from hub._services.chat.slots_config import get_system_slot
+        # Share SQLite serialization with materialize_blueprint, including the
+        # external slot inspection; no instance may appear between check/delete.
+        conn.execute("BEGIN IMMEDIATE")
         if get_system_slot(f"system-blueprint-{blueprint_id}"):
             raise HTTPException(409, "Zuerst den zugehörigen Living-Steckplatz entfernen")
         row = conn.execute("SELECT is_template, version FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone()
@@ -491,6 +495,9 @@ async def delete_agent_blueprint(blueprint_id: int, expected_version: int = Quer
             raise HTTPException(409, "Blueprint wurde inzwischen geändert")
         conn.commit()
         return {"success": True, "id": blueprint_id}
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

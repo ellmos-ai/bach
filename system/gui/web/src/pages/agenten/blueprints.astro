@@ -64,18 +64,18 @@ import BachLayout from "../../layouts/BachLayout.astro";
           <summary><span>03</span> Modell & Arbeitsvertrag</summary>
           <div class="studio-group-body">
             <div class="studio-fields">
-              <label>Anbieter<select id="bp-backend"><option value="ollama">Ollama · lokal</option><option value="lmstudio">LM Studio · lokal</option><option value="hermes">Hermes · lokal</option><option value="ollama-cloud">Ollama Cloud</option><option value="openrouter">OpenRouter</option><option value="claude-api">Claude API</option><option value="openai">OpenAI API</option><option value="claude">Claude CLI · Subscription</option><option value="codex">Codex CLI · Subscription</option></select></label>
+              <label>Anbieter<select id="bp-backend"><option value="ollama">Ollama · lokal</option><option value="lmstudio">LM Studio · lokal</option><option value="hermes">Hermes · API</option><option value="ollama-cloud">Ollama Cloud</option><option value="openrouter">OpenRouter</option><option value="claude-api">Claude API</option><option value="openai">OpenAI API</option><option value="claude">Claude CLI · Subscription</option><option value="codex">Codex CLI · Subscription</option></select></label>
               <label>Modell<input id="bp-model" list="bp-models" autocomplete="off" maxlength="120" /><datalist id="bp-models"></datalist></label>
               <label>Arbeitsvertrag<select id="bp-contractus-preset"></select></label>
               <label>Modus<select id="bp-mode"><option value="safe">Safe</option><option value="full">Full</option></select></label>
-              <label>Arbeitsweise<select id="bp-modus"><option value="casualis">Aufgabenbezogen</option><option value="usus">Dauerläufer</option><option value="impetus_temporal">Zeitlich begrenzt</option></select></label>
+              <label>Arbeitsweise<select id="bp-modus"><option value="casualis">Ein Arbeitsblock</option><option value="usus">Dauerläufer</option><option value="impetus_temporal" disabled>Zeitlich begrenzt · noch nicht ausführbar</option><option value="impetus_causa" disabled>Ereignisgesteuert · noch nicht ausführbar</option></select></label>
               <label>Toolrunden<input id="bp-turns" type="number" min="1" max="100" value="20" /></label>
               <label>Pause nach<input id="bp-pause-after" type="number" min="0" max="1440" value="5" /></label>
               <label>Pause in Minuten<input id="bp-pause-minutes" type="number" min="0" max="1440" value="1" /></label>
               <label>Pausenbasis<select id="bp-pause-basis"><option value="runs">Worker-Läufe</option><option value="tasks">Aufgaben</option></select></label>
               <label class="studio-check"><input id="bp-think" type="checkbox" checked /> Think</label>
             </div>
-            <p class="studio-note">Das Modell wird bei der Instanziierung ausdrücklich festgelegt. Cloud- und API-Worker starten über den Startknopf.</p>
+            <p class="studio-note">Ein Arbeitsblock endet nach seinem Toolbudget; eine offene Aufgabe wird dabei zurückgegeben. Dauerläufer arbeiten bis zum Stopp. Zeit- und Ereignissteuerung sind noch nicht ausführbar. Cloud- und API-Worker starten über den Startknopf.</p>
           </div>
         </details>
         <details class="studio-group">

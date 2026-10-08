@@ -688,6 +688,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "allowed_tools": slot.get("allowed_tools"),
             "blueprint_id": slot.get("blueprint_id"),
             "blueprint_version": slot.get("blueprint_version"),
+            "type": slot.get("type", "continuous"),
             "backend": slot.get("backend"),
             "model": slot.get("model"),
             "resolved_model": slot.get("resolved_model") or "",
@@ -864,10 +865,14 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
         raise ValueError("Blueprint-Steckplatz ist bereits anders belegt")
     if any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", [])):
         raise ValueError("Blueprint-Steckplatz kollidiert mit einem Worker")
-    edits = _validated_core_edits(changes)
+    fields = dict(changes)
+    worker_type = fields.pop("worker_type", None)
+    if worker_type not in {"once", "continuous"}:
+        raise ValueError("Worker-Laufbegrenzung muss ausdrücklich festgelegt werden")
+    edits = _validated_core_edits(fields)
     core = {**DEFAULT_CORE_SLOTS["buddha_chat"], **(existing or {}),
             "id": slot_id, "system": True, "execution_kind": "worker",
-            "type": "continuous", "require_assigned_slot": True,
+            "type": worker_type, "require_assigned_slot": True,
             "blueprint_id": blueprint_id, "blueprint_version": blueprint_version,
             "enabled": True, "status": "idle", "current_activity": "",
             "chat_id": "", "task_id": None, "category": "all", **edits}
@@ -890,7 +895,10 @@ def system_worker_at_version(slot_id: str, expected_version: str,
                 (slot.get("system") is not True or slot.get("execution_kind") != "worker"))
             or any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", []))):
         raise ValueError("System-Worker ist nicht eindeutig vorhanden")
-    return {**DEFAULT_CORE_SLOTS.get(slot_id, {}), **slot, "type": "continuous", "system": True}
+    worker_type = slot.get("type", "continuous")
+    if worker_type not in {"once", "continuous"}:
+        raise ValueError("System-Worker-Laufbegrenzung ist ungültig")
+    return {**DEFAULT_CORE_SLOTS.get(slot_id, {}), **slot, "type": worker_type, "system": True}
 
 
 def _core_prompt_definitions() -> dict[str, str]:

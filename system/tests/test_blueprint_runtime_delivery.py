@@ -167,3 +167,54 @@ def test_native_tool_names_take_precedence_over_legacy_aliases(state):
     bp = save(state, governance={"tool_whitelist":["execute_command","task_manage"]})
     created = materialize(state, bp)
     assert slots.get_system_slot(created["slot_id"])["allowed_tools"] == ["execute_command","task_manage"]
+
+
+@pytest.mark.parametrize('modus,worker_type', [('casualis','once'),('usus','continuous')])
+def test_blueprint_work_mode_reaches_the_actual_controller(state, modus, worker_type):
+    from hub._services.chat import telegram_chat as control
+    bp = save(state, modus=modus)
+    created = materialize(state, bp)
+    assert slots.get_system_slot(created['slot_id'])['type'] == worker_type
+    assert slots.system_worker_at_version(created['slot_id'], created['configuration_version'])['type'] == worker_type
+    assert control._execution_worker_slot(created['slot_id'])['type'] == worker_type
+
+
+@pytest.mark.parametrize('modus', ['impetus_temporal','impetus_causa'])
+def test_unimplemented_trigger_modes_refuse_to_create_an_unbounded_worker(state, modus):
+    bp = save(state, modus=modus)
+    with pytest.raises(ValueError, match='noch nicht ausführbar'):
+        materialize(state, bp)
+    assert slots.get_system_slot(f"system-blueprint-{bp['id']}") == {}
+
+
+def test_contract_presets_advertise_executable_modes_and_all_can_be_saved(state):
+    import asyncio
+    from gui.api import unified_api as api
+    presets = asyncio.run(api.get_contractus_presets())['presets']
+    for preset in presets:
+        assert preset['title']
+        assert preset['execution_supported'] is (preset['modus'] in {'casualis','usus'})
+        save(state, name=preset['id'], modus=preset['modus'])
+
+
+def test_blueprint_delete_serializes_slot_inspection_with_materialization(state, monkeypatch):
+    import asyncio
+    from gui.api import unified_api as api
+    bp = save(state)
+    db = state.execute('PRAGMA database_list').fetchone()[2]
+    monkeypatch.setattr(api, '_get_conn', lambda: sqlite3.connect(db))
+    observed = []
+    def inspect(slot_id):
+        competitor = sqlite3.connect(db, timeout=0)
+        try:
+            with pytest.raises(sqlite3.OperationalError, match='locked'):
+                competitor.execute('BEGIN IMMEDIATE')
+            observed.append(slot_id)
+            return {}
+        finally:
+            competitor.close()
+    monkeypatch.setattr(slots, 'get_system_slot', inspect)
+    result = asyncio.run(api.delete_agent_blueprint(bp['id'], expected_version=bp['version']))
+    assert result['success'] is True
+    assert observed == [f"system-blueprint-{bp['id']}"]
+    assert state.execute('SELECT count(*) FROM agent_blueprints WHERE id=?', (bp['id'],)).fetchone()[0] == 0

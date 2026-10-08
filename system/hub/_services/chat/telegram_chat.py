@@ -302,7 +302,10 @@ def _execution_worker_slot(worker_id: str) -> dict:
     from hub._services.chat.slots_config import get_system_slot
     system_slot = get_system_slot(worker_id)
     if system_slot and system_slot.get("execution_kind") == "worker":
-        return {**system_slot, "type": "continuous", "system": True}
+        worker_type = system_slot.get("type", "continuous")
+        if worker_type not in {"once", "continuous"}:
+            raise ValueError("System-Worker-Laufbegrenzung ist ungültig")
+        return {**system_slot, "type": worker_type, "system": True}
     return {}
 
 

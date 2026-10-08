@@ -577,7 +577,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         conn.rollback()
         raise ValueError("Blueprint enthält ungültigen Text")
     if (len(title) > 120 or not isinstance(animus, str) or animus not in {"api", "cli", "subscription", "local"}
-            or not isinstance(modus, str) or modus not in {"casualis", "usus", "impetus_temporal"}):
+            or not isinstance(modus, str) or modus not in {"casualis", "usus", "impetus_temporal", "impetus_causa"}):
         conn.rollback()
         raise ValueError("Blueprint-Titel oder Arbeitsmodus ist ungültig")
     if (not isinstance(skills, list) or len(skills) > 100
@@ -667,6 +667,9 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
     from .chat.bach_tools import TOOLS_FULL
     if not isinstance(execution, dict) or not execution.get("backend") or not execution.get("model"):
         raise ValueError("Anbieter und konkretes Modell sind erforderlich")
+    modus = bp.get("modus", "casualis")
+    if modus not in {"casualis", "usus"}:
+        raise ValueError("Zeit- und Ereignissteuerung sind noch nicht ausführbar; Ein Arbeitsblock oder Dauerläufer wählen")
     governance = json.loads(bp.get("governance_json") or "{}")
     contractus = json.loads(bp.get("contractus_json") or "{}")
     skills = json.loads(bp.get("skills_json") or "[]")
@@ -698,7 +701,8 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
     changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
         "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",
         "custom_role_prompt": prompt, "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
-        "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True})
+        "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True,
+        "worker_type": "once" if modus == "casualis" else "continuous"})
     if governance.get("profile") == "read_only_research":
         changes["mode"] = "safe"
         changes["allowed_tools"] = sorted(allowed & {"read_file", "list_directory", "search_text", "web_fetch", "system_status", "ollama_info", "task_manage"})
@@ -747,6 +751,11 @@ def start_blueprint_worker(conn: sqlite3.Connection, blueprint_id: int, task: st
     slot = get_system_slot(slot_id, slots_path)
     if (not slot or slot.get("blueprint_id") != blueprint_id
             or slot.get("blueprint_version") != expected_version):
+        raise RuntimeError("blueprint_instance_not_current")
+    modus = bp.get("modus", "casualis")
+    if modus not in {"casualis", "usus"}:
+        raise ValueError("Zeit- und Ereignissteuerung sind noch nicht ausführbar")
+    if slot.get("type") != ("once" if modus == "casualis" else "continuous"):
         raise RuntimeError("blueprint_instance_not_current")
     execution = dispatcher(slot_id, configuration_version)
     if (not isinstance(execution, dict) or execution.get("schema") != "bach.worker-execution.v1"

@@ -13,6 +13,15 @@ export function blueprintState(blueprint) {
 export function executionSettings(blueprint, fallback = {}) {
   return {...fallback, ...(blueprint.contractus?.execution || {}), ...(blueprint.instance || {})};
 }
+export function instanceSettings(blueprint, core) {
+  const fallback = core?.agents?.find(slot => slot.id === "buddha_chat") || {};
+  const fresh = core?.agents?.find(slot => slot.blueprint_id === blueprint.id);
+  return {...executionSettings({...blueprint, instance:null}, fallback), ...(fresh || {})};
+}
+export function startLabel(slot) {
+  const remoteModel = /:cloud(?:\s|$)/i.test([slot.model,slot.resolved_model].filter(Boolean).join(" "));
+  return ["ollama","lmstudio"].includes(slot.backend) && !remoteModel ? "Lokal starten" : "Cloud/API starten";
+}
 export function normalizeTools(names) {
   const aliases = {
     read_files:["read_file","list_directory"], search_content:["search_text"],
@@ -28,7 +37,7 @@ export function correlatedStart(result, workerId, requestId) {
     receipt?.schema === "bach.worker-execution.v1" &&
     receipt.worker_id === workerId && receipt.start_request_id === requestId &&
     /^[a-f0-9]{32}$/.test(receipt.service_instance || "") &&
-    /^[a-f0-9]{32}$/.test(receipt.run_generation || "") &&
+    /^[a-f0-9]{32}$/.test(receipt.generation || "") &&
     typeof receipt.terminal === "boolean" && typeof receipt.worker_thread_started === "boolean";
 }
 
@@ -37,7 +46,7 @@ if (typeof document !== "undefined") initializeStudio();
 function initializeStudio() {
   const $ = id => document.getElementById(id);
   const state = {blueprints:[], teams:[], skills:[], tools:[], contracts:[], governance:[], core:null,
-    prompts:null, library:"custom", edit:null, instance:null, instanceVersion:null, promptVersion:null,
+    prompts:null, library:"custom", edit:null, instance:null, instanceVersion:null, instanceConfig:null, promptVersion:null,
     team:null, avatar:"", modelRequest:0};
   const labels = {agent:"Agent",role:"Rolle",skill:"Skill-Vorlage",workflow:"Workflow-Vorlage",service:"Service-Vorlage",contractus:"Arbeitsvertrag"};
   const icons = {agent:"🤖",role:"🎭",skill:"🧩",workflow:"⛓",service:"⚙",contractus:"📜"};
@@ -58,7 +67,7 @@ function initializeStudio() {
     select.value = String(value ?? "");
   }
   function selectOptions(select,items,value) {
-    select.replaceChildren(...items.map(item => new Option(item.label,item.value)));
+    select.replaceChildren(...items.map(item => {const option=new Option(item.label,item.value);option.disabled=item.disabled===true;return option;}));
     choose(select,value ?? items[0]?.value ?? "");
   }
   function optionList(target, items, selected) {
@@ -88,7 +97,7 @@ function initializeStudio() {
         (!bp.is_template?'<button class="btn" data-edit="'+id+'">Bearbeiten</button>':"")+
         (canExecute?'<button class="btn" data-instance="'+id+'">'+(slot?"Steckplatz aktualisieren":"Als Steckplatz")+'</button>':"")+
         (slot?'<a class="btn" href="/tasks?assigned_slot='+encodeURIComponent(slot.id)+'">Aufgaben</a>':"")+
-        (slot&&slot.runtime_verified===true&&slot.running===false&&slot.enabled!==false?'<button class="btn btn-primary" data-start="'+id+'">'+(["ollama","lmstudio","hermes"].includes(slot.backend)?"Lokal starten":"Cloud/API starten")+'</button>':"")+
+        (slot&&slot.runtime_verified===true&&slot.running===false&&slot.enabled!==false?'<button class="btn btn-primary" data-start="'+id+'">'+startLabel(slot)+'</button>':"")+
         (!bp.is_template&&!slot?'<button class="btn" data-delete="'+id+'">Entfernen</button>':"")+'</div></article>';
     }).join("") || '<div class="studio-empty">'+(query||kind?"Keine passenden Blueprints.":"Noch keine eigenen Blueprints. Lege einen an oder übernimm eine Vorlage.")+'</div>';
   }
@@ -139,7 +148,7 @@ function initializeStudio() {
     $("bp-pause-after").value=config.pause_after??5;$("bp-pause-minutes").value=config.pause_minutes??1;
     choose($("bp-pause-basis"),config.pause_basis||"runs");choose($("bp-modus"),bp.modus||"casualis");
     state.avatar=config.avatar||"";drawAvatar();
-    selectOptions($("bp-contractus-preset"),[{value:"",label:"Eigener Arbeitsvertrag"},...state.contracts.map(p=>({value:p.id,label:p.name}))],"");
+    selectOptions($("bp-contractus-preset"),[{value:"",label:"Eigener Arbeitsvertrag"},...state.contracts.map(p=>({value:p.id,label:p.title,disabled:p.execution_supported===false}))],"");
     selectOptions($("bp-governance"),state.governance.map(p=>({value:p.id,label:p.name})),bp.governance?.profile||"fail_closed_standard");
     const skillItems=state.skills.map(skill=>({id:skill.id,name:skill.name||skill.id,description:skill.evidence_type==="filesystem_present"?"Dateisystem · "+(skill.category||""):"Katalogeintrag · Installation nicht bestätigt"}));
     for(const id of bp.skills||[]) if(!skillItems.some(item=>item.id===id))skillItems.push({id,name:id,description:"Gespeichert · Quelle nicht verfügbar"});
@@ -164,7 +173,7 @@ function initializeStudio() {
   async function openInstance(bp) {
     state.instance=bp;
     const core=await api("/api/system/core-agents");state.core=core;state.instanceVersion=core.configuration_version;
-    const config=executionSettings(bp,currentLocal());
+    const config=instanceSettings(bp,core);state.instanceConfig=config;
     $("instance-backend").replaceChildren(...[...$("bp-backend").options].map(option=>new Option(option.text,option.value)));
     choose($("instance-backend"),config.backend||"ollama");$("instance-model").value=config.model||"";
     choose($("instance-mode"),config.mode||"safe");$("instance-description").textContent=bp.title||bp.name;
@@ -238,7 +247,7 @@ function initializeStudio() {
   },"editor-status");
   handle("instance-backend","change",()=>loadModels("instance"),"instance-status");
   handle("instance-form","submit",async event=>{
-    event.preventDefault();const bp=state.instance;const execution={...(bp.contractus?.execution||{}),backend:$("instance-backend").value,model:$("instance-model").value.trim(),mode:$("instance-mode").value};
+    event.preventDefault();const bp=state.instance;const execution={...state.instanceConfig,backend:$("instance-backend").value,model:$("instance-model").value.trim(),mode:$("instance-mode").value};
     $("instance-save").disabled=true;
     try{
       const result=await post("/api/agent-studio/blueprints/"+bp.id+"/materialize",{expected_version:bp.version,configuration_version:state.instanceVersion,execution});

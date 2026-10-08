@@ -35,6 +35,14 @@ def client():
     return TestClient(server.app)
 
 
+@pytest.fixture(autouse=True)
+def no_live_control_api(monkeypatch):
+    from gui.api import worker_status_adapter
+    def reject(*args, **kwargs):
+        raise AssertionError("Unit tests must never contact a live Control service")
+    monkeypatch.setattr(worker_status_adapter, "_request_control_api", reject)
+
+
 @pytest.fixture
 def temp_bach_db():
     with tempfile.TemporaryDirectory() as tmp:
@@ -244,6 +252,8 @@ class TestFabrikaAndBlueprintsContract:
         monkeypatch.setattr(core_system_agents, "_snapshot", lambda: slots_config.core_system_agents_snapshot())
         monkeypatch.setattr(unified_api, "_require_memory_device_token", lambda request: "fixture-device")
         monkeypatch.setattr(worker_status_adapter, "worker_action", lambda *args, **kwargs: {"ok": True, "state": "stopping"})
+        monkeypatch.setattr(worker_status_adapter, "read_worker_status", lambda **kwargs: {"workers": [{"id": "buddha_always_on", "status": "idle"}]})
+        monkeypatch.setattr(worker_status_adapter, "start_worker", lambda *args, **kwargs: {"ok": True, "start_acknowledged": True})
         snapshot = asyncio.run(core_system_agents.list_core_system_agents())
         assert snapshot["schema"] == "bach.core-system-agents.v1"
         assert len(snapshot["agents"]) == 3
