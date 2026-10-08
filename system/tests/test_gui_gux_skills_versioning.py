@@ -79,7 +79,7 @@ def test_gux_030_nav_config_skills_area():
     child_hrefs = [c.get("href") for c in children if isinstance(c, dict)]
     assert "/skills" in child_hrefs, "/skills must be under area 'skills'"
     assert {"/skills/plugins", "/skills/mcp", "/skills/software"}.issubset(child_hrefs)
-    assert "/agents-board" in child_hrefs, "/agents-board must be under area 'skills'"
+    assert "/agents-board" not in child_hrefs, "Deprecated Agents-Board must not remain in navigation"
 
     agenten_area = areas.get("agenten", {})
     agenten_child_hrefs = [c.get("href") for c in agenten_area.get("children", []) if isinstance(c, dict)]

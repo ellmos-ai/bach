@@ -1,5 +1,15 @@
 # TODO - ellmos BACH
 
+## Ocean-Integration und gemeinsame GUI
+
+Architektur und Einführungsfolge: [OCEAN-TRANSFER-PLAN.md](OCEAN-TRANSFER-PLAN.md).
+Ersetzte Teile und Rückbau: [DEPRICATED.md](DEPRICATED.md).
+Bedienung und Adapterprüfung: [GUI-Integrationshilfe](system/docs/help/gui-integration.txt).
+
+Der aktuelle Auftrag umfasst GUI, Installer und einen begrenzten ersten Modultransfer.
+Weitere 64 Modulaufgaben sind nach Zusammenführung gleicher Quellen in der TaskDB geplant.
+Die Planung und ein Testlauf sind kein Produktions- oder Geräteabnahmenachweis.
+
 ## Offene Aufgaben
 
 ### [BACH-SEC-DEPS-01] GUI-Abhängigkeitslücken vor dem nächsten Release schließen

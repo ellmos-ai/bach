@@ -242,6 +242,10 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## Documentation
 
+- **[Shared GUI and agent controls](system/docs/help/gui-integration.txt)** - Consumer release pins and adapter checks
+- **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
+- **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback
+
 - **Languages:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 - **[Quickstart Guide](QUICKSTART.md)** - Get your first workflow running in 5 minutes
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook

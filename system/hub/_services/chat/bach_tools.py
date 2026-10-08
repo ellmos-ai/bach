@@ -533,6 +533,7 @@ TOOLS_SAFE = [
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
+        "result": {"type": "string", "description": "Bei done: tatsächlich erarbeitetes Ergebnis, höchstens 3000 Zeichen; wird atomar mit dem bestätigten Taskabschluss gespeichert."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1040,6 +1041,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return "Taskoperation nicht bestätigt; Taskbindung prüfen."
             if require_task_binding:
                 return "Taskbindung fehlt; Taskoperation nicht ausgeführt."
+            if args.get("action") == "done" and args.get("result") is not None:
+                return "Taskergebnis braucht eine gebundene Worker-Task; Abschluss nicht ausgeführt."
             action = args.get("action", "list")
             runtime_db = _current_runtime_db()
             task_audit_fn = _current_apply_task_field_changes()

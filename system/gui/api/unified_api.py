@@ -898,85 +898,66 @@ def _ensure_marblerun_tables(conn: sqlite3.Connection):
         pass
 
 
-@router.get("/marblerun/chains")
-async def get_marblerun_chains():
-    """Liefert alle gespeicherten Agenten-Ketten."""
+async def _native_sequence_api(request, method, endpoint, *, body=None, params=None):
+    if request is None:
+        raise HTTPException(status_code=401, detail="Geräteautorisierung erforderlich")
+    token = _require_memory_device_token(request)
+    from .worker_status_adapter import _request_control_api, WorkerActionRejected, WorkerStatusUnavailable
     try:
-        conn = _get_conn(timeout=2.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            _ensure_marblerun_tables(conn)
-            rows = conn.execute("SELECT * FROM marblerun_chains").fetchall()
-            chains = []
-            for r in rows:
-                steps = []
-                try:
-                    steps = json.loads(r["steps_json"])
-                except Exception:
-                    pass
-                title = r["title"] if "title" in r.keys() and r["title"] else r["name"].replace("-", " ").title()
-                chains.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "title": title,
-                    "description": r["description"] if "description" in r.keys() else "",
-                    "steps": steps,
-                    "is_active": bool(r["is_active"]) if "is_active" in r.keys() else True,
-                    "created_at": r["created_at"] if "created_at" in r.keys() else None
-                })
-            return {"chains": chains, "count": len(chains)}
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.exception("Fehler beim Abruf der MarbleRun-Ketten: %s", e)
-        return {"chains": [], "count": 0, "status": "empty", "note": "Fehler beim Abruf"}
+        return await asyncio.to_thread(_request_control_api, method, endpoint,
+                                       device_token=token, body=body, params=params, timeout=15.0)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/marblerun/catalog")
+async def get_marblerun_catalog(request: Request):
+    return await _native_sequence_api(request, "GET", "marblerun/catalog")
+
+
+@router.get("/marblerun/chains")
+async def get_marblerun_chains(request: Request):
+    data = await _native_sequence_api(request, "GET", "marblerun/catalog")
+    return {**data, "count": len(data["chains"])}
 
 
 @router.post("/marblerun/chains")
-async def create_marblerun_chain(payload: Dict[str, Any]):
-    """Erstellt oder aktualisiert eine Agenten-Kette."""
-    name = (payload.get("name") or "").strip().lower()
-    if not name:
-        raise HTTPException(status_code=400, detail="Name fehlt")
-    title = payload.get("title") or name.title()
-    steps = payload.get("steps") or []
-    desc = payload.get("description", "")
-    now = datetime.now().isoformat()
-    conn = _get_conn()
-    try:
-        _ensure_marblerun_tables(conn)
-        conn.execute("""
-            INSERT INTO marblerun_chains (name, title, description, steps_json, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                title = excluded.title,
-                description = excluded.description,
-                steps_json = excluded.steps_json,
-                updated_at = excluded.updated_at
-        """, (name, title, desc, json.dumps(steps), now))
-        conn.commit()
-        return {"success": True, "name": name, "title": title, "steps_count": len(steps)}
-    finally:
-        conn.close()
+async def create_marblerun_chain(payload: Dict[str, Any], request: Request):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+                                     body={"action": "create", "definition": payload})
+
+
+@router.put("/marblerun/chains/{chain_id}")
+async def update_marblerun_chain(chain_id: int, payload: Dict[str, Any], request: Request):
+    if set(payload) != {"version", "definition"}:
+        raise HTTPException(status_code=400, detail="Kettenversion und Definition erforderlich")
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "update", "chain_id": chain_id, **payload})
 
 
 @router.delete("/marblerun/chains/{chain_id}")
-async def delete_marblerun_chain(chain_id: int):
-    """Loescht eine Agenten-Kette."""
-    conn = _get_conn()
-    try:
-        _ensure_marblerun_tables(conn)
-        conn.execute("DELETE FROM marblerun_chains WHERE id = ?", (chain_id,))
-        conn.commit()
-        return {"success": True, "id": chain_id}
-    finally:
-        conn.close()
+async def delete_marblerun_chain(chain_id: int, request: Request, version: int = Query(...)):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "delete", "chain_id": chain_id, "version": version})
 
 
 @router.post("/marblerun/chains/{chain_id}/run")
-async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(default={})):
-    """No run is recorded until a real agent dispatcher is connected."""
-    raise HTTPException(status_code=501, detail="Agenten-Kettenlauf nicht verfügbar: kein Worker-Dispatcher angebunden.")
+async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(...), request: Request = None):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "start", "chain_id": chain_id, "request": payload})
+
+
+@router.get("/marblerun/runs/{run_id}")
+async def get_marblerun_run(run_id: str, request: Request):
+    return await _native_sequence_api(request, "GET", "marblerun/run", params={"run_id": run_id})
+
+
+@router.post("/marblerun/runs/{run_id}/stop")
+async def stop_marblerun_run(run_id: str, request: Request):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+                                     body={"action": "stop", "run_id": run_id})
 
 
 @router.get("/marblerun/agents-map")
@@ -1051,42 +1032,23 @@ async def get_agents_map():
 
 @router.get("/governance/status")
 async def get_governance_status():
-    """Live-Status fuer Governance: Locks, P-Policies, Decisions und Systems."""
-    decisions = []
-    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
-        d_dir = CONTROL_ROOT / "_DECISIONS"
-        for df in sorted(d_dir.glob("*.md"), reverse=True)[:15]:
-            decisions.append({
-                "filename": df.name,
-                "title": df.stem.replace("_", " ").title(),
-                "source": "decision_register"
-            })
-
+    """Observe locks and canonical policy pointers; unavailable sources stay unknown."""
+    from .governance_registry import read_registry
+    try:
+        governance = await read_registry()
+    except HTTPException as exc:
+        governance = {"availability": "unavailable", "reason": exc.detail, "entries": [], "count": None}
     snapshot = _lock_cache_snapshot()
-
+    entries = governance["entries"]
     return {
         "status": "observed" if snapshot["availability"] == "available" else "unknown",
-        "timestamp": snapshot["checked_at"],
-        "source": snapshot["source"],
-        "availability": snapshot["availability"],
-        "scanned_at": snapshot["scanned_at"],
-        "error": snapshot["error"],
-        "recent_decisions": decisions,
-        "active_locks": snapshot["locks"][:25],
-        "lock_count": snapshot["count"],
-        "policies": [
-            {"id": policy_id, "title": title, "status": "unverified", "level": level,
-             "source": "configured_policy_list", "enforcement_verified": False}
-            for policy_id, title, level in (
-                ("P-001", "Fail-Closed Git Protection", "critical"),
-                ("P-002", "Two-Tree Rule (OneDrive & Local Clone)", "critical"),
-                ("P-003", "Device Token Long-Lived Auth", "high"),
-                ("P-004", "Automations Memory & Log Archiving", "medium"),
-                ("P-005", "Credential Protection & Fail-Closed Scans", "critical"),
-                ("P-006", "Mermaid Diagram Syntax Guardrails", "medium"),
-                ("P-007", "Proof-Note Release in Research Repos", "high"),
-            )
-        ]
+        "timestamp": snapshot["checked_at"], "source": snapshot["source"],
+        "availability": snapshot["availability"], "scanned_at": snapshot["scanned_at"], "error": snapshot["error"],
+        "recent_decisions": [entry for entry in entries if entry["kind"] == "decision"][:15],
+        "active_locks": snapshot["locks"][:25], "lock_count": snapshot["count"],
+        "policies": [entry for entry in entries if entry["kind"] in {"policy", "rule"}],
+        "policies_availability": governance["availability"], "policies_reason": governance.get("reason"),
+        "policy_source": "policy-registry", "enforcement_verified": False,
     }
 
 
@@ -1139,37 +1101,20 @@ async def list_governance_locks():
 
 @router.get("/governance/decisions")
 async def list_governance_decisions():
-    """Listet archivierte und offene Entscheidungen (Decisions)."""
-    decisions = []
-    if CONTROL_ROOT and (CONTROL_ROOT / "_DECISIONS").exists():
-        for f in sorted((CONTROL_ROOT / "_DECISIONS").glob("*.md"), reverse=True):
-            decisions.append({
-                "id": f.stem,
-                "title": f.stem.replace("_", " ").title(),
-                "path": str(f)
-            })
-    return {"decisions": decisions, "count": len(decisions)}
+    """Canonical decision pointers. DecisionClicker adoption remains a separate action."""
+    from .governance_registry import read_registry
+    result = await read_registry(kind="decision")
+    return {**result, "decisions": result["entries"]}
 
 
 @router.get("/governance/policies")
 async def list_governance_policies():
-    """Kanonische Richtlinienliste (P-001 bis P-007)."""
-    policies = [
-        {"id": "P-001", "name": "Fail-Closed Git Protection", "scope": "Git & Repos", "enforcement": "Strict", "desc": "Kein automatischer Push ohne Pruefung aller Gates."},
-        {"id": "P-002", "name": "Two-Tree Rule", "scope": "Filesystem", "enforcement": "Strict", "desc": "Trennung zwischen lokalem Klon und OneDrive-Transfer."},
-        {"id": "P-003", "name": "Device Token Long-Lived Auth", "scope": "Cluster & Network", "enforcement": "Strict", "desc": "Sichere Token-Authentifizierung ohne Passwort-Leaks."},
-        {"id": "P-004", "name": "Automation Log Archiving", "scope": "Logging", "enforcement": "Medium", "desc": "Logs gehoeren ins zentrale Logbuch, nicht in CLAUDE.md."},
-        {"id": "P-005", "name": "Credential Protection", "scope": "Security", "enforcement": "Strict", "desc": "Niemals API-Keys oder Zugangsdaten im Chat oder Klartext ausgeben."},
-        {"id": "P-006", "name": "Mermaid Syntax Guardrails", "scope": "Documentation", "enforcement": "Medium", "desc": "Diagramme sauber quotieren vor Commit/Push."},
-        {"id": "P-007", "name": "Proof-Note Freigabe", "scope": "Research", "enforcement": "High", "desc": "Proof-Notes nur mit Kuration und Gate freigeben."}
-    ]
-    for policy in policies:
-        policy["configured_level"] = policy.pop("enforcement")
-        policy["enforcement"] = "unverified"
-        policy["enforcement_verified"] = False
-    return {"policies": policies, "count": len(policies),
-            "source": "configured_policy_list",
-            "checked_at": datetime.now(timezone.utc).isoformat()}
+    """Canonical policies and rules; no hardcoded enforcement claims."""
+    from .governance_registry import read_registry
+    result = await read_registry()
+    policies = [{**entry, "name": entry["title"], "desc": "Quellenmetadaten aus policy-registry",
+                 "enforcement": "unverified"} for entry in result["entries"] if entry["kind"] in {"policy", "rule"}]
+    return {**result, "policies": policies, "count": len(policies)}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1572,7 +1517,7 @@ async def get_capabilities_tiers():
 
 @router.post("/capabilities/skills/version")
 async def save_skill_version(payload: Dict[str, Any] = Body(...)):
-    """Speichert eine neue Version eines Skills (SentinelFleet-Muster)."""
+    """Speichert eine neue Version eines Skills mit kanonischer Versionshistorie."""
     skill_name = payload.get("skill_name")
     if not skill_name:
         raise HTTPException(status_code=400, detail="skill_name erforderlich")
@@ -1923,7 +1868,7 @@ async def get_cognitive_state():
             },
             "user_profile": {
                 "user": "Lukas (System-Architekt)",
-                "context_anchors": ["OneDrive .TOPICS", "Mac Studio Cluster", "SentinelFleet-Architektur"]
+                "context_anchors": ["OneDrive .TOPICS", "Mac Studio Cluster", "Native Agentenketten"]
             }
         },
         "prozedurales_gedaechtnis": {

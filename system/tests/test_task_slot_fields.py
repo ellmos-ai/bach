@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import sqlite3
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -104,13 +105,35 @@ def test_structured_api_forwards_routing_fields(monkeypatch):
 
 def test_gui_http_create_persists_routing_fields(task_handler, monkeypatch):
     from gui import server
+    from gui.api import core_system_agents
+    from hub._services.chat import slots_config
 
     _, db_path = task_handler
     monkeypatch.setattr(server, "get_bach_db", lambda: sqlite3.connect(db_path))
+    configuration_version = "a" * 64
+    snapshot = {
+        "configuration_version": configuration_version,
+        "agents": [{
+            "id": "cloud_worker", "execution_kind": "worker", "enabled": True,
+            "living": True, "runtime_verified": True, "allow_tools": True,
+            "allowed_tools": ["task_manage"], "backend": "ollama-cloud",
+            "model": "glm-5.3:cloud",
+        }],
+    }
+    monkeypatch.setattr(core_system_agents, "_snapshot", lambda: snapshot)
+    monkeypatch.setattr(slots_config, "core_system_agents_snapshot", lambda: snapshot)
+
+    @contextmanager
+    def admission_transaction():
+        yield lambda: pytest.fail("Task routing must not advance slot configuration")
+
+    monkeypatch.setattr(slots_config, "worker_admission_transaction", admission_transaction)
     response = asyncio.run(server.api_post_task({
         "title": "Cloud-Aufgabe",
         "required_model": "glm-5.3:cloud",
         "assigned_slot": "cloud_worker",
+        "assigned_to": "OLLAMA-CLOUD",
+        "assignment_configuration_version": configuration_version,
         "creation_origin": "recurring",
         "source": "draft:test:12345678",
     }))
@@ -126,3 +149,6 @@ def test_gui_http_create_persists_routing_fields(task_handler, monkeypatch):
         "recurring",
         "draft:test:12345678",
     )
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT assigned_to FROM tasks WHERE id = ?", (response["id"],)).fetchone() == ("OLLAMA-CLOUD",)
+    assert snapshot["configuration_version"] == configuration_version

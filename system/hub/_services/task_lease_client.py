@@ -43,6 +43,7 @@ try:
         LeaseValidationError,
         TaskNotFound,
         acquire_lease,
+        _acquire_native_creator_lease,
         decompose_lease,
         parse_ts,
         read_lease,
@@ -59,6 +60,7 @@ except ImportError:  # pragma: no cover
         LeaseValidationError,
         TaskNotFound,
         acquire_lease,
+        _acquire_native_creator_lease,
         decompose_lease,
         parse_ts,
         read_lease,
@@ -528,6 +530,31 @@ class TaskLeaseClient:
         # Sending time is conservative: response latency cannot extend the local deadline.
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
 
+    def _acquire_native_creator(self, task_id, *, delegation, worker_id, host,
+                                task_version, config=None, now=None):
+        """Private lead-local entry; it has no HTTP equivalent or fallback."""
+        if self.mode != "local":
+            raise LeaseProtocolError("Creator-Delegation wird ausschließlich am lokalen TaskDB-Lead eingelöst")
+        _identity(task_id)
+        _version(task_version, required=True)
+        sent_at = now or datetime.now(timezone.utc)
+        conn = self._get_local_connection()
+        try:
+            result = _acquire_native_creator_lease(conn, task_id, delegation=delegation,
+                worker_id=worker_id, host=host, task_version=task_version, config=config, now=now)
+            status, data = result.http_status, result.payload
+        except (LeaseValidationError, TaskNotFound):
+            raise LeaseProtocolError("Private Creator-Delegation oder Task ungültig") from None
+        finally:
+            if self._conn is None:
+                conn.close()
+        if status != 200:
+            self._raise_denied(task_id, data)
+        if not isinstance(data, dict) or type(data.get("task_id")) is not int or data["task_id"] != task_id:
+            raise LeaseProtocolError("Creator-ACK passt nicht zur gebundenen Task")
+        _wire_time(data.get("server_now"))
+        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
+
     def read(self, task_id, *, lease_id=None, config=None, now=None):
         headers = {"X-Lease-Id": lease_id} if lease_id else None
         body = {"lease_id": lease_id} if self.mode == "local" else None
@@ -606,7 +633,8 @@ class TaskLeaseClient:
 
     def _raise_denied(self, task_id, payload):
         known = {"stale_fence", "expired", "max_total_reached", "held", "already_held_by_caller",
-                 "stale_task_version", "not_claimable", "creator_priority", "completion_guard", "conflict"}
+                 "stale_task_version", "not_claimable", "creator_priority", "completion_guard", "conflict",
+                 "creator_delegation_invalid", "creator_delegation_revoked", "creator_delegation_consumed"}
         reason = payload.get("reason") if isinstance(payload, dict) else None
         if reason not in known:
             reason = "denied"

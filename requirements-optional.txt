@@ -154,6 +154,10 @@ pywin32>=311              # Windows COM interface (pdf_schwaerzer_pro)
 # ============================================================
 pytest>=9.0.2             # Test runner (system/tests/, BACH_Dev/tests/)
 
+# [GOVERNANCE] Canonical read-only provider; enable explicitly in host configuration.
+policy-registry @ git+https://github.com/ellmos-ai/policy-registry.git@08add2bb598e9d301d225221ebef5721a7a0e833
+llmauto @ git+https://github.com/ellmos-ai/marblerun.git@e136ab3a632bcd663a510ef1c2ed666f6300b6bf
+
 # ============================================================
 # [WEB SCRAPE] moved to requirements.txt -- NOT optional any more.
 # The canonical engine is the default since PR #38, so `web-scraper` is a core

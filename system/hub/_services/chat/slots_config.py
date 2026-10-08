@@ -774,6 +774,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "allowed_tools": slot.get("allowed_tools"),
             "blueprint_id": slot.get("blueprint_id"),
             "blueprint_version": slot.get("blueprint_version"),
+            "sequence_run_id": slot.get("sequence_run_id"),
             "type": slot.get("type", "continuous"),
             "backend": slot.get("backend"),
             "model": slot.get("model"),
@@ -813,6 +814,74 @@ def core_system_agents_snapshot(path: str | None = None) -> dict[str, Any]:
     """Read only the allowlisted fields of the existing Control slots file."""
     target = _resolve_path(path)
     return _core_snapshot_from_bytes(target.read_bytes())
+
+
+def sequence_profile_snapshot(slot_ids, expected_version=None, *, path=None):
+    """Freeze selected Living policies and effective prompts from one image."""
+    raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    if expected_version is not None and snapshot["configuration_version"] != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    return {"configuration_version": snapshot["configuration_version"],
+            "profiles": _sequence_profiles_from_config(config, slot_ids)}
+
+
+def _sequence_profiles_from_config(config, slot_ids):
+    """Derive permissions from the same configuration image used for a write."""
+    result = {}
+    for slot_id in slot_ids:
+        slot = config["slots"].get(slot_id)
+        if (not isinstance(slot, dict) or slot.get("system") is not True
+                or (slot_id != "buddha_always_on" and slot.get("execution_kind") != "worker") or slot.get("enabled") is not True
+                or slot.get("sequence_run_id")):
+            raise ValueError("Gewählter Living-Agent ist nicht als Worker verfügbar")
+        profile = {**DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"]), **slot}
+        fields = {key: profile[key] for key in CORE_EDITABLE_FIELDS if key in profile}
+        if fields.get("allow_tools") is not True or (fields.get("allowed_tools") is not None
+                and "task_manage" not in fields["allowed_tools"]):
+            raise ValueError("Agent hat keine Freigabe für bestätigte Taskabschlüsse")
+        role = fields.get("role_id")
+        fields["custom_system_prompt"] = fields.get("custom_system_prompt") or config.get("prompts", {}).get("system_default", DEFAULT_SYSTEM_PROMPT)
+        fields["custom_role_prompt"] = fields.get("custom_role_prompt") or config.get("prompts", {}).get("role_" + str(role), DEFAULT_ROLE_PROMPTS.get(role, ""))
+        result[slot_id] = _validated_core_edits(fields)
+    return result
+
+
+@_serialized_mutation
+def materialize_sequence_slot(run_id, cursor, profile, task_id, *, source_slot, expected_profile_digest, path=None):
+    """Create a run-owned once worker; preserve user profiles and existing runs."""
+    if (not isinstance(run_id, str) or not re.fullmatch(r"[0-9a-f]{32}", run_id)
+            or type(cursor) is not int or not 0 <= cursor < 32
+            or type(task_id) is not int or task_id <= 0):
+        raise ValueError("Ungültige Ketten-Schrittbindung")
+    edits = _validated_core_edits(profile)
+    slot_id = f"system-sequence-{run_id}-{cursor}"
+    raw = _resolve_path(path).read_bytes()
+    _core_snapshot_from_bytes(raw)
+    config = json.loads(raw.decode("utf-8"))
+    from .sequence_store import digest
+    current = _sequence_profiles_from_config(config, [source_slot])[source_slot]
+    if digest(current) != expected_profile_digest:
+        raise ValueError("Quellprofil seit der Startfreigabe geändert")
+    existing = config["slots"].get(slot_id)
+    profile_digest = hashlib.sha256(json.dumps(edits, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    if existing is not None:
+        if (existing.get("sequence_run_id") != run_id or existing.get("sequence_cursor") != cursor
+                or existing.get("sequence_profile_digest") != profile_digest or existing.get("task_id") != task_id):
+            raise ValueError("Laufsteckplatz bereits anders belegt")
+        return {"slot_id": slot_id, **core_system_agents_snapshot(path)}
+    if any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", [])):
+        raise ValueError("Laufsteckplatz kollidiert mit einem Worker")
+    config["slots"][slot_id] = {**DEFAULT_CORE_SLOTS["buddha_chat"], **edits,
+        "id": slot_id, "system": True, "execution_kind": "worker", "type": "once",
+        "task_id": task_id, "require_assigned_slot": True, "category": "all", "status": "idle",
+        "chat_id": "", "current_activity": "", "auto_paused": False, "pause_counter": 0,
+        "sequence_run_id": run_id, "sequence_cursor": cursor, "sequence_profile_digest": profile_digest}
+    from hub._services.skill_source_service import check_write_locks
+    check_write_locks(_resolve_path(path))
+    save_slots_config(config, path)
+    return {"slot_id": slot_id, **core_system_agents_snapshot(path)}
 
 
 @_serialized_mutation
