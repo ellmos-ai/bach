@@ -2021,6 +2021,47 @@ class TestMatchTaskToPickupFilter:
     def test_match_task_to_pickup_filter(self, task, slot_filter, expected):
         slot = {"pickup_filter": slot_filter}
         assert match_task_to_pickup_filter(task, slot) is expected
+        if isinstance(slot_filter, dict):
+            assert match_task_to_pickup_filter(task, slot_filter) is expected
+
+    @pytest.mark.parametrize(
+        "task_changes,expected",
+        [
+            ({}, True),
+            ({"category": "WORKER", "priority": "P2"}, True),
+            ({"category": "OTHER"}, False),
+            ({"priority": "P3"}, False),
+            ({"tags": "waiting"}, False),
+            ({"assigned_slot": "buddha_chat"}, False),
+            ({"required_model": "glm-5.3:cloud"}, False),
+        ],
+    )
+    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected):
+        from hub._services.chat.slots_config import get_always_on_execution_slot
+        from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+        config_path = str(tmp_path / "native-always-on.json")
+        initialize_slots_config(config_path)
+        update_slot("buddha_always_on", {
+            "enabled": True,
+            "model": "qwen3.8:27b-mlx",
+            "pickup_filter": {
+                "enabled": True,
+                "categories": ["INBOX", "WORKER"],
+                "priorities": ["P1", "P2"],
+                "exclude_tags": ["delegated", "waiting"],
+            },
+        }, path=config_path)
+        slot = get_always_on_execution_slot(config_path)
+        task = {
+            "category": "INBOX", "priority": "P1", "tags": "",
+            "assigned_slot": "buddha_always_on", "required_model": "qwen3.8:27b-mlx",
+            **task_changes,
+        }
+
+        assert slot["enabled"] is True
+        assert match_task_to_pickup_filter(task, slot) is expected
+        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
 
     def test_empty_slot_filter_dict_rejects(self):
         # A slot with an empty dict as pickup_filter is treated as missing/malformed
@@ -2111,10 +2152,12 @@ class TestOffeneTasksPickupFilter:
                 "exclude_tags": ["delegated"],
             }
         }
-        # With slot filter, only task 1 should match
+        slot.update(id="buddha_always_on", enabled=True, model="qwen3.8:27b-mlx")
+        # With a complete enabled slot, only task 1 should match.
         tasks = offene_tasks(str(db_path), "all", slot=slot)
         assert len(tasks) == 1
         assert tasks[0]["id"] == 1
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=slot["pickup_filter"])] == [1]
 
         # Without filter, all 4 open tasks match
         all_tasks = offene_tasks(str(db_path), "all")
@@ -2140,7 +2183,7 @@ class TestOffeneTasksPickupFilter:
                  (4, "unbound", None, None)],
             )
 
-        local = {"id": "buddha_always_on", "model": "qwen3.8:27b-mlx",
+        local = {"id": "buddha_always_on", "enabled": True, "model": "qwen3.8:27b-mlx",
                  "pickup_filter": {"enabled": False}}
         assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
         assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]

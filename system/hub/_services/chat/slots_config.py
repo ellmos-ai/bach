@@ -472,7 +472,8 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
         return False
     if not task_matches_slot_binding(task, slot):
         return False
-    pickup_filter = slot if "enabled" in slot else slot.get("pickup_filter")
+    # Slot activation and pickup-filter activation are separate flags.
+    pickup_filter = slot.get("pickup_filter") if "pickup_filter" in slot else slot
     if not isinstance(pickup_filter, dict):
         return False
     if not pickup_filter.get("enabled", False):
