@@ -649,3 +649,41 @@ def test_gui_forwards_work_and_process_states_separately(config_file, monkeypatc
     assert worker["living"] is True and worker["running"] is False
     assert worker["worker_active"] is True and worker["status"] == "ready"
     assert worker["task_id"] is None
+
+
+@pytest.mark.parametrize("retained", [False, True], ids=["configuration", "terminal-receipt"])
+def test_manual_pause_is_not_reported_as_ready_or_assignable(config_file, monkeypatch, retained):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    slots.update_slot(ident, {"enabled": True, "status": "paused"})
+    baseline = slots.core_system_agents_snapshot()["configuration_version"]
+    ctrl = control._WorkerControl(ident)
+    ctrl.thread = SimpleNamespace(is_alive=lambda: False)
+    ctrl.worker_thread_started = True
+    ctrl.done_event.set()
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: ctrl} if retained else {})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    agent = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+    assert agent["enabled"] is True  # Desired on/off configuration is preserved.
+    assert agent["status"] == "paused" and agent["living"] is False
+    assert agent["running"] is False and agent["worker_active"] is False
+    assert agent["pause_info"]["is_paused"] is True and agent["pause_info"]["manual"] is True
+    assert slots.core_system_agents_snapshot()["configuration_version"] == baseline
+
+
+def test_gui_forwards_confirmed_manual_pause(config_file, monkeypatch):
+    baseline = slots.core_system_agents_snapshot()
+    def request(*args, **kwargs):
+        return {"configuration_version": baseline["configuration_version"],
+                "agents": [{"id": "buddha_always_on", "living": False, "running": False,
+                            "worker_active": False, "runtime_verified": True, "status": "paused",
+                            "pause_info": {"is_paused": True, "manual": True}}]}
+    monkeypatch.setattr(adapter, "_request_control_api", request)
+    observed = api._snapshot()
+    worker = next(a for a in observed["agents"] if a["id"] == "buddha_always_on")
+    assert worker["living"] is False and worker["running"] is False
+    assert worker["status"] == "paused" and worker["pause_info"]["is_paused"] is True
+    assert worker["pause_info"]["manual"] is True

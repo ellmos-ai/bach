@@ -558,6 +558,8 @@ def _system_slots_snapshot() -> dict:
         execution, thread_alive, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
         execution_state = execution["state"] if execution else None
+        manual_paused = agent["status"] == "paused"
+        paused = not agent["enabled"] or manual_paused or agent["pause_info"]["is_paused"]
         # Process liveness protects admission and cleanup; Running describes
         # actual work. An idle continuous worker remains available (Living).
         worker_active = bool(thread_alive or execution_state in {
@@ -569,7 +571,8 @@ def _system_slots_snapshot() -> dict:
             if not running:
                 running = None
         agent.update({"runtime_verified": True,
-                      "living": agent["enabled"] or worker_active is True or running is True,
+                      "living": (agent["enabled"] and not paused) or worker_active is True or running is True,
+                      "pause_info": {**agent["pause_info"], "is_paused": paused, "manual": manual_paused},
                       "running": running, "worker_active": worker_active,
                       "task_id": task_id, "execution": execution,
                       "current_tool": getattr(active_session, "current_tool", ""),
@@ -578,7 +581,7 @@ def _system_slots_snapshot() -> dict:
                       "status": (execution_state if execution_state in {
                           "starting", "stopping", "finishing", "unconfirmed"} else
                           "running" if running else
-                          "paused" if not agent["enabled"] or agent["pause_info"]["is_paused"] else "ready")})
+                          "paused" if paused else "ready")})
     result["service_instance"] = _WORKER_SERVICE_INSTANCE
     return result
 

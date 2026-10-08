@@ -34,7 +34,7 @@ def _snapshot() -> dict[str, Any]:
                 and isinstance(live.get("agents"), list)):
             by_id = {item["id"]: item for item in live["agents"] if isinstance(item, dict) and "id" in item}
             fields = ("living", "running", "worker_active", "runtime_verified", "runtime_reason_code", "status",
-                      "current_tool", "tool_round", "execution", "task_id")
+                      "current_tool", "tool_round", "execution", "task_id", "pause_info")
             for agent in result["agents"]:
                 current = by_id.get(agent["id"], {})
                 agent.update({key: current[key] for key in fields if key in current})
