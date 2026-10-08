@@ -98,8 +98,9 @@ def test_creation_cannot_raise_privileges(state, extra):
 @pytest.mark.parametrize("backend,model", [("openrouter", "openrouter/free"), ("ollama-cloud", "owned-local"),
     ("claude", "subscription"), ("ollama", "qwen:cloud"), ("ollama", "")])
 def test_agent_cannot_start_cloud_or_implicit_model(state, backend, model):
-    slot_id = slots.create_system_slot({"name": "Bound", "backend": backend, "model": model,
+    slot_id = slots.create_system_slot({"name": "Bound", "backend": backend, "model": model or "temporary-explicit",
         "allowed_tools": ["read_file"]}, slots.core_system_agents_snapshot()["configuration_version"])["slot_id"]
+    if not model: slots.update_slot(slot_id, {"model": ""})
     with pytest.raises(PermissionError):
         start(state, slot_id)
     state.start.assert_not_called()

@@ -578,6 +578,8 @@ class ChatRuntime(_ModuleChatRuntime):
                 raise RuntimeError("Worker ist deaktiviert")
             session.allow_tools = slot.get("allow_tools", True) is True
             session.allowed_tools = slot.get("allowed_tools")
+            from hub._services.skill_source_service import load_skill_instructions
+            load_skill_instructions(slot.get("skill_refs", []))
             return None
         except Exception as exc:
             session.allow_tools = False

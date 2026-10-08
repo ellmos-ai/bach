@@ -621,6 +621,9 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
+    if capability_edits:
+        updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
     slots = cfg.setdefault("slots", {})
     workers = cfg.setdefault("dynamic_workers", [])
@@ -1241,6 +1244,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs") if key in worker_data}
+    capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
     worker_type = worker_data.get("type", "once" if task_id else "persistent")
@@ -1264,6 +1269,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "expert_models": expert_models,
         "task_prompt": task_prompt,
         "custom_system_prompt": custom_system_prompt,
+        "skill_refs": capabilities.get("skill_refs", []),
     }, path)
 
     expires_at = worker_data.get("expires_at")
@@ -1283,6 +1289,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "allow_tools": allow_tools,
+        "allowed_tools": capabilities.get("allowed_tools"),
+        "skill_refs": capabilities.get("skill_refs", []),
         "system_prompt": composed_prompt,
         "custom_system_prompt": custom_system_prompt,
         "task_prompt": task_prompt,
@@ -1386,6 +1394,7 @@ def record_activity(
 
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
 })
@@ -1427,6 +1436,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():
+        if field in {"allowed_tools", "skill_refs"}:
+            edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
             raise ValueError(f"{field} muss wahr oder falsch sein")
         if field in ranges:

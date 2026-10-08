@@ -161,11 +161,29 @@ def test_skill_change_revokes_foreground_slot_tools(tmp_path, monkeypatch):
     root = tmp_path / "skills"
     skill = make_skill(root)
     monkeypatch.setattr(source, "skill_roots", lambda: [root])
-    slot = {"enabled": True, "skill_refs": source.pin_skills(["example"])}
+    slot = {"id": "owned-slot", "enabled": True, "skill_refs": source.pin_skills(["example"])}
     session = ChatSession()
+    session.system_slot_id = "owned-slot"
     session.system_slot_reader = lambda: slot
     session.system_slot_configuration = {"enabled": True}
     assert ChatRuntime._refresh_worker_tools(session) is None
     skill.write_text("Geänderte Anleitung", encoding="utf-8")
     assert isinstance(ChatRuntime._refresh_worker_tools(session), FailedAnswer)
     assert session.allow_tools is False
+
+
+def test_dynamic_worker_keeps_skill_and_tool_bindings_in_configuration(tmp_path, monkeypatch):
+    root = tmp_path / "skills"
+    make_skill(root)
+    monkeypatch.setattr(source, "skill_roots", lambda: [root])
+    path = str(tmp_path / "slots.json")
+    slots_config.initialize_slots_config(path)
+    refs = source.pin_skills(["example"])
+    worker = slots_config.add_worker({"name": "Eigener Worker", "skill_refs": refs,
+        "allowed_tools": ["read_file"]}, path)
+    assert worker["skill_refs"] == refs and worker["allowed_tools"] == ["read_file"]
+    assert "Erstelle einen ausführlichen Überblick." in worker["system_prompt"]
+    before = slots_config.worker_configuration_snapshot(worker["id"], path=path)
+    slots_config.change_worker_configuration(worker["id"], before["configuration_version"],
+        {"allowed_tools": ["task_manage"]}, path=path)
+    assert slots_config.worker_configuration_snapshot(worker["id"], path=path)["configuration_version"] != before["configuration_version"]
