@@ -800,10 +800,10 @@ def _write_revocation_receipt(
 
         status_persisted = True
         try:
-            updated = _persist_worker_metadata(control, {
-                "status": final_status,
-                "current_activity": control.stop_activity,
-            })
+            changes = {"status": final_status, "current_activity": control.stop_activity}
+            if final_status == "paused":
+                changes.update(auto_paused=False, pause_started_at="")
+            updated = _persist_worker_metadata(control, changes)
             status_persisted = updated is not None
         except Exception:
             status_persisted = False
@@ -886,7 +886,10 @@ def _request_worker_revocation(
         if control is None:
             receipt = _worker_receipt(None, worker_id, confirmed=True, final_status=final_status,
                 outcome="no-live-thread")
-            updated = update_slot(worker_id, {"status": final_status, "current_activity": activity})
+            changes = {"status": final_status, "current_activity": activity}
+            if final_status == "paused":
+                changes.update(auto_paused=False, pause_started_at="")
+            updated = update_slot(worker_id, changes)
             try:
                 record_activity(worker_id, activity, "ok", {"receipt": receipt})
             except Exception:

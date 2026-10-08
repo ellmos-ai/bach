@@ -709,3 +709,73 @@ def test_automatic_pause_is_not_marked_manual(config_file, monkeypatch, elapsed)
     assert agent["pause_info"]["auto_paused"] is True and agent["pause_info"]["manual"] is False
     assert agent["living"] is False and agent["running"] is False
     assert slots.core_system_agents_snapshot()["configuration_version"] == baseline
+
+
+def test_explicit_pause_interrupts_actual_automatic_cooldown(config_file, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    slots.update_slot(ident, {"enabled": True, "status": "running", "pause_after": 1,
+                              "pause_minutes": 1, "pause_basis": "runs", "pause_counter": 0,
+                              "auto_paused": False, "pause_started_at": ""})
+    worker = control._WorkerControl(ident)
+    worker.launch_attempted = worker.worker_thread_started = True
+    entered = threading.Event()
+    def activity(_ident, message, *_args):
+        if message.startswith("Automatische Pause gestartet"):
+            entered.set()
+    monkeypatch.setattr(control, "record_activity", activity)
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {ident: worker})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: worker})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    monkeypatch.setattr(control, "_WORKER_STOP_WAIT_SECONDS", 2)
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    def run_cooldown():
+        try:
+            control._wait_worker_cooldown(worker)
+        finally:
+            with control._WORKER_CONTROL_LOCK:
+                worker.done_event.set()
+                control._WORKER_CONTROLS.pop(ident, None)
+                control._ACTIVE_WORKER_THREADS.pop(ident, None)
+    worker.thread = threading.Thread(target=run_cooldown)
+    control._ACTIVE_WORKER_THREADS[ident] = worker.thread
+    worker.thread.start()
+    try:
+        assert entered.wait(2)
+        automatic = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+        assert automatic["pause_info"]["auto_paused"] is True
+        assert automatic["pause_info"]["manual"] is False
+        automatic_counter = slots.get_slot(ident)["pause_counter"]
+        expected = {"service_instance": control._WORKER_SERVICE_INSTANCE,
+                    "start_request_id": worker.start_request_id, "generation": worker.generation}
+        confirmed, _, receipt, code = control._request_worker_revocation(
+            ident, slots.get_slot(ident), requested_status="paused", expected_execution=expected)
+        assert confirmed and code == 200 and receipt["status_persisted"]
+        assert receipt["execution"]["terminal"] and not worker.thread.is_alive()
+        stored = slots.get_slot(ident)
+        assert stored["enabled"] is True and stored["auto_paused"] is False
+        assert stored["pause_started_at"] == "" and stored["pause_counter"] == automatic_counter
+        manual = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+        assert manual["status"] == "paused" and manual["living"] is False
+        assert manual["pause_info"]["manual"] is True and manual["pause_info"]["auto_paused"] is False
+    finally:
+        worker.stop_event.set()
+        worker.thread.join(3)
+        assert not worker.thread.is_alive()
+
+
+def test_explicit_pause_without_thread_clears_old_automatic_metadata(config_file, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    slots.update_slot(ident, {"enabled": True, "status": "paused", "auto_paused": True,
+                              "pause_started_at": "2026-01-01T00:00:00+00:00", "pause_counter": 4})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    monkeypatch.setattr(control, "record_activity", lambda *_a, **_k: None)
+    confirmed, updated, receipt, code = control._request_worker_revocation(
+        ident, slots.get_slot(ident), requested_status="paused")
+    assert confirmed and code == 200 and receipt["outcome"] == "no-live-thread"
+    assert updated["auto_paused"] is False and updated["pause_started_at"] == ""
+    assert updated["enabled"] is True and updated["pause_counter"] == 4
