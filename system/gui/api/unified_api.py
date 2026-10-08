@@ -3149,7 +3149,7 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
         "type": worker_type,
         "backend": backend,
         "model": model.strip(),
-        "max_tool_rounds": integer("max_tool_rounds", 25, 0, 100),
+        "max_tool_rounds": integer("max_tool_rounds", 25, 0, 1000),
         "mode": mode,
         "think": boolean("think", True),
         "allow_tools": boolean("allow_tools", True),

@@ -443,7 +443,7 @@ def _request_worker_decomposition(worker_id, generation, task_id, task_version):
                 or control.admission_pending
                 or not slot or slot.get("enabled", True) is not True or slot.get("status") != "running"):
             raise ValueError("Worker ist nicht in einem aktiven Lauf")
-        if slot.get("allow_tools", True) is not True or slot.get("max_tool_rounds") == 0:
+        if slot.get("allow_tools", True) is not True:
             raise ValueError("Zerlegung benötigt aktivierte Task-Werkzeuge")
         if slot.get("expires_at"):
             expiry = datetime.fromisoformat(slot["expires_at"])
@@ -483,7 +483,7 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
             if (control.supports_step_actions
                     and control.task_binding is not None and not control.task_binding.closed
                     and worker.get("enabled", True) is True
-                    and worker.get("allow_tools", True) is True and worker.get("max_tool_rounds") != 0):
+                    and worker.get("allow_tools", True) is True):
                 try:
                     control.task_binding.assert_active()
                     worker["task_action_binding"] = {

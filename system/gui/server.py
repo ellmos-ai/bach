@@ -1534,6 +1534,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/inbox",
         "/daemon",
         "/tasks",
+        "/user-inbox",
         "/messages",
         "/reports",
         "/help",
@@ -3275,6 +3276,10 @@ async def api_restore_mounts():
 
 # ═══════════════════════════════════════════════════════════════
 
+
+
+from gui.api.user_inbox import build_router as build_user_inbox_router
+app.include_router(build_user_inbox_router(_messages))
 
 
 @app.get("/api/messages")
@@ -5413,13 +5418,19 @@ async def tasks_page():
 
 
 
+@app.get("/user-inbox", response_class=HTMLResponse)
+async def user_inbox_page():
+    """Nachrichten an den Nutzer; Chats und Läufe haben eigene Ansichten."""
+    page = ASTRO_DIST_DIR / "user-inbox.html"
+    if page.is_file():
+        return FileResponse(page)
+    raise HTTPException(status_code=503, detail="Inbox-Oberfläche noch nicht installiert")
+
+
 @app.get("/messages", response_class=HTMLResponse)
 async def messages_page():
-    """Messages Seite."""
-    messages_file = TEMPLATES_DIR / "messages.html"
-    if messages_file.exists():
-        return FileResponse(messages_file)
-    raise HTTPException(status_code=404, detail="Template messages.html nicht gefunden")
+    """Compatibility redirect for old bookmarks."""
+    return RedirectResponse(url="/user-inbox", status_code=307)
 
 
 @app.get("/reports", response_class=HTMLResponse)

@@ -361,9 +361,9 @@ class TestGUIServerSmoke:
         else:
             tpl.write_text("<!DOCTYPE html><html><title>BACH - Berichte & Abschlussberichte</title></html>", encoding="utf-8")
 
-        resp_m = client.get("/messages")
-        assert resp_m.status_code == 200
-        assert "Berichte & Abschlussberichte" in resp_m.text
+        resp_m = client.get("/messages", follow_redirects=False)
+        assert resp_m.status_code == 307
+        assert resp_m.headers["location"] == "/user-inbox"
 
         resp_r = client.get("/reports")
         assert resp_r.status_code == 200
