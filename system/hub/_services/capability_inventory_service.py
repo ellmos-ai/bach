@@ -90,11 +90,20 @@ def plugin_inventory(roots: list[Path] | None = None) -> dict:
     result = _base("plugins", roots)
     entries = {}
     enabled = {}
+    codex_enabled = {}
     try:
         settings, _ = _document(home / ".claude/settings.json")
         enabled = settings.get("enabledPlugins") or {}
         if not isinstance(enabled, dict):
             enabled = {}
+    except (OSError, UnicodeError, ValueError):
+        pass
+    try:
+        settings, _ = _document(home / ".codex/config.toml")
+        configured = settings.get("plugins", {})
+        if isinstance(configured, dict):
+            codex_enabled = {name: value.get("enabled") for name, value in configured.items()
+                             if isinstance(value, dict) and type(value.get("enabled")) is bool}
     except (OSError, UnicodeError, ValueError):
         pass
 
@@ -118,6 +127,20 @@ def plugin_inventory(roots: list[Path] | None = None) -> dict:
                         "runtime_active": None, "connection_state": "unverified",
                         "path": str(folder) if folder else None}
 
+    cache_directories = 0
+
+    def cache_children(path):
+        nonlocal cache_directories
+        if path.is_symlink() or not path.is_dir() or cache_directories >= 4096:
+            if cache_directories >= 4096:
+                result["truncated"] = True
+            return []
+        cache_directories += 1
+        children = sorted(islice(path.iterdir(), MAX_ITEMS + 1), key=lambda p: p.name)
+        if len(children) > MAX_ITEMS:
+            result["truncated"] = True
+        return [p for p in children[:MAX_ITEMS] if p.is_dir() and not p.is_symlink() and not p.name.startswith(".")]
+
     for root in roots:
         if not root.is_dir() or root.is_symlink():
             continue
@@ -140,6 +163,17 @@ def plugin_inventory(roots: list[Path] | None = None) -> dict:
             except (OSError, UnicodeError, ValueError) as exc:
                 result["errors"].append({"source": str(registry), "reason": type(exc).__name__})
         try:
+            if ".codex" in root.parts:
+                for marketplace in cache_children(root / "cache"):
+                    for plugin in cache_children(marketplace):
+                        for version in cache_children(plugin):
+                            if len(entries) >= MAX_ITEMS:
+                                result["truncated"] = True
+                                break
+                            _, revision = _metadata(version)
+                            if revision is not None:
+                                key = plugin.name + "@" + marketplace.name
+                                add(key, version, "Codex", "cached_plugin_manifest", codex_enabled.get(key))
             children = sorted(islice(root.iterdir(), MAX_ITEMS + 1), key=lambda p: p.name)
             if len(children) > MAX_ITEMS:
                 result["truncated"] = True
@@ -148,7 +182,7 @@ def plugin_inventory(roots: list[Path] | None = None) -> dict:
                     continue
                 meta, revision = _metadata(folder)
                 if revision is not None:
-                    consumer = "Gemini" if ".gemini" in folder.parts else "Host-Bibliothek"
+                    consumer = "Gemini" if ".gemini" in folder.parts else "Codex" if ".codex" in folder.parts else "Host-Bibliothek"
                     add(folder.name, folder, consumer, "manifest_present")
         except OSError as exc:
             result["errors"].append({"source": str(root), "reason": type(exc).__name__})
@@ -189,7 +223,9 @@ def mcp_inventory(configs: list[Path] | None = None) -> dict:
                     if not isinstance(name, str) or not isinstance(config, dict):
                         continue
                     command = config.get("command")
-                    basename = command.replace("\\", "/").rsplit("/", 1)[-1] if isinstance(command, str) else ""
+                    executable = (command if isinstance(command, str)
+                                  and re.fullmatch(r"[^\s\x00=\"';&|<>`$]+", command) else "")
+                    basename = executable.replace("\\", "/").rsplit("/", 1)[-1]
                     command_name = basename if re.fullmatch(r"[A-Za-z0-9._+-]{1,100}", basename) else None
                     address = config.get("url")
                     hostname = None

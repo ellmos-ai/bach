@@ -7,6 +7,10 @@ export const INVENTORIES = {
   software: '/api/capabilities/software',
 };
 
+export function confirmSkillReplacement(content, loadedContent, ask) {
+  return content === loadedContent || ask('Ungespeicherte Änderungen durch die ausgewählte Fassung ersetzen?') === true;
+}
+
 export async function requestJson(url, options = {}, fetcher = globalThis.fetch) {
   const response = await fetcher(url, options);
   let data;

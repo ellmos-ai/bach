@@ -1,4 +1,4 @@
-import {INVENTORIES, SKILL_ID, loadSkill, saveSkill, requestJson} from './capability-board-client.mjs';
+import {INVENTORIES, SKILL_ID, loadSkill, saveSkill, requestJson, confirmSkillReplacement} from './capability-board-client.mjs';
 
 const board = document.getElementById('capability-board');
 if (board) {
@@ -94,7 +94,7 @@ if (board) {
   }
 
   const editor = byId('skill-editor');
-  let currentSource = null, editorBusy = false, editorGeneration = 0, originalContent = '';
+  let currentSource = null, editorBusy = false, editorGeneration = 0, originalContent = '', selectedHistory = '';
   function busy(value) {
     editorBusy = value;
     for (const id of ['skill-content', 'skill-id', 'skill-history', 'skill-reload', 'skill-close']) byId(id).disabled = value;
@@ -109,6 +109,7 @@ if (board) {
   }
   async function loadHistory() {
     const select = byId('skill-history');
+    selectedHistory = '';
     select.replaceChildren(new Option('Aktuelle Fassung', ''));
     if (!currentSource || currentSource.source_version === '0') return;
     const history = await requestJson('/api/capabilities/skills/' + encodeURIComponent(currentSource.id) + '/history');
@@ -140,6 +141,7 @@ if (board) {
   editor.addEventListener('cancel', event => { event.preventDefault(); closeEditor(); });
   byId('skill-create')?.addEventListener('click', () => {
     ++editorGeneration; currentSource = {id:'',source_version:'0'};
+    selectedHistory = '';
     originalContent = '---\nname: neuer-skill\ndescription: Aufgabe und Einsatz der Anleitung\nversion: 1.0.0\n---\n\n# Neuer Skill\n\n## Vorgehen\n\n1. Beschreibe die Arbeitsschritte.\n';
     byId('skill-editor-title').textContent = 'Neuer Skill'; byId('skill-id').value = '';
     byId('skill-content').value = originalContent; byId('skill-editor-status').textContent = '';
@@ -159,13 +161,19 @@ if (board) {
   });
   byId('skill-history').addEventListener('change', async () => {
     if (!currentSource || editorBusy) return;
-    const revision = byId('skill-history').value; busy(true);
+    const revision = byId('skill-history').value;
+    if (!confirmSkillReplacement(byId('skill-content').value, originalContent, message => window.confirm(message))) {
+      byId('skill-history').value = selectedHistory;
+      return;
+    }
+    busy(true);
     try {
       const source = revision ? await requestJson('/api/capabilities/skills/' + encodeURIComponent(currentSource.id) + '/history/' + encodeURIComponent(revision)) : currentSource;
       if (typeof source.content !== 'string' || (revision && source.source_version !== revision)) throw new Error('Historische Quelle konnte nicht bestätigt werden.');
       byId('skill-content').value = source.content;
+      selectedHistory = revision;
       byId('skill-editor-status').textContent = revision ? 'Frühere Fassung als Vorlage geladen. Speichern erzeugt die neue aktuelle Fassung.' : 'Geladene aktuelle Fassung wieder eingesetzt.';
-    } catch (error) { byId('skill-editor-status').textContent = error.message; }
+    } catch (error) { byId('skill-history').value = selectedHistory; byId('skill-editor-status').textContent = error.message; }
     finally { busy(false); }
   });
   byId('skill-save').addEventListener('click', async () => {

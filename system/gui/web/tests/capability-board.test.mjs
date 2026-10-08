@@ -1,10 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {loadSkill, saveSkill, requestJson} from '../src/lib/capability-board-client.mjs';
+import {loadSkill, saveSkill, requestJson, confirmSkillReplacement} from '../src/lib/capability-board-client.mjs';
 
 const revision = 'a'.repeat(64), nextRevision = 'b'.repeat(64);
 const current = {id:'example',content:'# Aktuelle Grüße',source_version:revision};
 const response = (data, status=200) => ({ok:status<400,status,json:async()=>data});
+
+test('changing history does not discard edited content without consent',()=>{
+  let asked=0;
+  assert.equal(confirmSkillReplacement('unchanged','unchanged',()=>assert.fail('Unnecessary discard prompt')),true);
+  assert.equal(confirmSkillReplacement('edited','current',()=>{asked++;return false;}),false);
+  assert.equal(asked,1);
+  assert.equal(confirmSkillReplacement('edited','current',()=>true),true);
+});
 
 test('opening a skill returns actual source content and rejects declarations', async()=>{
   assert.deepEqual(await loadSkill('example',async()=>response(current)),current);

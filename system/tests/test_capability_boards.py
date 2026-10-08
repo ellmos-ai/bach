@@ -35,18 +35,32 @@ def test_plugins_are_actual_files_without_default_seeds(tmp_path, monkeypatch):
 def test_mcp_projection_excludes_credentials_and_process_claims(tmp_path):
     config = tmp_path / ".codex/config.toml"
     config.parent.mkdir()
-    config.write_text('[mcp_servers.safe]\ncommand="/opt/bin/node"\nargs=["--token","FAKE_ARG_SECRET"]\nenabled=false\n[mcp_servers.safe.env]\nTOKEN="FAKE_ENV_SECRET"\n[mcp_servers.remote]\nurl="https://fakeuser:FAKE_URL_SECRET@example.org/path?token=FAKE_QUERY_SECRET"\n[mcp_servers.unsafe]\ncommand="node --token FAKE_COMMAND_SECRET"\n', encoding="utf-8")
+    config.write_text('[mcp_servers.safe]\ncommand="/opt/bin/node"\nargs=["--token","FAKE_ARG_SECRET"]\nenabled=false\n[mcp_servers.safe.env]\nTOKEN="FAKE_ENV_SECRET"\n[mcp_servers.remote]\nurl="https://fakeuser:FAKE_URL_SECRET@example.org/path?token=FAKE_QUERY_SECRET"\n[mcp_servers.unsafe]\ncommand="node --token FAKE_COMMAND_SECRET"\n[mcp_servers.slash]\ncommand="node --token=/private/FAKE_COMMAND_SECRET"\n', encoding="utf-8")
     result = inventory.mcp_inventory([config])
     rows = {item["name"]:item for item in result["items"]}
     assert rows["safe"]["command_name"] == "node"
     assert rows["safe"]["enabled_in_client"] is False
     assert rows["remote"]["hostname"] == "example.org"
     assert rows["unsafe"]["command_name"] is None
+    assert rows["slash"]["command_name"] is None
     assert result["active_connection_count"] is None
     assert all(row["runtime_connected"] is None for row in rows.values())
     text = json.dumps(result)
     for forbidden in ("FAKE_ARG_SECRET", "FAKE_ENV_SECRET", "FAKE_URL_SECRET", "FAKE_QUERY_SECRET", "FAKE_COMMAND_SECRET", "fakeuser"):
         assert forbidden not in text
+
+
+def test_codex_version_caches_are_discovered_without_runtime_claims(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    root = tmp_path / ".codex/plugins"
+    for version in ("1.0", "2.0"):
+        write_json(root / "cache/marketplace/example" / version / ".codex-plugin/plugin.json", {"name":"Example", "version":version})
+    (tmp_path / ".codex/config.toml").write_text('[plugins."example@marketplace"]\nenabled=false\n', encoding="utf-8")
+    result = inventory.plugin_inventory([root])
+    assert result["count"] == 2
+    assert all(row["consumer"] == "Codex" and row["runtime_active"] is None and row["enabled_in_client"] is False for row in result["items"])
+    assert {row["version"] for row in result["items"]} == {"1.0", "2.0"}
+    assert all(row["evidence"] == "cached_plugin_manifest" for row in result["items"])
 
 
 def test_mcp_project_scopes_are_distinct(tmp_path):
