@@ -212,7 +212,7 @@ class NativeSequences:
                 pins = []
                 for skill_id in step["skill_ids"]:
                     skill = read_skill(skill_id)
-                    pins.append({"id": skill_id, "source_version": skill["source_version"]})
+                    pins.append({"id": skill_id, "source_version": skill["source_version"], "version": skill["version"]})
                 inherited = profile.get("skill_refs", [])
                 combined = {item["id"]: item for item in (*inherited, *pins)}
                 load_skill_instructions(list(combined.values()))

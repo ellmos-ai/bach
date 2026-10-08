@@ -159,16 +159,41 @@ def test_real_engine_uses_result_and_exactly_one_native_start_per_step(store,pro
     assert replay["replayed"] is True and len(transport.calls)==2
 
 
-def test_skill_mode_keeps_one_approved_agent_and_pins_each_skill(store,profiles,monkeypatch):
-    monkeypatch.setattr(native,"read_skill",lambda skill_id:{"id":skill_id,"source_version":"b"*64})
-    monkeypatch.setattr(native,"load_skill_instructions",lambda pins:"skills")
-    monkeypatch.setattr(skill_source_service,"load_skill_instructions",lambda pins:"skills")
-    controller,transport=service(store,profiles);chain=store.save_chain(draft("skills"));payload=start_payload(chain)
+@pytest.mark.parametrize("mode", ["agents", "skills"])
+def test_skill_mode_keeps_one_approved_agent_and_pins_each_skill(store,profiles,monkeypatch,tmp_path,mode):
+    root=tmp_path/"skills"
+    monkeypatch.setenv("BACH_USER_SKILLS_ROOT",str(root))
+    monkeypatch.setenv("BACH_SKILLS_ROOTS","[]")
+    versions={"native-a":"1.0.0","native-b":"2.1.0"}
+    expected=[]
+    for skill_id,version in versions.items():
+        source=root/skill_id/"SKILL.md"
+        source.parent.mkdir(parents=True)
+        source.write_text(f"---\nname: {skill_id}\nversion: {version}\n---\n\nPrüfanleitung für {skill_id}.\n",encoding="utf-8")
+        skill=skill_source_service.read_skill(skill_id)
+        expected.append([{"id":skill_id,"source_version":skill["source_version"],"version":version}])
+    read=native.read_skill
+    reads=[]
+    def read_once(skill_id):
+        reads.append(skill_id)
+        return read(skill_id)
+    monkeypatch.setattr(native,"read_skill",read_once)
+    controller,transport=service(store,profiles)
+    document=draft(mode)
+    for step,skill_id in zip(document["steps"],versions):
+        step["skill_ids"]=[skill_id]
+    chain=store.save_chain(document);payload=start_payload(chain)
     controller.start(chain["id"],payload);run=wait(controller,payload["request_id"])
-    assert run["phase"]=="complete"
+    assert run["phase"]=="complete" and len(transport.calls)==2
+    assert reads==list(versions)
     saved=store.run(run["run_id"])
-    assert [step["agent_slot"] for step in saved["plan"]["steps"]]==["buddha_research"]*2
-    assert [step["skill_refs"][0]["id"] for step in saved["plan"]["steps"]]==["native-a","native-b"]
+    expected_agents=["buddha_research"]*2 if mode=="skills" else ["buddha_research","buddha_developer"]
+    assert [step["agent_slot"] for step in saved["plan"]["steps"]]==expected_agents
+    assert [step["skill_refs"] for step in saved["plan"]["steps"]]==expected
+    for index,step in enumerate(saved["plan"]["steps"]):
+        assert skill_source_service.validate_skill_refs(step["skill_refs"])==expected[index]
+        assert "Prüfanleitung für "+step["skill_refs"][0]["id"] in skill_source_service.load_skill_instructions(step["skill_refs"])
+        assert slots.get_system_slot(transport.calls[index][0])["skill_refs"]==expected[index]
 
 
 @pytest.mark.parametrize("fault",["result","receipt"])
