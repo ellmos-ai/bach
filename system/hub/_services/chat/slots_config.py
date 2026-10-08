@@ -675,6 +675,32 @@ CORE_KNOWN_BACKENDS = frozenset({
 })
 
 
+def _core_configuration_version(config: dict[str, Any]) -> str:
+    """Hash configuration while preserving every authority field.
+
+    Tool progress and history change during the very operation that reads
+    the catalog. They must not invalidate a later configuration CAS. The
+    exclusions are explicit: unknown fields, task bindings, pause controls,
+    resolved providers, prompts, grants and execution status remain part of
+    the token. Status changes invalidate terminal-state admission snapshots.
+    """
+    progress = frozenset({"current_activity", "current_tool", "tool_round"})
+    content = {key: value for key, value in config.items()
+               if key not in {"updated_at", "activity_history"}}
+    content["slots"] = {
+        key: {field: value for field, value in slot.items() if field not in progress}
+        for key, slot in config["slots"].items()
+    }
+    workers = config.get("dynamic_workers")
+    if isinstance(workers, list):
+        content["dynamic_workers"] = [
+            {field: value for field, value in worker.items() if field not in progress | {"history"}}
+            if isinstance(worker, dict) else worker for worker in workers
+        ]
+    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
     config = json.loads(raw.decode("utf-8"))
     if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
@@ -682,7 +708,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
     slots = config["slots"]
     if any(not isinstance(slots.get(slot_id), dict) for slot_id in REQUIRED_CORE_SYSTEM_AGENT_IDS):
         raise ValueError("Mindestens eine feste System-Agenten-ID fehlt")
-    version = hashlib.sha256(raw).hexdigest()
+    version = _core_configuration_version(config)
     prompts = config.get("prompts", {})
     if not isinstance(prompts, dict) or any(not isinstance(value, str) for value in prompts.values()):
         raise ValueError("Promptkonfiguration ist ungültig")
@@ -874,7 +900,7 @@ def create_system_slot(changes: dict[str, Any], expected_version: str, *,
                        preset: str = "assistant", path: str | None = None) -> dict[str, Any]:
     target = _resolve_path(path)
     raw = target.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected_version:
+    if _core_snapshot_from_bytes(raw)["configuration_version"] != expected_version:
         raise RuntimeError("configuration_version_conflict")
     if preset not in SYSTEM_SLOT_PRESETS:
         raise ValueError("Unbekannte Steckplatzvorlage")
@@ -897,7 +923,7 @@ def delete_system_slot(slot_id: str, expected_version: str, path: str | None = N
     if slot_id in CORE_SYSTEM_AGENT_IDS or not get_system_slot(slot_id, path):
         raise ValueError("Dieser Systemsteckplatz kann nicht gelöscht werden")
     raw = _resolve_path(path).read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected_version:
+    if _core_snapshot_from_bytes(raw)["configuration_version"] != expected_version:
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     del config["slots"][slot_id]
@@ -947,7 +973,7 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
 
 def system_worker_at_version(slot_id: str, expected_version: str,
                              *, path: str | None = None) -> dict[str, Any]:
-    """Read the exact config approved by the caller from one atomic file image."""
+    """Read approved configuration and current progress from one atomic file image."""
     raw = _resolve_path(path).read_bytes()
     snapshot = _core_snapshot_from_bytes(raw)
     if expected_version != snapshot["configuration_version"]:
@@ -1005,7 +1031,7 @@ def core_prompt_snapshot(path: str | None = None) -> dict[str, Any]:
     source_bytes = json.dumps(definitions, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return {
         "schema": "bach.core-prompts.v1",
-        "configuration_version": hashlib.sha256(raw).hexdigest(),
+        "configuration_version": _core_configuration_version(config),
         "source_version": hashlib.sha256(source_bytes).hexdigest(),
         "prompts": prompts,
     }
@@ -1022,7 +1048,7 @@ def change_core_prompt(
         raise KeyError("Unbekannte Prompt-ID")
     target = _resolve_path(path)
     raw = target.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected_version:
+    if _core_snapshot_from_bytes(raw)["configuration_version"] != expected_version:
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
