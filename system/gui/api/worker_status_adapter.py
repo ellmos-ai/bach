@@ -95,11 +95,12 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     item: dict[str, Any] = {"id": worker_id}
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
-    try:
-        item["avatar"] = validate_agent_avatar(raw.get("avatar", ""))
-        item["symbol"] = validate_symbol(raw.get("symbol", ""))
-    except ValueError:
-        item["avatar"] = item["symbol"] = ""
+    for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):
+        if field in raw:
+            try:
+                item[field] = validator(raw[field])
+            except ValueError:
+                item[field] = ""
     for field in _SAFE_TEXT_FIELDS:
         value = _text(raw.get(field), limit=240 if field == "current_activity" else 160)
         if value is not None:
