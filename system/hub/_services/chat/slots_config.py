@@ -967,7 +967,7 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
             if value not in {"runs", "tasks"}:
                 raise ValueError("pause_basis muss runs oder tasks sein")
         else:
-            upper = 100 if field == "max_tool_rounds" else 1440
+            upper = 1000 if field == "max_tool_rounds" else 1440
             lower = 0
             if type(value) is not int or not lower <= value <= upper:
                 raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
@@ -1587,7 +1587,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
     if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
         raise ValueError("Unbekannte Worker-Konfigurationsfelder")
     boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role"}
-    ranges = {"max_tool_rounds": (0, 100), "pause_after": (0, 100),
+    ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():

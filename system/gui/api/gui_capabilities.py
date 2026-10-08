@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
 
-PREFIXES = ("/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
+PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
             "/api/domains/", "/api/artifacts", "/api/calendar/", "/api/gui/")
@@ -20,6 +20,7 @@ PAGE_READS = {
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
     "/skills/ocean": ["/api/capabilities/ocean"],
+    "/inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
     "/artefakte": ["/api/artifacts"],
