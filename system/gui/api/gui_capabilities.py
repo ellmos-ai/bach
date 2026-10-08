@@ -19,6 +19,7 @@ PAGE_READS = {
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
+    "/skills/ocean": ["/api/capabilities/ocean"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
     "/artefakte": ["/api/artifacts"],

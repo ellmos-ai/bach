@@ -779,3 +779,20 @@ def test_explicit_pause_without_thread_clears_old_automatic_metadata(config_file
     assert confirmed and code == 200 and receipt["outcome"] == "no-live-thread"
     assert updated["auto_paused"] is False and updated["pause_started_at"] == ""
     assert updated["enabled"] is True and updated["pause_counter"] == 4
+
+@pytest.mark.parametrize("avatar", ["preset:gemini-claude-friendly", "preset:gemini-claude-neon",
+    "preset:gemini-claude-opus", "preset:gemini-copilot", "preset:gemini-gemini",
+    "preset:gemini-gemini-umbruch"])
+def test_gemini_portrait_preset_configuration_cas_roundtrip(config_file, avatar):
+    before = slots.core_system_agents_snapshot()
+    result = slots.change_core_system_agent("buddha_chat", before["configuration_version"], {"avatar": avatar})
+    item = next(item for item in result["agents"] if item["id"] == "buddha_chat")
+    assert item["avatar"] == avatar
+    assert slots.validate_agent_avatar(avatar) == avatar
+    with pytest.raises(RuntimeError, match="conflict"):
+        slots.change_core_system_agent("buddha_chat", before["configuration_version"], {"avatar": ""})
+
+
+def test_unknown_gemini_portrait_id_is_rejected():
+    with pytest.raises(ValueError):
+        slots.validate_agent_avatar("preset:gemini-unknown")
