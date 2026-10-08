@@ -778,3 +778,87 @@ class TestConstructionOutsideMainThread:
         registered = {call.args[0] for call in sig.call_args_list}
         assert _signal.SIGTERM in registered
         assert _signal.SIGINT in registered
+
+
+@pytest.fixture
+def daemon_status_client(monkeypatch, tmp_path):
+    from starlette.testclient import TestClient
+    from gui import server
+    from gui import daemon_service
+
+    monkeypatch.setattr(server, "BACH_DIR", tmp_path)
+    monkeypatch.setattr(server, "BACH_DB", tmp_path / "test_daemon.db")
+    monkeypatch.setattr(server, "_GUI_DAEMON", None)
+    monkeypatch.setattr(daemon_service, "DAEMON_PID_FILE", tmp_path / "daemon.pid")
+    monkeypatch.setattr(
+        server, "validate_token",
+        lambda token: {"id": 1} if token == "daemon-status-fixture" else None,
+    )
+    return TestClient(
+        server.app, raise_server_exceptions=False,
+        headers={"Authorization": "Bearer daemon-status-fixture"},
+    )
+
+
+class TestDaemonStatusAPI:
+    @pytest.mark.parametrize("run_count", [0, 6])
+    def test_scheduler_rows_are_serialized_read_only(
+        self, daemon_status_client, tmp_path, run_count,
+    ):
+        db_path = _create_test_db(tmp_path)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO scheduler_jobs (name, command, is_active) "
+                "VALUES ('own-status-job', 'unused', 1), ('inactive-job', 'unused', 0)"
+            )
+            today = conn.execute("SELECT date('now')").fetchone()[0]
+            runs = [
+                (1, f"{today} 12:{index:02d}:00", float(index),
+                 "failed" if index == 5 else "success")
+                for index in range(run_count)
+            ]
+            conn.executemany(
+                "INSERT INTO scheduler_runs (job_id, started_at, duration_seconds, result) "
+                "VALUES (?, ?, ?, ?)", runs,
+            )
+        original = db_path.read_bytes()
+
+        response = daemon_status_client.get("/api/daemon/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stats_availability"] == "available"
+        assert data["stats"] == {
+            "total_jobs": 2, "active_jobs": 1,
+            "runs_today": run_count, "failed_today": int(run_count == 6),
+        }
+        assert data["last_runs"] == [
+            {
+                "id": index + 1, "name": "own-status-job",
+                "result": runs[index][3], "started_at": runs[index][1],
+                "duration_seconds": runs[index][2],
+            }
+            for index in reversed(range(max(0, run_count - 5), run_count))
+        ]
+        assert data["running"] is False
+        assert data["identity"] == "stopped"
+        assert data["control_available"] is False
+        assert db_path.read_bytes() == original
+
+    def test_missing_scheduler_db_stays_unavailable_without_creation(
+        self, daemon_status_client, tmp_path,
+    ):
+        db_path = tmp_path / "test_daemon.db"
+        assert not db_path.exists()
+
+        response = daemon_status_client.get("/api/daemon/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stats_availability"] == "unavailable"
+        assert data["stats"] == {
+            "total_jobs": None, "active_jobs": None,
+            "runs_today": None, "failed_today": None,
+        }
+        assert data["last_runs"] == []
+        assert not db_path.exists()

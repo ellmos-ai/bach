@@ -3515,6 +3515,7 @@ async def get_daemon_status():
     try:
         from contextlib import closing
         with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only = ON")
             observed = {
                 "total_jobs": conn.execute("SELECT COUNT(*) FROM scheduler_jobs").fetchone()[0],
