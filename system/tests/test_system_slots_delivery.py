@@ -687,3 +687,25 @@ def test_gui_forwards_confirmed_manual_pause(config_file, monkeypatch):
     assert worker["living"] is False and worker["running"] is False
     assert worker["status"] == "paused" and worker["pause_info"]["is_paused"] is True
     assert worker["pause_info"]["manual"] is True
+
+
+@pytest.mark.parametrize("elapsed", [False, True], ids=["countdown", "awaiting-resume"])
+def test_automatic_pause_is_not_marked_manual(config_file, monkeypatch, elapsed):
+    from datetime import datetime, timedelta, timezone
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    started = datetime.now(timezone.utc) - timedelta(minutes=2 if elapsed else 0)
+    slots.update_slot(ident, {"enabled": True, "status": "paused", "auto_paused": True,
+                              "pause_started_at": started.isoformat(), "pause_minutes": 1})
+    baseline = slots.core_system_agents_snapshot()["configuration_version"]
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    agent = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+    assert agent["enabled"] is True and agent["status"] == "paused"
+    assert agent["pause_info"]["is_paused"] is True
+    assert agent["pause_info"]["auto_paused"] is True and agent["pause_info"]["manual"] is False
+    assert agent["living"] is False and agent["running"] is False
+    assert slots.core_system_agents_snapshot()["configuration_version"] == baseline

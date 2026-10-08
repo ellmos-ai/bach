@@ -795,7 +795,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "enabled": bool(slot.get("enabled", defaults.get("enabled", True))),
             "status": slot.get("status", defaults.get("status", "idle")),
             "current_activity": slot.get("current_activity", ""),
-            "pause_info": pause_info,
+            "pause_info": {**pause_info, "auto_paused": slot.get("auto_paused") is True},
             "living": None,
             "running": None,
             "worker_active": None,

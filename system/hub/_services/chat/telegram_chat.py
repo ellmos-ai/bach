@@ -558,8 +558,8 @@ def _system_slots_snapshot() -> dict:
         execution, thread_alive, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
         execution_state = execution["state"] if execution else None
-        manual_paused = agent["status"] == "paused"
-        paused = not agent["enabled"] or manual_paused or agent["pause_info"]["is_paused"]
+        manual_paused = agent["status"] == "paused" and not agent["pause_info"].get("auto_paused", False)
+        paused = not agent["enabled"] or agent["status"] == "paused" or agent["pause_info"]["is_paused"]
         # Process liveness protects admission and cleanup; Running describes
         # actual work. An idle continuous worker remains available (Living).
         worker_active = bool(thread_alive or execution_state in {
