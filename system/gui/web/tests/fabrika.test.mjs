@@ -1,30 +1,22 @@
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import test from 'node:test';
-import { Script } from 'node:vm';
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import test from "node:test";
+import {Script} from "node:vm";
 
-const page = readFileSync(new URL('../src/pages/agenten/fabrika.astro', import.meta.url), 'utf8');
-const source = page.match(/<script is:inline>([\s\S]*?)<\/script>/)[1];
-
-test('Fabrika inline code parses and exposes its startup functions', () => {
-  const script = new Script(source);
-  const context = { window: { addEventListener() {} } };
-  script.runInNewContext(context);
-  for (const name of ['resetForm', 'loadDynamicSkills', 'loadContractusPresets', 'applyGovProfile']) {
-    assert.equal(typeof context[name], 'function', name);
-  }
+const page=readFileSync(new URL("../src/pages/agenten/fabrika.astro",import.meta.url),"utf8");
+const source=page.match(/<script is:inline>([\s\S]*?)<\/script>/)[1];
+function redirect(search) {
+  let destination;
+  new Script(source).runInNewContext({URL,URLSearchParams,location:{origin:"http://127.0.0.1:8000",search,replace(value){destination=value;}}});
+  return destination;
+}
+test("the former factory opens the consolidated editor",()=>{
+  assert.equal(redirect(""),"/agenten/blueprints?new=1");
 });
-
-test('read-only governance disables write, command and git tools', () => {
-  const fields = new Map(['read', 'write', 'cmd', 'git', 'mcp', 'web'].map(name => [
-    `tool-${name}`, { checked: true },
-  ]));
-  const context = {
-    window: { addEventListener() {} },
-    document: { getElementById(id) { return fields.get(id); } },
-  };
-  new Script(source).runInNewContext(context);
-  context.applyGovProfile('read_only_research');
-  for (const name of ['write', 'cmd', 'git']) assert.equal(fields.get(`tool-${name}`).checked, false);
-  for (const name of ['read', 'mcp', 'web']) assert.equal(fields.get(`tool-${name}`).checked, true);
+test("legacy blueprint and team links keep their destination",()=>{
+  assert.equal(redirect("?load=entwickler"),"/agenten/blueprints?blueprint=entwickler");
+  assert.equal(redirect("?tab=teambuilding"),"/agenten/blueprints?tab=teams");
+});
+test("legacy links cannot redirect to external sites",()=>{
+  assert.equal(redirect("?load=https://external.example"),"/agenten/blueprints?blueprint=https%3A%2F%2Fexternal.example");
 });

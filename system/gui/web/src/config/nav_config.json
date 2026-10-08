@@ -123,12 +123,6 @@
     "icon": "🤖",
     "children": [
       {
-        "href": "/agenten/fabrika",
-        "label": "Agenten-Werkstatt",
-        "icon": "🏭",
-        "description": "Baukasten & Werkstatt: Vorlagen, Teambuilding (Swarm) & Ketten-Staffeln"
-      },
-      {
         "href": "/agenten/blueprints",
         "label": "Blueprints (Vorlagen)",
         "icon": "📐",
@@ -139,6 +133,12 @@
         "label": "Living & Running",
         "icon": "⚡",
         "description": "Aktive Instanzen, Beseelungen und Health"
+      },
+      {
+        "href": "/agenten/marblerun",
+        "label": "Ketten · MarbleRun",
+        "icon": "⛓️",
+        "description": "Agentenübergaben und Skills in geordneter Folge"
       },
       {
         "href": "/agenten/sessions",

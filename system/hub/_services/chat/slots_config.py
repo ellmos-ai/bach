@@ -638,7 +638,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
-    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -685,6 +685,10 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "role_id": slot.get("role_id", defaults["role_id"]),
             "sub_mode": slot.get("sub_mode", defaults["sub_mode"]),
             "allow_tools": slot.get("allow_tools", True),
+            "allowed_tools": slot.get("allowed_tools"),
+            "blueprint_id": slot.get("blueprint_id"),
+            "blueprint_version": slot.get("blueprint_version"),
+            "type": slot.get("type", "continuous"),
             "backend": slot.get("backend"),
             "model": slot.get("model"),
             "resolved_model": slot.get("resolved_model") or "",
@@ -730,7 +734,14 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
     result: dict[str, Any] = {}
     for field, value in changes.items():
-        if field == "avatar":
+        if field == "allowed_tools":
+            from .bach_tools import TOOLS_FULL
+            known = {tool["function"]["name"] for tool in TOOLS_FULL}
+            if (value is not None and (not isinstance(value, list) or len(value) > 100
+                    or any(not isinstance(name, str) or name not in known for name in value)
+                    or len(set(value)) != len(value))):
+                raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
+        elif field == "avatar":
             value = validate_agent_avatar(value)
         elif field in {"description", "custom_system_prompt", "custom_role_prompt"}:
             if not isinstance(value, str) or len(value) > 20000 or "\x00" in value:
@@ -828,6 +839,66 @@ def delete_system_slot(slot_id: str, expected_version: str, path: str | None = N
     del config["slots"][slot_id]
     save_slots_config(config, path)
     return True
+
+
+@_serialized_mutation
+def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
+                                 changes: dict[str, Any], expected_version: str,
+                                 *, path: str | None = None) -> dict[str, Any]:
+    """Create one explicit Living instance without starting a provider.
+
+    The stable ID reconciles a failed database commit on retry. Callers must
+    verify a terminal controller before refreshing an existing instance.
+    """
+    if type(blueprint_id) is not int or blueprint_id <= 0 or type(blueprint_version) is not int:
+        raise ValueError("Gültige Blueprint-ID und Version erforderlich")
+    raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    if snapshot["configuration_version"] != expected_version:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    slot_id = f"system-blueprint-{blueprint_id}"
+    existing = config["slots"].get(slot_id)
+    if existing is not None and (not isinstance(existing, dict)
+            or existing.get("id") != slot_id or existing.get("system") is not True
+            or existing.get("blueprint_id") != blueprint_id):
+        raise ValueError("Blueprint-Steckplatz ist bereits anders belegt")
+    if any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", [])):
+        raise ValueError("Blueprint-Steckplatz kollidiert mit einem Worker")
+    fields = dict(changes)
+    worker_type = fields.pop("worker_type", None)
+    if worker_type not in {"once", "continuous"}:
+        raise ValueError("Worker-Laufbegrenzung muss ausdrücklich festgelegt werden")
+    edits = _validated_core_edits(fields)
+    core = {**DEFAULT_CORE_SLOTS["buddha_chat"], **(existing or {}),
+            "id": slot_id, "system": True, "execution_kind": "worker",
+            "type": worker_type, "require_assigned_slot": True,
+            "blueprint_id": blueprint_id, "blueprint_version": blueprint_version,
+            "enabled": True, "status": "idle", "current_activity": "",
+            "chat_id": "", "task_id": None, "category": "all", **edits}
+    config["slots"][slot_id] = core
+    save_slots_config(config, path)
+    return {"slot_id": slot_id, **core_system_agents_snapshot(path)}
+
+
+def system_worker_at_version(slot_id: str, expected_version: str,
+                             *, path: str | None = None) -> dict[str, Any]:
+    """Read the exact config approved by the caller from one atomic file image."""
+    raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    if expected_version != snapshot["configuration_version"]:
+        raise RuntimeError("configuration_version_conflict")
+    config = json.loads(raw.decode("utf-8"))
+    slot = config["slots"].get(slot_id)
+    if (not isinstance(slot, dict) or slot.get("id") != slot_id
+            or (slot_id != "buddha_always_on" and
+                (slot.get("system") is not True or slot.get("execution_kind") != "worker"))
+            or any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", []))):
+        raise ValueError("System-Worker ist nicht eindeutig vorhanden")
+    worker_type = slot.get("type", "continuous")
+    if worker_type not in {"once", "continuous"}:
+        raise ValueError("System-Worker-Laufbegrenzung ist ungültig")
+    return {**DEFAULT_CORE_SLOTS.get(slot_id, {}), **slot, "type": worker_type, "system": True}
 
 
 def _core_prompt_definitions() -> dict[str, str]:

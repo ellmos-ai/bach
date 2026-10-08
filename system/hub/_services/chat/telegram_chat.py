@@ -302,7 +302,10 @@ def _execution_worker_slot(worker_id: str) -> dict:
     from hub._services.chat.slots_config import get_system_slot
     system_slot = get_system_slot(worker_id)
     if system_slot and system_slot.get("execution_kind") == "worker":
-        return {**system_slot, "type": "continuous", "system": True}
+        worker_type = system_slot.get("type", "continuous")
+        if worker_type not in {"once", "continuous"}:
+            raise ValueError("System-Worker-Laufbegrenzung ist ungültig")
+        return {**system_slot, "type": worker_type, "system": True}
     return {}
 
 
@@ -311,7 +314,8 @@ def _execution_worker_configuration(slot: dict):
     if slot.get("id") == "buddha_always_on" or slot.get("system"):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
-             "custom_system_prompt", "custom_role_prompt", "role_id", "sub_mode")}}
+             "custom_system_prompt", "custom_role_prompt", "role_id", "sub_mode",
+             "allowed_tools", "blueprint_id", "blueprint_version")}}
     return configuration
 
 
@@ -654,6 +658,16 @@ def _worker_task_completed(slot: Dict[str, Any], completed_task_ids: Any) -> boo
         return int(assigned_task_id) in completed
     except (TypeError, ValueError):
         return False
+
+
+def _worker_once_completion_changes(slot: Dict[str, Any], completed_task_ids: Any) -> dict:
+    changes = {"status": "completed", "current_activity": "Abgeschlossen"}
+    # A reusable blueprint owns its acquired task ID. A verified Done must
+    # allow the next assigned task; an unfinished block keeps its continuation.
+    if (slot.get("system") is True and slot.get("blueprint_id") is not None
+            and _worker_task_completed(slot, completed_task_ids)):
+        changes["task_id"] = None
+    return changes
 
 
 def _update_worker_slot(
@@ -1441,6 +1455,7 @@ def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = No
     if "allow_tools" in slot:
         # Apply the capability before parsing any other numeric settings.
         session.allow_tools = slot["allow_tools"] is True
+    session.allowed_tools = slot.get("allowed_tools")
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
     from hub._services.chat.slots_config import compose_worker_prompt, get_system_slot, system_slot_chat_id
@@ -3088,7 +3103,8 @@ def _enrich_activity_history_with_tasks(history: list[dict[str, Any]]) -> None:
 
 def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            start_request_id: str | None = None,
-                           expected_service_instance: str | None = None) -> tuple[dict, int]:
+                           expected_service_instance: str | None = None,
+                           expected_configuration_version: str | None = None) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
@@ -3123,7 +3139,11 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 response["receipt"] = current.receipt
             return rejected(response, 409)
         try:
-            slot = _execution_worker_slot(worker_id)
+            if expected_configuration_version is not None:
+                from hub._services.chat.slots_config import system_worker_at_version
+                slot = system_worker_at_version(worker_id, expected_configuration_version)
+            else:
+                slot = _execution_worker_slot(worker_id)
         except Exception as exc:
             return rejected({"error": f"Worker-Slot nicht verifizierbar: {exc}"}, 503)
         if not slot or slot.get("id") != worker_id:
@@ -3414,7 +3434,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             "pending",
                         )
                         return
-                    _update_worker_slot(control, {"status": "completed", "current_activity": "Abgeschlossen"})
+                    _update_worker_slot(control, _worker_once_completion_changes(current_slot, completion_receipts))
                     return
 
                 # Fortlaufende Profile dürfen ohne TTL bis zum manuellen
@@ -4488,6 +4508,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 body.get("id") or body.get("worker_id"), custom_prompt=body.get("prompt"),
                 start_request_id=body.get("start_request_id"),
                 expected_service_instance=body.get("expected_service_instance"),
+                expected_configuration_version=body.get("configuration_version"),
             )
             self._json(response, status)
 

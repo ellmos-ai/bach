@@ -44,6 +44,7 @@ _ALLOWED_CONTROL = {
     ("POST", "workers/handoff"),
     ("POST", "workers/decompose"),
     ("GET", "workers/configuration"), ("POST", "workers/configuration"),
+    ("GET", "workers/execution"),
 }
 _ACTIONS = {
     "create": ("POST", "workers"),
@@ -634,3 +635,47 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
         "runtime_readback": "available" if observed else "unavailable",
         "worker": observed or worker,
     }
+
+
+def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
+                              device_token: str, start_request_id: str) -> dict[str, Any]:
+    """An explicit, versioned start followed by the same controller receipt."""
+    if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
+            or not isinstance(start_request_id, str) or not _RUN_ID.fullmatch(start_request_id)
+            or not isinstance(configuration_version, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", configuration_version)):
+        raise WorkerActionRejected("Steckplatzversion und Start-Request-ID erforderlich", 400)
+    snapshot = _request_control_api("GET", "system-slots", device_token=device_token)
+    instance = snapshot.get("service_instance")
+    if (snapshot.get("configuration_version") != configuration_version
+            or not isinstance(instance, str) or not _RUN_ID.fullmatch(instance)):
+        raise WorkerActionRejected("Steckplatz oder Control-Instanz inzwischen geändert", 409)
+    agent = next((item for item in snapshot.get("agents", []) if item.get("id") == worker_id), {})
+    if not agent or agent.get("enabled") is not True or agent.get("execution_kind") != "worker":
+        raise WorkerActionRejected("Worker-Steckplatz fehlt oder ist ausgeschaltet", 409)
+    ready = _request_control_api("GET", "readiness", device_token=device_token,
+                                 params={"chat_id": worker_id})
+    if ready.get("available") is not True:
+        raise WorkerActionRejected("Gewähltes Modell ist derzeit nicht bereit", 503)
+    admitted = _request_control_api("POST", "workers/run", device_token=device_token,
+        body={"id": worker_id, "start_request_id": start_request_id,
+              "expected_service_instance": instance, "configuration_version": configuration_version})
+    if admitted.get("ok") is not True:
+        raise WorkerActionRejected("Start nicht bestätigt", 503)
+    observed = _request_control_api("GET", "workers/execution", device_token=device_token,
+                                    params={"id": worker_id, "start_request_id": start_request_id})
+    execution = observed.get("execution")
+    if (observed.get("ok") is not True or not isinstance(execution, dict)
+            or execution.get("schema") != "bach.worker-execution.v1"
+            or execution.get("worker_id") != worker_id
+            or execution.get("service_instance") != instance
+            or execution.get("start_request_id") != start_request_id
+            or not isinstance(execution.get("generation"), str)
+            or not _RUN_ID.fullmatch(execution["generation"])
+            or execution.get("state") not in {"starting", "running", "stopping", "terminal"}
+            or type(execution.get("terminal")) is not bool
+            or type(execution.get("worker_thread_started")) is not bool):
+        raise WorkerStatusUnavailable("Korrelierter Ausführungsbeleg nicht verfügbar")
+    return {key: execution[key] for key in ("schema", "worker_id", "service_instance",
+            "start_request_id", "generation", "state", "terminal", "worker_thread_started",
+            "worker_status", "error_code", "completed_task_ids", "reviewed_task_ids") if key in execution}

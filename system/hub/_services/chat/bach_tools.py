@@ -1645,12 +1645,13 @@ class BachToolProvider:
     """
 
     def __init__(self, bach_app=None, default_model: Callable[[], str] | None = None,
-                 *, worker_task_binding=None, require_task_binding=False, guard=None):
+                 *, worker_task_binding=None, require_task_binding=False, guard=None, allowed_tools=None):
         self.bach_app = bach_app
         self._default_model = default_model
         self._worker_task_binding = worker_task_binding
         self._require_task_binding = require_task_binding
         self._guard = guard
+        self._allowed_tools = None if allowed_tools is None else frozenset(allowed_tools)
 
     def get_tools(self, mode) -> list[dict]:
         if self._guard is not None:
@@ -1666,7 +1667,9 @@ class BachToolProvider:
             except Exception:
                 return []
         m = self._mode(mode)
-        return tools_for_mode(m, bound_worker=self._worker_task_binding is not None)
+        tools = tools_for_mode(m, bound_worker=self._worker_task_binding is not None)
+        return tools if self._allowed_tools is None else [
+            tool for tool in tools if tool["function"]["name"] in self._allowed_tools]
 
     @staticmethod
     def _mode(mode):
@@ -1677,6 +1680,8 @@ class BachToolProvider:
         return as_mode(mode).value
 
     def execute(self, name: str, args: Any, mode) -> str:
+        if self._allowed_tools is not None and name not in self._allowed_tools:
+            return "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben."
         if self._guard is not None:
             try:
                 self._guard()
