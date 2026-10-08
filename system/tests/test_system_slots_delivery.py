@@ -123,6 +123,120 @@ def test_stored_running_status_is_not_a_running_receipt(config_file, monkeypatch
     assert agent["current_tool"] == ""
 
 
+@pytest.mark.parametrize("kind", ["fixed", "custom"])
+def test_live_continuous_worker_waiting_for_task_is_running(config_file, monkeypatch, kind):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    if kind == "custom":
+        result = slots.create_system_slot(
+            {"name": "Waiting worker"}, slots.core_system_agents_snapshot()["configuration_version"],
+            preset="boss")
+        ident = result["slot_id"]
+    slots.update_slot(ident, {"type": "continuous", "status": "running"})
+    ctrl = control._WorkerControl(ident)
+    ctrl.thread = SimpleNamespace(is_alive=lambda: True)
+    ctrl.worker_thread_started = True
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {ident: ctrl})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: ctrl})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {ident: ctrl.thread})
+    monkeypatch.setattr(control.runtime, "compute_turn_status",
+                        lambda: {"active": False, "foreground_waiters": 0})
+    agent = next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
+    assert agent["execution"]["state"] == "running"
+    assert agent["execution"]["worker_thread_started"] is True
+    assert agent["living"] is True and agent["running"] is True and agent["status"] == "running"
+    assert agent["task_id"] is None
+    assert agent["current_tool"] == "" and agent["tool_round"] == 0
+    assert control.runtime.compute_turn_status()["active"] is False
+
+
+@pytest.mark.parametrize(
+    "state,alive,started,admission_pending,stop,done,expected_running",
+    [
+        ("starting", True, False, True, False, False, True),
+        ("stopping", True, True, False, True, False, True),
+        ("finishing", True, True, False, False, True, True),
+        ("unconfirmed", True, False, False, False, False, True),
+        ("unconfirmed", False, True, False, False, False, None),
+        ("unconfirmed", False, False, True, False, False, None),
+        ("terminal", False, True, False, False, True, False),
+    ],
+    ids=["starting", "stopping", "finishing", "unconfirmed-live",
+         "unconfirmed-dead", "unconfirmed-admission", "terminal"])
+def test_worker_lifecycle_snapshot_never_reports_pending_execution_ready(
+        config_file, monkeypatch, state, alive, started, admission_pending, stop, done,
+        expected_running):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    ctrl = control._WorkerControl(ident)
+    ctrl.thread = SimpleNamespace(is_alive=lambda: alive)
+    ctrl.worker_thread_started = started
+    ctrl.admission_pending = admission_pending
+    if stop:
+        ctrl.stop_event.set()
+    if done:
+        ctrl.done_event.set()
+    # Retained executions include the cleanup tail after the current control is removed.
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {} if done else {ident: ctrl})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: ctrl})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    agent = next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
+    assert agent["execution"]["state"] == state
+    assert agent["execution"]["terminal"] is (state == "terminal")
+    assert agent["running"] is expected_running
+    assert agent["status"] == ("ready" if state == "terminal" else state)
+    assert agent["task_id"] is None
+    assert agent["current_tool"] == "" and agent["tool_round"] == 0
+
+
+def test_disabled_worker_stays_living_until_physical_cleanup_finishes(config_file, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    slots.update_slot(ident, {"enabled": False})
+    alive = {"value": True}
+    ctrl = control._WorkerControl(ident)
+    ctrl.thread = SimpleNamespace(is_alive=lambda: alive["value"])
+    ctrl.worker_thread_started = True
+    ctrl.stop_event.set()
+    ctrl.done_event.set()
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {ident: ctrl})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS", {})
+    def snapshot():
+        return next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
+    agent = snapshot()
+    assert agent["enabled"] is False
+    assert agent["living"] is True and agent["running"] is True and agent["status"] == "finishing"
+    assert agent["execution"]["terminal"] is False
+    assert agent["current_tool"] == "" and agent["tool_round"] == 0
+    alive["value"] = False
+    agent = snapshot()
+    assert agent["living"] is False and agent["running"] is False and agent["status"] == "paused"
+    assert agent["execution"]["terminal"] is True
+
+
+def test_untracked_live_worker_is_unconfirmed_instead_of_ready(config_file, monkeypatch):
+    from hub._services.chat import telegram_chat as control
+    ident = "buddha_boss"
+    monkeypatch.setattr(control.runtime, "sessions", {})
+    monkeypatch.setattr(control.runtime, "_chat_turn_gates", {})
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(control, "_WORKER_EXECUTIONS", {})
+    monkeypatch.setattr(control, "_ACTIVE_WORKER_THREADS",
+                        {ident: SimpleNamespace(is_alive=lambda: True)})
+    agent = next(item for item in control._system_slots_snapshot()["agents"] if item["id"] == ident)
+    assert agent["execution"]["state"] == "unconfirmed"
+    assert agent["living"] is True and agent["running"] is True and agent["status"] == "unconfirmed"
+    assert agent["task_id"] is None
+    assert agent["current_tool"] == "" and agent["tool_round"] == 0
+
+
 def test_real_chat_turn_supplies_tool_round_and_running_state(config_file, monkeypatch):
     from hub._services.chat import telegram_chat as control
     chat_id = "slot:buddha_chat:" + "a" * 32

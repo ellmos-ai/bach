@@ -523,13 +523,15 @@ def _system_slots_snapshot() -> dict:
             slot_id = agent["id"]
             control = _WORKER_CONTROLS.get(slot_id) or _WORKER_EXECUTIONS.get(slot_id)
             _, thread = _active_worker_control(slot_id)
+            thread_alive = _thread_is_alive(thread)
             execution = (worker_execution_receipt(slot_id, control.start_request_id)
                          if control else worker_execution_receipt(slot_id)
-                         if _thread_is_alive(thread) else None)
+                         if thread_alive else None)
             binding = getattr(control, "task_binding", None)
             task_active = (control is not None and _thread_is_alive(control.thread)
                            and binding is not None and not binding.closed)
-            worker_states[slot_id] = (execution, task_active, binding.task_id if task_active else None)
+            worker_states[slot_id] = (execution, thread_alive,
+                                     binding.task_id if task_active else None)
     with _runtime_state_lock:
         sessions = list(runtime.sessions.items())
     with runtime._chat_turn_gates_lock:
@@ -553,18 +555,25 @@ def _system_slots_snapshot() -> dict:
                 with gate.condition:
                     if gate.active_turns > 0:
                         running_sessions.append(session)
-        execution, task_active, task_id = worker_states[slot_id]
+        execution, thread_alive, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
-        agent.update({"runtime_verified": True, "living": agent["enabled"],
-                      "running": bool(task_active or running_sessions),
+        execution_state = execution["state"] if execution else None
+        # A continuous worker remains running while it waits for a task.
+        # Neither a free compute gate nor an empty task binding proves its end.
+        running = bool(thread_alive or running_sessions or execution_state in {
+            "starting", "running", "stopping", "finishing"})
+        if not running and execution_state == "unconfirmed":
+            running = None
+        agent.update({"runtime_verified": True, "living": agent["enabled"] or running is True,
+                      "running": running,
                       "task_id": task_id, "execution": execution,
                       "current_tool": getattr(active_session, "current_tool", ""),
                       "tool_round": getattr(active_session, "tool_round", 0),
                       "runtime_reason_code": "live_controller",
-                       "status": ("stopping" if execution and execution["state"] == "stopping" else
-                                  "starting" if execution and execution["state"] == "starting" else
-                                 "running" if task_active or running_sessions else
-                                 "paused" if not agent["enabled"] or agent["pause_info"]["is_paused"] else "ready")})
+                      "status": (execution_state if execution_state in {
+                          "starting", "stopping", "finishing", "unconfirmed"} else
+                          "running" if running else
+                          "paused" if not agent["enabled"] or agent["pause_info"]["is_paused"] else "ready")})
     result["service_instance"] = _WORKER_SERVICE_INSTANCE
     return result
 
