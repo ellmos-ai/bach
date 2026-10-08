@@ -179,7 +179,7 @@ def test_dynamic_worker_keeps_skill_and_tool_bindings_in_configuration(tmp_path,
     path = str(tmp_path / "slots.json")
     slots_config.initialize_slots_config(path)
     refs = source.pin_skills(["example"])
-    worker = slots_config.add_worker({"name": "Eigener Worker", "skill_refs": refs,
+    worker = slots_config.add_worker({"name": "Eigener Worker", "task_prompt": "Prüfe den Auftrag.", "skill_refs": refs,
         "allowed_tools": ["read_file"]}, path)
     assert worker["skill_refs"] == refs and worker["allowed_tools"] == ["read_file"]
     assert "Erstelle einen ausführlichen Überblick." in worker["system_prompt"]
