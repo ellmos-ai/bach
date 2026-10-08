@@ -798,6 +798,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "pause_info": pause_info,
             "living": None,
             "running": None,
+            "worker_active": None,
             "runtime_reason_code": "runtime_not_probed",
         })
     return {
