@@ -5421,7 +5421,7 @@ async def tasks_page():
 @app.get("/user-inbox", response_class=HTMLResponse)
 async def user_inbox_page():
     """Nachrichten an den Nutzer; Chats und Läufe haben eigene Ansichten."""
-    page = ASTRO_DIST_DIR / "inbox.html"
+    page = ASTRO_DIST_DIR / "user-inbox.html"
     if page.is_file():
         return FileResponse(page)
     raise HTTPException(status_code=503, detail="Inbox-Oberfläche noch nicht installiert")
