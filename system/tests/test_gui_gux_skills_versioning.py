@@ -78,6 +78,7 @@ def test_gux_030_nav_config_skills_area():
     children = skills_area.get("children", [])
     child_hrefs = [c.get("href") for c in children if isinstance(c, dict)]
     assert "/skills" in child_hrefs, "/skills must be under area 'skills'"
+    assert {"/skills/plugins", "/skills/mcp", "/skills/software"}.issubset(child_hrefs)
     assert "/agents-board" in child_hrefs, "/agents-board must be under area 'skills'"
 
     agenten_area = areas.get("agenten", {})
@@ -105,9 +106,10 @@ def test_gux_031_blueprint_skills_validation():
 
 
 def test_gux_063_mcp_cookbooks_discovery():
-    """GUX-063: MCP Cookbooks must support live discovery from disk."""
+    """Cookbooks are instruction templates, not runtime connection evidence."""
     cookbooks_res = get_mcp_cookbooks()
-    assert cookbooks_res.get("live_discovery") is True
+    assert cookbooks_res.get("live_discovery") is False
+    assert cookbooks_res.get("source") == "instruction_templates"
     assert cookbooks_res.get("count", 0) > 0
     cookbooks = cookbooks_res.get("cookbooks", [])
     assert len(cookbooks) > 0
@@ -275,7 +277,7 @@ def test_unified_api_routes(auth_client):
     # MCP Cookbooks
     r = auth_client.get("/api/capabilities/mcp/cookbooks")
     assert r.status_code == 200, f"Failed with {r.status_code}: {r.text}"
-    assert r.json().get("live_discovery") is True
+    assert r.json().get("live_discovery") is False
 
     # Tiers
     r = auth_client.get("/api/capabilities/tiers")

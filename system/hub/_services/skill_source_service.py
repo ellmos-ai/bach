@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -35,7 +36,7 @@ def user_skills_root() -> Path:
 
 def skill_roots() -> list[Path]:
     configured = os.environ.get("BACH_SKILLS_ROOTS")
-    if configured:
+    if configured is not None:
         values = json.loads(configured)
         if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
             raise ValueError("BACH_SKILLS_ROOTS muss eine Liste absoluter Pfade sein")
@@ -124,6 +125,55 @@ def read_skill(skill_id: str, *, roots: list[Path] | None = None) -> dict:
             "source_version": hashlib.sha256(data).hexdigest(), "content": data.decode("utf-8"),
             "source_path": str(item["path"]), "editable": True,
             "edit_kind": "local_override", "tools_granted": False}
+
+
+def skill_library(roots: list[Path] | None = None) -> dict:
+    catalog = source_catalog(roots)
+    items = [{**{k: v for k, v in item.items() if k not in {"path", "root"}}, "description": item["role"]}
+             for item in catalog.values()]
+    return {"schema": "bach.skill-library.v1", "skills": sorted(items, key=lambda x: x["name"].casefold()),
+            "count": len(items), "categories": sorted({x["category"] for x in items}),
+            "source": "current_SKILL.md", "declared_only_included": False}
+
+
+def _history_directory(skill_id: str) -> tuple[Path, Path]:
+    if not isinstance(skill_id, str) or not SKILL_ID.fullmatch(skill_id):
+        raise ValueError("Ungültige Skill-ID")
+    root = user_skills_root()
+    directory = root / ".history" / skill_id
+    if directory.is_symlink() or not directory.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Skill-Historie liegt außerhalb ihrer Wurzel")
+    return root, directory
+
+
+def read_skill_history(skill_id: str, revision: str) -> dict:
+    if not isinstance(revision, str) or not REVISION.fullmatch(revision):
+        raise ValueError("Ungültige Skill-Quellenversion")
+    root, directory = _history_directory(skill_id)
+    path = directory / (revision + ".md")
+    if not path.is_file():
+        raise KeyError("Historische Skill-Fassung fehlt")
+    raw = _source_bytes(path, root)
+    if hashlib.sha256(raw).hexdigest() != revision:
+        raise ValueError("Skill-Historie stimmt nicht mit ihrer Quellenversion überein")
+    return {"id": skill_id, "source_version": revision, "content": raw.decode("utf-8"),
+            "version": str(_metadata(raw.decode("utf-8")).get("version") or "ohne Versionsnummer"),
+            "archived_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
+
+
+def list_skill_history(skill_id: str) -> dict:
+    _, directory = _history_directory(skill_id)
+    items = []
+    if directory.is_dir():
+        paths = sorted(directory.iterdir(), key=lambda p: p.name)
+        if len(paths) > 500:
+            raise ValueError("Skill-Historie überschreitet die Lesegrenze")
+        for path in paths:
+            if path.suffix == ".md" and REVISION.fullmatch(path.stem):
+                item = read_skill_history(skill_id, path.stem)
+                items.append({k: v for k, v in item.items() if k != "content"})
+    return {"schema": "bach.skill-history.v1", "id": skill_id,
+            "versions": sorted(items, key=lambda x: x["archived_at"], reverse=True)}
 
 
 def pin_skills(ids: list[str], *, roots: list[Path] | None = None) -> list[dict]:

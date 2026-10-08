@@ -1556,6 +1556,9 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/skills-board",
         "/agents-board",
         "/skills",
+        "/skills/plugins",
+        "/skills/mcp",
+        "/skills/software",
         "/finanzen",
         "/steuer",
         "/gesundheit",
@@ -5675,7 +5678,7 @@ async def skills_board_page():
 
 @app.get("/skills")
 async def skills_page():
-    """Skills & Capabilities Zentrale (Astro v5 Modular GUI mit Fallback)."""
+    """Current Skill-Zentrale with the actual SKILL.md editor."""
     p = ASTRO_DIST_DIR / "skills.html"
     if p.exists():
         return FileResponse(p)
@@ -5683,6 +5686,20 @@ async def skills_page():
     if tpl.exists():
         return FileResponse(tpl)
     return RedirectResponse("/agents-board")
+
+
+@app.get("/skills/plugins")
+@app.get("/skills/mcp")
+@app.get("/skills/software")
+async def capability_board_page(request: Request):
+    """Separate static boards; all host inventories require device authentication."""
+    name = request.url.path.rsplit("/", 1)[-1]
+    if name not in {"plugins", "mcp", "software"}:
+        raise HTTPException(404, "Board nicht gefunden")
+    page = ASTRO_DIST_DIR / "skills" / (name + ".html")
+    if not page.is_file():
+        raise HTTPException(503, "Board noch nicht gebaut")
+    return FileResponse(page)
 
 @app.get("/finanzen")
 async def finanzen_redirect():

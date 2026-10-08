@@ -755,6 +755,62 @@ async def get_current_skill_source(skill_id: str):
         raise HTTPException(400, str(exc))
 
 
+@router.get("/capabilities/skills/library")
+async def get_current_skill_library():
+    from hub._services.skill_source_service import skill_library
+    try:
+        return await asyncio.to_thread(skill_library)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise HTTPException(503, "Aktuelle Skill-Bibliothek nicht lesbar") from exc
+
+
+@router.get("/capabilities/skills/{skill_id}/history")
+async def get_current_skill_history(skill_id: str):
+    from hub._services.skill_source_service import list_skill_history
+    try:
+        return await asyncio.to_thread(list_skill_history, skill_id)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/capabilities/skills/{skill_id}/history/{revision}")
+async def get_historical_skill_source(skill_id: str, revision: str):
+    from hub._services.skill_source_service import read_skill_history
+    try:
+        return await asyncio.to_thread(read_skill_history, skill_id, revision)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/capabilities/plugins/inventory")
+async def get_actual_plugin_inventory():
+    from hub._services.capability_inventory_service import plugin_inventory
+    try:
+        return await asyncio.to_thread(plugin_inventory)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, "Plugin-Quellen nicht lesbar") from exc
+
+
+@router.get("/capabilities/mcp/connections")
+async def get_actual_mcp_connections():
+    from hub._services.capability_inventory_service import mcp_inventory
+    try:
+        return await asyncio.to_thread(mcp_inventory)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, "MCP-Konfiguration nicht lesbar") from exc
+
+
+@router.get("/capabilities/software")
+async def get_actual_software_inventory():
+    from hub._services.capability_inventory_service import software_inventory
+    try:
+        return await asyncio.to_thread(software_inventory)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, "Software-Quellen nicht lesbar") from exc
+
+
 @router.put("/capabilities/skills/{skill_id}/source")
 async def save_current_skill_source(skill_id: str, payload: Dict[str, Any] = Body(...)):
     from hub._services.skill_source_service import save_skill
@@ -1494,40 +1550,14 @@ async def get_mcp_cookbook_detail(server_id: str):
 
 @router.post("/capabilities/mcp/disconnect")
 async def disconnect_mcp_server(payload: Dict[str, Any] = Body(...)):
-    """Fuehrt einen autoritativen Hard-Disconnect fuer einen MCP-Server durch."""
-    from hub._services.mcp_cookbook_service import perform_hard_disconnect
-    server_id = payload.get("server_id")
-    if not server_id:
-        raise HTTPException(status_code=400, detail="server_id erforderlich")
-    force = bool(payload.get("force", False))
-    operator = str(payload.get("operator", "user"))
-
-    receipt = perform_hard_disconnect(server_id, force=force, operator=operator)
-    if receipt.get("status") == "rejected_unknown_server":
-        raise HTTPException(status_code=400, detail=f"Unbekannter MCP-Server: {server_id}")
-
-    # Synchronisiere Steckdosenleiste: bei Hard-Disconnect Stecker auf ausgezogen (is_plugged=0) setzen
-    try:
-        conn = _get_conn()
-        _ensure_capabilities_db(conn)
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        cursor.execute("""
-            UPDATE plugin_sockets SET is_plugged = 0, updated_at = ? WHERE name = ?
-        """, (now, server_id))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.warning("Konnte plugin_sockets nach Hard-Disconnect nicht aktualisieren: %s", e)
-
-    return receipt
+    """A client configuration does not give BACH ownership of its processes."""
+    raise HTTPException(410, "Diese Verbindungen gehören den Agenten-Clients. Trenne sie im jeweiligen Client.")
 
 
 @router.get("/capabilities/mcp/disconnect/status")
 async def get_disconnect_status_endpoint(server_id: str = Query(..., description="Server-ID")):
-    """Liefert den aktuellen Prozess- und Disconnect-Status eines MCP-Servers."""
-    from hub._services.mcp_cookbook_service import get_hard_disconnect_status
-    return get_hard_disconnect_status(server_id)
+    """Process-name matches cannot prove a connection or a clean disconnect."""
+    raise HTTPException(410, "Der Verbindungsstatus wird vom jeweiligen Agenten-Client verwaltet.")
 
 
 @router.get("/capabilities/tiers")

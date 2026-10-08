@@ -166,16 +166,34 @@
     "icon": "🔌",
     "children": [
       {
-        "href": "/skills",
-        "label": "Skills-Zentrale",
+        "href": "/skills/plugins",
+        "label": "Plugins",
         "icon": "🔌",
-        "description": "Steckdosenleiste, MCP Cookbooks, Versionierung & Rollback"
+        "description": "Plugin-Quellen und Client-Einstellungen"
+      },
+      {
+        "href": "/skills/mcp",
+        "label": "MCP-Connections",
+        "icon": "📚",
+        "description": "Serverkonfiguration und Rezeptbibliothek"
+      },
+      {
+        "href": "/skills",
+        "label": "Skill-Zentrale",
+        "icon": "📜",
+        "description": "Aktuelle Anleitungen bearbeiten und frühere Fassungen laden"
+      },
+      {
+        "href": "/skills/software",
+        "label": "Software",
+        "icon": "💻",
+        "description": "Vorhandene Software und Module"
       },
       {
         "href": "/agents-board",
         "label": "Agents-Board",
         "icon": "📊",
-        "description": "Skill-Katalog, 388+ Skills & Aufgabenzuweisung"
+        "description": "Bisheriger Hierarchie-Editor"
       }
     ]
   },

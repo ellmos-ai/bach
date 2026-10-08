@@ -101,3 +101,5 @@ session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b
 ellmos-chat @ git+https://github.com/ellmos-ai/ellmos-chat.git@v0.2.0
 
 python-telegram-bot
+# Standard-library TOML parser compatibility for supported Python 3.10 hosts.
+tomli>=2.0; python_version < "3.11"
