@@ -154,7 +154,7 @@ def tray(tmp_path, monkeypatch):
     client = BACHTray(host="testhost", execution_state_path=tmp_path / "intent.json")
     client.state["connected"] = True
     client.slots = {WORKER: {"id": WORKER, "enabled": True, "pause_info": {"is_paused": False},
-                           "model": "actual-model", "mode": "safe", "max_tool_rounds": 7}}
+                           "model": "actual-model", "backend": "ollama", "mode": "safe", "max_tool_rounds": 7}}
     client._update_icon = Mock()
     return client
 
@@ -441,3 +441,33 @@ def test_tray_stops_disabled_host_or_slot_but_preserves_cooldown_and_foreground(
     posts = [c for c in client._worker_request.call_args_list if c.args[0] == "POST"]
     assert bool(posts) == (gate in {"disabled", "host"})
     if posts: assert posts[0].args[1] == "/api/workers/stop"
+
+@pytest.mark.parametrize("connected, turn, expected", [
+    (False, {"active": True, "priority": "foreground"}, "Status nicht geprüft"),
+    (True, None, "Status nicht geprüft"),
+    (True, {"active": "false"}, "Status nicht geprüft"),
+    (True, {"active": False}, "lokale Inferenz frei"),
+    (True, {"active": True, "priority": "foreground"}, "Chat"),
+    (True, {"active": True, "priority": "background"}, "Hintergrundworker"),
+    (True, {"active": True, "priority": "unknown"}, "lokale Inferenz belegt"),
+])
+def test_fackel_owner_comes_from_actual_inference(tmp_path, monkeypatch, connected, turn, expected):
+    client = tray(tmp_path, monkeypatch)
+    client.state.update(connected=connected, compute_turn=turn, fackel_preference="ollama")
+    label = client._fackel_runtime_label()
+    assert label.startswith("Fackel: " + expected)
+    assert "Priorität: Ollama" in label
+    client._api = Mock()
+    client._fackel_runtime_label()
+    client._api.assert_not_called()
+
+
+def test_inference_change_refreshes_tray_menu_without_slot_changes(tmp_path, monkeypatch):
+    client = tray(tmp_path, monkeypatch)
+    client.state["compute_turn"] = {"active": False}
+    idle = client._menu_signature()
+    client.state["compute_turn"] = {"active": True, "priority": "foreground", "chat_id": "actual-chat"}
+    foreground = client._menu_signature()
+    client.state["compute_turn"] = {"active": True, "priority": "background", "chat_id": WORKER}
+    background = client._menu_signature()
+    assert idle != foreground != background
