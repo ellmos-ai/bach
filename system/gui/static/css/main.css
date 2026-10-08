@@ -13,15 +13,16 @@
     --bg-elevated: #1c2033;
 
     /* Accent — refined red, BACH brand */
-    --accent: #d4485a;
+    --accent: #e66d80;
+    --on-accent: #0b0d14;
     --accent-light: #e06b7e;
     --accent-blue: #5b8def;
     --accent-glow: rgba(212, 72, 90, 0.12);
 
     /* Text */
     --text: #e2ded8;
-    --text-muted: #6e7386;
-    --text-dim: #454a5c;
+    --text-muted: #a0a8bd;
+    --text-dim: #909aaf;
 
     /* Borders */
     --border: #1e2236;
@@ -194,7 +195,8 @@ body {
 @media (max-width: 760px) {
     .main-header { flex-wrap: wrap; padding: 0.5rem; }
     .header-left, .header-right { flex: 1 1 100%; min-width: 0; }
-    .main-nav { overflow-x: auto; }
+    .header-left { flex-wrap: wrap; }
+    .main-nav { flex: 1 1 100%; width: 100%; overflow-x: auto; }
     .nav-item { flex-shrink: 0; }
 }
 
@@ -524,7 +526,7 @@ body {
 
 .btn-primary {
     background: var(--accent);
-    color: #0b0d14;
+    color: var(--on-accent);
 }
 
 .btn-primary:hover {
@@ -1088,18 +1090,19 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
    ══════════════════════════════════════ */
 
 [data-theme="light"] {
+    --on-accent: #ffffff;
     --bg-dark: #f4f5f7;
     --bg-panel: #ffffff;
     --bg-card: #eef0f4;
     --bg-elevated: #e4e7ed;
 
     --accent: #c83a4e;
-    --accent-light: #d95c6e;
+    --accent-light: #b72f43;
     --accent-glow: rgba(200, 58, 78, 0.1);
 
     --text: #1a1c2e;
-    --text-muted: #6b7085;
-    --text-dim: #9da2b4;
+    --text-muted: #60677d;
+    --text-dim: #60677d;
 
     --border: #dde0e8;
     --border-hover: #c8ccd6;
@@ -1118,7 +1121,7 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
 }
 
 [data-theme="light"] .btn-primary {
-    color: #fff;
+    color: var(--on-accent);
 }
 
 [data-theme="light"] .logo-text {
@@ -1140,18 +1143,19 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
    ══════════════════════════════════════ */
 
 [data-theme="warm"] {
+    --on-accent: #ffffff;
     --bg-dark: #f6f0e4;
     --bg-panel: #fffaf0;
     --bg-card: #eee2cf;
     --bg-elevated: #e4d3bb;
 
     --accent: #a64b2a;
-    --accent-light: #bd6846;
+    --accent-light: #b45735;
     --accent-glow: rgba(166, 75, 42, 0.13);
 
     --text: #35271f;
-    --text-muted: #756253;
-    --text-dim: #a38f7e;
+    --text-muted: #695446;
+    --text-dim: #6d5645;
 
     --border: #dccbb5;
     --border-hover: #c7b197;
@@ -1167,7 +1171,7 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
 
 [data-theme="warm"] .nav-item.active,
 [data-theme="warm"] .btn-primary {
-    color: #fff;
+    color: var(--on-accent);
 }
 
 [data-theme="warm"] .logo-text {
@@ -1290,6 +1294,7 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
 
 /* ── Ocean Theme ── */
 [data-theme="ocean"] {
+    --on-accent: #070d18;
     --bg-dark: #070d18;
     --bg-panel: #0c1728;
     --bg-card: #11223b;
@@ -1302,8 +1307,11 @@ a:not(.nav-item):not(.dropdown-item):not([class*="btn"]):hover {
     --border-hover: #264a75;
     --text: #e0f2fe;
     --text-muted: #7ba3cd;
-    --text-dim: #456b94;
+    --text-dim: #749ec8;
     --success: #10b981;
     --warning: #f59e0b;
     --error: #f43f5e;
 }
+
+/* Keep active navigation labels legible on the theme accent. */
+.nav-item.active { color: var(--on-accent); }

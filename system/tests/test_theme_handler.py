@@ -192,3 +192,45 @@ def test_navigation_and_finance_tabs_wrap_without_hiding_content():
     assert "flex-wrap: wrap" in nav_rules
     tabs = finance[finance.index(".tabs {"):finance.index(".tab {")]
     assert "flex-wrap: wrap" in tabs
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "ocean", "warm"])
+def test_default_theme_text_and_actions_contrast(theme):
+    import re
+
+    css = (SYSTEM_ROOT / "gui/static/css/main.css").read_text(encoding="utf-8")
+
+    def variables(selector):
+        start = css.index(selector + " {") + len(selector) + 2
+        block = css[start:].split("}", 1)[0]
+        return dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{3,6});", block))
+
+    values = variables(":root")
+    if theme != "dark":
+        values.update(variables(f'[data-theme="{theme}"]'))
+
+    def luminance(color):
+        color = color.lstrip("#")
+        if len(color) == 3:
+            color = "".join(char * 2 for char in color)
+        rgb = [int(color[offset:offset + 2], 16) / 255 for offset in (0, 2, 4)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return sum(c * weight for c, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+    def contrast(first, second):
+        low, high = sorted((luminance(values[first]), luminance(values[second])))
+        return (high + 0.05) / (low + 0.05)
+
+    for foreground in ("--text", "--text-muted", "--text-dim"):
+        for background in ("--bg-dark", "--bg-panel", "--bg-card", "--bg-elevated"):
+            assert contrast(foreground, background) >= 4.5, (theme, foreground, background)
+    for background in ("--accent", "--accent-light"):
+        assert contrast("--on-accent", background) >= 4.5, (theme, background)
+
+
+def test_mobile_navigation_has_full_row_without_recoloring_underlined_tabs():
+    css = (SYSTEM_ROOT / "gui/static/css/main.css").read_text(encoding="utf-8")
+    assert ".header-left { flex-wrap: wrap; }" in css
+    assert ".main-nav { flex: 1 1 100%; width: 100%; overflow-x: auto; }" in css
+    assert ".nav-item.active { color: var(--on-accent); }" in css
+    assert ".nav-item.active, .tab-btn.active { color: var(--on-accent); }" not in css
