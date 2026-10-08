@@ -637,6 +637,11 @@ def get_always_on_execution_slot(path: str | None = None) -> dict[str, Any]:
     """Read the persisted core worker once, without defaults or dynamic aliases."""
     with _config_lock:
         config = json.loads(_resolve_path(path).read_text(encoding="utf-8"))
+    return _always_on_execution_slot_from_config(config)
+
+
+def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Use one persisted policy representation for physical and CAS admission."""
     if (not isinstance(config, dict) or not isinstance(config.get("slots"), dict)
             or not isinstance(config.get("dynamic_workers"), list)):
         raise ValueError("Always-On-Konfiguration ist nicht verifizierbar")
@@ -1095,6 +1100,8 @@ def system_worker_at_version(slot_id: str, expected_version: str,
     worker_type = slot.get("type", "continuous")
     if worker_type not in {"once", "continuous"}:
         raise ValueError("System-Worker-Laufbegrenzung ist ungültig")
+    if slot_id == "buddha_always_on":
+        return _always_on_execution_slot_from_config(config)
     return {**DEFAULT_CORE_SLOTS.get(slot_id, {}), **slot, "type": worker_type, "system": True}
 
 
