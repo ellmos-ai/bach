@@ -898,85 +898,66 @@ def _ensure_marblerun_tables(conn: sqlite3.Connection):
         pass
 
 
-@router.get("/marblerun/chains")
-async def get_marblerun_chains():
-    """Liefert alle gespeicherten Agenten-Ketten."""
+async def _native_sequence_api(request, method, endpoint, *, body=None, params=None):
+    if request is None:
+        raise HTTPException(status_code=401, detail="Geräteautorisierung erforderlich")
+    token = _require_memory_device_token(request)
+    from .worker_status_adapter import _request_control_api, WorkerActionRejected, WorkerStatusUnavailable
     try:
-        conn = _get_conn(timeout=2.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            _ensure_marblerun_tables(conn)
-            rows = conn.execute("SELECT * FROM marblerun_chains").fetchall()
-            chains = []
-            for r in rows:
-                steps = []
-                try:
-                    steps = json.loads(r["steps_json"])
-                except Exception:
-                    pass
-                title = r["title"] if "title" in r.keys() and r["title"] else r["name"].replace("-", " ").title()
-                chains.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "title": title,
-                    "description": r["description"] if "description" in r.keys() else "",
-                    "steps": steps,
-                    "is_active": bool(r["is_active"]) if "is_active" in r.keys() else True,
-                    "created_at": r["created_at"] if "created_at" in r.keys() else None
-                })
-            return {"chains": chains, "count": len(chains)}
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.exception("Fehler beim Abruf der MarbleRun-Ketten: %s", e)
-        return {"chains": [], "count": 0, "status": "empty", "note": "Fehler beim Abruf"}
+        return await asyncio.to_thread(_request_control_api, method, endpoint,
+                                       device_token=token, body=body, params=params, timeout=15.0)
+    except WorkerActionRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/marblerun/catalog")
+async def get_marblerun_catalog(request: Request):
+    return await _native_sequence_api(request, "GET", "marblerun/catalog")
+
+
+@router.get("/marblerun/chains")
+async def get_marblerun_chains(request: Request):
+    data = await _native_sequence_api(request, "GET", "marblerun/catalog")
+    return {**data, "count": len(data["chains"])}
 
 
 @router.post("/marblerun/chains")
-async def create_marblerun_chain(payload: Dict[str, Any]):
-    """Erstellt oder aktualisiert eine Agenten-Kette."""
-    name = (payload.get("name") or "").strip().lower()
-    if not name:
-        raise HTTPException(status_code=400, detail="Name fehlt")
-    title = payload.get("title") or name.title()
-    steps = payload.get("steps") or []
-    desc = payload.get("description", "")
-    now = datetime.now().isoformat()
-    conn = _get_conn()
-    try:
-        _ensure_marblerun_tables(conn)
-        conn.execute("""
-            INSERT INTO marblerun_chains (name, title, description, steps_json, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                title = excluded.title,
-                description = excluded.description,
-                steps_json = excluded.steps_json,
-                updated_at = excluded.updated_at
-        """, (name, title, desc, json.dumps(steps), now))
-        conn.commit()
-        return {"success": True, "name": name, "title": title, "steps_count": len(steps)}
-    finally:
-        conn.close()
+async def create_marblerun_chain(payload: Dict[str, Any], request: Request):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+                                     body={"action": "create", "definition": payload})
+
+
+@router.put("/marblerun/chains/{chain_id}")
+async def update_marblerun_chain(chain_id: int, payload: Dict[str, Any], request: Request):
+    if set(payload) != {"version", "definition"}:
+        raise HTTPException(status_code=400, detail="Kettenversion und Definition erforderlich")
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "update", "chain_id": chain_id, **payload})
 
 
 @router.delete("/marblerun/chains/{chain_id}")
-async def delete_marblerun_chain(chain_id: int):
-    """Loescht eine Agenten-Kette."""
-    conn = _get_conn()
-    try:
-        _ensure_marblerun_tables(conn)
-        conn.execute("DELETE FROM marblerun_chains WHERE id = ?", (chain_id,))
-        conn.commit()
-        return {"success": True, "id": chain_id}
-    finally:
-        conn.close()
+async def delete_marblerun_chain(chain_id: int, request: Request, version: int = Query(...)):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "delete", "chain_id": chain_id, "version": version})
 
 
 @router.post("/marblerun/chains/{chain_id}/run")
-async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(default={})):
-    """No run is recorded until a real agent dispatcher is connected."""
-    raise HTTPException(status_code=501, detail="Agenten-Kettenlauf nicht verfügbar: kein Worker-Dispatcher angebunden.")
+async def execute_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body(...), request: Request = None):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+        body={"action": "start", "chain_id": chain_id, "request": payload})
+
+
+@router.get("/marblerun/runs/{run_id}")
+async def get_marblerun_run(run_id: str, request: Request):
+    return await _native_sequence_api(request, "GET", "marblerun/run", params={"run_id": run_id})
+
+
+@router.post("/marblerun/runs/{run_id}/stop")
+async def stop_marblerun_run(run_id: str, request: Request):
+    return await _native_sequence_api(request, "POST", "marblerun/action",
+                                     body={"action": "stop", "run_id": run_id})
 
 
 @router.get("/marblerun/agents-map")

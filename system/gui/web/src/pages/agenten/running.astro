@@ -557,7 +557,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
 
     function renderCoreAgents(data) {
       coreConfigVersion = data.configuration_version;
-      coreAgents = data.agents;
+      coreAgents = data.agents.filter(agent => !agent.sequence_run_id || agent.running === true);
       coreCatalog = data;
       const target = document.getElementById('core-agent-cards');
       target.replaceChildren();

@@ -36,6 +36,7 @@ _SAFE_TEXT_FIELDS = (
 _NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
 _BOOL_FIELDS = ("auto_paused", "system", "deletable")
 _ALLOWED_CONTROL = {
+    ("GET", "marblerun/catalog"), ("GET", "marblerun/run"), ("POST", "marblerun/action"),
     ("GET", "status"), ("GET", "auth/check"), ("GET", "workers"), ("GET", "system-slots"), ("GET", "activity"),
     ("GET", "models"), ("GET", "readiness"),
     ("POST", "workers"), ("POST", "workers/run"),

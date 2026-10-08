@@ -6,6 +6,7 @@ Only canonical content snapshots and confirmed receipt strings leave it.
 from __future__ import annotations
 
 import copy
+import json
 import threading
 from datetime import datetime, timezone
 
@@ -34,6 +35,7 @@ class WorkerLeaseBinding:
         self._active = True
         self._closed = False
         self._completed = False
+        self._completion_result = None
         self._review_ack = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
@@ -133,6 +135,12 @@ class WorkerLeaseBinding:
     def completed_task_ids(self):
         with self._lock:
             return (self.task_id,) if self._completed else ()
+
+    @property
+    def completion_result(self):
+        """Actual model output, retained only after a correlated Done ACK."""
+        with self._lock:
+            return copy.deepcopy(self._completion_result) if self._completed else None
 
     @property
     def reviewed_task_ids(self):
@@ -255,6 +263,7 @@ class WorkerLeaseBinding:
             if review:
                 release = self._operation(self._client.release, outcome="review", result_ref=result_ref)
                 if (not isinstance(release, LeaseReleaseAck) or release.released is not True
+                        or type(release.task_id) is not int or type(release.fence) is not int
                         or type(release.task_id) is not int or release.task_id != self.task_id
                         or type(release.fence) is not int or release.fence != self._ack.fence
                         or release.outcome != "review" or release.status != "review"):
@@ -283,7 +292,27 @@ class WorkerLeaseBinding:
                                     or args["task_id"] != self.task_id):
                 raise LeaseProtocolError("Mutation gehört nicht zur gebundenen Task")
             if action == "done":
-                self._operation(self._client.release, outcome="done")
+                if set(args) - {"action", "task_id", "result"}:
+                    raise LeaseProtocolError("Unbekannte Abschlussfelder")
+                result = args.get("result")
+                record = None
+                note = ""
+                if result is not None:
+                    if (not isinstance(result, str) or not result.strip()
+                            or len(result) > 3000 or "\x00" in result):
+                        raise LeaseProtocolError("Ergebnis muss lesbarer Text mit höchstens 3000 Zeichen sein")
+                    record = {"schema": "bach.task-result.v1", "task_id": self.task_id,
+                              "generation": self._generation, "result": result}
+                    note = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                    if len(note) > 4000:
+                        raise LeaseProtocolError("Kodiertes Ergebnis überschreitet das Task-Historienbudget")
+                release = self._operation(self._client.release, outcome="done", note=note)
+                if (not isinstance(release, LeaseReleaseAck) or release.released is not True
+                        or release.task_id != self.task_id or release.fence != self._ack.fence
+                        or release.outcome != "done" or release.status != "done"):
+                    self.invalidate()
+                    raise LeaseProtocolError("Taskabschluss nicht bestätigt")
+                self._completion_result = record
                 self._closed = self._completed = True
                 self._active = False
                 return f"Task #{self.task_id} erledigt."

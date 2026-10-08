@@ -207,6 +207,7 @@ class _WorkerControl:
     receipt: Optional[Dict[str, Any]] = None
     task_binding: Any = None
     completed_task_ids: list[int] = field(default_factory=list)
+    completed_task_results: dict[int, dict] = field(default_factory=dict)
     reviewed_task_ids: list[int] = field(default_factory=list)
     lease_supervisor: Any = None
     supports_step_actions: bool = False
@@ -282,9 +283,27 @@ def _retain_worker_task_receipts(control: _WorkerControl) -> None:
         return
     completed = tuple(binding.completed_task_ids)
     reviewed = tuple(binding.reviewed_task_ids)
+    result = getattr(binding, "completion_result", None)
     with _WORKER_CONTROL_LOCK:
         control.completed_task_ids = sorted(set(control.completed_task_ids) | set(completed))
         control.reviewed_task_ids = sorted(set(control.reviewed_task_ids) | set(reviewed))
+        if (isinstance(result, dict) and result.get("generation") == control.generation
+                and result.get("task_id") in completed):
+            control.completed_task_results[result["task_id"]] = dict(result)
+
+
+def worker_execution_result(worker_id, request_id, generation, task_id):
+    """Private native-chain handoff after ACK and physical thread completion."""
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_EXECUTIONS.get(worker_id)
+        if (control is None or control.start_request_id != request_id
+                or control.generation != generation or not control.done_event.is_set()
+                or _thread_is_alive(control.thread)):
+            raise ValueError("Physisches Laufende dieser Generation nicht bestätigt")
+        result = control.completed_task_results.get(task_id)
+        if task_id not in control.completed_task_ids or not isinstance(result, dict):
+            raise ValueError("Bestätigter Taskabschluss mit fachlichem Ergebnis fehlt")
+        return dict(result)
 
 
 def _native_task_client():
@@ -3668,7 +3687,79 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     return {"ok": True, "message": f"Worker {worker_id} gestartet"}, 200
 
 
+_NATIVE_SEQUENCES = None
+_NATIVE_SEQUENCES_LOCK = threading.RLock()
+
+
+def _native_sequences():
+    global _NATIVE_SEQUENCES
+    with _NATIVE_SEQUENCES_LOCK:
+        if _NATIVE_SEQUENCES is None:
+            from hub._services.chat.native_sequences import NativeSequences, NativeGateway
+            from hub._services.chat.sequence_store import SequenceStore
+            from hub._services.skill_source_service import check_write_locks
+            from hub._services.chat.bach_tools import _current_runtime_db
+            if _native_task_client().mode != "local":
+                raise RuntimeError("Native Ketten werden auf dem konfigurierten TaskDB-Lead ausgeführt")
+            database = Path(_current_runtime_db())
+            gateway = NativeGateway(service_instance=_WORKER_SERVICE_INSTANCE, start=start_worker_execution,
+                observe=worker_execution_receipt, result=worker_execution_result,
+                stop=_request_worker_revocation, slot=_execution_worker_slot)
+            _NATIVE_SEQUENCES = NativeSequences(SequenceStore(database,
+                write_guard=lambda: check_write_locks(database)), gateway)
+        return _NATIVE_SEQUENCES
+
+
 class ControlHandler(BaseHTTPRequestHandler):
+    def _sequence_response(self, action, body=None, query=None):
+        from hub._services.chat.sequence_store import SequenceConflict
+        body, query = body or {}, query or {}
+        try:
+            service = _native_sequences()
+            if action == "catalog":
+                result = service.catalog()
+            elif action == "read_run":
+                result = {"run": service.get_run(query.get("run_id", [""])[0])}
+            else:
+                allowed = {
+                    "create": {"action", "definition"},
+                    "update": {"action", "chain_id", "version", "definition"},
+                    "delete": {"action", "chain_id", "version"},
+                    "start": {"action", "chain_id", "request"},
+                    "stop": {"action", "run_id"},
+                }
+                if action not in allowed or set(body) != allowed[action]:
+                    raise ValueError("Ungültige Kettenaktion oder Felder")
+                if action in {"update", "delete", "start"}:
+                    if type(body["chain_id"]) is not int or body["chain_id"] <= 0:
+                        raise ValueError("Gültige Ketten-ID erforderlich")
+                if action == "create":
+                    result = {"chain": service.store.save_chain(body["definition"])}
+                elif action == "update":
+                    result = {"chain": service.store.save_chain(body["definition"], chain_id=body["chain_id"], expected_version=body["version"])}
+                elif action == "delete":
+                    service.store.delete_chain(body["chain_id"], body["version"])
+                    result = {"deleted": True, "chain_id": body["chain_id"]}
+                elif action == "start":
+                    result = service.start(body["chain_id"], body["request"])
+                else:
+                    result = service.stop(body["run_id"])
+            self._json({"ok": True, **result})
+        except SequenceConflict as exc:
+            self._json({"error": str(exc)}, 409)
+        except KeyError:
+            self._json({"error": "Kette, Lauf oder Skill nicht gefunden"}, 404)
+        except (ValueError, TypeError):
+            self._json({"error": "Ungültige Kettendefinition, Bindung oder Eingabe"}, 400)
+        except RuntimeError as exc:
+            if str(exc) == "configuration_version_conflict":
+                self._json({"error": "Living-Konfiguration inzwischen geändert"}, 409)
+            else:
+                self._json({"error": "Kettenlauf oder kanonische Quelle nicht verfügbar"}, 503)
+        except Exception:
+            log.exception("Native chain request could not be confirmed")
+            self._json({"error": "Kettenaktion nicht bestätigt"}, 503)
+
     def log_message(self, fmt, *args):
         log.debug("ControlAPI: " + fmt % args)
 
@@ -3788,6 +3879,12 @@ class ControlHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
+
+        if path in {"/api/marblerun/catalog", "/api/marblerun/run"}:
+            if not self._allow_control_request():
+                return
+            self._sequence_response("catalog" if path.endswith("catalog") else "read_run", query=parse_qs(parsed_url.query))
+            return
 
         if path == "/api/auth/check":
             # T-20260926-652455601: side-effect-free capability authentication.
@@ -4174,6 +4271,10 @@ class ControlHandler(BaseHTTPRequestHandler):
         body = self._read_body()
         if not isinstance(body, dict):
             self._json({"error": "JSON-Objekt erforderlich"}, 400)
+            return
+
+        if path == "/api/marblerun/action":
+            self._sequence_response(body.get("action"), body)
             return
 
         if path == "/api/backend":
