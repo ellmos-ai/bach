@@ -83,3 +83,44 @@ def test_task_counts_remain_available_for_existing_database(tmp_path):
         conn.executemany("INSERT INTO tasks (assigned_to) VALUES (?)", [("user",), ("worker",)])
 
     assert cluster_status._task_counts(db_path) == (2, 1)
+
+def test_cluster_endpoint_keeps_other_coroutine_running_during_hardware_probe(monkeypatch, tmp_path):
+    import asyncio
+    import threading
+    from gui.api import unified_api
+
+    _install_observations(monkeypatch, False)
+    monkeypatch.setattr(unified_api, "BACH_DB", str(tmp_path / "bach.db"))
+    capacity = cluster_status._capacity()
+    probe_entered = threading.Event()
+    peer_released_probe = threading.Event()
+    peer_progressed_before_probe_end = threading.Event()
+
+    def blocked_hardware_probe():
+        probe_entered.set()
+        if peer_released_probe.wait(2):
+            peer_progressed_before_probe_end.set()
+        return capacity
+
+    monkeypatch.setattr(cluster_status, "_capacity", blocked_hardware_probe)
+
+    async def peer_request():
+        while not probe_entered.is_set():
+            await asyncio.sleep(0)
+        peer_released_probe.set()
+        return "peer completed"
+
+    async def exercise_route():
+        try:
+            return await asyncio.gather(unified_api.get_cluster_cockpit(), peer_request())
+        finally:
+            peer_released_probe.set()
+
+    cockpit, peer = asyncio.run(exercise_route())
+
+    assert peer == "peer completed"
+    assert peer_progressed_before_probe_end.is_set(), "Hardwareprobe blockierte die zweite Coroutine"
+    assert cockpit["fackel"]["capacity"] == capacity
+    assert cockpit["fackel"]["ownership"]["state"] == "idle"
+    assert cockpit["fackel"]["ownership"]["flame"] is False
+    assert cockpit["muschelgrund"]["total_tasks"] == 4
