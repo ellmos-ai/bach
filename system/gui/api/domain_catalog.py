@@ -152,24 +152,10 @@ def pins_storage_path(custom_dir: Path | None = None) -> Path:
         base = Path(configured).expanduser()
     else:
         base = Path(__file__).parent.parent.parent / "data"
-    base.mkdir(parents=True, exist_ok=True)
     return base / "domain_pins.json"
 
 
-def get_domain_pins(data_dir: Path | None = None) -> list[dict[str, Any]]:
-    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
-    p_file = pins_storage_path(data_dir)
-    pinned_ids = list(DEFAULT_PINNED_IDS)
-    if p_file.exists():
-        try:
-            raw = json.loads(p_file.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
-                pinned_ids = [str(x) for x in raw if isinstance(x, str) and _ID.fullmatch(x)]
-            elif isinstance(raw, dict) and "pins" in raw and isinstance(raw["pins"], list):
-                pinned_ids = [str(x) for x in raw["pins"] if isinstance(x, str) and _ID.fullmatch(x)]
-        except (OSError, ValueError, TypeError) as err:
-            logger.debug("Konnte Pins nicht laden: %s", err)
-
+def _project_pins(pinned_ids: list[str]) -> list[dict[str, Any]]:
     pins = []
     r_root = repos_root()
     m_root = module_root() / ".DOMAINS"
@@ -198,48 +184,34 @@ def get_domain_pins(data_dir: Path | None = None) -> list[dict[str, Any]]:
     return pins
 
 
-def save_domain_pins(pinned_ids: list[Any], data_dir: Path | None = None) -> list[dict[str, Any]]:
-    """Speichert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
-    cleaned: list[str] = []
-    seen: set[str] = set()
-    for item in pinned_ids:
-        pid = item.get("id") if isinstance(item, dict) else item
-        if isinstance(pid, str) and _ID.fullmatch(pid) and pid not in seen:
-            cleaned.append(pid)
-            seen.add(pid)
-
-    p_file = pins_storage_path(data_dir)
-    p_file.parent.mkdir(parents=True, exist_ok=True)
-    p_file.write_text(json.dumps({"pins": cleaned}, indent=2), encoding="utf-8")
-    return get_domain_pins(data_dir)
+def domain_pins_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
+    from hub._services.domain_pin_store import read, SCHEMA
+    snapshot = read(pins_storage_path(data_dir), DEFAULT_PINNED_IDS)
+    pins = _project_pins(snapshot["ids"])
+    return {"schema": SCHEMA, "version": snapshot["version"], "persisted": snapshot["persisted"],
+            "pins": pins, "total": len(pins)}
 
 
-def toggle_domain_pin(domain_id: str, pinned: bool | None = None, data_dir: Path | None = None) -> dict[str, Any]:
-    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
-    if not isinstance(domain_id, str) or not _ID.fullmatch(domain_id):
-        raise ValueError(f"Ungültige Domain-ID: {domain_id}")
+def get_domain_pins(data_dir: Path | None = None) -> list[dict[str, Any]]:
+    return domain_pins_snapshot(data_dir)["pins"]
 
-    current_pins = [p["id"] for p in get_domain_pins(data_dir)]
-    is_currently_pinned = domain_id in current_pins
 
-    if pinned is None:
-        target_state = not is_currently_pinned
-    else:
-        target_state = bool(pinned)
+def save_domain_pins(pinned_ids: list[Any], data_dir: Path | None = None, *,
+                     expected_version: str | None = None) -> dict[str, Any]:
+    from hub._services.domain_pin_store import mutate, SCHEMA
+    snapshot = mutate(pins_storage_path(data_dir), DEFAULT_PINNED_IDS, expected_version, ids=pinned_ids)
+    return {"schema": SCHEMA, "version": snapshot["version"], "persisted": snapshot["persisted"],
+            "pins": _project_pins(snapshot["ids"]), "total": len(snapshot["ids"])}
 
-    if target_state and not is_currently_pinned:
-        current_pins.append(domain_id)
-    elif not target_state and is_currently_pinned:
-        current_pins = [pid for pid in current_pins if pid != domain_id]
 
-    save_domain_pins(current_pins, data_dir)
-    return {
-        "id": domain_id,
-        "pinned": target_state,
-        "status": "pinned" if target_state else "unpinned",
-        "pins": current_pins,
-        "success": True,
-    }
+def toggle_domain_pin(domain_id: str, pinned: bool | None = None, data_dir: Path | None = None, *,
+                      expected_version: str | None = None) -> dict[str, Any]:
+    from hub._services.domain_pin_store import mutate, SCHEMA
+    snapshot = mutate(pins_storage_path(data_dir), DEFAULT_PINNED_IDS, expected_version,
+                      domain_id=domain_id, pinned=pinned)
+    return {"schema": SCHEMA, "version": snapshot["version"], "persisted": snapshot["persisted"],
+            "id": domain_id, "pinned": pinned, "status": "pinned" if pinned else "unpinned",
+            "pins": _project_pins(snapshot["ids"]), "total": len(snapshot["ids"]), "success": True}
 
 
 def get_domain_detail(domain_id: str, root: Path | None = None) -> dict[str, Any] | None:
