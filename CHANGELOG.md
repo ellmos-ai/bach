@@ -6,6 +6,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Aufgaben für dynamische Workerprofile (Task #1954):** Der versionierte Zielkatalog berücksichtigt auch dynamische Profile mit authentifiziertem Statusnachweis. Die Zuweisung bindet Profil-ID, Anbieter und Modell; pausierte, fehlerhafte, abgelaufene und private Staffelprofile bleiben gesperrt. Die globale Konfigurationsprüfung umfasst Profiländerungen und bleibt bis zum Task-Commit gültig. Die gemeinsame GUI bietet den Einstieg bei Living- und Running-Profilen. Eine Zuweisung startet keinen Worker und ersetzt keine Task-Lease.
+
 - **Worker-Fehler bleiben nach dem Task-Abschluss sichtbar (Task #1976):** Ollama-Fehler liefern einen begrenzten, strukturierten Fehlervertrag. Ein ausdrücklich gemeldetes Monatslimit erscheint verständlich; `Retry-After` wird nur aus einem gültigen Anbieter-Header übernommen. Providertexte, URLs und Credentials werden dabei nicht an die GUI weitergegeben. Das Ende einer fehlerhaften Task-Besetzung bleibt im Verlauf, überschreibt aber die Fehlerursache nicht. Ein ausdrücklich gestarteter neuer Workerlauf entfernt den alten Fehler. Kein automatischer Cloud-Neustart oder Ersatzmodell.
 
 ### Changed
