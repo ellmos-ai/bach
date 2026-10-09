@@ -252,3 +252,36 @@ def test_null_transcript_metadata_is_unavailable_not_uncaught_500(history,field)
         conn.commit()
     finally:conn.close()
     assert client.get("/api/agent-history/sessions").status_code==503
+
+
+def test_legacy_archive_without_chat_key_remains_readable_without_database_repair(history):
+    store,client,_,database=history
+    seed_global(store);store.archive_current("gui-web")
+    conn=sqlite3.connect(database)
+    try:
+        conn.execute("UPDATE session_snapshots SET snapshot_data=json_remove(snapshot_data,'$.chat_id') WHERE instr(session_id,':archived:')>0")
+        conn.commit()
+    finally:conn.close()
+    before=database.read_bytes()
+    page=client.get("/api/agent-history/sessions?archive=archived").json()
+    assert page["total"]==1 and page["sessions"][0]["chat_id"]==""
+    assert page["sessions"][0]["archived"] is True
+    snapshot_id=page["sessions"][0]["id"]
+    detail=client.get("/api/agent-history/sessions/"+str(snapshot_id))
+    assert detail.status_code==200 and detail.json()["messages"][0]["content"]=="Hallo äöü"
+    assert database.read_bytes()==before
+
+
+def test_missing_chat_key_cannot_override_existing_profile_binding(history):
+    store,client,_,database=history
+    seed_profile(store);store.archive_current("agent:1:"+32*"a")
+    conn=sqlite3.connect(database)
+    try:
+        conn.execute("UPDATE session_snapshots SET snapshot_data=json_remove(snapshot_data,'$.chat_id') WHERE instr(session_id,':archived:')>0")
+        snapshot_id=conn.execute("SELECT id FROM session_snapshots WHERE instr(session_id,':archived:')>0").fetchone()[0]
+        conn.commit()
+    finally:conn.close()
+    assert client.get("/api/agent-history/sessions?archive=archived").json()["total"]==0
+    assert client.get("/api/agent-history/sessions?archive=archived&agent_id=1").json()["total"]==0
+    assert client.get("/api/agent-history/sessions/"+str(snapshot_id)).status_code==409
+    assert client.get("/api/agent-history/sessions/"+str(snapshot_id)+"?agent_id=1").status_code==409
