@@ -21,8 +21,9 @@ import logging
 import os
 import re
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -2077,51 +2078,108 @@ async def unarchive_denkarium_endpoint(entry_id: int):
 # 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
 # ═══════════════════════════════════════════════════════════════
 
+MEMORY_FACT_CATEGORIES = ("user", "project", "system", "domain")
+
+
+def _memory_fact_values(payload: dict[str, Any], *, partial: bool = False) -> dict[str, Any]:
+    """Validiert Facts vor dem Öffnen einer Schreibverbindung; Lessons bleiben separat."""
+    values: dict[str, Any] = {}
+    if not partial or "category" in payload:
+        category = payload.get("category", "user")
+        if not isinstance(category, str) or category not in MEMORY_FACT_CATEGORIES:
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_category",
+                "message": "Kategorie muss user, project, system oder domain sein.",
+                "allowed_categories": list(MEMORY_FACT_CATEGORIES),
+            })
+        values["category"] = category
+    for field in ("key", "value"):
+        if not partial or field in payload:
+            value = payload.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise HTTPException(status_code=400, detail={
+                    "code": "invalid_fact_text", "message": "Schlüssel und Wert müssen nicht leere Texte sein.",
+                })
+            values[field] = value.strip()
+    if not partial or "confidence" in payload:
+        confidence = payload.get("confidence", 1.0)
+        try:
+            if isinstance(confidence, bool):
+                raise TypeError
+            confidence = float(confidence)
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_confidence", "message": "Konfidenz muss eine Zahl zwischen 0 und 1 sein.",
+            }) from None
+        if not isfinite(confidence) or not 0 <= confidence <= 1:
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_confidence", "message": "Konfidenz muss eine Zahl zwischen 0 und 1 sein.",
+            })
+        values["confidence"] = confidence
+    if not partial:
+        source = payload.get("source", "user_gui")
+        if source is not None and not isinstance(source, str):
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_source", "message": "Quelle muss ein Text sein.",
+            })
+        values["source"] = source
+    if not values:
+        raise HTTPException(status_code=400, detail="Keine gültigen Felder übergeben")
+    return values
+
+
+@contextmanager
+def _memory_fact_write():
+    """Commit oder Rollback und Schließen für jeden Facts-Schreibweg."""
+    try:
+        with closing(_get_conn()) as conn, conn:
+            yield conn
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail={
+            "code": "fact_conflict", "message": "Fakt konnte wegen eines Datenkonflikts nicht verändert werden.",
+        }) from None
+    except sqlite3.Error:
+        logger.exception("Memory-Facts-Datenbank nicht verfügbar")
+        raise HTTPException(status_code=503, detail={
+            "code": "memory_unavailable", "message": "Faktenspeicher ist derzeit nicht verfügbar.",
+        }) from None
+
+
 @router.get("/memory/facts")
 async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
     """Liefert Faktenwissen aus memory_facts."""
     try:
-        conn = _get_conn()
-        _ensure_capabilities_db(conn)
-        conn.row_factory = sqlite3.Row
-        query = "SELECT id, category, key, value, value_type, confidence, source, created_at FROM memory_facts"
-        params: List[Any] = []
-        if category and category != "all":
-            query += " WHERE category = ?"
-            params.append(category)
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(limit)
-        rows = conn.execute(query, params).fetchall()
-        facts = [dict(r) for r in rows]
-        conn.close()
-        return {"facts": facts, "count": len(facts)}
-    except Exception as e:
-        logger.exception("Fehler beim Abruf von memory_facts: %s", e)
-        return {"facts": [], "count": 0, "error": "Interner Serverfehler"}
+        with closing(_get_conn()) as conn:
+            conn.row_factory = sqlite3.Row
+            query = "SELECT id, category, key, value, value_type, confidence, source, created_at FROM memory_facts"
+            params: List[Any] = []
+            if category and category != "all":
+                query += " WHERE category = ?"
+                params.append(category)
+            query += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(query, params).fetchall()
+            facts = [dict(r) for r in rows]
+        return {"facts": facts, "count": len(facts), "allowed_categories": list(MEMORY_FACT_CATEGORIES)}
+    except sqlite3.Error:
+        logger.exception("Fehler beim Abruf von memory_facts")
+        raise HTTPException(status_code=503, detail={
+            "code": "memory_unavailable", "message": "Faktenspeicher ist derzeit nicht verfügbar.",
+        }) from None
 
 
 @router.post("/memory/facts")
 async def create_memory_fact(payload: Dict[str, Any]):
     """Erstellt einen neuen Fakt in memory_facts."""
-    category = payload.get("category", "general")
-    key = payload.get("key", "").strip()
-    value = payload.get("value", "").strip()
-    confidence = float(payload.get("confidence", 1.0))
-    source = payload.get("source", "user_gui")
-    if not key or not value:
-        raise HTTPException(status_code=400, detail="Key und Value erforderlich")
-    conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-    now = datetime.now().isoformat()
-    cursor.execute("""
-        INSERT INTO memory_facts (category, key, value, value_type, confidence, source, created_at)
-        VALUES (?, ?, ?, 'text', ?, ?, ?)
-    """, (category, key, value, confidence, source, now))
-    new_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return {"status": "created", "id": new_id, "key": key, "category": category}
+    values = _memory_fact_values(payload)
+    with _memory_fact_write() as conn:
+        cursor = conn.execute("""
+            INSERT INTO memory_facts (category, key, value, value_type, confidence, source, created_at)
+            VALUES (?, ?, ?, 'text', ?, ?, ?)
+        """, (values["category"], values["key"], values["value"], values["confidence"],
+              values["source"], datetime.now().isoformat()))
+        new_id = cursor.lastrowid
+    return {"status": "created", "id": new_id, "key": values["key"], "category": values["category"]}
 
 
 @router.get("/memory/lessons")
@@ -2234,32 +2292,23 @@ async def get_memory_sessions(limit: int = 20):
 @router.put("/memory/facts/{fact_id}")
 async def update_memory_fact(fact_id: int, payload: Dict[str, Any]):
     """Aktualisiert einen Fakt in memory_facts."""
-    conn = _get_conn()
-    cursor = conn.cursor()
-    fields = []
-    values = []
-    for k in ["category", "key", "value", "confidence"]:
-        if k in payload:
-            fields.append(f"{k} = ?")
-            values.append(payload[k])
-    if not fields:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Keine gueltigen Felder uebergeben")
-    values.append(fact_id)
-    cursor.execute(f"UPDATE memory_facts SET {', '.join(fields)} WHERE id = ?", values)
-    conn.commit()
-    conn.close()
+    values = _memory_fact_values(payload, partial=True)
+    fields = [f"{field} = ?" for field in values]
+    with _memory_fact_write() as conn:
+        cursor = conn.execute(f"UPDATE memory_facts SET {', '.join(fields)} WHERE id = ?",
+                              [*values.values(), fact_id])
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Fakt wurde nicht gefunden")
     return {"status": "updated", "id": fact_id}
 
 
 @router.delete("/memory/facts/{fact_id}")
 async def delete_memory_fact(fact_id: int):
-    """Loescht einen Fakt aus memory_facts."""
-    conn = _get_conn()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM memory_facts WHERE id = ?", (fact_id,))
-    conn.commit()
-    conn.close()
+    """Löscht einen Fakt aus memory_facts."""
+    with _memory_fact_write() as conn:
+        cursor = conn.execute("DELETE FROM memory_facts WHERE id = ?", (fact_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Fakt wurde nicht gefunden")
     return {"status": "deleted", "id": fact_id}
 
 

@@ -345,3 +345,14 @@ Siehe auch:
 ---
 Version: 1.3.0 | Aktualisiert: 2026-02-08
 (Connector-Integration dokumentiert, Library API + Headless API ergänzt)
+
+GUI-Faktenvertrag (Task1991, 2026-10-09)
+--------------------------------------
+Facts verwenden die Kategorien user, project, system oder domain.
+Ohne Kategorie gilt user. Lessons haben eigene freie Kategorien.
+Ungültige Facts werden vor dem Öffnen einer Schreibverbindung mit HTTP400
+abgelehnt. Konflikte liefern HTTP409, ein nicht verfügbarer Speicher HTTP503;
+fehlende Datensätze bei Ändern oder Löschen liefern HTTP404.
+Schreibwege committen oder rollen zurück und schließen ihre Verbindung
+auch nach Fehlern. Lesen erzeugt keine Tabellen. Die GUI zeigt Fehler an,
+bewahrt den Entwurf und bietet die vier gültigen Facts-Kategorien an.

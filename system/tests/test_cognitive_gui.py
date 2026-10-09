@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 import sys
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 # Add system directory to path
@@ -133,7 +134,7 @@ def test_memory_tables_crud():
     assert "facts" in f_res.json()
 
     create_f = client.post("/api/memory/facts", headers=AUTH_HEADER, json={
-        "category": "pytest",
+        "category": "system",
         "key": "test_fact_key",
         "value": "Cognitive Architecture Verified"
     })
@@ -169,6 +170,157 @@ def test_memory_tables_crud():
     s_res = client.get("/api/memory/sessions", headers=AUTH_HEADER)
     assert s_res.status_code == 200
     assert "sessions" in s_res.json()
+
+
+@pytest.fixture
+def facts_db(tmp_path, monkeypatch):
+    """Facts-Vertrag gegen die tatsächliche kanonische SQL-Definition."""
+    from gui.api import unified_api
+
+    db = tmp_path / "facts.db"
+    schema = (SYS_DIR / "data/schema/schema.sql").read_text(encoding="utf-8")
+    definition = "CREATE TABLE IF NOT EXISTS memory_facts (" + schema.split(
+        "CREATE TABLE IF NOT EXISTS memory_facts (", 1
+    )[1].split(";", 1)[0] + ";"
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.executescript(definition)
+    opened = []
+
+    class TrackedConnection(sqlite3.Connection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+            super().close()
+
+    def connect():
+        conn = sqlite3.connect(db, timeout=0.1, factory=TrackedConnection)
+        conn.row_factory = sqlite3.Row
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(unified_api, "_get_conn", connect)
+    return db, opened
+
+
+@pytest.mark.parametrize("method", ["post", "put"])
+@pytest.mark.parametrize("category", ["pytest", "architektur", "general", "", None, {}, [], 1])
+def test_fact_category_rejected_before_connection(facts_db, method, category):
+    _, opened = facts_db
+    route = "/api/memory/facts" + ("/1" if method == "put" else "")
+    response = getattr(client, method)(route, headers=AUTH_HEADER, json={
+        "category": category, "key": "category-test", "value": "Wert",
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_fact_category"
+    assert response.json()["detail"]["allowed_categories"] == ["user", "project", "system", "domain"]
+    assert opened == []
+
+
+@pytest.mark.parametrize("category", ["user", "project", "system", "domain"])
+def test_fact_crud_uses_canonical_categories_and_closes_connections(facts_db, category):
+    _, opened = facts_db
+    created = client.post("/api/memory/facts", headers=AUTH_HEADER, json={
+        "category": category, "key": " umlaut-key ", "value": " Grüße ",
+    })
+    assert created.status_code == 200
+    fact_id = created.json()["id"]
+    assert created.json()["key"] == "umlaut-key"
+    updated = client.put(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER,
+                         json={"value": "Änderung", "confidence": 0})
+    assert updated.status_code == 200
+    listed = client.get(f"/api/memory/facts?category={category}", headers=AUTH_HEADER)
+    assert listed.status_code == 200
+    assert listed.json()["allowed_categories"] == ["user", "project", "system", "domain"]
+    assert listed.json()["facts"][0]["value"] == "Änderung"
+    assert listed.json()["facts"][0]["confidence"] == 0
+    assert client.delete(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER).status_code == 200
+    assert client.get("/api/memory/facts", headers=AUTH_HEADER).json()["count"] == 0
+    assert client.put(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER,
+                      json={"value": "missing"}).status_code == 404
+    assert client.delete(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER).status_code == 404
+    assert opened and all(conn.closed for conn in opened)
+
+
+@pytest.mark.parametrize("confidence", [-0.1, 1.1, "NaN", "Infinity", "invalid", None, True, {}])
+def test_fact_confidence_rejected_before_connection(facts_db, confidence):
+    _, opened = facts_db
+    response = client.post("/api/memory/facts", headers=AUTH_HEADER,
+                           json={"key": "confidence-test", "value": "Wert", "confidence": confidence})
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_fact_confidence"
+    assert opened == []
+
+
+@pytest.mark.parametrize("payload", [{"key": None, "value": "x"}, {"key": "k", "value": []},
+                                     {"key": " ", "value": "x"},
+                                     {"key": "k", "value": "x", "source": {}}])
+def test_fact_invalid_text_and_source_do_not_open_connection(facts_db, payload):
+    _, opened = facts_db
+    assert client.post("/api/memory/facts", headers=AUTH_HEADER, json=payload).status_code == 400
+    assert opened == []
+
+
+def test_fact_duplicate_conflict_closes_connection_and_allows_next_write(facts_db):
+    _, opened = facts_db
+    payload = {"key": "duplicate", "value": "Original"}
+    first = client.post("/api/memory/facts", headers=AUTH_HEADER, json=payload)
+    assert first.status_code == 200 and first.json()["category"] == "user"
+    conflict = client.post("/api/memory/facts", headers=AUTH_HEADER, json=payload)
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "fact_conflict"
+    assert client.post("/api/memory/facts", headers=AUTH_HEADER,
+                       json={"key": "after-conflict", "value": "Weiter"}).status_code == 200
+    assert all(conn.closed for conn in opened)
+
+
+@pytest.mark.parametrize("action", ["INSERT", "UPDATE", "DELETE"])
+def test_fact_failed_write_rolls_back_trigger_and_releases_lock(facts_db, action):
+    db, opened = facts_db
+    created = client.post("/api/memory/facts", headers=AUTH_HEADER,
+                          json={"key": "original", "value": "Original"})
+    fact_id = created.json()["id"]
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.execute("CREATE TABLE write_log (action TEXT)")
+        conn.execute(f"""CREATE TRIGGER fail_write AFTER {action} ON memory_facts BEGIN
+            INSERT INTO write_log VALUES ('written');
+            SELECT RAISE(FAIL, 'forced-private-failure'); END""")
+    if action == "INSERT":
+        response = client.post("/api/memory/facts", headers=AUTH_HEADER,
+                               json={"key": "failed", "value": "Nicht übernehmen"})
+    elif action == "UPDATE":
+        response = client.put(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER,
+                              json={"value": "Nicht übernehmen"})
+    else:
+        response = client.delete(f"/api/memory/facts/{fact_id}", headers=AUTH_HEADER)
+    assert response.status_code == 409
+    assert "forced-private-failure" not in response.text
+    assert all(conn.closed for conn in opened)
+    with closing(sqlite3.connect(db, timeout=0.1)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        assert conn.execute("SELECT COUNT(*) FROM write_log").fetchone()[0] == 0
+        assert conn.execute("SELECT key, value FROM memory_facts").fetchall() == [("original", "Original")]
+        conn.execute("DROP TRIGGER fail_write")
+    assert client.post("/api/memory/facts", headers=AUTH_HEADER,
+                       json={"key": "after-rollback", "value": "Weiter"}).status_code == 200
+    assert all(conn.closed for conn in opened)
+
+
+def test_fact_missing_schema_returns_unavailable_without_ddl(facts_db):
+    db, opened = facts_db
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.execute("DROP TABLE memory_facts")
+    requests = [("get", "/api/memory/facts", None),
+                ("post", "/api/memory/facts", {"key": "k", "value": "v"}),
+                ("put", "/api/memory/facts/1", {"value": "v"}),
+                ("delete", "/api/memory/facts/1", None)]
+    for method, route, payload in requests:
+        response = client.request(method, route, headers=AUTH_HEADER, json=payload)
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "memory_unavailable"
+    assert all(conn.closed for conn in opened)
+    with closing(sqlite3.connect(db)) as conn:
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name='memory_facts'").fetchall() == []
 
 
 
