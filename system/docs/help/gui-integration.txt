@@ -14,6 +14,10 @@ ANSICHTEN
 /skills/mcp           MCP-Board
 /skills/software      Software-Board
 
+Die drei Karten für Erstellung, fertige Agenten und fertige Teams bilden eine
+gemeinsame Gruppe mit blauen Akzenten. Im hellen Modus sind ihre Flächen weiß;
+die beiden Living-Bereiche bleiben beim ersten Öffnen eingeklappt.
+
 Die ehemaligen URLs /agents-board und /skills-board sind Weiterleitungen.
 Fabrika führt zum konsolidierten Blueprint-Editor.
 
@@ -49,3 +53,4 @@ Der DecisionClicker-Schreibpfad ist eine gesondert freizugebende Fähigkeit.
 WEITERLESEN
 Root: OCEAN-TRANSFER-PLAN.md, DEPRICATED.md und TODO.md.
 Aufgabenstatus wird in der TaskDB geführt.
+Konkrete Worker-Ergebnisse und getrennte Abnahme: worker-results.txt.
