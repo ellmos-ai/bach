@@ -598,7 +598,8 @@ def _system_slots_snapshot() -> dict:
         running = bool(task_id is not None or running_sessions)
         failed = (not worker_active and not running and (
             agent["status"] == "error"
-            or (execution is not None and execution.get("worker_status") == "error")))
+            or (execution is not None and (
+                execution.get("worker_status") == "error" or execution.get("error_code")))))
         if execution_state == "unconfirmed":
             if not worker_active:
                 worker_active = None
@@ -3730,6 +3731,11 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 except Exception:
                     cleanup_error = True
                     log.warning("Worker-Lease-Supervisor konnte nicht beendet werden", exc_info=True)
+                    # close() first signals its finished event. Even if join()
+                    # fails, a sent Renew still has to settle physically before
+                    # Return, registry removal, or a terminal receipt.
+                    while control.lease_supervisor.is_alive:
+                        time.sleep(0.1)
             if control.task_binding is not None and not control.task_binding.closed:
                 try:
                     if not control.task_binding.return_lease():
