@@ -6,6 +6,18 @@ action=submit_result. Ihre Abschluss-Aliase führen ebenfalls zur Ergebnisabgabe
 Eine reine Erledigungsbestätigung genügt nicht. Die Aufgabe wartet anschließend
 in Review; die Task-Lease wird freigegeben. Eine Abgabe erledigt die Aufgabe nicht.
 
+Eine ausdrücklich einem Systemslot zugewiesene Aufgabe wird unabhängig von dessen
+allgemeiner Kategorie- und Prioritätsauswahl übernommen. Tagfilter, insbesondere
+ausgeschlossene Tags wie waiting oder delegated, bleiben verbindlich. Der
+zugewiesene Slot und required_model müssen zur tatsächlichen Besetzung passen. Abhängigkeiten, die
+Creator-Schonfrist und bestehende Task-Leases bleiben verbindlich. Für Aufgaben
+ohne ausdrückliche Slot-Zuordnung gelten die bisherigen Queue- und Assignee-Filter.
+
+Für die Betriebsprüfung sind die Konfiguration und Ausführungsnachweise des
+laufenden Control-Dienstes maßgeblich. Eine neu gestartete CLI kann durch andere
+Umgebungsvariablen eine andere Slot-Konfigurationsdatei lesen und belegt deshalb
+allein nicht, welche Aufgaben der tatsächlich laufende Worker auswählen kann.
+
 In den Taskdetails zeigt Review den gespeicherten Ergebnistext. Der Nutzer prüft
 ihn und akzeptiert mit einem eigenen Operator-Schlüssel. Die Abnahme bindet das
 genaue Ergebnis, seinen SHA-256, die Task-Inhaltsversion und die Statusrevision.

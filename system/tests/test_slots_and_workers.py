@@ -2025,18 +2025,18 @@ class TestMatchTaskToPickupFilter:
             assert match_task_to_pickup_filter(task, slot_filter) is expected
 
     @pytest.mark.parametrize(
-        "task_changes,expected",
+        "task_changes,expected,assigned_expected",
         [
-            ({}, True),
-            ({"category": "WORKER", "priority": "P2"}, True),
-            ({"category": "OTHER"}, False),
-            ({"priority": "P3"}, False),
-            ({"tags": "waiting"}, False),
-            ({"assigned_slot": "buddha_chat"}, False),
-            ({"required_model": "glm-5.3:cloud"}, False),
+            ({}, True, True),
+            ({"category": "WORKER", "priority": "P2"}, True, True),
+            ({"category": "OTHER"}, False, True),
+            ({"priority": "P3"}, False, True),
+            ({"tags": "waiting"}, False, False),
+            ({"assigned_slot": "buddha_chat"}, False, False),
+            ({"required_model": "glm-5.3:cloud"}, False, False),
         ],
     )
-    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected):
+    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected, assigned_expected):
         from hub._services.chat.slots_config import get_always_on_execution_slot
         from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
@@ -2061,7 +2061,7 @@ class TestMatchTaskToPickupFilter:
 
         assert slot["enabled"] is True
         assert match_task_to_pickup_filter(task, slot) is expected
-        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
+        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is assigned_expected
 
     def test_empty_slot_filter_dict_rejects(self):
         # A slot with an empty dict as pickup_filter is treated as missing/malformed
