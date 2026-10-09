@@ -259,7 +259,20 @@ AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset
                                 "preset:coordinator", "preset:engineer", "preset:researcher",
                                 "preset:gemini-claude-friendly", "preset:gemini-claude-neon",
                                 "preset:gemini-claude-opus", "preset:gemini-copilot",
-                                "preset:gemini-gemini", "preset:gemini-gemini-umbruch"})
+                                "preset:gemini-gemini", "preset:gemini-gemini-umbruch",
+                                "preset:gemini-buddha-chat",
+                                "preset:gemini-always-on",
+                                "preset:gemini-operator",
+                                "preset:gemini-ticket-master",
+                                "preset:gemini-maintenance",
+                                "preset:gemini-system-auditor",
+                                "preset:gemini-law-checker",
+                                "preset:gemini-researcher",
+                                "preset:gemini-connector-a",
+                                "preset:gemini-connector-b",
+                                "preset:gemini-maintainer",
+                                "preset:gemini-task-solver",
+                                "preset:gemini-task-writer"})
 
 
 def validate_agent_avatar(value: Any) -> str:

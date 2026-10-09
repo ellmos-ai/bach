@@ -796,3 +796,19 @@ def test_gemini_portrait_preset_configuration_cas_roundtrip(config_file, avatar)
 def test_unknown_gemini_portrait_id_is_rejected():
     with pytest.raises(ValueError):
         slots.validate_agent_avatar("preset:gemini-unknown")
+
+
+@pytest.mark.parametrize('preset', ['preset:gemini-buddha-chat', 'preset:gemini-always-on', 'preset:gemini-operator', 'preset:gemini-ticket-master', 'preset:gemini-maintenance', 'preset:gemini-system-auditor', 'preset:gemini-law-checker', 'preset:gemini-researcher', 'preset:gemini-connector-a', 'preset:gemini-connector-b', 'preset:gemini-maintainer', 'preset:gemini-task-solver', 'preset:gemini-task-writer'])
+def test_gemini_role_portraits_roundtrip_core_and_worker_configuration(config_file, preset):
+    assert slots.validate_agent_avatar(preset) == preset
+    version=slots.core_system_agents_snapshot()['configuration_version']
+    slots.change_core_system_agent('buddha_chat', version, {'avatar': preset})
+    assert slots.get_system_slot('buddha_chat')['avatar'] == preset
+    worker=slots.add_worker({'name': 'Portrait fixture', 'backend': 'ollama', 'model': 'fixture-model', 'sub_mode': 'hintergrund_worker'})
+    current=slots.worker_configuration_snapshot(worker['id'])
+    ack=slots.change_worker_configuration(worker['id'], current['configuration_version'], {'avatar': preset})
+    assert ack['configuration']['avatar'] == preset
+    assert slots.get_worker_slot(worker['id'])['avatar'] == preset
+    projected=adapter._project_configuration({'ok': True, **ack}, worker['id'])
+    assert projected['configuration']['avatar'] == preset
+    assert slots.get_worker_slot(worker['id'])['status'] == 'idle'
