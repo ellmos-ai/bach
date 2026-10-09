@@ -151,6 +151,7 @@ jobs:
             system/tests/test_gesundheit_handler.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
+            system/tests/test_agent_history_delivery.py \
             system/tests/test_domain_pin_store.py \
             system/tests/test_gui_domain_catalog.py \
             system/tests/test_gui_mounts_contract.py \
