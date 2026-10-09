@@ -3590,7 +3590,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         )
                     )
                 finally:
-                    loop.close()
+                    try:
+                        loop.run_until_complete(loop.shutdown_asyncgens())
+                    finally:
+                        loop.close()
 
                 resolved = (getattr(worker_session, "resolved_model", None)
                             or getattr(target_backend, "last_resolved_model", None))
