@@ -1,0 +1,30 @@
+Worker-Fehler und Anbieterlimits
+================================
+
+Ollama-Fehler werden zusätzlich als backend_error gespeichert und über die
+authentifizierte Worker-Status-API projiziert. Der Vertrag enthält nur geprüfte
+Felder: provider, kind, status_code (wenn tatsächlich vorhanden), quota_exceeded,
+quota_period=month (bei ausdrücklich gemeldetem Monatslimit),
+retry_after_seconds (wenn ein gültiger Retry-After-Header vorliegt) und eine
+aus festen Texten erzeugte message. Providerbodies, URLs, Schlüssel und übrige
+Header gehören nicht in diesen Vertrag. Fehlerbodies werden höchstens bis
+16 KiB ausgewertet; unlesbare oder größere Bodies liefern keine Quotenannahme.
+
+HTTP 429 allein beweist kein Monatslimit. Ohne konkrete Monatslimitmeldung
+erscheint ein Anfragelimit. Retry-After akzeptiert ganze, nichtnegative Sekunden
+oder ein HTTP-Datum mit Zeitzone; das Datum wird relativ zum aktuellen Zeitpunkt
+ausgewertet. Ungültige oder fehlende Header erzeugen keine Wartezeit. Ein
+Retry-After ist keine Zusage über die Rücksetzung eines Monatskontingents.
+
+FailedAnswer erhält den geprüften Vertrag auch beim Speichern und Wiederladen
+eines Chatverlaufs. Diese Metadaten werden nicht an ein Modell zurückgesendet.
+Beim Providerfehler endet der Worker, gibt seine aktuelle Task-Lease bestätigt
+zurück und behält den Fehlertext. Das korrelierte assignment_ended-Ereignis
+bleibt getrennt im Verlauf erhalten; es überschreibt keine Fehlerursache.
+Ein bestätigter neuer Start entfernt den Fehler der vorherigen Generation.
+
+Die vorhandenen Shared-GUI-Karten zeigen current_activity. Deshalb bleibt der
+lesbare Fehlertext auch für GUI-Versionen nutzbar, die backend_error noch nicht
+auswerten. Alte Fehler ohne gespeicherten Vertrag werden nicht nachträglich als
+Monatslimit ausgegeben. Es gibt weder Cloud-Autostarts noch unbegrenzte Retries
+oder einen kostenpflichtigen Modellwechsel. Cloud-Worker startet der Nutzer.

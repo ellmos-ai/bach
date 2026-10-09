@@ -1574,13 +1574,19 @@ def record_activity(
     if len(history) > 100:
         cfg["activity_history"] = history[:100]
 
+    # End receipts remain in the timeline but must not erase a worker failure.
+    def update_activity(profile):
+        if not (assignment_details.get("event") == "assignment_ended"
+                and profile.get("status") == "error"):
+            profile["current_activity"] = activity
+
     # Update slot current activity if matching
     if source in cfg.get("slots", {}):
-        cfg["slots"][source]["current_activity"] = activity
+        update_activity(cfg["slots"][source])
     else:
         for w in cfg.get("dynamic_workers", []):
             if w.get("id") == source:
-                w["current_activity"] = activity
+                update_activity(w)
                 w.setdefault("history", []).insert(0, entry)
                 w["history"] = w["history"][:20]
 

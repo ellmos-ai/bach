@@ -31,3 +31,4 @@ Erst die bestätigte aktuelle Abnahme ermöglicht die Übergabe an den Folgeschr
 Ein ausdrücklicher Stop bleibt auch beim Warten auf eine fehlende Quelle möglich.
 
 Installation und GUI-Pin: gui-integration.txt.
+Providerfehler, Monatslimit und Task-Cleanup: worker-errors.txt.
