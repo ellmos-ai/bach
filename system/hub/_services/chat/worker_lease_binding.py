@@ -72,6 +72,15 @@ class WorkerLeaseBinding:
         if not task_matches_slot_binding(snapshot, slot):
             return False
         pickup = slot.get("pickup_filter")
+        # Explicit routing takes precedence over generic category/priority
+        # selection. Tag restrictions and model/slot constraints still apply;
+        # Acquire separately enforces dependencies and canonical ownership.
+        if str(snapshot.get("assigned_slot") or "").strip():
+            if isinstance(pickup, dict) and pickup.get("enabled"):
+                assigned_filter = {**pickup, "categories": [], "priorities": []}
+                return match_task_to_pickup_filter(
+                    snapshot, {**slot, "pickup_filter": assigned_filter})
+            return True
         return (not isinstance(pickup, dict) or not pickup.get("enabled")
                 or match_task_to_pickup_filter(snapshot, slot))
 

@@ -411,3 +411,81 @@ def test_returned_version_is_deferred_but_changed_content_can_be_picked(mem_db):
     changed = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
     assert changed.task_id == first
     assert changed.task_snapshot()["task_version"] != deferred[first]
+
+
+@pytest.mark.parametrize("assigned_slot, expected", [("our-slot", True), (None, False), ("  ", False)])
+def test_explicit_slot_assignment_precedes_generic_pickup_filter(request, assigned_slot, expected):
+    task_db = request.getfixturevalue("mem_db")
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    tid = _insert_task(task_db, "Explicit GUI assignment")
+    task_db.execute("UPDATE tasks SET assigned_to='user', assigned_slot=?, required_model='openrouter/free', "
+                   "category='GUI', priority='P3' WHERE id=?", (assigned_slot, tid))
+    task_db.commit()
+    slot = {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {
+        "enabled": True, "categories": ["WORKER"], "priorities": ["P1", "P2"]}}
+    client = TaskLeaseClient(conn=task_db)
+    chosen = WorkerLeaseBinding.acquire_next(client, slot, worker_id="physical-worker@HOST", host="HOST",
+        generation="current", is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert (chosen is not None) is expected
+    if expected:
+        assert chosen.task_id == tid and chosen.task_snapshot()["category"] == "GUI"
+        assert chosen.task_snapshot()["priority"] == "P3"
+        assert client.read(tid, lease_id=chosen._ack.lease_id, now=T0).own
+    else:
+        assert client.read(tid, now=T0).leased is False
+
+
+@pytest.mark.parametrize("assigned_slot, required_model", [
+    ("other-slot", "openrouter/free"), ("our-slot", "paid-model")])
+def test_explicit_assignment_never_overrides_slot_or_model(request, monkeypatch, assigned_slot, required_model):
+    task_db = request.getfixturevalue("mem_db")
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    tid = _insert_task(task_db)
+    task_db.execute("UPDATE tasks SET assigned_slot=?, required_model=? WHERE id=?",
+                   (assigned_slot, required_model, tid))
+    task_db.commit()
+    client = TaskLeaseClient(conn=task_db)
+    monkeypatch.setattr(client, "acquire", lambda *a, **kw: pytest.fail("ineligible task acquired"))
+    chosen = WorkerLeaseBinding.acquire_next(client,
+        {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}},
+        worker_id="physical-worker@HOST", host="HOST", generation="current",
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert chosen is None
+
+
+@pytest.mark.parametrize("denial", ["foreign-holder", "dependency", "creator-priority"])
+def test_explicit_assignment_keeps_canonical_acquire_guards(request, denial):
+    task_db = request.getfixturevalue("mem_db")
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    tid = _insert_task(task_db)
+    task_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    task_db.execute("UPDATE tasks SET assigned_slot='our-slot', required_model='openrouter/free', "
+                   "category='GUI', priority='P3' WHERE id=?", (tid,))
+    client = TaskLeaseClient(conn=task_db)
+    if denial == "dependency":
+        dependency = _insert_task(task_db, "Unfinished prerequisite")
+        task_db.execute("UPDATE tasks SET depends_on=? WHERE id=?", (str(dependency), tid))
+    if denial == "creator-priority":
+        task_db.execute("UPDATE tasks SET created_by='user', created_at=? WHERE id=?", (T0.isoformat(), tid))
+    task_db.commit()
+    if denial == "foreign-holder":
+        client.acquire(tid, worker_id="other@HOST", host="HOST", now=T0)
+    slot = {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}}
+    chosen = WorkerLeaseBinding.acquire_next(client, slot, worker_id="physical-worker@HOST", host="HOST",
+        generation="current", is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert chosen is None
+    if denial == "foreign-holder":
+        assert client.read(tid, now=T0).holder["worker_id"] == "other@HOST"
+    else:
+        assert client.read(tid, now=T0).leased is False
+
+
+@pytest.mark.parametrize("tags, expected", [("ready", True), ("waiting", False), ("delegated", False), ("", False)])
+def test_explicit_assignment_preserves_required_and_excluded_tags(tags, expected):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    task = {"assigned_slot": "our-slot", "required_model": "openrouter/free",
+            "category": "GUI", "priority": "P3", "tags": tags}
+    slot = {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {
+        "enabled": True, "categories": ["WORKER"], "priorities": ["P1", "P2"],
+        "tags": ["ready"], "exclude_tags": ["waiting", "delegated"]}}
+    assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
