@@ -91,14 +91,15 @@ async def read_error_payload(response, *, timeout_seconds):
     """Bound error bodies to 16 KiB and the caller's remaining total budget."""
     import asyncio
     import httpx
-    data = bytearray()
-    try:
-        async with asyncio.timeout(timeout_seconds):
-            async for chunk in response.aiter_bytes(chunk_size=4096):
-                if len(data) + len(chunk) > 16_384:
-                    return None
-                data.extend(chunk)
+    async def read_bounded():
+        data = bytearray()
+        async for chunk in response.aiter_bytes(chunk_size=4096):
+            if len(data) + len(chunk) > 16_384:
+                return None
+            data.extend(chunk)
         result = json.loads(data)
-    except (ValueError, UnicodeDecodeError, httpx.HTTPError, TimeoutError):
+        return result if isinstance(result, dict) else None
+    try:
+        return await asyncio.wait_for(read_bounded(), timeout=timeout_seconds)
+    except (ValueError, UnicodeDecodeError, httpx.HTTPError, asyncio.TimeoutError):
         return None
-    return result if isinstance(result, dict) else None

@@ -249,3 +249,13 @@ def test_slow_http_error_body_cannot_bypass_total_cap(monkeypatch):
     assert len(calls) == 1 and result["backend_error"]["status_code"] == 429
     assert result["backend_error"]["kind"] == "rate_limited"
     assert "PRIVATE" not in json.dumps(result)
+
+
+def test_bounded_reader_works_without_python311_timeout_api(monkeypatch):
+    from hub._services.llm.backend_errors import read_error_payload
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    class Response:
+        async def aiter_bytes(self, **kw):
+            yield b'{"error":"monthly usage limit reached"}'
+    result = asyncio.run(read_error_payload(Response(), timeout_seconds=1))
+    assert result == {"error": "monthly usage limit reached"}
