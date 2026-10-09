@@ -10,7 +10,7 @@ class NoLegacyTaskApp:
         pytest.fail("Unfenced legacy handler executed")
 
 
-@pytest.mark.parametrize("operation,args", [("done", None), ("block", None),
+@pytest.mark.parametrize("operation,args", [("done", ["--result", "Konkretes Ergebnis des CLI-Abschlusses"]), ("block", None),
                                             ("show", None), ("list", []),
                                             ("edit", ["--title", "Neuer Titel"]),
                                             ("priority", ["P1"]), ("assign", ["BACH"])])
@@ -21,7 +21,7 @@ def test_bach_task_commands_use_private_binding_before_legacy_app(binding, opera
                                                     "args": arguments}, "safe",
                                   bach_app=NoLegacyTaskApp(), worker_task_binding=binding)
     assert "BLOCKIERT" not in result and "Fehler" not in result
-    if operation == "done": assert binding.completed_task_ids == (binding.task_id,)
+    if operation == "done": assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
     elif operation == "block": assert binding.closed and not binding.completed_task_ids
     elif operation == "edit": assert binding.task_snapshot()["title"] == "Neuer Titel"
     elif operation == "priority": assert binding.task_snapshot()["priority"] == "P1"
@@ -43,9 +43,9 @@ def test_unsupported_or_foreign_task_cli_never_falls_back(binding, operation, ar
 def test_bound_provider_executes_actual_fenced_completion(binding):
     provider = bach_tools.BachToolProvider(NoLegacyTaskApp(), worker_task_binding=binding,
                                           require_task_binding=True)
-    result = provider.execute("task_manage", {"action": "done", "task_id": binding.task_id}, "safe")
-    assert result == f"Task #{binding.task_id} erledigt."
-    assert binding.completed_task_ids == (binding.task_id,)
+    result = provider.execute("task_manage", {"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis des Tool-Providers"}, "safe")
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
 
 
 @pytest.mark.parametrize("name,args", [("task_manage", {"action": "done", "task_id": 1}),
@@ -133,7 +133,8 @@ def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, ser
         def get_default_model(self): return "isolated-model"
         async def chat(self, messages, **kwargs):
             calls.append(messages)
-            args = {"handler": "task", "operation": "done", "args": [str(binding.task_id)]}
+            args = {"handler": "task", "operation": "done",
+                    "args": [str(binding.task_id), "--result", "Konkretes Ergebnis aus dem realen CLI-Tool-Aufruf"]}
             tools = [{"function": {"name": "bach_command", "arguments": json.dumps(args) if serialized else args}}]
             return {"content": "", "tool_calls": tools,
                     "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
@@ -142,8 +143,10 @@ def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, ser
     session.worker_task_binding = binding
     session.require_task_binding = True
     answer = asyncio.run(runtime.process("Auftrag", "worker-bound", work_priority="background"))
-    assert str(answer) == f"Task #{binding.task_id} erledigt."
-    assert answer.completed_task_ids == (binding.task_id,)
+    assert str(answer) == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert not runtime.get_last_task_completion_receipts("worker-bound")
+    assert not binding.completed_task_ids
+    assert binding.reviewed_task_ids == (binding.task_id,)
     assert len(calls) == 1
 
 

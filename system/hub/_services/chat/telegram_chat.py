@@ -3695,12 +3695,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if _update_worker_slot(control, {"task_id": None}) is None:
                             break
 
-                # Count a task only when task_manage returned a successful
-                # completion receipt for this worker's assigned task.
+                # A canonical native submission ends the work on this task,
+                # even while separate acceptance is pending. Count it for
+                # task-based breaks; a legacy PR-Review ACK alone remains a run.
+                task_submitted = task_reviewed and control.task_binding.submitted_result is not None
                 is_max_turns = "(Max Tool-Runden erreicht)" in ans_str and not (task_completed or task_reviewed)
                 pause_event = _worker_pause_event_type(
                     current_slot,
-                    task_completed=task_completed,
+                    task_completed=task_completed or task_submitted,
                 )
                 if not _wait_worker_cooldown(control, event_type=pause_event):
                     break

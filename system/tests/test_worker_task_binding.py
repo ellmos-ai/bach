@@ -65,7 +65,7 @@ def test_continuous_worker_advances_task_binding_and_assignment(tmp_path, monkey
                 result_ref="https://github.com/ellmos-ai/bach/pull/123")
             assert binding.completed_task_ids == ()
         elif receipt_kind not in {"foreign", "review-text"}:
-            binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+            binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis der Worker-Aufgabe"})
         return "PR bestätigt; review" if receipt_kind == "review-text" else "verified task completion"
     monkeypatch.setattr(control.runtime, "process", process)
     monkeypatch.setattr(control.runtime, "consume_task_completion_receipts",
@@ -112,7 +112,7 @@ def test_continuous_worker_advances_task_binding_and_assignment(tmp_path, monkey
         assert len(calls) == len(ends) == 2
         assert [assignment["task_id"] for assignment in starts] == [42, 43]
         assert ends[0][1]["result"] == "task_returned"
-        assert ends[1][1]["result"] == "task_done"
+        assert ends[1][1]["result"] == "task_review"
         assert pauses == ["runs", "tasks"]
         assert mem_db.execute("SELECT status FROM tasks WHERE id=42").fetchone()[0] == (
             "blocked" if receipt_kind == "blocked" else "pending")
@@ -145,10 +145,10 @@ def test_continuous_worker_advances_task_binding_and_assignment(tmp_path, monkey
     assert len(ends) == 2
     if receipt_kind == "review":
         assert ends[0][1]["status"] == "released" and ends[0][1]["result"] == "task_review"
-        assert ends[1][1]["status"] == "completed"
+        assert ends[1][1]["status"] == "released"
         assert mem_db.execute("SELECT status FROM tasks WHERE id=42").fetchone()[0] == "review"
     else:
-        assert all(details["status"] == "completed" for assignment, details in ends)
+        assert all(details["status"] == "released" for assignment, details in ends)
 
 
 @pytest.mark.parametrize("state", ["no-task", "foreign-holder"])
@@ -243,7 +243,7 @@ def test_assignment_completion_uses_authority_ack_not_stale_slot_projection(monk
     monkeypatch.setattr(control.runtime, "get_session", lambda ident: session)
     async def process(*a, **kw):
         assert case == "actual-ack"
-        return session.worker_task_binding.execute_task_manage({"action": "done", "task_id": 42})
+        return session.worker_task_binding.execute_task_manage({"action": "done", "task_id": 42, "result": "Konkretes Ergebnis des realen ACK-Falls"})
     monkeypatch.setattr(control.runtime, "process", process)
     class SynchronousThread:
         def __init__(self, target, **kw): self.target = target
@@ -264,5 +264,5 @@ def test_assignment_completion_uses_authority_ack_not_stale_slot_projection(monk
     monkeypatch.setattr(handler, "_json", lambda *a, **kw: None)
     handler.do_POST()
     assert len(ends) == 1
-    assert ends[0]["status"] == ("completed" if case == "actual-ack" else "released")
-    assert ends[0]["result"] == ("task_done" if case == "actual-ack" else "not_finished")
+    assert ends[0]["status"] == "released"
+    assert ends[0]["result"] == ("task_review" if case == "actual-ack" else "not_finished")

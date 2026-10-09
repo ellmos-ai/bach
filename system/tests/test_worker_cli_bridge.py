@@ -19,7 +19,7 @@ def test_bound_claude_uses_only_private_tools_and_selected_configuration(bridge,
         calls.append((cmd, prompt, env, flags))
         client = WorkerToolClient.from_environment(env)
         assert any(t["function"]["name"] == "task_manage" for t in client.tools())
-        result, failed = client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id})
+        result, failed = client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
         assert not failed
         return result
     monkeypatch.setattr(backend, "_run_subprocess", physical)
@@ -42,8 +42,9 @@ def test_bound_claude_uses_only_private_tools_and_selected_configuration(bridge,
     assert env["BACH_WORKER_TOOL_TOKEN"] not in str(cmd) + prompt + str(result)
     assert bridge.binding._ack.lease_id not in str(cmd) + prompt + str(result)
     assert "Actual role" in prompt and "Actual task" in prompt
-    assert result["content"] == f"Task #{bridge.binding.task_id} erledigt."
-    assert bridge.binding.completed_task_ids == (bridge.binding.task_id,)
+    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert bridge.binding.completed_task_ids == ()
+    assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
     assert backend.cwd == "configured-workdir"
 
 
@@ -123,14 +124,15 @@ def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, 
                     await session.initialize()
                     tools = await session.list_tools()
                     assert any(t.name == "task_manage" for t in tools.tools)
-                    response = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id})
+                    response = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
                     assert not response.isError
                     return response.content[0].text
         return asyncio.run(use_shim())  # Both SDK contexts close the actual child.
     monkeypatch.setattr(backend, "_run_subprocess", physical)
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=lambda: None))
-    assert result["content"] == f"Task #{bridge.binding.task_id} erledigt."
-    assert bridge.binding.completed_task_ids == (bridge.binding.task_id,)
+    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert bridge.binding.completed_task_ids == ()
+    assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
 
 
 def test_unknown_tool_response_revokes_bound_cli_without_returning_lease(bridge, monkeypatch):
@@ -162,7 +164,7 @@ def test_policy_downgrade_after_tools_list_blocks_actual_cli_mutation(bridge, mo
         assert client.tools()
         permitted[0] = False
         with pytest.raises(RuntimeError):
-            client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id})
+            client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
         return "downgrade was denied"
     monkeypatch.setattr(backend, "_run_subprocess", physical)
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=guard))

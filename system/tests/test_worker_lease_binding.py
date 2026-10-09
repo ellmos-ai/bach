@@ -20,6 +20,21 @@ def binding(mem_db):
                                      stop_event=threading.Event(), clock=lambda: T0)
 
 
+def approve_result(binding, conn=None):
+    """Separate operator on the isolated authority; never a provider credential."""
+    from gui.device_auth import create_task_result_operator
+    from hub._services.task_result_service import accept_result
+    conn = conn if conn is not None else binding._client._conn
+    observed = binding._client.task_result_snapshot(binding.task_id)
+    record = observed["result"]
+    token = create_task_result_operator(f"fixture-operator-{record['result_id']}", connection=conn)
+    accepted = accept_result(conn, binding.task_id, record["result_id"],
+        digest=record["result_sha256"], task_version=observed["task_version"],
+        status_revision=observed["status_revision"], operator_token=token)
+    assert accepted["result"]["accepted"] is True
+    return accepted
+
+
 def test_binding_uses_canonical_content_and_keeps_capability_private(binding):
     assert binding.task_id == binding.task_snapshot()["id"]
     assert "task_version" in binding.task_snapshot()
@@ -27,10 +42,16 @@ def test_binding_uses_canonical_content_and_keeps_capability_private(binding):
     assert binding._ack.lease_id not in repr(binding)
 
 
-def test_done_receipt_requires_authoritative_release(binding):
-    result = binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
-    assert result == f"Task #{binding.task_id} erledigt."
+def test_done_receipt_requires_submission_and_separate_authoritative_acceptance(binding):
+    with pytest.raises(LeaseError):
+        binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+    binding.assert_active()
+    result = binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
+                                         "result": "Konkretes fachliches Ergebnis"})
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
     assert binding.closed
+    assert binding.completed_task_ids == () and binding.reviewed_task_ids == (binding.task_id,)
+    approve_result(binding)
     assert binding.completed_task_ids == (binding.task_id,)
     with pytest.raises(LeaseError):
         binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
@@ -42,7 +63,9 @@ def test_content_update_rebinds_before_next_mutation(binding):
                                  "description": "Änderung"})
     assert binding.task_snapshot()["task_version"] != previous
     assert binding.task_snapshot()["description"] == "Änderung"
-    assert binding.execute_task_manage({"action": "done", "task_id": binding.task_id}).endswith("erledigt.")
+    assert "wartet in Review" in binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
+                                                              "result": "Ergebnis für den geänderten Inhalt"})
+    assert binding.submitted_result["task_version"] == binding.task_snapshot()["task_version"]
 
 
 @pytest.mark.parametrize("changes", [{"status": "done", "description": "Must not apply"},
@@ -56,7 +79,7 @@ def test_unsafe_update_does_not_partially_write(binding, changes):
 
 @pytest.mark.parametrize("cause", ["foreign-task", "stopped", "generation", "expired"])
 def test_guard_prevents_mutation(binding, cause):
-    args = {"action": "done", "task_id": binding.task_id}
+    args = {"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis"}
     before = binding._client.task_snapshot(binding.task_id)
     if cause == "foreign-task": args["task_id"] += 1
     if cause == "stopped": binding._stop_event.set()
@@ -87,16 +110,26 @@ def test_lost_update_ack_revokes_binding_and_never_retries(binding, monkeypatch)
 
 
 @pytest.mark.parametrize("close", [False, True])
-def test_decomposition_rebinds_or_closes_parent(binding, close):
+def test_decomposition_rebinds_without_parent_completion(binding, close):
     previous = binding.task_snapshot()["task_version"]
+    if close:
+        before = binding._client.task_snapshot(binding.task_id)
+        with pytest.raises(LeaseError):
+            binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
+                                         "subtasks": [{"title": "Kind"}], "close_parent": True})
+        assert binding._client.task_snapshot(binding.task_id) == before
+        assert not binding.closed and not binding.completed_task_ids
+        binding.assert_active()
+        return
     result = binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
                                          "subtasks": [{"title": "Kind"}], "close_parent": close})
     assert "in 1 Teilaufgaben zerlegt: IDs" in result
-    assert binding.closed is close
-    assert binding.completed_task_ids == ((binding.task_id,) if close else ())
+    assert not binding.closed and not binding.completed_task_ids
     if not close:
         assert binding.task_snapshot()["task_version"] != previous
-        binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+        binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
+                                    "result": "Zerlegungsplan mit bestätigten Kind-IDs: " + result})
+        assert binding.reviewed_task_ids == (binding.task_id,)
 
 
 def test_add_uses_parent_fenced_decomposition_without_completion_receipt(binding):
@@ -155,7 +188,14 @@ def test_task_tool_dispatch_uses_private_binding_before_local_db(binding, monkey
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
     result = bach_tools.exec_tool("task_manage", {"action": "done", "task_id": binding.task_id},
                                   mode="safe", worker_task_binding=binding)
-    assert result == f"Task #{binding.task_id} erledigt."
+    assert "Taskoperation nicht bestätigt" in result
+    binding.assert_active()
+    result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id,
+                                                  "result": "Konkretes Ergebnis ohne Projektion"},
+                                  mode="safe", worker_task_binding=binding)
+    assert "wartet in Review" in result
+    assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
+    approve_result(binding)
     assert binding.completed_task_ids == (binding.task_id,)
 
 
@@ -179,7 +219,8 @@ def test_real_native_process_releases_bound_task_without_post_completion_inferen
             assert binding._ack.lease_id not in str(messages)
             assert len(calls) == 1
             tools = [{"function": {"name": "task_manage", "arguments": {
-                "action": "done", "task_id": binding.task_id}}}]
+                "action": "submit_result", "task_id": binding.task_id,
+                "result": "Konkretes Ergebnis aus dem isolierten Lauf"}}}]
             return {"content": "", "tool_calls": tools,
                     "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
         def tool_response_message(self, content, tool_call_id=""):
@@ -193,8 +234,9 @@ def test_real_native_process_releases_bound_task_without_post_completion_inferen
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
     answer = asyncio.run(runtime.process("Gebundenen Auftrag abschließen", "worker-bound",
                                          work_priority="background"))
-    assert str(answer) == f"Task #{binding.task_id} erledigt."
-    assert answer.completed_task_ids == (binding.task_id,)
+    assert "wartet in Review" in str(answer)
+    assert getattr(answer, "completed_task_ids", ()) == ()
+    assert binding.reviewed_task_ids == (binding.task_id,) and not binding.completed_task_ids
     assert len(calls) == 1
     assert binding._ack.lease_id not in str(runtime.history("worker-bound"))
 
@@ -264,7 +306,8 @@ def test_completed_binding_selects_and_acquires_real_successor(mem_db):
                 is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     binding = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
     assert binding.task_id == first
-    binding.execute_task_manage({"action": "done", "task_id": first})
+    binding.execute_task_manage({"action": "done", "task_id": first, "result": "Ergebnis der ersten Aufgabe"})
+    assert binding.reviewed_task_ids == (first,) and not binding.completed_task_ids
     successor = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
     assert successor.task_id == second
     assert successor._ack.worker_id == binding._ack.worker_id
@@ -361,7 +404,7 @@ def test_returned_version_is_deferred_but_changed_content_can_be_picked(mem_db):
     deferred = {first: bound.task_snapshot()["task_version"]}
     next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
     assert next_task.task_id == second
-    next_task.execute_task_manage({"action": "done", "task_id": second})
+    next_task.execute_task_manage({"action": "done", "task_id": second, "result": "Ergebnis der zweiten Aufgabe"})
     assert WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args) is None
     mem_db.execute("UPDATE tasks SET description='Neue Voraussetzung' WHERE id=?", (first,))
     mem_db.commit()

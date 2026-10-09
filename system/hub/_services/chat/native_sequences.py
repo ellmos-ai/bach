@@ -181,10 +181,21 @@ class NativeSequences:
                     observed = self.gateway.observe_worker(step["worker_id"], step["request_id"])
                     if (observed.get("generation") != step["generation"]
                             or observed.get("service_instance") != row["owner_service"]
+                            or observed.get("worker_id") != step["worker_id"]
+                            or observed.get("start_request_id") != step["request_id"]
                             or observed.get("results_verified") is not True):
                         wait_reason = "task_result_unconfirmed"
                     elif step["task_id"] in observed.get("reviewed_task_ids", []):
                         wait_reason = "task_result_review_required"
+                    elif (observed.get("terminal") is True
+                            and step["task_id"] in observed.get("completed_task_ids", [])):
+                        result = self.gateway.worker_result(step["worker_id"], step["request_id"],
+                                                           step["generation"], step["task_id"])
+                        if (result.get("schema") != "bach.task-result.v1"
+                                or result.get("task_id") != step["task_id"]
+                                or result.get("generation") != step["generation"]
+                                or result.get("accepted") is not True):
+                            wait_reason = "task_result_unconfirmed"
                 except Exception:
                     wait_reason = "task_result_unconfirmed"
         return {"run_id": row["run_id"], "chain_id": row["chain_id"], "chain_version": row["chain_version"],

@@ -74,7 +74,7 @@ def test_lost_renew_ack_revokes_writes_but_waits_for_actual_provider_completion(
         assert supervisor.failure is not None
         assert not task.done()  # Missing ACK is not a physical provider cancellation.
         with pytest.raises(LeaseError):
-            binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+            binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis unter Lease-Überwachung"})
         assert binding.return_lease() is False
         release.set()
         with pytest.raises(LeaseError): await asyncio.wait_for(task, 1)
@@ -98,7 +98,9 @@ def test_manual_stop_waits_for_provider_then_allows_known_lease_return(binding):
         task = asyncio.create_task(supervisor.run(provider))
         await asyncio.wait_for(started.wait(), 1)
         binding._stop_event.set()
-        await asyncio.sleep(.03)
+        deadline = time.monotonic() + 1
+        while supervisor.is_alive and time.monotonic() < deadline:
+            await asyncio.sleep(.01)
         assert not task.done()
         assert not supervisor.is_alive
         release.set()
@@ -177,10 +179,10 @@ def test_max_total_denial_keeps_known_lease_valid_until_its_deadline(binding, mo
     async def provider():
         await asyncio.sleep(.03)
         binding.assert_active()
-        return binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+        return binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis unter Lease-Überwachung"})
     supervisor = WorkerLeaseSupervisor(binding, poll_interval=.005, renew_interval=.005)
-    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id} erledigt."
+    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
     assert supervisor.failure is None
     assert len(calls) == 1  # Exhaustion is known; never retry Renew for this lease.
-    assert binding.completed_task_ids == (binding.task_id,)
+    assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
     assert not supervisor.is_alive
