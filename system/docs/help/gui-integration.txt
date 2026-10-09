@@ -43,6 +43,14 @@ Native Zuweisungen verwenden assigned_slot, assigned_to und required_model.
 die aktuelle assignment_configuration_version. Ein Konflikt erfordert neues
 Einlesen; es gibt keinen stillen Wiederholungsversuch oder automatischen Start.
 
+Auch dynamische Workerprofile sind typisierte Zuweisungsziele. Ihr gespeicherter
+Anbieter, ihr Modell und der authentifizierte Statusnachweis müssen zusammenpassen.
+Pausierte, fehlerhafte, abgelaufene oder private Staffelprofile sind nicht wählbar.
+Aufgabe zuweisen in Living/Running öffnet das Aufgabenformular mit dem Profil;
+Speichern bindet die Aufgabe an seine tatsächliche ID. Die globale Konfigurations-
+version wird nach dem Statusabruf und unmittelbar vor dem Task-Commit geprüft.
+Eine Zuweisung startet keinen Worker und erwirbt keine Task-Lease.
+
 GOVERNANCE
 BACH_POLICY_REGISTRY_ENABLED=1 aktiviert den optionalen kanonischen Reader.
 Die Registry wird vom Provider über POLICY_REGISTRY_PATH oder dessen eigenen

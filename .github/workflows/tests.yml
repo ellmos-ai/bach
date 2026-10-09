@@ -84,6 +84,12 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_backend_errors.py
 
+      - name: Native task assignment and dynamic worker profiles
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_task_assignment.py system/tests/test_task_worker_profiles.py system/tests/test_user_inbox_api.py
+
       - name: "pytest (T-20260927-676283213: alle lokal ohne Live-Dienste gruenen Dateien)"
         env:
           PYTHONIOENCODING: utf-8
