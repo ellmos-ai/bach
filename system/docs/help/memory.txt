@@ -3,6 +3,27 @@
 # Nächste Prüfung: 2026-08-08
 # Ressourcen: [CONSOL_REPORT_20260130, hub/consolidation.py, hub/memory.py, bach_api.py]
 
+KOGNITIVE GUI: PROZESSMODELL UND MESSWERTE [P 2026-10-09]
+--------------------------------------------------------
+Die Map unter /memory ist ein Soll-Modell als kognitive Analogie.
+Sie trennt Bedarfserkennung, Kontextauswahl, Regelprüfung und Zustellung
+als Teilprozesse. Diese dürfen im selben Hooker implementiert sein.
+Die Map verlangt keine physisch getrennten Kontroll- und Zustellmodule.
+
+GET /api/memory/cognitive-state und GET /api/cognitive/topology trennen
+architecture_model (conceptual, runtime_verified=false) von gemessenen
+BACH-Tabellenständen. Gespeicherte Working-Einträge belegen keine aktuelle
+Kontextbelegung. Fehlende Tabellen liefern null statt einer erfundenen 0.
+
+GET /api/cognitive/blocks/{block_id} erzeugt keine Sensor-, Guard- oder
+Zustellbelege. Ohne angeschlossenen Laufzeitnachweis sind die jeweiligen
+Felder null und der Status not_verified; eine erlaubte Aktion wird damit
+nicht behauptet. Diese Lesewege erzeugen keine Datenbank oder Schemaänderung.
+Der alte Antwortschlüssel reiner_injektor_hooker bleibt kompatibel erhalten,
+bezeichnet aber ausdrücklich nur den Teilprozess kontext_zustellen.
+
+Die folgenden älteren CLI-Abschnitte behalten ihren angegebenen Stand.
+
 MEMORY-SYSTEM (Cognitive Model)
 ================================
 

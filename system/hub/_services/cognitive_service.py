@@ -8,13 +8,13 @@ gemäß GUX-032 bis GUX-043 (Register GUX-94-2026-10-04-v1.1, Task #1700).
 Architektur & Prinzipien:
 -------------------------
 1. GUX-032: Architekturansicht rendert die kanonische Mermaid-Quelle selbst.
-2. GUX-033: Diagrammfarben codieren nur belegte funktionale Beziehungen und besitzen eine Legende.
-3. GUX-034 bis GUX-041: Die 8 kognitiven Prozessblöcke als echte Datenquellen mit Receipts und Status:
+2. GUX-033: Diagrammfarben zeigen die Prozesszugehörigkeit und besitzen eine Legende.
+3. GUX-034 bis GUX-041: Die 8 kognitiven Prozessblöcke als Soll-Modell mit separat gemessenen Tabellenständen:
    - 1. kontextfenster (Baddeley Working Memory / Phonologische Schleife)
    - 2. zentrale_exekutive (Norman & Shallice SAS, Miller TOTE, Circuit Breaker)
    - 3. sensoren_messtechnik (Context-Reader, Token-Monitor, Stress-Detektor)
    - 4. guards (Deterministische Skript-Guards & Lebendige LLM-Guards)
-   - 5. berechtigung_hooker (Decision Gate & reine Injektor-Zustellung)
+   - 5. berechtigung_hooker (Prüfung und Zustellung als Teilprozesse)
    - 6. startprompt (Synthese aus Agent + System + Aufgabe mit Boot-Bus)
    - 7. lernen_rueckfluss (NemoFold / Hermes / Lessons learned)
    - 8. langzeit_gedaechtnis (SSoT-Trennung BACH vs. USMC vs. Gardener)
@@ -43,23 +43,26 @@ except ImportError:
         BACH_DB = Path.home() / ".bach" / "bach.db"
 
 
-def _resolve_connection(conn: sqlite3.Connection | None = None) -> tuple[sqlite3.Connection, bool]:
+def _resolve_connection(
+    conn: sqlite3.Connection | None = None, *, readonly: bool = False
+) -> tuple[sqlite3.Connection, bool]:
     """Liefert eine SQLite-Verbindung und ein Flag, ob sie geschlossen werden muss."""
     if conn is not None:
         return conn, False
-    c = sqlite3.connect(str(BACH_DB))
+    c = (sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True)
+         if readonly else sqlite3.connect(str(BACH_DB)))
     c.row_factory = sqlite3.Row
     return c, True
 
 
 CANONICAL_MERMAID_DIAGRAM = """flowchart TD
     subgraph ZE ["1. Zentrale Exekutive & Messtechnik"]
-        EXEC["Zentrale Exekutive (Aufsicht & Willensbildung / SAS)"]
+        EXEC["Zentrale Exekutive (Soll-Prozess: Aufsicht / SAS)"]
         SENS["Sensoren & Messtechnik (Context-Reader, Token-Monitor, Stress-Detektor)"]
         EXEC -->|"Aufsichts-Auftrag"| SENS
     end
 
-    subgraph SK ["2. Selbstkontroll-Mechanismen (Die eigentlichen Kontrolleure)"]
+    subgraph SK ["2. Teilprozesse: Regeln und Grenzen prüfen"]
         DG["Deterministische Skript-Guards (P-001 Git-Sperre, Pfad-Locks, Regex-Filter)"]
         LG["Lebendige LLM-Guards (/goal Evaluator, Disambiguierung, Konsistenz)"]
         SENS -->|"Messdaten & Limits"| DG
@@ -72,8 +75,8 @@ CANONICAL_MERMAID_DIAGRAM = """flowchart TD
         LG -->|"Guard-Freigabe"| DEC
     end
 
-    subgraph HOOK ["4. Hooker (Reine Injektoren / Zustell-Kanal)"]
-        HK["Hooker Injektor-Pipeline (Reine Zustellung ohne eigene Kontrolllogik)"]
+    subgraph HOOK ["4. Teilprozess: Kontext zustellen"]
+        HK["Payload und Providerformat (kann im selben Hooker liegen)"]
         DEC -->|"Autorisierter Payload (Gedanke / Faktenanker)"| HK
     end
 
@@ -84,7 +87,7 @@ CANONICAL_MERMAID_DIAGRAM = """flowchart TD
     subgraph CTX ["6. Zentrum: Aktives Kontextfenster"]
         KW["Aktives Kontextfenster (Phonologische Schleife & CoT)"]
         SP -->|"Einmaliger Boot-Bus"| KW
-        HK -->|"Einziger dynamischer Einlass"| KW
+        HK -->|"Zusatzkontext; Anschluss separat nachweisen"| KW
     end
 
     subgraph MEM ["7. Langzeitgedächtnis (SSoT: bach.db, usmc, gardener)"]
@@ -95,44 +98,74 @@ CANONICAL_MERMAID_DIAGRAM = """flowchart TD
     end
 
     subgraph LEARN ["8. Lern- & Konsolidierungssystem"]
-        CL["Kognitives Lernen (NemoFold / Hermes)"]
+        CL["Kognitives Lernen (Soll-Prozess; separat prüfen)"]
         KW -->|"Rohdaten-Strom"| CL
         CL -->|"Destilliertes Wissen"| LTM
-    end"""
+    end
+    NOTE["Prozessgrenzen sind keine Modulgrenzen. Hooker können Prüfung und Zustellung enthalten."]
+    NOTE -.-> HK
+    classDef control fill:#27364a,stroke:#8c9fbc,color:#eef2f6
+    classDef context fill:#233b3c,stroke:#86aaa8,color:#eef2f6
+    classDef storage fill:#393630,stroke:#aba292,color:#eef2f6
+    classDef annotation fill:#292e36,stroke:#8a929e,color:#eef2f6
+    class EXEC,SENS,DG,LG,DEC,HK control
+    class SP,KW context
+    class LTM,CL storage
+    class NOTE annotation
+    linkStyle 0,1,2,3,4,5,7,10 stroke:#8c9fbc
+    linkStyle 6,8 stroke:#86aaa8
+    linkStyle 9,11,12 stroke:#aba292
+    linkStyle 13 stroke:#8a929e
+    style ZE fill:transparent,stroke:#8a929e
+    style SK fill:transparent,stroke:#8a929e
+    style GATE fill:transparent,stroke:#8a929e
+    style HOOK fill:transparent,stroke:#8a929e
+    style BOOT fill:transparent,stroke:#8a929e
+    style CTX fill:transparent,stroke:#8a929e
+    style MEM fill:transparent,stroke:#8a929e
+    style LEARN fill:transparent,stroke:#8a929e"""
+
+PROCESS_MODEL = {
+    "state": "conceptual",
+    "scope": "processes_and_subprocesses",
+    "module_boundaries": "not_implied",
+    "runtime_verified": False,
+    "description": "Soll-Modell: Mehrere Teilprozesse dürfen im selben Hooker implementiert sein."
+}
 
 DIAGRAM_LEGEND = [
     {
         "id": "boot_bus",
         "name": "Einmaliger Boot-Bus",
-        "color": "#3b82f6",
+        "color": "#86aaa8",
         "style": "solid",
         "description": "Initialer Startflash (Agent + System + Aufgabe) direkt ins leere Kontextfenster beim Start"
     },
     {
         "id": "injection_path",
         "name": "Autorisierter Injektions-Kanal",
-        "color": "#10b981",
-        "style": "dashed",
+        "color": "#8c9fbc",
+        "style": "solid",
         "description": "Freigegebene Injektion über den Hooker ins laufende Kontextfenster nach bestandenem Decision Gate"
     },
     {
         "id": "supervision_sensors",
         "name": "Aufsicht & Messtechnik",
-        "color": "#8b5cf6",
+        "color": "#8c9fbc",
         "style": "solid",
         "description": "Messwerte, Token-Überwachung, Limits und CoT-Drift an die Selbstkontroll-Guards"
     },
     {
         "id": "active_tool_pull",
         "name": "Aktiver Tool-Pull",
-        "color": "#f59e0b",
+        "color": "#aba292",
         "style": "solid",
         "description": "Explizite Abfragen des aktiven Modells via Tools (z. B. bach mem query, hb_kb_search)"
     },
     {
         "id": "reactive_guard",
         "name": "Reaktive Schutzschranke",
-        "color": "#64748b",
+        "color": "#8c9fbc",
         "style": "dotted",
         "description": "Reaktiver Fakten- und Konsistenzabgleich aus dem Langzeitgedächtnis gegen Konfabulation"
     }
@@ -177,12 +210,10 @@ def ensure_denkarium_schema(conn: sqlite3.Connection | None = None) -> None:
 
 def get_cognitive_topology(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
-    actual_conn, should_close = _resolve_connection(conn)
+    actual_conn, should_close = _resolve_connection(conn, readonly=True)
     try:
-        ensure_denkarium_schema(actual_conn)
-
-        # Messung der Tabellenstände
-        counts = {"facts": 0, "lessons": 0, "sessions": 0, "working": 0}
+        # Nur Tabellenstände messen; fehlende Quellen sind keine leeren Tabellen.
+        counts = dict.fromkeys(("facts", "lessons", "sessions", "working"))
         try:
             counts["facts"] = actual_conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
         except (sqlite3.Error, OSError) as e:
@@ -208,79 +239,80 @@ def get_cognitive_topology(conn: sqlite3.Connection | None = None) -> dict[str, 
                 "number": 6,
                 "title": "Aktives Kontextfenster",
                 "sub": "Phonologische Schleife & CoT-Arbeitsgedächtnis (Baddeley)",
-                "status": "active",
+                "status": "not_verified",
                 "data_source": "memory_working",
                 "active_items_count": counts["working"],
-                "role": "Das aktive LLM-Kontextfenster ist das Zentrum: Einlass nur über Boot-Bus oder autorisierten Hooker!",
-                "evidence_kind": "live_working_memory"
+                "role": "Soll-Prozess des aktiven Kontextfensters. Gespeicherte Working-Einträge belegen keine aktuelle Kontextbelegung.",
+                "evidence_kind": "database_snapshot"
             },
             "zentrale_exekutive": {
                 "id": "zentrale_exekutive",
                 "number": 1,
                 "title": "Zentrale Exekutive & Messtechnik",
                 "sub": "Norman & Shallice (SAS) • Miller TOTE (/plan, /goal) • Notfall-Circuit-Breaker",
-                "status": "monitored",
-                "data_source": "system/hub/executive",
+                "status": "not_verified",
+                "data_source": None,
                 "role": "Führung und Aufsicht: Greift bei neuartigen Aufgaben, Konflikten und Risiken regulierend ein.",
-                "evidence_kind": "policy_enforcement"
+                "evidence_kind": "conceptual_model"
             },
             "sensoren_messtechnik": {
                 "id": "sensoren_messtechnik",
                 "number": 1.2,
                 "title": "Sensoren & Messtechnik",
                 "sub": "Context-Reader • Token-Monitor • Loop- & Drift-Detektor",
-                "status": "active",
-                "data_source": "system/guards/sensors",
-                "role": "Liefert Echtzeit-Messbelege (SensorReceipt) an die Selbstkontroll-Guards.",
-                "evidence_kind": "sensor_telemetry"
+                "status": "not_verified",
+                "data_source": None,
+                "role": "Soll-Prozess für Messwerte und Bedarfserkennung; kein angeschlossener Laufzeitnachweis.",
+                "evidence_kind": "conceptual_model"
             },
             "guards": {
                 "id": "guards",
                 "number": 2,
                 "title": "Selbstkontroll-Guards",
                 "sub": "Deterministische Skript-Guards (P-001, Locks) & Lebendige LLM-Guards (/goal, Disambiguierung)",
-                "status": "enforced",
-                "data_source": "system/guards",
-                "role": "Echte Prüfung VOR Werkzeugausführung und Einspeisung. Schützt vor Konfabulation und Regelbrüchen.",
-                "evidence_kind": "guard_evaluation_receipt"
+                "status": "not_verified",
+                "data_source": None,
+                "role": "Soll-Prozess: Regeln und Rechte vor Aktionen oder Kontextzustellung prüfen; Durchsetzung separat nachweisen.",
+                "evidence_kind": "conceptual_model"
             },
             "berechtigung_hooker": {
                 "id": "berechtigung_hooker",
                 "number": 3,
                 "title": "Berechtigungskontrolle & Hooker",
-                "sub": "Decision Gate ➔ Reiner Injektor / Zustell-Pipeline",
-                "status": "guarded",
-                "data_source": "system/hub/injectors",
-                "role": "Der Hooker besitzt keine Kontrolllogik; er stellt autorisierten Payload nach Decision-Freigabe sicher zu.",
-                "evidence_kind": "injection_receipt"
+                "sub": "Kontext auswählen ➔ Grenzen prüfen ➔ Payload zustellen",
+                "status": "not_verified",
+                "data_source": None,
+                "role": "Diese Teilprozesse und Aktionsguards dürfen im selben Hooker liegen. Ausführung hängt vom Laufzeitanschluss ab.",
+                "evidence_kind": "conceptual_model"
             },
             "startprompt": {
                 "id": "startprompt",
                 "number": 5,
                 "title": "Startprompt-Synthese",
                 "sub": "Einmaliger Boot-Bus [Boot:Agent] + [Boot:System] + [Boot:Aufgabe]",
-                "status": "synthesized",
-                "data_source": "agent_blueprints / blueprint_service",
-                "role": "Erzeugt strukturierte Boot-Sequenz. Leere Stubs scheitern fail-closed (GUX-029).",
-                "evidence_kind": "boot_prompt_manifest"
+                "status": "not_verified",
+                "data_source": None,
+                "role": "Soll-Prozess der Promptzusammenstellung; hier wird kein konkreter Lauf geprüft.",
+                "evidence_kind": "conceptual_model"
             },
             "lernen_rueckfluss": {
                 "id": "lernen_rueckfluss",
                 "number": 8,
                 "title": "Kognitives Lernen & Konsolidierung",
                 "sub": "NemoFold (Workflow-Ketten) & Hermes (Skill-Destillation) & Lessons Learned",
-                "status": "active",
-                "data_source": "memory_lessons / candidates",
+                "status": "not_verified",
+                "data_source": "memory_lessons",
                 "active_lessons_count": counts["lessons"],
                 "role": "Rückfluss aus Beobachtung und Dialog: Vorschlag ➔ Review ➔ append-only Übernahme.",
-                "evidence_kind": "distillation_receipt"
+                "evidence_kind": "database_snapshot"
             },
             "langzeit_gedaechtnis": {
                 "id": "langzeit_gedaechtnis",
                 "number": 7,
                 "title": "Langzeitgedächtnis (SSoT)",
                 "sub": "Faktenwissen, Sessions, Lessons (SSoT-Trennung: BACH vs. USMC vs. Gardener)",
-                "status": "available",
+                "status": ("available" if all(counts[key] is not None for key in ("facts", "sessions", "lessons"))
+                           else "unavailable"),
                 "data_source": "memory_facts / memory_sessions / memory_lessons",
                 "facts_count": counts["facts"],
                 "sessions_count": counts["sessions"],
@@ -290,9 +322,17 @@ def get_cognitive_topology(conn: sqlite3.Connection | None = None) -> dict[str, 
             }
         }
 
+        for block in blocks.values():
+            block["runtime_verified"] = False
+            block["architecture_model"] = dict(PROCESS_MODEL)
+
         return {
             "success": True,
             "observed_at": now,
+            "architecture_model": dict(PROCESS_MODEL),
+            "measurement_scope": "bach_memory_table_counts",
+            "source_availability": {key: "available" if count is not None else "unavailable"
+                                    for key, count in counts.items()},
             "mermaid_code": CANONICAL_MERMAID_DIAGRAM,
             "legend": DIAGRAM_LEGEND,
             "counts": counts,
@@ -323,7 +363,7 @@ def get_process_block(
     if not actual_block_id:
         raise ValueError("block_id ist erforderlich")
 
-    actual_conn, should_close = _resolve_connection(actual_conn)
+    actual_conn, should_close = _resolve_connection(actual_conn, readonly=True)
     try:
         topology = get_cognitive_topology(actual_conn)
         blocks = topology["blocks"]
@@ -333,38 +373,43 @@ def get_process_block(
         block = dict(blocks[actual_block_id])
         now = datetime.now(timezone.utc).isoformat()
 
-        # Zusätzliche Live-Details je Block
+        # Gespeicherte Daten und ausdrücklich fehlende Laufzeitnachweise.
         if actual_block_id == "kontextfenster":
             try:
                 working_rows = actual_conn.execute("SELECT id, type, content, priority, created_at FROM memory_working WHERE is_active = 1 ORDER BY priority DESC, id DESC LIMIT 10").fetchall()
                 block["working_items"] = [dict(r) if isinstance(r, sqlite3.Row) else {"id": r[0], "type": r[1], "content": r[2], "priority": r[3], "created_at": r[4]} for r in working_rows]
+                block["working_items_availability"] = "available"
             except (sqlite3.Error, OSError):
                 block["working_items"] = []
+                block["working_items_availability"] = "unavailable"
         elif actual_block_id == "sensoren_messtechnik":
             block["sensor_receipt"] = {
-                "receipt_id": f"rcpt-sens-{uuid.uuid4().hex[:8]}",
-                "timestamp": now,
-                "context_usage_percent": 18.5,
-                "cot_loop_detected": False,
-                "stress_index": 0.05,
-                "status": "nominal"
+                "receipt_id": None,
+                "timestamp": None,
+                "context_usage_percent": None,
+                "cot_loop_detected": None,
+                "stress_index": None,
+                "status": "not_verified"
             }
         elif actual_block_id == "guards":
             block["guard_receipt"] = {
-                "receipt_id": f"rcpt-guard-{uuid.uuid4().hex[:8]}",
-                "timestamp": now,
-                "deterministic_git_guard": "passed",
-                "lock_master_guard": "passed",
-                "anti_confabulation_guard": "passed",
-                "decision": "allow"
+                "receipt_id": None,
+                "timestamp": None,
+                "deterministic_git_guard": None,
+                "lock_master_guard": None,
+                "anti_confabulation_guard": None,
+                "decision": None,
+                "status": "not_verified"
             }
         elif actual_block_id == "berechtigung_hooker":
             block["injection_gate"] = {
-                "authorized": True,
+                "authorized": None,
                 "target": "active_context",
-                "executor": "hooker_pipeline",
-                "has_control_logic": False,
-                "delivery_receipt": f"del-{uuid.uuid4().hex[:8]}"
+                "executor": None,
+                "has_control_logic": None,
+                "delivery_receipt": None,
+                "status": "not_verified",
+                "module_boundaries": "not_implied"
             }
         elif actual_block_id == "langzeit_gedaechtnis":
             block["ssot_architecture"] = {
