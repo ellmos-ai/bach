@@ -65,7 +65,7 @@ CLAIMABLE_OPENING_STATUSES = frozenset({"open", "pending", "in_progress"})
 LEASE_CAPABILITY_COLUMNS = (
     "claim_id", "claim_host", "claim_issued_at", "claim_expires_at", "claim_heartbeat_at",
     "claim_ttl_profile", "claim_salt_ref", "claim_intent", "claim_request_id",
-    "claim_task_version",
+    "claim_task_version", "claim_result_generation",
 )
 
 
@@ -209,6 +209,7 @@ def apply_task_field_changes(
     clear_fields: Iterable[str] = (),
     allow_reopen: bool = False,
     lease_authorized: bool = False,
+    result_acceptance: Any = None,
 ) -> bool:
     """Schreibt das UPDATE auf `tasks` plus die zugehoerigen `task_history`-
     Zeilen. Committet NICHT selbst -- der Aufrufer bleibt fuer Transaktions-
@@ -239,6 +240,11 @@ def apply_task_field_changes(
     # gate-geparkten Task per Status-Change wieder claimbar setzen, worauf der
     # Terminal-Waechter in chat_tray nicht mehr greift (claimed_by gecleart).
     new_status = field_values.get("status")
+    if new_status in COMPLETED_STATUSES:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        from hub._services.task_result_service import assert_completion_allowed
+        assert_completion_allowed(conn, task_id, result_acceptance, changes=field_values)
     # BACH #1726: Auch eine abgelaufene Capability darf nicht durch einen
     # generischen Statuswechsel umgangen werden. Nur Release/Reclaim/Reaper
     # entwerten sie. Der aktuelle DB-Zustand ersetzt den Snapshot des Aufrufers.

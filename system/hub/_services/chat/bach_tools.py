@@ -528,12 +528,12 @@ TOOLS_SAFE = [
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
     _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
-        "action": {"type": "string", "enum": ["list", "add", "done", "detail", "update", "decompose"],
-                   "description": "Aktion: list (offene Tasks), add (neuer Task), done (erledigen), detail (Details), update (Felder aktualisieren), decompose (in Teilaufgaben zerlegen)"},
+        "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
+                   "description": "list, add, detail, update, decompose; Worker geben mit submit_result (oder done als Alias) ein konkretes Ergebnis zur getrennten Review-Abnahme ab."},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Bei done: tatsächlich erarbeitetes Ergebnis, höchstens 3000 Zeichen; wird atomar mit dem bestätigten Taskabschluss gespeichert."},
+        "result": {"type": "string", "description": "Worker-Ergebnis bei submit_result/done, erforderlich, höchstens 3000 Zeichen: Befunde, Quellen, Prüfungen und verbleibende Grenzen. Atomar gespeichert mit Review; Abnahme erfolgt getrennt."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -559,7 +559,7 @@ TOOLS_SAFE = [
             "description": "Liste von Teilaufgaben bei action='decompose'"
         },
         "sequential": {"type": "boolean", "description": "Bei decompose: ob Teilaufgaben sequentiell voneinander abhängen sollen"},
-        "close_parent": {"type": "boolean", "description": "Bei decompose: ob der übergeordnete Task als completed markiert wird (Standard true)"}
+        "close_parent": {"type": "boolean", "description": "Worker müssen false verwenden; Zerlegung ist kein erledigter Auftrag."}
     }, ["action"]),
     _tool("maintain", "Systemwartung: fällige Tasks prüfen, Wartungsoperationen ausführen", {
         "action": {"type": "string", "enum": ["check", "run", "health", "services", "sync"],
