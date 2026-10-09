@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from .agent_profile_context import binding_metadata
+from .agent_profile_context import binding_metadata, profile_chat_id_agent
 
 
 CHAT_SNAPSHOT_TYPE = "chat-transcript.v1"
@@ -58,6 +58,21 @@ class SQLiteChatSessionStore:
             raise ChatSessionStoreError(
                 f"cannot open canonical BACH database: {exc}"
             ) from exc
+
+    def _connect_readonly(self) -> sqlite3.Connection:
+        if not self.db_path.is_file():
+            raise ChatSessionStoreError("canonical BACH database is unavailable")
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path.resolve(strict=True).as_uri() + "?mode=ro",
+                                   uri=True, timeout=2)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            return conn
+        except (sqlite3.Error, OSError) as exc:
+            if conn is not None:
+                conn.close()
+            raise ChatSessionStoreError("cannot read canonical BACH database") from exc
 
     def _normalise_messages(self, messages: Iterable[dict]) -> list[dict]:
         if not isinstance(messages, (list, tuple)):
@@ -291,6 +306,64 @@ class SQLiteChatSessionStore:
         finally:
             conn.close()
 
+    def list_snapshot_page(self, *, limit: int = 25, offset: int = 0,
+                           agent_id: int | None = None, archive: str = "all") -> dict:
+        """Read an authenticated viewer's explicit context; filter before paging."""
+        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
+            raise ValueError("Invalid transcript page")
+        if agent_id is not None and (type(agent_id) is not int or agent_id <= 0):
+            raise ValueError("Invalid transcript profile")
+        if archive not in {"all", "current", "archived"}:
+            raise ValueError("Invalid transcript archive filter")
+        if not self.db_path.is_file():
+            raise ChatSessionStoreError("canonical BACH database is unavailable")
+        conn = None
+        try:
+            conn = self._connect_readonly()
+            conn.create_function("profile_chat_id_agent", 1, profile_chat_id_agent, deterministic=True)
+            conn.execute("BEGIN")
+            conditions = ["snapshot_type = ?"]
+            args = [CHAT_SNAPSHOT_TYPE]
+            if agent_id is None:
+                conditions.extend(["COALESCE(json_extract(snapshot_data,'$.context_class'),'') != 'agent-profile'",
+                                   "substr(COALESCE(json_extract(snapshot_data,'$.chat_id'),''),1,6) != 'agent:'"])
+            else:
+                conditions.extend(["json_extract(snapshot_data,'$.context_class') = 'agent-profile'",
+                                   "json_type(snapshot_data,'$.agent_id') = 'integer'",
+                                   "json_extract(snapshot_data,'$.agent_id') = ?",
+                                   "profile_chat_id_agent(json_extract(snapshot_data,'$.chat_id')) = ?"])
+                args.extend([agent_id, agent_id])
+            if archive != "all":
+                conditions.append("instr(session_id, ':archived:') " + ("> 0" if archive == "archived" else "= 0"))
+            where = " AND ".join(conditions)
+            total = conn.execute("SELECT COUNT(*) FROM session_snapshots WHERE " + where, args).fetchone()[0]
+            rows = conn.execute(
+                "SELECT id, session_id, name, created_at, length(snapshot_data) AS size_bytes, "
+                "json_extract(snapshot_data,'$.chat_id') AS chat_id, "
+                "json_extract(snapshot_data,'$.context_class') AS context_class, "
+                "json_extract(snapshot_data,'$.agent_id') AS agent_id, "
+                "json_array_length(snapshot_data,'$.messages') AS stored_message_count, "
+                "json_extract(snapshot_data,'$.version') AS payload_version "
+                "FROM session_snapshots WHERE " + where + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                [*args, limit, offset]).fetchall()
+            items = []
+            for row in rows:
+                item = dict(row)
+                if (item.pop("payload_version") != 1 or type(item["stored_message_count"]) is not int
+                        or not 0 <= item["stored_message_count"] <= 1000
+                        or any(type(item[key]) is not str for key in ("session_id", "chat_id", "name"))):
+                    raise ChatSessionStoreError("stored transcript metadata is invalid")
+                item["archived"] = ":archived:" in item["session_id"]
+                items.append(item)
+            return {"sessions": items, "total": total, "offset": offset, "limit": limit,
+                    "has_more": offset + len(items) < total,
+                    "save_limits": {"max_messages": self.max_messages, "max_content_chars": self.max_content_chars}}
+        except (sqlite3.Error, OSError) as exc:
+            raise ChatSessionStoreError("cannot read canonical transcript page") from exc
+        finally:
+            if conn is not None:
+                conn.close()
+
     def list_snapshots(self, limit: int = 50) -> list[dict]:
         """Liefert eine sortierte Übersicht aller Chat-Transkripte."""
         conn = self._connect()
@@ -325,7 +398,7 @@ class SQLiteChatSessionStore:
 
     def get_snapshot_by_id(self, snapshot_id: int) -> dict | None:
         """Holt ein konkretes Transkript per Primärschlüssel."""
-        conn = self._connect()
+        conn = self._connect_readonly()
         try:
             row = conn.execute(
                 "SELECT id, session_id, name, snapshot_data, created_at "
@@ -335,7 +408,12 @@ class SQLiteChatSessionStore:
             ).fetchone()
             if not row:
                 return None
-            payload = json.loads(row["snapshot_data"] or "{}")
+            raw = row["snapshot_data"]
+            if not isinstance(raw, str) or len(raw) > 5_000_000:
+                raise ChatSessionStoreError("stored transcript exceeds readable bounds")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or payload.get("version") != 1:
+                raise ChatSessionStoreError("stored transcript version is invalid")
             return {
                 "id": row["id"],
                 "session_id": row["session_id"],
