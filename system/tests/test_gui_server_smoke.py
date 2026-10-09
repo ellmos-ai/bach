@@ -178,6 +178,12 @@ def test_db(tmp_path):
         INSERT INTO tasks (title, status, priority) VALUES ('Test task', 'open', 'P2');
         INSERT INTO messages (sender, recipient, body, status) VALUES ('system', 'user', 'Hello', 'unread');
     """)
+    # Installation/test setup owns schema creation; Facts requests never create it.
+    schema = (SYSTEM_ROOT / "data/schema/schema.sql").read_text(encoding="utf-8")
+    facts_definition = "CREATE TABLE IF NOT EXISTS memory_facts (" + schema.split(
+        "CREATE TABLE IF NOT EXISTS memory_facts (", 1
+    )[1].split(");", 1)[0] + ");"
+    conn.executescript(facts_definition)
     conn.commit()
     conn.close()
     return tmp_path
@@ -414,6 +420,8 @@ class TestGUIServerSmoke:
     def test_memory_facts(self, client):
         resp = client.get("/api/memory/facts")
         assert resp.status_code == 200
+        assert resp.json()["facts"] == []
+        assert resp.json()["allowed_categories"] == ["user", "project", "system", "domain"]
 
     def test_memory_sessions(self, client):
         resp = client.get("/api/memory/sessions")
@@ -529,12 +537,29 @@ class TestGUIServerWrite:
                 "SELECT content FROM memory_working WHERE id = ?", (resp.json()["id"],),
             ).fetchone()[0] == "test working memory"
 
-    def test_memory_fact_create(self, client):
+    def test_memory_fact_create(self, client, test_db):
         resp = client.post("/api/memory/facts", json={
             "key": "test_key",
             "value": "test_value"
         })
         assert resp.status_code == 200
+        assert resp.json()["category"] == "user"
+        with sqlite3.connect(test_db / "data" / "bach.db") as conn:
+            assert conn.execute(
+                "SELECT category, key, value FROM memory_facts WHERE id = ?",
+                (resp.json()["id"],),
+            ).fetchone() == ("user", "test_key", "test_value")
+
+    def test_memory_fact_invalid_category_preserves_next_write(self, client):
+        rejected = client.post("/api/memory/facts", json={
+            "category": "pytest", "key": "invalid", "value": "Grüße",
+        })
+        assert rejected.status_code == 400
+        assert client.get("/api/memory/facts").json()["facts"] == []
+        accepted = client.post("/api/memory/facts", json={
+            "category": "system", "key": "valid", "value": "Grüße",
+        })
+        assert accepted.status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════════
