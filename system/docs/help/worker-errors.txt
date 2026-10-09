@@ -22,10 +22,31 @@ Retry-After ist keine Zusage über die Rücksetzung eines Monatskontingents.
 
 FailedAnswer erhält den geprüften Vertrag auch beim Speichern und Wiederladen
 eines Chatverlaufs. Diese Metadaten werden nicht an ein Modell zurückgesendet.
-Beim Providerfehler endet der Worker, gibt seine aktuelle Task-Lease bestätigt
-zurück und behält den Fehlertext. Das korrelierte assignment_ended-Ereignis
-bleibt getrennt im Verlauf erhalten; es überschreibt keine Fehlerursache.
+Bei harten Providerfehlern endet der Worker, gibt seine aktuelle Task-Lease
+bestätigt zurück und behält den Fehlertext. Das korrelierte assignment_ended-
+Ereignis bleibt getrennt im Verlauf erhalten; es überschreibt keine Fehlerursache.
 Ein bestätigter neuer Start entfernt den Fehler der vorherigen Generation.
+
+Ein bereits ausdrücklich gestarteter fortlaufender Ollama-Cloud-Worker kann
+nach einem vorübergehenden HTTP 429 im selben Lauf wiederaufnehmen. Vor der
+Wartephase werden der Lease-Renew-Thread beendet, die Task bestätigt zurückgegeben
+und das Assignment geschlossen. Ohne bestätigte Rückgabe wird nicht gewartet
+oder erneut gearbeitet. Während des Wartens ist der Worker aktiv, bearbeitet
+aber keine Task: worker_active=true, running=false, active_task_id=null.
+
+Die lokale Wiederaufnahmeregel erlaubt höchstens drei aufeinanderfolgende
+Wiederaufnahmen mit insgesamt höchstens 900 Sekunden geplanter Wartezeit.
+Ohne längeren gültigen Retry-After sind die Wartezeiten 60, 120 und 240 Sekunden.
+Ein tatsächlich vorhandener längerer Retry-After wird eingehalten; überschreitet
+er das verbleibende Wartebudget, endet der Worker. Diese Werte sind Programmregeln,
+keine beobachteten Kontingent-Rücksetzzeiten. Erst eine erfolgreiche Backendantwort
+setzt den Zähler zurück und entfernt die alte Fehleranzeige. Ein Monatslimit,
+Authentifizierungsfehler, unbekannte Fehler und Einzelläufe werden nicht wiederholt.
+
+Stop, Deaktivierung, Pause, Ablaufzeit und ein Generationenwechsel unterbrechen
+das Warten. Danach werden Slot, Modell, Taskversion, Abhängigkeiten, fremde Leases
+und die Creator-Schonfrist erneut geprüft. Es gibt keine neue Startfreigabe,
+keinen Modellwechsel und keinen Cloud-Autostart durch diese Wiederaufnahme.
 
 Die vorhandenen Shared-GUI-Karten zeigen current_activity. Deshalb bleibt der
 lesbare Fehlertext auch für GUI-Versionen nutzbar, die backend_error noch nicht

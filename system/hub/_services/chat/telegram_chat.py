@@ -748,6 +748,55 @@ def _record_worker_activity(
         return True
 
 
+_WORKER_BACKEND_RETRY_LIMIT = 3
+_WORKER_BACKEND_RETRY_BASE_SECONDS = 60
+_WORKER_BACKEND_RETRY_BUDGET_SECONDS = 900
+
+
+def _worker_backend_retry_delay(slot, detail, *, model, retries, waited_seconds):
+    """Bound recovery of an admitted Cloud worker; never infer a quota reset."""
+    from hub._services.llm.backend_errors import normalize_backend_error
+    error = normalize_backend_error(detail)
+    if (slot.get("type") not in {"continuous", "persistent"}
+            or not str(model).lower().endswith(":cloud")
+            or not error or error["kind"] != "rate_limited"
+            or retries >= _WORKER_BACKEND_RETRY_LIMIT):
+        return None
+    delay = max(_WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries),
+                error.get("retry_after_seconds", 0))
+    if waited_seconds + delay > _WORKER_BACKEND_RETRY_BUDGET_SECONDS:
+        return None
+    return delay
+
+
+def _wait_worker_backend_retry(control: _WorkerControl, seconds: float) -> bool:
+    """Wait without a task lease, watching stop, generation, policy and TTL."""
+    deadline = time.monotonic() + seconds
+    while not control.stop_event.is_set():
+        with _WORKER_CONTROL_LOCK:
+            if _WORKER_CONTROLS.get(control.worker_id) is not control:
+                return False
+        slot = control.slot_policy_reader()
+        if not slot or slot.get("status") in {"paused", "idle", "stopping", "expired"}:
+            return False
+        if slot.get("enabled", True) is not True:
+            _update_worker_slot(control, {"status": "idle", "current_activity": "Worker ist deaktiviert"})
+            return False
+        if slot.get("expires_at"):
+            # Invalid lifetime metadata is an error, never permission to wait.
+            expiry = datetime.fromisoformat(slot["expires_at"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= expiry:
+                _update_worker_slot(control, {"status": "expired", "current_activity": "Ablaufzeit erreicht (Beendet)"})
+                return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        control.stop_event.wait(min(1.0, remaining))
+    return False
+
+
 def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
     """Apply a configured run/task-count pause while keeping stop responsive."""
     worker_id = control.worker_id
@@ -3492,6 +3541,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
             prompt_to_run = initial_prompt
             run_count = 0
+            backend_retries = 0
+            backend_waited_seconds = 0
 
             while True:
                 if control.stop_event.is_set():
@@ -3628,7 +3679,48 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         "error",
                         {"backend_error": detail} if detail else None,
                     )
+                    retry_delay = _worker_backend_retry_delay(
+                        current_slot, detail, model=model, retries=backend_retries,
+                        waited_seconds=backend_waited_seconds,
+                    )
+                    if retry_delay is not None and not control.task_binding.closed:
+                        # Settle Renew physically and obtain the canonical Return
+                        # ACK before any wait. A cleanup error stays terminal.
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                        if not control.task_binding.return_lease():
+                            raise RuntimeError("Task-Lease vor Wiederaufnahme nicht bestätigt zurückgegeben")
+                        if assignment_open:
+                            finish_assignment(current_assignment, status="error",
+                                              result="backend_error", reason="temporary_rate_limit")
+                            assignment_open = False
+                        worker_session.worker_task_binding = None
+                        control.task_binding = None
+                        backend_retries += 1
+                        backend_waited_seconds += retry_delay
+                        waiting = (f"{error_activity} Warte {retry_delay:g} Sekunden; "
+                                   f"Wiederaufnahme {backend_retries}/{_WORKER_BACKEND_RETRY_LIMIT}.")
+                        if _update_worker_slot(control, {
+                            "status": "running", "task_id": None, "current_activity": waiting,
+                        }) is None:
+                            return
+                        worker_error = None
+                        control.start_error = None
+                        _record_worker_activity(control, waiting, "pending")
+                        if not _wait_worker_backend_retry(control, retry_delay):
+                            return
+                        # The next iteration rechecks policy, expiry, model,
+                        # creator/dependency gates and acquires a fresh fence.
+                        prompt_to_run = initial_prompt
+                        continue
+                    if detail and detail["kind"] == "rate_limited" and backend_retries:
+                        _update_worker_slot(control, {"current_activity":
+                            f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
+                if backend_retries:
+                    backend_retries = 0
+                    backend_waited_seconds = 0
+                    _update_worker_slot(control, {"backend_error": None})
                 if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
                     break
 

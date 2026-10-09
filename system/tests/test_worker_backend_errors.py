@@ -208,6 +208,183 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         conn.close()
 
 
+@pytest.mark.parametrize("model, kind, worker_type, retries, waited, header, expected", [
+    ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, None, 60),
+    ("glm-5.3:cloud", "rate_limited", "persistent", 1, 60, 0, 120),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 180, 180),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 2, 660, 240, 240),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 901, None),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 2, 661, 240, None),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 3, 420, None, None),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, None),
+    ("glm-5.3:cloud", "http_error", "continuous", 0, 0, 60, None),
+    ("glm-5.3:cloud", "rate_limited", "once", 0, 0, 60, None),
+    ("qwen3.5:4b", "rate_limited", "persistent", 0, 0, 60, None),
+])
+def test_cloud_retry_policy_is_bounded_and_preserves_observed_header(
+        model, kind, worker_type, retries, waited, header, expected):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    detail = {"provider": "ollama", "kind": kind, "status_code": 429 if kind != "http_error" else 401,
+              "quota_exceeded": kind == "quota_exceeded"}
+    if header is not None:
+        detail["retry_after_seconds"] = header
+    assert control._worker_backend_retry_delay({"type": worker_type}, detail, model=model,
+        retries=retries, waited_seconds=waited) == expected
+
+
+@pytest.mark.parametrize("interruption", ["stop", "disabled", "paused", "missing", "expired", "replaced"])
+def test_retry_wait_observes_stop_policy_ttl_and_generation(monkeypatch, interruption):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    slot = {"id": "retry-fixture", "enabled": True, "status": "running"}
+    worker = control._WorkerControl(slot["id"], slot_policy_reader=lambda: slot)
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {slot["id"]: worker})
+    writes = []
+    monkeypatch.setattr(control, "_update_worker_slot", lambda _, changes: writes.append(changes))
+    if interruption == "stop":
+        worker.stop_event.set()
+    elif interruption == "disabled":
+        slot["enabled"] = False
+    elif interruption == "paused":
+        slot["status"] = "paused"
+    elif interruption == "missing":
+        worker.slot_policy_reader = lambda: None
+    elif interruption == "expired":
+        slot["expires_at"] = "2000-01-01T00:00:00+00:00"
+    else:
+        control._WORKER_CONTROLS[slot["id"]] = control._WorkerControl(slot["id"])
+    assert control._wait_worker_backend_retry(worker, 60) is False
+    if interruption in {"stop", "paused", "missing", "replaced"}:
+        assert not writes
+    else:
+        assert writes[-1]["status"] == ("idle" if interruption == "disabled" else "expired")
+
+
+@pytest.mark.parametrize("scenario", ["recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry"])
+def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_path, monkeypatch, scenario):
+    import sqlite3
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.chat_runtime import ChatSession, _managed_backend_answer
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from system.tests.test_task_lease_client import _init_db
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
+        "mode": "safe", "task_id": 42, "pause_after": 0}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+        "VALUES (42,'Cloud retry fixture','pending','P1','INBOX','BACH',?)", (ident,))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    session = ChatSession()
+    session.chat_id = ident
+    monkeypatch.setattr(control.runtime, "get_session", lambda _: session)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
+    real_client = httpx.AsyncClient
+    calls, fences, waits = [], [], []
+    def reply(request):
+        calls.append(request)
+        if len(calls) > 1 and scenario == "recover":
+            return httpx.Response(200, text=json.dumps({"message": {"content": "Healthy fixture"}, "done": True}) + "\n")
+        payload = "monthly usage limit reached" if scenario == "quota_after_retry" and len(calls) > 1 else "rate limit"
+        return httpx.Response(429, json={"error": payload + " PRIVATE_PROVIDER_BODY"})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    async def process(*a, **kw):
+        binding = session.worker_task_binding
+        assert binding.task_id == 42 and not binding.closed
+        fences.append(binding._ack.fence)
+        answer = _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
+        if not FailedAnswer.looks_like(answer):
+            binding.execute_task_manage({"action": "submit_result", "task_id": 42, "result": str(answer)})
+        return answer
+    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: False)
+    foreign = []
+    acquire_calls = []
+    native_acquire = control._acquire_worker_task
+    def acquire(worker, *args):
+        binding = native_acquire(worker, *args)
+        acquire_calls.append(binding is not None)
+        if foreign:
+            assert binding is None and client.read(42, lease_id=foreign[0].lease_id).own is True
+            worker.stop_event.set()
+        return binding
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire)
+    def wait(worker, seconds):
+        waits.append(seconds)
+        assert worker.task_binding is None and worker.lease_supervisor is None
+        assert session.worker_task_binding is None
+        assert client.read(42).leased is False
+        snapshot = control._worker_handoff_snapshot(slots.get_slot(ident, path))
+        assert snapshot["active_task_id"] is None
+        public = _project_worker(snapshot)
+        assert public["worker_active"] is True and public["running"] is False
+        assert public.get("active_task_id") is None and public["backend_error"]["status_code"] == 429
+        if scenario == "stop":
+            worker.stop_event.set()
+            return False
+        if scenario == "foreign_claim":
+            foreign.append(client.acquire(42, worker_id="foreign-fixture@fixture", host="fixture",
+                                          task_version=client.task_snapshot(42)["task_version"]))
+        return True
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
+    if scenario == "return_denied":
+        monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _: False)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(5)
+        assert not thread.is_alive()
+        assert all(json.loads(request.content)["model"] == "glm-5.3:cloud" for request in calls)
+        task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
+        current = slots.get_slot(ident, path)
+        if scenario == "recover":
+            assert len(calls) == 2 and waits == [60] and fences == [1, 2]
+            assert task["status"] == "review" and task["claim_salt_ref"] is None
+            assert current.get("backend_error") is None
+            assert execution.task_result_bindings[42].submitted_result["accepted"] is False
+        elif scenario == "exhausted":
+            assert len(calls) == 4 and waits == [60, 120, 240] and fences == [1, 2, 3, 4]
+            assert current["status"] == "error" and "begrenzt beendet" in current["current_activity"]
+            assert task["status"] == "pending" and task["claim_salt_ref"] is None
+        elif scenario == "quota_after_retry":
+            assert len(calls) == 2 and waits == [60]
+            assert current["backend_error"]["quota_period"] == "month"
+            assert task["status"] == "pending" and task["claim_salt_ref"] is None
+        elif scenario == "return_denied":
+            assert len(calls) == 1 and waits == [] and execution.start_error == "cleanup_error"
+            assert client.read(42).leased is True
+        elif scenario == "foreign_claim":
+            assert len(calls) == 1 and waits == [60]
+            assert client.read(42, lease_id=foreign[0].lease_id).own is True
+            assert acquire_calls == [True, False]
+        else:
+            assert len(calls) == 1 and waits == [60] and task["status"] == "pending"
+            assert task["claim_salt_ref"] is None
+            assert execution.stop_event.is_set() and execution.start_error is None
+        assert "PRIVATE_PROVIDER_BODY" not in json.dumps(slots.get_activity_history(path=path))
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
 @pytest.mark.parametrize("status", [401, 403, 404, 500, 503])
 def test_other_statuses_do_not_invent_monthly_quota(monkeypatch, status):
     result = run_http(monkeypatch, {"error": "monthly usage limit reached PRIVATE"}, status=status)
