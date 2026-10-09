@@ -596,13 +596,16 @@ def _system_slots_snapshot() -> dict:
         worker_active = bool(thread_alive or execution_state in {
             "starting", "running", "stopping", "finishing"})
         running = bool(task_id is not None or running_sessions)
+        failed = (not worker_active and not running and (
+            agent["status"] == "error"
+            or (execution is not None and execution.get("worker_status") == "error")))
         if execution_state == "unconfirmed":
             if not worker_active:
                 worker_active = None
             if not running:
                 running = None
         agent.update({"runtime_verified": True,
-                      "living": (agent["enabled"] and not paused) or worker_active is True or running is True,
+                      "living": (agent["enabled"] and not paused and not failed) or worker_active is True or running is True,
                       "pause_info": {**agent["pause_info"], "is_paused": paused, "manual": manual_paused},
                       "running": running, "worker_active": worker_active,
                       "task_id": task_id, "execution": execution,
@@ -612,7 +615,8 @@ def _system_slots_snapshot() -> dict:
                       "status": (execution_state if execution_state in {
                           "starting", "stopping", "finishing", "unconfirmed"} else
                           "running" if running else
-                          "paused" if paused else "ready")})
+                          "paused" if paused else
+                          "error" if failed else "ready")})
     result["service_instance"] = _WORKER_SERVICE_INSTANCE
     return result
 
@@ -3561,6 +3565,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 # restored as plain text after persistence. Neither
                 # form may complete a once-worker or be logged as ok.
                 if FailedAnswer.looks_like(ans):
+                    worker_error = RuntimeError("Backendantwort fehlgeschlagen")
+                    control.start_error = "backend_error"
                     _update_worker_slot(control, {
                         "status": "error",
                         "current_activity": ans_str[:120],
@@ -3708,15 +3714,39 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             _update_worker_slot(control, {"status": next_status, "current_activity": "Abgeschlossen"})
         except Exception as exc:
             worker_error = exc
+            control.start_error = "runtime_error"
             log.error(f"Worker {worker_id} Fehler: {exc}", exc_info=True)
             if not control.stop_event.is_set():
                 _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                 _record_worker_activity(control, f"Fehler: {exc}", "error")
         finally:
+            # Cleanup failures cannot skip assignment closure, registry removal,
+            # or the physical thread's terminal acknowledgement. A missing
+            # Return ACK stays an error; expiry remains canonical.
+            cleanup_error = False
             if control.lease_supervisor is not None:
-                control.lease_supervisor.close()
-            if control.task_binding is not None:
-                control.task_binding.return_lease()
+                try:
+                    control.lease_supervisor.close()
+                except Exception:
+                    cleanup_error = True
+                    log.warning("Worker-Lease-Supervisor konnte nicht beendet werden", exc_info=True)
+            if control.task_binding is not None and not control.task_binding.closed:
+                try:
+                    if not control.task_binding.return_lease():
+                        cleanup_error = True
+                except Exception:
+                    cleanup_error = True
+                    log.warning("Worker-Taskfreigabe konnte nicht bestätigt werden", exc_info=True)
+            if cleanup_error:
+                worker_error = worker_error or RuntimeError("Worker-Cleanup nicht bestätigt")
+                control.start_error = "cleanup_error"
+                try:
+                    _update_worker_slot(control, {
+                        "status": "error",
+                        "current_activity": "Cleanup nicht bestätigt; Task-Lease nur kanonisch prüfen",
+                    })
+                except Exception:
+                    log.warning("Worker-Cleanup-Fehlerstatus konnte nicht gespeichert werden", exc_info=True)
             if (worker_session is not None
                     and getattr(worker_session, "worker_task_binding", None) is control.task_binding):
                 worker_session.worker_task_binding = None
