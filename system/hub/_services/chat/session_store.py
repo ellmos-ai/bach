@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from .agent_profile_context import binding_metadata
+from .agent_profile_context import binding_metadata, profile_chat_id_agent
 
 
 CHAT_SNAPSHOT_TYPE = "chat-transcript.v1"
@@ -320,15 +320,19 @@ class SQLiteChatSessionStore:
         conn = None
         try:
             conn = self._connect_readonly()
+            conn.create_function("profile_chat_id_agent", 1, profile_chat_id_agent, deterministic=True)
             conn.execute("BEGIN")
             conditions = ["snapshot_type = ?"]
             args = [CHAT_SNAPSHOT_TYPE]
             if agent_id is None:
-                conditions.append("COALESCE(json_extract(snapshot_data,'$.context_class'),'') != 'agent-profile'")
+                conditions.extend(["COALESCE(json_extract(snapshot_data,'$.context_class'),'') != 'agent-profile'",
+                                   "substr(COALESCE(json_extract(snapshot_data,'$.chat_id'),''),1,6) != 'agent:'"])
             else:
                 conditions.extend(["json_extract(snapshot_data,'$.context_class') = 'agent-profile'",
-                                   "json_extract(snapshot_data,'$.agent_id') = ?"])
-                args.append(agent_id)
+                                   "json_type(snapshot_data,'$.agent_id') = 'integer'",
+                                   "json_extract(snapshot_data,'$.agent_id') = ?",
+                                   "profile_chat_id_agent(json_extract(snapshot_data,'$.chat_id')) = ?"])
+                args.extend([agent_id, agent_id])
             if archive != "all":
                 conditions.append("instr(session_id, ':archived:') " + ("> 0" if archive == "archived" else "= 0"))
             where = " AND ".join(conditions)
@@ -345,7 +349,9 @@ class SQLiteChatSessionStore:
             items = []
             for row in rows:
                 item = dict(row)
-                if item.pop("payload_version") != 1 or type(item["stored_message_count"]) is not int or item["stored_message_count"] < 0:
+                if (item.pop("payload_version") != 1 or type(item["stored_message_count"]) is not int
+                        or not 0 <= item["stored_message_count"] <= 1000
+                        or any(type(item[key]) is not str for key in ("session_id", "chat_id", "name"))):
                     raise ChatSessionStoreError("stored transcript metadata is invalid")
                 item["archived"] = ":archived:" in item["session_id"]
                 items.append(item)

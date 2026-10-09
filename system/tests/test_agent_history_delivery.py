@@ -208,3 +208,47 @@ def test_detail_does_not_accept_an_unknown_transcript_version(history):
     finally:conn.close()
     assert client.get("/api/agent-history/sessions/"+str(snapshot_id)).status_code==503
     assert client.get("/api/agent-history/sessions").status_code==503
+
+
+def test_legacy_profile_prefix_is_excluded_before_global_count_and_paging(history):
+    store,client,_,database=history
+    seed_global(store)
+    conn=sqlite3.connect(database)
+    try:
+        payload={"version":1,"chat_id":"agent:1:"+32*"b","messages":[]}
+        conn.execute("INSERT INTO session_snapshots(session_id,snapshot_type,snapshot_data,name,created_at) VALUES(?,?,?,?,?)",
+                     ("legacy-profile",CHAT_SNAPSHOT_TYPE,json.dumps(payload),"Legacy","2099"))
+        conn.commit()
+    finally:conn.close()
+    page=client.get("/api/agent-history/sessions?limit=1").json()
+    assert page["total"]==1 and page["sessions"][0]["chat_id"]=="gui-web"
+
+
+def test_profile_prefix_binding_is_consistent_before_count_and_paging(history):
+    store,client,_,database=history
+    seed_profile(store)
+    conn=sqlite3.connect(database)
+    try:
+        for chat in ("gui-web","agent:2:"+32*"b","agent:1:invalid"):
+            payload={"version":1,"chat_id":chat,"context_class":"agent-profile","agent_id":1,"messages":[]}
+            conn.execute("INSERT INTO session_snapshots(session_id,snapshot_type,snapshot_data,name,created_at) VALUES(?,?,?,?,?)",
+                         (chat,CHAT_SNAPSHOT_TYPE,json.dumps(payload),"Invalid binding","2099"))
+        conn.commit()
+    finally:conn.close()
+    page=client.get("/api/agent-history/sessions?agent_id=1&limit=1").json()
+    assert page["total"]==1 and page["sessions"][0]["chat_id"]=="agent:1:"+32*"a"
+
+
+@pytest.mark.parametrize("field",["session_id","chat_id","name"])
+def test_null_transcript_metadata_is_unavailable_not_uncaught_500(history,field):
+    store,client,_,database=history
+    seed_global(store)
+    conn=sqlite3.connect(database)
+    try:
+        if field=="chat_id":
+            conn.execute("UPDATE session_snapshots SET snapshot_data=json_set(snapshot_data,'$.chat_id',NULL)")
+        else:
+            conn.execute("UPDATE session_snapshots SET "+field+"=NULL")
+        conn.commit()
+    finally:conn.close()
+    assert client.get("/api/agent-history/sessions").status_code==503
