@@ -16,6 +16,10 @@ Die vorhandene SessionStore-Persistenz speichert regulär höchstens 40 Nachrich
 
 Systemnachrichten und private Reasoning-Felder werden nicht projiziert. Nachrichtentexte werden in der GUI als Text dargestellt. Referenzierte Aufgaben sind Links, kein eigener fachlicher Abschlussnachweis. Der Taskverlauf projiziert Metadaten und Statusänderungen, keine Akteure oder geänderten Beschreibungsinhalte.
 
-## Stand
+## Ältere Archive
 
-Quellimplementierung vorhanden; Veröffentlichung, unabhängiges Review und installierte Abnahme dieses Pakets stehen noch aus.
+Ein älteres v1-Archiv ohne das optionale Feld chat_id wird mit einer leeren Transportkennung gelesen, wie beim bestehenden Snapshotleser. Explizites JSON-null und ungültige Metadatentypen bleiben Quellenfehler. Eine vorhandene Profilbindung bleibt verbindlich; ein Archiv ohne passende Profilkennung wird nicht als Profiltranskript freigegeben. Die Leser verändern keine gespeicherten Archive.
+
+## Auslieferungsnachweis
+
+Der Quellstand und eine installierte Abnahme sind getrennte Nachweise. /api/gui/kit-manifest prüft die aktive Distribution gegen den gepinnten Commit und die Dateihashes. Der native Aufgabenbeleg in Task1938 enthält Review-, CI- und Deploymentnachweise sowie offene Abnahmegrenzen.

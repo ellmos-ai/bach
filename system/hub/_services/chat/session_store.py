@@ -339,7 +339,8 @@ class SQLiteChatSessionStore:
             total = conn.execute("SELECT COUNT(*) FROM session_snapshots WHERE " + where, args).fetchone()[0]
             rows = conn.execute(
                 "SELECT id, session_id, name, created_at, length(snapshot_data) AS size_bytes, "
-                "json_extract(snapshot_data,'$.chat_id') AS chat_id, "
+                "CASE WHEN json_type(snapshot_data,'$.chat_id') IS NULL THEN '' "
+                "ELSE json_extract(snapshot_data,'$.chat_id') END AS chat_id, "
                 "json_extract(snapshot_data,'$.context_class') AS context_class, "
                 "json_extract(snapshot_data,'$.agent_id') AS agent_id, "
                 "json_array_length(snapshot_data,'$.messages') AS stored_message_count, "
