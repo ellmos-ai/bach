@@ -208,6 +208,7 @@ class _WorkerControl:
     task_binding: Any = None
     sequence_creator_authority: Any = None
     creator_delegation: Any = None
+    startup_recovery: bool = False
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
     completed_task_ids: list[int] = field(default_factory=list)
     completed_task_results: dict[int, dict] = field(default_factory=dict)
@@ -379,6 +380,7 @@ def _execution_slot_reader(slot: dict):
 
 def _acquire_worker_task(control, slot, physical_worker_id):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import LeaseDeniedError
     def is_current():
         # One identity read also works from the heartbeat thread. Taking the
         # controller lock here would invert lock order with stop/cleanup.
@@ -397,13 +399,32 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                     task_id=slot.get("task_id"), slot_id=control.worker_id,
                     start_request_id=control.start_request_id, generation=control.generation,
                     worker_id=f"{physical_worker_id}@{host}", host=host)
-    return WorkerLeaseBinding.acquire_next(
-        client, slot, worker_id=f"{physical_worker_id}@{host}", host=host,
-        generation=control.generation, is_current=is_current, stop_event=control.stop_event,
-        policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
-        _creator_delegation=control.creator_delegation,
-        deferred_versions=control.deferred_task_versions,
-    )
+    startup_recovery = control.startup_recovery and control.worker_id == "buddha_always_on"
+    explicit = slot.get("task_id")
+    if startup_recovery and explicit not in (None, "", 0, "0"):
+        task_id = int(explicit)
+        snapshot = client.task_snapshot(task_id)
+        from hub._services.task_lease import TERMINAL_STATUSES
+        if snapshot["status"] in TERMINAL_STATUSES:
+            from hub._services.chat.slots_config import clear_recovered_always_on_task
+            with _WORKER_CONTROL_LOCK:
+                if is_current() and not control.stop_event.is_set():
+                    control.slot_policy_reader()
+                    if clear_recovered_always_on_task(task_id):
+                        _record_worker_activity(control, "Vorherige Taskbindung ist kanonisch terminal; suche neue Aufgabe", "ok")
+            return None
+    try:
+        return WorkerLeaseBinding.acquire_next(
+            client, slot, worker_id=f"{physical_worker_id}@{host}", host=host,
+            generation=control.generation, is_current=is_current, stop_event=control.stop_event,
+            policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
+            _creator_delegation=control.creator_delegation,
+            deferred_versions=control.deferred_task_versions,
+        )
+    except LeaseDeniedError as exc:
+        if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
+            return None
+        raise
 
 
 def _bound_worker_prompt(binding, prompt):
@@ -859,6 +880,8 @@ def _request_worker_revocation(
     """Fence selection/stop atomically; join only the captured physical thread."""
     _validate_worker_execution_fence(expected_execution)
     final_status = _worker_terminal_status(worker, requested_status)
+    if worker_id == "buddha_always_on" and requested_status is None:
+        final_status = "paused"
     with _WORKER_CONTROL_LOCK:
         control, thread = _active_worker_control(worker_id)
         if expected_execution is not None:
@@ -3138,6 +3161,15 @@ def _control_bind_host() -> str:
 
 
 class QuietHTTPServer(ThreadingHTTPServer):
+    def server_close(self):
+        stop = getattr(self, "always_on_startup_stop", None)
+        thread = getattr(self, "always_on_startup_thread", None)
+        if stop is not None:
+            stop.set()
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=3.5)
+        super().server_close()
+
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
         if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
@@ -3224,7 +3256,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            start_request_id: str | None = None,
                            expected_service_instance: str | None = None,
                            expected_configuration_version: str | None = None,
-                           _creator_authority=None) -> tuple[dict, int]:
+                           _creator_authority=None, _startup_stop_event=None) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
@@ -3242,6 +3274,8 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
             "start_request_id": request_id, "service_instance": _WORKER_SERVICE_INSTANCE}}, status
 
     with _WORKER_CONTROL_LOCK:
+        if _startup_stop_event is not None and _startup_stop_event.is_set():
+            return rejected({"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409)
         known = _WORKER_EXECUTIONS.get(worker_id)
         if known is not None and known.start_request_id == request_id:
             execution = worker_execution_receipt(worker_id, request_id)
@@ -3273,6 +3307,9 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                                          admitted_worker={"id": worker_id, "type": slot.get("type")},
                                          slot_policy_reader=_execution_slot_reader(slot),
                                          sequence_creator_authority=_creator_authority)
+                if _startup_stop_event is not None:
+                    control.stop_event = _startup_stop_event
+                    control.startup_recovery = True
                 control.admission_handle = _WorkerAdmission()
                 control.admission_pending = True
                 control.thread = control.admission_handle
@@ -3312,6 +3349,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     # Admission fixes the provider and execution policy for this generation.
     # A later edit requires an explicit new start, including while no task exists.
     control.slot_policy_reader()
+    if control.stop_event.is_set():
+        return {"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409
 
     # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
     # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
@@ -4816,6 +4855,80 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"error": "Method not allowed"}, 405)
 
 
+
+def _resume_always_on_at_startup(stop_event):
+    """Resume only the persisted local Always-On policy through native admission."""
+    from hub.rheingold import get_lead_config
+    from hub._services.chat.slots_config import always_on_startup_snapshot
+    from hub._services.agent_manage_service import verified_local_agent_model
+    if stop_event.is_set():
+        return {"state": "shutdown", "retry": False}
+    if get_lead_config().get("mode") != "lead":
+        return {"state": "not_lead", "retry": False}
+    policy = always_on_startup_snapshot()
+    slot = policy["slot"]
+    if (slot.get("enabled") is not True
+            or slot.get("status") not in {"idle", "running", "starting", "paused"}
+            or slot.get("status") == "paused" and slot.get("auto_paused") is not True):
+        return {"state": "suspended", "retry": False}
+    if (slot.get("backend") not in {"ollama", "lmstudio"}
+            or not isinstance(slot.get("model"), str)
+            or slot["model"].lower().endswith(":cloud")):
+        return {"state": "nonlocal_policy", "retry": False}
+    if "buddha_always_on" in _active_worker_ids():
+        return {"state": "existing_admission", "retry": False}
+    if slot.get("auto_paused") is True:
+        try:
+            datetime.fromisoformat(slot["pause_started_at"])
+        except (KeyError, ValueError, TypeError):
+            return {"state": "invalid_cooldown", "retry": False}
+        if get_slot_pause_info(slot)["is_paused"]:
+            return {"state": "waiting_cooldown", "retry": True}
+    selected, model = _snapshot_chat_backend("buddha_always_on", worker_slot=slot, read_only=True)
+    if not verified_local_agent_model(selected, model):
+        return {"state": "waiting_local_model", "retry": True}
+    if stop_event.is_set():
+        return {"state": "shutdown", "retry": False}
+    response, status = _start_worker_execution("buddha_always_on",
+        expected_service_instance=_WORKER_SERVICE_INSTANCE,
+        expected_configuration_version=policy["configuration_version"], _startup_stop_event=stop_event)
+    if response.get("error_code") == "service_instance_conflict":
+        return {"state": "service_instance_changed", "retry": False}
+    if status == 503:
+        rejected = response.get("admission", {}).get("admitted") is False
+        return {"state": "configuration_changed" if rejected else "admission_unconfirmed",
+                "retry": rejected}
+    if status == 409:
+        pending = response.get("execution", {}).get("terminal") is False
+        return {"state": "existing_admission" if pending else "denied", "retry": False,
+                "execution": response.get("execution")}
+    return {"state": "admitted" if status == 200 else "denied", "retry": False,
+            "execution": response.get("execution")}
+
+
+def _start_always_on_startup_monitor(server):
+    """Wait for the local model service; never issue cloud or creator grants."""
+    stop = threading.Event()
+    server.always_on_startup_stop = stop
+    def monitor():
+        while not stop.is_set():
+            try:
+                result = _resume_always_on_at_startup(stop)
+            except Exception as exc:
+                # A provider may still be booting. Do not log credentials or URLs.
+                log.warning("Always-On-Start noch nicht verifizierbar (%s)", type(exc).__name__)
+                result = {"state": "unverifiable", "retry": True}
+            if not result["retry"]:
+                log.info("Always-On-Startprüfung: %s", result["state"])
+                return
+            if stop.wait(30):
+                return
+    thread = threading.Thread(target=monitor, name="bach-always-on-startup", daemon=True)
+    server.always_on_startup_thread = thread
+    thread.start()
+    return thread
+
+
 def start_control_api():
     try:
         from hub._services.chat.slots_config import initialize_system_slots
@@ -4831,6 +4944,7 @@ def start_control_api():
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
+        _start_always_on_startup_monitor(server)
         actual_port = int(server.server_port)
         log.info("Control API auf %s:%s", bind_host, actual_port)
         print(f"Web-Dashboard: http://localhost:{actual_port}/")

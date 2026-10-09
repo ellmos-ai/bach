@@ -28,6 +28,10 @@ Living bedeutet verfügbar; Running benötigt einen beobachteten Lauf.
 Die Modellbezeichnung allein bestätigt keine erfolgreiche Inferenz.
 Ein lokal gestarteter Worker teilt sich den tatsächlichen Compute-Besitz.
 Cloud-Worker werden ausdrücklich gestartet.
+Der aktivierte feste Always-On-Worker kann auf dem Lead nach einem Control-Start
+mit nachgewiesen lokalem Modell wieder aufgenommen werden. Manuelle Pause und
+Stop bleiben erhalten; siehe always-on-startup.txt. Diese lokale Wiederaufnahme
+ist kein Cloud-Autostart.
 
 ZUWEISUNG
 Native Zuweisungen verwenden assigned_slot, assigned_to und required_model.
