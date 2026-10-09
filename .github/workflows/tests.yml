@@ -76,7 +76,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_gui_gux_kognitiver_schaltplan.py system/tests/test_cognitive_gui.py::test_cognitive_memory_state
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_gui_gux_kognitiver_schaltplan.py system/tests/test_cognitive_gui.py
 
       - name: "pytest (T-20260927-676283213: alle lokal ohne Live-Dienste gruenen Dateien)"
         env:
