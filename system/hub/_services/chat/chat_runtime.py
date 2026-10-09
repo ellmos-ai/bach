@@ -274,6 +274,12 @@ class FailedAnswer(str):
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
 
+    def __new__(cls, value, *, backend_error=None):
+        from hub._services.llm.backend_errors import normalize_backend_error
+        answer = super().__new__(cls, value)
+        answer.backend_error = normalize_backend_error(backend_error)
+        return answer
+
     @classmethod
     def looks_like(cls, text, *, status: str | None = None) -> bool:
         """Return whether ``text`` is a typed failure in the live runtime.
@@ -393,7 +399,8 @@ def _managed_backend_answer(result: Any) -> str:
                 f"\n[Teilantwort vor dem Abbruch]\n{partial_text}"
                 if partial_text
                 else ""
-            )
+            ),
+            backend_error=result.get("backend_error"),
         )
 
     content = result.get("content")
@@ -667,7 +674,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 if isinstance(content, FailedAnswer):
                     item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
                 elif status == FailedAnswer.STATUS_FAILED and isinstance(content, str):
-                    item["content"] = FailedAnswer(content)
+                    item["content"] = FailedAnswer(content, backend_error=item.get("backend_error"))
                 elif status == FailedAnswer.STATUS_SUCCESS:
                     if isinstance(content, str) and content.strip().startswith(FailedAnswer.PREFIX):
                         item["content"] = SuccessfulAnswer(content)
@@ -685,7 +692,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids")}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error")}
             for message in messages
         ]
 
@@ -711,6 +718,11 @@ class ChatRuntime(_ModuleChatRuntime):
                         else FailedAnswer.STATUS_SUCCESS
                     )
                 item[FailedAnswer.STATUS_KEY] = status
+                from hub._services.llm.backend_errors import normalize_backend_error
+                detail = normalize_backend_error(getattr(content, "backend_error", None) or item.get("backend_error"))
+                item.pop("backend_error", None)
+                if detail is not None and status == FailedAnswer.STATUS_FAILED:
+                    item["backend_error"] = detail
             stored.append(item)
         return stored
 
@@ -1737,7 +1749,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 teil = result.get("content") or ""
                 return FailedAnswer(
                     f"{FailedAnswer.PREFIX}{result['error']}"
-                    + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
+                    + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
+                    backend_error=result.get("backend_error"),
                 )
 
             if self._context_voll(

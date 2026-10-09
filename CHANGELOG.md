@@ -6,6 +6,8 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Worker-Fehler bleiben nach dem Task-Abschluss sichtbar (Task #1976):** Ollama-Fehler liefern einen begrenzten, strukturierten Fehlervertrag. Ein ausdrücklich gemeldetes Monatslimit erscheint verständlich; `Retry-After` wird nur aus einem gültigen Anbieter-Header übernommen. Providertexte, URLs und Credentials werden dabei nicht an die GUI weitergegeben. Das Ende einer fehlerhaften Task-Besetzung bleibt im Verlauf, überschreibt aber die Fehlerursache nicht. Ein ausdrücklich gestarteter neuer Workerlauf entfernt den alten Fehler. Kein automatischer Cloud-Neustart oder Ersatzmodell.
+
 ### Changed
 
 - **Gemeinsames Gedächtnis BACH = OCEAN aktiv (S2, T-20260920-823767362):** `043_memory_union.py` liegt jetzt in `data/schema/migrations/` und läuft über den Runner; Modul und Vertrag bleiben in `data/schema/memory_union/` (sonst wären sie selbst Migrationen). `schema.sql` trägt den Vertragsstand (memory_*, context_triggers, memory_consolidation, decay_config, Lesson-Nebentabellen, Indizes), weil frische DBs per `init_schema` + `baseline_migrations` alle Migrationen nur buchen. Laptop und Mac wurden am 2026-09-26 bereits direkt umgestellt; dort ist der Lauf ein No-op mit Buchung.

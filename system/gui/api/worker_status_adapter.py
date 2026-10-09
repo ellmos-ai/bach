@@ -95,6 +95,10 @@ def _project_worker(raw: Any) -> dict[str, Any]:
         raise WorkerStatusUnavailable("Workerantwort enthält eine ungültige ID")
 
     item: dict[str, Any] = {"id": worker_id}
+    from hub._services.llm.backend_errors import normalize_backend_error
+    error = normalize_backend_error(raw.get("backend_error"))
+    if error is not None:
+        item["backend_error"] = error
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
     for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):

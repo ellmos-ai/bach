@@ -3441,7 +3441,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
         try:
             if control.stop_event.is_set():
                 return
-            _update_worker_slot(control, {"status": "running", "auto_paused": False, "current_activity": "Starte Routine..."})
+            _update_worker_slot(control, {"status": "running", "auto_paused": False,
+                "current_activity": "Starte Routine...", "backend_error": None})
             _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
             if control.stop_event.is_set():
                 return
@@ -3611,16 +3612,21 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 # restored as plain text after persistence. Neither
                 # form may complete a once-worker or be logged as ok.
                 if FailedAnswer.looks_like(ans):
+                    from hub._services.llm.backend_errors import normalize_backend_error
+                    detail = normalize_backend_error(getattr(ans, "backend_error", None))
+                    error_activity = detail["message"] if detail else ans_str[:120]
                     worker_error = RuntimeError("Backendantwort fehlgeschlagen")
                     control.start_error = "backend_error"
                     _update_worker_slot(control, {
                         "status": "error",
-                        "current_activity": ans_str[:120],
+                        "current_activity": error_activity,
+                        "backend_error": detail,
                     })
                     _record_worker_activity(
                         control,
-                        f"Block {run_count}: {ans_str[:55]}",
+                        error_activity if detail else f"Block {run_count}: {ans_str[:55]}",
                         "error",
+                        {"backend_error": detail} if detail else None,
                     )
                     return
                 if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
