@@ -20,6 +20,10 @@ from hub._services.llm.model_backend import OllamaBackend  # noqa: E402
 class _FakeStream:
     """Antwortet mit vorgegebenen Zeilen."""
 
+    # HTTPX streaming responses expose these before raise_for_status/iteration.
+    status_code = 200
+    headers = {}
+
     def __init__(self, zeilen):
         self._zeilen = zeilen
 
