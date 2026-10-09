@@ -1,0 +1,49 @@
+# Native Always-On-Wiederaufnahme
+
+Die Control-API startet nach erfolgreichem Binden ihres konfigurierten Ports eine
+eigene Startprüfung. Ausschließlich der gespeicherte Steckplatz
+buddha_always_on wird auf einem kanonischen Lead berücksichtigt. Andere
+Steckplätze und dynamische Worker erhalten keinen automatischen Start.
+
+Die Prüfung übernimmt weder Defaults als Nutzerfreigabe noch Creator-Rechte.
+Enabled muss ausdrücklich true sein. Manuell pausierte, gestoppte, deaktivierte,
+abgelaufene und abgeschlossene Zustände bleiben erhalten. Ein normaler Stop
+dieses festen Workers speichert künftig paused; ein ausdrücklich angeforderter
+Zielzustand bleibt wirksam. Eine vorherige automatische Abkühlpause darf
+fortgesetzt werden; die Startprüfung wartet vor einer Zulassung auf den
+vorhandenen Countdown. Ein unlesbarer Pausenbeginn erlaubt keinen Start.
+
+Ollama und LM Studio werden nur nach tatsächlicher lokaler Modellprüfung
+berücksichtigt. Cloudanbieter und :cloud-Modelle sind ausgeschlossen; ein
+Loopback-Endpunkt allein beweist kein lokales Modell. Ist der lokale
+Modellserver noch nicht bereit, wartet die Startprüfung 30 Sekunden und liest
+die aktuelle Konfiguration erneut. Die Prüfung endet bei bestätigter Zulassung
+oder vorhandener nativer Zulassung und wird beim Schließen des Servers beendet.
+Ihr Abbruchsignal ist atomar an die eigene reservierte Generation gebunden.
+Damit darf eine beim Shutdown noch wartende Rollenzulassung keinen Worker
+nachträglich starten; eine spätere fremde Generation erhält keinen Stop.
+
+Die lokale Modellprüfung und der Start verwenden eine gemeinsame unveränderte
+Konfigurationsversion. Die vorhandene native Zulassung prüft diese Version,
+die aktuelle Control-Instanz und den gespeicherten Enabled-Zustand erneut.
+Parallele Versuche reservieren höchstens eine Generation pro Controller.
+Ein unbestätigter physischer Start wird nicht als CAS-Konflikt wiederholt.
+
+Die normale Task-Lease, Inhaltsversion, Creator-Schonfrist von 600 Sekunden,
+Fackel und lokale Inferenzsteuerung werden unverändert genutzt. Erst die
+tatsächlich bestätigte Taskübernahme erlaubt eine Modellrunde. Eine leere Queue
+hält den zugelassenen kontinuierlichen Worker verfügbar.
+Nach einem Absturz wartet die eigene Wiederaufnahme auf held-, Creator- und
+Inhaltskonflikte, ohne die bestätigte Lease zu übergehen. Ein kanonisch
+terminaler alter Taskzustand erlaubt nur das bedingte Löschen des unveränderten
+Taskzeigers; er wird nie als eigene erledigte Aufgabe oder eigenes Ergebnis
+ausgegeben. Zwischenzeitlich neu zugewiesene Taskzeiger bleiben erhalten.
+
+## Abnahme
+
+Dieses Dokument beschreibt den Quellvertrag. Die produktive Abnahme erfordert
+einen neuen Control-Prozess, eine neue Service-Instanz, genau eine physische
+Always-On-Generation und eine reale geleaste Aufgabe mit bestätigtem Ergebnis.
+Ein bloßes Source-Update oder eine grüne Testauswahl beweist diese Abnahme nicht.
+Cloud-Worker werden nach einem Control-Neustart weiterhin nicht automatisch
+wieder gestartet.

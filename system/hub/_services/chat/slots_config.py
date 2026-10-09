@@ -656,6 +656,33 @@ def get_always_on_execution_slot(path: str | None = None) -> dict[str, Any]:
     return _always_on_execution_slot_from_config(config)
 
 
+
+def always_on_startup_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Bind the persisted startup intent and native admission to one file image."""
+    with _config_lock:
+        raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    return {"configuration_version": snapshot["configuration_version"],
+            "slot": _always_on_execution_slot_from_config(json.loads(raw.decode("utf-8")))}
+
+
+
+@_serialized_mutation
+def clear_recovered_always_on_task(expected_task_id: int, path: str | None = None) -> bool:
+    """Clear only the unchanged controller task pointer after canonical terminal readback."""
+    if type(expected_task_id) is not int or expected_task_id <= 0:
+        raise ValueError("Gültige Taskbindung erforderlich")
+    config = load_slots_config(path, strict=True)
+    slot = _always_on_execution_slot_from_config(config)
+    if str(slot.get("task_id")) != str(expected_task_id):
+        return False
+    from hub._services.skill_source_service import check_write_locks
+    check_write_locks(_resolve_path(path))
+    config["slots"]["buddha_always_on"]["task_id"] = None
+    save_slots_config(config, path)
+    return True
+
+
 def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, Any]:
     """Use one persisted policy representation for physical and CAS admission."""
     if (not isinstance(config, dict) or not isinstance(config.get("slots"), dict)
