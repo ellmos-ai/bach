@@ -483,6 +483,16 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker.pop("task_action_binding", None)
     with _WORKER_CONTROL_LOCK:
         retained = _WORKER_EXECUTIONS.get(worker.get("id"))
+        control = _WORKER_CONTROLS.get(worker.get("id"))
+        live_control = control or retained
+        thread_alive = bool(live_control and _thread_is_alive(live_control.thread))
+        binding = getattr(live_control, "task_binding", None)
+        task_active = bool(thread_alive and binding is not None and not binding.closed)
+        # Service liveness includes idle polling. Running needs an actual
+        # generation-bound task; the configured task_id is not proof.
+        worker.update(runtime_verified=True, worker_active=thread_alive,
+                      running=task_active, active_task_id=binding.task_id if task_active else None,
+                      has_task_prompt=bool(str(worker.get("task_prompt") or "").strip()))
         if retained is not None:
             execution = worker_execution_receipt(retained.worker_id, retained.start_request_id)
             worker["execution"] = execution
@@ -3698,7 +3708,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             _update_worker_slot(control, {"status": next_status, "current_activity": "Abgeschlossen"})
         except Exception as exc:
             worker_error = exc
-            log.error(f"Worker {worker_id} Fehler: {exc}")
+            log.error(f"Worker {worker_id} Fehler: {exc}", exc_info=True)
             if not control.stop_event.is_set():
                 _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                 _record_worker_activity(control, f"Fehler: {exc}", "error")
