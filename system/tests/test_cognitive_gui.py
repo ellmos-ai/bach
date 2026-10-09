@@ -69,6 +69,12 @@ def test_cognitive_memory_state():
     # The diagram is conceptual; this endpoint does not attest runtime guards.
     hg = data["hooker_governance"]
     assert hg["status"] == "Nicht geprüft"
+    assert data["architecture_model"]["runtime_verified"] is False
+    assert data["architecture_model"]["module_boundaries"] == "not_implied"
+    assert data["measurement_scope"] == "bach_memory_table_counts"
+    assert "Teilprozesse" in hg["concept"]
+    assert "reine Injektoren" not in hg["concept"]
+    assert hg["reiner_injektor_hooker"]["legacy_key"] is True
     assert len(hg["safety_rules"]) >= 3
     assert len(hg["channels"]) >= 4
 

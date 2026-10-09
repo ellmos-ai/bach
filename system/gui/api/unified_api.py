@@ -57,6 +57,7 @@ from hub._services.blueprint_service import (
 from hub._services.cognitive_service import (
     CANONICAL_MERMAID_DIAGRAM,
     DIAGRAM_LEGEND,
+    PROCESS_MODEL,
     get_cognitive_topology,
     get_process_block,
     read_usmc_lessons_safe,
@@ -1639,6 +1640,8 @@ async def get_cognitive_state():
 
     return {
         "source": "bach_memory_tables",
+        "architecture_model": dict(PROCESS_MODEL),
+        "measurement_scope": "bach_memory_table_counts",
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "availability": "available" if db_error is None else "unavailable",
         "error": db_error,
@@ -1693,7 +1696,7 @@ async def get_cognitive_state():
         },
         "kontextfenster": {
             "title": "Aktives Kontextfenster (Im Zentrum des Kognitiven Baums)",
-            "role_in_llm": "Das aktive LLM-Kontextfenster IST die Phonologische Schleife! Alle Organe speisen hier ein oder lesen daraus.",
+            "role_in_llm": "Kognitive Analogie im Soll-Modell: Das Kontextfenster übernimmt die Rolle eines Arbeitsgedächtnisses.",
             "mental_health": {
                 "active_tokens": None,
                 "max_tokens": None,
@@ -1794,8 +1797,8 @@ async def get_cognitive_state():
             ]
         },
         "hooker_governance": {
-            "title": "Selbstkontrolle & Hooker-Injektions-Engpass",
-            "concept": "Hooker sind reine Injektoren (Zustell-Pipeline), KEINE Kontrolleure! Die Kontrolle liegt in den Selbstkontroll-Mechanismen der Zentralen Exekutive (Sensoren -> Deterministische & LLM-Guards -> Berechtigungskontrolle -> Hooker-Zustellung).",
+            "title": "Teilprozesse: Bedarf erkennen, Prüfen und Zustellen",
+            "concept": "Die Map trennt Bedarfserkennung, Kontextauswahl, Regelprüfung und Zustellung als Tätigkeiten. Ein Hooker kann mehrere dieser Teilprozesse und Aktionsguards implementieren. Ihre Durchsetzung hängt vom jeweiligen Laufzeitanschluss ab.",
             "status": "Nicht geprüft",
             "safety_rules": [
                 {"rule": "Sanitization & Prompt-Injection-Filter", "desc": "Prüft externe Inputs vor Einspeisung ins Kontextfenster"},
@@ -1832,7 +1835,9 @@ async def get_cognitive_state():
                 "verification": "Nicht geprüft"
             },
             "reiner_injektor_hooker": {
-                "definition": "Der Hooker ist das reine Ausführungsorgan (Zusteller). Er besitzt keine eigene Kontrolllogik, sondern führt nach Berechtigung die Injektion ins Kontextfenster aus."
+                "definition": "Zustellung ist ein Teilprozess. Die Prüfung und Zustellung dürfen im selben Hooker liegen; die Prozessgrenze verlangt keine getrennten Module.",
+                "legacy_key": True,
+                "process_id": "kontext_zustellen"
             }
         },
         "disambiguierung_knoten": {
@@ -1981,7 +1986,7 @@ async def get_cognitive_state():
                 {"from": "sensoren_messtechnik", "to": "selbstkontroll_guards", "type": "Sensordaten (Token, CoT-Loops, Stress)", "wire": "wire-sensor-guards"},
                 {"from": "selbstkontroll_guards", "to": "berechtigungskontrolle", "type": "Entscheidungsfindung (Skript- & LLM-Guards)", "wire": "wire-guards-auth"},
                 {"from": "berechtigungskontrolle", "to": "hooker_injektor", "type": "Freigegebener Payload (Gedanke / Faktenanker)", "wire": "wire-auth-hooker"},
-                {"from": "hooker_injektor", "to": "kontextfenster", "type": "Reine physische Injektion / Zustellung", "wire": "wire-hook-ctx-inject", "is_critical": True},
+                {"from": "hooker_injektor", "to": "kontextfenster", "type": "Zusatzkontext zustellen (Teilprozess; Anschluss separat prüfen)", "wire": "wire-hook-ctx-inject", "is_critical": True},
                 {"from": "agenten_fabrika", "to": "startprompt", "type": "Rolle + Persona + Skills + Governance", "wire": "wire-fab-start"},
                 {"from": "langzeit_gedaechtnis", "to": "startprompt", "type": "Initialer Kontext beim Booten", "wire": "wire-lzg-start"},
                 {"from": "disambiguierung_knoten", "to": "startprompt", "type": "Vorab-Sicherheitsleitplanke (Nichtwissen erlaubt)", "wire": "wire-dis-start"},
@@ -2006,10 +2011,10 @@ async def get_cognitive_state():
 async def get_cognitive_topology_endpoint():
     """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
     try:
-        conn = _get_conn()
-        res = get_cognitive_topology(conn)
-        conn.close()
-        return res
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only = ON")
+            return get_cognitive_topology(conn)
     except Exception as e:
         logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
         return {"success": False, "error": "Interner Serverfehler", "blocks": {}}
@@ -2019,10 +2024,10 @@ async def get_cognitive_topology_endpoint():
 async def get_cognitive_block_endpoint(block_id: str):
     """Liefert detaillierte Inspektionsdaten zu einem der 8 kognitiven Prozessblöcke (GUX-034..041)."""
     try:
-        conn = _get_conn()
-        res = get_process_block(block_id, conn=conn)
-        conn.close()
-        return res
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only = ON")
+            return get_process_block(block_id, conn=conn)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
