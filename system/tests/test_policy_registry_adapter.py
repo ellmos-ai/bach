@@ -21,7 +21,7 @@ def test_projection_contains_no_full_text_or_private_location():
     assert result["source_verified"] and not result["enforcement_verified"]
     serialized = json.dumps(result)
     assert "NEVER_COPY" not in serialized and "/private/location" not in serialized
-    for state in ("present", "remote-unchecked", "hash-mismatch", "missing"):
+    for state in ("present", "remote-unchecked", "hash-mismatch", "missing", "unreadable"):
         assert not adapter.pointer(entry(), {"rule-1": {"state": state}})["source_verified"]
 
 
@@ -87,3 +87,41 @@ def test_unavailable_api_uses_503_without_bundled_list(monkeypatch):
     monkeypatch.setattr(api, "observe", unavailable)
     with pytest.raises(HTTPException) as denied: asyncio.run(api.read_registry())
     assert denied.value.status_code == 503 and denied.value.detail == "policy_registry_missing"
+
+
+class PartlyUnreadableRegistry(Registry):
+    def search(self, **options):
+        return [entry(), entry(id="rule-2")]
+
+    def verify(self):
+        return {"checks": [
+            {"id": "rule-1", "state": "unreadable"},
+            {"id": "rule-2", "state": "ok", "actual": "a" * 64},
+        ]}
+
+
+@pytest.mark.parametrize("effective", [False, True])
+def test_unreadable_pointer_keeps_other_entries_available(tmp_path, monkeypatch, effective):
+    path = tmp_path / "registry.json"
+    path.write_text("{}", encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(adapter, "_provider", lambda: PartlyUnreadableRegistry(path))
+
+    result = asyncio.run(api.read_registry(scope="project:test", effective=effective))
+
+    assert result["availability"] == "available" and result["count"] == 2
+    pointers = {item["id"]: item for item in result["entries"]}
+    assert pointers["rule-1"]["source_state"] == "unreadable"
+    assert pointers["rule-1"]["source_verified"] is False
+    assert pointers["rule-2"]["source_state"] == "ok"
+    assert pointers["rule-2"]["source_verified"] is True
+    assert result["source_verification_complete"] is False
+    assert result["enforcement_verified"] is False
+    assert all(item["enforcement_verified"] is False for item in pointers.values())
+    if effective:
+        assert result["effective"]["selected"]["source_state"] == "unreadable"
+        assert result["effective"]["selected"]["source_verified"] is False
+        assert result["effective"]["selected"]["enforcement_verified"] is False
+    serialized = json.dumps(result)
+    assert "NEVER_COPY" not in serialized and "/private/location" not in serialized
+    assert path.read_bytes() == before

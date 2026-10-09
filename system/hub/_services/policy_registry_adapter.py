@@ -10,8 +10,8 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PIN = "08add2bb598e9d301d225221ebef5721a7a0e833"
-VERSION = "0.2.3"
+PIN = "2c4896b70cb39e2e24748b384d5d0cc7fcd15a16"
+VERSION = "0.2.4"
 REPOSITORY = "https://github.com/ellmos-ai/policy-registry"
 
 
