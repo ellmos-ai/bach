@@ -34,7 +34,8 @@ _SAFE_TEXT_FIELDS = (
     "current_activity", "created_at", "expires_at",
 )
 _NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
-_BOOL_FIELDS = ("auto_paused", "system", "deletable")
+_BOOL_FIELDS = ("auto_paused", "system", "deletable", "runtime_verified",
+                "worker_active", "running", "has_task_prompt")
 _ALLOWED_CONTROL = {
     ("GET", "marblerun/catalog"), ("GET", "marblerun/run"), ("POST", "marblerun/action"),
     ("GET", "status"), ("GET", "auth/check"), ("GET", "workers"), ("GET", "system-slots"), ("GET", "activity"),
@@ -128,6 +129,9 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     task_id = raw.get("task_id")
     if isinstance(task_id, int) and not isinstance(task_id, bool):
         item["task_id"] = task_id
+    active_task_id = raw.get("active_task_id")
+    if type(active_task_id) is int and active_task_id > 0:
+        item["active_task_id"] = active_task_id
     generation = raw.get("generation")
     if isinstance(generation, str) and _RUN_ID.fullmatch(generation):
         item["generation"] = generation
