@@ -87,16 +87,18 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     return normalize_backend_error(raw)
 
 
-async def read_error_payload(response):
-    """Bound streamed error bodies to 16 KiB; truncated/unreadable is unknown."""
+async def read_error_payload(response, *, timeout_seconds):
+    """Bound error bodies to 16 KiB and the caller's remaining total budget."""
+    import asyncio
     import httpx
     data = bytearray()
     try:
-        async for chunk in response.aiter_bytes(chunk_size=4096):
-            if len(data) + len(chunk) > 16_384:
-                return None
-            data.extend(chunk)
+        async with asyncio.timeout(timeout_seconds):
+            async for chunk in response.aiter_bytes(chunk_size=4096):
+                if len(data) + len(chunk) > 16_384:
+                    return None
+                data.extend(chunk)
         result = json.loads(data)
-    except (ValueError, UnicodeDecodeError, httpx.HTTPError):
+    except (ValueError, UnicodeDecodeError, httpx.HTTPError, TimeoutError):
         return None
     return result if isinstance(result, dict) else None

@@ -8,7 +8,11 @@ quota_period=month (bei ausdrücklich gemeldetem Monatslimit),
 retry_after_seconds (wenn ein gültiger Retry-After-Header vorliegt) und eine
 aus festen Texten erzeugte message. Providerbodies, URLs, Schlüssel und übrige
 Header gehören nicht in diesen Vertrag. Fehlerbodies werden höchstens bis
-16 KiB ausgewertet; unlesbare oder größere Bodies liefern keine Quotenannahme.
+16 KiB ausgewertet. Das Lesen hält außerdem das verbleibende Gesamtbudget
+BACH_LLM_TOTAL_CAP und den bestehenden Read-Timeout ein. Unlesbare, zu langsam
+gelieferte oder größere Bodies liefern keine Quotenannahme; der tatsächlich
+empfangene HTTP-Status bleibt erhalten. Auch Systemslot-Snapshots enthalten
+ausschließlich die normalisierten Fehlerfelder.
 
 HTTP 429 allein beweist kein Monatslimit. Ohne konkrete Monatslimitmeldung
 erscheint ein Anfragelimit. Retry-After akzeptiert ganze, nichtnegative Sekunden

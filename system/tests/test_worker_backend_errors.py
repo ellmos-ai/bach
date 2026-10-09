@@ -195,6 +195,12 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         assert public["worker_active"] is False and public["running"] is False
         assert public["backend_error"]["quota_period"] == "month"
         assert "PRIVATE_PROVIDER_BODY" not in json.dumps(events + [public])
+        if core:
+            agent = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
+            assert agent["backend_error"]["quota_period"] == "month"
+            assert agent["backend_error"]["status_code"] == 429
+            assert agent["status"] == "error" and agent["worker_active"] is False
+            assert "PRIVATE_PROVIDER_BODY" not in json.dumps(agent)
     finally:
         if thread is not None and thread.is_alive():
             control._WORKER_EXECUTIONS[ident].stop_event.set()
@@ -214,3 +220,32 @@ def test_oversized_error_body_is_unknown_and_not_copied(monkeypatch):
     result = run_http(monkeypatch, {"error": "monthly usage limit reached " + "PRIVATE" * 5000})
     assert result["backend_error"]["kind"] == "rate_limited"
     assert "quota_period" not in result["backend_error"] and "PRIVATE" not in json.dumps(result)
+
+
+def test_slow_http_error_body_cannot_bypass_total_cap(monkeypatch):
+    import time
+    from hub._services.llm import model_backend as module
+    original_limit = module.limit
+    monkeypatch.setattr(module, "limit", lambda key: 0.03 if key == "BACH_LLM_TOTAL_CAP" else original_limit(key))
+    class SlowErrorBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'{"error":"'
+            # Each chunk is well below read_timeout, but the whole response
+            # has no end. The finite total budget must release the worker.
+            while True:
+                await asyncio.sleep(.01)
+                yield b'PRIVATE'
+    real_client = httpx.AsyncClient
+    calls = []
+    def reply(request):
+        calls.append(request)
+        return httpx.Response(429, stream=SlowErrorBody())
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    started = time.monotonic()
+    result = asyncio.run(OllamaBackend(default_model="glm-5.3:cloud").chat(
+        [{"role": "user", "content": "fixture"}]))
+    assert time.monotonic() - started < 2
+    assert len(calls) == 1 and result["backend_error"]["status_code"] == 429
+    assert result["backend_error"]["kind"] == "rate_limited"
+    assert "PRIVATE" not in json.dumps(result)

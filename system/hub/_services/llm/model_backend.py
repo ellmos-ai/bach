@@ -240,7 +240,8 @@ class OllamaBackend(ModelBackend):
                 ) as response:
                     if response.status_code >= 400:
                         from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
-                        detail = classify_ollama_error(await read_error_payload(response),
+                        error_budget = min(read_timeout, max(0, total_cap - (time.time() - started))) if total_cap > 0 else read_timeout
+                        detail = classify_ollama_error(await read_error_payload(response, timeout_seconds=error_budget),
                             status_code=response.status_code,
                             retry_after=response.headers.get("Retry-After"))
                         return aborted("HTTPStatusError: " + detail["message"], backend_error=detail)

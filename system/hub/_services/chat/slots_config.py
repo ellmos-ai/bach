@@ -801,6 +801,8 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             raise ValueError("System-Steckplatz-ID stimmt nicht überein")
         defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
         pause_info = get_slot_pause_info(slot)
+        from hub._services.llm.backend_errors import normalize_backend_error
+        error = normalize_backend_error(slot.get("backend_error"))
         public_slots.append({
             "id": slot_id,
             "system": True,
@@ -838,6 +840,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "enabled": bool(slot.get("enabled", defaults.get("enabled", True))),
             "status": slot.get("status", defaults.get("status", "idle")),
             "current_activity": slot.get("current_activity", ""),
+            **({"backend_error": error} if error is not None else {}),
             "pause_info": {**pause_info, "auto_paused": slot.get("auto_paused") is True},
             "living": None,
             "running": None,
