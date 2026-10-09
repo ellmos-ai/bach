@@ -54,10 +54,10 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
     "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
     "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
-    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true). "
-    "Erst wenn das Werkzeug die angelegten Teilaufgaben und den geschlossenen Eltern-Task "
-    "bestätigt, gilt die Zerlegung als erfolgreicher Abschluss dieses Laufs; die Teilaufgaben "
-    "übernimmt ein späterer Lauf. Danach mit FERTIG enden. Ohne bestätigten Werkzeugbeleg "
+    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
+    "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
+    "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
+    "bestätigte Kind-IDs, offene Arbeit>') den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
     "keinen Taskabschluss behaupten."
 )
 
@@ -1859,9 +1859,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
                         actions.confirm(binding)
+                    completed = binding.completed_task_ids
                     with self._task_completion_receipts_lock:
                         receipts = self._task_completion_receipts.setdefault(str(session.chat_id), [])
-                        for task_id in binding.completed_task_ids:
+                        for task_id in completed:
                             if task_id not in receipts:
                                 receipts.append(task_id)
                     if binding.closed:

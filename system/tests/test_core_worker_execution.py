@@ -93,7 +93,7 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
             binding.record_worktree_result(42, "PR ready", review=True,
                 result_ref="https://github.com/ellmos-ai/bach/pull/123")
         else:
-            binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+            binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis der gebundenen Core-Aufgabe"})
         return "block finished"
     monkeypatch.setattr(control.runtime, "process", process)
 
@@ -123,7 +123,7 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     assert all(a["backend_id"] == "openrouter" and a["model_id"] == "selected-model" for a in assignments)
     assert assignments[0]["agent_instance_id"] == assignments[1]["agent_instance_id"]
     assert pauses == (["runs", "tasks"] if outcome == "review" else ["tasks", "tasks"])
-    assert endings[0]["result"] == ("task_review" if outcome == "review" else "task_done")
+    assert endings[0]["result"] == "task_review"
     assert slots_config.get_slot(CORE, core_file)["task_id"] is None
 
 
@@ -252,7 +252,7 @@ def test_core_policy_change_blocks_bound_operations_but_keeps_confirmed_cleanup(
         with pytest.raises(LeaseProtocolError):
             binding.assert_active()
         with pytest.raises(LeaseProtocolError):
-            binding.execute_task_manage({"action": "done", "task_id": 42})
+            binding.execute_task_manage({"action": "done", "task_id": 42, "result": "Konkretes Ergebnis"})
         assert binding.completed_task_ids == ()
         # Maintain ownership while an already admitted physical call terminates.
         assert binding.heartbeat(renew_due=True)

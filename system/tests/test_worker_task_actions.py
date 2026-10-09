@@ -5,6 +5,7 @@ import pytest
 
 from system.tests.test_worker_lease_binding import binding, mem_db
 from hub._services.chat.worker_task_actions import WorkerTaskActions
+from hub._services.task_lease_client import LeaseProtocolError
 
 
 def requested(binding):
@@ -41,8 +42,18 @@ def test_request_consumed_once_and_no_text_completion(binding):
 def test_actual_decompose_ack_confirms_created_ids_without_capabilities(binding, close):
     actions, receipt = requested(binding)
     actions.consume(binding, backend="isolated", model="test-model")
-    binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
-                                 "subtasks": [{"title": "Prüfen"}], "close_parent": close})
+    args = {"action": "decompose", "task_id": binding.task_id,
+            "subtasks": [{"title": "Prüfen"}], "close_parent": close}
+    if close:
+        with pytest.raises(LeaseProtocolError):
+            binding.execute_task_manage(args)
+        assert not binding.closed and binding.decomposition_receipt is None
+        assert binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
+        assert actions.confirm(binding) is False
+        actions.end_block()
+        assert actions.snapshot()["state"] == "error"
+        return
+    binding.execute_task_manage(args)
     assert actions.confirm(binding)
     observed = actions.snapshot()
     assert observed["state"] == "confirmed"
@@ -95,7 +106,7 @@ def test_committed_decomposition_with_lost_ack_never_confirms(binding, monkeypat
     with pytest.raises(LeaseConnectionError):
         binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
                                      "subtasks": [{"title": "Teilauftrag"}]})
-    assert binding._client.task_snapshot(binding.task_id)["status"] == "done"
+    assert binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
     assert actions.confirm(binding) is False
     assert binding.return_lease() is False
     actions.end_block()
@@ -140,8 +151,16 @@ def test_real_runtime_boundary_and_tool_ack(binding, monkeypatch, tool_action, s
             assert binding._ack.lease_id not in str(messages)
             if tool_action == "text":
                 return {"content": "FERTIG"}
+            if tool_action == "decompose" and len(calls) == 2:
+                args = {"action": "submit_result", "task_id": binding.task_id,
+                        "result": f"Zerlegungsplan: Teilaufgaben {binding.decomposition_receipt['created_ids']} zur Ausführung angelegt; Umsetzung und Abnahme sind offen."}
+                tools = [{"function": {"name": "task_manage", "arguments": json.dumps(args) if serialized else args}}]
+                return {"content": "", "tool_calls": tools,
+                        "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
             args = {"action": "decompose" if tool_action == "update-then-decompose" else tool_action,
                     "task_id": binding.task_id}
+            if tool_action == "done":
+                args["result"] = "Konkretes Ergebnis statt angeforderter Zerlegung"
             if tool_action in {"decompose", "update-then-decompose"}:
                 args["subtasks"] = [{"title": "Teilauftrag"}]
             tools = [{"function": {"name": "task_manage", "arguments": json.dumps(args) if serialized else args}}]
@@ -169,10 +188,10 @@ def test_real_runtime_boundary_and_tool_ack(binding, monkeypatch, tool_action, s
         runtime._handoff = AsyncMock(return_value=[{"role": "user", "content": "Zusammenfassung ohne Aktionsauftrag"}])
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection accessed"))
     asyncio.run(runtime.process("Auftrag", "worker-bound", work_priority="background"))
-    assert len(calls) == 1
+    assert len(calls) == (2 if tool_action == "decompose" else 1)
     assert actions.snapshot()["state"] == ("confirmed" if tool_action == "decompose" else "error")
-    if tool_action == "done":
-        assert binding.completed_task_ids == (binding.task_id,)
+    if tool_action in {"done", "decompose"}:
+        assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
     elif tool_action == "text":
         assert not binding.closed
     if tool_action == "update-then-decompose":

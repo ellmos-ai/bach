@@ -210,9 +210,7 @@ class _WorkerControl:
     creator_delegation: Any = None
     startup_recovery: bool = False
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
-    completed_task_ids: list[int] = field(default_factory=list)
-    completed_task_results: dict[int, dict] = field(default_factory=dict)
-    reviewed_task_ids: list[int] = field(default_factory=list)
+    task_result_bindings: dict[int, Any] = field(default_factory=dict)
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     handoff: WorkerHandoff = field(init=False)
@@ -232,7 +230,7 @@ _WORKER_EXECUTIONS: Dict[str, _WorkerControl] = {}
 _WORKER_SERVICE_INSTANCE = uuid.uuid4().hex
 
 
-def worker_execution_receipt(worker_id: str, start_request_id: str | None = None) -> dict:
+def worker_execution_receipt(worker_id: str, start_request_id: str | None = None, *, verify_results=True) -> dict:
     """Observe this service's exact start without inferring completion from text."""
     with _WORKER_CONTROL_LOCK:
         control = _WORKER_EXECUTIONS.get(worker_id)
@@ -246,10 +244,10 @@ def worker_execution_receipt(worker_id: str, start_request_id: str | None = None
                 "state": "unconfirmed" if current is not None or _thread_is_alive(thread) else "idle",
                 "terminal": False, "worker_thread_started": None,
                 "worker_status": None, "completed_task_ids": [], "reviewed_task_ids": [], "error_code": None}
-        return _control_execution_receipt(control)
+    return _control_execution_receipt(control, verify_results=verify_results)
 
 
-def _control_execution_receipt(control: _WorkerControl) -> dict:
+def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) -> dict:
     """Observe this captured generation even after a later start replaced it."""
     with _WORKER_CONTROL_LOCK:
         worker_id = control.worker_id
@@ -265,35 +263,68 @@ def _control_execution_receipt(control: _WorkerControl) -> dict:
             state = "unconfirmed"
         else:
             state = "stopping" if control.stop_event.is_set() else "running"
-        try:
-            status = (_execution_worker_slot(worker_id) or {}).get("status")
-        except Exception:
-            status = None
         binding = control.task_binding
-        return {"schema": "bach.worker-execution.v1", "service_instance": _WORKER_SERVICE_INSTANCE,
+        archived = dict(control.task_result_bindings)
+        bindings = dict(archived)
+        receipt = {"schema": "bach.worker-execution.v1", "service_instance": _WORKER_SERVICE_INSTANCE,
             "worker_id": worker_id, "start_request_id": control.start_request_id,
             "generation": control.generation, "state": state, "terminal": terminal,
             "worker_thread_started": (None if control.launch_attempted and not control.worker_thread_started
                                       and not terminal else control.worker_thread_started),
-            "worker_status": status, "error_code": control.start_error,
-            "completed_task_ids": sorted(set(control.completed_task_ids) | (set(binding.completed_task_ids) if binding is not None else set())),
-            "reviewed_task_ids": sorted(set(control.reviewed_task_ids) | (set(binding.reviewed_task_ids) if binding is not None else set()))}
+            "worker_status": None, "error_code": control.start_error,
+            "stop_requested": control.stop_event.is_set()}
+    if not verify_results:
+        # Stop already holds the controller lock. Its receipt confirms only the
+        # physical lifecycle; a separate execution poll verifies TaskDB results.
+        return {**receipt, "completed_task_ids": [], "reviewed_task_ids": [],
+                "submitted_task_ids": [], "results_verified": False}
+    # Binding locks, SQLite, and remote authority never run under controller lock.
+    try:
+        receipt["worker_status"] = (_execution_worker_slot(worker_id) or {}).get("status")
+    except Exception:
+        pass
+    if binding is not None:
+        bindings[binding.task_id] = binding
+    completed, reviewed, submitted = set(), set(), set()
+    verified = True
+    for task_id, retained in bindings.items():
+        try:
+            if retained.submitted_result is not None:
+                submitted.add(task_id)
+            observed = retained.result_state()
+            completed.update(observed["completed_task_ids"])
+            reviewed.update(observed["reviewed_task_ids"])
+        except Exception:
+            verified = False
+    with _WORKER_CONTROL_LOCK:
+        if control.task_binding is not binding or control.task_result_bindings != archived:
+            # Retry next poll instead of combining different controller snapshots.
+            completed.clear(); reviewed.clear(); verified = False
+    receipt.update(completed_task_ids=sorted(completed), reviewed_task_ids=sorted(reviewed),
+                   submitted_task_ids=sorted(submitted), results_verified=verified)
+    return receipt
 
 
 def _retain_worker_task_receipts(control: _WorkerControl) -> None:
     """Keep canonical Release ACKs before replacing the current task binding."""
-    binding = control.task_binding
+    with _WORKER_CONTROL_LOCK:
+        binding = control.task_binding
     if binding is None:
         return
-    completed = tuple(binding.completed_task_ids)
-    reviewed = tuple(binding.reviewed_task_ids)
-    result = getattr(binding, "completion_result", None)
+    has_receipt = binding.has_result_receipt
     with _WORKER_CONTROL_LOCK:
-        control.completed_task_ids = sorted(set(control.completed_task_ids) | set(completed))
-        control.reviewed_task_ids = sorted(set(control.reviewed_task_ids) | set(reviewed))
-        if (isinstance(result, dict) and result.get("generation") == control.generation
-                and result.get("task_id") in completed):
-            control.completed_task_results[result["task_id"]] = dict(result)
+        if control.task_binding is binding and has_receipt:
+            control.task_result_bindings[binding.task_id] = binding
+
+
+def _worker_result_binding(control, task_id, generation):
+    """Select the retained generation's exact binding under the controller lock."""
+    binding = control.task_result_bindings.get(task_id)
+    if binding is None:
+        binding = control.task_binding
+    if binding is None or binding.task_id != task_id or binding.generation != generation:
+        return None
+    return binding
 
 
 def worker_execution_result(worker_id, request_id, generation, task_id):
@@ -304,10 +335,18 @@ def worker_execution_result(worker_id, request_id, generation, task_id):
                 or control.generation != generation or not control.done_event.is_set()
                 or _thread_is_alive(control.thread)):
             raise ValueError("Physisches Laufende dieser Generation nicht bestätigt")
-        result = control.completed_task_results.get(task_id)
-        if task_id not in control.completed_task_ids or not isinstance(result, dict):
-            raise ValueError("Bestätigter Taskabschluss mit fachlichem Ergebnis fehlt")
-        return dict(result)
+        binding = _worker_result_binding(control, task_id, generation)
+        if binding is None:
+            raise ValueError("Bestätigte Ergebnisabgabe fehlt")
+    result = binding.completion_result
+    if not isinstance(result, dict) or result.get("accepted") is not True:
+        raise ValueError("Aktuelle getrennte Abnahme des fachlichen Ergebnisses fehlt")
+    with _WORKER_CONTROL_LOCK:
+        if (_WORKER_EXECUTIONS.get(worker_id) is not control
+                or _worker_result_binding(control, task_id, generation) is not binding
+                or not control.done_event.is_set() or _thread_is_alive(control.thread)):
+            raise ValueError("Laufzuordnung seit dem Lesen verändert")
+    return {**result, "schema": "bach.task-result.v1"}
 
 
 def _native_task_client():
@@ -433,7 +472,10 @@ def _bound_worker_prompt(binding, prompt):
               "assigned_to", "required_model", "assigned_slot", "task_version")
     content = {key: snapshot[key] for key in fields if key in snapshot}
     return (f"{prompt}\n\nAktuell übernommener Auftrag: Task #{binding.task_id}. "
-            "Bearbeite ausschließlich diesen Auftrag. Ein Abschluss zählt erst nach der Werkzeugbestätigung.\n"
+            "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
+            "task_manage(action='submit_result', task_id=<ID>, result='<Befunde, Quellen, Prüfungen, offene Grenzen>') "
+            "ab. Das speichert Review und gibt die Task zurück; eine getrennte Operator-Abnahme entscheidet über Done. "
+            "Eine bloße Erledigungsbestätigung, update(status=done) oder close_parent=true ersetzen keine Abnahme.\n"
             + json.dumps(content, ensure_ascii=False))
 
 
@@ -494,14 +536,14 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
                       running=task_active, active_task_id=binding.task_id if task_active else None,
                       has_task_prompt=bool(str(worker.get("task_prompt") or "").strip()))
         if retained is not None:
-            execution = worker_execution_receipt(retained.worker_id, retained.start_request_id)
+            execution = worker_execution_receipt(retained.worker_id, retained.start_request_id, verify_results=False)
             worker["execution"] = execution
             if not execution["terminal"] and execution["state"] in {"starting", "stopping", "finishing", "unconfirmed"}:
                 worker["status"] = execution["state"]
         control = _WORKER_CONTROLS.get(worker.get("id"))
         if control is not None and control.admission_pending:
             worker["status"] = "stopping" if control.stop_event.is_set() else "starting"
-            worker["execution"] = worker_execution_receipt(control.worker_id, control.start_request_id)
+            worker["execution"] = worker_execution_receipt(control.worker_id, control.start_request_id, verify_results=False)
             return worker
         if control and _thread_is_alive(control.thread) and not control.stop_event.is_set():
             worker["generation"] = control.generation
@@ -555,8 +597,8 @@ def _system_slots_snapshot() -> dict:
             control = _WORKER_CONTROLS.get(slot_id) or _WORKER_EXECUTIONS.get(slot_id)
             _, thread = _active_worker_control(slot_id)
             thread_alive = _thread_is_alive(thread)
-            execution = (worker_execution_receipt(slot_id, control.start_request_id)
-                         if control else worker_execution_receipt(slot_id)
+            execution = (worker_execution_receipt(slot_id, control.start_request_id, verify_results=False)
+                         if control else worker_execution_receipt(slot_id, verify_results=False)
                          if thread_alive else None)
             binding = getattr(control, "task_binding", None)
             task_active = (control is not None and _thread_is_alive(control.thread)
@@ -907,10 +949,10 @@ def _request_worker_revocation(
                 receipt = _worker_receipt(None, worker_id, confirmed=False, final_status=final_status,
                     outcome="execution-conflict", status_persisted=False)
                 return False, worker, receipt, 409
-            if _control_execution_receipt(retained)["terminal"]:
+            if retained.done_event.is_set() and not _thread_is_alive(retained.thread):
                 receipt = _worker_receipt(retained, worker_id, confirmed=True, final_status=final_status,
                     outcome="already-terminal", status_persisted=False)
-                receipt["execution"] = _control_execution_receipt(retained)
+                receipt["execution"] = _control_execution_receipt(retained, verify_results=False)
                 return True, worker, receipt, 200
             if control is not retained:
                 receipt = _worker_receipt(None, worker_id, confirmed=False, final_status=final_status,
@@ -976,7 +1018,7 @@ def _request_worker_revocation(
                                     {"receipt": receipt})
                 except Exception:
                     log.exception("Worker %s konnte Pending-Receipt nicht protokollieren", worker_id)
-            return False, updated, {**receipt, "execution": _control_execution_receipt(control)}, 409
+            return False, updated, {**receipt, "execution": _control_execution_receipt(control, verify_results=False)}, 409
 
         receipt = control.receipt
         if not receipt or not receipt.get("confirmed"):
@@ -985,7 +1027,7 @@ def _request_worker_revocation(
             updated = _execution_worker_slot(worker_id)
         except Exception:
             updated = worker
-        receipt = {**receipt, "execution": _control_execution_receipt(control)}
+        receipt = {**receipt, "execution": _control_execution_receipt(control, verify_results=False)}
         return bool(receipt.get("confirmed") and receipt.get("status_persisted", True)), updated, receipt, 200
 
 
@@ -3293,10 +3335,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
             return rejected({"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409)
         known = _WORKER_EXECUTIONS.get(worker_id)
         if known is not None and known.start_request_id == request_id:
-            execution = worker_execution_receipt(worker_id, request_id)
+            execution = worker_execution_receipt(worker_id, request_id, verify_results=False)
             return {"ok": True, "execution": execution}, 200 if execution["terminal"] else 202
-        if known is not None and not worker_execution_receipt(worker_id)["terminal"]:
-            execution = worker_execution_receipt(worker_id)
+        if known is not None and not worker_execution_receipt(worker_id, verify_results=False)["terminal"]:
+            execution = worker_execution_receipt(worker_id, verify_results=False)
             return rejected({"ok": False, "status": execution["state"], "error": "Vorheriger Start noch nicht beendet",
                     "execution": execution}, 409)
         current, thread = _active_worker_control(worker_id)
@@ -3411,14 +3453,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("task_id"):
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
-                    f"Erledigung mit task_manage(action='done', task_id={w.get('task_id')}). "
+                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>'). "
                     "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "hintergrund_worker":
                 initial_prompt = (
                     "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
                     "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                    "task_manage(action='done', task_id=<ID>). Bei Hindernissen bleibt die Task offen; "
+                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>'). Bei Hindernissen bleibt die Task offen; "
                     "nenne den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "boss_routing":
@@ -3444,7 +3486,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             else:
                 initial_prompt = w.get("task_prompt") or (
                     "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
-                    "tatsächlicher Erledigung mit task_manage(action='done', task_id=<ID>)."
+                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
                 )
 
             prompt_to_run = initial_prompt
@@ -3548,7 +3590,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         )
                     )
                 finally:
-                    loop.close()
+                    try:
+                        loop.run_until_complete(loop.shutdown_asyncgens())
+                    finally:
+                        loop.close()
 
                 resolved = (getattr(worker_session, "resolved_model", None)
                             or getattr(target_backend, "last_resolved_model", None))
@@ -3614,7 +3659,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 if current_slot.get("type") == "once":
                     if task_reviewed:
                         _update_worker_slot(control, {"status": "idle", "task_id": None,
-                            "current_activity": "PR bestätigt; Aufgabe wartet auf Prüfung"})
+                            "current_activity": "Ergebnis abgegeben; Aufgabe wartet auf Prüfung"})
                         return
                     assigned_task_id = current_slot.get("task_id")
                     if assigned_task_id not in (None, "", 0, "0") and not task_completed:
@@ -3653,12 +3698,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if _update_worker_slot(control, {"task_id": None}) is None:
                             break
 
-                # Count a task only when task_manage returned a successful
-                # completion receipt for this worker's assigned task.
+                # A canonical native submission ends the work on this task,
+                # even while separate acceptance is pending. Count it for
+                # task-based breaks; a legacy PR-Review ACK alone remains a run.
+                task_submitted = task_reviewed and control.task_binding.submitted_result is not None
                 is_max_turns = "(Max Tool-Runden erreicht)" in ans_str and not (task_completed or task_reviewed)
                 pause_event = _worker_pause_event_type(
                     current_slot,
-                    task_completed=task_completed,
+                    task_completed=task_completed or task_submitted,
                 )
                 if not _wait_worker_cooldown(control, event_type=pause_event):
                     break
@@ -3680,7 +3727,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     # A verified completion lets a continuous worker pick the next task.
                     if _update_worker_slot(control, {
                         "status": "running",
-                        "current_activity": ("PR bestätigt; Aufgabe wartet auf Prüfung. " if task_reviewed else "Aufgabe fertig. ")
+                        "current_activity": ("Ergebnis abgegeben; Aufgabe wartet auf Prüfung. " if task_reviewed else "Aufgabe fertig. ")
                             + f"Suche nächste Aufgabe (Lauf {run_count + 1})..."
                     }) is None:
                         break
@@ -3689,7 +3736,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     prompt_to_run = (
                         "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
                         "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                        "task_manage(action='done', task_id=<ID>)."
+                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
                     )
                 else:
                     # Do not abandon or mark an unverified task complete.
@@ -3702,8 +3749,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         break
                     prompt_to_run = (
                         "Setze die zuletzt bearbeitete Task fort. Es liegt noch kein erfolgreicher "
-                        "task_manage(action='done')-Beleg vor. Prüfe den aktuellen Taskstatus und arbeite "
-                        "weiter; nur nach tatsächlicher Erledigung mit der konkreten Task-ID als done markieren."
+                        "kanonisch bestätigter Ergebnisabgabe-Beleg vor. Prüfe den aktuellen Taskstatus und arbeite "
+                        "weiter; reiche danach das konkrete Ergebnis mit submit_result zur getrennten Prüfung ein."
                     )
 
             if control.stop_event.is_set():
@@ -3736,6 +3783,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     # Return, registry removal, or a terminal receipt.
                     while control.lease_supervisor.is_alive:
                         time.sleep(0.1)
+            # A committed submission can lose its ACK and exit through this
+            # error path. Keep its expected binding for canonical reconstruction.
+            try:
+                _retain_worker_task_receipts(control)
+            except Exception:
+                cleanup_error = True
+                log.warning("Worker-Ergebnisbindung konnte nicht behalten werden", exc_info=True)
             if control.task_binding is not None and not control.task_binding.closed:
                 try:
                     if not control.task_binding.return_lease():

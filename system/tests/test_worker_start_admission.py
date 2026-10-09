@@ -791,7 +791,7 @@ def test_crash_recovery_waits_for_real_held_lease_then_acquires_fresh_fence(reco
         assert fresh.task_id == 42
         assert fresh._ack.fence > old.fence
         fresh.assert_active()
-        assert execution.completed_task_ids == []
+        assert control._control_execution_receipt(execution)["completed_task_ids"] == []
     finally:
         fresh.return_lease()
 
@@ -805,7 +805,7 @@ def test_crash_recovery_preserves_real_creator_priority_window(recovery):
     assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
     row = db.execute("SELECT status,claim_fence FROM tasks WHERE id=42").fetchone()
     assert row["status"] == "pending" and row["claim_fence"] == 0
-    assert execution.completed_task_ids == []
+    assert control._control_execution_receipt(execution)["completed_task_ids"] == []
 
 
 @pytest.mark.parametrize("status", ["done", "blocked", "cancelled", "completed"])
@@ -816,7 +816,7 @@ def test_crash_recovery_clears_only_canonically_terminal_old_task_pointer(recove
     assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
     assert slots.get_always_on_execution_slot()["task_id"] is None
     assert db.execute("SELECT status FROM tasks WHERE id=42").fetchone()[0] == status
-    assert execution.completed_task_ids == []
+    assert control._control_execution_receipt(execution)["completed_task_ids"] == []
 
 
 def test_terminal_recovery_does_not_clear_intervening_new_task_pointer(recovery, monkeypatch):
@@ -831,7 +831,7 @@ def test_terminal_recovery_does_not_clear_intervening_new_task_pointer(recovery,
     monkeypatch.setattr(client, "task_snapshot", intervening)
     assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
     assert slots.get_always_on_execution_slot()["task_id"] == 43
-    assert execution.completed_task_ids == []
+    assert control._control_execution_receipt(execution)["completed_task_ids"] == []
 
 
 def test_terminal_recovery_write_lock_preserves_task_pointer_and_task_state(recovery):
@@ -847,7 +847,7 @@ def test_terminal_recovery_write_lock_preserves_task_pointer_and_task_state(reco
             acquire(execution, slots.get_always_on_execution_slot(), "new-process")
         assert path.read_bytes() == before
         assert db.execute("SELECT status FROM tasks WHERE id=42").fetchone()[0] == "done"
-        assert execution.completed_task_ids == []
+        assert control._control_execution_receipt(execution)["completed_task_ids"] == []
     finally:
         lock.unlink()
 

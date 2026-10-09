@@ -115,6 +115,42 @@ def create_device(name: str, connection: sqlite3.Connection | None = None) -> st
             connection.close()
 
 
+def create_task_result_operator(name: str, connection: sqlite3.Connection | None = None) -> str:
+    """Local operator provisioning only; never called by general device enrollment.
+
+    Issues a NEW credential, distinct from every existing worker/tray token.
+    Deliver it to the operator's browser/keyring, never to TaskLeaseClient.
+    """
+    import secrets
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("Gerätename darf nicht leer sein.")
+    owned = connection is None
+    connection = connection or GET_CONNECTION()
+    try:
+        if connection.in_transaction:
+            raise ValueError("Operator-Einrichtung benötigt eine eigene Transaktion")
+        init_devices_db(connection)
+        token = secrets.token_urlsafe(32)
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("""CREATE TABLE IF NOT EXISTS task_result_operators (
+            device_id INTEGER PRIMARY KEY,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cursor = connection.execute("INSERT INTO devices (name,token_hash,status) VALUES (?,?,'active')",
+                                    (clean_name, _hash_token(token)))
+        connection.execute("INSERT INTO task_result_operators (device_id) VALUES (?)", (cursor.lastrowid,))
+        connection.commit()
+        return token
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        if owned:
+            connection.close()
+
+
 def revoke_device(name: str, connection: sqlite3.Connection | None = None) -> bool:
     """Revoke a device token by name.
 

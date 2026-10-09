@@ -1,0 +1,33 @@
+Worker-Ergebnisse und persönliche Abnahme
+=========================================
+
+Native Worker speichern ein konkretes fachliches Ergebnis mit task_manage,
+action=submit_result. Ihre Abschluss-Aliase führen ebenfalls zur Ergebnisabgabe.
+Eine reine Erledigungsbestätigung genügt nicht. Die Aufgabe wartet anschließend
+in Review; die Task-Lease wird freigegeben. Eine Abgabe erledigt die Aufgabe nicht.
+
+In den Taskdetails zeigt Review den gespeicherten Ergebnistext. Der Nutzer prüft
+ihn und akzeptiert mit einem eigenen Operator-Schlüssel. Die Abnahme bindet das
+genaue Ergebnis, seinen SHA-256, die Task-Inhaltsversion und die Statusrevision.
+Ein frischer Abruf bestätigt die tatsächlich gespeicherte Abnahme.
+
+Der Operator wird ausschließlich lokal auf dem kanonischen Backend eingerichtet:
+gui.device_auth.create_task_result_operator(name). Die Funktion erzeugt ein neues
+Geräte-Credential; bestehende Tray-, Worker- und allgemeine Geräteschlüssel erhalten
+dadurch keine Abnahmerechte. Der eigene Schlüssel wird privat zum Nutzer übertragen
+und im aktuellen Browser-Tab hinterlegt. Vergessen entfernt ihn aus diesem Tab.
+Er gehört weder in Repositories noch in Tickets, Logs, Modellkontext oder SYNC.
+
+GET /api/tasks/{id}/result liest Abgabe und aktuelle Abnahme.
+POST /api/tasks/{id}/result/accept verlangt zusätzlich X-BACH-Result-Operator.
+Allgemeine Geräteauthentifizierung allein erlaubt diese Abnahme nicht. Widerrufene
+Operator-Geräte, geänderte Ergebnisse, Taskinhalte oder Statusrevisionen werden
+abgewiesen. Historische Ergebnisse bleiben zur Einsicht erhalten, ohne als aktuell
+bestätigte Abnahme zu gelten.
+
+Eine Staffel wartet nach dem physischen Worker-Ende auf diese getrennte Abnahme.
+Bei unbestätigter Ergebnisquelle behält sie dieselbe Schrittbindung und wartet.
+Erst die bestätigte aktuelle Abnahme ermöglicht die Übergabe an den Folgeschritt.
+Ein ausdrücklicher Stop bleibt auch beim Warten auf eine fehlende Quelle möglich.
+
+Installation und GUI-Pin: gui-integration.txt.

@@ -2391,12 +2391,14 @@ def _public_task_snapshot(row):
 
 
 class LeaseAcquireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     worker_id: str
     host: str
     request_id: str
     ttl_profile: Optional[str] = None
     intent: Optional[str] = None
     task_version: Optional[StrictStr] = None
+    result_generation: Optional[StrictStr] = None
 
 
 class LeaseRefRequest(BaseModel):
@@ -2406,9 +2408,11 @@ class LeaseRefRequest(BaseModel):
 
 
 class LeaseReleaseRequest(LeaseRefRequest):
+    model_config = ConfigDict(extra="forbid")
     outcome: str
     result_ref: Optional[str] = None
     note: Optional[str] = None
+    worker_result: Optional[dict] = None
 
 
 class LeaseUpdateRequest(LeaseRefRequest):
@@ -2433,6 +2437,47 @@ def _lease_device_label(request: Request) -> Optional[str]:
     return str(device) if device else None
 
 
+class TaskResultAcceptanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result_id: StrictInt
+    result_sha256: StrictStr
+    task_version: StrictStr
+    status_revision: StrictInt
+
+
+@app.get("/api/tasks/{task_id}/result")
+async def read_task_result(task_id: int):
+    """Ergebnis und heutige Abnahme aus einem kanonischen Lesesnapshot."""
+    from hub._services.task_result_service import read_result
+    conn = get_bach_db()
+    try:
+        if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        return read_result(conn, task_id)
+    finally:
+        conn.close()
+
+
+@app.post("/api/tasks/{task_id}/result/accept")
+async def accept_task_result(task_id: int, body: TaskResultAcceptanceRequest, request: Request):
+    """Getrennte Operator-Abnahme; Geräteidentität kommt ausschließlich aus Auth."""
+    from hub._services.task_result_service import accept_result, ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    conn = get_bach_db()
+    try:
+        if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        return accept_result(conn, task_id, body.result_id, digest=body.result_sha256,
+                             task_version=body.task_version, status_revision=body.status_revision,
+                             operator_token=operator_token)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    finally:
+        conn.close()
+
+
 def _run_lease_op(op, *args, **kwargs):
     from hub._services.task_lease import LeaseValidationError, TaskNotFound
     conn = get_bach_db()
@@ -2454,6 +2499,7 @@ async def acquire_task_lease(task_id: int, body: LeaseAcquireRequest, request: R
     return _run_lease_op(acquire_lease, task_id, worker_id=body.worker_id, host=body.host,
                          request_id=body.request_id, ttl_profile=body.ttl_profile,
                          task_version=body.task_version,
+                         result_generation=body.result_generation,
                          intent=body.intent or "", device=_lease_device_label(request))
 
 
@@ -2479,7 +2525,7 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
     return _run_lease_op(release_lease, task_id, lease_id=body.lease_id, fence=body.fence,
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
-                         note=body.note or "")
+                         note=body.note or "", worker_result=body.worker_result)
 
 
 @app.post("/api/tasks/{task_id}/lease/update")

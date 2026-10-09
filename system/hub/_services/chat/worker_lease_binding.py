@@ -6,13 +6,12 @@ Only canonical content snapshots and confirmed receipt strings leave it.
 from __future__ import annotations
 
 import copy
-import json
 import threading
 from datetime import datetime, timezone
 
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
-    LeaseReleaseAck,
+    LeaseReleaseAck, WorkerResultAck,
 )
 
 
@@ -34,8 +33,8 @@ class WorkerLeaseBinding:
         self._lock = threading.RLock()
         self._active = True
         self._closed = False
-        self._completed = False
         self._completion_result = None
+        self._submission_expected = None
         self._review_ack = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
@@ -57,7 +56,7 @@ class WorkerLeaseBinding:
         kwargs = {"now": clock()} if clock is not None else {}
         if _creator_delegation is None:
             ack = client.acquire(task_id, worker_id=worker_id, host=host,
-                                 task_version=snapshot["task_version"], **kwargs)
+                                 task_version=snapshot["task_version"], result_generation=generation, **kwargs)
         else:
             if (_creator_delegation.task_id != task_id or _creator_delegation.generation != generation
                     or _creator_delegation.worker_id != worker_id or _creator_delegation.host != host):
@@ -145,23 +144,74 @@ class WorkerLeaseBinding:
 
     @property
     def completed_task_ids(self):
-        with self._lock:
-            return (self.task_id,) if self._completed else ()
+        return self.result_state()["completed_task_ids"]
 
     @property
     def completion_result(self):
-        """Actual model output, retained only after a correlated Done ACK."""
+        """Only a currently accepted, correlated canonical result can be handed on."""
+        state = self.result_state()
+        return state["result"] if state["completed_task_ids"] else None
+
+    @property
+    def submitted_result(self):
+        """Historical submission ACK, never itself proof of current acceptance."""
         with self._lock:
-            return copy.deepcopy(self._completion_result) if self._completed else None
+            return copy.deepcopy(self._completion_result)
+
+    @property
+    def has_result_receipt(self):
+        with self._lock:
+            return (self._completion_result is not None or self._review_ack is not None
+                    or self._submission_expected is not None)
+
+    def result_state(self):
+        with self._lock:
+            record = copy.deepcopy(self._completion_result)
+            expected = copy.deepcopy(self._submission_expected)
+            review = self._review_ack
+            version = self._snapshot["task_version"]
+            fence = self._ack.fence
+        empty = {"completed_task_ids": (), "reviewed_task_ids": (), "result": None}
+        if record is None and review is None and expected is None:
+            return empty
+        # No DB/HTTP work while holding controller or binding locks.
+        observed = self._client.task_result_snapshot(self.task_id)
+        current = observed.get("result")
+        if record is None and expected is not None:
+            if current is None:
+                raise LeaseProtocolError("Ergebnisabgabe nach fehlendem ACK noch nicht geklärt")
+            if any(current.get(key) != expected[key] for key in expected):
+                raise LeaseProtocolError("Kanonisches Ergebnis gehört nicht zur ungeklärten Abgabe")
+            if (type(current.get("result_id")) is not int or current["result_id"] <= 0
+                    or type(current.get("submission_event_id")) is not int):
+                raise LeaseProtocolError("Kanonische Rekonstruktion der Ergebnisabgabe fehlt")
+            record = current
+            with self._lock:
+                if self._submission_expected == expected:
+                    self._completion_result = copy.deepcopy(current)
+                    self._closed = True
+                    self._active = False
+        if record is not None:
+            if (not isinstance(current, dict) or any(current.get(key) != record.get(key)
+                    for key in ("result_id", "task_id", "fence", "generation", "task_version", "result_sha256"))):
+                raise LeaseProtocolError("Kanonische Ergebnisbindung nicht mehr bestätigt")
+            if current.get("accepted") is True:
+                return {**empty, "completed_task_ids": (self.task_id,), "result": current}
+            if current.get("reason") == "awaiting_review":
+                return {**empty, "reviewed_task_ids": (self.task_id,), "result": current}
+            raise LeaseProtocolError("Aktuelle Ergebnisabnahme nicht bestätigt")
+        elif (isinstance(review, LeaseReleaseAck) and review.released is True
+              and review.task_id == self.task_id and review.fence == fence
+              and review.outcome == review.status == observed.get("status") == "review"
+              and observed.get("task_version") == version):
+            task = self._client.task_snapshot(self.task_id)
+            if task.get("claim_fence") == fence and task.get("status") == "review":
+                return {**empty, "reviewed_task_ids": (self.task_id,)}
+        return empty
 
     @property
     def reviewed_task_ids(self):
-        """Only a correlated typed canonical Review Release ACK is evidence."""
-        with self._lock:
-            ack = self._review_ack
-            if isinstance(ack, LeaseReleaseAck) and ack.task_id == self.task_id and ack.outcome == "review" and ack.status == "review":
-                return (self.task_id,)
-            return ()
+        return self.result_state()["reviewed_task_ids"]
 
     def task_snapshot(self):
         with self._lock:
@@ -303,46 +353,56 @@ class WorkerLeaseBinding:
             if action != "add" and (type(args.get("task_id")) is not int
                                     or args["task_id"] != self.task_id):
                 raise LeaseProtocolError("Mutation gehört nicht zur gebundenen Task")
-            if action == "done":
+            if action in {"done", "submit_result"}:
                 if set(args) - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
-                result = args.get("result")
-                record = None
-                note = ""
-                if result is not None:
-                    if (not isinstance(result, str) or not result.strip()
-                            or len(result) > 3000 or "\x00" in result):
-                        raise LeaseProtocolError("Ergebnis muss lesbarer Text mit höchstens 3000 Zeichen sein")
-                    record = {"schema": "bach.task-result.v1", "task_id": self.task_id,
-                              "generation": self._generation, "result": result}
-                    note = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-                    if len(note) > 4000:
-                        raise LeaseProtocolError("Kodiertes Ergebnis überschreitet das Task-Historienbudget")
-                release = self._operation(self._client.release, outcome="done", note=note)
-                if (not isinstance(release, LeaseReleaseAck) or release.released is not True
-                        or release.task_id != self.task_id or release.fence != self._ack.fence
-                        or release.outcome != "done" or release.status != "done"):
+                from hub._services.task_result_service import validate_submission
+                try:
+                    _, text, digest = validate_submission({"generation": self._generation, "result": args.get("result")})
+                except ValueError as exc:
+                    raise LeaseProtocolError(str(exc)) from None
+                self._submission_expected = {"task_id": self.task_id, "fence": self._ack.fence,
+                    "generation": self._generation, "task_version": self._snapshot["task_version"],
+                    "result_sha256": digest, "result": text}
+                try:
+                    release = self._operation(self._client.submit_result,
+                                              generation=self._generation, result=text)
+                except LeaseDeniedError:
+                    # A correlated explicit denial is not an ambiguous commit.
+                    self._submission_expected = None
+                    raise
+                if (not isinstance(release, WorkerResultAck)
+                        or release.release.released is not True
+                        or release.release.task_id != self.task_id or release.release.fence != self._ack.fence
+                        or release.release.outcome != "review" or release.release.status != "review"):
                     self.invalidate()
-                    raise LeaseProtocolError("Taskabschluss nicht bestätigt")
-                self._completion_result = record
-                self._closed = self._completed = True
+                    raise LeaseProtocolError("Ergebnisabgabe nicht bestätigt")
+                self._completion_result = copy.deepcopy(release.record)
+                self._review_ack = release.release
+                self._closed = True
                 self._active = False
-                return f"Task #{self.task_id} erledigt."
+                return f"Task #{self.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
                            "assigned_to", "required_model", "assigned_slot", "status"}
-                if set(args) - allowed - {"action", "task_id"}:
+                if set(args) - allowed - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Task-Inhaltsfelder")
                 changes = {key: value for key, value in args.items() if key in allowed}
+                if changes.get("status") in {"done", "completed"}:
+                    if len(changes) != 1:
+                        raise LeaseProtocolError("Ergebnisabgabe und Inhaltsänderung getrennt ausführen")
+                    return self.execute_task_manage({"action": "submit_result", "task_id": self.task_id,
+                                                     "result": args.get("result")})
+                if "result" in args:
+                    raise LeaseProtocolError("Ergebnis mit submit_result abgeben")
                 if "status" in changes:
-                    outcomes = {"done": "done", "completed": "done", "pending": "return",
+                    outcomes = {"pending": "return",
                                 "open": "return", "blocked": "blocked"}
                     if len(changes) != 1 or changes["status"] not in outcomes:
                         raise LeaseProtocolError("Statuswechsel braucht einen eigenständigen Lease-Abschluss")
                     outcome = outcomes[changes["status"]]
                     self._operation(self._client.release, outcome=outcome)
                     self._closed = True
-                    self._completed = outcome == "done"
                     self._active = False
                 else:
                     ack = self._operation(self._client.update, changes=changes)
@@ -363,7 +423,9 @@ class WorkerLeaseBinding:
                     if set(args) - allowed:
                         raise LeaseProtocolError("Unbekannte Zerlegungsfelder")
                     subtasks = args.get("subtasks")
-                    close_parent = args.get("close_parent", True)
+                    close_parent = args.get("close_parent", False)
+                    if close_parent is not False:
+                        raise LeaseProtocolError("Worker-Zerlegung schließt den Parent nicht ab; Ergebnisabgabe und Abnahme erforderlich")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in ("category", "assigned_to", "assigned_slot", "required_model")
                                        if key in args}, **item} if isinstance(item, dict) else item
@@ -380,8 +442,8 @@ class WorkerLeaseBinding:
                 self._snapshot["description"] = (self._snapshot.get("description") or "") + (
                     f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
                 if ack.parent_closed:
-                    self._closed = self._completed = True
-                    self._active = False
+                    self.invalidate()
+                    raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
                 if action == "add":
                     return f"Task #{ack.created_ids[0]} erstellt: {subtasks[0]['title']}"
                 return (f"Task #{self.task_id} in {ack.created_count} Teilaufgaben zerlegt: "

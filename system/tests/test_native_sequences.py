@@ -19,7 +19,7 @@ from hub._services import skill_source_service
 # The focused Mac run starts in system/, whereas CI starts at repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from system.tests.test_task_lease_client import _init_db, mem_db
-from system.tests.test_worker_lease_binding import binding
+from system.tests.test_worker_lease_binding import binding, approve_result
 
 
 @pytest.fixture
@@ -75,10 +75,13 @@ class IsolatedNative:
             generation=generation,is_current=lambda:True,stop_event=threading.Event(),_creator_delegation=delegated)
         output="Ergebnis "+str(len(self.calls))+" · Müller & Söhne"
         binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
-        self.results[worker_id]=binding.completion_result
+        assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
+        approve_result(binding, db)
+        self.results[worker_id]={**binding.completion_result,"schema":"bach.task-result.v1"}
         self.receipts[worker_id]={"schema":"bach.worker-execution.v1","service_instance":"a"*32,
             "worker_id":worker_id,"start_request_id":kwargs["start_request_id"],"generation":generation,
-            "state":"terminal","terminal":True,"worker_thread_started":True,"completed_task_ids":[binding.task_id]}
+            "state":"terminal","terminal":True,"worker_thread_started":True,
+            "results_verified":True,"reviewed_task_ids":[],"completed_task_ids":[binding.task_id]}
         db.close()
         return {"execution":self.receipts[worker_id]},202
 
@@ -200,6 +203,16 @@ def test_skill_mode_keeps_one_approved_agent_and_pins_each_skill(store,profiles,
 def test_missing_result_or_foreign_generation_never_admits_next_step(store,profiles,fault):
     controller,transport=service(store,profiles);transport.fail_result=fault=="result";transport.foreign_receipt=fault=="receipt"
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
+    if fault == "result":
+        assert transport.observed.wait(5)
+        run=controller.get_run(payload["request_id"])
+        assert controller._threads[payload["request_id"]].is_alive()
+        assert run["cursor"] == 0 and len(transport.calls) == 1
+        assert run["result_wait"] == "task_result_unconfirmed"
+        transport.fail_result=False
+        run=wait(controller,payload["request_id"])
+        assert run["phase"] == "complete" and len(transport.calls) == 2
+        return
     run=wait(controller,payload["request_id"])
     assert len(transport.calls)==1 and run["cursor"]==0 and run["phase"] in {"failed","unconfirmed"}
 
@@ -413,28 +426,38 @@ def test_task_and_step_binding_roll_back_together(store):
         assert db.execute("SELECT COUNT(*) FROM native_sequence_creator_delegations").fetchone()[0]==0
 
 
-def test_semantic_output_is_atomic_with_the_done_release(binding,mem_db):
+def test_semantic_output_is_atomic_with_review_and_requires_separate_acceptance(binding,mem_db):
     binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Tatsächliches Ergebnis · üöäß"})
-    record=binding.completion_result
+    record=binding.submitted_result
     history=mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'",(binding.task_id,)).fetchone()
-    note=json.loads(json.loads(history[0])["note"])
-    assert note==record and record["result"]=="Tatsächliches Ergebnis · üöäß"
+    release=json.loads(history[0])
+    assert release["result_ref"] == f"bach-task-result:{record['result_id']}:{record['result_sha256']}"
+    assert record["result"]=="Tatsächliches Ergebnis · üöäß"
+    assert binding.completion_result is None and binding._client.task_snapshot(binding.task_id)["status"]=="review"
+    approve_result(binding)
+    assert binding.completion_result["accepted"] is True
     assert binding._client.task_snapshot(binding.task_id)["status"]=="done"
 
 
-@pytest.mark.parametrize("value",["",True,{},"x"*3001,"\nx"*1499])
+@pytest.mark.parametrize("value",["",True,{},"x"*3001,"\nx"*1501])
 def test_invalid_output_never_completes_a_task(binding,value):
     with pytest.raises(LeaseProtocolError):binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":value})
     assert not binding.completed_task_ids and binding.completion_result is None
     assert binding._client.task_snapshot(binding.task_id)["status"]=="in_progress"
 
 
-def test_lost_done_ack_retains_neither_output_nor_completion_claim(binding,monkeypatch):
-    original=binding._client.release
-    def lost(*args,**kw):original(*args,**kw);raise LeaseConnectionError("lost ack")
-    monkeypatch.setattr(binding._client,"release",lost)
+def test_lost_submission_ack_reconstructs_exact_review_without_mutation_retry(binding,monkeypatch):
+    original=binding._client.submit_result
+    calls=[]
+    def lost(*args,**kw):
+        calls.append((args,kw));original(*args,**kw);raise LeaseConnectionError("lost ack")
+    monkeypatch.setattr(binding._client,"submit_result",lost)
     with pytest.raises(LeaseConnectionError):binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Ergebnis"})
     assert binding.completion_result is None and not binding.completed_task_ids
+    assert binding.reviewed_task_ids == (binding.task_id,) and len(calls) == 1
+    assert binding.closed and binding.submitted_result["result"] == "Ergebnis"
+    approve_result(binding)
+    assert binding.completed_task_ids == (binding.task_id,) and len(calls) == 1
 
 
 def test_unregistered_module_revision_is_rejected(monkeypatch):
@@ -452,6 +475,7 @@ def test_gui_without_device_request_never_dispatches_or_writes():
 def test_result_handoff_requires_physical_thread_end_and_exact_request(binding,monkeypatch):
     from hub._services.chat import telegram_chat as control
     binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Fachliches Ergebnis"})
+    approve_result(binding)
     run=control._WorkerControl("owned-worker",generation=binding.generation,start_request_id="a"*32)
     run.task_binding=binding
     control._retain_worker_task_receipts(run)

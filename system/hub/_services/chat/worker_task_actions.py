@@ -81,9 +81,11 @@ class WorkerTaskActions:
             if self._closed or not self._receipt or self._receipt["state"] != "running":
                 return None
             return (f"[ZERLEGUNG ANGEFORDERT · Task #{self._receipt['task_id']} · Anfrage {self._receipt['request_id']}]\n"
-                    "Zerlege ausschließlich diesen Auftrag mit task_manage(action='decompose') "
+                    "Zerlege ausschließlich diesen Auftrag mit task_manage(action='decompose', close_parent=false) "
                     "in konkrete, ausführbare Teilaufgaben. Nutze den vorhandenen Kontext und die aktuelle Rolle. "
-                    "Ein Abschluss zählt erst nach der bestätigten Teilaufgabenanlage.")
+                    "Die Teilaufgabenanlage bestätigt nur die Zerlegung. Gib danach den Plan mit "
+                    "task_manage(action='submit_result', task_id=<ID>, result='<Plan, Kind-IDs, offene Arbeit>') "
+                    "zur getrennten Review-Abnahme ab.")
 
     def confirm(self, binding):
         with self._lock:
