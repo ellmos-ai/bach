@@ -364,3 +364,4 @@ _codex/*.log
 
 # Codex-Zweitmeinung: Roh-Logs bleiben lokal
 _codex/*.log
+/system/data/.domain_pins.json.*.tmp

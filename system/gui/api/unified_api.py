@@ -2569,32 +2569,55 @@ async def get_installed_domains(scope: str = Query("all"), probe: bool = Query(T
     return discover_domains(scope=scope, probe=probe, include_repos=True)
 
 
-@router.get("/domains/pins")
-async def get_domain_pins_endpoint():
-    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
-    from gui.api.domain_catalog import get_domain_pins
+def _domain_pin_call(operation):
+    from hub._services.domain_pin_store import PinConflict, PinUnavailable, PinVersionRequired
+    try:
+        return operation()
+    except PinVersionRequired as exc:
+        raise HTTPException(status_code=428, detail=str(exc)) from None
+    except PinConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except PermissionError:
+        raise HTTPException(status_code=423, detail="Pin-Speicher ist gesperrt oder ungeprüft") from None
+    except (PinUnavailable, OSError, TimeoutError):
+        raise HTTPException(status_code=503, detail="Pin-Speicher nicht verfügbar; bitte erneut prüfen") from None
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
-    pins = get_domain_pins()
-    return {"pins": pins, "total": len(pins)}
+
+@router.get("/domains/pins")
+def get_domain_pins_endpoint():
+    from gui.api.domain_catalog import domain_pins_snapshot
+    return _domain_pin_call(domain_pins_snapshot)
 
 
 @router.post("/domains/pins")
-async def save_domain_pins_endpoint(payload: Dict[str, Any] = Body(...)):
-    """Aktualisiert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
+def save_domain_pins_endpoint(request: Request, payload: Dict[str, Any] = Body(...)):
+    _require_memory_device(request)
     from gui.api.domain_catalog import save_domain_pins
-
-    pinned_ids = payload.get("pinned_ids", [])
-    pins = save_domain_pins(pinned_ids)
-    return {"pins": pins, "total": len(pins), "status": "saved"}
+    def save():
+        if set(payload) != {"pinned_ids", "version"}:
+            if "version" not in payload:
+                from hub._services.domain_pin_store import PinVersionRequired
+                raise PinVersionRequired("Aktuelle Pin-Version erforderlich")
+            raise ValueError("Nur pinned_ids und version sind erlaubt")
+        snapshot = save_domain_pins(payload["pinned_ids"], expected_version=payload["version"])
+        return {**snapshot, "status": "saved"}
+    return _domain_pin_call(save)
 
 
 @router.post("/domains/{domain_id}/pin")
-async def toggle_domain_pin_endpoint(domain_id: str, payload: Optional[Dict[str, Any]] = Body(None)):
-    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
+def toggle_domain_pin_endpoint(domain_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    _require_memory_device(request)
     from gui.api.domain_catalog import toggle_domain_pin
-
-    pinned = payload.get("pinned") if payload else None
-    return toggle_domain_pin(domain_id, pinned=pinned)
+    def save():
+        if set(payload) != {"pinned", "version"}:
+            if "version" not in payload:
+                from hub._services.domain_pin_store import PinVersionRequired
+                raise PinVersionRequired("Aktuelle Pin-Version erforderlich")
+            raise ValueError("Nur pinned und version sind erlaubt")
+        return toggle_domain_pin(domain_id, pinned=payload["pinned"], expected_version=payload["version"])
+    return _domain_pin_call(save)
 
 
 @router.get("/domains/{domain_id}")
