@@ -292,3 +292,32 @@ def test_structured_task_reap(monkeypatch):
     assert row[0] == "pending"
     assert row[1] is None
     assert row[2] is None
+
+
+def _task_db(tmp_path, monkeypatch, rows):
+    import bach_api
+
+    db = tmp_path / "bach.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, status TEXT, priority TEXT, "
+        "category TEXT, description TEXT, assigned_to TEXT, delegated_to TEXT, depends_on TEXT, "
+        "created_at TEXT, completed_at TEXT, updated_at TEXT, due_date TEXT)"
+    )
+    conn.executemany("INSERT INTO tasks (title, status, priority) VALUES (?, ?, 'P3')", rows)
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(bach_api, "_resolve_db_path", lambda: db)
+
+
+def test_task_list_status_all_returns_every_status(tmp_path, monkeypatch):
+    _task_db(tmp_path, monkeypatch, [("a", "pending"), ("b", "done"), ("c", "blocked")])
+    proxy = _TaskProxy("task")
+    assert {t["title"] for t in proxy.list(status="all")} == {"a", "b", "c"}
+    assert {t["title"] for t in proxy.list("all")} == {"a", "b", "c"}
+    assert [t["title"] for t in proxy.list(status="all", filter_text="b")] == ["b"]
+
+
+def test_task_list_status_all_on_empty_db_is_empty_not_error(tmp_path, monkeypatch):
+    _task_db(tmp_path, monkeypatch, [])
+    assert _TaskProxy("task").list(status="all") == []
