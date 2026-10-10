@@ -47,15 +47,19 @@ welchem Agent) stehen im Abschnitt "assignments" der JSON.
 
 DATENHALTUNG
 ------------
-**1. data/skills_hierarchy.json - Datenquelle des GUI (Source of Truth
-fuer das Board):**
+**1. Tabelle hierarchy_assignments (bach.db) - einziger Speicher der Zuordnungen
+(seit 2026-10-11; data/skills_hierarchy.json wird nicht mehr gelesen oder
+geschrieben, Altbestand nur ueber tools/migration/skills_hierarchy_dryrun.py
+als Bericht vergleichbar):**
+(Hinweis: Die folgenden Zeilen beschreiben die frueheren JSON-Struktur.)
    - `items`: 5 Kategorien (agents, experts, skills, services,
      workflows), je Item: id, name, description, dashboard, status,
      path_hint
    - `assignments`: Zuweisungen pro Agent
    - `_meta.last_updated`: Zeitstempel (wird bei jedem PUT erneuert)
-   - GET `/api/skills-board/hierarchy` liest, PUT schreibt diese Datei.
-     Die GUI liest NICHT aus der Datenbank.
+   - GET `/api/skills-board/hierarchy` liest seit 2026-10-11 die Datenbank;
+     PUT validiert strikt und schreibt nur die Zuordnungen in
+     hierarchy_assignments (Items werden nicht gespeichert).
 
 **2. bach.db - Tabellen bach_agents / bach_experts:**
    - Werden von anderen Tools genutzt (tools/agents/agent_cli.py,
@@ -91,8 +95,9 @@ FUNKTIONEN
   Titel "[AgentName] <Kurzfassung>" und Feld delegated_to=<agent-id>.
 - **Filter**: Ansicht nach Typ filtern (setupFilters).
 - **Edit**: Namen/Beschreibungen direkt im UI aendern; ZUSATZLICH
-  direktes Datei-Editing: GET/PUT /api/skills-board/item-file liefert
-  bzw. speichert die Quelldatei (.md/.txt/.py) eines Items.
+  direktes Datei-Editing: GET/PUT /api/skills-board/item-file sind seit
+  2026-10-11 stillgelegt (HTTP 410). Ersatz: GET/PUT
+  /api/capabilities/skills/{id}/source (Skill-Zentrale /skills).
 - **Vollbild**: Vollbild-Modus des Boards (toggleFullscreen).
 
 SYSTEM-INTEGRATION
@@ -102,8 +107,8 @@ SYSTEM-INTEGRATION
   skills-board.html (Fallback)
 - **Routes**: GET /skills-board, GET /agents-board (beide dienen
   agents-board.html)
-- **API**: GET/PUT /api/skills-board/hierarchy,
-  GET/PUT /api/skills-board/item-file
+- **API**: GET/PUT /api/skills-board/hierarchy;
+  GET/PUT /api/skills-board/item-file (stillgelegt, 410)
 - **Migration**: tools/migration/migrate_skills_hierarchy.py
   (JSON -> bach.db, optional --dry-run)
 

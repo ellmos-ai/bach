@@ -91,13 +91,35 @@ def test_item_file_put_is_gone_for_any_body_and_still_needs_a_device_token(board
     assert board.client.put("/api/skills-board/item-file", json={"path": "x.py", "content": "x"}).status_code == 401
 
 
-def test_item_file_get_returns_only_a_relative_path(board):
-    response = board.client.get("/api/skills-board/item-file", headers=AUTH, params={"type": "agent", "id": "bueroassistent", "path_hint": "agents/bueroassistent/"})
-    body = response.json()
-    assert response.status_code == 200 and body["success"] is True
-    assert body["path"] == "agents/bueroassistent/SKILL.md"
-    assert "absolute_path" not in body
-    assert str(board.root) not in json.dumps(body)
+def test_item_file_get_is_gone_and_returns_no_content(board):
+    secret = board.root / ".env"
+    secret.write_text("TOKEN=geheim-123", encoding="utf-8")
+    cases = [
+        {"type": "agent", "id": "bueroassistent", "path_hint": "agents/bueroassistent/"},   # the former legitimate use
+        {"type": "agent", "id": "x", "path_hint": ".env"},                                  # dotfile in the root
+        {"type": "agent", "id": "x", "path_hint": str(secret)},                             # absolute path inside the root
+        {"type": "agent", "id": "x", "path_hint": "../outside.md"},                         # traversal
+        {"type": "workflow", "id": "anything"},
+    ]
+    for params in cases:
+        response = board.client.get("/api/skills-board/item-file", headers=AUTH, params=params)
+        assert response.status_code == 410, params
+        assert "/api/capabilities/skills/{id}/source" in response.json()["detail"]
+        assert "geheim-123" not in response.text and "absolute_path" not in response.text
+        assert str(board.root) not in response.text
+
+
+def test_item_file_get_is_gone_for_a_symlink_and_still_needs_a_device_token(board):
+    secret = board.root / "secret.txt"
+    secret.write_text("TOKEN=geheim-456", encoding="utf-8")
+    link = board.root / "agents" / "link.md"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this host")
+    response = board.client.get("/api/skills-board/item-file", headers=AUTH, params={"type": "agent", "id": "x", "path_hint": "agents/link.md"})
+    assert response.status_code == 410 and "geheim-456" not in response.text
+    assert board.client.get("/api/skills-board/item-file", params={"type": "agent", "id": "x"}).status_code == 401
 
 
 # ---------------------------------------------------------------- hierarchy: one store
@@ -153,13 +175,27 @@ def test_put_clears_all_known_assignments_of_a_parent_with_empty_lists(board):
     assert [r for r in board.rows() if r[0] == "bueroassistent" and r[2] != "ghost-child"] == []
 
 
-def test_items_are_validated_but_never_stored(board):
+def test_known_items_are_accepted_but_never_stored_and_unknown_items_are_rejected(board):
     payload = assignments(skills=["skill-bugfix"])
-    payload["items"] = {"skills": [{"id": "skill-bugfix", "name": "Umbenannt"}], "workflows": [{"id": "workflow_999", "name": "Neu"}]}
+    payload["items"] = {"skills": [{"id": "skill-bugfix", "name": "Umbenannt"}]}
     assert board.put(payload).status_code == 200
     data = board.client.get("/api/skills-board/hierarchy", headers=AUTH).json()
-    assert [i["name"] for i in data["items"]["skills"]] == ["Bugfix Skill", "Skill Zwei"]
-    assert all(i["id"] != "workflow_999" for i in data["items"]["workflows"])
+    assert [i["name"] for i in data["items"]["skills"]] == ["Bugfix Skill", "Skill Zwei"]  # rename was not stored
+    before = board.rows()
+    payload["items"] = {"workflows": [{"id": "workflow_999", "name": "Neu"}]}
+    rejected = board.put(payload)
+    assert rejected.status_code == 400 and "unbekanntes Element workflow_999" in rejected.json()["detail"]
+    assert board.rows() == before
+
+
+def test_duplicate_json_object_keys_are_rejected(board):
+    before = board.rows()
+    twice = '{"assignments": {"bueroassistent": {"skills": ["skill-bugfix"]}, "bueroassistent": {"skills": []}}}'
+    response = board.client.put("/api/skills-board/hierarchy", headers={**AUTH, "Content-Type": "application/json"}, content=twice)
+    assert response.status_code == 400 and "doppelter Objektschlüssel" in response.json()["detail"]
+    nested = '{"assignments": {}, "assignments": {}}'
+    assert board.client.put("/api/skills-board/hierarchy", headers={**AUTH, "Content-Type": "application/json"}, content=nested).status_code == 400
+    assert board.rows() == before
 
 
 # ---------------------------------------------------------------- hierarchy: validation (negative tests)
@@ -203,6 +239,43 @@ def test_non_json_and_oversized_bodies_are_rejected(board):
     too_long = {"assignments": {"bueroassistent": {"skills": ["s%d" % i for i in range(server.HIERARCHY_MAX_LIST + 1)]}}}
     assert board.put(too_long).status_code == 400
     assert board.rows() == before
+
+
+def test_oversized_streamed_body_is_cut_off_with_413_without_content_length(board):
+    def chunks():  # no Content-Length: sent chunked
+        for _ in range(40):
+            yield b"x" * 100_000
+
+    response = board.client.put("/api/skills-board/hierarchy", headers={**AUTH, "Content-Type": "application/json"}, content=chunks())
+    assert response.status_code == 413
+
+
+def test_the_body_reader_stops_reading_at_the_limit_and_checks_content_length_first():
+    import asyncio
+
+    consumed = []
+
+    class FakeRequest:
+        def __init__(self, headers, parts):
+            self.headers, self._parts = headers, parts
+
+        async def stream(self):
+            for part in self._parts:
+                consumed.append(len(part))
+                yield part
+
+    parts = [b"a" * 400_000] * 10
+    with pytest.raises(server.HTTPException) as over:
+        asyncio.run(server.read_limited_body(FakeRequest({}, parts), 1_000_000))
+    assert over.value.status_code == 413 and len(consumed) == 3  # stopped after the third chunk, not after all ten
+    consumed.clear()
+    with pytest.raises(server.HTTPException) as declared:
+        asyncio.run(server.read_limited_body(FakeRequest({"content-length": "2000000"}, parts), 1_000_000))
+    assert declared.value.status_code == 413 and consumed == []  # rejected before reading anything
+    with pytest.raises(server.HTTPException) as bad:
+        asyncio.run(server.read_limited_body(FakeRequest({"content-length": "abc"}, parts), 1_000_000))
+    assert bad.value.status_code == 400
+    assert asyncio.run(server.read_limited_body(FakeRequest({}, [b"ab", b"cd"]), 10)) == b"abcd"
 
 
 def test_the_arbitrary_json_that_used_to_be_stored_is_now_refused(board):

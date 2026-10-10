@@ -6953,44 +6953,13 @@ SKILLS_HIERARCHY_FILE = DATA_DIR / "skills_hierarchy.json"
 
 
 @app.get("/api/skills-board/item-file")
-
-async def get_skills_item_file(
-    type: str,
-    id: str,
-    description: Optional[str] = "",
-    path_hint: Optional[str] = "",
-):
-
-    """Sucht und liefert den Inhalt der Quelldatei eines Items."""
-
-    path = resolve_skill_file(type, id, description, path_hint or "")
-
-    if not path:
-
-        return {"success": False, "error": "Keine Quelldatei (.md/.txt) fuer dieses Element gefunden."}
-
-    
-
-    try:
-
-        content = path.read_text(encoding='utf-8')
-
-        return {
-
-            "success": True,
-
-            "path": str(path.relative_to(BACH_DIR)).replace("\\", "/"),
-
-            "content": content,
-
-            "filename": path.name
-
-        }
-
-    except Exception as e:
-
-        return {"success": False, "error": public_error_message()}
-
+async def get_skills_item_file():
+    """Stillgelegt: Der Weg las jede UTF-8-Datei unter BACH_DIR. Ersatz: GET /api/capabilities/skills/{id}/source."""
+    raise HTTPException(
+        410,
+        "Dieser Lesepfad ist stillgelegt. Skill-Quellen lesen: GET /api/capabilities/skills/{id}/source "
+        "(kanonische SKILL.md-Quelle mit Revision, Skill-Zentrale /skills).",
+    )
 
 
 @app.put("/api/skills-board/item-file")
@@ -7062,12 +7031,17 @@ def validate_skills_hierarchy_payload(data) -> dict:
     return result
 
 
-def persist_hierarchy_assignments(assignments: dict) -> dict:
+def persist_hierarchy_assignments(assignments: dict, items: dict | None = None) -> dict:
     """Write assignments of the parents present in the payload into hierarchy_assignments (one transaction, diff-based).
     Parents and children must exist in the DB-derived hierarchy; rows of other parents or with unknown children stay untouched."""
     known = load_skills_board_from_db()
     agents = {item["id"] for item in known["items"]["agents"]}
     targets = {key: {item["id"] for item in known["items"][key]} for key in HIERARCHY_LIST_KEYS}
+    for key, entries in (items or {}).items():
+        known_ids = {item["id"] for item in known["items"][key]}
+        for entry in entries:
+            if entry["id"] not in known_ids:
+                raise _hierarchy_error("unbekanntes Element " + entry["id"] + " in items." + key)
     desired = {}
     for parent, lists in assignments.items():
         if parent not in agents:
@@ -7107,18 +7081,42 @@ def persist_hierarchy_assignments(assignments: dict) -> dict:
     return {"parents": len(assignments), "inserted": inserted, "updated": updated, "deleted": deleted}
 
 
+async def read_limited_body(request: Request, limit: int) -> bytes:
+    """Read the request body in chunks and stop as soon as the limit is exceeded (no full buffering)."""
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            size = int(declared)
+        except ValueError:
+            raise HTTPException(400, "Ungültiger Content-Length-Header") from None
+        if size > limit:
+            raise HTTPException(413, "Hierarchie überschreitet " + str(limit) + " Byte")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, "Hierarchie überschreitet " + str(limit) + " Byte")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _reject_duplicate_keys(pairs):
+    keys = [key for key, _ in pairs]
+    if len(keys) != len(set(keys)):
+        raise ValueError("doppelter Objektschlüssel")
+    return dict(pairs)
+
+
 @app.put("/api/skills-board/hierarchy")
 async def save_skills_hierarchy(request: Request):
-    """Speichert die Zuordnungen (nur hierarchy_assignments). Items werden geprüft, aber nicht gespeichert."""
-    body = await request.body()
-    if len(body) > HIERARCHY_BODY_LIMIT:
-        raise HTTPException(413, "Hierarchie überschreitet " + str(HIERARCHY_BODY_LIMIT) + " Byte")
+    """Speichert die Zuordnungen (nur hierarchy_assignments). Items werden geprüft (bekannte IDs), aber nicht gespeichert."""
+    body = await read_limited_body(request, HIERARCHY_BODY_LIMIT)
     try:
-        data = json.loads(body.decode("utf-8"))
+        data = json.loads(body.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys)
     except (UnicodeDecodeError, ValueError):
-        raise _hierarchy_error("kein gültiges JSON") from None
+        raise _hierarchy_error("kein gültiges JSON oder doppelter Objektschlüssel") from None
     assignments = validate_skills_hierarchy_payload(data)
-    summary = persist_hierarchy_assignments(assignments)
+    summary = persist_hierarchy_assignments(assignments, data.get("items", {}))
     return {"status": "saved", "persisted": "hierarchy_assignments", "items_persisted": False, **summary}
 
 
