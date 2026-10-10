@@ -2457,7 +2457,7 @@ async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
 
 
 @router.get("/learning/hermes/candidates")
-async def get_hermes_candidates(status: str = Query("pending", description="pending|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+async def get_hermes_candidates(status: str = Query("pending", description="pending|reviewed|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
     """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
     service = _get_hermes_service_instance()
     try:
@@ -2478,24 +2478,42 @@ async def get_hermes_candidate_detail(candidate_id: int):
     return cand
 
 
+def _learning_decision(action, request, service_factory, candidate_id, payload):
+    """Use existing device authority; body display names confer no identity."""
+    actor = f"device:{_require_memory_device(request)}"
+    try:
+        service = service_factory()
+        if action == "approve":
+            # The old target writers are intentionally unavailable.
+            return service.approve_candidate(candidate_id)
+        fields = {"expected_revision", "expected_digest", "request_id", "notes" if action == "review" else "reason"}
+        if set(payload) - fields:
+            raise ValueError("Unbekannte Reviewfelder")
+        kwargs = {key: payload.get(key) for key in ("expected_revision", "expected_digest", "request_id")}
+        if action == "review":
+            return service.review_candidate(candidate_id, actor=actor, notes=payload.get("notes", ""), **kwargs)
+        return service.reject_candidate(candidate_id, actor=actor, reason=payload.get("reason", ""), **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=getattr(exc, "http_status", 422),
+            detail={"code": getattr(exc, "code", "invalid_learning_review"), "message": str(exc)}) from exc
+
+
 @router.post("/learning/hermes/candidates/{candidate_id}/approve")
-async def approve_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Operator-Freigabe (Human-in-the-Loop): Überführt Kandidat in skill_versions."""
-    service = _get_hermes_service_instance()
-    approved_by = payload.get("approved_by", "operator")
-    res = service.approve_candidate(candidate_id, approved_by=approved_by)
-    if res.get("status") == "error":
-        raise HTTPException(status_code=404, detail=res.get("message", "Freigabe fehlgeschlagen"))
-    return res
+async def approve_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Legacy publication is unavailable until a native provider contract exists."""
+    return _learning_decision("approve", request, _get_hermes_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/review")
+async def review_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Record a bound content review; publish no skills or lessons."""
+    return _learning_decision("review", request, _get_hermes_service_instance, candidate_id, payload)
 
 
 @router.post("/learning/hermes/candidates/{candidate_id}/reject")
-async def reject_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Lehnt einen Skill-Kandidaten ab."""
-    service = _get_hermes_service_instance()
-    reason = payload.get("reason", "")
-    res = service.reject_candidate(candidate_id, reason=reason)
-    return res
+async def reject_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Reject the exact displayed candidate revision."""
+    return _learning_decision("reject", request, _get_hermes_service_instance, candidate_id, payload)
 
 
 @router.get("/learning/hermes/stats")
@@ -2527,7 +2545,7 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
     """
     Führt die NemoFold Heuristik-Detektion und Step-Ketten Synthese aus.
     Nimmt Session-Logs, Transkripte oder Snapshot-IDs entgegen und erzeugt
-    strukturierte, TÜV-geprüfte Step-Ketten für MarbleRun.
+    unveröffentlichte Entwürfe mit statischer Metadatenprüfung.
     """
     service = _get_nemofold_service_instance()
     source_type = payload.get("source_type", "transcript")
@@ -2548,7 +2566,7 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
 
 @router.get("/learning/nemofold/candidates")
 async def get_nemofold_candidates(
-    status: str = Query("pending", description="pending|approved|rejected|all"),
+    status: str = Query("pending", description="pending|reviewed|approved|rejected|all"),
     limit: int = Query(50, ge=1, le=200)
 ):
     """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
@@ -2568,35 +2586,21 @@ async def get_nemofold_candidate_detail(candidate_id: int):
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/approve")
-async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Operator-Freigabe: Überführt die Kette direkt in `marblerun_chains`."""
-    service = _get_nemofold_service_instance()
-    operator = payload.get("approved_by", "operator")
-    notes = payload.get("notes", "")
-    try:
-        res = service.approve_candidate(candidate_id, operator=operator, notes=notes)
-        return res
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception("Freigabe-Fehler: %s", e)
-        raise HTTPException(status_code=500, detail="Freigabe-Fehler")
+async def approve_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Legacy direct chain activation is unavailable."""
+    return _learning_decision("approve", request, _get_nemofold_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/review")
+async def review_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Record content review; static metadata is no execution receipt."""
+    return _learning_decision("review", request, _get_nemofold_service_instance, candidate_id, payload)
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/reject")
-async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Lehnt einen gelernten Workflow-Kandidaten mit Begründung ab."""
-    service = _get_nemofold_service_instance()
-    operator = payload.get("rejected_by", "operator")
-    reason = payload.get("reason", "")
-    try:
-        res = service.reject_candidate(candidate_id, reason=reason, operator=operator)
-        return res
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception("Ablehnungs-Fehler: %s", e)
-        raise HTTPException(status_code=500, detail="Ablehnungs-Fehler")
+async def reject_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Reject the exact displayed candidate revision."""
+    return _learning_decision("reject", request, _get_nemofold_service_instance, candidate_id, payload)
 
 
 @router.get("/learning/nemofold/stats")

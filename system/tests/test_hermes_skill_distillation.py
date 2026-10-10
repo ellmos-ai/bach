@@ -162,7 +162,8 @@ def test_hermes_full_pipeline_persistence(hermes_service: HermesDistillationServ
     assert len(runs) == 1
 
     lessons = cur.execute("SELECT title FROM memory_lessons").fetchall()
-    assert len(lessons) >= 1
+    assert lessons == []
+    assert hermes_service.get_candidate(res.candidate["id"])["lessons_draft"]
 
     dreams = cur.execute("SELECT summary FROM memory_dream_log").fetchall()
     assert len(dreams) == 1
@@ -185,26 +186,18 @@ def test_hermes_approval_and_rejection_workflow(hermes_service: HermesDistillati
     assert cand is not None
     assert cand["status"] == "pending"
 
-    # 2. Genehmigung (Approve)
-    approval = hermes_service.approve_candidate(cand_id, approved_by="senior_architect")
-    assert approval["status"] == "approved"
-    assert approval["skill_name"] == "git-pre-commit-ops"
-
-    # Pruefen, dass Skill in skill_versions abgelegt wurde
+    # 2. Content review is bound and does not publish a native skill.
+    with pytest.raises(ValueError, match="native Veröffentlichung"):
+        hermes_service.approve_candidate(cand_id, approved_by="senior_architect")
+    review = hermes_service.review_candidate(cand_id, actor="device:7", notes="Entwurf gelesen",
+        expected_revision=cand["candidate_revision"], expected_digest=cand["candidate_digest"],
+        request_id="hermes-review-0001")
+    assert review["status"] == "reviewed"
+    assert review["targets_published"] is False
     conn = sqlite3.connect(str(temp_db))
     cur = conn.cursor()
-    version_row = cur.execute(
-        "SELECT skill_name, author FROM skill_versions WHERE skill_name = ?",
-        ("git-pre-commit-ops",),
-    ).fetchone()
-    assert version_row is not None
-    assert version_row[0] == "git-pre-commit-ops"
-    assert "hermes:senior_architect" in version_row[1]
-
-    # Status in hermes_skill_candidates pruefen
-    cand_updated = hermes_service.get_candidate(cand_id)
-    assert cand_updated["status"] == "approved"
-    assert cand_updated["approved_by"] == "senior_architect"
+    assert cur.execute("SELECT COUNT(*) FROM skill_versions").fetchone()[0] == 0
+    assert hermes_service.get_candidate(cand_id)["status"] == "reviewed"
 
     # 3. Zweiter Kandidat fuer Ablehnung
     res2 = hermes_service.run_pipeline(
@@ -213,7 +206,10 @@ def test_hermes_approval_and_rejection_workflow(hermes_service: HermesDistillati
         persist=True,
     )
     cand2_id = res2.candidate["id"]
-    rej = hermes_service.reject_candidate(cand2_id, reason="Kein fachlicher Mehrwert")
+    cand2 = hermes_service.get_candidate(cand2_id)
+    rej = hermes_service.reject_candidate(cand2_id, reason="Kein fachlicher Mehrwert", actor="device:7",
+        expected_revision=cand2["candidate_revision"], expected_digest=cand2["candidate_digest"],
+        request_id="hermes-reject-0002")
     assert rej["status"] == "rejected"
 
     cand2_updated = hermes_service.get_candidate(cand2_id)
@@ -274,14 +270,13 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
 
     # 4. POST /api/learning/hermes/candidates/{id}/approve
     resp = client.post(f"/api/learning/hermes/candidates/{cand_id}/approve", json={"approved_by": "qa-lead"})
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "approved"
+    assert resp.status_code == 401  # Bare author labels confer no device authority.
 
     # 5. GET /api/learning/hermes/stats
     resp = client.get("/api/learning/hermes/stats")
     assert resp.status_code == 200
     stats = resp.json()
-    assert stats["approved_candidates"] >= 1
+    assert stats["approved_candidates"] == 0
 
     # 6. GET /api/setup/ocean-map pruefen
     resp = client.get("/api/setup/ocean-map")

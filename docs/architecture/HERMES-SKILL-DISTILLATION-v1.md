@@ -1,5 +1,7 @@
 # Hermes Skill-Lernen & Destillation Engine v1.0.0
 
+> Historisches Design vor Task #2000. Angaben zur Direktfreigabe, nativen Provideranbindung und aktiven Lessons gelten nicht als aktueller Source- oder Betriebsnachweis. Maßgeblich ist [LEARNING-PROMOTION-CONTRACT.md](LEARNING-PROMOTION-CONTRACT.md).
+
 **Subsystem:** Ocean Subsystem *Hermes* (`category: "Skill-Destillation"`)  
 **Status:** `active`  
 **Referenz-Ticket:** `T-20261003-605028960` / Ocean Task 491  

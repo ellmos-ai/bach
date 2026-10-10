@@ -4,8 +4,8 @@ NemoFold Workflow-Lernen & Step-Ketten Synthese Service (Ocean Subsystem).
 Analysiert autonome Session-Logs und Werkzeugfolgen ueber mehrere Sessions,
 erkennt wiederkehrende Aktionsmuster (Heuristik-Detektor), giesst sie in
 strukturierte, wiederverwendbare Step-Ketten (MarbleRun / Toolchains) und
-validiert diese mit dem Workflow-TÜV (Reversibilitaet & Rollback-Schutz via
-NemoFold Action-Journal).
+prüft deren Metadaten statisch. Diese Heuristik führt weder Tests noch einen
+Action-Journal-Rollback aus und veröffentlicht keine native Kette.
 
 Verknuepft mit Ticket T-20261003-605028960 / Ocean Task 490 (#1688).
 """
@@ -14,10 +14,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
+
+from .learning_review_service import (
+    LearningConflict, ensure_review_schema, project_candidate, proposal_binding,
+    prohibit_legacy_promotion, record_review,
+)
 
 logger = logging.getLogger("nemofold_workflow_service")
 
@@ -111,6 +117,7 @@ class NemoFoldWorkflowService:
         conn = self._get_conn()
         try:
             conn.executescript(SCHEMA_SQL)
+            ensure_review_schema(conn, "nemofold")
             conn.commit()
         finally:
             conn.close()
@@ -514,7 +521,7 @@ class NemoFoldWorkflowService:
 
     def _evaluate_workflow_tuv(self, steps: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
         """
-        Validiert Ketten-Schritte gegen Sicherheitsregeln und Rollback-Faehigkeit:
+        Prüft ausschließlich deklarierte Kettenmetadaten; keine Ausführungsabnahme:
         - Keine ungeschuetzten destruktiven Shell-Commands.
         - Schreibende Schritte muessen Two-Phase Action-Journal Rollback unterstuetzen.
         - Release-Schritte duerfen nicht ungeprueft direkt auf main pushen.
@@ -559,7 +566,9 @@ class NemoFoldWorkflowService:
             "has_rollback_support": has_rollback_support,
             "has_test_gate": has_tests,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-            "tuv_inspector": "nemofold.workflow-tuv.v1"
+            "tuv_inspector": "nemofold.workflow-tuv.v1",
+            "analysis_kind": "static_metadata",
+            "empirically_validated": False
         }
         return status, report
 
@@ -568,50 +577,65 @@ class NemoFoldWorkflowService:
     # ─────────────────────────────────────────────────────────────
 
     def store_candidate(self, chain_data: dict[str, Any]) -> int:
-        """Speichert eine synthetisierte Kette als Kandidat in der Review-Queue."""
+        """Store a versioned draft; re-synthesis invalidates a previous review."""
         conn = self._get_conn()
         try:
-            cur = conn.cursor()
             now = datetime.now(timezone.utc).isoformat()
-            chain_name = chain_data["name"]
-            steps_json = json.dumps(chain_data.get("steps", []))
-            tuv_report_json = json.dumps(chain_data.get("tuv_report", {}))
-            prov_json = json.dumps(chain_data.get("provenance", {}))
-
-            cur.execute("""
-                INSERT INTO nemofold_workflow_candidates (
-                    chain_name, title, description, trigger_type, steps_json,
-                    confidence_score, tuv_status, tuv_report_json, status,
-                    provenance_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-                ON CONFLICT(chain_name) DO UPDATE SET
-                    title = excluded.title,
-                    description = excluded.description,
-                    steps_json = excluded.steps_json,
-                    confidence_score = excluded.confidence_score,
-                    tuv_status = excluded.tuv_status,
-                    tuv_report_json = excluded.tuv_report_json,
-                    provenance_json = excluded.provenance_json,
-                    updated_at = excluded.updated_at
-            """, (
-                chain_name,
-                chain_data.get("title", chain_name),
-                chain_data.get("description", ""),
-                chain_data.get("trigger_type", "manual"),
-                steps_json,
-                chain_data.get("confidence_score", 0.8),
-                chain_data.get("tuv_status", "certified"),
-                tuv_report_json,
-                prov_json,
-                now,
-                now
-            ))
+            confidence = chain_data.get("confidence_score", 0.8)
+            if (type(confidence) not in {int, float} or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1):
+                raise ValueError("Konfidenz muss eine endliche Zahl zwischen 0 und 1 sein")
+            item = {
+                "chain_name": chain_data["name"],
+                "title": chain_data.get("title", chain_data["name"]),
+                "description": chain_data.get("description", ""),
+                "trigger_type": chain_data.get("trigger_type", "manual"),
+                "steps_json": json.dumps(chain_data.get("steps", []), ensure_ascii=False),
+                "confidence_score": float(confidence),
+                "tuv_status": chain_data.get("tuv_status", "needs_review"),
+                "tuv_report_json": json.dumps(chain_data.get("tuv_report", {}), ensure_ascii=False),
+                "provenance_json": json.dumps(chain_data.get("provenance", {}), ensure_ascii=False),
+            }
+            for field in ("chain_name", "title", "description", "trigger_type", "tuv_status"):
+                if not isinstance(item[field], str):
+                    raise ValueError(f"{field} muss Text sein")
+            if not item["chain_name"].strip() or "\x00" in item["chain_name"]:
+                raise ValueError("Kandidatenname erforderlich")
+            proposal, digest = proposal_binding("nemofold", item)
+            conn.execute("BEGIN IMMEDIATE")
+            prior = conn.execute(
+                "SELECT * FROM nemofold_workflow_candidates WHERE chain_name=?", (item["chain_name"],)
+            ).fetchone()
+            if prior is not None:
+                if prior["proposal_json"] == proposal and prior["candidate_digest"] == digest:
+                    conn.commit()
+                    return prior["id"]
+                if prior["status"] == "approved" or prior["promoted_to_chain_id"] is not None:
+                    raise LearningConflict("Historisch veröffentlichter Kandidat bleibt unverändert; neuen Namen verwenden.")
+                revision = prior["candidate_revision"] + 1
+                conn.execute("""UPDATE nemofold_workflow_candidates SET
+                    title=?,description=?,trigger_type=?,steps_json=?,confidence_score=?,
+                    tuv_status=?,tuv_report_json=?,provenance_json=?,updated_at=?,
+                    candidate_revision=?,candidate_digest=?,proposal_json=?,status='pending',
+                    reviewed_by=NULL,review_notes=NULL WHERE id=?""", (
+                    *(item[key] for key in ("title", "description", "trigger_type", "steps_json",
+                        "confidence_score", "tuv_status", "tuv_report_json", "provenance_json")),
+                    now, revision, digest, proposal, prior["id"],
+                ))
+                candidate_id = prior["id"]
+            else:
+                keys = tuple(item)
+                cur = conn.execute(
+                    f"INSERT INTO nemofold_workflow_candidates ({','.join(keys)},created_at,updated_at,"
+                    f"candidate_revision,candidate_digest,proposal_json,status) VALUES ({','.join('?' for _ in keys)},?,?,?,?,?,'pending')",
+                    (*item.values(), now, now, 1, digest, proposal),
+                )
+                candidate_id = cur.lastrowid
             conn.commit()
-            row_id = cur.lastrowid
-            if not row_id or row_id == 0:
-                row = cur.execute("SELECT id FROM nemofold_workflow_candidates WHERE chain_name = ?", (chain_name,)).fetchone()
-                row_id = row[0] if row else 0
-            return row_id
+            return candidate_id
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -633,7 +657,7 @@ class NemoFoldWorkflowService:
 
             candidates = []
             for r in rows:
-                c = dict(r)
+                c = project_candidate("nemofold", r)
                 try:
                     c["steps"] = json.loads(c.get("steps_json") or "[]")
                 except (json.JSONDecodeError, ValueError):
@@ -658,7 +682,7 @@ class NemoFoldWorkflowService:
             row = conn.execute("SELECT * FROM nemofold_workflow_candidates WHERE id = ?", (candidate_id,)).fetchone()
             if not row:
                 return None
-            c = dict(row)
+            c = project_candidate("nemofold", row)
             try:
                 c["steps"] = json.loads(c.get("steps_json") or "[]")
             except (json.JSONDecodeError, ValueError):
@@ -676,106 +700,32 @@ class NemoFoldWorkflowService:
             conn.close()
 
     def approve_candidate(self, candidate_id: int, operator: str = "operator", notes: str = "") -> dict[str, Any]:
-        """
-        Gibt einen Kandidaten frei und ueberfuehrt ihn direkt in `marblerun_chains`.
-        Damit wird die Kette sofort im MarbleRun Designer ausfuehrbar.
-        """
-        candidate = self.get_candidate(candidate_id)
-        if not candidate:
-            raise ValueError(f"Kandidat {candidate_id} nicht gefunden")
-
+        """Legacy direct activation is unavailable; review and publication differ."""
         conn = self._get_conn()
         try:
-            now = datetime.now(timezone.utc).isoformat()
-            steps = candidate.get("steps", [])
-
-            # 1. Sicherstellen, dass marblerun_chains existiert
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS marblerun_chains (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    title TEXT,
-                    description TEXT,
-                    steps_json TEXT NOT NULL,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # 2. In marblerun_chains einfuegen/aktualisieren
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO marblerun_chains (name, title, description, steps_json, is_active, updated_at)
-                VALUES (?, ?, ?, ?, 1, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    title = excluded.title,
-                    description = excluded.description,
-                    steps_json = excluded.steps_json,
-                    is_active = 1,
-                    updated_at = excluded.updated_at
-            """, (
-                candidate["chain_name"],
-                candidate["title"],
-                candidate.get("description", "") + " (Synthetisiert durch NemoFold)",
-                json.dumps(steps),
-                now
-            ))
-            promoted_id = cur.lastrowid
-            if not promoted_id or promoted_id == 0:
-                mr_row = cur.execute("SELECT id FROM marblerun_chains WHERE name = ?", (candidate["chain_name"],)).fetchone()
-                promoted_id = mr_row[0] if mr_row else 0
-
-            # 3. Status in nemofold_workflow_candidates aktualisieren
-            cur.execute("""
-                UPDATE nemofold_workflow_candidates
-                SET status = 'approved',
-                    reviewed_by = ?,
-                    review_notes = ?,
-                    promoted_to_chain_id = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """, (operator, notes, promoted_id, now, candidate_id))
-
-            conn.commit()
-            return {
-                "success": True,
-                "candidate_id": candidate_id,
-                "status": "approved",
-                "promoted_to_marblerun_id": promoted_id,
-                "chain_name": candidate["chain_name"],
-                "approved_by": operator,
-                "approved_at": now
-            }
+            prohibit_legacy_promotion(conn, "nemofold", candidate_id)
         finally:
             conn.close()
 
-    def reject_candidate(self, candidate_id: int, reason: str = "", operator: str = "operator") -> dict[str, Any]:
-        """Lehnt einen Workflow-Kandidaten mit Begruendung ab."""
-        candidate = self.get_candidate(candidate_id)
-        if not candidate:
-            raise ValueError(f"Kandidat {candidate_id} nicht gefunden")
-
+    def review_candidate(self, candidate_id: int, *, expected_revision=None, expected_digest=None,
+                         request_id=None, actor="", notes="") -> dict[str, Any]:
         conn = self._get_conn()
         try:
-            now = datetime.now(timezone.utc).isoformat()
-            conn.execute("""
-                UPDATE nemofold_workflow_candidates
-                SET status = 'rejected',
-                    reviewed_by = ?,
-                    review_notes = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """, (operator, reason or "Abgelehnt durch Operator", now, candidate_id))
-            conn.commit()
-            return {
-                "success": True,
-                "candidate_id": candidate_id,
-                "status": "rejected",
-                "rejected_by": operator,
-                "reason": reason,
-                "rejected_at": now
-            }
+            return record_review(conn, "nemofold", candidate_id,
+                expected_revision=expected_revision, expected_digest=expected_digest,
+                request_id=request_id, actor=actor, decision="reviewed", notes=notes)
+        finally:
+            conn.close()
+
+    def reject_candidate(self, candidate_id: int, reason: str = "", operator: str = "operator", *,
+                         expected_revision=None, expected_digest=None, request_id=None, actor=None) -> dict[str, Any]:
+        conn = self._get_conn()
+        try:
+            receipt = record_review(conn, "nemofold", candidate_id,
+                expected_revision=expected_revision, expected_digest=expected_digest,
+                request_id=request_id, actor=actor if actor is not None else operator,
+                decision="rejected", notes=reason)
+            return {**receipt, "success": True, "reason": reason}
         finally:
             conn.close()
 
@@ -894,6 +844,8 @@ class NemoFoldWorkflowService:
                 "approved_candidates": approved_cand,
                 "rejected_candidates": rejected_cand,
                 "tuv_certified_count": certified_tuv,
+                "tuv_analysis_kind": "static_metadata",
+                "native_promotion_available": False,
                 "average_confidence": round(avg_conf, 2),
                 "recent_candidates": recent_candidates
             }
