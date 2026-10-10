@@ -1,16 +1,27 @@
 {
-  "count": 8,
+  "count": 11,
   "counts": {
-    "bundle": 2,
+    "bundle": 3,
     "module": 2,
     "satellite": 2,
-    "skill": 2
+    "skill": 2,
+    "stack": 2
   },
   "errors": [
     {
       "item": "bundle-lost",
       "reason": "manifest_FileNotFoundError",
       "source": "bundles_catalog"
+    },
+    {
+      "item": "../escape",
+      "reason": "unsafe_id",
+      "source": "bundles_catalog"
+    },
+    {
+      "item": "broken.v1.json",
+      "reason": "JSONDecodeError",
+      "source": "stacks_systems"
     }
   ],
   "generated_at": "2026-10-10T12:00:00+00:00",
@@ -25,12 +36,15 @@
         "alpha-old"
       ],
       "category": "runtime",
-      "description": "Synthetic module",
+      "description": "Synthetic module stored in <pfad> and <pfad> or <pfad>, see /api/tasks and https://example.org/a/b",
       "git": {
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -38,8 +52,11 @@
         {
           "branch": "main",
           "host": "MANIFEST-HOST",
-          "last_commit": "2026-09-01T00:00:00+00:00",
+          "last_commit": null,
+          "last_commit_raw": "2026-09-01T00:00:00",
           "observed_at": "2026-10-10T07:00:00+00:00",
+          "observed_at_basis": "declared",
+          "observed_at_raw": null,
           "source": "repos_manifest",
           "state": "clean"
         }
@@ -102,7 +119,10 @@
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -144,7 +164,10 @@
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -208,7 +231,10 @@
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -244,13 +270,199 @@
     },
     {
       "aliases": [],
+      "category": "control",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "last_commit_raw": null,
+        "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "../escape",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "../escape",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "bundles_catalog"
+      ],
+      "status": "registered",
+      "type": "bundle",
+      "version": null,
+      "visibility": null
+    },
+    {
+      "aliases": [
+        "homebase-stack"
+      ],
+      "category": "deployment-projection",
+      "description": "Synthetic deployment stack",
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "last_commit_raw": null,
+        "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "systems/homebase-stack",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "homebase-stack",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "required",
+          "target": "bundle-one",
+          "target_type": "bundle"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "optional",
+          "target": "bundle-lost",
+          "target_type": "bundle"
+        }
+      ],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "stacks_systems"
+      ],
+      "status": null,
+      "type": "stack",
+      "version": "2.0.0",
+      "visibility": null
+    },
+    {
+      "aliases": [
+        "homebase-stack"
+      ],
+      "category": "module-stack",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "last_commit_raw": null,
+        "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "stacks/homebase-stack",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "homebase-stack",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "required",
+          "target": "bundle-one",
+          "target_type": "bundle"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "required",
+          "target": "alpha-core",
+          "target_type": "module"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": null,
+          "target": "skills",
+          "target_type": "skill-library"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": null,
+          "target": "other-stack",
+          "target_type": "stack"
+        }
+      ],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "stacks_modules"
+      ],
+      "status": "active",
+      "type": "stack",
+      "version": null,
+      "visibility": "public"
+    },
+    {
+      "aliases": [],
       "category": "assist",
       "description": "Synthetic skill",
       "git": {
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -297,7 +509,10 @@
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -341,7 +556,10 @@
         "branch": "feature/x",
         "host": "TEST-HOST",
         "last_commit": "2026-10-01T00:00:00+00:00",
-        "observed_at": "2026-10-09T09:00:00+02:00",
+        "last_commit_raw": null,
+        "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": "repo_registry",
         "state": "dirty"
       },
@@ -350,7 +568,10 @@
           "branch": "feature/x",
           "host": "TEST-HOST",
           "last_commit": "2026-10-01T00:00:00+00:00",
-          "observed_at": "2026-10-09T09:00:00+02:00",
+          "last_commit_raw": null,
+          "observed_at": null,
+          "observed_at_basis": "absent",
+          "observed_at_raw": null,
           "source": "repo_registry",
           "state": "dirty"
         }
@@ -395,7 +616,10 @@
         "branch": null,
         "host": null,
         "last_commit": null,
+        "last_commit_raw": null,
         "observed_at": null,
+        "observed_at_basis": "absent",
+        "observed_at_raw": null,
         "source": null,
         "state": "unknown"
       },
@@ -433,76 +657,117 @@
       "visibility": null
     }
   ],
+  "redactions": 3,
   "schema": "bach.catalog.v1",
   "sources": [
     {
       "availability": "available",
       "error": null,
-      "generated_at": "2026-10-09T10:00:00+02:00",
+      "generated_at": "2026-10-09T08:00:00+00:00",
       "generated_at_basis": "declared",
+      "generated_at_raw": null,
       "host": "REGISTRY-HOST",
       "id": "repo_registry",
       "kind": "git-hosts",
+      "modified_at": "2025-10-09T08:53:20+00:00",
       "path_label": "GITHUBBOT/config/repo_registry.json",
       "schema": "githubbot-repo-registry-v1",
-      "source_version": "8e0392b509549bfa75b4a4f9a9f3e08cb7d1dbc3265e56f0d54f9db438363a30"
+      "source_version": "a382b19cb948ad537aaedea2160a160bf4e32470f3de9ff92d84fa6ceced3d3f"
     },
     {
       "availability": "available",
       "error": null,
       "generated_at": "2026-10-10T07:00:00+00:00",
       "generated_at_basis": "declared",
+      "generated_at_raw": null,
       "host": "MANIFEST-HOST",
       "id": "repos_manifest:slot-a",
       "kind": "git-hosts",
+      "modified_at": "2025-10-09T08:53:20+00:00",
       "path_label": ".SYNC/slot-a/repos.json",
       "schema": "repos-manifest-v1",
-      "source_version": "5da90c3ad43668e3420fe24f4a95ccc374ca3d94554daebcf9bf8d6bba1d6528"
+      "source_version": "c08fe78a9afd1fcf8ad754c3840a47497e7b50dc99c07346524cce6204067518"
     },
     {
       "availability": "available",
       "error": null,
       "generated_at": "2025-10-09T08:53:20+00:00",
       "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
       "host": null,
       "id": "modules_catalog",
       "kind": "module",
+      "modified_at": "2025-10-09T08:53:20+00:00",
       "path_label": ".MODULES/modules.catalog.json",
       "schema": "ellmos.modules-catalog.v1",
-      "source_version": "e9889d5de42feb6d8b153af0485b14aaf8771967cd907ec05d4acba7d08d0c92"
+      "source_version": "bd10b9d56470d2e88dcf74a96ca709d9e837da2a2bfd000ecca0f59a082be7b6"
     },
     {
       "availability": "available",
       "error": null,
       "generated_at": "2025-10-09T08:53:20+00:00",
       "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
       "host": null,
       "id": "bundles_catalog",
       "kind": "bundle",
+      "modified_at": "2025-10-09T08:53:20+00:00",
       "path_label": ".BUNDLES/bundles.catalog.v1.json",
       "schema": "ellmos.bundles.catalog.v1",
-      "source_version": "5930f8df888e19a791ae04a604d95d6ac5eb472297c5851c0c312cfe77fae5b3"
+      "source_version": "9b0eee5041e28bc41fbbf984dbad4fb1ca849f1c8cbfe96a319b22d5946132da"
     },
     {
       "availability": "available",
       "error": null,
       "generated_at": "2025-10-09T08:53:20+00:00",
       "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
       "host": null,
-      "id": "skills_registry",
-      "kind": "skill",
-      "path_label": "skills/registry/components.json",
+      "id": "stacks_systems",
+      "kind": "stack",
+      "modified_at": "2025-10-09T08:53:20+00:00",
+      "path_label": ".SYSTEMS/stacks/*.json",
       "schema": null,
-      "source_version": "a63c301691bdaec0b04727f98b2853864d0c45a2fe11fbf5d49523e9596c74a4"
+      "source_version": "9846693d3517ed8ba325474e9078575fbdac6cad0a0c5eb326598fa58049eb22"
     },
     {
       "availability": "available",
       "error": null,
-      "generated_at": "2026-10-10T08:00:00",
-      "generated_at_basis": "declared",
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
+      "host": null,
+      "id": "stacks_modules",
+      "kind": "stack",
+      "modified_at": "2025-10-09T08:53:20+00:00",
+      "path_label": ".STACKS/*/stack.v2.json",
+      "schema": null,
+      "source_version": "cb49f1676a76f2fac219f54ac4f8d83711f1510f95c0bf36b3ca45d877647358"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
+      "host": null,
+      "id": "skills_registry",
+      "kind": "skill",
+      "modified_at": "2025-10-09T08:53:20+00:00",
+      "path_label": "skills/registry/components.json",
+      "schema": null,
+      "source_version": "9c5a157a3d5aad320e4ebc8ffcb4e9dbc92af4e5dce3fdd4f9015fcd2c587872"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": null,
+      "generated_at_basis": "no_timezone",
+      "generated_at_raw": "2026-10-10T08:00:00",
       "host": null,
       "id": "satellite_catalog",
       "kind": "satellite",
+      "modified_at": "2025-10-09T08:53:20+00:00",
       "path_label": "GITHUBBOT/config/master_satellite_catalog.json",
       "schema": "master-satellite-catalog-v1",
       "source_version": "6ea05235af706ea7ee37dc6448cccd81f4422e4e3adea6553b1c4eb7d6c9b6d7"
