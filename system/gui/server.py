@@ -5659,8 +5659,12 @@ async def settings_page():
 
 
 @app.get("/system", response_class=HTMLResponse)
-async def system_page():
-    """System-Route leitet auf Einstellungen/Setup weiter."""
+async def system_page(request: Request):
+    """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
+    if request.query_params.get("tab") == "ocean":
+        ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
+        if ocean_page.is_file():
+            return FileResponse(ocean_page)
     return await settings_page()
 
 
