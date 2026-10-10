@@ -13,6 +13,23 @@ zugewiesene Slot und required_model müssen zur tatsächlichen Besetzung passen.
 Creator-Schonfrist und bestehende Task-Leases bleiben verbindlich. Für Aufgaben
 ohne ausdrückliche Slot-Zuordnung gelten die bisherigen Queue- und Assignee-Filter.
 
+Ein aktivierter Pickupfilter verlangt alle konfigurierten Filtergruppen:
+Kategorie (category, project oder categories), Priorität, mindestens einen
+positiven Tag und keinen ausgeschlossenen Tag. Leere Gruppen schränken nicht
+ein. Ohne aktivierten Filter und ohne ausdrückliche Slotzuweisung ist die
+allgemeine Queue auf assigned_to BACH, Buddha, Ollama oder die eigene Worker-ID,
+Rolle beziehungsweise sub_mode begrenzt. Ein aktivierter Filter ist eine
+ausdrückliche Auswahlkonfiguration, keine allgemeine Freigabe fremder Aufgaben.
+
+Die live erhobene queue_status-Projektion nennt Kandidaten, Auswahlmatches,
+Übernahmeversuche, Quelle, Zeit und getrennte Ausschlusszahlen für Kategorie,
+Priorität, positive beziehungsweise ausgeschlossene Tags und native
+Übernahmegrenzen. Ein Auswahlmatch ist noch keine bestätigte Lease.
+current_activity zeigt die wichtigsten Zahlen auch in älteren GUI-Karten.
+Der authentifizierte Konfigurationsabruf liefert selection_policy separat von
+den bearbeitbaren Feldern. Diese Anzeige ändert, startet oder claimt nichts;
+ihre Auswahlwerte sind in die Konfigurationsversion eingebunden.
+
 Für die Betriebsprüfung sind die Konfiguration und Ausführungsnachweise des
 laufenden Control-Dienstes maßgeblich. Eine neu gestartete CLI kann durch andere
 Umgebungsvariablen eine andere Slot-Konfigurationsdatei lesen und belegt deshalb
