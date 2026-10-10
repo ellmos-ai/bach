@@ -11,8 +11,8 @@ Testet:
 6. Unified API Endpunkte (/api/learning/nemofold/* und /api/setup/ocean-map)
 """
 
-import json
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
