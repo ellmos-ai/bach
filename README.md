@@ -242,6 +242,9 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## Documentation
 
+Native documentation maintenance, activation and evidence boundaries:
+[DOCS-MAINTENANCE.md](docs/architecture/DOCS-MAINTENANCE.md).
+
 - **[Shared GUI and agent controls](system/docs/help/gui-integration.txt)** - Consumer release pins and adapter checks
 - **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
 - **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback

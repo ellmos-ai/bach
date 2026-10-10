@@ -1792,6 +1792,8 @@ try:
     app.include_router(core_system_agents_router)
     from gui.api.agent_history import router as agent_history_router
     app.include_router(agent_history_router)
+    from gui.api.docs_maintenance import router as docs_maintenance_router
+    app.include_router(docs_maintenance_router)
     app.include_router(prompt_router)
     from gui.api.task_assignment import router as task_assignment_router
     app.include_router(task_assignment_router)
