@@ -252,6 +252,8 @@ jobs:
             system/tests/test_prompt_chat_draft.py \
             system/tests/test_prompt_generator.py \
             system/tests/test_prompt_handler.py \
+            system/tests/test_promptboard_import.py \
+            system/tests/test_prompt_tag_compatibility.py \
             system/tests/test_prosync_race.py \
             system/tests/test_recurring_tasks.py \
             system/tests/test_reflection_handler.py \

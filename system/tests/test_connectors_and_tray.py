@@ -1284,7 +1284,7 @@ class TestTrayIdleWorker:
             tray = BACHTray(host="testhost", port=9999, execution_state_path=state_path)
         tray.state["connected"] = True
         tray.slots = {"buddha_always_on": {"id": "buddha_always_on", "enabled": True,
-                     "pause_info": {"is_paused": False}, "model": "actual-model", "mode": "safe"}}
+                     "pause_info": {"is_paused": False}, "backend": "ollama", "model": "actual-model", "mode": "safe"}}
         tray._update_icon = MagicMock()
         return tray
 
