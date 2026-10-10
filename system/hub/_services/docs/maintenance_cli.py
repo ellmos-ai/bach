@@ -68,7 +68,9 @@ def handle(handler, args, dry_run=False):
             return True, json.dumps(
                 launch_plan(
                     root,
-                    Path(sys.executable).resolve(),
+                    # Resolving a venv symlink selects global Python and loses
+                    # the installed consumer dependencies at service startup.
+                    Path(sys.executable).absolute(),
                     handler.user_db.resolve(),
                     runtime,
                     config_path,
