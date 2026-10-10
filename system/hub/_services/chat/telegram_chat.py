@@ -3683,6 +3683,23 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         current_slot, detail, model=model, retries=backend_retries,
                         waited_seconds=backend_waited_seconds,
                     )
+                    dispatches = getattr(control.task_binding, "tool_dispatch_count", None)
+                    retry_before_tools = type(dispatches) is int and dispatches == 0
+                    if not control.task_binding.closed and not retry_before_tools:
+                        # No persisted tool transcript or idempotency contract
+                        # can prove that re-running initial_prompt is safe.
+                        # Block the task canonically so a different worker also
+                        # cannot replay it through a fresh binding/counter.
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                        if not control.task_binding.quarantine_lease():
+                            control.task_binding.invalidate()
+                            raise RuntimeError("Task-Quarantäne nicht bestätigt; kanonischen Zustand prüfen")
+                        activity = (f"{error_activity} Automatische Wiederaufnahme unterdrückt: "
+                                    "Toolwirkung bereits begonnen oder nicht verifizierbar; Task zur Prüfung blockiert.")
+                        _update_worker_slot(control, {"current_activity": activity})
+                        _record_worker_activity(control, activity, "error")
+                        return
                     if retry_delay is not None and not control.task_binding.closed:
                         # Settle Renew physically and obtain the canonical Return
                         # ACK before any wait. A cleanup error stays terminal.

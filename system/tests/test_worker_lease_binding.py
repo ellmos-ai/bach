@@ -42,6 +42,31 @@ def test_binding_uses_canonical_content_and_keeps_capability_private(binding):
     assert binding._ack.lease_id not in repr(binding)
 
 
+@pytest.mark.parametrize("ack_fault", [None, "before_commit", "after_commit", "malformed"])
+def test_quarantine_blocks_requeue_and_never_falls_back_to_return(binding, monkeypatch, ack_fault):
+    from dataclasses import replace
+    from hub._services.task_lease_client import LeaseProtocolError
+    binding.mark_tool_dispatch()
+    native_release = binding._client.release
+    def release(*args, **kwargs):
+        assert kwargs["outcome"] == "blocked"
+        if ack_fault == "before_commit":
+            raise LeaseProtocolError("Isolated missing ACK before commit")
+        ack = native_release(*args, **kwargs)
+        if ack_fault == "after_commit":
+            raise LeaseProtocolError("Isolated missing ACK after commit")
+        return replace(ack, status="pending") if ack_fault == "malformed" else ack
+    monkeypatch.setattr(binding._client, "release", release)
+    assert binding.quarantine_lease() is (ack_fault is None)
+    assert binding.return_lease() is False
+    snapshot = binding._client.task_snapshot(binding.task_id)
+    assert snapshot["status"] == ("in_progress" if ack_fault == "before_commit" else "blocked")
+    assert binding.tool_dispatch_count == 1
+    if ack_fault is not None:
+        with pytest.raises(LeaseError):
+            binding.assert_active()
+
+
 def test_done_receipt_requires_submission_and_separate_authoritative_acceptance(binding):
     with pytest.raises(LeaseError):
         binding.execute_task_manage({"action": "done", "task_id": binding.task_id})

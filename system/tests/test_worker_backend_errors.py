@@ -259,7 +259,8 @@ def test_retry_wait_observes_stop_policy_ttl_and_generation(monkeypatch, interru
         assert writes[-1]["status"] == ("idle" if interruption == "disabled" else "expired")
 
 
-@pytest.mark.parametrize("scenario", ["recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry"])
+@pytest.mark.parametrize("scenario", ["recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry",
+    "unknown_none", "unknown_false", "unknown_true", "unknown_negative", "unknown_string", "unknown_float"])
 def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_path, monkeypatch, scenario):
     import sqlite3
     from hub._services import task_lease_client as client_module
@@ -342,6 +343,10 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
     if scenario == "return_denied":
         monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _: False)
+    if scenario.startswith("unknown_"):
+        invalid = {"unknown_none": None, "unknown_false": False, "unknown_true": True,
+                   "unknown_negative": -1, "unknown_string": "0", "unknown_float": 0.0}[scenario]
+        monkeypatch.setattr(WorkerLeaseBinding, "tool_dispatch_count", property(lambda _: invalid))
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -373,11 +378,144 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             assert len(calls) == 1 and waits == [60]
             assert client.read(42, lease_id=foreign[0].lease_id).own is True
             assert acquire_calls == [True, False]
+        elif scenario.startswith("unknown_"):
+            assert len(calls) == 1 and waits == []
+            assert task["status"] == "blocked" and task["claim_salt_ref"] is None
+            assert "nicht verifizierbar" in current["current_activity"]
         else:
             assert len(calls) == 1 and waits == [60] and task["status"] == "pending"
             assert task["claim_salt_ref"] is None
             assert execution.stop_event.is_set() and execution.start_error is None
         assert "PRIVATE_PROVIDER_BODY" not in json.dumps(slots.get_activity_history(path=path))
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
+@pytest.mark.parametrize("action", ["add", "detail", "invalid", "list_directory"])
+@pytest.mark.parametrize("previous_block", [False, True])
+@pytest.mark.parametrize("dispatch_path", ["runtime", "bridge"])
+@pytest.mark.parametrize("backend_failure", ["rate_limit", "monthly_quota", "server_error"])
+def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatch, action, previous_block, dispatch_path, backend_failure):
+    """Use real process/dispatcher/TaskDB, not a simulated runtime.process."""
+    import sqlite3
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from system.tests.test_task_lease_client import _init_db
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Real retry fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
+        "mode": "safe", "task_id": 42, "pause_after": 0, "max_tool_rounds": 5}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+        "VALUES (42,'Real retry fixture','pending','P1','INBOX','BACH',?)", (ident,))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    bindings = []
+    acquire = control._acquire_worker_task
+    def acquire_record(*args, **kwargs):
+        binding = acquire(*args, **kwargs)
+        if binding is not None:
+            bindings.append(binding)
+        return binding
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire_record)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    runtime = ChatRuntime(backend)
+    # The lean lease-client fixture omits creation timestamps, which the real
+    # decomposition tool needs when it creates a child task.
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    # Isolate unrelated context/hook providers; retain actual tool dispatch.
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
+    monkeypatch.setattr(control, "runtime", runtime)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: True)
+    calls, waits = [], []
+    arguments = ({"action": "add", "title": "Only one child"} if action == "add"
+                 else {"action": action, "task_id": 42})
+    tool_name = "task_manage"
+    if action == "list_directory":
+        tool_name, arguments = "list_directory", {"path": str(tmp_path)}
+    real_client = httpx.AsyncClient
+    def reply(request):
+        calls.append(request)
+        if len(calls) == 1:
+            if dispatch_path == "runtime":
+                payload = {"message": {"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": tool_name, "arguments": arguments}}]}, "done": True}
+                return httpx.Response(200, text=json.dumps(payload) + "\n")
+            # Exercise the real owned HTTP/ACK bridge and provider dispatcher
+            # on this same lease. Provider errors are then handled by the real
+            # Cloud runtime/controller, without mocking runtime.process.
+            from hub._services.chat.worker_tool_bridge import WorkerToolBridge
+            from hub._services.chat.worker_tool_client import WorkerToolClient
+            with WorkerToolBridge(bindings[-1], mode="safe") as relay:
+                bridge_client = WorkerToolClient.from_environment(relay.private_environment())
+                bridge_client.call(tool_name, arguments)
+        expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
+        if previous_block and len(calls) == expected_calls - 1:
+            return httpx.Response(200, text=json.dumps({"message": {
+                "role": "assistant", "content": "Partial work; task remains open"}, "done": True}) + "\n")
+        assert len(calls) <= expected_calls, "Unsafe replay reached provider"
+        status = 503 if backend_failure == "server_error" else 429
+        message = "monthly usage limit reached" if backend_failure == "monthly_quota" else "rate limit"
+        return httpx.Response(status, json={"error": message})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    def wait(worker, seconds):
+        waits.append(seconds)
+        pytest.fail("Tools have run; automatic retry must be suppressed")
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
+        assert len(calls) == expected_calls and waits == []
+        snapshot = client.task_snapshot(42)
+        assert snapshot["claim_fence"] == 1 and snapshot["status"] == "blocked"
+        assert not client.read(42).leased
+        children = conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0]
+        assert children == (1 if action == "add" else 0)
+        current = slots.get_slot(ident, path)
+        assert current["status"] == "error"
+        assert "Toolwirkung" in current["current_activity"]
+        expected_kind = {"server_error": "http_error", "monthly_quota": "quota_exceeded", "rate_limit": "rate_limited"}[backend_failure]
+        assert current["backend_error"]["kind"] == expected_kind
+        assert execution.task_binding.tool_dispatch_count == 1
+        assert execution.start_error == "backend_error"
+        # A compatible second worker must not silently replay the initial
+        # prompt with a fresh zero counter after the first worker exits.
+        import threading
+        from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+        from hub._services.task_lease_client import LeaseDeniedError
+        second = WorkerLeaseBinding.acquire_next(client, {"id": ident, "model": "glm-5.3:cloud"},
+            worker_id="second@fixture", host="fixture", generation="b" * 32,
+            is_current=lambda: True, stop_event=threading.Event())
+        if second is not None:
+            assert second.task_id != 42
+            assert second.return_lease()
+        with pytest.raises(LeaseDeniedError, match="not_claimable"):
+            WorkerLeaseBinding.acquire(client, 42, worker_id="second@fixture", host="fixture",
+                generation="b" * 32, is_current=lambda: True, stop_event=threading.Event())
+        history = conn.execute("SELECT new_value FROM task_history WHERE task_id=42 AND action='lease_release'").fetchall()
+        assert any("backend_error_after_tool_dispatch" in row[0] for row in history)
     finally:
         if thread is not None and thread.is_alive():
             control._WORKER_EXECUTIONS[ident].stop_event.set()

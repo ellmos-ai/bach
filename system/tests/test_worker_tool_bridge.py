@@ -75,11 +75,13 @@ def test_lost_relay_response_cannot_duplicate_open_parent_decomposition(bridge):
     args = {"action": "decompose", "task_id": bridge.binding.task_id,
             "subtasks": [{"title": "One child"}], "close_parent": False}
     call(bridge, args)  # canonical ACK reached the broker; client never acknowledges receipt
+    assert bridge.binding.tool_dispatch_count == 1
     with pytest.raises(urllib.error.HTTPError) as error:
         call(bridge, args)
     assert error.value.code == 409
     assert len(bridge.binding._client.task_candidates()["tasks"]) == 2
     bridge.close()
+    assert bridge.binding.tool_dispatch_count == 1  # unknown receipt cannot reset proof
     with pytest.raises(Exception): bridge.binding.assert_active()
     assert bridge.binding.return_lease() is False
 
