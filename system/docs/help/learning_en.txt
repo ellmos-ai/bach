@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Resources: [hub/learning.py, hub/_services/learning_source_service.py, /api/learning/sources/*]
+
+LEARNING — Bounded Sources and Review Candidates
+================================================
+
+PURPOSE
+-------
+Learning checks an explicitly allowed source together with a learning proposal supplied by the caller. It checks provenance, hashes, format, selection signals, privacy, and possible duplicates. It does not select experiences on its own and proves neither reuse nor outcome quality.
+
+SOURCE ALLOWLIST
+----------------
+BACH_LEARNING_SOURCE_ROOTS is a JSON object mapping root IDs to absolute, existing directories. Its default is {}; no source is allowed by default. Requests use only a root ID and a relative path. Paths containing .., symlink roots, and paths outside the allowed root are rejected. Every source needs an explicit SHA-256 hash.
+
+SUPPORTED SOURCES
+-----------------
+- session: a prepared JSON export using schema bach.learning-source.v1, session_id, and at most 200 unique events. Roles are user, assistant, or tool; tool and outcome are optional. A candidate requires at least one selected user event with a recognized selection marker. Otherwise the result is no_candidate.
+- hermes_ledger: a native Hermes JSONL ledger with a unique 12-character lowercase hexadecimal entry_id. A create, edit, update, or patch maintenance event must include an after manifest with paths and SHA-256 hashes. All files must remain inside the allowed root. The ledger is telemetry, not approval or a quality result; the adapter reads its format and does not start a Hermes curator run.
+- nemofold_voyage: an original file from the native run-reports/web-console/voyages library. NemoFold VoyageStore.load runs with require_receipt=True. The receipt, job contract, file hash, and voyage ID are checked. This proves a saved plan, not execution.
+
+LIMITS AND PRIVACY
+------------------
+A source is at most 1,000,000 bytes; a Hermes manifest and its referenced files share that total limit, and each referenced file is limited to 200,000 bytes. A receipt is limited to 4,096 bytes. A request is at most 200,000 bytes. Source limits are not a total limit for all separate catalogue and guide reads.
+
+The service rejects detected path, account, IP, and credential patterns, as well as credential fields. Its pattern filter is not a complete semantic secret detector. Private literals can be replaced by a parameter with a name, value, and description; the proposal then uses the <NAME> placeholder. Credential-like names are also forbidden as dictionary keys.
+
+Source and event locators remain internal provenance metadata in the candidate contract. Candidate list and detail endpoints require an active device token; these locators are not published skill or chain content.
+
+ANALYSIS, STORAGE, AND REVIEW
+-----------------------------
+A complete proposal contains kind (skill, chain, or rule), name, trigger, reason, body, event_ids, parameters, side_effects, required_capabilities, and dedup. The service reads existing neighbors from the allowed skill and chain catalogues and binds the caller-supplied dedup decision and, where applicable, its basis version; it does not make an independent semantic deduplication decision. Selection and dedup decisions remain subject to review. The contract records semantic_review_required=true and empirically_validated=false.
+
+CLI:
+  bach learning analyze <request.json>
+  bach learning store <request.json> --dry-run
+  bach learning store <request.json> -n
+  bach learning store <request.json>
+
+analyze is always read-only. store with --dry-run or -n previews without saving. store without either flag stores only an inactive, versioned candidate in the existing Hermes or NemoFold review store. Updates require expected_revision and expected_digest together. Identical content is recognized idempotently; version conflicts fail closed.
+
+HTTP:
+  POST /api/learning/sources/analyze
+  POST /api/learning/sources/store
+
+Both routes first require an active device token, provided through an Authorization: Bearer header or the bach_device_token cookie. They then use the same handler pipeline. analyze remains read-only. store does not publish or activate anything.
+
+PYTHON API
+----------
+  from bach_api import learning
+  learning.analyze("request.json")
+  learning.store("request.json")
+
+The convenience methods return the JSON result as text on success, not as a Python dict. On error, the proxy prints and returns an error message as text; do not pass error text to json.loads. For the legacy return value:
+  success, message = learning.raw("analyze", "request.json")
+success is a bool; message is JSON text on success and plain error text otherwise.
+
+REVIEW BOUNDARY
+----------------
+A review candidate is not an approved skill. The adapter creates no active skill file, grants no tools or capabilities, and configures no scheduler. Rules are drafts without governance authority; scheduler setup needs separate approval. The quarantine and review in the PR 303 dependency remain in force.
+
+The skill-extractor and workflow-extract guides are actually read; the resolved version and hash are recorded. The guides are not executed. Their version is not fixed at 1.3.1 because runtime catalogue resolution may select another version. The fixed supported references neutralisierung.md, transcript-quellen.md, and automation-bausteine.md are read and hashed when mentioned in the guides; they are not executed.
+
+The older direct Hermes distill and NemoFold synthesize paths and their heuristics remain. They do not implement this shared contract and are not native original-source integrations. Code or CI success proves neither installation nor a Mac Studio run. Native promotion, independent reuse with a quality result, provider pins, automatic session export, and scheduling are separate open work.
+
+SEE ALSO
+--------
+docs/architecture/LEARNING-SOURCE-CONTRACT.md

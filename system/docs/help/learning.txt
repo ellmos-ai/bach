@@ -1,0 +1,68 @@
+# Portabilität: UNIVERSAL
+# Version: 1.0.0
+# Ressourcen: [hub/learning.py, hub/_services/learning_source_service.py, /api/learning/sources/*]
+
+LEARNING – Begrenzte Lernquellen und Prüfkandidaten
+===================================================
+
+ZWECK
+-----
+Learning prüft eine ausdrücklich freigegebene Quelle zusammen mit einem vom Aufrufer gelieferten Lernvorschlag. Es prüft Herkunft, Hash, Format, Auswahlmarker, Privatsphäre und mögliche Duplikate. Es wählt keine Erfahrung selbstständig aus und beweist weder Wiederverwendung noch Ergebnisqualität.
+
+QUELLENFREIGABE
+---------------
+BACH_LEARNING_SOURCE_ROOTS ist ein JSON-Objekt aus Wurzel-IDs und absoluten, vorhandenen Verzeichnissen. Der Standardwert ist {}; damit ist keine Quelle freigegeben. Eine Anfrage verwendet nur die Wurzel-ID und einen relativen Pfad. Pfade mit .., Symlink-Wurzeln und Zugriffe außerhalb der freigegebenen Wurzel werden abgelehnt. Für jede Quelle ist ein expliziter SHA-256-Hash erforderlich.
+
+UNTERSTÜTZTE QUELLEN
+--------------------
+- session: vorbereiteter JSON-Export mit Schema bach.learning-source.v1, session_id und höchstens 200 eindeutigen Ereignissen. Rollen sind user, assistant oder tool; tool und outcome sind optional. Für einen Kandidaten muss mindestens ein ausgewähltes user-Ereignis einen erkannten Auswahlmarker enthalten. Sonst lautet das Ergebnis no_candidate.
+- hermes_ledger: natives Hermes-JSONL-Ledger mit einer eindeutigen 12-stelligen kleingeschriebenen Hex-ID entry_id. Ein Pflegeereignis create, edit, update oder patch muss ein after-Manifest mit Pfad und SHA-256 enthalten. Alle Dateien müssen innerhalb der freigegebenen Wurzel liegen. Das Ledger ist Telemetrie, keine Genehmigung und kein Qualitätsnachweis; der Adapter liest das Format und startet keinen Hermes-Curatorlauf.
+- nemofold_voyage: Originaldatei aus der nativen Voyage-Bibliothek run-reports/web-console/voyages. NemoFold VoyageStore.load läuft mit require_receipt=True. Receipt, Jobvertrag, Datei-Hash und Voyage-ID werden geprüft. Das belegt einen gespeicherten Plan, keine Ausführung.
+
+GRENZEN UND PRIVATSPHÄRE
+------------------------
+Eine Quelle ist höchstens 1.000.000 Byte groß; ein Hermes-Manifest samt referenzierten Dateien unterliegt derselben Gesamtgrenze, jede referenzierte Datei höchstens 200.000 Byte. Ein Receipt ist auf 4.096 Byte begrenzt. Eine Anfrage ist höchstens 200.000 Byte groß. Die Quellgrenzen sind keine Gesamtgrenze für alle separaten Katalog- und Leitfaden-Lesevorgänge.
+
+Der Dienst weist erkannte Pfad-, Konto-, IP- und Credential-Muster sowie Credential-Felder zurück. Der Musterfilter ist kein vollständiger semantischer Geheimnisdetektor. Private Literale können als Parameter mit Name, Wert und Beschreibung ersetzt werden; der Vorschlag enthält danach den Platzhalter <NAME>. Credential-ähnliche Namen sind auch als Dictionary-Schlüssel verboten.
+
+Quellen- und Ereignislokatoren bleiben interne Herkunftsmetadaten im Kandidatenvertrag. Kandidatenlisten und -details erfordern ein aktives Device-Token; diese Lokatoren sind kein veröffentlichter Skill- oder Ketteninhalt.
+
+ANALYSE, SPEICHERUNG UND PRÜFUNG
+-------------------------------
+Eine vollständige proposal-Angabe enthält kind (skill, chain oder rule), name, trigger, reason, body, event_ids, parameters, side_effects, required_capabilities und dedup. Der Dienst liest vorhandene Nachbarn aus den freigegebenen Skill- und Kettenkatalogen und bindet die vom Aufrufer gelieferte Dedup-Entscheidung und, soweit erforderlich, die Basisversion; er trifft keine eigenständige semantische Duplikatentscheidung. Auswahl und Duplikatentscheidung bleiben prüfpflichtig. Der Vertrag markiert semantic_review_required=true und empirically_validated=false.
+
+CLI:
+  bach learning analyze <request.json>
+  bach learning store <request.json> --dry-run
+  bach learning store <request.json> -n
+  bach learning store <request.json>
+
+analyze ist immer lesend. store mit --dry-run oder -n zeigt die Vorschau ohne Speicherung. store ohne diese Flags legt nur einen inaktiven, versionierten Kandidaten im vorhandenen Hermes- oder NemoFold-Prüfspeicher ab. Für ein Versionsupdate müssen expected_revision und expected_digest gemeinsam angegeben werden. Gleiche Inhalte werden idempotent wiedererkannt; bei Versionskonflikten wird abgebrochen.
+
+HTTP:
+  POST /api/learning/sources/analyze
+  POST /api/learning/sources/store
+
+Beide Routen verlangen zuerst ein aktives Device-Token, übermittelt im Authorization: Bearer-Header oder im Cookie bach_device_token. Danach nutzen sie dieselbe Handler-Pipeline. analyze bleibt lesend. store veröffentlicht oder aktiviert nichts.
+
+PYTHON-API
+-----------
+  from bach_api import learning
+  learning.analyze("request.json")
+  learning.store("request.json")
+
+Die bequemen Methoden geben bei Erfolg das JSON-Ergebnis als Text zurück, kein Python-dict. Bei einem Fehler druckt der Proxy eine Fehlermeldung und gibt sie als Text zurück; Fehlertext darf nicht mit json.loads verarbeitet werden. Für den Legacy-Rückgabewert:
+  success, message = learning.raw("analyze", "request.json")
+success ist bool; message ist bei Erfolg JSON-Text und bei Fehler Klartext.
+
+FREIGABEGRENZE
+---------------
+Ein Prüfkandidat ist kein freigegebener Skill. Der Adapter schreibt keine aktive Skill-Datei, gewährt keine Tools oder Fähigkeiten und richtet keinen Scheduler ein. Regeln sind Entwürfe ohne Governance-Autorität; für Scheduler-Konfiguration ist eine getrennte Freigabe nötig. Die Quarantäne und Review der PR-303-Abhängigkeit bleiben maßgeblich.
+
+Die Leitfäden skill-extractor und workflow-extract werden tatsächlich gelesen; der aufgelöste Stand und Hash werden festgehalten. Die gelesenen Leitfäden werden nicht ausgeführt. Ihre Version ist nicht auf 1.3.1 festgelegt, weil die Laufzeit einen anderen Katalogstand auflösen kann. Die fest unterstützten, in den Leitfäden erwähnten Referenzen neutralisierung.md, transcript-quellen.md und automation-bausteine.md werden mit Hash als gelesen, aber nicht ausgeführt protokolliert.
+
+Die älteren direkten Hermes-distill- und NemoFold-synthesize-Wege samt Heuristiken bleiben bestehen. Sie erfüllen diesen gemeinsamen Vertrag nicht und sind keine native Originalquellenintegration. Code- oder CI-Erfolg belegt weder Installation noch Lauf auf dem Mac Studio. Native Promotion, unabhängige Wiederverwendung mit Qualitätsnachweis, Provider-Pins, automatischer Sessionexport und Scheduler sind separate offene Schritte.
+
+SIEHE AUCH
+-----------
+docs/architecture/LEARNING-SOURCE-CONTRACT.md

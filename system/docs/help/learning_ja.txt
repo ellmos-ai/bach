@@ -1,0 +1,68 @@
+# 移植性: UNIVERSAL
+# バージョン: 1.0.0
+# リソース: [hub/learning.py, hub/_services/learning_source_service.py, /api/learning/sources/*]
+
+学習 — 制限付きソースとレビュー候補
+====================================
+
+目的
+----
+Learning は、明示的に許可されたソースと呼び出し側が渡した学習提案を照合します。出所、ハッシュ、形式、選択シグナル、プライバシー、重複候補を検査します。経験を自動選択せず、再利用や結果の品質を証明しません。
+
+ソースの許可リスト
+------------------
+BACH_LEARNING_SOURCE_ROOTS は、ルートIDから既存の絶対ディレクトリへの対応を持つ JSON オブジェクトです。既定値は {} で、既定ではソースを許可しません。リクエストにはルートIDと相対パスだけを指定します。.. を含むパス、シンボリックリンクのルート、許可ルート外のパスは拒否されます。各ソースには明示的な SHA-256 ハッシュが必要です。
+
+対応するソース
+--------------
+- session: スキーマ bach.learning-source.v1、session_id、最大200件の一意な events を持つ準備済み JSON エクスポートです。role は user、assistant、tool のいずれかで、tool と outcome は任意です。候補には、選択された user イベントの少なくとも1件に認識済みの選択マーカーが必要です。なければ no_candidate です。
+- hermes_ledger: ネイティブ形式の Hermes JSONL 台帳です。一意な12桁の小文字16進 entry_id を指定します。create、edit、update、patch の保守イベントには、パスと SHA-256 を含む after マニフェストが必要です。すべてのファイルは許可ルート内に置きます。台帳はテレメトリであり、承認や品質の証拠ではありません。アダプターは形式を読み取るだけで、Hermes curator を起動しません。
+- nemofold_voyage: ネイティブな run-reports/web-console/voyages ライブラリの元ファイルです。NemoFold VoyageStore.load を require_receipt=True で呼び出します。receipt、ジョブ契約、ファイルハッシュ、voyage ID を検査します。証明されるのは保存済みプランであり、実行ではありません。
+
+上限とプライバシー
+------------------
+ソースは最大1,000,000バイトです。Hermes のマニフェストと参照ファイルは同じ合計上限を共有し、各参照ファイルは最大200,000バイトです。receipt は最大4,096バイト、リクエストは最大200,000バイトです。これらの上限は、別々に行われるカタログやガイドの全読み取りを合算した総上限ではありません。
+
+サービスは、検出されたパス、アカウント、IP、認証情報のパターンと、認証情報フィールドを拒否します。このパターンフィルターは、意味的にすべての秘密を検出するものではありません。非公開のリテラルは、名前、値、説明を持つパラメーターに置き換えられ、提案では <NAME> プレースホルダーになります。認証情報に見える名前は辞書キーにも使用できません。
+
+ソースとイベントのロケーターは、候補契約内の内部 provenance メタデータとして保持されます。候補一覧と詳細のエンドポイントには有効なデバイストークンが必要です。これらのロケーターは公開される skill や chain の内容には含まれません。
+
+分析、保存、レビュー
+--------------------
+完全な提案には kind (skill、chain、rule)、name、trigger、reason、body、event_ids、parameters、side_effects、required_capabilities、dedup が必要です。サービスは許可されたスキル／チェーンカタログから既存の隣接項目を読み取り、呼び出し側から渡された重複判定と、該当する場合は基準バージョンを結び付けます。独自に意味的な重複判定は行いません。選択と重複判定は引き続きレビュー対象です。契約には semantic_review_required=true と empirically_validated=false が記録されます。
+
+CLI:
+  bach learning analyze <request.json>
+  bach learning store <request.json> --dry-run
+  bach learning store <request.json> -n
+  bach learning store <request.json>
+
+analyze は常に読み取り専用です。--dry-run または -n を付けた store は保存せずにプレビューします。どちらのフラグも付けない store は、既存の Hermes または NemoFold のレビュー用保存先に、不活性でバージョン管理された候補だけを保存します。更新には expected_revision と expected_digest の両方が必要です。同一内容は冪等に認識され、バージョン競合は拒否されます。
+
+HTTP:
+  POST /api/learning/sources/analyze
+  POST /api/learning/sources/store
+
+どちらのルートも、Authorization: Bearer ヘッダーまたは bach_device_token Cookie で送信された有効なデバイストークンを最初に要求します。その後、同じ handler パイプラインを使います。analyze は読み取り専用です。store は公開も有効化もしません。
+
+Python API
+----------
+  from bach_api import learning
+  learning.analyze("request.json")
+  learning.store("request.json")
+
+簡易メソッドは成功時に JSON 結果をテキストで返します。Python の dict ではありません。エラー時はプロキシがエラーメッセージを表示し、テキストで返します。エラー文字列を json.loads に渡さないでください。従来形式の戻り値は次のとおりです。
+  success, message = learning.raw("analyze", "request.json")
+success は bool で、成功時の message は JSON テキスト、失敗時は通常のエラーテキストです。
+
+レビュー境界
+------------
+レビュー候補は承認済み skill ではありません。アダプターは有効な skill ファイルを作らず、ツールや能力を付与せず、scheduler も設定しません。rule はガバナンス権限のない草案です。scheduler の設定には別の承認が必要です。PR 303 の依存にある隔離とレビューが引き続き適用されます。
+
+skill-extractor と workflow-extract のガイドは実際に読み、解決されたバージョンとハッシュを記録します。ガイドは実行しません。実行時のカタログ解決で別バージョンが選ばれる可能性があるため、1.3.1 に固定しません。固定サポート対象の参照ファイル neutralisierung.md、transcript-quellen.md、automation-bausteine.md は、ガイド内で言及されている場合に読み込んでハッシュを記録します。実行はしません。
+
+従来の直接的な Hermes distill と NemoFold synthesize の経路およびヒューリスティクスは残ります。これらは共通契約を実装せず、ネイティブな元ソース統合でもありません。コードや CI の成功は、インストールや Mac Studio での実行を証明しません。ネイティブ昇格、品質を示す独立した再利用、プロバイダーピン、セッション自動エクスポート、スケジューリングは別途残る作業です。
+
+関連資料
+--------
+docs/architecture/LEARNING-SOURCE-CONTRACT.md

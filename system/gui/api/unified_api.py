@@ -27,7 +27,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body
 from fastapi.responses import FileResponse, PlainTextResponse
 
 logger = logging.getLogger(__name__)
@@ -2370,6 +2370,54 @@ async def toggle_memory_lesson(lesson_id: int):
 
 # ═══════════════════════════════════════════════════════════════
 # 6.5. HERMES: SKILL-DESTILLATION & LERN-PIPELINE (/api/learning/hermes/*)
+def _learning_source_request(request, payload, *, persist=False):
+    actor = f"device:{_require_memory_device(request)}"
+    from hub.learning import LearningHandler
+    try:
+        return LearningHandler.analyze_payload(
+            payload, db_path=BACH_DB, actor=actor, persist=persist,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=getattr(exc, "http_status", 422),
+            detail={"code": getattr(exc, "code", "invalid_learning_source"),
+                    "message": str(exc)}) from exc
+
+
+async def _bounded_learning_source_payload(request: Request):
+    """Authenticate before reading and cap streamed bytes before JSON parsing."""
+    _require_memory_device(request)
+    from hub._services.learning_source_service import MAX_REQUEST_BYTES
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="Learning request exceeds byte limit")
+        raw.extend(chunk)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise HTTPException(status_code=422, detail="Learning request needs valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Learning request needs a JSON object")
+    return payload
+
+
+_LEARNING_SOURCE_OPENAPI = {"requestBody": {"required": True, "content": {
+    "application/json": {"schema": {"type": "object", "additionalProperties": True}}
+}}}
+
+
+@router.post("/learning/sources/analyze", openapi_extra=_LEARNING_SOURCE_OPENAPI)
+def analyze_learning_source(request: Request, payload: Dict[str, Any] = Depends(_bounded_learning_source_payload)):
+    return _learning_source_request(request, payload)
+
+
+@router.post("/learning/sources/store", openapi_extra=_LEARNING_SOURCE_OPENAPI)
+def store_learning_source(request: Request, payload: Dict[str, Any] = Depends(_bounded_learning_source_payload)):
+    return _learning_source_request(request, payload, persist=True)
+
+
 # ═══════════════════════════════════════════════════════════════
 
 def _get_hermes_service_instance():
@@ -2457,8 +2505,9 @@ async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
 
 
 @router.get("/learning/hermes/candidates")
-async def get_hermes_candidates(status: str = Query("pending", description="pending|reviewed|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+async def get_hermes_candidates(request: Request, status: str = Query("pending", description="pending|reviewed|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
     """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
+    _require_memory_device(request)
     service = _get_hermes_service_instance()
     try:
         candidates = service.list_candidates(status=status, limit=limit)
@@ -2469,8 +2518,9 @@ async def get_hermes_candidates(status: str = Query("pending", description="pend
 
 
 @router.get("/learning/hermes/candidates/{candidate_id}")
-async def get_hermes_candidate_detail(candidate_id: int):
+async def get_hermes_candidate_detail(candidate_id: int, request: Request):
     """Liefert vollständige Details und SKILL.md-Inhalt eines Kandidaten."""
+    _require_memory_device(request)
     service = _get_hermes_service_instance()
     cand = service.get_candidate(candidate_id)
     if not cand:
@@ -2566,18 +2616,21 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
 
 @router.get("/learning/nemofold/candidates")
 async def get_nemofold_candidates(
+    request: Request,
     status: str = Query("pending", description="pending|reviewed|approved|rejected|all"),
     limit: int = Query(50, ge=1, le=200)
 ):
     """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
+    _require_memory_device(request)
     service = _get_nemofold_service_instance()
     candidates = service.list_candidates(status=status)
     return {"candidates": candidates[:limit], "count": len(candidates)}
 
 
 @router.get("/learning/nemofold/candidates/{candidate_id}")
-async def get_nemofold_candidate_detail(candidate_id: int):
+async def get_nemofold_candidate_detail(candidate_id: int, request: Request):
     """Liefert die vollständige Spezifikation und TÜV-Bewertung eines Kandidaten."""
+    _require_memory_device(request)
     service = _get_nemofold_service_instance()
     candidate = service.get_candidate(candidate_id)
     if not candidate:

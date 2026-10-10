@@ -1,0 +1,68 @@
+# 可移植性：UNIVERSAL
+# 版本：1.0.0
+# 资源：[hub/learning.py, hub/_services/learning_source_service.py, /api/learning/sources/*]
+
+学习 — 有界来源与待审候选
+=========================
+
+用途
+----
+Learning 会检查明确获准的来源以及调用方提供的学习提案。它检查来源、哈希、格式、选择信号、隐私和可能的重复项。它不会自行选择经验，也不证明复用情况或结果质量。
+
+来源许可列表
+------------
+BACH_LEARNING_SOURCE_ROOTS 是一个 JSON 对象，将根 ID 映射到已存在的绝对目录。默认值为 {}，默认不允许任何来源。请求只提供根 ID 和相对路径。包含 .. 的路径、符号链接根目录以及超出许可根目录的路径都会被拒绝。每个来源都必须提供明确的 SHA-256 哈希。
+
+支持的来源
+----------
+- session：准备好的 JSON 导出，使用 bach.learning-source.v1 模式，包含 session_id 和最多 200 个唯一事件。角色为 user、assistant 或 tool；tool 和 outcome 可选。候选要求至少一个被选中的 user 事件包含可识别的选择标记，否则结果为 no_candidate。
+- hermes_ledger：原生格式的 Hermes JSONL 日志，entry_id 为唯一的 12 位小写十六进制 ID。create、edit、update 或 patch 维护事件必须包含带路径和 SHA-256 哈希的 after 清单。所有文件必须位于许可根目录内。日志是遥测记录，不是批准或质量证明；适配器只读取该格式，不会启动 Hermes curator。
+- nemofold_voyage：来自原生 run-reports/web-console/voyages 库的原始文件。NemoFold VoyageStore.load 使用 require_receipt=True。系统会检查 receipt、作业契约、文件哈希和 voyage ID。这证明的是已保存计划，不是计划已执行。
+
+限制与隐私
+----------
+来源最大为 1,000,000 字节；Hermes 清单及其引用文件共享此总上限，每个引用文件最多 200,000 字节。receipt 最多 4,096 字节。请求最多 200,000 字节。来源限制不代表所有独立目录和指南读取的总上限。
+
+服务会拒绝检测到的路径、账户、IP 和凭据模式，以及凭据字段。该模式过滤器并非完整的语义秘密检测器。隐私字面值可以通过包含名称、值和说明的参数替换；提案随后使用 <NAME> 占位符。类似凭据的名称也禁止用作字典键。
+
+来源和事件定位符会作为候选契约中的内部来源元数据保留。候选列表和详情接口需要有效的设备令牌；这些定位符不会成为已发布 skill 或 chain 内容。
+
+分析、存储与审核
+----------------
+完整提案包含 kind（skill、chain 或 rule）、name、trigger、reason、body、event_ids、parameters、side_effects、required_capabilities 和 dedup。服务会从获准的技能和链目录中读取现有相邻条目，并绑定调用方提供的去重决定，以及适用时的基准版本；它不会独立作出语义重复判定。选择和去重决定仍需审核。契约会记录 semantic_review_required=true 和 empirically_validated=false。
+
+CLI：
+  bach learning analyze <request.json>
+  bach learning store <request.json> --dry-run
+  bach learning store <request.json> -n
+  bach learning store <request.json>
+
+analyze 始终只读。store 加 --dry-run 或 -n 会预览但不保存。不带这两个选项的 store 只会把未激活的版本化候选存入现有 Hermes 或 NemoFold 审核库。更新必须同时提供 expected_revision 和 expected_digest。相同内容会以幂等方式识别；版本冲突会被拒绝。
+
+HTTP：
+  POST /api/learning/sources/analyze
+  POST /api/learning/sources/store
+
+两个路由都会先要求有效的活动设备令牌，可通过 Authorization: Bearer 请求头或 bach_device_token Cookie 传递。随后使用相同的 handler 流程。analyze 仍为只读。store 不会发布或激活任何内容。
+
+Python API
+----------
+  from bach_api import learning
+  learning.analyze("request.json")
+  learning.store("request.json")
+
+便捷调用成功时会以文本返回 JSON 结果，而不是 Python dict。发生错误时，代理会打印并以文本返回错误消息；不要将错误文本传给 json.loads。要获取兼容旧版的返回值：
+  success, message = learning.raw("analyze", "request.json")
+success 是 bool；成功时 message 是 JSON 文本，失败时是普通错误文本。
+
+审核边界
+--------
+待审候选不是已批准的 skill。适配器不会创建已激活的 skill 文件，不会授予工具或能力，也不会配置 scheduler。规则只是草案，不具备治理权限；配置 scheduler 需要单独批准。PR 303 依赖中的隔离和审核流程仍然适用。
+
+skill-extractor 和 workflow-extract 指南会被实际读取，并记录解析出的版本和哈希。指南不会被执行。版本不固定为 1.3.1，因为运行时目录解析可能选择其他版本。固定支持的参考文件 neutralisierung.md、transcript-quellen.md 和 automation-bausteine.md 会在指南提及它们时读取并记录哈希；这些文件不会被执行。
+
+旧的 Hermes distill 和 NemoFold synthesize 直接路径及其启发式仍然存在。它们不实现此共享契约，也不属于原生原始来源集成。代码或 CI 成功不证明已安装，也不证明在 Mac Studio 上运行。原生晋升、带质量证明的独立复用、提供方固定、自动会话导出和调度仍是单独的后续工作。
+
+另请参阅
+--------
+docs/architecture/LEARNING-SOURCE-CONTRACT.md

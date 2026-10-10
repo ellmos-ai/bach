@@ -72,11 +72,19 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py
 
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/NemoFold
+          ref: fe71fb58e510b8c819126da37a05332d0d189c79
+          path: .ci-sources/native-nemofold
+          persist-credentials: false
+
       - name: Learning candidate quarantine and versioned review
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_learning_promotion_contract.py system/tests/test_hermes_skill_distillation.py system/tests/test_nemofold_workflow_synthesis.py
+          PYTHONPATH: ${{ github.workspace }}/.ci-sources/native-nemofold/src
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_learning_promotion_contract.py system/tests/test_hermes_skill_distillation.py system/tests/test_nemofold_workflow_synthesis.py system/tests/test_learning_sources.py system/tests/test_learning_source_http_limits.py
 
       - name: Native cognitive process model and read-only observations
         env:
