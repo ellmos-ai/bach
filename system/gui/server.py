@@ -2239,15 +2239,19 @@ async def api_get_tasks(
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
-        # Suche: je Token (UND) Titel/Beschreibung per LIKE, numerisch ("12"/"#12") zusaetzlich id.
-        for token in q.split()[:8]:
+        # Suche: je Token (UND, alle innerhalb der 200 Zeichen) Titel/Beschreibung per Unicode-casefold-LIKE;
+        # Token ^#?\d+$ im SQLite-Integerbereich 1..2^63-1 trifft zusaetzlich die id.
+        if q:
+            conn.create_function("bach_casefold", 1, lambda v: v.casefold() if isinstance(v, str) else v, deterministic=True)
+        for token in q.casefold().split():
             esc = token.replace("!", "!!").replace("%", "!%").replace("_", "!_")
             like = f"%{esc}%"
-            clause = "(title LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!'"
+            clause = "(bach_casefold(title) LIKE ? ESCAPE '!' OR bach_casefold(description) LIKE ? ESCAPE '!'"
             params.extend([like, like])
-            if token.lstrip("#").isdigit() and token.lstrip("#").isascii():
+            digits = token[1:] if token.startswith("#") else token
+            if digits.isascii() and digits.isdigit() and 1 <= int(digits) <= 9223372036854775807:
                 clause += " OR id = ?"
-                params.append(int(token.lstrip("#")))
+                params.append(int(digits))
             query += " AND " + clause + ")"
         if priority:
             prio_clean = priority.strip().upper()

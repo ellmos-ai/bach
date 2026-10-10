@@ -265,3 +265,69 @@ def test_search_combines_with_assignment_status_and_pagination(client):
 def test_search_too_long_is_rejected(client):
     assert client.get("/api/tasks?q=" + "x" * 201).status_code == 400
     assert client.get("/api/tasks?q=" + "x" * 200).status_code == 200
+
+
+@pytest.fixture()
+def extra_rows(client):
+    """Zusatzzeilen (category 'sx'), nach dem Test wieder entfernt."""
+    conn = sqlite3.connect(os.environ["BACH_DB"])
+    rows = [
+        ("Plain", "Quellcode Äußerung zebra", "open", "P2", "claude"),
+        ("Änderung Plan", None, "open", "P2", "user"),
+        ("Token alpha beta gamma delta eps zeta eta theta iota", None, "done", "P3", "user"),
+        ("Zahl 9223372036854775808 und #12", None, "open", "P2", "user"),
+        ("Zweite Seite A", "seite", "open", "P2", "user"),
+        ("Zweite Seite B", "seite", "open", "P2", "user"),
+        ("Zweite Seite C", "seite", "open", "P2", "user"),
+    ]
+    conn.executemany(
+        "INSERT INTO tasks (title, description, status, priority, category, assigned_to, created_at) VALUES (?, ?, ?, ?, 'sx', ?, datetime('now'))",
+        [(t, d, s, p, a) for t, d, s, p, a in rows],
+    )
+    conn.commit()
+    conn.close()
+    yield
+    conn = sqlite3.connect(os.environ["BACH_DB"])
+    conn.execute("DELETE FROM tasks WHERE category = 'sx'")
+    conn.commit()
+    conn.close()
+
+
+def _titles(client, query):
+    return {t["title"] for t in _ids(client.get("/api/tasks?status=all&category=sx&" + query))["tasks"]}
+
+
+def test_search_description_only_and_unicode_casefold(client, extra_rows):
+    assert _titles(client, "q=zebra") == {"Plain"}
+    assert _titles(client, "q=%C3%A4nderung") == {"Änderung Plan"}  # änderung findet Änderung
+    assert _titles(client, "q=%C3%84NDERUNG") == {"Änderung Plan"}
+    assert _titles(client, "q=%C3%A4u%C3%9Ferung") == {"Plain"}
+
+
+def test_search_uses_all_tokens_beyond_eight(client, extra_rows):
+    nine = "alpha beta gamma delta eps zeta eta theta iota"
+    assert _titles(client, "q=" + nine.replace(" ", "%20")) == {
+        "Token alpha beta gamma delta eps zeta eta theta iota"}
+    # das neunte Token entscheidet mit
+    assert _titles(client, "q=" + nine.replace(" ", "%20") + "%20nomatch") == set()
+
+
+def test_search_id_edge_cases(client, extra_rows):
+    ids = {t["title"]: t["id"] for t in _ids(client.get("/api/tasks?status=all&category=sx&limit=100"))["tasks"]}
+    plain = ids["Plain"]
+    assert "Plain" in _titles(client, f"q={plain}") and "Plain" in _titles(client, f"q=%23{plain}")
+    assert "Plain" not in _titles(client, f"q=%23%23{plain}")      # nur ein fuehrendes #
+    assert _titles(client, "q=%230") == set()                       # 0 ist keine ID
+    assert _titles(client, "q=-1") == set()                         # negativ: nur Text
+    assert _titles(client, "q=9223372036854775808") == {"Zahl 9223372036854775808 und #12"}  # > 2^63-1: nur Text, kein Fehler
+    assert _titles(client, "q=%2312") == {"Zahl 9223372036854775808 und #12"}  # Text-Treffer
+
+
+def test_search_with_priority_assignee_total_and_next_page(client, extra_rows):
+    data = _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P2&assigned_to=user&limit=2&offset=0"))
+    nxt = _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P2&assigned_to=user&limit=2&offset=2"))
+    assert data["total"] == nxt["total"] == 3
+    assert data["has_more"] is True and nxt["has_more"] is False
+    got = [t["title"] for t in data["tasks"] + nxt["tasks"]]
+    assert sorted(got) == ["Zweite Seite A", "Zweite Seite B", "Zweite Seite C"]
+    assert _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P3"))["total"] == 0
