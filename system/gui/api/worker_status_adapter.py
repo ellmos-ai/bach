@@ -333,6 +333,13 @@ def read_worker_configuration(worker_id: str, *, device_token: str, timeout: flo
     return _project_configuration(result, worker_id)
 
 
+def _configuration_value_for_change(snapshot: dict[str, Any], key: str):
+    if key == "pickup_filter":
+        selection_policy = snapshot.get("selection_policy")
+        return selection_policy.get("pickup_filter") if isinstance(selection_policy, dict) else None
+    return snapshot["configuration"].get(key)
+
+
 def update_worker_configuration(worker_id: str, version: str, changes: dict[str, Any], *,
                                  device_token: str, timeout: float = 8.0):
     from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS
@@ -349,7 +356,8 @@ def update_worker_configuration(worker_id: str, version: str, changes: dict[str,
     acknowledged = _project_configuration(accepted, worker_id)
     observed = read_worker_configuration(worker_id, device_token=device_token, timeout=timeout)
     if (observed != acknowledged
-            or any(observed["configuration"].get(key) != value for key, value in changes.items())):
+            or any(_configuration_value_for_change(observed, key) != value
+                   for key, value in changes.items())):
         raise WorkerActionRejected("Gespeicherte Worker-Konfiguration stimmt nicht mit der Anfrage überein", 409)
     return observed
 
