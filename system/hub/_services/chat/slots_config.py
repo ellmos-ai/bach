@@ -312,6 +312,41 @@ def system_slot_chat_id(chat_id: str) -> str | None:
     return match[1] if match else None
 
 
+def connector_provider_for_chat(chat_id: str) -> str | None:
+    """Recognize native connector IDs, without broad provider-prefix guesses."""
+    normalized = str(chat_id)
+    if re.fullmatch(r"-?[0-9]+", normalized):
+        return "telegram"
+    aliases = {"tg": "telegram", "telegram": "telegram", "wa": "whatsapp",
+               "whatsapp": "whatsapp", "signal": "signal"}
+    if normalized in ("telegram", "whatsapp", "signal"):
+        return aliases[normalized]
+    prefix, separator, suffix = normalized.partition(":")
+    if separator and suffix and prefix in aliases:
+        return aliases[prefix]
+    return None
+
+
+def connector_slot_for_provider(slot: dict, provider: str) -> dict:
+    """Overlay only supported connector target settings; keep profile authority."""
+    providers = slot.get("providers", {})
+    if not isinstance(providers, dict):
+        raise ValueError("Ungültige Connector-Anbieterkonfiguration")  # noqa: TRY004 - configuration API uses ValueError
+    override = providers.get(provider, {})
+    if (not isinstance(override, dict)
+            or set(override) - {"backend", "model", "max_tool_rounds"}):
+        raise ValueError("Ungültige Connector-Anbieterzuordnung")
+    if ("backend" in override and (not isinstance(override["backend"], str)
+            or override["backend"] not in CORE_KNOWN_BACKENDS)):
+        raise ValueError("Ungültiger Connector-Anbieter")
+    if "model" in override and not isinstance(override["model"], str):
+        raise ValueError("Ungültiges Connector-Modell")
+    if ("max_tool_rounds" in override and (type(override["max_tool_rounds"]) is not int
+            or not 0 <= override["max_tool_rounds"] <= 1000)):
+        raise ValueError("Ungültiges Connector-Rundenbudget")
+    return {**slot, **override}
+
+
 def _resolve_path(path: str | None = None) -> Path:
     target = path or DEFAULT_SLOTS_FILE
     return Path(os.path.expanduser(target)).resolve()

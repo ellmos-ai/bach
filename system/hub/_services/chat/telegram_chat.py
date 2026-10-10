@@ -1648,16 +1648,17 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
             return slots.get("buddha_always_on", DEFAULT_CORE_SLOTS["buddha_always_on"])
         raise WorkerBindingError(f"Worker-ID nicht registriert: {str_id}")
 
-    # 3. Messaging Connectors (Telegram, WhatsApp, Signal)
-    if str_id.isdigit() or any(str_id.startswith(p) for p in ("tg:", "telegram", "wa:", "whatsapp", "signal:")):
+    # 3. Native connector routing is explicit; ChatRuntime never guesses it.
+    from hub._services.chat.slots_config import (
+        connector_provider_for_chat,
+        connector_slot_for_provider,
+    )
+    provider = connector_provider_for_chat(str_id)
+    if provider is not None:
         conn_slot = slots.get("buddha_connector", DEFAULT_CORE_SLOTS["buddha_connector"])
-        if (str_id.isdigit() or str_id.startswith("tg:") or str_id == "telegram") and "providers" in conn_slot:
-            tg_cfg = conn_slot.get("providers", {}).get("telegram")
-            if tg_cfg:
-                combined = dict(conn_slot)
-                combined.update(tg_cfg)
-                return combined
-        return conn_slot
+        return connector_slot_for_provider(conn_slot, provider)
+    if str_id.startswith(("tg:", "telegram", "wa:", "whatsapp", "signal:")):
+        raise WorkerBindingError("Connector-Chat-ID ist nicht eindeutig zugeordnet")
 
     # 4. Default to Buddha Chat (Interactive)
     return slots.get("buddha_chat", DEFAULT_CORE_SLOTS["buddha_chat"])
@@ -1675,6 +1676,16 @@ def _registered_worker_slot(worker_id: str) -> Optional[dict]:
     if not isinstance(worker, dict) or worker.get("id") != normalized:
         return None
     return worker
+
+
+def _bind_system_caller(chat_id: str, session: Any, slot: dict) -> None:
+    """Bind the admitted caller to its live profile without resetting context."""
+    from hub._services.chat.slots_config import CORE_EDITABLE_FIELDS
+    session.system_slot_id = slot["id"]
+    session.system_slot_reader = lambda: _resolve_slot_for_chat(chat_id)
+    session.system_slot_configuration = {
+        key: slot.get(key) for key in CORE_EDITABLE_FIELDS if key != "enabled"
+    }
 
 
 def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = None) -> tuple[Any, str]:
@@ -1701,15 +1712,16 @@ def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = No
     session.allowed_tools = slot.get("allowed_tools")
     if "max_tool_rounds" in slot:
         session.max_tool_rounds = int(slot["max_tool_rounds"])
-    from hub._services.chat.slots_config import compose_worker_prompt, get_system_slot, system_slot_chat_id
+    from hub._services.chat.slots_config import (
+        compose_worker_prompt,
+        system_slot_chat_id,
+    )
     system_id = system_slot_chat_id(chat_id)
     if system_id or slot.get("id") in DEFAULT_CORE_SLOTS or slot.get("system"):
         session.custom_system_prompt = compose_worker_prompt(slot)
-        if system_id or slot.get("id") in {"buddha_chat", "buddha_connector"}:
-            session.system_slot_id = slot["id"]
-            session.system_slot_reader = lambda: get_system_slot(slot["id"])
-            from hub._services.chat.slots_config import CORE_EDITABLE_FIELDS
-            session.system_slot_configuration = {key: slot.get(key) for key in CORE_EDITABLE_FIELDS if key != "enabled"}
+        if (system_id or slot.get("id") in {"buddha_chat", "buddha_connector"}
+                or _legacy_worker_binding_active(chat_id)):
+            _bind_system_caller(chat_id, session, slot)
     elif slot.get("system_prompt"):
         session.custom_system_prompt = slot["system_prompt"]
 
@@ -2207,6 +2219,19 @@ def _compute_lock_blocks(selected_backend=None) -> bool:
 runtime.compute_gate = _compute_lock_blocks
 
 
+async def _admit_chat_for_compute(chat_id: str):
+    """Reuse runtime target/binding admission before changing compute jobs."""
+    backend, model = _snapshot_chat_backend(chat_id)
+    receipt, _ = await runtime.prepare_inference_call(backend, model, chat_id=chat_id)
+    if receipt is not None and not receipt["admitted"] and receipt["state"] not in {
+        "waiting_memory_reserve", "waiting_disk_reserve",
+    }:
+        from hub._services.chat.local_resource_reserve import LocalReserveError
+        raise LocalReserveError("Lokale Ressourcenfreigabe: " + receipt["state"])
+    local = receipt is not None and receipt["state"] != "external_target"
+    return backend, model, local
+
+
 async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
     """Handle JA/NEIN reply to a pending compute lock question.
 
@@ -2224,12 +2249,18 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
     reply = text.strip().upper()
 
     if reply in ("JA", "J", "YES", "Y"):
+        try:
+            selected_backend, model, uses_local_compute = await _admit_chat_for_compute(chat_id)
+        except Exception as exc:  # noqa: BLE001 - every admission failure must precede process control
+            await update.message.reply_text(f"Chat-Zuordnung nicht verfügbar: {exc}")
+            return True
         del _pending_actions[chat_id]
         status = pending["status"]
         original_text = pending["text"]
 
-        await update.message.reply_text("Pausiere Compute-Jobs...")
-        paused = pause_compute_jobs(status)
+        if uses_local_compute:
+            await update.message.reply_text("Pausiere Compute-Jobs...")
+        paused = pause_compute_jobs(status) if uses_local_compute else []
 
         if not paused:
             await update.message.reply_text(
@@ -2243,8 +2274,7 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
             )
 
         # Session flag VOR dem LLM-Call schreiben (Watchdog braucht es für Inferenz-Schutz)
-        model = runtime.get_session(chat_id).model or runtime.backend.get_default_model()
-        if _compute_lock_enabled():
+        if uses_local_compute and _compute_lock_enabled(selected_backend):
             write_session_flag(chat_id, model,
                                effective_keep_alive_seconds=get_effective_keep_alive_seconds())
 
@@ -2252,7 +2282,7 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
         typing = asyncio.create_task(_keep_typing(update))
         success = False
         try:
-            if _compute_lock_enabled():
+            if uses_local_compute and _compute_lock_enabled(selected_backend):
                 set_inferenz_active(True)
             answer = await runtime.process(original_text, chat_id, skip_compute_gate=True)
             for i in range(0, len(answer), 4000):
@@ -2265,7 +2295,7 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
             log.error(f"Chat-Fehler nach Compute-Pause: {e}")
             await update.message.reply_text(f"Fehler: {e}")
         finally:
-            if _compute_lock_enabled():
+            if uses_local_compute and _compute_lock_enabled(selected_backend):
                 set_inferenz_active(False)
             typing.cancel()
 
@@ -2321,6 +2351,12 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     chat_id = str(update.effective_chat.id)
 
+    try:
+        selected_backend, model, uses_local_compute = await _admit_chat_for_compute(chat_id)
+    except Exception as exc:  # noqa: BLE001 - every admission failure must precede process control
+        await update.message.reply_text(f"Chat-Zuordnung nicht verfügbar: {exc}")
+        return
+
     # Handle pending compute lock confirmation (JA/NEIN)
     if chat_id in _pending_actions:
         consumed = await _handle_pending_action(chat_id, text, update)
@@ -2328,7 +2364,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
     # Compute lock check: before Ollama call, check if compute jobs are running
-    if _compute_lock_enabled():
+    if uses_local_compute and _compute_lock_enabled(selected_backend):
         cl_cfg = CONFIG.get("compute_lock", {})
         is_active, status = check_compute_active(
             lock_path=cl_cfg.get("lock_path", DEFAULT_LOCK_PATH),
@@ -2409,7 +2445,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     typing = asyncio.create_task(_keep_typing(update))
 
     try:
-        if _compute_lock_enabled():
+        if uses_local_compute and _compute_lock_enabled(selected_backend):
             set_inferenz_active(True)
         answer = await runtime.process(text, chat_id)
         for i in range(0, len(answer), 4000):
@@ -2421,7 +2457,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         log.error(f"Chat-Fehler: {e}")
         await update.message.reply_text(f"Fehler: {e}")
     finally:
-        if _compute_lock_enabled():
+        if uses_local_compute and _compute_lock_enabled(selected_backend):
             set_inferenz_active(False)
         typing.cancel()
 
@@ -2918,7 +2954,10 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None, rea
     with _runtime_state_lock:
         normalized = str(chat_id or "")
         registered_worker = _registered_worker_slot(normalized)
-        from hub._services.chat.slots_config import system_slot_chat_id
+        from hub._services.chat.slots_config import (
+            connector_provider_for_chat,
+            system_slot_chat_id,
+        )
         selected_system_id = system_slot_chat_id(normalized)
         from hub._services.chat.agent_profile_context import profile_chat_id_agent
         profile_chat = profile_chat_id_agent(normalized) is not None
@@ -2964,8 +3003,8 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None, rea
                 raise WorkerBindingError("Worker-Slot fehlt oder stimmt nicht überein")
             dedicated = (registered_worker is not None or selected_system_id is not None
                          or normalized in DEFAULT_CORE_SLOTS or normalized.startswith("slot:")
-                         or normalized.isdigit() or normalized.startswith(
-                             ("idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:")))
+                         or connector_provider_for_chat(normalized) is not None
+                         or normalized.startswith(("idle", "worker-")))
             if isinstance(selected_worker, dict) and selected_worker.get("id") == normalized:
                 selected = selected_worker
             elif dedicated:
@@ -3007,12 +3046,14 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None, rea
             or normalized in DEFAULT_CORE_SLOTS
             or normalized.startswith("slot:")
             or selected_system_id is not None
-            or normalized.isdigit()
-            or normalized.startswith((
-                "idle", "worker-", "tg:", "telegram", "wa:", "whatsapp", "signal:"
-            ))
+            or connector_provider_for_chat(normalized) is not None
+            or normalized.startswith(("idle", "worker-"))
         )
         if not uses_dedicated_slot:
+            # Ordinary Control/API dialogs use the existing interactive profile.
+            # Their selected backend/model and previous messages stay intact;
+            # every actual local target still needs that profile's model binding.
+            _bind_system_caller(chat_id, session, _resolve_slot_for_chat(normalized))
             return runtime.backend, _get_session_model(chat_id)
         try:
             target_backend, model = _apply_slot_to_session(
@@ -3020,18 +3061,10 @@ def _snapshot_chat_backend(chat_id: str, *, worker_slot: dict | None = None, rea
             )
             return target_backend, model
         except Exception:
-            if is_dynamic_worker:
-                session.allow_tools = False
-            if (
-                is_dynamic_worker
-                or registered_worker is not None
-                or _is_strict_worker_id(normalized)
-                or normalized in DEFAULT_CORE_SLOTS
-                or normalized.startswith("slot:")
-                or selected_system_id is not None
-            ) and not _legacy_worker_binding_active(normalized):
-                raise
-            return runtime.backend, _get_session_model(chat_id)
+            # A dedicated route was selected above. Reopening the global
+            # backend would bypass connector or explicit legacy admission.
+            session.allow_tools = False
+            raise
 
 
 def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, str]:
