@@ -265,6 +265,9 @@ def check_recurring_tasks() -> List[str]:
     now = datetime.now()
 
     for task_id, task_config in recurring.items():
+        from hub._services.docs.maintenance_recurring import delegated_to_maintenance
+        if delegated_to_maintenance(Path(USER_DB), task_id):
+            continue
         if not task_config.get('enabled', False):
             continue
 
@@ -356,6 +359,10 @@ def list_recurring_tasks() -> Dict[str, Dict]:
 
 def trigger_recurring_task(task_id: str) -> bool:
     """Loest einen recurring Task manuell aus."""
+    from hub._services.docs.maintenance_recurring import delegated_to_maintenance
+    if delegated_to_maintenance(Path(USER_DB), task_id):
+        print("  [SKIP] Doku-Routine ist dem nativen Wartungsbetrieb zugeordnet")
+        return False
     config = load_config()
     recurring = config.get('recurring_tasks', {})
 
