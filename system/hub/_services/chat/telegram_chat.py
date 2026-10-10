@@ -211,6 +211,7 @@ class _WorkerControl:
     startup_recovery: bool = False
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
+    queue_status: Any = None
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     handoff: WorkerHandoff = field(init=False)
@@ -273,6 +274,11 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
                                       and not terminal else control.worker_thread_started),
             "worker_status": None, "error_code": control.start_error,
             "stop_requested": control.stop_event.is_set()}
+        if control.queue_status is not None:
+            from hub._services.chat.worker_queue_status import project_queue_status
+            projected = project_queue_status(control.queue_status)
+            if projected is not None:
+                receipt["queue_status"] = projected
     if not verify_results:
         # Stop already holds the controller lock. Its receipt confirms only the
         # physical lifecycle; a separate execution poll verifies TaskDB results.
@@ -452,6 +458,11 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                     if clear_recovered_always_on_task(task_id):
                         _record_worker_activity(control, "Vorherige Taskbindung ist kanonisch terminal; suche neue Aufgabe", "ok")
             return None
+    def observe_queue(record):
+        with _WORKER_CONTROL_LOCK:
+            if is_current() and not control.stop_event.is_set():
+                control.queue_status = record
+
     try:
         return WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=f"{physical_worker_id}@{host}", host=host,
@@ -459,6 +470,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
             _creator_delegation=control.creator_delegation,
             deferred_versions=control.deferred_task_versions,
+            observe_queue=observe_queue,
         )
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
@@ -535,6 +547,12 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
         worker.update(runtime_verified=True, worker_active=thread_alive,
                       running=task_active, active_task_id=binding.task_id if task_active else None,
                       has_task_prompt=bool(str(worker.get("task_prompt") or "").strip()))
+        worker.pop("queue_status", None)
+        if live_control is not None:
+            from hub._services.chat.worker_queue_status import project_queue_status
+            projected = project_queue_status(live_control.queue_status)
+            if projected is not None:
+                worker["queue_status"] = projected
         if retained is not None:
             execution = worker_execution_receipt(retained.worker_id, retained.start_request_id, verify_results=False)
             worker["execution"] = execution
@@ -3496,7 +3514,6 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             while True:
                 if control.stop_event.is_set():
                     break
-                run_count += 1
 
                 # Worker-State prüfen: wurde er pausiert oder gelöscht?
                 current_slot = control.slot_policy_reader()
@@ -3581,9 +3598,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
                     worker_session.require_task_binding = True
+                    bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
+                    # Empty queue polling is not a model block or a failed
+                    # task attempt. Count only actual runtime submissions.
+                    run_count += 1
                     ans = loop.run_until_complete(
                         runtime.process(
-                            _bound_worker_prompt(control.task_binding, prompt_to_run),
+                            bound_prompt,
                             worker_id,
                             backend=target_backend,
                             model=model,

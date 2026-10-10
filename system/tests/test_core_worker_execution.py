@@ -59,11 +59,13 @@ def test_core_execution_reader_fails_closed(core_file, bad):
 
 
 @pytest.mark.parametrize("outcome", ["done", "review"])
-def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypatch, mem_db, outcome):
+@pytest.mark.parametrize("idle_polls", [0, 3])
+def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypatch, mem_db, outcome, idle_polls):
     control = importlib.import_module("hub._services.chat.telegram_chat")
     session = ChatSession()
     session.chat_id = CORE
     calls, assignments, endings, pauses = [], [], [], []
+    activities = []
     mem_db.executemany("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
         "VALUES (?,?,'pending',?,'INBOX','BACH',?)",
         [(42, "First core task", "P1", CORE), (43, "Second core task", "P2", CORE)])
@@ -71,10 +73,19 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(lease_module, "get_lead_config", lambda: {"mode": "isolated"})
     monkeypatch.setattr(control, "_native_task_client", lambda: TaskLeaseClient(conn=mem_db))
-    monkeypatch.setattr(control, "record_activity", lambda *args, **kw: None)
+    monkeypatch.setattr(control, "record_activity", lambda *args, **kw: activities.append(args))
     monkeypatch.setattr(control.runtime, "get_session", lambda ident: session)
     monkeypatch.setattr(control, "begin_assignment", lambda **kw: assignments.append(kw) or kw)
     monkeypatch.setattr(control, "finish_assignment", lambda assignment, **kw: endings.append(kw))
+    original_acquire = control._acquire_worker_task
+    acquire_calls = []
+    def acquire_after_idle(*args, **kwargs):
+        acquire_calls.append(True)
+        if len(acquire_calls) <= idle_polls:
+            assert calls == []
+            return None
+        return original_acquire(*args, **kwargs)
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire_after_idle)
 
     def snapshot(ident, *, worker_slot=None):
         assert ident == CORE and worker_slot["id"] == CORE
@@ -118,6 +129,10 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     response, status = control.start_worker_execution(CORE)
     assert status == 200 and response["ok"] is True
     assert len(calls) == 2
+    assert len(acquire_calls) == idle_polls + 2
+    assert any("Block 1: block finished" in str(a) for a in activities)
+    assert any("Block 2: block finished" in str(a) for a in activities)
+    assert not any("Block 3:" in str(a) for a in activities)
     assert [a["task_id"] for a in assignments] == [42, 43]
     assert all(a["slot_id"] == CORE and a["session_id"] == CORE for a in assignments)
     assert all(a["backend_id"] == "openrouter" and a["model_id"] == "selected-model" for a in assignments)
@@ -125,6 +140,39 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     assert pauses == (["runs", "tasks"] if outcome == "review" else ["tasks", "tasks"])
     assert endings[0]["result"] == "task_review"
     assert slots_config.get_slot(CORE, core_file)["task_id"] is None
+
+
+def test_failed_prompt_snapshot_does_not_count_or_call_a_model():
+    import ast
+    import inspect
+
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    tree = ast.parse(inspect.getsource(control._start_reserved_worker_execution))
+    # Execute the actual submission statements with a failed canonical read.
+    # The complete controller flow is covered by the bound-task tests above.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        for index, statement in enumerate(node.body):
+            if (isinstance(statement, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "bound_prompt"
+                            for target in statement.targets)):
+                statements = node.body[index:index + 3]
+                break
+        else:
+            continue
+        break
+    else:
+        pytest.fail("Worker submission boundary was not found")
+    calls = []
+    def failed_snapshot(*_):
+        raise RuntimeError("canonical snapshot unavailable")
+    scope = {"_bound_worker_prompt": failed_snapshot, "control": type("Control", (), {"task_binding": object()})(),
+             "prompt_to_run": "task", "run_count": 0,
+             "runtime": type("Runtime", (), {"process": lambda *args, **kwargs: calls.append(args)})()}
+    with pytest.raises(RuntimeError, match="canonical snapshot unavailable"):
+        exec(compile(ast.Module(body=statements, type_ignores=[]), "worker-submission", "exec"), scope)
+    assert scope["run_count"] == 0 and calls == []
 
 
 def test_disabled_core_cannot_start_or_dispatch_tools(core_file, monkeypatch):
