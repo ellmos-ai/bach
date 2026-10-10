@@ -6981,8 +6981,6 @@ async def get_skills_item_file(
 
             "path": str(path.relative_to(BACH_DIR)).replace("\\", "/"),
 
-            "absolute_path": str(path),
-
             "content": content,
 
             "filename": path.name
@@ -6996,98 +6994,132 @@ async def get_skills_item_file(
 
 
 @app.put("/api/skills-board/item-file")
-
-async def update_skills_item_file(request: FileUpdateRequest):
-
-    """Speichert den Inhalt der Quelldatei."""
-
-    path = resolve_under_base(BACH_DIR, request.path, allowed_suffixes={".md", ".txt", ".py"})
-
-        
-
-    # Nur .md, .txt, .py erlauben
-
-    if path.suffix.lower() not in ['.md', '.txt', '.py']:
-
-        raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt.")
-
-        
-
-    try:
-
-        path.write_text(request.content, encoding='utf-8')
-
-        return {"success": True}
-
-    except Exception as e:
-
-        return {"success": False, "error": public_error_message()}
-
+async def update_skills_item_file():
+    """Stillgelegt: Dieser Weg schrieb .md/.txt/.py unter BACH_DIR. Ersatz: PUT /api/capabilities/skills/{id}/source."""
+    raise HTTPException(
+        410,
+        "Dieser Schreibweg ist stillgelegt. Skill-Quellen ändern: PUT /api/capabilities/skills/{id}/source "
+        "(CAS-Revision und Verlauf in der Skill-Zentrale /skills).",
+    )
 
 
 @app.get("/api/skills-board/hierarchy")
-
 async def get_skills_hierarchy():
+    """Hierarchie aus bach.db (EIN Speicher: hierarchy_assignments). skills_hierarchy.json wird nicht mehr gelesen."""
+    return load_skills_board_from_db()
 
-    """Laedt die Skills-Hierarchie."""
 
-    import json
+HIERARCHY_BODY_LIMIT = 1_000_000
+HIERARCHY_ID = re.compile(r"^[^\x00-\x1f\x7f]{1,200}$")
+HIERARCHY_LIST_KEYS = ("experts", "skills", "services", "workflows")
+HIERARCHY_CHILD_TYPE = {"experts": "expert", "skills": "skill", "services": "service", "workflows": "workflow"}
+HIERARCHY_MAX_LIST = 5000
 
-    if SKILLS_HIERARCHY_FILE.exists():
-        try:
-            with open(SKILLS_HIERARCHY_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if hierarchy_has_items(data):
-                return data
-        except Exception as e:
-            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geladen werden: {e}")
 
-    data = load_skills_board_from_db()
-    if hierarchy_has_items(data):
-        try:
-            SKILLS_HIERARCHY_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(SKILLS_HIERARCHY_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geschrieben werden: {e}")
+def _hierarchy_error(detail: str):
+    return HTTPException(status_code=400, detail="Ungültige Hierarchie: " + detail)
 
-    return data
 
+def _hierarchy_id(value, where: str) -> str:
+    if not isinstance(value, str) or not HIERARCHY_ID.fullmatch(value):
+        raise _hierarchy_error(where + " muss ein Text von 1 bis 200 Zeichen ohne Steuerzeichen sein")
+    return value
+
+
+def validate_skills_hierarchy_payload(data) -> dict:
+    """Strict shape check; returns {agent_id: {key: [ids]}} (deduplicated, order kept). Items are checked but never stored."""
+    if not isinstance(data, dict):
+        raise _hierarchy_error("Wurzel ist kein Objekt")
+    unknown = set(data) - {"items", "assignments", "_meta"}
+    if unknown:
+        raise _hierarchy_error("unbekannter Schlüssel " + sorted(map(str, unknown))[0])
+    items = data.get("items", {})
+    if not isinstance(items, dict) or set(items) - set(HIERARCHY_TYPE_TO_KEY.values()):
+        raise _hierarchy_error("items hat eine unbekannte Gruppe")
+    for key, entries in items.items():
+        if not isinstance(entries, list) or len(entries) > HIERARCHY_MAX_LIST:
+            raise _hierarchy_error("items." + key + " muss eine Liste mit höchstens " + str(HIERARCHY_MAX_LIST) + " Einträgen sein")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise _hierarchy_error("items." + key + " enthält einen Nicht-Objekt-Eintrag")
+            _hierarchy_id(entry.get("id"), "items." + key + "[].id")
+    if "_meta" in data and not isinstance(data["_meta"], dict):
+        raise _hierarchy_error("_meta ist kein Objekt")
+    raw = data.get("assignments")
+    if not isinstance(raw, dict) or len(raw) > 2000:
+        raise _hierarchy_error("assignments muss ein Objekt mit höchstens 2000 Agenten sein")
+    result = {}
+    for parent, lists in raw.items():
+        _hierarchy_id(parent, "assignments-Schlüssel")
+        if not isinstance(lists, dict) or set(lists) - set(HIERARCHY_LIST_KEYS):
+            raise _hierarchy_error("assignments." + parent + " hat eine unbekannte Gruppe")
+        clean = {}
+        for key, ids in lists.items():
+            if not isinstance(ids, list) or len(ids) > HIERARCHY_MAX_LIST:
+                raise _hierarchy_error("assignments." + parent + "." + key + " muss eine Liste sein (max. " + str(HIERARCHY_MAX_LIST) + ")")
+            clean[key] = list(dict.fromkeys(_hierarchy_id(i, "assignments." + parent + "." + key + "[]") for i in ids))
+        result[parent] = clean
+    return result
+
+
+def persist_hierarchy_assignments(assignments: dict) -> dict:
+    """Write assignments of the parents present in the payload into hierarchy_assignments (one transaction, diff-based).
+    Parents and children must exist in the DB-derived hierarchy; rows of other parents or with unknown children stay untouched."""
+    known = load_skills_board_from_db()
+    agents = {item["id"] for item in known["items"]["agents"]}
+    targets = {key: {item["id"] for item in known["items"][key]} for key in HIERARCHY_LIST_KEYS}
+    desired = {}
+    for parent, lists in assignments.items():
+        if parent not in agents:
+            raise _hierarchy_error("unbekannter Agent " + parent)
+        for key, ids in lists.items():
+            for order, child in enumerate(ids):
+                if child not in targets[key]:
+                    raise _hierarchy_error("unbekanntes Element " + child + " in " + key)
+                desired[(parent, child)] = (HIERARCHY_CHILD_TYPE[key], order)
+    conn = get_bach_db()
+    try:
+        if not table_exists(conn, "hierarchy_assignments"):
+            raise HTTPException(503, "Tabelle hierarchy_assignments fehlt")
+        known_children = set().union(*targets.values())
+        inserted = updated = deleted = 0
+        with conn:
+            existing = {}
+            for row in conn.execute("SELECT id, parent_id, child_id, child_type, assignment_order FROM hierarchy_assignments WHERE parent_type = 'agent'"):
+                if row["parent_id"] in assignments and row["child_id"] in known_children:
+                    existing[(row["parent_id"], row["child_id"])] = row
+            for pair, row in existing.items():
+                if pair not in desired:
+                    conn.execute("DELETE FROM hierarchy_assignments WHERE id = ?", (row["id"],))
+                    deleted += 1
+            for (parent, child), (child_type, order) in desired.items():
+                row = existing.get((parent, child))
+                if row is None:
+                    conn.execute(
+                        "INSERT INTO hierarchy_assignments (parent_id, parent_type, child_id, child_type, assignment_order) VALUES (?, 'agent', ?, ?, ?)",
+                        (parent, child, child_type, order))
+                    inserted += 1
+                elif row["child_type"] != child_type or row["assignment_order"] != order:
+                    conn.execute("UPDATE hierarchy_assignments SET child_type = ?, assignment_order = ? WHERE id = ?", (child_type, order, row["id"]))
+                    updated += 1
+    finally:
+        conn.close()
+    return {"parents": len(assignments), "inserted": inserted, "updated": updated, "deleted": deleted}
 
 
 @app.put("/api/skills-board/hierarchy")
-
 async def save_skills_hierarchy(request: Request):
-
-    """Speichert die Skills-Hierarchie."""
-
-    import json
-
-    from datetime import datetime
-
-
-
-    data = await request.json()
-
-
-
-    # Update timestamp
-
-    if '_meta' not in data:
-
-        data['_meta'] = {}
-
-    data['_meta']['last_updated'] = datetime.now().isoformat()
-
-
-
-    with open(SKILLS_HIERARCHY_FILE, 'w', encoding='utf-8') as f:
-
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-
-    return {"status": "saved"}
+    """Speichert die Zuordnungen (nur hierarchy_assignments). Items werden geprüft, aber nicht gespeichert."""
+    body = await request.body()
+    if len(body) > HIERARCHY_BODY_LIMIT:
+        raise HTTPException(413, "Hierarchie überschreitet " + str(HIERARCHY_BODY_LIMIT) + " Byte")
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise _hierarchy_error("kein gültiges JSON") from None
+    assignments = validate_skills_hierarchy_payload(data)
+    summary = persist_hierarchy_assignments(assignments)
+    return {"status": "saved", "persisted": "hierarchy_assignments", "items_persisted": False, **summary}
 
 
 
