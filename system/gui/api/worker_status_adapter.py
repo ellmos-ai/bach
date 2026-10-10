@@ -99,6 +99,10 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     error = normalize_backend_error(raw.get("backend_error"))
     if error is not None:
         item["backend_error"] = error
+    from hub._services.chat.worker_queue_status import project_queue_status
+    queue_status = project_queue_status(raw.get("queue_status"))
+    if queue_status is not None:
+        item["queue_status"] = queue_status
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
     for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):
@@ -426,7 +430,12 @@ def _request_control_api(
 
 def read_worker_status(*, device_token: str, timeout: float = 5.0) -> dict[str, Any]:
     """Read one authenticated live worker snapshot from the local Control API."""
-    payload = _request_control_api("GET", "workers", device_token=device_token, timeout=timeout)
+    try:
+        payload = _request_control_api("GET", "workers", device_token=device_token, timeout=timeout)
+    except WorkerActionRejected as exc:
+        # The GUI caller is separately enrolled. A rejected internal read
+        # means status is unavailable; it is not an unhandled action error.
+        raise WorkerStatusUnavailable("Lokale Control-API hat keinen Workerstatus bestätigt") from exc
     if payload.get("ok") is not True or not isinstance(payload.get("workers"), list):
         raise WorkerStatusUnavailable("Lokale Control-API lieferte keinen Workerstatus")
     workers = [_project_worker(entry) for entry in payload["workers"]]

@@ -86,27 +86,62 @@ class WorkerLeaseBinding:
 
     @classmethod
     def _automatic_matches_slot(cls, snapshot, slot):
+        return cls._selection_rejection_reason(snapshot, slot) is None
+
+    @classmethod
+    def _selection_rejection_reason(cls, snapshot, slot):
+        # Report the same constraints used by acquisition, without exposing
+        # titles, prompts, task versions, holders or private lease credentials.
+        if slot.get("require_assigned_slot") is True and snapshot.get("assigned_slot") != slot.get("id"):
+            return "explicit_slot_required"
+        for key, slot_key, reason in (("required_model", "model", "model_binding"),
+                                      ("assigned_slot", "id", "slot_binding")):
+            required = str(snapshot.get(key) or "").strip().casefold()
+            if required and required != str(slot.get(slot_key) or "").strip().casefold():
+                return reason
         if not cls._matches_slot(snapshot, slot):
-            return False
+            return "pickup_filter"
         pickup = slot.get("pickup_filter")
         # Explicit routing/filter configuration may select a human-created
         # task. A generic backlog scan has no such ownership instruction.
         if snapshot.get("assigned_slot") or (isinstance(pickup, dict) and pickup.get("enabled")):
-            return True
+            return None
         allowed = {"bach", "buddha", "ollama"}
         allowed.update(str(slot.get(key) or "").strip().casefold()
                        for key in ("id", "role_id", "sub_mode"))
         allowed.discard("")
-        return str(snapshot.get("assigned_to") or "").strip().casefold() in allowed
+        if str(snapshot.get("assigned_to") or "").strip().casefold() not in allowed:
+            return "ownership"
+        return None
 
     @classmethod
-    def acquire_next(cls, client, slot, **kwargs):
+    def acquire_next(cls, client, slot, *, observe_queue=None, **kwargs):
         """Acquire the actual configured/next canonical task before any inference."""
+        from .worker_queue_status import QueueObservation
+        observation = QueueObservation(client, observe_queue, kwargs.get("clock"))
+        try:
+            return cls._acquire_next_observed(client, slot, observation, **kwargs)
+        finally:
+            observation.publish()
+
+    @classmethod
+    def _acquire_next_observed(cls, client, slot, observation, **kwargs):
+        from .worker_queue_status import ACQUIRE_DENIALS
         explicit = slot.get("task_id")
         if explicit not in (None, "", 0, "0"):
             if isinstance(explicit, str) and explicit.isdecimal():
                 explicit = int(explicit)
-            return cls.acquire(client, explicit, slot=slot, **kwargs)
+            observation.candidate(explicit)
+            observation.record["matched_count"] += 1
+            observation.record["attempted_count"] += 1
+            try:
+                binding = cls.acquire(client, explicit, slot=slot, **kwargs)
+            except LeaseDeniedError as exc:
+                if exc.reason in ACQUIRE_DENIALS:
+                    observation.denied(exc.reason)
+                raise  # Preserve explicit-acquisition control/recovery semantics.
+            observation.acquired(binding)
+            return binding
         if kwargs.get("_creator_delegation") is not None:
             raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
         offset = 0
@@ -114,18 +149,35 @@ class WorkerLeaseBinding:
             if not kwargs["is_current"]() or kwargs["stop_event"].is_set():
                 raise LeaseProtocolError("Workerlauf ist nicht mehr aktiv")
             page = client.task_candidates(limit=100, offset=offset)
+            observation.record["scanned_pages"] += 1
             for task in page["tasks"]:
-                if not cls._automatic_matches_slot(task, slot):
+                observation.candidate(task["id"])
+                reason = cls._selection_rejection_reason(task, slot)
+                if reason:
+                    observation.reject(reason)
                     continue
+                if (kwargs.get("deferred_versions") or {}).get(task["id"]) == task["task_version"]:
+                    observation.reject("deferred_version")
+                    continue
+                observation.record["matched_count"] += 1
+                observation.record["attempted_count"] += 1
                 try:
-                    return cls.acquire(client, task["id"], slot=slot, automatic=True, **kwargs)
+                    binding = cls.acquire(client, task["id"], slot=slot, automatic=True, **kwargs)
+                    observation.acquired(binding)
+                    return binding
                 except _TaskDoesNotMatch:
+                    observation.reject("changed_selection")
                     continue
                 except LeaseDeniedError as exc:
+                    if exc.reason == "conflict":
+                        observation.denied(exc.reason)
+                        raise  # A native no-grant conflict still stops this run.
                     if exc.reason not in {"held", "not_claimable", "creator_priority",
                                            "stale_task_version", "already_held_by_caller"}:
                         raise
+                    observation.reject(exc.reason)
             if not page["has_more"]:
+                observation.waiting()
                 return None
             if not page["tasks"]:
                 raise LeaseProtocolError("Kanonische Task-Seite hat keinen Fortschritt")
