@@ -1801,6 +1801,8 @@ try:
     app.include_router(task_assignment_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
+    from gui.api.catalog_projection import router as catalog_projection_router
+    app.include_router(catalog_projection_router)
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)

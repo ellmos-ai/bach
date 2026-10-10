@@ -1,0 +1,512 @@
+{
+  "count": 8,
+  "counts": {
+    "bundle": 2,
+    "module": 2,
+    "satellite": 2,
+    "skill": 2
+  },
+  "errors": [
+    {
+      "item": "bundle-lost",
+      "reason": "manifest_FileNotFoundError",
+      "source": "bundles_catalog"
+    }
+  ],
+  "generated_at": "2026-10-10T12:00:00+00:00",
+  "host": {
+    "id": "TEST-HOST",
+    "source": "declared"
+  },
+  "items": [
+    {
+      "aliases": [
+        "Alpha Core",
+        "alpha-old"
+      ],
+      "category": "runtime",
+      "description": "Synthetic module",
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [
+        {
+          "branch": "main",
+          "host": "MANIFEST-HOST",
+          "last_commit": "2026-09-01T00:00:00+00:00",
+          "observed_at": "2026-10-10T07:00:00+00:00",
+          "source": "repos_manifest",
+          "state": "clean"
+        }
+      ],
+      "id": "alpha-core",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "Alpha Core",
+      "optional": [
+        "gamma.hint"
+      ],
+      "pin": {
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [
+        "alpha.store"
+      ],
+      "relations": [
+        {
+          "basis": "declared",
+          "kind": "requires",
+          "requirement": "required",
+          "target": "beta.api",
+          "target_type": "capability"
+        },
+        {
+          "basis": "declared",
+          "kind": "requires",
+          "requirement": "optional",
+          "target": "gamma.hint",
+          "target_type": "capability"
+        }
+      ],
+      "repository": "https://github.com/example-org/alpha-core",
+      "requires": [
+        "beta.api"
+      ],
+      "source_ids": [
+        "modules_catalog"
+      ],
+      "status": "active",
+      "type": "module",
+      "version": "1.0.0",
+      "visibility": "public"
+    },
+    {
+      "aliases": [],
+      "category": "tools",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "beta-tool",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "beta-tool",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [],
+      "repository": "https://github.com/example-org/beta-tool",
+      "requires": [],
+      "source_ids": [
+        "modules_catalog"
+      ],
+      "status": "development",
+      "type": "module",
+      "version": null,
+      "visibility": "private"
+    },
+    {
+      "aliases": [],
+      "category": "control",
+      "description": "Synthetic bundle",
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "bundle-one",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "Bundle One",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_version": "ee0d282101c447be7d14a97c368154f7d6cf2bd86146b7a3f38a7555eff514c0",
+        "verified": null
+      },
+      "provides": [],
+      "relations": [
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "required",
+          "target": "module:alpha-core",
+          "target_type": "module"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": "optional",
+          "target": "skill:assist:note",
+          "target_type": "skill"
+        },
+        {
+          "basis": "declared",
+          "kind": "contains",
+          "requirement": null,
+          "target": "module:beta-tool",
+          "target_type": "module"
+        }
+      ],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "bundles_catalog"
+      ],
+      "status": "registered",
+      "type": "bundle",
+      "version": "1.0.0",
+      "visibility": "private"
+    },
+    {
+      "aliases": [],
+      "category": "control",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "bundle-lost",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "bundle-lost",
+      "optional": [],
+      "pin": {
+        "commit": null,
+        "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "bundles_catalog"
+      ],
+      "status": "registered",
+      "type": "bundle",
+      "version": null,
+      "visibility": null
+    },
+    {
+      "aliases": [],
+      "category": "assist",
+      "description": "Synthetic skill",
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "skill:assist:note",
+      "languages": [
+        "de",
+        "en"
+      ],
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "note",
+      "optional": [],
+      "path_label": "skills/assist/note/SKILL.md",
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "skills_registry"
+      ],
+      "status": "active",
+      "type": "skill",
+      "version": "1.0.0",
+      "visibility": null
+    },
+    {
+      "aliases": [],
+      "category": "util",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "tool:util:abs",
+      "languages": [],
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "abs",
+      "optional": [],
+      "path_label": null,
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "skills_registry"
+      ],
+      "status": null,
+      "type": "skill",
+      "version": null,
+      "visibility": null
+    },
+    {
+      "aliases": [],
+      "category": "x",
+      "description": null,
+      "git": {
+        "branch": "feature/x",
+        "host": "TEST-HOST",
+        "last_commit": "2026-10-01T00:00:00+00:00",
+        "observed_at": "2026-10-09T09:00:00+02:00",
+        "source": "repo_registry",
+        "state": "dirty"
+      },
+      "git_hosts": [
+        {
+          "branch": "feature/x",
+          "host": "TEST-HOST",
+          "last_commit": "2026-10-01T00:00:00+00:00",
+          "observed_at": "2026-10-09T09:00:00+02:00",
+          "source": "repo_registry",
+          "state": "dirty"
+        }
+      ],
+      "id": "example-org/sat-known",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "sat-known",
+      "optional": [],
+      "org": "example-org",
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provenance": "EIGENENTWICKLUNG",
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "satellite_catalog"
+      ],
+      "status": null,
+      "type": "satellite",
+      "upstream": "example-org/sat-known",
+      "version": null,
+      "visibility": null
+    },
+    {
+      "aliases": [],
+      "category": "y",
+      "description": null,
+      "git": {
+        "branch": null,
+        "host": null,
+        "last_commit": null,
+        "observed_at": null,
+        "source": null,
+        "state": "unknown"
+      },
+      "git_hosts": [],
+      "id": "example-org/sat-unknown",
+      "measured": {
+        "connection_state": "unverified",
+        "evidence": null,
+        "host": null,
+        "installed": null,
+        "observed_at": null,
+        "runtime_active": null
+      },
+      "name": "sat-unknown",
+      "optional": [],
+      "org": "example-org",
+      "pin": {
+        "commit": null,
+        "content_hash": null,
+        "source_version": null,
+        "verified": null
+      },
+      "provenance": null,
+      "provides": [],
+      "relations": [],
+      "repository": null,
+      "requires": [],
+      "source_ids": [
+        "satellite_catalog"
+      ],
+      "status": null,
+      "type": "satellite",
+      "upstream": null,
+      "version": null,
+      "visibility": null
+    }
+  ],
+  "schema": "bach.catalog.v1",
+  "sources": [
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2026-10-09T10:00:00+02:00",
+      "generated_at_basis": "declared",
+      "host": "REGISTRY-HOST",
+      "id": "repo_registry",
+      "kind": "git-hosts",
+      "path_label": "GITHUBBOT/config/repo_registry.json",
+      "schema": "githubbot-repo-registry-v1",
+      "source_version": "8e0392b509549bfa75b4a4f9a9f3e08cb7d1dbc3265e56f0d54f9db438363a30"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2026-10-10T07:00:00+00:00",
+      "generated_at_basis": "declared",
+      "host": "MANIFEST-HOST",
+      "id": "repos_manifest:slot-a",
+      "kind": "git-hosts",
+      "path_label": ".SYNC/slot-a/repos.json",
+      "schema": "repos-manifest-v1",
+      "source_version": "5da90c3ad43668e3420fe24f4a95ccc374ca3d94554daebcf9bf8d6bba1d6528"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "host": null,
+      "id": "modules_catalog",
+      "kind": "module",
+      "path_label": ".MODULES/modules.catalog.json",
+      "schema": "ellmos.modules-catalog.v1",
+      "source_version": "e9889d5de42feb6d8b153af0485b14aaf8771967cd907ec05d4acba7d08d0c92"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "host": null,
+      "id": "bundles_catalog",
+      "kind": "bundle",
+      "path_label": ".BUNDLES/bundles.catalog.v1.json",
+      "schema": "ellmos.bundles.catalog.v1",
+      "source_version": "5930f8df888e19a791ae04a604d95d6ac5eb472297c5851c0c312cfe77fae5b3"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "host": null,
+      "id": "skills_registry",
+      "kind": "skill",
+      "path_label": "skills/registry/components.json",
+      "schema": null,
+      "source_version": "a63c301691bdaec0b04727f98b2853864d0c45a2fe11fbf5d49523e9596c74a4"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2026-10-10T08:00:00",
+      "generated_at_basis": "declared",
+      "host": null,
+      "id": "satellite_catalog",
+      "kind": "satellite",
+      "path_label": "GITHUBBOT/config/master_satellite_catalog.json",
+      "schema": "master-satellite-catalog-v1",
+      "source_version": "6ea05235af706ea7ee37dc6448cccd81f4422e4e3adea6553b1c4eb7d6c9b6d7"
+    }
+  ],
+  "truncated": false
+}
