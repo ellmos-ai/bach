@@ -120,3 +120,15 @@ PROMPT — управление шаблонами подсказок
   bach --help tasks        Система задач
   bach --help memory       Система памяти
   bach --help skills       Система SKILL.md
+
+ИМПОРТ PROMPTBOARD
+------------------
+  bach prompt import-promptboard [library.json] --dry-run
+  bach prompt import-promptboard [library.json]
+  Для import-promptboard флаг -n означает --dry-run (предпросмотр).
+  API: bach_api.prompt.import_promptboard("library.json", "--dry-run")
+Без пути поиск включает BACH_PROMPTBOARD_LIBRARY.
+Предпросмотр ничего не записывает. Существующие шаблоны сохраняются.
+Пустые записи считаются недействительными; неверные типы полей отменяют
+импорт. Новые шаблоны сохраняются или откатываются вместе.
+GUI, CLI и API используют один обработчик.

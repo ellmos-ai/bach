@@ -17,17 +17,86 @@ Ref: B42
 """
 import sqlite3
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
 
 
+def serialize_prompt_tags(tags):
+    """Store new tags as JSON; accept CSV and existing serialized lists."""
+    if tags is None:
+        return None
+    if isinstance(tags, str):
+        try:
+            parsed = json.loads(tags)
+        except ValueError:
+            parsed = None
+        tags = (parsed if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed)
+                else tags.split(","))
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        raise ValueError("tags: Text oder Liste von Texten erwartet")
+    return json.dumps([tag.strip() for tag in tags if tag.strip()], ensure_ascii=False)
+
+
+def prompt_tags_text(tags):
+    """Display/search both legacy CSV and JSON, including escaped Unicode."""
+    if tags is None:
+        return None
+    try:
+        parsed = json.loads(tags)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed):
+        return ", ".join(tag.strip() for tag in parsed if tag.strip())
+    return tags
+
+
+def prompt_tags_edit_text(tags):
+    """Use CSV for simple tags and JSON when CSV would lose tag boundaries."""
+    display = prompt_tags_text(tags)
+    if tags is None:
+        return None
+    try:
+        parsed = json.loads(tags)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed):
+        if serialize_prompt_tags(display) != serialize_prompt_tags(parsed):
+            return json.dumps(parsed, ensure_ascii=False)
+    return display
+
+
+def promptboard_library_paths():
+    """Discover the existing PromptBoard library without creating directories."""
+    candidates = []
+    if os.environ.get("BACH_PROMPTBOARD_LIBRARY"):
+        candidates.append(Path(os.environ["BACH_PROMPTBOARD_LIBRARY"]).expanduser())
+    candidates.append(Path.home() / ".promptboard" / "library.json")
+    if os.environ.get("APPDATA"):
+        candidates.append(Path(os.environ["APPDATA"]) / "PromptBoard" / "library.json")
+    if os.environ.get("USERPROFILE"):
+        project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
+                   ".SOFTWARE" / "LLM" / "REL-PUB_PromptBoard")
+        candidates.extend([project / "library.json", project / "data" / "library.json"])
+    return candidates
+
+
+def promptboard_library_not_found(candidates):
+    """Keep discovery sources and attempted paths in CLI/API/GUI diagnostics."""
+    searched = ", ".join(str(path) for path in candidates) or "(keine Kandidaten)"
+    return ("Keine PromptBoard library.json gefunden (BACH_PROMPTBOARD_LIBRARY, "
+            "~/.promptboard, %APPDATA%/PromptBoard, REL-PUB_PromptBoard; "
+            f"geprüft: {searched})")
+
+
 class PromptHandler(BaseHandler):
     """Handler fuer Prompt-Templates und Boards."""
 
-    def __init__(self, base_path_or_app):
+    def __init__(self, base_path_or_app, connection_factory=None):
         super().__init__(base_path_or_app)
         self.db_path = self._canonical_db
+        self._connection_factory = connection_factory
 
     @property
     def profile_name(self) -> str:
@@ -47,10 +116,22 @@ class PromptHandler(BaseHandler):
             "search": "LIKE-Suche: bach prompt search <query>",
             "boards": "Alle Boards listen: bach prompt boards",
             "board": "Board verwalten: bach prompt board <title> [--add-prompt ID] [--remove-prompt ID] [--description TEXT]",
+            "import_promptboard": "PromptBoard importieren: bach prompt import-promptboard [library.json] [--dry-run]",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
-        if operation == "list":
+        if operation in ("import_promptboard", "import-promptboard"):
+            preview_flags = ("--dry-run", "-n")
+            dry_run = dry_run or any(flag in args for flag in preview_flags)
+            paths = [arg for arg in args if arg not in preview_flags]
+            if len(paths) > 1:
+                return False, "Usage: bach prompt import-promptboard [library.json] [--dry-run]"
+            try:
+                result = self.import_promptboard(paths[0] if paths else None, dry_run=dry_run)
+                return True, json.dumps(result, ensure_ascii=False)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                return False, f"PromptBoard-Import fehlgeschlagen: {exc}"
+        elif operation == "list":
             return self._list(args)
         elif operation == "add":
             return self._add(args)
@@ -80,9 +161,71 @@ class PromptHandler(BaseHandler):
             return False, f"Unbekannte Operation: {operation}"
 
     def _get_conn(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connection_factory() if self._connection_factory else sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def import_promptboard(self, library_path=None, *, dry_run=False):
+        """Validate first, then import atomically; duplicate names keep user data.
+
+        Missing/empty entries are counted as invalid. Non-text fields reject the
+        entire library instead of silently converting JSON objects to prompts.
+        The dry run counts additions and duplicates without changing the DB.
+        """
+        path = (Path(library_path).expanduser() if library_path is not None else
+                next((p for p in promptboard_library_paths() if p.exists()), None))
+        if path is None:
+            raise FileNotFoundError(promptboard_library_not_found(promptboard_library_paths()))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            raise ValueError("Unerwartetes Format: 'items'-Liste fehlt")
+        entries, invalid = [], 0
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                invalid += 1
+                continue
+            for field in ("name", "content", "category", "item_type", "description"):
+                if item.get(field) is not None and not isinstance(item[field], str):
+                    raise ValueError(f"items[{index}].{field}: Text erwartet")
+            name = (item.get("name") or "").strip()
+            text = (item.get("content") or "").strip()
+            if not name or not text:
+                invalid += 1
+                continue
+            try:
+                tags = serialize_prompt_tags(item.get("tags"))
+            except ValueError as exc:
+                raise ValueError(f"items[{index}].{exc}") from exc
+            category = (item.get("category") or item.get("item_type") or "PromptBoard").strip() or "PromptBoard"
+            entries.append((name, item.get("description"), text, tags, category))
+
+        imported, skipped = 0, 0
+        conn = self._get_conn()
+        try:
+            with conn:
+                # Serialize duplicate decisions with concurrent writers. A preview
+                # only reads; a later actual import rechecks the names.
+                if not dry_run:
+                    conn.execute("BEGIN IMMEDIATE")
+                names = {row[0] for row in conn.execute("SELECT name FROM prompt_templates")}
+                now = datetime.now().isoformat()
+                for entry in entries:
+                    if entry[0] in names:
+                        skipped += 1
+                        continue
+                    if not dry_run:
+                        conn.execute(
+                            "INSERT INTO prompt_templates "
+                            "(name, purpose, text, tags, category, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)", (*entry, now, now),
+                        )
+                    names.add(entry[0])
+                    imported += 1
+            return {"ok": True, "source": str(path), "imported": imported,
+                    "skipped": skipped, "invalid": invalid, "dry_run": bool(dry_run)}
+        finally:
+            conn.close()
 
     def _resolve_prompt(self, conn, id_or_name: str):
         """Findet ein Template per ID oder Name. Returns Row oder None."""
@@ -166,7 +309,7 @@ class PromptHandler(BaseHandler):
                 category = args[i + 1].strip()
                 i += 2
             elif args[i] == "--tags" and i + 1 < len(args):
-                tags = json.dumps([t.strip() for t in args[i + 1].split(",")])
+                tags = serialize_prompt_tags(args[i + 1])
                 i += 2
             elif args[i] == "--purpose" and i + 1 < len(args):
                 purpose = args[i + 1].strip()
@@ -206,7 +349,7 @@ class PromptHandler(BaseHandler):
                 f"PROMPT TEMPLATE: {row['name']} (ID: {row['id']})",
                 f"Kategorie: {row['category'] or '-'}",
                 f"Purpose: {row['purpose'] or '-'}",
-                f"Tags: {row['tags'] or '-'}",
+                f"Tags: {prompt_tags_text(row['tags']) or '-'}",
                 f"Erstellt: {row['created_at']}",
                 f"Aktualisiert: {row['updated_at']}",
                 f"dist_type: {row['dist_type'] or '-'}",
@@ -317,12 +460,13 @@ class PromptHandler(BaseHandler):
 
         conn = self._get_conn()
         try:
+            conn.create_function("prompt_tags_text", 1, prompt_tags_text)
             rows = conn.execute(
                 "SELECT id, name, category, purpose, tags, text "
                 "FROM prompt_templates "
-                "WHERE name LIKE ? OR text LIKE ? OR tags LIKE ? "
+                "WHERE name LIKE ? OR text LIKE ? OR tags LIKE ? OR prompt_tags_text(tags) LIKE ? "
                 "ORDER BY name",
-                (pattern, pattern, pattern),
+                (pattern, pattern, pattern, pattern),
             ).fetchall()
 
             if not rows:

@@ -89,6 +89,12 @@ Automatisierter Daily Care & Dev Check. Befund und Status:
 - Lieferung über einen separaten PR. Promptboard-/Tray-Integration, modulare Installer und die offenen Compare-Race-Aufgaben bleiben eigene Arbeitspakete; daraus wird kein abgeschlossener Live-Test abgeleitet.
 - Diagnose-Folgeaufgabe #1694: Taskänderungen und Abschluss aus Rheingold-Workern zum Lead propagieren; lokaler Cache und Lead-Status dürfen nicht auseinanderlaufen. Separat vom Recurring-/ID-Kollisions-Slice #1346 bearbeiten.
 
+## PromptBoard-Import 2026-10-08 (Kandidat zur Integration)
+
+- Gemeinsamer Handler für GUI, CLI und Library-API ersetzt die bisherige GUI-eigene Importlogik. Vorschau, Feldprüfung und atomare Transaktion erhalten vorhandene Vorlagen und verhindern Teilimporte.
+- Dies schafft einen klaren Adapter für die spätere Modulgrenze; es ist noch kein eigenständiges PromptBoard-Paket und kein modularer Installer.
+- Folgearbeit: `BACH-PROMPTBOARD-IMPORT-01` in TODO und lokaler Offline-Draft. Nach Review und Integration Import, Tray-Start und Chat-Ausführung am Desktop abnehmen. Lead-Writer-Reconciliation (#1694) bleibt Voraussetzung für einen zentralen Taskabschluss.
+
 ## Review 2026-10-01 (Daily Care & Dev Check)
 
 Automatisierter Daily Care & Dev Check. Befund und Status:

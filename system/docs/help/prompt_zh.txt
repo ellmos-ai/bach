@@ -120,3 +120,15 @@ CLI 命令（巴赫提示符）
   bach --help tasks        任务系统
   bach --help memory       内存系统
   bach --help skills       SKILL.md 系统
+
+PROMPTBOARD 导入
+---------------
+  bach prompt import-promptboard [library.json] --dry-run
+  bach prompt import-promptboard [library.json]
+  在 import-promptboard 中，-n 是 --dry-run（预览）的别名。
+  API: bach_api.prompt.import_promptboard("library.json", "--dry-run")
+省略路径时会搜索 BACH_PROMPTBOARD_LIBRARY 等位置。
+预览不会写入。现有同名模板保持不变。
+空条目计为无效；字段类型错误会中止导入。
+新模板要么全部保存，要么全部回滚。
+GUI、CLI 和 API 使用同一个处理器。
