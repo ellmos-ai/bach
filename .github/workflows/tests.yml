@@ -325,6 +325,7 @@ jobs:
             system/tests/test_safe_exec.py \
             system/tests/test_safe_shell_args.py \
             system/tests/test_chat_runtime_security.py \
+            system/tests/test_foerderbericht_modi.py \
             system/tests/test_telegram_owner_check.py
 
   shared-dbsync:

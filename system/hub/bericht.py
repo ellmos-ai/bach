@@ -48,7 +48,8 @@ class BerichtHandler(BaseHandler):
             "archive": "Exportierten Bericht archivieren",
             "extract": "Quelltexte aus Klienten-Ordner extrahieren",
             "prompt": "LLM-Prompt erstellen",
-            "pipeline": "End-to-End Pipeline: data_roh -> fertiger Bericht",
+            "pipeline": "End-to-End Pipeline: data_roh -> fertiger Bericht (--modus lokal|cloud|hybrid)",
+            "watch": "data_roh/ beobachten und Bericht automatisch starten",
             "list": "Klienten-Ordner auflisten",
             "status": "Status der Pipeline anzeigen",
             "help": "Hilfe anzeigen",
@@ -68,6 +69,8 @@ class BerichtHandler(BaseHandler):
             return self._prompt(args)
         elif operation == "pipeline":
             return self._pipeline(args)
+        elif operation == "watch":
+            return self._watch(args)
         elif operation == "list":
             return self._list(args)
         elif operation == "status":
@@ -272,6 +275,8 @@ class BerichtHandler(BaseHandler):
         eltern = []
         adresse = None
         cleanup = True
+        modus = None
+        lokal_modell = None
 
         # Positionale Args: [name] [geburtsdatum] -- beide optional
         positional = []
@@ -298,6 +303,12 @@ class BerichtHandler(BaseHandler):
                 elif args[i] == "--no-cleanup":
                     cleanup = False
                     i += 1
+                elif args[i] == "--modus" and i + 1 < len(args):
+                    modus = args[i + 1]
+                    i += 2
+                elif args[i] == "--lokal-modell" and i + 1 < len(args):
+                    lokal_modell = args[i + 1]
+                    i += 2
                 else:
                     i += 1
             else:
@@ -324,13 +335,19 @@ class BerichtHandler(BaseHandler):
                 llm_backend=backend,
                 model=model,
                 auto_cleanup=cleanup,
+                modus=modus,
+                lokal_modell=lokal_modell,
             )
 
             if result.success:
                 lines = [
                     f"Pipeline erfolgreich!",
                     f"  Bericht: erstellt",
-                    f"  Tarnname: {result.tarnname}",
+                    f"  Modus: {getattr(result, 'modus', 'cloud')}",
+                ]
+                if getattr(result, "modus", "cloud") == "cloud":
+                    lines.append(f"  Tarnname: {result.tarnname}")
+                lines += [
                     f"  Dauer: {result.duration_s:.1f}s",
                     "",
                     "  Schritte:",
@@ -342,6 +359,48 @@ class BerichtHandler(BaseHandler):
                 return False, f"Pipeline fehlgeschlagen: {result.error}"
         except Exception as e:
             return False, f"Fehler bei Pipeline: {e}"
+
+    def _watch(self, args: List[str]) -> Tuple[bool, str]:
+        """data_roh/ beobachten und die Pipeline automatisch starten."""
+        opts = {"--modus": None, "--intervall": "30", "--ruhe": "60",
+                "--zeitraum": None, "--lokal-modell": None,
+                "--backend": None, "--model": None}
+        once = "--once" in args
+        i = 0
+        while i < len(args):
+            if args[i] in opts and i + 1 < len(args):
+                opts[args[i]] = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        try:
+            intervall = float(opts["--intervall"])
+            ruhe = float(opts["--ruhe"])
+        except ValueError:
+            return False, "--intervall und --ruhe erwarten Sekunden als Zahl"
+
+        pipeline_kwargs = {}
+        for flag, key in (("--zeitraum", "berichtszeitraum"),
+                          ("--lokal-modell", "lokal_modell"),
+                          ("--backend", "llm_backend"), ("--model", "model")):
+            if opts[flag]:
+                pipeline_kwargs[key] = opts[flag]
+
+        try:
+            sys.path.insert(0, str(self.base_path))
+            from hub._services.document.foerderbericht_pipeline import FoerderberichtPipeline
+            from hub._services.document.foerderbericht_watch import watch
+
+            erstellt = watch(
+                FoerderberichtPipeline, modus=opts["--modus"],
+                intervall_s=intervall, ruhe_s=ruhe, once=once,
+                pipeline_kwargs=pipeline_kwargs,
+            )
+        except KeyboardInterrupt:
+            return True, "Waechter beendet."
+        except Exception as e:
+            return False, f"Fehler im Waechter: {e}"
+        return True, f"Waechter beendet. Berichte erstellt: {erstellt}"
 
     def _list(self, args: List[str]) -> Tuple[bool, str]:
         """Klienten-Ordner und Pipeline-Status auflisten."""
@@ -419,6 +478,9 @@ class BerichtHandler(BaseHandler):
             "  bach bericht pipeline                              # Auto-Detect (empfohlen)",
             "  bach bericht pipeline --zeitraum \"01.07.2025 - 30.06.2026\"",
             "  bach bericht pipeline \"Max Mustermann\" \"15.03.2016\"  # Explizit",
+            "  bach bericht pipeline --modus lokal                # lokales Modell, ohne Anonymisierung",
+            "  bach bericht pipeline --modus hybrid               # Cloud steuert, lokales Modell schreibt",
+            "  bach bericht watch --modus lokal                   # Akte ablegen -> Bericht automatisch",
             "  bach bericht list",
             "  bach bericht status",
             "  bach bericht generate output/bericht_data.json -o output/bericht.docx",
@@ -426,5 +488,6 @@ class BerichtHandler(BaseHandler):
             "",
             "Standardwege: Chat/Subagent, Desktop-.bat, llmauto Chain, CLI",
             "Name + Geburtsdatum werden automatisch aus data_roh/ erkannt.",
+            "Standardmodus: BACH_FOERDERBERICHT_MODUS (lokal|cloud|hybrid, Default cloud).",
         ])
         return True, "\n".join(lines)

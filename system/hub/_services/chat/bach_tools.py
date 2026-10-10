@@ -567,9 +567,14 @@ TOOLS_SAFE = [
         "operation": {"type": "string",
                       "description": "Bei run: registry, skills, docs, backup, clean, memory, recurring"},
     }, ["action"]),
-    _tool("foerderbericht", "Förderbericht-Pipeline: Anonymisierung und Berichterstellung", {
-        "action": {"type": "string", "enum": ["prepare", "status", "cleanup"],
-                   "description": "prepare=Phase 1 (Anonymisierung, kein LLM), status=Pipeline-Status, cleanup=Zwischendateien löschen"},
+    _tool("foerderbericht", "Förderbericht-Pipeline: Bericht aus der Akte in data_roh/ erstellen", {
+        "action": {"type": "string", "enum": ["run", "prepare", "finish", "status", "cleanup"],
+                   "description": "run=kompletter Bericht im gewählten Modus, prepare=anonymisierten Prompt erzeugen (kein LLM), "
+                                  "finish=Bericht aus data_bundled/llm_response.txt erstellen, status=Pipeline-Status, "
+                                  "cleanup=Zwischendateien löschen"},
+        "modus": {"type": "string", "enum": ["lokal", "cloud", "hybrid"],
+                  "description": "Nur bei run: lokal=lokales Modell ohne Anonymisierung, cloud=anonymisiert an Cloud-Modell, "
+                                 "hybrid=Cloud steuert, lokales Modell liest/schreibt (Standard: Konfiguration)"},
         "zeitraum": {"type": "string", "description": "Berichtszeitraum (z.B. '01.01.2025 - 31.12.2025')"},
         "eltern": {"type": "array", "items": {"type": "string"}, "description": "Elternnamen zur Anonymisierung"},
         "adresse": {"type": "string", "description": "Klienten-Adresse zur Anonymisierung"},
@@ -1353,14 +1358,36 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     status += f"Anonymisierter Prompt vorhanden: {'ja' if prompt_exists else 'nein'}"
                     return status
 
+                elif action == "run":
+                    result = pipeline.run_full_pipeline(
+                        berichtszeitraum=args.get("zeitraum", "01.01.2025 - 31.12.2025"),
+                        parent_names=args.get("eltern"),
+                        client_address=args.get("adresse"),
+                        modus=args.get("modus"),
+                    )
+                    if result.success:
+                        # Dateiname nicht nennen: er enthaelt den Klarnamen.
+                        return (f"Bericht erstellt (Modus {result.modus}) in output_berichte/.\n"
+                                f"Dauer: {result.duration_s:.1f}s\nSchritte: {', '.join(result.steps_completed)}")
+                    return f"Bericht fehlgeschlagen (Modus {result.modus}): {result.error}"
+
+                elif action == "finish":
+                    result = pipeline.finish_report()
+                    if result.success:
+                        return f"Bericht erstellt in output_berichte/.\nSchritte: {', '.join(result.steps_completed)}"
+                    return f"Phase 3 fehlgeschlagen: {result.error}"
+
                 elif action == "prepare":
                     zeitraum = args.get("zeitraum", "01.01.2025 - 31.12.2025")
                     eltern = args.get("eltern")
                     adresse = args.get("adresse")
+                    # Immer anonymisiert: Das Chat-Modell kann ein Cloud-Modell
+                    # sein und liest den Prompt danach selbst.
                     result = pipeline.prepare_prompt(
                         berichtszeitraum=zeitraum,
                         parent_names=eltern,
                         client_address=adresse,
+                        modus="cloud",
                     )
                     if result.success:
                         return (f"Phase 1 abgeschlossen. Tarnname: {result.tarnname}\n"
@@ -1379,7 +1406,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         lock_file.unlink()
                     return "Zwischendateien gelöscht (data_ano/, data_bundled/), Lock entfernt."
 
-                return f"Unbekannte Aktion: {action}. Erlaubt: prepare, status, cleanup"
+                return f"Unbekannte Aktion: {action}. Erlaubt: run, prepare, finish, status, cleanup"
             except Exception as e:
                 return f"Pipeline-Fehler: {e}"
 

@@ -29,6 +29,7 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ### Added
 
+- **Förderbericht-Pipeline mit drei Modi und Ordnerwächter:** `bach bericht pipeline --modus lokal|cloud|hybrid` (Standard über `BACH_FOERDERBERICHT_MODUS`, Default `cloud` wie bisher). `lokal`: Ollama-Modell liest und schreibt, keine Anonymisierung. `hybrid`: Cloud-Modell plant und prüft nur anhand von Strukturdaten (Dokumenttypen, Monat/Jahr, Längen, Feldstatus, ICF-Codes), das lokale Modell liest die Akte und schreibt; eine Datenschutz-Sperre bricht ab, wenn Name, Geburtsdatum oder Ordnername in einer Cloud-Nachricht stünden. Lokale Prompts heißen `prompt_lokal.txt`, damit kein Cloud-Weg Klardaten liest. `bach bericht watch` startet den Lauf automatisch, sobald eine Akte in `data_roh/` ruhig liegt (`--once` für Aufgabenplanung). Das BACH-Chat-Werkzeug `foerderbericht` kann jetzt `run` (mit Modus) und `finish`; `prepare` bleibt immer anonymisiert. Ausgaben nennen den Berichts-Dateinamen nicht mehr, weil er den Klarnamen enthält. Der tote Verweis auf die nicht existierende Chain `foerderbericht` ist aus der Hilfe entfernt.
 - **LaunchAgent-Vorlagen für Chat-Tray und Telegram-Bot** (`system/launchd/`), hostagnostisch über `$HOME`, mit `OLLAMA_NUM_CTX=16384`. Wert und Speichermessung: `docs/operations/MAC-CHAT-LAUNCHAGENTS.md`.
 
 ### Added (vorbereitet, noch nicht aktiv)

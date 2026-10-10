@@ -999,7 +999,8 @@ Interpersonelle Interaktionen:
         session: WorkflowSession,
         include_wissensdatenbank: bool = True,
         berichtszeitraum: str = "01.01.2025 - 31.12.2025",
-        custom_instructions: str = ""
+        custom_instructions: str = "",
+        anonymisiert: bool = True,
     ) -> str:
         """
         Generiert den LLM-Prompt mit Kontext.
@@ -1009,6 +1010,8 @@ Interpersonelle Interaktionen:
             include_wissensdatenbank: Wissensdatenbank einbeziehen
             berichtszeitraum: Zeitraum fuer den Bericht
             custom_instructions: Zusaetzliche Anweisungen
+            anonymisiert: False fuer lokale Modi (Bundle mit Klarnamen);
+                passt die Hinweise im Prompt an
 
         Returns:
             Fertiger Prompt fuer LLM
@@ -1264,6 +1267,18 @@ JSON:
 {custom_instructions}
 
 """
+
+        if not anonymisiert:
+            # Lokale Modi: Das Bundle enthaelt Klarnamen; der Prompt darf das
+            # Modell nicht auf einen "anonymisierten Namen" verpflichten.
+            for alt, neu in (
+                ("Klient (anonymisiert):", "Klient:"),
+                ("mit dem anonymisierten Dokumenten-Bundle", "mit dem Dokumenten-Bundle"),
+                ("Verwende den anonymisierten Namen wie angegeben", "Verwende den Namen wie angegeben"),
+                ("Den anonymisierten Namen verwenden (wie oben angegeben)", "Den Namen verwenden (wie oben angegeben)"),
+                ('"name": "Anonymisierter Name"', '"name": "Name des Klienten"'),
+            ):
+                prompt = prompt.replace(alt, neu)
 
         return prompt
 

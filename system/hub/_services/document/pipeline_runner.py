@@ -72,6 +72,16 @@ Name + Geburtsdatum werden automatisch erkannt.
         help="Zwischenordner nicht leeren nach Durchlauf"
     )
     parser.add_argument(
+        "--modus", choices=["lokal", "cloud", "hybrid"], default=None,
+        help="lokal = Ollama ohne Anonymisierung, cloud = anonymisiert an "
+             "Cloud-Modell, hybrid = Cloud steuert, lokal liest/schreibt "
+             "(Default: BACH_FOERDERBERICHT_MODUS, sonst cloud)"
+    )
+    parser.add_argument(
+        "--lokal-modell", default=None,
+        help="Ollama-Modell fuer lokal/hybrid (Default: BACH_FOERDERBERICHT_LOKAL_MODELL)"
+    )
+    parser.add_argument(
         "--base-path",
         help="Alternativer Basis-Ordner (Default: aus bach_paths)"
     )
@@ -82,6 +92,7 @@ Name + Geburtsdatum werden automatisch erkannt.
     print(f"[PIPELINE] Starte fuer: {args.client_name or 'Auto-Detect'}")
     print(f"[PIPELINE] Geburtsdatum: {args.geburtsdatum or 'Auto-Detect'}")
     print(f"[PIPELINE] Zeitraum: {args.zeitraum}")
+    print(f"[PIPELINE] Modus: {args.modus or 'Konfiguration'}")
     print(f"[PIPELINE] Backend: {args.backend} / {args.model}")
     print()
 
@@ -95,12 +106,16 @@ Name + Geburtsdatum werden automatisch erkannt.
         llm_backend=args.backend,
         model=args.model,
         auto_cleanup=not args.no_cleanup,
+        modus=args.modus,
+        lokal_modell=args.lokal_modell,
     )
 
     print()
     if result.success:
         print(f"[OK] Bericht erstellt: {result.output_path}")
-        print(f"     Tarnname war: {result.tarnname}")
+        print(f"     Modus: {result.modus}")
+        if result.modus == "cloud":
+            print(f"     Tarnname war: {result.tarnname}")
         print(f"     Dauer: {result.duration_s:.1f}s")
         print()
         for step in result.steps_completed:
