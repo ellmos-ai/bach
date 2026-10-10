@@ -151,7 +151,7 @@ def begin_assignment(
     """
     contract = authorize_role(role_id, mode)
 
-    assignment_id = str(uuid.uuid4())
+    assignment_id = f"asgn-{uuid.uuid4().hex}"
     agent_instance_id = _require_text("agent_instance_id", agent_instance_id)
     backend_id = _require_text("backend_id", backend_id)
     model_id = _require_text("model_id", model_id)
