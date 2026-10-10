@@ -1,39 +1,165 @@
 {
   "_comment": "Shared test vectors for catalog path redaction. Used by BACH (system/tests/test_catalog_projection.py) and by ellmos-system-gui (tests/catalog-projection.test.mjs); the two files are byte-identical. 'redacted' equals 'text' when nothing may be redacted.",
   "vectors": [
-    {"text": "ref:/home/private/user/data", "redacted": "ref:<pfad>"},
-    {"text": "see /root/x now", "redacted": "see <pfad> now"},
-    {"text": "tmp /usr/local/bin ok", "redacted": "tmp <pfad> ok"},
-    {"text": "(/home/u/f)", "redacted": "(<pfad>)"},
-    {"text": "p=/opt/app/z", "redacted": "p=<pfad>"},
-    {"text": "/etc", "redacted": "<pfad>"},
-    {"text": "/项目/档案", "redacted": "<pfad>"},
-    {"text": "pfad: /données/projet/été", "redacted": "pfad: <pfad>"},
-    {"text": "C:\\Users\\a\\b end", "redacted": "<pfad> end"},
-    {"text": "at C:\\Temp\\x in text", "redacted": "at <pfad> in text"},
-    {"text": "D:/x/y", "redacted": "<pfad>"},
-    {"text": "ref:C:\\Users\\a", "redacted": "ref:<pfad>"},
-    {"text": "share \\\\server\\share\\x", "redacted": "share <pfad>"},
-    {"text": "use ~/notes/y here", "redacted": "use <pfad> here"},
-    {"text": "ref:~/notes", "redacted": "ref:<pfad>"},
-    {"text": "%USERPROFILE%\\x\\y", "redacted": "<pfad>"},
-    {"text": "file:///home/u/x", "redacted": "<pfad>"},
-    {"text": "file:///C:/Users/u/x", "redacted": "<pfad>"},
-    {"text": "see file:///srv/data/x.", "redacted": "see <pfad>"},
-    {"text": "https://example.org/a/b", "redacted": "https://example.org/a/b"},
-    {"text": "ssh://git@host/org/repo.git", "redacted": "ssh://git@host/org/repo.git"},
-    {"text": "https://github.com/o/r and and/or", "redacted": "https://github.com/o/r and and/or"},
-    {"text": "/api/capabilities/catalog", "redacted": "/api/capabilities/catalog"},
-    {"text": "CI/CD pipeline", "redacted": "CI/CD pipeline"},
-    {"text": "a-b/c", "redacted": "a-b/c"},
-    {"text": "Lease-/Claim-Vertrag und .STACKS/*/stack.v2.json", "redacted": "Lease-/Claim-Vertrag und .STACKS/*/stack.v2.json"},
-    {"text": "x,/home/u/y", "redacted": "x,<pfad>"},
-    {"text": "ratio 1/2 und über/unter", "redacted": "ratio 1/2 und über/unter"},
-    {"text": "项目/档案", "redacted": "项目/档案"},
-    {"text": "relative/dir/file.json", "redacted": "relative/dir/file.json"},
-    {"text": "./rel/path", "redacted": "./rel/path"},
-    {"text": "key:value/other", "redacted": "key:value/other"},
-    {"text": "2026-10-10T08:00:00+02:00", "redacted": "2026-10-10T08:00:00+02:00"},
-    {"text": "<pfad>", "redacted": "<pfad>"}
+    {
+      "text": "ref:/home/private/user/data",
+      "redacted": "ref:<pfad>"
+    },
+    {
+      "text": "see /root/x now",
+      "redacted": "see <pfad> now"
+    },
+    {
+      "text": "tmp /usr/local/bin ok",
+      "redacted": "tmp <pfad> ok"
+    },
+    {
+      "text": "(/home/u/f)",
+      "redacted": "(<pfad>)"
+    },
+    {
+      "text": "p=/opt/app/z",
+      "redacted": "p=<pfad>"
+    },
+    {
+      "text": "/etc",
+      "redacted": "/etc"
+    },
+    {
+      "text": "/项目/档案",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "pfad: /données/projet/été",
+      "redacted": "pfad: <pfad>"
+    },
+    {
+      "text": "C:\\Users\\a\\b end",
+      "redacted": "<pfad> end"
+    },
+    {
+      "text": "at C:\\Temp\\x in text",
+      "redacted": "at <pfad> in text"
+    },
+    {
+      "text": "D:/x/y",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "ref:C:\\Users\\a",
+      "redacted": "ref:<pfad>"
+    },
+    {
+      "text": "share \\\\server\\share\\x",
+      "redacted": "share <pfad>"
+    },
+    {
+      "text": "use ~/notes/y here",
+      "redacted": "use <pfad> here"
+    },
+    {
+      "text": "ref:~/notes",
+      "redacted": "ref:<pfad>"
+    },
+    {
+      "text": "%USERPROFILE%\\x\\y",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "file:///home/u/x",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "file:///C:/Users/u/x",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "see file:///srv/data/x.",
+      "redacted": "see <pfad>"
+    },
+    {
+      "text": "https://example.org/a/b",
+      "redacted": "https://example.org/a/b"
+    },
+    {
+      "text": "ssh://git@host/org/repo.git",
+      "redacted": "ssh://git@host/org/repo.git"
+    },
+    {
+      "text": "https://github.com/o/r and and/or",
+      "redacted": "https://github.com/o/r and and/or"
+    },
+    {
+      "text": "/api/capabilities/catalog",
+      "redacted": "/api/capabilities/catalog"
+    },
+    {
+      "text": "CI/CD pipeline",
+      "redacted": "CI/CD pipeline"
+    },
+    {
+      "text": "a-b/c",
+      "redacted": "a-b/c"
+    },
+    {
+      "text": "Lease-/Claim-Vertrag und .STACKS/*/stack.v2.json",
+      "redacted": "Lease-/Claim-Vertrag und .STACKS/*/stack.v2.json"
+    },
+    {
+      "text": "x,/home/u/y",
+      "redacted": "x,<pfad>"
+    },
+    {
+      "text": "ratio 1/2 und über/unter",
+      "redacted": "ratio 1/2 und über/unter"
+    },
+    {
+      "text": "项目/档案",
+      "redacted": "项目/档案"
+    },
+    {
+      "text": "relative/dir/file.json",
+      "redacted": "relative/dir/file.json"
+    },
+    {
+      "text": "./rel/path",
+      "redacted": "./rel/path"
+    },
+    {
+      "text": "key:value/other",
+      "redacted": "key:value/other"
+    },
+    {
+      "text": "2026-10-10T08:00:00+02:00",
+      "redacted": "2026-10-10T08:00:00+02:00"
+    },
+    {
+      "text": "<pfad>",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "/bugsweep",
+      "redacted": "/bugsweep"
+    },
+    {
+      "text": "/tmp",
+      "redacted": "/tmp"
+    },
+    {
+      "text": "Use on /bugsweep or /code-review",
+      "redacted": "Use on /bugsweep or /code-review"
+    },
+    {
+      "text": "siehe /bugsweep und /home/u/x",
+      "redacted": "siehe /bugsweep und <pfad>"
+    },
+    {
+      "text": "/a/b",
+      "redacted": "<pfad>"
+    },
+    {
+      "text": "/a/",
+      "redacted": "/a/"
+    }
   ]
 }

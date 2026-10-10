@@ -344,10 +344,11 @@ _PATH_PATTERNS = [
     re.compile(r"\\\\[^\s\"'<>|,;)]+"),                                  # \\server\share
     re.compile(r"(?<!\w)~[\\/]" + _TAIL),                                # ~/x
     re.compile(r"%[A-Za-z_]+%[\\/]" + _TAIL),                            # %USERPROFILE%\x
-    # absolute POSIX path: ONE slash followed by a non-slash that starts a token (text start, whitespace, quote,
-    # opening bracket, "=", ":", "," or ";" before it). Not part of a word, glob or URL ("//host/...");
-    # "/api/..." routes stay. Works after ":" too ("ref:/home/x").
-    re.compile(r"(?<![^\s\"'(=\[:,;])/(?!api/)(?![\s/])[^\s\"'<>|,;)]+"),
+    # absolute POSIX path with at least TWO segments ("/a/b"), starting a token (text start, whitespace, quote,
+    # opening bracket, "=", ":", "," or ";" before it). Single segments ("/bugsweep", "/tmp") are slash commands or
+    # reveal nothing and stay. Not part of a word, glob or URL ("//host/..."); "/api/..." routes stay;
+    # works after ":" too ("ref:/home/x/y").
+    re.compile(r"(?<![^\s\"'(=\[:,;])/(?!api/)[^\s/\"'<>|,;)]+/[^\s\"'<>|,;)]+"),
 ]
 REDACTED = "<pfad>"
 
