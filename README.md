@@ -209,6 +209,10 @@ returns the inference owner and preserves the current session without replaying
 tools. This is an optional reserve barrier; it does not replace the model-slot
 controller or certify model capacity. See [Local model reserves](docs/architecture/LOCAL-MODEL-RESERVE.md)
 for configuration, verification and the separate installation/runtime gates.
+The [model socket contract](docs/architecture/MODEL-SOCKETS.md) keeps native
+dialog and connector calls bound to stable agent identities, projects configured
+connector targets during explicit migration, and preserves existing dialog
+context. Source verification does not imply native migration or model capacity.
 
 
 ### 1. Task Management

@@ -1053,6 +1053,64 @@ class ChatRuntime(_ModuleChatRuntime):
             gate.started_at = None
             gate.condition.notify_all()
 
+    def _model_binding_for_session(self, chat_id, backend, model, session):
+        from hub._services.chat.model_sockets import model_binding_for_call
+        from hub._services.llm.model_backend import backend_identifier
+
+        agent_id = getattr(session, "system_slot_id", None) if session is not None else None
+        if agent_id is None and session is not None and getattr(session, "worker_slot_reader", None):
+            agent_id = session.worker_slot_reader().get("id")
+        target_backend = backend_identifier(backend) or getattr(backend, "backend_id", "")
+        return model_binding_for_call(
+            chat_id, target_backend, str(model), agent_id=agent_id,
+            require_config=getattr(self, "require_model_socket_config", False),
+        )
+
+    async def prepare_inference_call(self, backend, model, *, chat_id=None):
+        """Probe the actual target and binding without taking a compute owner.
+
+        Resource waits are receipts, not admission to inference. Callers must
+        recheck after waiting; external aliases never need a local binding.
+        """
+        from hub._services.chat.local_resource_reserve import (
+            LocalReserveError,
+            probe,
+            read_policy,
+            require_retryable,
+        )
+
+        session = (self.sessions.get(str(chat_id)) or self.get_session(chat_id)) if chat_id is not None else None
+
+        def check_caller():
+            if session is not None and (
+                getattr(session, "worker_task_binding", None) is not None
+                or getattr(session, "require_task_binding", False)
+                or getattr(session, "system_slot_reader", None) is not None
+                or getattr(session, "worker_slot_reader", None) is not None
+            ):
+                problem = self._worker_backend_gate(session, backend, model)
+                if problem is not None:
+                    raise RuntimeError(str(problem))
+
+        check_caller()
+        if not self._uses_local_compute(backend) or str(model).lower().endswith(":cloud"):
+            return None, None
+        receipt = await probe(backend, model)
+        try:
+            _, version = read_policy()
+        except (OSError, ValueError, TypeError, UnicodeError):
+            raise LocalReserveError("Lokale Ressourcenfreigabe: invalid_policy") from None
+        if receipt.get("policy_version") != version:
+            raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
+        check_caller()
+        if receipt["state"] == "external_target":
+            return receipt, None
+        require_retryable(receipt)
+        binding = None
+        if receipt["admitted"] or receipt["state"] in {"waiting_memory_reserve", "waiting_disk_reserve"}:
+            binding = self._model_binding_for_session(chat_id or "runtime", backend, model, session)
+        return receipt, binding
+
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         turn_context = self._compute_turn_context.get()
@@ -1079,13 +1137,7 @@ class ChatRuntime(_ModuleChatRuntime):
             )
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
-
         selected_model = kwargs.get("model") or backend.get_default_model()
-        # The actual selected target matters: a localhost cloud proxy holds
-        # no local inference torch. Metadata handles non-suffixed cloud aliases
-        # when the explicit reserve policy is active.
-        if str(selected_model).lower().endswith(":cloud"):
-            return await backend.chat(*args, **kwargs)
 
         chat_id, priority = turn_context or ("runtime", "foreground")
         from hub._services.chat.host_inference_gate import HostInferenceGate
@@ -1096,17 +1148,14 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "require_task_binding", False)
             or getattr(session, "system_slot_reader", None) is not None
             or getattr(session, "worker_slot_reader", None) is not None) else {})
-        from hub._services.chat.local_resource_reserve import probe, read_policy, require_retryable, LocalReserveError
-        from hub._services.chat.model_sockets import model_binding_for_call
-        from hub._services.llm.model_backend import backend_identifier
-        target_backend = backend_identifier(backend) or getattr(backend, "backend_id", "")
+        from hub._services.chat.local_resource_reserve import (
+            LocalReserveError,
+            read_policy,
+            require_retryable,
+        )
 
         def check_model_binding():
-            agent_id = getattr(session, "system_slot_id", None) if session is not None else None
-            if agent_id is None and session is not None and getattr(session, "worker_slot_reader", None):
-                agent_id = session.worker_slot_reader().get("id")
-            return model_binding_for_call(chat_id, target_backend, str(selected_model), agent_id=agent_id,
-                                          require_config=getattr(self, "require_model_socket_config", False))
+            return self._model_binding_for_session(chat_id, backend, selected_model, session)
 
         def check_local_ready():
             check_binding()
@@ -1131,7 +1180,10 @@ class ChatRuntime(_ModuleChatRuntime):
         try:
             while True:
                 check_binding()
-                receipt = await probe(backend, selected_model)
+                receipt, _ = await self.prepare_inference_call(
+                    backend, selected_model, chat_id=chat_id if turn_context else None)
+                if receipt is None:
+                    return await backend.chat(*args, **kwargs)
                 if not policy_bound:
                     policy_version = receipt.get("policy_version")
                     policy_bound = True
@@ -1150,7 +1202,10 @@ class ChatRuntime(_ModuleChatRuntime):
                     async with HostInferenceGate().turn(chat_id, priority, model_target=target, **guard):
                         # Resource availability can change while we waited for
                         # the existing host owner. Recheck under that owner.
-                        receipt = await probe(backend, selected_model)
+                        receipt, _ = await self.prepare_inference_call(
+                            backend, selected_model, chat_id=chat_id if turn_context else None)
+                        if receipt is None:
+                            raise RuntimeError("model_socket_target_changed")
                         check_reserve_policy(receipt)
                         check_binding()
                         require_retryable(receipt)
@@ -1582,10 +1637,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             and self.compute_gate is not None
             and self.compute_gate(selected_backend)
         ):
-            raise ComputeLocked(
-                "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
-                "Rechenjobs nicht in den Swap gedraengt werden."
-            )
+            actual_local = True
+            if self._uses_local_compute(selected_backend):
+                candidate_model = model or getattr(known_session, "model", "") or selected_backend.get_default_model()
+                receipt, _ = await self.prepare_inference_call(
+                    selected_backend, candidate_model, chat_id=chat_id if known_session is not None else None)
+                # A localhost Ollama cloud proxy does not compete for this
+                # host's compute. Do not bypass using a stale caller receipt.
+                actual_local = receipt is not None and receipt["state"] != "external_target"
+            if actual_local:
+                raise ComputeLocked(
+                    "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
+                    "Rechenjobs nicht in den Swap gedraengt werden."
+                )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
         if str(chat_id).startswith("agent:"):
