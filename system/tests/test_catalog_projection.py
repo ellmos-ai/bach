@@ -573,6 +573,48 @@ def test_conflict_copy_of_the_architecture_file_is_never_read(tmp_path):
     assert [a["id"] for a in result["architecture"]["areas"]] == ["runtime", "tools", "memory"]
 
 
+@pytest.mark.parametrize("mutate", [
+    lambda d: d["areas"][0].update({"cross": "yes"}),
+    lambda d: d["areas"][2].update({"cross": 1}),
+    lambda d: d["areas"][0].update({"cross": None}),
+    lambda d: d["edges"][0].update({"both": "true"}),
+    lambda d: d["edges"][1].update({"both": 0}),
+    lambda d: d["layers"][0].update({"id": ""}),
+    lambda d: d["layers"][0].update({"id": "   "}),
+    lambda d: d["layers"][0].update({"id": "../escape"}),
+    lambda d: d["layers"][0].update({"id": 5}),
+    lambda d: d["layers"][0].pop("id"),
+    lambda d: d["layers"].append(dict(d["layers"][0])),  # duplicate layer id
+])
+def test_wrong_flag_types_and_bad_layer_ids_are_source_errors_not_silent_defaults(tmp_path, mutate):
+    config = build_sources(tmp_path)
+    path = tmp_path / "ai" / "ELLMOS-SCHALTPLAN.authored.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mutate(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    result = cp.observe(config=config, host="TEST-HOST", now=NOW)
+    assert result["architecture"]["available"] is False and result["architecture"]["areas"] == []
+    record = source(result, "schaltplan_authored")
+    assert record["availability"] == "error" and record["error"] == "invalid_structure"
+    assert any(e["source"] == "schaltplan_authored" and e["reason"] == "invalid_structure" for e in result["errors"])
+    assert source(result, "modules_catalog")["availability"] == "available" and result["count"] == 11
+
+
+def test_omitted_optional_flags_default_to_false_and_real_booleans_are_kept(tmp_path):
+    config = build_sources(tmp_path)
+    path = tmp_path / "ai" / "ELLMOS-SCHALTPLAN.authored.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["areas"][2]["cross"]      # was True
+    del data["edges"][1]["both"]       # was True
+    data["areas"][0]["cross"] = True
+    data["edges"][0]["both"] = False
+    path.write_text(json.dumps(data), encoding="utf-8")
+    arch = cp.observe(config=config, host="TEST-HOST", now=NOW)["architecture"]
+    assert arch["available"] is True
+    assert [a["cross"] for a in arch["areas"]] == [True, False, False]
+    assert [e["both"] for e in arch["edges"]] == [False, False]
+
+
 # ---------------------------------------------------------------- fixture and route
 
 def test_fixture_matches_checked_in_copy(projection):

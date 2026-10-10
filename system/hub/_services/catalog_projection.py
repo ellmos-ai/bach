@@ -695,6 +695,15 @@ def _bilingual(value, what):
     return {"de": de, "en": en}
 
 
+def _optional_bool(entry: dict, key: str) -> bool:
+    """An omitted optional flag is False; a present value must be a real boolean (anything else is a source error)."""
+    if key not in entry:
+        return False
+    if not isinstance(entry[key], bool):
+        raise ValueError(key + "_not_boolean")
+    return entry[key]
+
+
 def _empty_architecture(source_id, available=False):
     return {"basis": "declared", "source_id": source_id, "available": available, "areas": [], "edges": [],
             "layers": [], "icons": {}, "ui": {}, "edges_note": None}
@@ -722,18 +731,22 @@ def _architecture(config, sources):
         ids.add(area_id)
         areas.append({"id": area_id, "dir": _text(area.get("dir"), 80) or "", "name": _bilingual(area.get("name"), "name"),
                       "q": _bilingual(area.get("q"), "q"), "desc": _bilingual(area.get("desc"), "desc"),
-                      "cross": area.get("cross") is True})
+                      "cross": _optional_bool(area, "cross")})
     edges = []
     for entry in raw_edges:
         edge = _dict(entry)
         if edge.get("from") not in ids or edge.get("to") not in ids:
             raise ValueError("edge_area")
         edges.append({"from": edge["from"], "to": edge["to"], "label": _bilingual(edge.get("label"), "label"),
-                      "desc": _bilingual(edge.get("desc"), "edge_desc"), "both": edge.get("both") is True})
-    layers = []
+                      "desc": _bilingual(edge.get("desc"), "edge_desc"), "both": _optional_bool(edge, "both")})
+    layers, layer_ids = [], set()
     for entry in raw_layers:
         layer = _dict(entry)
-        layers.append({"id": _text(layer.get("id"), 80) or "", "n": _bilingual(layer.get("n"), "layer_n"),
+        layer_id = _text(layer.get("id"), 80)
+        if not layer_id or not SAFE_SEGMENT.fullmatch(layer_id) or layer_id in layer_ids:
+            raise ValueError("layer_id")
+        layer_ids.add(layer_id)
+        layers.append({"id": layer_id, "n": _bilingual(layer.get("n"), "layer_n"),
                        "d": _bilingual(layer.get("d"), "layer_d"),
                        "s_tpl": _clean(layer.get("s_tpl")) if isinstance(layer.get("s_tpl"), dict) else None})
     icons = {k: v for k, v in ((k, _text(_dict(s).get("i"), 16)) for k, s in _dict(data.get("skin")).items()) if k in ids and v}
