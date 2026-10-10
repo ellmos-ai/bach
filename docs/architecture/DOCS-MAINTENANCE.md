@@ -44,6 +44,9 @@ Die Konfiguration wird einmalig angelegt und nicht überschrieben.
 tatsächlich ermittelten Python-, Repo-, TaskDB- und Konfigurationspfaden. Er
 installiert oder startet nichts. Für CLI, GUI und Recurring dieselbe kanonische
 Konfiguration `<TaskDB-Verzeichnis>/maintenance/config.json` verwenden.
+Python muss den Interpreterpfad des BACH-venv beibehalten; sein Symlinkziel kann
+ein globaler Interpreter ohne die installierten Module sein. Der Plan darf diesen
+Pfad daher nicht durch Auflösen des Symlinks ersetzen.
 Abweichende CLI-Runtimepfade sind Diagnose-/Testpfade und kein zweiter Betrieb.
 
 Nach regulärer Integration den Entwurf kontrolliert unter dem Benutzer des

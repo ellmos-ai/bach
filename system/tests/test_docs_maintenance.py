@@ -415,6 +415,34 @@ def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
     assert not (tmp_path / "runtime").exists()
 
 
+def test_cli_launch_plan_preserves_virtual_environment_interpreter(tmp_path, monkeypatch):
+    from hub._services.docs import maintenance_cli
+
+    # Model venv symlink resolution without requiring Windows symlink privilege.
+    interpreter = tmp_path / "venv" / "bin" / "python"
+    resolved = tmp_path / "global" / "python"
+    for path in (interpreter, resolved):
+        path.parent.mkdir(parents=True)
+        path.touch()
+    script = tmp_path / "system/tools/maintenance/scheduler_maintenance.py"
+    script.parent.mkdir(parents=True)
+    script.touch()
+    original_resolve = Path.resolve
+
+    def resolve(path, *args, **kwargs):
+        return resolved if path == interpreter else original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setattr(maintenance_cli.sys, "executable", str(interpreter))
+    handler = SimpleNamespace(base_path=tmp_path / "system", user_db=tmp_path / "bach.db")
+    ok, payload = maintenance_cli.handle(handler, ["launch-plan", "--json"])
+    assert ok
+    plan = json.loads(payload)
+    assert plan["program_arguments"][0] == str(interpreter.absolute())
+    assert not (tmp_path / "maintenance").exists()
+    assert plan["installed"] is False and plan["started"] is False
+
+
 def test_status_does_not_project_nested_private_values(tmp_path):
     data, proc = status_receipt(tmp_path)
     data["documentation"] = {
