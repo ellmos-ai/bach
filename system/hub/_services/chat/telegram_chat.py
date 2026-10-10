@@ -3600,10 +3600,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         control.lease_supervisor = None
                     control.task_binding = _acquire_worker_task(control, current_slot, worker_instance_id)
                     if control.task_binding is None:
+                        from hub._services.chat.worker_queue_status import (
+                            queue_waiting_activity,
+                        )
+                        waiting_activity = queue_waiting_activity(control.queue_status)
                         if current_slot.get("type") not in {"continuous", "persistent"}:
-                            _update_worker_slot(control, {"status": "idle", "current_activity": "Keine passende übernehmbare Aufgabe"})
+                            _update_worker_slot(control, {"status": "idle", "current_activity": waiting_activity})
                             return
-                        _update_worker_slot(control, {"current_activity": "Warte auf eine passende übernehmbare Aufgabe"})
+                        _update_worker_slot(control, {"current_activity": waiting_activity})
                         if control.stop_event.wait(10):
                             break
                         continue
@@ -4489,6 +4493,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 500)
 
         elif path == "/api/workers/configuration":
+            if not self._allow_control_request():
+                return
             worker_id = parse_qs(parsed_url.query).get("id", [""])[0]
             try:
                 self._json({"ok": True, **worker_configuration_snapshot(worker_id)})

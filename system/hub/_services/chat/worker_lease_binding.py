@@ -103,6 +103,12 @@ class WorkerLeaseBinding:
             if required and required != str(slot.get(slot_key) or "").strip().casefold():
                 return reason
         if not cls._matches_slot(snapshot, slot):
+            from .slots_config import pickup_filter_rejection
+            pickup = slot.get("pickup_filter")
+            if isinstance(pickup, dict) and pickup.get("enabled"):
+                if str(snapshot.get("assigned_slot") or "").strip():
+                    pickup = {**pickup, "categories": [], "priorities": []}
+                return pickup_filter_rejection(snapshot, {**slot, "pickup_filter": pickup}) or "pickup_filter"
             return "pickup_filter"
         pickup = slot.get("pickup_filter")
         # Explicit routing/filter configuration may select a human-created

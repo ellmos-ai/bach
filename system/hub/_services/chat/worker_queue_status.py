@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 SCHEMA = "bach.worker-queue.v1"
 REJECTIONS = frozenset({
     "slot_binding", "model_binding", "explicit_slot_required", "pickup_filter",
+    "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
     "conflict",
@@ -23,6 +24,65 @@ _STATE_REASONS = {"acquired": {"task_acquired"},
                   "error": {"selection_error"}}
 _COUNTERS = ("candidate_count", "matched_count", "attempted_count", "scanned_pages")
 log = logging.getLogger(__name__)
+
+
+def project_selection_policy(raw):
+    """Bounded read-only configuration, separate from editable fields and grants."""
+    if (not isinstance(raw, dict) or raw.get("schema") != "bach.worker-selection.v1"
+            or type(raw.get("require_assigned_slot")) is not bool):
+        return None
+    pickup = raw.get("pickup_filter")
+    if not isinstance(pickup, dict) or type(pickup.get("enabled")) is not bool:
+        return None
+    projected = {"enabled": pickup["enabled"]}
+    for key in ("categories", "priorities", "tags", "exclude_tags"):
+        values = pickup.get(key)
+        if (not isinstance(values, list) or len(values) > 64 or any(
+                not isinstance(value, str) or len(value) > 100 or "\x00" in value for value in values)):
+            return None
+        projected[key] = list(values)
+    return {"schema": raw["schema"], "require_assigned_slot": raw["require_assigned_slot"],
+            "pickup_filter": projected,
+            "unrouted_ownership": ("explicit_pickup_filter" if pickup["enabled"]
+                                  else "bach_or_own_worker_role")}
+
+
+def worker_selection_policy(worker):
+    pickup = worker.get("pickup_filter")
+    if not isinstance(pickup, dict):
+        pickup = {}
+    raw = {"schema": "bach.worker-selection.v1",
+           "require_assigned_slot": worker.get("require_assigned_slot") is True,
+           "pickup_filter": {"enabled": pickup.get("enabled", False),
+                            **{key: pickup.get(key) or [] for key in
+                               ("categories", "priorities", "tags", "exclude_tags")}}}
+    result = project_selection_policy(raw)
+    if result is None:
+        raise ValueError("Worker-Auswahlfilter ist ungültig")
+    return result
+
+
+def queue_waiting_activity(raw):
+    """Readable fallback for existing clients that display current_activity."""
+    report = project_queue_status(raw)
+    if report is None or report["state"] != "waiting":
+        return "Warte auf eine passende übernehmbare Aufgabe"
+    labels = {
+        "pickup_category": "Kategorie", "pickup_priority": "Priorität",
+        "pickup_tags": "erforderliche Tags", "excluded_tag": "ausgeschlossene Tags",
+        "pickup_filter": "Auswahlfilter", "slot_binding": "Slot", "model_binding": "Modell",
+        "explicit_slot_required": "Slotzuweisung fehlt", "ownership": "Zuständigkeit",
+        "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
+        "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
+        "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",
+        "already_held_by_caller": "bereits gehalten", "conflict": "Übernahmekonflikt",
+    }
+    reasons = ", ".join(f"{labels[key]}: {count}" for key, count in report["rejected_counts"].items())
+    prefix = "Keine offenen Kandidaten" if report["reason"] == "empty_queue" else "Keine übernehmbare Aufgabe"
+    counts = f'{report["candidate_count"]} Kandidaten, {report["matched_count"]} Auswahlmatches'
+    stamp = datetime.fromisoformat(report["observed_at"].replace("Z", "+00:00"))
+    checked = stamp.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+    return f"{prefix}: {counts}" + (f"; {reasons}" if reasons else "") + f" · Task-API · {checked}"
 
 
 def project_queue_status(raw):
