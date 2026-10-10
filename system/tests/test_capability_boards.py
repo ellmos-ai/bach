@@ -197,3 +197,16 @@ def test_application_catalog_missing_registry_does_not_fall_back_to_repositories
     assert result["count"] == 0 and result["errors"]
     assert result["sources"][0]["available"] is False
     assert inventory.ocean_inventory([root])["count"] == 1
+
+
+def test_system_tab_ocean_serves_the_built_page_and_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    (tmp_path / "settings.html").write_text("<h1>Settings</h1>", encoding="utf-8")
+    client = TestClient(server.app)
+    assert "Settings" in client.get("/system?tab=ocean").text  # dist page not built: unchanged fallback
+    (tmp_path / "system").mkdir()
+    (tmp_path / "system" / "ocean.html").write_text("<h1>Ocean</h1>", encoding="utf-8")
+    assert "Ocean" in client.get("/system?tab=ocean").text
+    assert "Ocean" in client.get("/system?tab=ocean&view=satelliten").text
+    assert "Settings" in client.get("/system").text
+    assert "Settings" in client.get("/system?tab=other").text
