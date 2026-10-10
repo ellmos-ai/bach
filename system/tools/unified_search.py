@@ -251,6 +251,9 @@ class UnifiedSearch:
         ok, msg = self.index_knowledgedigest()
         results.append(msg)
 
+        ok, msg = self.index_gardener()
+        results.append(msg)
+
         return True, "\n".join(results)
 
     def index_wiki(self) -> Tuple[bool, str]:
@@ -640,6 +643,150 @@ class UnifiedSearch:
             conn.close()
             if path_added and kd_parent in sys.path:
                 sys.path.remove(kd_parent)
+
+    def index_gardener(self, data_dir=None) -> Tuple[bool, str]:
+        """Indexiert Gardener-Eintraege read-only in den Suchindex (M3, GUX-041).
+
+        Der Gardener (/Users/lukas/dev/gardener) wird NICHT importiert und
+        NICHT instanziiert (Gardener.__init__ legt Verzeichnisse/Tabellen an
+        und schreibt). user.db und gardener.db werden direkt per sqlite3 im
+        mode=ro geoeffnet und deren Tabelle 'everything' gelesen. observed_at
+        ist kein eigenes Feld, sondern Teil des unverändert gespeicherten
+        meta-JSON; meta wird deshalb an den Inhalt angehaengt, damit Suchbegriffe
+        daraus (z.B. observed_at) findbar sind.
+
+        Args:
+            data_dir: Gardener-Datenverzeichnis. Default: ENV BACH_GARDENER_DATA
+                      oder GARDENER_DATA, sonst ~/.gardener.
+
+        Returns:
+            Tuple[bool, str]: (Erfolg, Statusmeldung)
+        """
+        if data_dir is None:
+            data_dir = os.environ.get("BACH_GARDENER_DATA") or os.environ.get("GARDENER_DATA")
+        if data_dir is None:
+            data_dir = Path.home() / ".gardener"
+        data_dir = Path(data_dir)
+        if not data_dir.exists():
+            return True, f"[Gardener] Datenverzeichnis nicht gefunden: {data_dir}, uebersprungen."
+
+        db_specs = [
+            ("gardener_user", data_dir / "user.db"),
+            ("gardener_system", data_dir / "gardener.db"),
+        ]
+        missing = []
+        notes = []
+        conn = self._get_db()
+        try:
+            # Alte Gardener-Eintraege loeschen (M2-Muster)
+            existing_count = conn.execute(
+                "SELECT COUNT(*) FROM search_index "
+                "WHERE source IN ('gardener_user', 'gardener_system')"
+            ).fetchone()[0]
+
+            if existing_count > 0:
+                conn.execute("DROP TRIGGER IF EXISTS search_idx_ad")
+                conn.execute(
+                    "DELETE FROM search_tags WHERE search_id IN "
+                    "(SELECT id FROM search_index WHERE source IN "
+                    "('gardener_user', 'gardener_system'))"
+                )
+                conn.execute(
+                    "DELETE FROM search_index "
+                    "WHERE source IN ('gardener_user', 'gardener_system')"
+                )
+                conn.execute("INSERT INTO search_fts(search_fts) VALUES('rebuild')")
+                conn.executescript("""
+                    CREATE TRIGGER IF NOT EXISTS search_idx_ad AFTER DELETE ON search_index BEGIN
+                        INSERT INTO search_fts(search_fts, rowid, title, content)
+                        VALUES ('delete', old.id, old.title, COALESCE(old.content, ''));
+                    END;
+                """)
+                conn.commit()
+
+            counts = {}
+            for source, db_path in db_specs:
+                if not db_path.exists():
+                    missing.append(str(db_path))
+                    continue
+
+                ro = None
+                try:
+                    ro = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
+                    ro.row_factory = sqlite3.Row
+                    rows = ro.execute(
+                        "SELECT id, type, name, content, tags, meta, pinned FROM everything"
+                    ).fetchall()
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        notes.append(f"keine Tabelle 'everything' in {db_path}")
+                        continue
+                    raise
+                finally:
+                    if ro is not None:
+                        ro.close()
+
+                n = 0
+                for row in rows:
+                    entry_id = row['id']
+                    name = row['name'] or f"id:{entry_id}"
+                    content = row['content'] or ''
+                    meta = row['meta']
+                    if meta:
+                        content = (content + "\n\n[meta] " + meta) if content else ("[meta] " + meta)
+                    if not content.strip():
+                        continue
+                    category = row['type'] or 'entry'
+                    content_hash = _sha256_text(content)
+                    word_count = len(content.split()) if content else 0
+
+                    conn.execute("""
+                        INSERT INTO search_index
+                            (source, source_id, source_path, title, content,
+                             category, content_hash, word_count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        source, name, str(db_path), name,
+                        content[:100000], category,
+                        content_hash, word_count
+                    ))
+
+                    # Tags: komma-getrennt aus 'tags', zusaetzlich 'pinned'
+                    tags = [t.strip() for t in (row['tags'] or '').split(',') if t.strip()]
+                    if row['pinned']:
+                        tags.append('pinned')
+                    if tags:
+                        search_id = conn.execute(
+                            "SELECT id FROM search_index WHERE source=? AND source_id=?",
+                            (source, name)
+                        ).fetchone()
+                        if search_id:
+                            for tag in tags:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO search_tags (search_id, tag) VALUES (?, ?)",
+                                    (search_id['id'], tag)
+                                )
+
+                    n += 1
+                    if n % 100 == 0:
+                        conn.commit()
+
+                counts[source] = n
+
+            conn.commit()
+            user_count = counts.get('gardener_user', 0)
+            system_count = counts.get('gardener_system', 0)
+            msg = f"[Gardener] {user_count} User- + {system_count} System-Eintraege indexiert"
+            if missing:
+                msg += f"; nicht gefunden: {', '.join(missing)}"
+            if notes:
+                msg += "; " + "; ".join(notes)
+            return True, msg
+
+        except Exception as e:
+            return False, f"[Gardener] Fehler: {e}"
+        finally:
+            conn.close()
 
     def scan_directory(self, directory: str, tags_from_path: bool = True,
                        recursive: bool = True) -> Tuple[bool, str]:
