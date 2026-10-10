@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from fastapi import APIRouter, Body, HTTPException, Request
 
+from fastapi import APIRouter, Body, HTTPException, Request
 from hub._services.chat import model_sockets as service
+
 from .core_system_agents import _version
 
 router = APIRouter(prefix="/api/system/model-sockets", tags=["model-sockets"])
@@ -41,6 +42,15 @@ async def _write(request, payload, operation, *args, **kwargs):
 @router.get("")
 async def list_model_sockets():
     return await _read()
+
+
+@router.get("/catalog")
+async def local_model_catalog():
+    from hub._services.chat.local_model_catalog import local_model_catalog as catalog
+    try:
+        return await asyncio.to_thread(catalog)
+    except (OSError, ValueError, TypeError):
+        raise HTTPException(503, "Lokaler Modellkatalog nicht verifizierbar") from None
 
 
 @router.post("/migrate")

@@ -119,6 +119,48 @@ Residenz, Gewicht, Leuchtanteil und Slotaktivität bleiben in einem reinen
 Konfigurationsread `unknown` beziehungsweise `null`; `capacity_verified=false`.
 Das große Hauptmodell gilt dadurch weiterhin nicht als betriebsabgenommen.
 
+## Modellkatalog und CLI
+
+`GET /api/system/model-sockets/catalog` liest Metadaten des konfigurierten
+nativen Ollama-Anbieters. Chat, lokale Backend-Presets und Katalog teilen die
+Anbieterkonfiguration; explizite Einstellungen und Umgebungsvariablen gehen
+den bisherigen Standardwerten vor. Der Katalog initialisiert weder den
+Telegram-Controller noch Sessions oder Datenbanken. Er führt nur
+`GET /api/tags` und `POST /api/show` aus, ohne Pull, Modellstart oder Inferenz.
+Nur Loopback-Adressen aus der nativen Konfiguration sind zulässig, keine
+Adresse aus dem GUI-Aufruf. Weiterleitungen und Umgebungsproxies sind aus.
+Metadatenbudget: zehn Sekunden, maximal 64 Einträge und 2 MB pro Antwort.
+
+Lokale Herkunft und Fähigkeiten werden anhand der Metadaten geprüft.
+Cloud-Suffixe und remote_host/remote_model sind ausgeschlossen; fehlende
+Nachweise bleiben unbekannt. Embeddingmodelle stehen im Katalog, aber
+`chat_eligible=false` kennzeichnet sie zum Ausschluss aus normalen Chatangeboten.
+Artefaktgröße ist kein RAM-Gewicht. Modellresidenz und Fackelanteile bleiben
+unbekannt; Katalogpräsenz startet oder registriert nichts. Die eigenständige
+LM-Studio-Capabilityprojektion ist noch offen und wird ausdrücklich als
+`capability_adapter_pending` gemeldet.
+
+Die native CLI verwendet denselben Store mit CAS und Schreibsperren:
+
+```text
+bach model-sockets list --json
+bach model-sockets catalog --json
+bach model-sockets migrate --version <configuration_version>
+bach model-sockets configure --version <configuration_version> --backend ollama --model <name>
+bach model-sockets bind --version <configuration_version> --agent <agent_id> --socket <socket_id>
+bach model-sockets unbind --version <configuration_version> --binding <binding_id>
+```
+
+Jeder Schreibaufruf benötigt die Version aus dem letzten Read. Bindungen
+können enabled, priority und context_tokens konfigurieren; Steckplätze
+enabled, max_active_slots und residency_policy. ACK bestätigt nur die
+Konfigurationsspeicherung. Eine konfigurierte Wunschidentität ist keine
+bestätigte Modellverfügbarkeit; die tatsächliche Inferenzprüfung bleibt
+verbindlich. CLI und Katalog gehören auf den nativen Enginehost. Ein
+weitergeleiteter Loopback-Port ist kein zusätzlicher physischer Modellhost.
+GUI-Katalogauswahl, sämtliche Callerbindungen und native Migration müssen
+vor Aktivierung weiter abgenommen werden.
+
 ## Rückweg
 
 Die bisherige Konfiguration bleibt vor Aktivierung unverändert. Eine operative

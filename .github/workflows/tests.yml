@@ -82,7 +82,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
 
       - name: Native worker provider errors
         env:

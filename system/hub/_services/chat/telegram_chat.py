@@ -1132,11 +1132,8 @@ def load_config() -> dict:
 
     config.setdefault("bot_token", "")
     config.setdefault("owner_id", "")
-    config.setdefault("backend", {
-        "type": "ollama",
-        "base_url": "http://localhost:11434",
-        "default_model": "qwen3.8:27b-mlx",
-    })
+    from hub._services.chat.local_provider_config import effective_chat_backend
+    config["backend"] = effective_chat_backend(config)
 
     if not config["bot_token"]:
         config["bot_token"] = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -1151,13 +1148,6 @@ def load_config() -> dict:
         of = os.path.expanduser("~/.credentials/telegram_owner_id")
         if os.path.exists(of):
             config["owner_id"] = open(of, encoding="utf-8").read().strip()
-
-    env_model = os.environ.get("OLLAMA_MODEL")
-    if env_model:
-        config["backend"]["default_model"] = env_model
-    env_url = os.environ.get("OLLAMA_URL")
-    if env_url:
-        config["backend"]["base_url"] = env_url
 
     # Compute Lock config (default: disabled for users without memwatchdog)
     config.setdefault("compute_lock", {
@@ -1480,25 +1470,25 @@ async def cmd_model(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Modell: {args[0]}")
 
 
+from hub._services.chat.local_provider_config import local_backend_configs
+
+_local_configs = local_backend_configs(CONFIG)
+
 BACKEND_PRESETS = {
     "ollama": {
-        "type": "ollama",
-        "base_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-        "default_model": os.environ.get("OLLAMA_MODEL", "qwen3.8:27b-mlx"),
+        **_local_configs["ollama"],
         "method": "api",
         "description": "Lokales Ollama (Qwen, Llama, etc.)",
     },
     "ollama-cloud": {
         "type": "ollama",
-        "base_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+        "base_url": _local_configs["ollama"]["base_url"],
         "default_model": os.environ.get("OLLAMA_CLOUD_MODEL", "kimi-k3:cloud"),
         "method": "api",
         "description": "Ollama Cloud Proxies (:cloud Modelle wie Kimi, GLM)",
     },
     "lmstudio": {
-        "type": "lmstudio",
-        "base_url": os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1"),
-        "default_model": os.environ.get("LM_STUDIO_MODEL", "auto"),
+        **_local_configs["lmstudio"],
         "method": "api",
         "description": "LM Studio (lokal, Port 1234)",
     },
