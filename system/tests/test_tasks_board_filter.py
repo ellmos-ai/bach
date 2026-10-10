@@ -216,3 +216,52 @@ def test_nonterminal_pagination_exposes_remaining_open_tasks(client):
     assert first["success"] is True and first["has_more"] is True and len(first["tasks"]) == 3
     assert second["success"] is True and second["has_more"] is False and len(second["tasks"]) == 2
     assert {row["id"] for row in first["tasks"]}.isdisjoint({row["id"] for row in second["tasks"]})
+
+
+def _ids(res):
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    return data
+
+
+def test_search_title_and_description_with_applied_filter(client):
+    data = _ids(client.get("/api/tasks?status=all&q=progress"))
+    assert {t["title"] for t in data["tasks"]} == {"Progress Task", "In Progress Task"}
+    assert data["total"] == 2 and data["applied_filters"]["q"] == "progress"
+    assert _ids(client.get("/api/tasks?status=all&q=%20"))["total"] == 8
+    assert _ids(client.get("/api/tasks?status=all"))["applied_filters"]["q"] == ""
+
+
+def test_search_tokens_are_and_and_wildcards_literal(client):
+    assert _ids(client.get("/api/tasks?status=all&q=task%20done"))["total"] == 1
+    assert _ids(client.get("/api/tasks?status=all&q=task%20zzz"))["total"] == 0
+    assert _ids(client.get("/api/tasks?status=all&q=%25"))["total"] == 0
+    assert _ids(client.get("/api/tasks?status=all&q=_"))["total"] == 0
+
+
+def test_search_numeric_token_matches_id(client):
+    first = _ids(client.get("/api/tasks?status=all&q=Open%20Task"))["tasks"][0]["id"]
+    for token in (str(first), f"%23{first}"):
+        ids = [t["id"] for t in _ids(client.get(f"/api/tasks?status=all&q={token}"))["tasks"]]
+        assert first in ids
+
+
+def test_search_combines_with_assignment_status_and_pagination(client):
+    data = _ids(client.get("/api/tasks?assignment_group=user&status=done&q=task"))
+    assert data["total"] == 1 and data["tasks"][0]["title"] == "Completed Task"
+    data = _ids(client.get("/api/tasks?assignment_group=user&status=nonterminal&q=task"))
+    assert {t["title"] for t in data["tasks"]} == {"Open Task", "In Progress Task"}
+    first = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=0"))
+    second = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=3"))
+    assert first["total"] == second["total"] == 8
+    assert first["has_more"] is True and second["has_more"] is True
+    last = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=6"))
+    assert last["has_more"] is False and len(last["tasks"]) == 2
+    ids = [t["id"] for p in (first, second, last) for t in p["tasks"]]
+    assert len(ids) == len(set(ids)) == 8
+
+
+def test_search_too_long_is_rejected(client):
+    assert client.get("/api/tasks?q=" + "x" * 201).status_code == 400
+    assert client.get("/api/tasks?q=" + "x" * 200).status_code == 200

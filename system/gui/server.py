@@ -2177,11 +2177,15 @@ async def api_get_tasks(
     assignment_group: str = "all",
     priority: str = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    q: str = None
 ):
     """Liefert Tasks mit kombiniertem Filter vor Zählung und Pagination."""
     if assignment_group not in {"all", "user", "auto", "unassigned"}:
         raise HTTPException(400, "Ungültige Task-Zuordnung")
+    q = (q or "").strip()
+    if len(q) > 200:
+        raise HTTPException(400, "Suchbegriff zu lang")
     try:
         conn = get_bach_db()
 
@@ -2235,6 +2239,16 @@ async def api_get_tasks(
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
+        # Suche: je Token (UND) Titel/Beschreibung per LIKE, numerisch ("12"/"#12") zusaetzlich id.
+        for token in q.split()[:8]:
+            esc = token.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            like = f"%{esc}%"
+            clause = "(title LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!'"
+            params.extend([like, like])
+            if token.lstrip("#").isdigit() and token.lstrip("#").isascii():
+                clause += " OR id = ?"
+                params.append(int(token.lstrip("#")))
+            query += " AND " + clause + ")"
         if priority:
             prio_clean = priority.strip().upper()
             if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
@@ -2283,7 +2297,7 @@ async def api_get_tasks(
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
                 "offset": max(0, offset),
-                "applied_filters": {"assignment_group": assignment_group, "status": status}}
+                "applied_filters": {"assignment_group": assignment_group, "status": status, "q": q}}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 

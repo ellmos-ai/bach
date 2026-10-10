@@ -387,7 +387,7 @@ class _TaskProxy(_DBBackedProxy):
         unassigned: bool = False,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        status_filter = status
+        status_filter = None if status == "all" else status
         title_filter = filter_text
         assigned_filter = assigned_to.upper() if assigned_to else None
         unassigned_only = unassigned
