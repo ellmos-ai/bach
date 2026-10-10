@@ -135,6 +135,25 @@ def _models(payload):
     return items
 
 
+def _remote_evidence(record):
+    fields = [record.get("remote_host"), record.get("remote_model")]
+    if any(value is not None and not isinstance(value, str) for value in fields):
+        raise TypeError("invalid remote evidence")
+    if any(isinstance(value, str) and len(value) > 2048 for value in fields):
+        raise ValueError("oversized remote evidence")
+    return any(isinstance(value, str) and value.strip() for value in fields)
+
+
+def _catalog_identity(record):
+    fields = [record[key] for key in ("name", "model") if key in record]
+    if not fields or any(not isinstance(value, str) or not _MODEL.fullmatch(value) for value in fields):
+        raise ValueError("invalid catalog identity")
+    names = {value if ":" in value.rsplit("/", 1)[-1] else value + ":latest" for value in fields}
+    if len(names) != 1:
+        raise ValueError("conflicting catalog identity")
+    return names.pop()
+
+
 async def observe_ollama(backend, name):
     """Read-only native metadata; exact tags/digests, no prefix equivalence."""
     base = str(getattr(backend, "base_url", ""))
@@ -146,12 +165,17 @@ async def observe_ollama(backend, name):
     async with httpx.AsyncClient(timeout=2, follow_redirects=False, trust_env=False) as client:
         async with asyncio.timeout(4):
             shown = await _native_json(client, "POST", base.rstrip("/") + "/api/show", payload={"model": name})
-            remote_fields = [shown.get("remote_host"), shown.get("remote_model")]
-            if any(value is not None and not isinstance(value, str) for value in remote_fields):
-                raise TypeError("invalid remote evidence")
-            if any(isinstance(value, str) and len(value) > 2048 for value in remote_fields):
-                raise ValueError("oversized remote evidence")
-            if any(isinstance(value, str) and value.strip() for value in remote_fields):
+            if _remote_evidence(shown):
+                return {"external": True}
+            # Native cloud /show may omit remote fields and its local format.
+            # Only the exact, unique catalog identity can supply that evidence.
+            tags = _models(await _native_json(client, "GET", base.rstrip("/") + "/api/tags"))
+            names = {name} if ":" in name.rsplit("/", 1)[-1] else {name, name + ":latest"}
+            matches = [item for item in tags if _catalog_identity(item) in names]
+            if len(matches) != 1:
+                raise ValueError("ambiguous catalog identity")
+            item = matches[0]
+            if _remote_evidence(item):
                 return {"external": True}
             details, info = shown.get("details"), shown.get("model_info")
             if (not isinstance(details, dict) or details.get("format") not in {"gguf", "safetensors", "mlx"}
@@ -159,13 +183,7 @@ async def observe_ollama(backend, name):
                     or type(info.get("general.parameter_count")) is not int
                     or info["general.parameter_count"] <= 0):
                 raise ValueError("unverified local metadata")
-            tags = _models(await _native_json(client, "GET", base.rstrip("/") + "/api/tags"))
             loaded = _models(await _native_json(client, "GET", base.rstrip("/") + "/api/ps"))
-    names = {name} if ":" in name.rsplit("/", 1)[-1] else {name, name + ":latest"}
-    matches = [item for item in tags if item.get("name") in names or item.get("model") in names]
-    if len(matches) != 1:
-        raise ValueError("ambiguous catalog identity")
-    item = matches[0]
     digest, weight_floor = item.get("digest"), item.get("size")
     if (not isinstance(digest, str) or not _DIGEST.fullmatch(digest)
             or type(weight_floor) is not int or weight_floor <= 0):
