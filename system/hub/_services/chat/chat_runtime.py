@@ -532,6 +532,8 @@ class ChatRuntime(_ModuleChatRuntime):
         self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
         self._chat_turn_gates_lock = threading.Lock()
         self._compute_turn_gate = _ComputeTurnGate()
+        self._local_resource_waiters: dict[str, dict] = {}
+        self._local_resource_waiters_lock = threading.Lock()
         self._compute_turn_context = ContextVar(
             f"bach_compute_turn_context_{id(self)}", default=None
         )
@@ -1078,6 +1080,13 @@ class ChatRuntime(_ModuleChatRuntime):
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
 
+        selected_model = kwargs.get("model") or backend.get_default_model()
+        # The actual selected target matters: a localhost cloud proxy holds
+        # no local inference torch. Metadata handles non-suffixed cloud aliases
+        # when the explicit reserve policy is active.
+        if str(selected_model).lower().endswith(":cloud"):
+            return await backend.chat(*args, **kwargs)
+
         chat_id, priority = turn_context or ("runtime", "foreground")
         from hub._services.chat.host_inference_gate import HostInferenceGate
 
@@ -1087,13 +1096,106 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "require_task_binding", False)
             or getattr(session, "system_slot_reader", None) is not None
             or getattr(session, "worker_slot_reader", None) is not None) else {})
-        async with HostInferenceGate().turn(chat_id, priority, **guard):
-            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
+        from hub._services.chat.local_resource_reserve import probe, read_policy, require_retryable, LocalReserveError
+        from hub._services.chat.model_sockets import model_binding_for_call
+        from hub._services.llm.model_backend import backend_identifier
+        target_backend = backend_identifier(backend) or getattr(backend, "backend_id", "")
+
+        def check_model_binding():
+            agent_id = getattr(session, "system_slot_id", None) if session is not None else None
+            if agent_id is None and session is not None and getattr(session, "worker_slot_reader", None):
+                agent_id = session.worker_slot_reader().get("id")
+            return model_binding_for_call(chat_id, target_backend, str(selected_model), agent_id=agent_id,
+                                          require_config=getattr(self, "require_model_socket_config", False))
+
+        def check_local_ready():
+            check_binding()
+            check_model_binding()
+
+        guard = {"check_ready": check_local_ready}
+        deadline = None
+        policy_bound = False
+        policy_version = None
+
+        def check_reserve_policy(receipt):
+            # A metadata request or gate wait can yield after the probe read
+            # its policy. Bind the file currently on disk before dispatch too.
             try:
+                _, current_version = read_policy()
+            except (OSError, ValueError, TypeError, UnicodeError):
+                raise LocalReserveError("Lokale Ressourcenfreigabe: invalid_policy") from None
+            if (receipt.get("policy_version") != policy_version
+                    or current_version != policy_version):
+                raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
+
+        try:
+            while True:
                 check_binding()
-                return await backend.chat(*args, **kwargs)
-            finally:
-                self._leave_compute_turn(self._compute_turn_gate)
+                receipt = await probe(backend, selected_model)
+                if not policy_bound:
+                    policy_version = receipt.get("policy_version")
+                    policy_bound = True
+                check_reserve_policy(receipt)
+                check_binding()
+                if receipt["state"] == "external_target":
+                    with self._local_resource_waiters_lock:
+                        self._local_resource_waiters.pop(chat_id, None)
+                    return await backend.chat(*args, **kwargs)
+                require_retryable(receipt)
+                if receipt["admitted"]:
+                    model_binding = check_model_binding()
+                    target = ({key: model_binding[key] for key in
+                              ("socket_id", "binding_id", "agent_id", "backend", "model")}
+                              if model_binding is not None else None)
+                    async with HostInferenceGate().turn(chat_id, priority, model_target=target, **guard):
+                        # Resource availability can change while we waited for
+                        # the existing host owner. Recheck under that owner.
+                        receipt = await probe(backend, selected_model)
+                        check_reserve_policy(receipt)
+                        check_binding()
+                        require_retryable(receipt)
+                        if receipt["admitted"] and receipt["state"] != "external_target":
+                            current_binding = check_model_binding()
+                            if current_binding != model_binding:
+                                raise RuntimeError("model_socket_binding_changed")
+                            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
+                            try:
+                                check_binding()
+                                if check_model_binding() != model_binding:
+                                    raise RuntimeError("model_socket_binding_changed")
+                                check_reserve_policy(receipt)
+                                with self._local_resource_waiters_lock:
+                                    self._local_resource_waiters.pop(chat_id, None)
+                                return await backend.chat(*args, **kwargs)
+                            finally:
+                                self._leave_compute_turn(self._compute_turn_gate)
+                    if receipt["state"] == "external_target":
+                        # An alias may have changed while waiting. External
+                        # inference runs only after returning the host owner.
+                        check_binding()
+                        check_reserve_policy(receipt)
+                        with self._local_resource_waiters_lock:
+                            self._local_resource_waiters.pop(chat_id, None)
+                        return await backend.chat(*args, **kwargs)
+                # The host owner has been returned before reserve polling.
+                # We stay at this model-call boundary: previous tools and the
+                # task/session context are not replayed or reset.
+                with self._local_resource_waiters_lock:
+                    self._local_resource_waiters[chat_id] = dict(receipt)
+                if deadline is None:
+                    deadline = time.monotonic() + receipt["wait_seconds"]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
+                # Check cancellation, policy downgrades and native lease loss
+                # frequently even if the resource probe interval is longer.
+                poll_deadline = time.monotonic() + min(remaining, receipt["poll_seconds"])
+                while time.monotonic() < poll_deadline:
+                    check_binding()
+                    await asyncio.sleep(min(.1, max(0, poll_deadline - time.monotonic())))
+        finally:
+            with self._local_resource_waiters_lock:
+                self._local_resource_waiters.pop(chat_id, None)
 
     def _reset_task_completion_receipts(self, chat_id: str) -> None:
         with self._task_completion_receipts_lock:
@@ -1169,7 +1271,15 @@ class ChatRuntime(_ModuleChatRuntime):
         """Return live evidence about which BACH run currently owns local inference."""
         from hub._services.chat.host_inference_gate import HostInferenceGate
 
-        return HostInferenceGate().status()
+        result = HostInferenceGate().status()
+        with self._local_resource_waiters_lock:
+            if self._local_resource_waiters:
+                result["resource_waiters"] = [
+                    {"chat_id": chat_id, **receipt}
+                    for chat_id, receipt in list(self._local_resource_waiters.items())[:64]
+                ]
+                result["resource_waiter_count"] = len(self._local_resource_waiters)
+        return result
 
     @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:

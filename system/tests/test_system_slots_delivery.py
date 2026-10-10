@@ -309,7 +309,8 @@ def test_slot_change_revokes_queued_inference(config_file, monkeypatch, tmp_path
                     await stack.enter_async_context(HostInferenceGate().turn("holder", "foreground"))
                 else:
                     runtime._compute_turn_gate.active = True
-                task = asyncio.create_task(runtime._chat_with_compute_turn(backend, []))
+                # Production callers pass the admitted target model explicitly.
+                task = asyncio.create_task(runtime._chat_with_compute_turn(backend, [], model=session.model))
                 await asyncio.sleep(.04)
                 slots.update_slot("buddha_chat", change)
                 from hub._services.chat import telegram_chat as control
