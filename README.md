@@ -202,6 +202,15 @@ duplicates fail closed instead of being guessed or deleted.
 
 ## Core Components
 
+Local inference can enforce an explicit host reserve policy at the existing
+model-call boundary. It checks native model identity, configured context and
+memory headroom, plus free space for task, slot and runtime persistence. Waiting
+returns the inference owner and preserves the current session without replaying
+tools. This is an optional reserve barrier; it does not replace the model-slot
+controller or certify model capacity. See [Local model reserves](docs/architecture/LOCAL-MODEL-RESERVE.md)
+for configuration, verification and the separate installation/runtime gates.
+
+
 ### 1. Task Management
 Full GTD system with prioritization, deadlines, tags, and context tracking.
 
