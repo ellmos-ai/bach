@@ -197,7 +197,8 @@ def test_fixture_matches_checked_in_copy(projection):
     result, _ = projection
     target = os.environ.get("BACH_WRITE_CATALOG_FIXTURE")
     if target:
-        Path(target).write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:  # LF: the GUI repo pins this file's SHA-256
+            handle.write(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     # source_version is the SHA-256 of the fixture files written above (content-stable).
     assert json.loads(FIXTURE.read_text(encoding="utf-8")) == json.loads(json.dumps(result))
 
