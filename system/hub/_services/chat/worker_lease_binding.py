@@ -38,6 +38,9 @@ class WorkerLeaseBinding:
         self._review_ack = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
+        # Cumulative for this lease, not reset by model block boundaries.
+        # Starting a tool can have an effect even when its response is lost.
+        self._tool_dispatch_count = 0
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
@@ -186,6 +189,17 @@ class WorkerLeaseBinding:
     @property
     def generation(self):
         return self._generation
+
+    @property
+    def tool_dispatch_count(self):
+        with self._lock:
+            return self._tool_dispatch_count
+
+    def mark_tool_dispatch(self):
+        """Record a possible effect before entry into a bound dispatcher."""
+        with self._lock:
+            self.assert_active()
+            self._tool_dispatch_count += 1
 
     @property
     def decomposition_receipt(self):
@@ -368,6 +382,30 @@ class WorkerLeaseBinding:
             self.assert_active()
             return bound_task_command(operation, arguments, self)
 
+    def quarantine_lease(self):
+        """Block uncertain tool work canonically; never requeue it as pending."""
+        with self._lock:
+            if not self._active or self._closed or not self._is_current():
+                return False
+            try:
+                ack = self._operation(
+                    self._client.release, outcome="blocked", check_policy=False,
+                    note="backend_error_after_tool_dispatch: Toolwirkungen vor Wiederaufnahme prüfen",
+                )
+                if (not isinstance(ack, LeaseReleaseAck) or ack.released is not True
+                        or type(ack.task_id) is not int or type(ack.fence) is not int
+                        or ack.task_id != self.task_id or ack.fence != self._ack.fence
+                        or ack.outcome != "blocked" or ack.status != "blocked"):
+                    raise LeaseProtocolError("Quarantäne-Freigabe nicht bestätigt")
+            except LeaseError:
+                # A missing ACK may follow a committed quarantine. Neither
+                # Return-to-pending nor a guessed retry may undo that decision.
+                self._active = False
+                return False
+            self._closed = True
+            self._active = False
+            return True
+
     def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
         """Fence a Git result's content; review releases ownership without Done."""
         with self._lock:
@@ -397,9 +435,13 @@ class WorkerLeaseBinding:
                 self._active = False
             return True
 
-    def execute_task_manage(self, args):
+    def execute_task_manage(self, args, *, _dispatch_marked=False):
         with self._lock:
             self.assert_active()
+            # Native controller actions also need proof without a dispatcher.
+            # The private flag prevents counting the same dispatch twice.
+            if not _dispatch_marked:
+                self.mark_tool_dispatch()
             if not isinstance(args, dict):
                 raise LeaseProtocolError("Ungültige Task-Werkzeugargumente")
             action = args.get("action", "list")
@@ -453,7 +495,7 @@ class WorkerLeaseBinding:
                     if len(changes) != 1:
                         raise LeaseProtocolError("Ergebnisabgabe und Inhaltsänderung getrennt ausführen")
                     return self.execute_task_manage({"action": "submit_result", "task_id": self.task_id,
-                                                     "result": args.get("result")})
+                                                     "result": args.get("result")}, _dispatch_marked=True)
                 if "result" in args:
                     raise LeaseProtocolError("Ergebnis mit submit_result abgeben")
                 if "status" in changes:

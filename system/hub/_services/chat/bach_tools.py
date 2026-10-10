@@ -736,6 +736,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return "BLOCKIERT: Taskbindung oder Workerlauf ist nicht mehr aktiv."
         if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
             return "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar."
+        # Shared by the chat loop and the managed CLI bridge. Preserve proof
+        # before dispatch, including reads and uncertain tool outcomes.
+        mark_dispatch = getattr(worker_task_binding, "mark_tool_dispatch", None)
+        if callable(mark_dispatch):
+            mark_dispatch()
     if isinstance(args, str):
         try:
             args = json.loads(args)
@@ -1035,7 +1040,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "task_manage":
             if worker_task_binding is not None:
                 try:
-                    return worker_task_binding.execute_task_manage(args)
+                    return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
                 except Exception:
                     # Private authority/capability details never become tool text.
                     return "Taskoperation nicht bestätigt; Taskbindung prüfen."
