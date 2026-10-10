@@ -7,6 +7,15 @@ BACH konsumiert den Due-/Claim-/Run-Vertrag von `ellmos-scheduler` über
 Er legt begrenzte Analyseaufgaben über die kanonische Task-API an; TaskDB,
 Worker-Leases, Ergebnisablage und persönliche Ergebnisfreigabe bleiben nativ.
 
+Dokuaufgaben erhalten ihre Zuweisung atomar beim Anlegen über
+`bach task add ... --assigned bach` beziehungsweise `task.add(assigned_to="bach")`.
+Modell-/Slotbindung und Beschreibung werden dabei im selben INSERT gespeichert.
+Ohne Zuweisungsoption bleibt der bestehende Datenbankstandard erhalten.
+Eine bereits vorhandene falsch zugewiesene Aufgabe wird als Bindungskonflikt
+erhalten; der Wartungsowner schreibt sie nicht nachträglich um. Offline-Entwürfe
+übertragen ihre gespeicherte Zuweisung bei der Promotion an den Lead. Dessen
+zusätzliche Authentifizierungs- und Assignment-Gates gelten weiterhin.
+
 Es gibt einen exklusiven Betrieb mit OS-Prozesslock für die fünf Jobs
 `bach.docs.delta` und `bach.docs.routine.*`. Die vier übernommenen Schedulerjobs
 für Backup, Rotation und Übersetzungen bleiben erhalten. Dieser Wartungsowner

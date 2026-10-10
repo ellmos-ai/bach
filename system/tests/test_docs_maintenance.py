@@ -43,7 +43,7 @@ class FakeTasks:
     def raw(self, operation, *args):
         assert operation == "add"
         assert args[args.index("--category") + 1] == "WORKER"
-        assert args[args.index("--assign") + 1] == "bach"
+        assert args[args.index("--assigned") + 1] == "bach"
         self.adds += 1
         fields = {
             args[i].removeprefix("--").replace("-", "_"): args[i + 1]
@@ -55,7 +55,7 @@ class FakeTasks:
                 "title": args[0],
                 "status": "pending",
                 **fields,
-                "assigned_to": fields["assign"],
+                "assigned_to": fields["assigned"],
             }
         )
         if self.fail_ack:
@@ -91,6 +91,214 @@ def fixture(tmp_path):
         clock=lambda: NOW,
     )
     return dispatcher, tasks
+
+
+@pytest.fixture
+def native_task_environment(tmp_path, monkeypatch):
+    import sqlite3
+
+    from core.hooks import hooks
+    from hub.task import TaskHandler
+
+    import bach_api
+
+    db = tmp_path / "isolated-task.db"
+    schema = Path(__file__).parents[1] / "data/schema/schema.sql"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(schema.read_text(encoding="utf-8"))
+    monkeypatch.setenv("BACH_RHEINGOLD_DISABLED", "1")
+    monkeypatch.setattr(bach_api, "_resolve_db_path", lambda: db)
+    monkeypatch.setattr(hooks, "emit", lambda *_args, **_kwargs: None)
+    handler = TaskHandler(tmp_path)
+    handler.db_path = db
+    proxy = bach_api._TaskProxy("task")
+    monkeypatch.setattr(proxy, "raw", lambda operation, *args: handler.handle(operation, list(args)))
+    return SimpleNamespace(proxy=proxy, handler=handler, db=db)
+
+
+@pytest.fixture
+def native_task_proxy(native_task_environment):
+    return native_task_environment.proxy
+
+
+def test_dispatch_uses_native_atomic_task_owner(native_task_proxy, tmp_path):
+    dispatcher = DocumentationDispatcher(
+        tmp_path,
+        tmp_path / "maintenance.json",
+        native_task_proxy,
+        result,
+        lambda _: None,
+        snapshot=lambda *_: (REV, ["docs/README.md"]),
+        clock=lambda: NOW,
+        binding={"assigned_slot": "cloud_worker", "required_model": "glm-5.3:cloud"},
+    )
+    receipt = dispatcher.dispatch()
+    row = native_task_proxy.show(receipt["task_id"])
+    assert row["assigned_to"] == "BACH"
+    assert row["assigned_slot"] == "cloud_worker"
+    assert row["required_model"] == "glm-5.3:cloud"
+    assert dispatcher.dispatch()["state"] == "idle"
+    assert len(native_task_proxy.list(status=None, filter_text=row["title"])) == 1
+
+
+def test_structured_task_add_accepts_atomic_owner(native_task_proxy):
+    row = native_task_proxy.add("Automatisierte Dokuprüfung", assigned_to="bach")
+    assert row["assigned_to"] == "BACH"
+
+
+def test_owner_is_committed_before_create_hook(native_task_proxy, monkeypatch):
+    from core.hooks import hooks
+
+    observed = []
+    monkeypatch.setattr(hooks, "emit", lambda event, data: observed.append(native_task_proxy.show(data["task_id"])))
+    native_task_proxy.add("Atomarer Create-Hook", assigned_to="BACH")
+    assert len(observed) == 1
+    assert observed[0]["assigned_to"] == "BACH"
+
+
+def test_add_without_owner_preserves_schema_default(native_task_proxy):
+    with native_task_proxy._connect() as conn:
+        default = next(row[4] for row in conn.execute("PRAGMA table_info(tasks)") if row[1] == "assigned_to")
+    row = native_task_proxy.add("Unveränderter Standard")
+    assert row["assigned_to"] == default.strip("'\"")
+
+
+@pytest.mark.parametrize("arguments", [("--assigned",), ("--assigned", " "), ("--assigned=",), ("--assigned=-p",), ("--assigned", " -p"), ("--assigned= -p",), ("--assigned", "--priority", "P1"), ("-a", "-p", "P1")])
+def test_invalid_owner_does_not_create_task(native_task_proxy, arguments):
+    ok, _ = native_task_proxy.raw("add", "Ungültiger Besitzer", *arguments)
+    assert not ok
+    assert not native_task_proxy.list(status=None)
+
+
+def test_native_unknown_ack_recovers_without_second_add(native_task_proxy, tmp_path, monkeypatch):
+    dispatcher = DocumentationDispatcher(tmp_path, tmp_path / "ack.json", native_task_proxy, result, lambda _: None,
+        snapshot=lambda *_: (REV, ["docs/README.md"]), clock=lambda: NOW)
+    raw = native_task_proxy.raw
+    calls = []
+
+    def lost_ack(operation, *args):
+        calls.append(operation)
+        raw(operation, *args)
+        raise RuntimeError("Unknown acknowledgement")
+
+    monkeypatch.setattr(native_task_proxy, "raw", lost_ack)
+    with pytest.raises(RuntimeError, match="Unknown acknowledgement"):
+        dispatcher.dispatch()
+    assert not dispatcher.state_path.exists()
+    monkeypatch.setattr(native_task_proxy, "raw", raw)
+    assert dispatcher.dispatch()["dispatch_action"] == "recovered"
+    assert calls == ["add"]
+    assert len(native_task_proxy.list(status=None)) == 1
+
+
+def test_native_wrong_binding_is_retained(native_task_proxy, tmp_path):
+    dispatcher = DocumentationDispatcher(tmp_path, tmp_path / "binding.json", native_task_proxy, result, lambda _: None,
+        snapshot=lambda *_: (REV, ["docs/README.md"]), clock=lambda: NOW)
+    root_id = hashlib.sha256(str(tmp_path.resolve()).encode()).hexdigest()[:8]
+    title = f"Doku-Delta root {root_id} {REV[:12]}"
+    native_task_proxy.add(title, assigned_to="user", category="WORKER",
+        description=dispatcher._description("root", REV, ["docs/README.md"]))
+    with pytest.raises(RuntimeError, match="binding_conflict"):
+        dispatcher.dispatch()
+    assert native_task_proxy.list(status=None)[0]["assigned_to"] == "USER"
+    assert len(native_task_proxy.list(status=None)) == 1
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_offline_owner_survives_draft_promotion(native_task_environment, monkeypatch, remote):
+    from hub.rheingold import sync_drafts_to_rheingold
+
+    proxy, handler = native_task_environment.proxy, native_task_environment.handler
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {"mode": "worker"})
+    monkeypatch.setattr("hub.task.get_rheingold_url", lambda **_: None)
+    if remote:
+        monkeypatch.delenv("BACH_RHEINGOLD_DISABLED")
+        handler._canonical_db = native_task_environment.db
+    ok, message = proxy.raw("add", "Offline-Aufgabe", "--assigned", "bach", *([] if remote else ["--offline"]))
+    assert ok, message
+    row = proxy.list(status=None)[0]
+    assert row["id"] < 0 and row["assigned_to"] == "BACH"
+    payloads = []
+
+    def post(_url, payload):
+        payloads.append(payload)
+        return True, {"id": 987}
+
+    monkeypatch.setattr("hub.rheingold.post_task_to_rheingold", post)
+    with proxy._connect() as conn:
+        sync_drafts_to_rheingold(conn, "https://isolated.invalid")
+    assert payloads[0]["assigned_to"] == "BACH"
+    assert proxy.show(987)["assigned_to"] == "BACH"
+
+
+@pytest.mark.parametrize("owner", [None, "bach"])
+def test_remote_add_preserves_explicit_assignment(native_task_environment, monkeypatch, owner):
+    proxy, handler = native_task_environment.proxy, native_task_environment.handler
+    monkeypatch.delenv("BACH_RHEINGOLD_DISABLED")
+    handler._canonical_db = native_task_environment.db
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {"mode": "worker"})
+    monkeypatch.setattr("hub.task.get_rheingold_url", lambda **_: "https://isolated.invalid")
+    payloads = []
+
+    def post(_url, payload):
+        payloads.append(payload)
+        return True, {"id": 987}
+
+    monkeypatch.setattr("hub.task.post_task_to_rheingold", post)
+    arguments = ["--assigned", owner] if owner is not None else []
+    assert proxy.raw("add", "Remote-Aufgabe", *arguments)[0]
+    assert ("assigned_to" in payloads[0]) is (owner is not None)
+    if owner is not None:
+        assert payloads[0]["assigned_to"] == owner.upper()
+        assert proxy.show(987)["assigned_to"] == owner.upper()
+
+
+def test_remote_ack_cannot_overwrite_local_task(native_task_environment, monkeypatch):
+    proxy, handler = native_task_environment.proxy, native_task_environment.handler
+    original = proxy.add("Gleicher Titel", assigned_to="user", description="Lokale Nutzeraufgabe")
+    original.pop("_message")
+    monkeypatch.delenv("BACH_RHEINGOLD_DISABLED")
+    handler._canonical_db = native_task_environment.db
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {"mode": "worker"})
+    monkeypatch.setattr("hub.task.get_rheingold_url", lambda **_: "https://isolated.invalid")
+    monkeypatch.setattr("hub.task.post_task_to_rheingold", lambda *_: (True, {"id": original["id"]}))
+    ok, message = proxy.raw("add", "Gleicher Titel", "--assigned", "bach")
+    assert not ok and "COLLISION" in message
+    assert proxy.show(original["id"]) == original
+
+
+def test_identical_remote_ack_never_updates_existing_row(native_task_environment, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    proxy, handler = native_task_environment.proxy, native_task_environment.handler
+    monkeypatch.delenv("BACH_RHEINGOLD_DISABLED")
+    handler._canonical_db = native_task_environment.db
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {"mode": "worker"})
+    monkeypatch.setattr("hub.task.get_rheingold_url", lambda **_: "https://isolated.invalid")
+    monkeypatch.setattr("hub.task.post_task_to_rheingold", lambda *_: (True, {"id": 987}))
+    assert proxy.raw("add", "Idempotentes ACK", "--assigned", "bach")[0]
+    original = proxy.show(987)
+
+    @contextmanager
+    def readonly_existing():
+        with proxy._connect() as conn:
+            conn.set_authorizer(lambda action, *_: sqlite3.SQLITE_DENY if action in
+                (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE) else sqlite3.SQLITE_OK)
+            yield conn
+
+    monkeypatch.setattr(handler, "_get_db", readonly_existing)
+    assert proxy.raw("add", "Idempotentes ACK", "--assigned", "bach")[0]
+    assert proxy.show(987) == original
+
+
+@pytest.mark.parametrize("owner", ["bach", "BACH", "Ollama", "OLLAMA", "Büro", "BÜRO", "müller", "Müller"])
+def test_atomic_owner_is_visible_through_both_list_filters(native_task_proxy, owner):
+    row = native_task_proxy.add("Zugewiesene Aufgabe", assigned_to=owner)
+    assert [r["id"] for r in native_task_proxy.list(status=None, assigned_to=owner)] == [row["id"]]
+    ok, message = native_task_proxy.raw("list", "all", "--assigned", owner)
+    assert ok and "Zugewiesene Aufgabe" in message
+
 
 
 def test_one_task_then_idle_without_false_review(fixture):

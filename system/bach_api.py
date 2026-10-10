@@ -270,6 +270,7 @@ class _TaskProxy(_DBBackedProxy):
         due_date: str | None = None,
         required_model: str | None = None,
         assigned_slot: str | None = None,
+        assigned_to: str | None = None,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
@@ -277,6 +278,7 @@ class _TaskProxy(_DBBackedProxy):
         cli_due_date = due_date
         cli_required_model = required_model
         cli_assigned_slot = assigned_slot
+        cli_assigned_to = assigned_to
 
         i = 0
         while i < len(args):
@@ -305,6 +307,12 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--due="):
                 cli_due_date = arg.split("=", 1)[1]
                 i += 1
+            elif arg in ("--assigned", "-a"):
+                cli_assigned_to = str(args[i + 1]) if i + 1 < len(args) else ""
+                i += 2 if i + 1 < len(args) else 1
+            elif arg.startswith("--assigned="):
+                cli_assigned_to = arg.split("=", 1)[1]
+                i += 1
             elif arg in ("--required-model", "--assigned-slot"):
                 value = str(args[i + 1]) if i + 1 < len(args) else ""
                 if arg == "--required-model":
@@ -332,6 +340,8 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--required-model", cli_required_model])
         if cli_assigned_slot is not None:
             raw_args.extend(["--assigned-slot", cli_assigned_slot])
+        if cli_assigned_to is not None:
+            raw_args.extend(["--assigned", cli_assigned_to])
 
         success, message = self.raw("add", *raw_args)
         if not success:
@@ -427,7 +437,7 @@ class _TaskProxy(_DBBackedProxy):
             conditions.append("title LIKE ?")
             params.append(f"%{title_filter}%")
         if assigned_filter:
-            conditions.append("(assigned_to = ? OR delegated_to = ?)")
+            conditions.append("(UPPER(assigned_to) = ? OR UPPER(delegated_to) = ?)")
             params.extend([assigned_filter, assigned_filter])
         if unassigned_only:
             conditions.append(
