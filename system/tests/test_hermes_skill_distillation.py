@@ -11,6 +11,7 @@ Prueft:
 - REST-API Endpunkte (/api/learning/hermes/*) und Ocean Modulschaltplan-Status (active)
 """
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -230,7 +231,17 @@ def test_hermes_stats(hermes_service: HermesDistillationService):
     assert stats["status"] == "active"
 
 
-def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
+def _authorize_device(monkeypatch, tmp_path: Path) -> dict:
+    """Register an active device in an isolated BACH_DB and return its auth header."""
+    db = tmp_path / "devices_bach.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE devices (id INTEGER PRIMARY KEY, token_hash TEXT, status TEXT)")
+        conn.execute("INSERT INTO devices VALUES (7, ?, 'active')", (hashlib.sha256(b"test-device").hexdigest(),))
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", db)
+    return {"Authorization": "Bearer test-device"}
+
+
+def test_hermes_api_endpoints(monkeypatch, temp_db: Path, tmp_path: Path):
     """Testet die REST-Endpunkte in unified_api.py."""
     # Mocke DB Pfad und Service
     service = HermesDistillationService(db_path=temp_db)
@@ -239,6 +250,7 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     monkeypatch.setattr("system.gui.api.unified_api._get_hermes_service_instance", lambda: service)
     monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: service._get_connection())
 
+    auth = _authorize_device(monkeypatch, tmp_path)
     app = FastAPI()
     app.include_router(unified_router)
     client = TestClient(app)
@@ -257,14 +269,14 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     cand_id = data["skill_candidate"]["id"]
 
     # 2. GET /api/learning/hermes/candidates
-    resp = client.get("/api/learning/hermes/candidates?status=pending")
+    resp = client.get("/api/learning/hermes/candidates?status=pending", headers=auth)
     assert resp.status_code == 200
     cands_data = resp.json()
     assert cands_data["count"] >= 1
     assert any(c["id"] == cand_id for c in cands_data["candidates"])
 
     # 3. GET /api/learning/hermes/candidates/{id}
-    resp = client.get(f"/api/learning/hermes/candidates/{cand_id}")
+    resp = client.get(f"/api/learning/hermes/candidates/{cand_id}", headers=auth)
     assert resp.status_code == 200
     assert resp.json()["name"] == "pythonpath-resolver"
 
