@@ -59,6 +59,20 @@ def build_sources(root: Path) -> cp.CatalogConfig:
         "schema": "ellmos.stack.v2", "id": "homebase-stack", "status": "active", "visibility": "public",
         "components": [{"id": "alpha-core"}], "bundle_refs": ["bundle-one"],
         "external_components": [{"id": "skills", "kind": "skill-library"}], "nested_stacks": ["other-stack"]})
+    pair = lambda de, en=None: {"de": de, "en": en or de + " (en)"}  # noqa: E731
+    _write(ai / "ELLMOS-SCHALTPLAN.authored.json", {
+        "_meta": {"purpose": "synthetic"}, "skin": {"runtime": {"i": "R", "c1": "#fff"}, "tools": {"i": "T"}, "memory": {"i": "M"}, "ghost": {"i": "G"}},
+        "ui": {"de": {"layersH": "Wo diese Karte liegt", "layersSub": "Schichten", "status": {"ok": "im Einsatz"}},
+               "en": {"layersH": "Where this map sits", "layersSub": "Layers", "status": {"ok": "in use"}}},
+        "areas": [
+            {"id": "runtime", "dir": ".RUNTIME", "name": pair("Laufzeit"), "q": pair("Worin laeuft es?"), "desc": pair("Laufzeit in " + WIN_PATH)},
+            {"id": "tools", "dir": ".TOOLS", "name": pair("Werkzeuge"), "q": pair("Womit?"), "desc": pair("Werkzeuge")},
+            {"id": "memory", "dir": ".MEMORY", "name": pair("Gedaechtnis"), "q": pair("Was weiss ich?"), "desc": pair("Gedaechtnis"), "cross": True}],
+        "edges": [
+            {"from": "runtime", "to": "tools", "label": pair("hantiert"), "desc": pair("Runtime nutzt Tools")},
+            {"from": "tools", "to": "memory", "label": pair("merkt"), "desc": pair("Tools merken"), "both": True}],
+        "edges_note": "Kuratiert, keine Ableitung.",
+        "layers": [{"id": "modules", "n": pair("Module"), "d": pair("Bausteine"), "s_tpl": pair("{n} Bausteine")}]})
     _write(root / "skills" / "components.json", {"components": [
         {"id": "skill:assist:note", "name": "note", "category": "assist", "version": "1.0.0", "status": "active",
          "description": "Synthetic skill", "languages": ["de", "en"], "path": "skills/assist/note/SKILL.md"},
@@ -489,6 +503,74 @@ def test_aliases_are_not_unique_keys(projection):
     assert a["aliases"] == b["aliases"] == ["homebase-stack"] and a["id"] != b["id"]
     assert len({(i["type"], i["id"]) for i in result["items"]}) == len(result["items"])  # type + id is the key
     assert "are NOT unique keys" in cp.__doc__
+
+
+# ---------------------------------------------------------------- architecture (declared, curated)
+
+def test_architecture_is_projected_as_declared_curated_data(projection):
+    result, _ = projection
+    arch = result["architecture"]
+    assert arch["basis"] == "declared"
+    assert arch["available"] is True
+    assert arch["source_id"] == "schaltplan_authored"
+    assert [a["id"] for a in arch["areas"]] == ["runtime", "tools", "memory"]
+    assert arch["areas"][2]["cross"] is True and arch["areas"][0]["cross"] is False
+    assert [(e["from"], e["to"], e["both"]) for e in arch["edges"]] == [("runtime", "tools", False), ("tools", "memory", True)]
+    assert arch["icons"] == {"runtime": "R", "tools": "T", "memory": "M"}  # colours dropped, unknown area "ghost" dropped
+    assert arch["ui"]["de"]["layersH"] == "Wo diese Karte liegt"
+    assert arch["layers"][0]["n"]["en"] == "Module (en)"
+    assert arch["edges_note"] == "Kuratiert, keine Ableitung."
+    record = source(result, "schaltplan_authored")
+    assert record["availability"] == "available" and record["kind"] == "architecture"
+    assert len(record["source_version"]) == 64  # content hash = pin of the curated file
+    # architecture is not an item: counts and items are untouched by it
+    assert sum(result["counts"].values()) == result["count"] == len(result["items"])
+
+
+def test_architecture_text_is_redacted_like_everything_else(projection):
+    result, _ = projection
+    text = json.dumps(result["architecture"], ensure_ascii=False)
+    assert WIN_PATH not in text and "C:\\" not in text
+    assert cp.REDACTED in result["architecture"]["areas"][0]["desc"]["de"]
+
+
+def test_missing_architecture_file_is_missing_and_empty_not_invented(tmp_path):
+    config = build_sources(tmp_path)
+    (tmp_path / "ai" / "ELLMOS-SCHALTPLAN.authored.json").unlink()
+    result = cp.observe(config=config, host="TEST-HOST", now=NOW)
+    assert result["architecture"] == {"basis": "declared", "source_id": "schaltplan_authored", "available": False, "areas": [],
+                                      "edges": [], "layers": [], "icons": {}, "ui": {}, "edges_note": None}
+    assert source(result, "schaltplan_authored")["availability"] == "missing"
+    assert result["count"] == 11  # items unaffected
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda d: d["edges"][0].update({"to": "nowhere"}),
+    lambda d: d["areas"][1].update({"id": "runtime"}),
+    lambda d: d["areas"][0].update({"name": {"de": "nur deutsch"}}),
+    lambda d: d.update({"areas": []}),
+    lambda d: d["areas"][0].update({"id": "../escape"}),
+])
+def test_malformed_architecture_marks_only_its_source_as_error(tmp_path, mutate):
+    config = build_sources(tmp_path)
+    path = tmp_path / "ai" / "ELLMOS-SCHALTPLAN.authored.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mutate(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    result = cp.observe(config=config, host="TEST-HOST", now=NOW)
+    assert result["architecture"]["available"] is False and result["architecture"]["areas"] == []
+    assert source(result, "schaltplan_authored")["availability"] == "error"
+    assert source(result, "modules_catalog")["availability"] == "available"
+    assert result["count"] == 11
+    assert any(e["source"] == "schaltplan_authored" for e in result["errors"])
+
+
+def test_conflict_copy_of_the_architecture_file_is_never_read(tmp_path):
+    config = build_sources(tmp_path)
+    (tmp_path / "ai" / "ELLMOS-SCHALTPLAN.authored-WORKSTATION-LG.json").write_text(
+        json.dumps({"areas": [{"id": "conflict"}]}), encoding="utf-8")
+    result = cp.observe(config=config, host="TEST-HOST", now=NOW)
+    assert [a["id"] for a in result["architecture"]["areas"]] == ["runtime", "tools", "memory"]
 
 
 # ---------------------------------------------------------------- fixture and route

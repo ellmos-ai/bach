@@ -34,7 +34,8 @@ only from that handle. A platform without a way to determine the final path fail
 source becomes ``error``).
 
 Source locations (environment first, defaults only when the path exists):
-  BACH_CATALOG_AI_ROOT          directory with .MODULES/modules.catalog.json, .BUNDLES/, .SYSTEMS/, .STACKS/
+  BACH_CATALOG_AI_ROOT          directory with .MODULES/modules.catalog.json, .BUNDLES/, .SYSTEMS/, .STACKS/ and the curated
+                                ELLMOS-SCHALTPLAN.authored.json (projected as the top-level ``architecture``, basis declared)
   BACH_CATALOG_SKILLS_REGISTRY  skills/registry/components.json
   BACH_CATALOG_GITHUBBOT_CONFIG directory with master_satellite_catalog.json, repo_registry.json
   BACH_CATALOG_SYNC_ROOT        .SYNC directory containing <slot>/repos.json host manifests
@@ -669,6 +670,77 @@ def _satellites(config, sources, repo_git, local_host):
     return items
 
 
+# ---------------------------------------------------------------- architecture (declared, curated)
+
+def _clean(node, depth=0):
+    """Copy of curated JSON limited to plain text/lists/dicts (bounded), so nothing unexpected is passed through."""
+    if isinstance(node, str):
+        return node[:2000]
+    if isinstance(node, bool):
+        return node
+    if depth >= 5:
+        return None
+    if isinstance(node, list):
+        return [_clean(x, depth + 1) for x in node[:100]]
+    if isinstance(node, dict):
+        return {str(k)[:80]: _clean(v, depth + 1) for k, v in list(node.items())[:100]}
+    return None
+
+
+def _bilingual(value, what):
+    pair = _dict(value)
+    de, en = _text(pair.get("de"), 2000), _text(pair.get("en"), 2000)
+    if not de or not en:
+        raise ValueError(what + "_not_bilingual")
+    return {"de": de, "en": en}
+
+
+def _empty_architecture(source_id, available=False):
+    return {"basis": "declared", "source_id": source_id, "available": available, "areas": [], "edges": [],
+            "layers": [], "icons": {}, "ui": {}, "edges_note": None}
+
+
+def _architecture(config, sources):
+    """The curated architecture (areas, wires, layers) of ELLMOS-SCHALTPLAN.authored.json, the 'one writable user slot'
+    next to modules.catalog.json. It is CURATED INTENT, always ``basis: declared`` - never a measurement. Modules, counts and
+    git facts still come from the other sources. A malformed file marks only this source as error (see _guard)."""
+    src = _Source("schaltplan_authored", "architecture", ".TOPICS/.AI/ELLMOS-SCHALTPLAN.authored.json",
+                  _safe_child(config.ai_root, "ELLMOS-SCHALTPLAN.authored.json"), config.ai_root)
+    data = src.load()
+    sources.append(src.record)
+    if data is None:
+        return _empty_architecture(src.record["id"])
+    raw_areas, raw_edges, raw_layers = _list(data.get("areas")), _list(data.get("edges")), _list(data.get("layers"))
+    if not raw_areas or len(raw_areas) > 50 or len(raw_edges) > 200 or len(raw_layers) > 50:
+        raise ValueError("architecture_shape")
+    areas, ids = [], set()
+    for entry in raw_areas:
+        area = _dict(entry)
+        area_id = _text(area.get("id"), 80)
+        if not area_id or not SAFE_SEGMENT.fullmatch(area_id) or area_id in ids:
+            raise ValueError("area_id")
+        ids.add(area_id)
+        areas.append({"id": area_id, "dir": _text(area.get("dir"), 80) or "", "name": _bilingual(area.get("name"), "name"),
+                      "q": _bilingual(area.get("q"), "q"), "desc": _bilingual(area.get("desc"), "desc"),
+                      "cross": area.get("cross") is True})
+    edges = []
+    for entry in raw_edges:
+        edge = _dict(entry)
+        if edge.get("from") not in ids or edge.get("to") not in ids:
+            raise ValueError("edge_area")
+        edges.append({"from": edge["from"], "to": edge["to"], "label": _bilingual(edge.get("label"), "label"),
+                      "desc": _bilingual(edge.get("desc"), "edge_desc"), "both": edge.get("both") is True})
+    layers = []
+    for entry in raw_layers:
+        layer = _dict(entry)
+        layers.append({"id": _text(layer.get("id"), 80) or "", "n": _bilingual(layer.get("n"), "layer_n"),
+                       "d": _bilingual(layer.get("d"), "layer_d"),
+                       "s_tpl": _clean(layer.get("s_tpl")) if isinstance(layer.get("s_tpl"), dict) else None})
+    icons = {k: v for k, v in ((k, _text(_dict(s).get("i"), 16)) for k, s in _dict(data.get("skin")).items()) if k in ids and v}
+    return {"basis": "declared", "source_id": src.record["id"], "available": True, "areas": areas, "edges": edges,
+            "layers": layers, "icons": icons, "ui": _clean(_dict(data.get("ui"))), "edges_note": _text(data.get("edges_note"), 2000)}
+
+
 # ---------------------------------------------------------------- entry point
 
 def _guard(sources, source_id, fn, default):
@@ -708,6 +780,7 @@ def observe(*, kind: str | None = None, host: str | None = None, config: Catalog
         items += _guard(sources, "skills_registry", lambda: _skills(config, sources), [])
     if kind in (None, "satellite"):
         items += _guard(sources, "satellite_catalog", lambda: _satellites(config, sources, repo_git, local_host), [])
+    architecture = _guard(sources, "schaltplan_authored", lambda: _architecture(config, sources), _empty_architecture("schaltplan_authored"))
     for source in sources:
         if source["availability"] == "error":
             errors.append({"source": source["id"], "reason": source["error"], "item": None})
@@ -719,7 +792,7 @@ def observe(*, kind: str | None = None, host: str | None = None, config: Catalog
     result = {"schema": SCHEMA, "generated_at": (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat(),
               "host": {"id": local_host, "source": "measured" if not host else "declared"},
               "sources": sources, "items": items, "counts": counts, "count": len(items),
-              "errors": errors, "truncated": truncated}
+              "errors": errors, "truncated": truncated, "architecture": architecture}
     counter = [0]
     result = _redact(result, counter)
     result["redactions"] = counter[0]
