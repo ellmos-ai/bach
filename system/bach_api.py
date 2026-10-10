@@ -894,6 +894,7 @@ status = _HandlerProxy("status")
 agent = _HandlerProxy("agent")
 agents = _HandlerProxy("agents")
 prompt = _HandlerProxy("prompt")
+learning = _HandlerProxy("learning")
 partner = _HandlerProxy("partner")
 logs = _HandlerProxy("logs")
 msg = _HandlerProxy("msg")
@@ -1153,6 +1154,7 @@ __all__ = [
     "agent",
     "agents",
     "prompt",
+    "learning",
     "partner",
     "logs",
     "msg",

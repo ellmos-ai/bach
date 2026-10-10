@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from system.gui.api.unified_api import router as unified_router
+from system.gui.device_auth import create_device, revoke_device
 from system.hub._services.nemofold_workflow_service import NemoFoldWorkflowService
 
 # ═══════════════════════════════════════════════════════════════
@@ -163,25 +164,14 @@ def test_approve_and_promote_candidate_to_marblerun(service: NemoFoldWorkflowSer
     }
     cand_id = service.store_candidate(chain_sample)
 
-    res = service.approve_candidate(cand_id, operator="lukas", notes="Freigabe Test")
-    assert res["success"] is True
-    assert res["status"] == "approved"
-
-    # Verifiziere in nemofold_workflow_candidates
+    with pytest.raises(ValueError, match="native Veröffentlichung"):
+        service.approve_candidate(cand_id, operator="lukas", notes="Freigabe Test")
     cand = service.get_candidate(cand_id)
-    assert cand["status"] == "approved"
-    assert cand["reviewed_by"] == "lukas"
-
-    # Verifiziere Promotion in marblerun_chains
+    assert cand["status"] == "pending"
+    assert cand["promotion_available"] is False
     conn = sqlite3.connect(str(temp_db))
-    conn.row_factory = sqlite3.Row
-    mr_row = conn.execute("SELECT * FROM marblerun_chains WHERE name = ?", ("promotable-chain-42",)).fetchone()
+    assert conn.execute("SELECT name FROM sqlite_master WHERE name='marblerun_chains'").fetchone() is None
     conn.close()
-
-    assert mr_row is not None
-    assert mr_row["title"] == "Promotable Chain"
-    mr_steps = json.loads(mr_row["steps_json"])
-    assert len(mr_steps) == 2
 
 
 def test_reject_candidate(service: NemoFoldWorkflowService):
@@ -193,7 +183,10 @@ def test_reject_candidate(service: NemoFoldWorkflowService):
         "tuv_status": "needs_review"
     }
     cand_id = service.store_candidate(chain_sample)
-    res = service.reject_candidate(cand_id, reason="Unzureichende Evidenz", operator="operator")
+    cand = service.get_candidate(cand_id)
+    res = service.reject_candidate(cand_id, reason="Unzureichende Evidenz", operator="operator",
+        expected_revision=cand["candidate_revision"], expected_digest=cand["candidate_digest"],
+        request_id="nemo-reject-0001")
     assert res["success"] is True
     assert res["status"] == "rejected"
 
@@ -219,6 +212,15 @@ def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
     test_service = NemoFoldWorkflowService(db_path=str(temp_db))
     monkeypatch.setattr("system.gui.api.unified_api._get_nemofold_service_instance", lambda: test_service)
     monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: sqlite3.connect(str(temp_db)))
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", temp_db)
+
+    device_conn = sqlite3.connect(str(temp_db))
+    try:
+        active_token = create_device("nemofold-candidate-reader", connection=device_conn)
+        revoked_token = create_device("nemofold-candidate-reader-revoked", connection=device_conn)
+        assert revoke_device("nemofold-candidate-reader-revoked", connection=device_conn)
+    finally:
+        device_conn.close()
 
     app = FastAPI()
     app.include_router(unified_router)
@@ -244,27 +246,38 @@ def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
     assert synth_data["chains_synthesized"] >= 1
 
     # 2. Kandidaten abrufen
-    cand_resp = client.get("/api/learning/nemofold/candidates?status=pending")
+    candidates_path = "/api/learning/nemofold/candidates?status=pending"
+    assert client.get(candidates_path).status_code == 401
+    assert client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {revoked_token}"},
+    ).status_code == 403
+    cand_resp = client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert cand_resp.status_code == 200
     cand_data = cand_resp.json()
     assert cand_data["count"] >= 1
     target_id = cand_data["candidates"][0]["id"]
 
     # 3. Detailansicht
-    detail_resp = client.get(f"/api/learning/nemofold/candidates/{target_id}")
+    detail_resp = client.get(
+        f"/api/learning/nemofold/candidates/{target_id}",
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert detail_resp.status_code == 200
     assert detail_resp.json()["id"] == target_id
 
     # 4. Freigabe
     appr_resp = client.post(f"/api/learning/nemofold/candidates/{target_id}/approve", json={"approved_by": "lead_operator"})
-    assert appr_resp.status_code == 200
-    assert appr_resp.json()["status"] == "approved"
+    assert appr_resp.status_code == 401  # Body labels confer no authority.
 
     # 5. Stats abrufen
     stats_resp = client.get("/api/learning/nemofold/stats")
     assert stats_resp.status_code == 200
     stats_data = stats_resp.json()
-    assert stats_data["approved_candidates"] >= 1
+    assert stats_data["approved_candidates"] == 0
 
 
 def test_api_ocean_map_contains_active_nemofold(monkeypatch, temp_db: Path):

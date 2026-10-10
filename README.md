@@ -256,6 +256,7 @@ Native documentation maintenance, activation and evidence boundaries:
 [DOCS-MAINTENANCE.md](docs/architecture/DOCS-MAINTENANCE.md).
 
 - **[Shared GUI and agent controls](system/docs/help/gui-integration.txt)** - Consumer release pins and adapter checks
+- **[Learning sources and review candidates](docs/architecture/LEARNING-SOURCE-CONTRACT.md)** - Bounded source previews and inactive drafts; [command help](system/docs/help/learning_en.txt). Publication and independent reuse require separate acceptance.
 - **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
 - **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback
 

@@ -198,9 +198,11 @@ class SequenceStore:
                 if existing["request_digest"] != request_digest or existing["owner_service"] != service:
                     raise SequenceConflict("Startkennung gehört zu einem anderen Auftrag oder Controller")
                 return False
-            row = db.execute("SELECT version FROM marblerun_chains WHERE id=?", (chain_id,)).fetchone()
+            row = db.execute("SELECT version,is_active FROM marblerun_chains WHERE id=?", (chain_id,)).fetchone()
             if row is None or row["version"] != version:
                 raise SequenceConflict("Kettenversion inzwischen geändert")
+            if row["is_active"] != 1:
+                raise SequenceConflict("Kette ist nicht aktiviert")
             self._idle_chain(db, chain_id)
             db.execute("""INSERT INTO native_sequence_runs
                 (run_id,chain_id,chain_version,request_digest,owner_service,module_commit,plan_json,created_at,updated_at)
