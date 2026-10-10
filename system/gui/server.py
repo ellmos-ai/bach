@@ -10638,6 +10638,14 @@ class PromptUpdateRequest(BaseModel):
     tags: Optional[str] = None
 
 
+def _prompt_library_row(row):
+    """Keep the GUI's CSV editing contract for legacy and JSON database tags."""
+    from hub.prompt import prompt_tags_text
+    result = row_to_dict(row)
+    result["tags"] = prompt_tags_text(result.get("tags"))
+    return result
+
+
 def _promptboard_library_paths():
     """Kandidaten fuer PromptBoard library.json (gleiche Logik wie chat_tray.py)."""
     candidates = []
@@ -10668,14 +10676,16 @@ async def prompt_library_page():
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
+    from hub.prompt import prompt_tags_text
     conn = get_bach_db()
     try:
+        conn.create_function("prompt_tags_text", 1, prompt_tags_text)
         sql = ("SELECT id, name, category, purpose, tags, created_at, updated_at "
                "FROM prompt_templates")
         clauses, params = [], []
         if q:
-            clauses.append("(name LIKE ? OR text LIKE ? OR tags LIKE ? OR purpose LIKE ?)")
-            params.extend([f"%{q}%"] * 4)
+            clauses.append("(name LIKE ? OR text LIKE ? OR tags LIKE ? OR prompt_tags_text(tags) LIKE ? OR purpose LIKE ?)")
+            params.extend([f"%{q}%"] * 5)
         if category:
             clauses.append("category = ?")
             params.append(category)
@@ -10687,7 +10697,7 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
             "SELECT DISTINCT category FROM prompt_templates WHERE category IS NOT NULL ORDER BY category"
         ).fetchall()
         return {
-            "prompts": [row_to_dict(r) for r in rows],
+            "prompts": [_prompt_library_row(r) for r in rows],
             "categories": [c["category"] for c in cats],
         }
     finally:
@@ -10707,7 +10717,7 @@ async def get_prompt_library_entry(prompt_id: int):
             "WHERE prompt_id = ? ORDER BY version_number DESC",
             (prompt_id,),
         ).fetchall()
-        return {"prompt": row_to_dict(row), "versions": [row_to_dict(v) for v in versions]}
+        return {"prompt": _prompt_library_row(row), "versions": [_prompt_library_row(v) for v in versions]}
     finally:
         conn.close()
 
@@ -10715,6 +10725,7 @@ async def get_prompt_library_entry(prompt_id: int):
 @app.post("/api/prompt-library")
 async def create_prompt_library_entry(req: PromptCreateRequest):
     """Neues Template anlegen."""
+    from hub.prompt import serialize_prompt_tags
     name = req.name.strip()
     if not name or not req.text.strip():
         raise HTTPException(status_code=400, detail="name und text sind Pflicht")
@@ -10725,7 +10736,7 @@ async def create_prompt_library_entry(req: PromptCreateRequest):
             cur = conn.execute(
                 "INSERT INTO prompt_templates (name, purpose, text, tags, category, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (name, req.purpose, req.text, req.tags, req.category, now, now),
+                (name, req.purpose, req.text, serialize_prompt_tags(req.tags), req.category, now, now),
             )
             conn.commit()
         except sqlite3.IntegrityError:
@@ -10738,6 +10749,7 @@ async def create_prompt_library_entry(req: PromptCreateRequest):
 @app.put("/api/prompt-library/{prompt_id}")
 async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
     """Text aktualisieren — alter Stand wird als Version archiviert (wie hub/prompt.py)."""
+    from hub.prompt import serialize_prompt_tags
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text ist Pflicht")
     now = datetime.now().isoformat()
@@ -10756,7 +10768,7 @@ async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
         )
         conn.execute(
             "UPDATE prompt_templates SET text = ?, tags = COALESCE(?, tags), updated_at = ? WHERE id = ?",
-            (req.text, req.tags, now, prompt_id),
+            (req.text, serialize_prompt_tags(req.tags), now, prompt_id),
         )
         conn.commit()
         return {"ok": True, "archived_version": max_v + 1}

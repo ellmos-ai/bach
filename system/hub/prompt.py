@@ -22,6 +22,35 @@ from datetime import datetime
 from .base import BaseHandler
 
 
+def serialize_prompt_tags(tags):
+    """Store new tags as JSON; accept CSV and existing serialized lists."""
+    if tags is None:
+        return None
+    if isinstance(tags, str):
+        try:
+            parsed = json.loads(tags)
+        except ValueError:
+            parsed = None
+        tags = (parsed if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed)
+                else tags.split(","))
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        raise ValueError("tags: Text oder Liste von Texten erwartet")
+    return json.dumps([tag.strip() for tag in tags if tag.strip()], ensure_ascii=False)
+
+
+def prompt_tags_text(tags):
+    """Display/search both legacy CSV and JSON, including escaped Unicode."""
+    if tags is None:
+        return None
+    try:
+        parsed = json.loads(tags)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed):
+        return ", ".join(tag.strip() for tag in parsed if tag.strip())
+    return tags
+
+
 class PromptHandler(BaseHandler):
     """Handler fuer Prompt-Templates und Boards."""
 
@@ -166,7 +195,7 @@ class PromptHandler(BaseHandler):
                 category = args[i + 1].strip()
                 i += 2
             elif args[i] == "--tags" and i + 1 < len(args):
-                tags = json.dumps([t.strip() for t in args[i + 1].split(",")])
+                tags = serialize_prompt_tags(args[i + 1])
                 i += 2
             elif args[i] == "--purpose" and i + 1 < len(args):
                 purpose = args[i + 1].strip()
@@ -206,7 +235,7 @@ class PromptHandler(BaseHandler):
                 f"PROMPT TEMPLATE: {row['name']} (ID: {row['id']})",
                 f"Kategorie: {row['category'] or '-'}",
                 f"Purpose: {row['purpose'] or '-'}",
-                f"Tags: {row['tags'] or '-'}",
+                f"Tags: {prompt_tags_text(row['tags']) or '-'}",
                 f"Erstellt: {row['created_at']}",
                 f"Aktualisiert: {row['updated_at']}",
                 f"dist_type: {row['dist_type'] or '-'}",
@@ -317,12 +346,13 @@ class PromptHandler(BaseHandler):
 
         conn = self._get_conn()
         try:
+            conn.create_function("prompt_tags_text", 1, prompt_tags_text)
             rows = conn.execute(
                 "SELECT id, name, category, purpose, tags, text "
                 "FROM prompt_templates "
-                "WHERE name LIKE ? OR text LIKE ? OR tags LIKE ? "
+                "WHERE name LIKE ? OR text LIKE ? OR tags LIKE ? OR prompt_tags_text(tags) LIKE ? "
                 "ORDER BY name",
-                (pattern, pattern, pattern),
+                (pattern, pattern, pattern, pattern),
             ).fetchall()
 
             if not rows:
