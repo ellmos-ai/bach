@@ -216,3 +216,127 @@ def test_nonterminal_pagination_exposes_remaining_open_tasks(client):
     assert first["success"] is True and first["has_more"] is True and len(first["tasks"]) == 3
     assert second["success"] is True and second["has_more"] is False and len(second["tasks"]) == 2
     assert {row["id"] for row in first["tasks"]}.isdisjoint({row["id"] for row in second["tasks"]})
+
+
+def _ids(res):
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    return data
+
+
+def test_search_title_and_description_with_applied_filter(client):
+    data = _ids(client.get("/api/tasks?status=all&q=progress"))
+    assert {t["title"] for t in data["tasks"]} == {"Progress Task", "In Progress Task"}
+    assert data["total"] == 2 and data["applied_filters"]["q"] == "progress"
+    assert _ids(client.get("/api/tasks?status=all&q=%20"))["total"] == 8
+    assert _ids(client.get("/api/tasks?status=all"))["applied_filters"]["q"] == ""
+
+
+def test_search_tokens_are_and_and_wildcards_literal(client):
+    assert _ids(client.get("/api/tasks?status=all&q=task%20done"))["total"] == 1
+    assert _ids(client.get("/api/tasks?status=all&q=task%20zzz"))["total"] == 0
+    assert _ids(client.get("/api/tasks?status=all&q=%25"))["total"] == 0
+    assert _ids(client.get("/api/tasks?status=all&q=_"))["total"] == 0
+
+
+def test_search_numeric_token_matches_id(client):
+    first = _ids(client.get("/api/tasks?status=all&q=Open%20Task"))["tasks"][0]["id"]
+    for token in (str(first), f"%23{first}"):
+        ids = [t["id"] for t in _ids(client.get(f"/api/tasks?status=all&q={token}"))["tasks"]]
+        assert first in ids
+
+
+def test_search_combines_with_assignment_status_and_pagination(client):
+    data = _ids(client.get("/api/tasks?assignment_group=user&status=done&q=task"))
+    assert data["total"] == 1 and data["tasks"][0]["title"] == "Completed Task"
+    data = _ids(client.get("/api/tasks?assignment_group=user&status=nonterminal&q=task"))
+    assert {t["title"] for t in data["tasks"]} == {"Open Task", "In Progress Task"}
+    first = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=0"))
+    second = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=3"))
+    assert first["total"] == second["total"] == 8
+    assert first["has_more"] is True and second["has_more"] is True
+    last = _ids(client.get("/api/tasks?status=all&q=task&limit=3&offset=6"))
+    assert last["has_more"] is False and len(last["tasks"]) == 2
+    ids = [t["id"] for p in (first, second, last) for t in p["tasks"]]
+    assert len(ids) == len(set(ids)) == 8
+
+
+def test_search_too_long_is_rejected(client):
+    assert client.get("/api/tasks?q=" + "x" * 201).status_code == 400
+    assert client.get("/api/tasks?q=" + "x" * 200).status_code == 200
+
+
+@pytest.fixture()
+def extra_rows(client):
+    """Zusatzzeilen (category 'sx'), nach dem Test wieder entfernt."""
+    conn = sqlite3.connect(os.environ["BACH_DB"])
+    rows = [
+        ("Plain", "Quellcode Äußerung zebra", "open", "P2", "claude"),
+        ("Änderung Plan", None, "open", "P2", "user"),
+        ("Token alpha beta gamma delta eps zeta eta theta iota", None, "done", "P3", "user"),
+        ("Zahl 9223372036854775808 und #12", None, "open", "P2", "user"),
+        ("Ss-Zeile", "die äusserung", "open", "P2", "user"),
+        ("Zweite Seite A", "seite", "open", "P2", "user"),
+        ("Zweite Seite B", "seite", "open", "P2", "user"),
+        ("Zweite Seite C", "seite", "open", "P2", "user"),
+    ]
+    conn.executemany(
+        "INSERT INTO tasks (title, description, status, priority, category, assigned_to, created_at) VALUES (?, ?, ?, ?, 'sx', ?, datetime('now'))",
+        [(t, d, s, p, a) for t, d, s, p, a in rows],
+    )
+    conn.commit()
+    conn.close()
+    yield
+    conn = sqlite3.connect(os.environ["BACH_DB"])
+    conn.execute("DELETE FROM tasks WHERE category = 'sx'")
+    conn.commit()
+    conn.close()
+
+
+def _titles(client, query):
+    return {t["title"] for t in _ids(client.get("/api/tasks?status=all&category=sx&" + query))["tasks"]}
+
+
+def test_search_description_only_and_unicode_casefold(client, extra_rows):
+    assert _titles(client, "q=zebra") == {"Plain"}
+    assert _titles(client, "q=%C3%A4nderung") == {"Änderung Plan"}  # änderung findet Änderung
+    assert _titles(client, "q=%C3%84NDERUNG") == {"Änderung Plan"}
+    assert _titles(client, "q=%C3%A4u%C3%9Ferung") == {"Plain", "Ss-Zeile"}
+
+
+def test_search_uses_all_tokens_beyond_eight(client, extra_rows):
+    nine = "alpha beta gamma delta eps zeta eta theta iota"
+    assert _titles(client, "q=" + nine.replace(" ", "%20")) == {
+        "Token alpha beta gamma delta eps zeta eta theta iota"}
+    # das neunte Token entscheidet mit
+    assert _titles(client, "q=" + nine.replace(" ", "%20") + "%20nomatch") == set()
+
+
+def test_search_id_edge_cases(client, extra_rows):
+    ids = {t["title"]: t["id"] for t in _ids(client.get("/api/tasks?status=all&category=sx&limit=100"))["tasks"]}
+    plain = ids["Plain"]
+    assert "Plain" in _titles(client, f"q={plain}") and "Plain" in _titles(client, f"q=%23{plain}")
+    assert "Plain" not in _titles(client, f"q=%23%23{plain}")      # nur ein fuehrendes #
+    assert _titles(client, "q=%230") == set()                       # 0 ist keine ID
+    assert _titles(client, "q=-1") == set()                         # negativ: nur Text
+    assert _titles(client, "q=9223372036854775808") == {"Zahl 9223372036854775808 und #12"}  # > 2^63-1: nur Text, kein Fehler
+    assert _titles(client, "q=%2312") == {"Zahl 9223372036854775808 und #12"}  # Text-Treffer
+
+
+def test_search_with_priority_assignee_total_and_next_page(client, extra_rows):
+    data = _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P2&assigned_to=user&limit=2&offset=0"))
+    nxt = _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P2&assigned_to=user&limit=2&offset=2"))
+    assert data["total"] == nxt["total"] == 3
+    assert data["has_more"] is True and nxt["has_more"] is False
+    got = [t["title"] for t in data["tasks"] + nxt["tasks"]]
+    assert sorted(got) == ["Zweite Seite A", "Zweite Seite B", "Zweite Seite C"]
+    assert _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P3"))["total"] == 0
+
+
+def test_search_sharp_s_cross_and_non_ascii_digits_stay_text(client, extra_rows):
+    # casefold: ss <-> ß in beide Richtungen (Plain speichert "Äußerung", "Ss-Zeile" speichert "äusserung")
+    assert _titles(client, "q=%C3%A4usserung") == {"Plain", "Ss-Zeile"}
+    assert _titles(client, "q=%C3%84u%C3%9Ferung") == {"Plain", "Ss-Zeile"}
+    # IDs sind ASCII: arabisch-indische Ziffern sind nur Text, nie ID 12
+    assert _titles(client, "q=%23%D9%A1%D9%A2") == set()

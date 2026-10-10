@@ -2179,11 +2179,15 @@ async def api_get_tasks(
     assignment_group: str = "all",
     priority: str = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    q: str = None
 ):
     """Liefert Tasks mit kombiniertem Filter vor Zählung und Pagination."""
     if assignment_group not in {"all", "user", "auto", "unassigned"}:
         raise HTTPException(400, "Ungültige Task-Zuordnung")
+    q = (q or "").strip()
+    if len(q) > 200:
+        raise HTTPException(400, "Suchbegriff zu lang")
     try:
         conn = get_bach_db()
 
@@ -2237,6 +2241,20 @@ async def api_get_tasks(
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
+        # Suche: je Token (UND, alle innerhalb der 200 Zeichen) Titel/Beschreibung per Unicode-casefold-LIKE;
+        # Token ^#?\d+$ im SQLite-Integerbereich 1..2^63-1 trifft zusaetzlich die id.
+        if q:
+            conn.create_function("bach_casefold", 1, lambda v: v.casefold() if isinstance(v, str) else v, deterministic=True)
+        for token in q.casefold().split():
+            esc = token.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            like = f"%{esc}%"
+            clause = "(bach_casefold(title) LIKE ? ESCAPE '!' OR bach_casefold(description) LIKE ? ESCAPE '!'"
+            params.extend([like, like])
+            digits = token[1:] if token.startswith("#") else token
+            if digits.isascii() and digits.isdigit() and 1 <= int(digits) <= 9223372036854775807:
+                clause += " OR id = ?"
+                params.append(int(digits))
+            query += " AND " + clause + ")"
         if priority:
             prio_clean = priority.strip().upper()
             if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
@@ -2285,7 +2303,7 @@ async def api_get_tasks(
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
                 "offset": max(0, offset),
-                "applied_filters": {"assignment_group": assignment_group, "status": status}}
+                "applied_filters": {"assignment_group": assignment_group, "status": status, "q": q}}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
