@@ -276,6 +276,7 @@ def extra_rows(client):
         ("Änderung Plan", None, "open", "P2", "user"),
         ("Token alpha beta gamma delta eps zeta eta theta iota", None, "done", "P3", "user"),
         ("Zahl 9223372036854775808 und #12", None, "open", "P2", "user"),
+        ("Ss-Zeile", "die äusserung", "open", "P2", "user"),
         ("Zweite Seite A", "seite", "open", "P2", "user"),
         ("Zweite Seite B", "seite", "open", "P2", "user"),
         ("Zweite Seite C", "seite", "open", "P2", "user"),
@@ -301,7 +302,7 @@ def test_search_description_only_and_unicode_casefold(client, extra_rows):
     assert _titles(client, "q=zebra") == {"Plain"}
     assert _titles(client, "q=%C3%A4nderung") == {"Änderung Plan"}  # änderung findet Änderung
     assert _titles(client, "q=%C3%84NDERUNG") == {"Änderung Plan"}
-    assert _titles(client, "q=%C3%A4u%C3%9Ferung") == {"Plain"}
+    assert _titles(client, "q=%C3%A4u%C3%9Ferung") == {"Plain", "Ss-Zeile"}
 
 
 def test_search_uses_all_tokens_beyond_eight(client, extra_rows):
@@ -331,3 +332,11 @@ def test_search_with_priority_assignee_total_and_next_page(client, extra_rows):
     got = [t["title"] for t in data["tasks"] + nxt["tasks"]]
     assert sorted(got) == ["Zweite Seite A", "Zweite Seite B", "Zweite Seite C"]
     assert _ids(client.get("/api/tasks?status=all&category=sx&q=seite&priority=P3"))["total"] == 0
+
+
+def test_search_sharp_s_cross_and_non_ascii_digits_stay_text(client, extra_rows):
+    # casefold: ss <-> ß in beide Richtungen (Plain speichert "Äußerung", "Ss-Zeile" speichert "äusserung")
+    assert _titles(client, "q=%C3%A4usserung") == {"Plain", "Ss-Zeile"}
+    assert _titles(client, "q=%C3%84u%C3%9Ferung") == {"Plain", "Ss-Zeile"}
+    # IDs sind ASCII: arabisch-indische Ziffern sind nur Text, nie ID 12
+    assert _titles(client, "q=%23%D9%A1%D9%A2") == set()
