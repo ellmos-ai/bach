@@ -12,6 +12,7 @@ Testet:
 """
 
 import json
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -207,11 +208,22 @@ def test_get_stats(service: NemoFoldWorkflowService):
 # INTEGRATION TESTS: FASTAPI HTTP ENDPOINTS
 # ═══════════════════════════════════════════════════════════════
 
-def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
+def _authorize_device(monkeypatch, tmp_path: Path) -> dict:
+    """Register an active device in an isolated BACH_DB and return its auth header."""
+    db = tmp_path / "devices_bach.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE devices (id INTEGER PRIMARY KEY, token_hash TEXT, status TEXT)")
+        conn.execute("INSERT INTO devices VALUES (7, ?, 'active')", (hashlib.sha256(b"test-device").hexdigest(),))
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", db)
+    return {"Authorization": "Bearer test-device"}
+
+
+def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path, tmp_path: Path):
     test_service = NemoFoldWorkflowService(db_path=str(temp_db))
     monkeypatch.setattr("system.gui.api.unified_api._get_nemofold_service_instance", lambda: test_service)
     monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: sqlite3.connect(str(temp_db)))
 
+    auth = _authorize_device(monkeypatch, tmp_path)
     app = FastAPI()
     app.include_router(unified_router)
     client = TestClient(app)
@@ -236,14 +248,14 @@ def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
     assert synth_data["chains_synthesized"] >= 1
 
     # 2. Kandidaten abrufen
-    cand_resp = client.get("/api/learning/nemofold/candidates?status=pending")
+    cand_resp = client.get("/api/learning/nemofold/candidates?status=pending", headers=auth)
     assert cand_resp.status_code == 200
     cand_data = cand_resp.json()
     assert cand_data["count"] >= 1
     target_id = cand_data["candidates"][0]["id"]
 
     # 3. Detailansicht
-    detail_resp = client.get(f"/api/learning/nemofold/candidates/{target_id}")
+    detail_resp = client.get(f"/api/learning/nemofold/candidates/{target_id}", headers=auth)
     assert detail_resp.status_code == 200
     assert detail_resp.json()["id"] == target_id
 
