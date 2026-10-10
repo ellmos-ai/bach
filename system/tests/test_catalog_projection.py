@@ -144,18 +144,16 @@ def test_no_absolute_path_or_private_value_leaks_and_embedded_paths_are_redacted
     assert by_id(result, "skill:assist:note")["path_label"] == "skills/assist/note/SKILL.md"
 
 
-@pytest.mark.parametrize("raw", ["see /root/x now", "tmp /usr/local/bin", "at C:" + BS + "Users" + BS + "a end",
-                                 "share " + BS * 2 + "server" + BS + "share", "use ~/notes/x here", "D:/x/y",
-                                 "(/home/u/f)", "p=/opt/app/z"])
-def test_redaction_patterns(raw):
-    counter = [0]
-    assert "<pfad>" in cp._redact(raw, counter) and counter[0] >= 1
+VECTORS = json.loads((Path(__file__).parent / "fixtures" / "catalog_redaction_vectors.json").read_text(encoding="utf-8"))["vectors"]
 
 
-@pytest.mark.parametrize("raw", ["https://github.com/o/r", "and/or", "/api/capabilities/catalog", "CI/CD pipeline", "a-b/c"])
-def test_redaction_leaves_ordinary_text_alone(raw):
+@pytest.mark.parametrize("vector", VECTORS, ids=[v["text"][:40] for v in VECTORS])
+def test_redaction_follows_the_shared_vectors(vector):
+    """Same list as the GUI test (byte-identical file): the client must flag exactly what the server redacts."""
     counter = [0]
-    assert cp._redact(raw, counter) == raw and counter[0] == 0
+    assert cp._redact(vector["text"], counter) == vector["redacted"]
+    assert (counter[0] > 0) == (vector["redacted"] != vector["text"])
+    assert cp._redact(vector["redacted"], [0]) == vector["redacted"]  # idempotent
 
 
 def test_redaction_reaches_every_string_field_including_errors_item(tmp_path):
@@ -352,8 +350,11 @@ def test_broken_json_is_an_error_not_a_crash(tmp_path):
 
 MALFORMED = {
     "repo_registry": ("bot/repo_registry.json", {"repos": []}, "repo_registry"),
-    "repo_registry_hosts": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": []}}}, None),
-    "repo_registry_clones": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": {"H": {"clones": "x"}}}}}, None),
+    "repo_registry_repo": ("bot/repo_registry.json", {"repos": {"o/r": []}}, "repo_registry"),
+    "repo_registry_hosts": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": []}}}, "repo_registry"),
+    "repo_registry_host": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": {"H": "x"}}}}, "repo_registry"),
+    "repo_registry_clones": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": {"H": {"clones": "x"}}}}}, "repo_registry"),
+    "repo_registry_clone_item": ("bot/repo_registry.json", {"repos": {"o/r": {"hosts": {"H": {"clones": ["x"]}}}}}, "repo_registry"),
     "repos_manifest": ("sync/slot-a/repos.json", {"host": "H", "repos": {}}, "repos_manifest:slot-a"),
     "modules_catalog": ("ai/.MODULES/modules.catalog.json", {"modules": {}}, "modules_catalog"),
     "bundles_catalog": ("ai/.BUNDLES/bundles.catalog.v1.json", {"bundles": "x"}, "bundles_catalog"),
@@ -373,6 +374,9 @@ def test_valid_json_with_wrong_nested_types_marks_only_that_source(tmp_path, nam
     json.dumps(result)
     errored = {s["id"] for s in result["sources"] if s["availability"] == "error"}
     assert errored == ({expected_error} if expected_error else set())
+    if expected_error:  # the failure is visible in errors[], not silently skipped
+        assert {"source": expected_error, "reason": "invalid_structure", "item": None} in result["errors"] or \
+            any(e["source"] == expected_error for e in result["errors"])
     for kind, source_id in KIND_SOURCE.items():
         if source_id not in errored:
             assert result["counts"][kind] > 0, kind  # the other sources keep projecting
@@ -409,6 +413,82 @@ def test_kind_filter_and_unsupported_kind(tmp_path):
     assert set(only["counts"]) == {"stack"} and {i["type"] for i in only["items"]} == {"stack"} and only["count"] == 2
     with pytest.raises(ValueError):
         cp.observe(kind="plugin", config=config)
+
+
+# ---------------------------------------------------------------- open-then-verify, reparse points
+
+def test_read_verifies_the_final_path_of_the_open_handle(tmp_path):
+    root = tmp_path / "root"
+    _write(root / "ok.json", {"a": 1})
+    assert cp._read(root / "ok.json", root)[0] == {"a": 1}
+    outside = tmp_path / "outside"
+    _write(outside / "secret.json", {"leak": True})
+    with pytest.raises(PermissionError):
+        cp._read(outside / "secret.json", root)  # a file outside the root is refused even without any link
+
+
+def test_swapped_parent_link_is_caught_at_open_time_even_if_the_prefilter_was_passed(tmp_path):
+    """TOCTOU: the component check passed earlier; now a parent is a link to the outside. The handle check must refuse."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    _write(outside / "secret.json", {"leak": True})
+    link = root / "swapped"
+    if not _make_link(link, outside):
+        pytest.skip("neither symlink nor junction could be created on this host (no privilege)")
+    with pytest.raises(PermissionError):
+        cp._read(link / "secret.json", root)  # bypasses _safe_child on purpose
+    assert cp._safe_child(root, "swapped", "secret.json") is None  # and the pre-filter alone also refuses it
+
+
+def test_platform_without_a_final_path_fails_closed(tmp_path, monkeypatch):
+    config = build_sources(tmp_path)
+    monkeypatch.setattr(cp, "_final_path", lambda _fd: None)
+    result = cp.observe(config=config, now=NOW)
+    assert result["items"] == []
+    errored = {s["id"] for s in result["sources"] if s["availability"] == "error"}
+    assert {"modules_catalog", "bundles_catalog", "skills_registry", "satellite_catalog", "repo_registry"} <= errored
+    assert all(s["error"] == "PermissionError" for s in result["sources"] if s["availability"] == "error")
+    assert any(e["source"].startswith("stacks_") and e["reason"] == "PermissionError" for e in result["errors"])
+
+
+def test_final_path_of_a_real_handle_matches_the_file(tmp_path):
+    target = tmp_path / "f.json"
+    _write(target, {"a": 1})
+    fd = os.open(target, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    try:
+        final = cp._final_path(fd)
+    finally:
+        os.close(fd)
+    if final is None:
+        pytest.skip("no final-path support on this platform (the reader fails closed there)")
+    assert os.path.normcase(os.path.realpath(final)) == os.path.normcase(os.path.realpath(target))
+
+
+def test_reparse_points_are_refused_without_os_path_isjunction(tmp_path, monkeypatch):
+    """Python 3.10/3.11 have no os.path.isjunction: detection must not depend on it."""
+    monkeypatch.delattr(os.path, "isjunction", raising=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tmp_path / "link"
+    if not _make_link(link, outside):
+        pytest.skip("neither symlink nor junction could be created on this host (no privilege)")
+    assert cp._is_link(link) is True
+    assert cp._is_link(outside) is False
+    assert cp._safe_child(tmp_path, "link", "x.json") is None
+
+
+def test_cloud_placeholders_are_not_treated_as_links():
+    assert cp._is_cloud_placeholder(0x9000001A) and cp._is_cloud_placeholder(0x9000F01A)
+    assert not cp._is_cloud_placeholder(0xA0000003) and not cp._is_cloud_placeholder(0xA000000C)
+
+
+def test_aliases_are_not_unique_keys(projection):
+    result, _ = projection
+    a, b = by_id(result, "systems/homebase-stack"), by_id(result, "stacks/homebase-stack")
+    assert a["aliases"] == b["aliases"] == ["homebase-stack"] and a["id"] != b["id"]
+    assert len({(i["type"], i["id"]) for i in result["items"]}) == len(result["items"])  # type + id is the key
+    assert "are NOT unique keys" in cp.__doc__
 
 
 # ---------------------------------------------------------------- fixture and route

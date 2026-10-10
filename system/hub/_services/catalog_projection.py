@@ -12,7 +12,8 @@ derived from a file name (OneDrive conflict copies like ``...-ASUS-GEI-2.json`` 
 Item types: module, bundle, stack, skill, satellite. Stack ids are namespaced by their source
 family because ``homebase-stack`` exists in both: ``systems/<id>`` (``.SYSTEMS/stacks/*.json``,
 deployment projections) and ``stacks/<id>`` (``.STACKS/<dir>/stack.v2.json``, module stacks);
-the bare id is kept as an alias.
+the bare id is kept as an alias. ``aliases`` are NOT unique keys (``homebase-stack`` is an alias of
+two different stacks); the only unique key of an item is ``type`` + ``id``.
 
 ``host`` parameter: selects WHICH host's git record is shown as ``git`` for each item. It does
 NOT filter items; ``git_hosts`` always lists every host-bound record.
@@ -25,7 +26,12 @@ git record is only ever the observation time of the manifest that carries it (``
 
 Path safety: ids taken from catalogs and used in paths must be one safe segment
 (``[A-Za-z0-9._-]``, not ``.``/``..``); every component below the configured root must be neither
-a symlink nor a junction, and the resolved path must stay inside the root (fail-closed).
+a symlink nor a reparse point (Windows junctions/symlinks; cloud-file placeholders are exempt) -
+this is only a pre-filter. The authoritative check is "open, then verify": the file is opened
+read-only, the FINAL path of the open handle is determined (Windows ``GetFinalPathNameByHandleW``,
+macOS ``F_GETPATH``, Linux ``/proc/self/fd``) and must lie inside the real root; content is read
+only from that handle. A platform without a way to determine the final path fails closed (the
+source becomes ``error``).
 
 Source locations (environment first, defaults only when the path exists):
   BACH_CATALOG_AI_ROOT          directory with .MODULES/modules.catalog.json, .BUNDLES/, .SYSTEMS/, .STACKS/
@@ -40,6 +46,8 @@ import json
 import os
 import platform
 import re
+import stat
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,9 +108,86 @@ def _list(value) -> list:
     return value if isinstance(value, list) else []
 
 
+_REPARSE_FLAG = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+
+def _is_cloud_placeholder(tag: int) -> bool:
+    """OneDrive/cloud-files placeholders are reparse points with tags 0x9000?01A; they are not links."""
+    return (tag & 0xFFFF0FFF) == 0x9000001A
+
+
 def _is_link(path: Path) -> bool:
-    """Symlink or Windows junction (cloud-placeholder reparse points are deliberately not matched)."""
-    return path.is_symlink() or bool(getattr(os.path, "isjunction", lambda _p: False)(path))
+    """Symlink, or on Windows any reparse point (junction, symlink, mount point) except cloud placeholders.
+
+    Uses lstat attributes, which exist on every supported Python version (>= 3.5), not os.path.isjunction.
+    """
+    if path.is_symlink():
+        return True
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    attributes = getattr(info, "st_file_attributes", 0)
+    if attributes & _REPARSE_FLAG:
+        return not _is_cloud_placeholder(getattr(info, "st_reparse_tag", 0))
+    return False
+
+
+def _final_path(fd: int) -> str | None:
+    """Final (link-resolved) path of an open file descriptor, or None when the platform cannot tell."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            import msvcrt
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+            kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+            handle = msvcrt.get_osfhandle(fd)
+            size = 1024
+            buffer = ctypes.create_unicode_buffer(size)
+            length = kernel32.GetFinalPathNameByHandleW(handle, buffer, size, 0)
+            if length >= size:
+                size = length + 1
+                buffer = ctypes.create_unicode_buffer(size)
+                length = kernel32.GetFinalPathNameByHandleW(handle, buffer, size, 0)
+            if length == 0 or length >= size:
+                return None
+            path = buffer.value
+            if path.startswith("\\\\?\\UNC\\"):
+                return "\\\\" + path[8:]
+            return path[4:] if path.startswith("\\\\?\\") else path
+        if sys.platform == "darwin":
+            import fcntl
+            raw = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024)
+            return os.fsdecode(raw.split(b"\0", 1)[0]) or None
+        if sys.platform.startswith("linux"):
+            return os.readlink(f"/proc/self/fd/{fd}")
+    except (OSError, ImportError, AttributeError, ValueError):
+        return None
+    return None
+
+
+def _inside(path: str, root: Path) -> bool:
+    candidate = os.path.normcase(os.path.realpath(path))
+    base = os.path.normcase(os.path.realpath(root))
+    return candidate == base or candidate.startswith(base.rstrip(os.sep) + os.sep)
+
+
+def _open_inside(path: Path, root: Path) -> int:
+    """Open read-only, then verify the final path of THIS handle lies inside the root (no check-then-open gap)."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(path, flags)
+    try:
+        final = _final_path(fd)
+        if final is None:
+            raise PermissionError("final_path_unavailable")
+        if not _inside(final, root):
+            raise PermissionError("outside_root")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _safe_child(root: Path | None, *segments: str) -> Path | None:
@@ -145,25 +230,32 @@ def _time(raw) -> tuple[str | None, str, str | None]:
     return parsed.astimezone(timezone.utc).isoformat(), "declared", None
 
 
-def _read(path: Path):
-    """Return (data, version, mtime_iso). Raises OSError/ValueError on unreadable input."""
-    if _is_link(path) or not path.is_file():
-        raise FileNotFoundError("missing")
-    stat = path.stat()
-    if stat.st_size > MAX_BYTES:
+def _read(path: Path, root: Path):
+    """Return (data, version, mtime_iso). Reads only from a handle verified to be inside ``root``."""
+    if _is_link(path):
+        raise PermissionError("link")
+    fd = _open_inside(path, root)
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise FileNotFoundError("missing")
+        if info.st_size > MAX_BYTES:
+            raise ValueError("too_large")
+        raw = handle.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
         raise ValueError("too_large")
-    raw = path.read_bytes()
-    return json.loads(raw.decode("utf-8-sig")), hashlib.sha256(raw).hexdigest(), _iso(stat.st_mtime)
+    return json.loads(raw.decode("utf-8-sig")), hashlib.sha256(raw).hexdigest(), _iso(info.st_mtime)
 
 
 class _Source:
     """One source record; a failure becomes availability, never an exception."""
 
-    def __init__(self, source_id, kind, label, path: Path | None):
+    def __init__(self, source_id, kind, label, path: Path | None, root: Path | None = None):
         self.record = {"id": source_id, "kind": kind, "path_label": label, "host": None, "schema": None,
                        "source_version": None, "generated_at": None, "generated_at_basis": "absent",
                        "generated_at_raw": None, "modified_at": None, "availability": "missing", "error": None}
         self.path = path
+        self.root = root
 
     def fail(self, reason):
         self.record.update(availability="error", error=reason)
@@ -173,7 +265,7 @@ class _Source:
             self.record["error"] = "not_configured"
             return None
         try:
-            data, version, mtime = _read(self.path)
+            data, version, mtime = _read(self.path, self.root or self.path.parent)
         except FileNotFoundError:
             self.record["error"] = "file_missing"
             return None
@@ -192,7 +284,7 @@ class _Source:
         return data
 
 
-def _collect_dir(source_id, label, base: Path | None, members):
+def _collect_dir(source_id, label, base: Path | None, members, root: Path | None):
     """A directory of manifests: version is the hash over the member hashes."""
     record = _Source(source_id, "stack", label, None).record
     found, problems = [], []
@@ -202,7 +294,7 @@ def _collect_dir(source_id, label, base: Path | None, members):
     digest, newest = hashlib.sha256(), 0.0
     for name, member in members(base):
         try:
-            data, version, _ = _read(member)
+            data, version, _ = _read(member, root)
             if not isinstance(data, dict):
                 raise ValueError("not_an_object")
             digest.update(version.encode())
@@ -246,14 +338,16 @@ def _repo_full_name(url) -> str | None:
 # ---------------------------------------------------------------- path redaction (all output strings)
 
 _TAIL = r"[^\s\"'<>|,;)]*"
-_BOUND = "(?<![^\\s\"'(=\\[])"  # start of text, whitespace, quote, bracket or = before a path
 _PATH_PATTERNS = [
-    re.compile(r"(?<!\w)[A-Za-z]:[\\/]" + _TAIL),                                # C:\x or C:/x
-    re.compile(r"\\\\[^\s\"'<>|,;)]+"),                                       # \\server\share
-    re.compile(_BOUND + r"~[\\/]" + _TAIL),                               # ~/x
-    re.compile(r"%[A-Za-z_]+%[\\/]" + _TAIL),                                # %USERPROFILE%\x
-    re.compile(_BOUND + r"/(?!api/)(?:root|usr|etc|home|var|opt|mnt|tmp|srv|bin|Users|Library|Volumes|private)(?:/" + _TAIL + ")?"),
-    re.compile(_BOUND + r"/(?!api/)[\w.\-]+(?:/[\w.\-]+)+/?"),              # any /a/b (two or more segments)
+    re.compile(r"file://[^\s\"'<>|,;)]+"),                              # file:// URLs with a path
+    re.compile(r"(?<!\w)[A-Za-z]:[\\/]" + _TAIL),                         # C:\x or C:/x (also after ":")
+    re.compile(r"\\\\[^\s\"'<>|,;)]+"),                                  # \\server\share
+    re.compile(r"(?<!\w)~[\\/]" + _TAIL),                                # ~/x
+    re.compile(r"%[A-Za-z_]+%[\\/]" + _TAIL),                            # %USERPROFILE%\x
+    # absolute POSIX path: ONE slash followed by a non-slash that starts a token (text start, whitespace, quote,
+    # opening bracket, "=", ":", "," or ";" before it). Not part of a word, glob or URL ("//host/...");
+    # "/api/..." routes stay. Works after ":" too ("ref:/home/x").
+    re.compile(r"(?<![^\s\"'(=\[:,;])/(?!api/)(?![\s/])[^\s\"'<>|,;)]+"),
 ]
 REDACTED = "<pfad>"
 
@@ -290,7 +384,7 @@ def _collect_git(config: CatalogConfig, sources: list[dict]) -> dict[str, list[d
     index: dict[str, list[dict]] = {}
 
     registry = _Source("repo_registry", "git-hosts", "GITHUBBOT/config/repo_registry.json",
-                       _safe_child(config.githubbot_config, "repo_registry.json"))
+                       _safe_child(config.githubbot_config, "repo_registry.json"), config.githubbot_config)
     data = registry.load()
     if data is not None:
         try:
@@ -300,9 +394,21 @@ def _collect_git(config: CatalogConfig, sources: list[dict]) -> dict[str, list[d
             if repos is not None and not isinstance(repos, dict):
                 raise TypeError("repos")
             for full_name, repo in (repos or {}).items():
-                for host, info in _dict(_dict(repo).get("hosts")).items():
-                    clones = _dict(info).get("clones")
-                    if not isinstance(clones, list) or not clones or not isinstance(clones[0], dict):
+                # a wrong type at repo / hosts / host / clones level makes the whole source "error" (not silently skipped)
+                if not isinstance(repo, dict):
+                    raise TypeError("repo")
+                hosts = repo.get("hosts")
+                if hosts is not None and not isinstance(hosts, dict):
+                    raise TypeError("hosts")
+                for host, info in (hosts or {}).items():
+                    if not isinstance(info, dict):
+                        raise TypeError("host")
+                    clones = info.get("clones")
+                    if clones is None:
+                        continue
+                    if not isinstance(clones, list) or any(not isinstance(c, dict) for c in clones):
+                        raise TypeError("clones")
+                    if not clones:
                         continue
                     clone = clones[0]
                     # added_at is when the clone was registered, not when git was observed: no observed_at here.
@@ -320,7 +426,7 @@ def _collect_git(config: CatalogConfig, sources: list[dict]) -> dict[str, list[d
             manifest = _safe_child(config.sync_root, slot.name, "repos.json")
             if manifest is None or not manifest.is_file():
                 continue
-            src = _Source("repos_manifest:" + slot.name, "git-hosts", ".SYNC/" + slot.name + "/repos.json", manifest)
+            src = _Source("repos_manifest:" + slot.name, "git-hosts", ".SYNC/" + slot.name + "/repos.json", manifest, config.sync_root)
             body = src.load()
             if body is not None:
                 try:
@@ -361,7 +467,7 @@ def _apply_git(item, entries, local_host):
 
 def _modules(config, sources, repo_git, local_host):
     src = _Source("modules_catalog", "module", ".MODULES/modules.catalog.json",
-                  _safe_child(config.ai_root, ".MODULES", "modules.catalog.json"))
+                  _safe_child(config.ai_root, ".MODULES", "modules.catalog.json"), config.ai_root)
     data = src.load()
     sources.append(src.record)
     if data is None:
@@ -403,7 +509,7 @@ def _ref(value):
 
 def _bundles(config, sources):
     src = _Source("bundles_catalog", "bundle", ".BUNDLES/bundles.catalog.v1.json",
-                  _safe_child(config.ai_root, ".BUNDLES", "bundles.catalog.v1.json"))
+                  _safe_child(config.ai_root, ".BUNDLES", "bundles.catalog.v1.json"), config.ai_root)
     data = src.load()
     sources.append(src.record)
     items, problems = [], []
@@ -425,7 +531,7 @@ def _bundles(config, sources):
             problems.append({"source": "bundles_catalog", "reason": "unsafe_id", "item": entry["id"]})
             continue
         try:
-            body, version, _ = _read(manifest)
+            body, version, _ = _read(manifest, config.ai_root)
             if not isinstance(body, dict):
                 raise ValueError("not_an_object")
             item["pin"]["source_version"] = version
@@ -482,7 +588,7 @@ def _stack_family(config, sources, errors, source_id, label, namespace, category
                 if member is not None and member.is_file():
                     yield folder.name, member
 
-    record, found, problems = _collect_dir(source_id, label, _safe_child(config.ai_root, *parts), members)
+    record, found, problems = _collect_dir(source_id, label, _safe_child(config.ai_root, *parts), members, config.ai_root)
     sources.append(record)
     items = []
     try:
@@ -537,7 +643,7 @@ def _skills(config, sources):
 
 def _satellites(config, sources, repo_git, local_host):
     src = _Source("satellite_catalog", "satellite", "GITHUBBOT/config/master_satellite_catalog.json",
-                  _safe_child(config.githubbot_config, "master_satellite_catalog.json"))
+                  _safe_child(config.githubbot_config, "master_satellite_catalog.json"), config.githubbot_config)
     data = src.load()
     sources.append(src.record)
     if data is None:
