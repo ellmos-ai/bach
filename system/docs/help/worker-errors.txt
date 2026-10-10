@@ -28,7 +28,22 @@ Ereignis bleibt getrennt im Verlauf erhalten; es überschreibt keine Fehlerursac
 Ein bestätigter neuer Start entfernt den Fehler der vorherigen Generation.
 
 Ein bereits ausdrücklich gestarteter fortlaufender Ollama-Cloud-Worker kann
-nach einem vorübergehenden HTTP 429 im selben Lauf wiederaufnehmen. Vor der
+nach einem vorübergehenden HTTP 429 im selben Lauf wiederaufnehmen, sofern
+für die aktuelle Task-Lease nachweislich noch kein Werkzeug gestartet wurde.
+Dieser Nachweis gilt auch über mehrere Modellblöcke und für Werkzeuge über
+die CLI-Bridge. Bereits begonnene Toolarbeit oder ein fehlender beziehungsweise
+ungültiger Nachweis unterdrücken die automatische Wiederaufnahme. Nach einem
+bestätigten Quarantäne-ACK ist die Task mit dem nativen Status blocked zur
+Prüfung gesperrt und ihre Lease freigegeben; die Fehleranzeige bleibt erhalten.
+Ein anderer Worker kann diese bestätigte Quarantäne nicht automatisch neu
+übernehmen. Fehlt der Quarantäne-ACK oder ist er ungültig, bleibt der Retry
+unterdrückt; der tatsächliche Taskstatus und die Lease sind über die kanonische
+Task-API zu prüfen. Ein fehlender ACK kann vor oder nach dem Commit auftreten
+und beweist daher weder blocked noch eine Freigabe. Der Worker fällt nicht auf
+Return-to-pending zurück. Vor einer erneuten Freigabe sind bereits erfolgte
+Toolwirkungen zu prüfen. Die Wiederholungsregel garantiert keine idempotente
+Toolarbeit.
+Vor der
 Wartephase werden der Lease-Renew-Thread beendet, die Task bestätigt zurückgegeben
 und das Assignment geschlossen. Ohne bestätigte Rückgabe wird nicht gewartet
 oder erneut gearbeitet. Während des Wartens ist der Worker aktiv, bearbeitet
