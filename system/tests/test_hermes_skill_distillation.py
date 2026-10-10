@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from system.gui.api.unified_api import router as unified_router
+from system.gui.device_auth import create_device, revoke_device
 from system.hub._services.hermes_distillation_service import (
     CleanedTranscriptResult,
     HermesDistillationService,
@@ -238,6 +239,15 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
 
     monkeypatch.setattr("system.gui.api.unified_api._get_hermes_service_instance", lambda: service)
     monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: service._get_connection())
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", temp_db)
+
+    device_conn = sqlite3.connect(str(temp_db))
+    try:
+        active_token = create_device("hermes-candidate-reader", connection=device_conn)
+        revoked_token = create_device("hermes-candidate-reader-revoked", connection=device_conn)
+        assert revoke_device("hermes-candidate-reader-revoked", connection=device_conn)
+    finally:
+        device_conn.close()
 
     app = FastAPI()
     app.include_router(unified_router)
@@ -257,14 +267,26 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     cand_id = data["skill_candidate"]["id"]
 
     # 2. GET /api/learning/hermes/candidates
-    resp = client.get("/api/learning/hermes/candidates?status=pending")
+    candidates_path = "/api/learning/hermes/candidates?status=pending"
+    assert client.get(candidates_path).status_code == 401
+    assert client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {revoked_token}"},
+    ).status_code == 403
+    resp = client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert resp.status_code == 200
     cands_data = resp.json()
     assert cands_data["count"] >= 1
     assert any(c["id"] == cand_id for c in cands_data["candidates"])
 
     # 3. GET /api/learning/hermes/candidates/{id}
-    resp = client.get(f"/api/learning/hermes/candidates/{cand_id}")
+    resp = client.get(
+        f"/api/learning/hermes/candidates/{cand_id}",
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert resp.status_code == 200
     assert resp.json()["name"] == "pythonpath-resolver"
 

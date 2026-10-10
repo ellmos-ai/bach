@@ -55,7 +55,11 @@ def candidate_payload(provider, row):
     result = {key: item.get(key) for key in _FIELDS[provider]}
     for key in _JSON_FIELDS.intersection(result):
         result[key] = json.loads(result[key]) if isinstance(result[key], str) else result[key]
-    return {"provider": provider, "proposal_schema": 1, "candidate": result}
+    payload = {"provider": provider, "proposal_schema": 1, "candidate": result}
+    # Preserve Phase-A bindings for historical rows without a common contract.
+    if item.get("candidate_contract_json"):
+        payload["common_contract"] = json.loads(item["candidate_contract_json"])
+    return payload
 
 
 def proposal_binding(provider, row):
@@ -73,6 +77,7 @@ def ensure_review_schema(conn, provider):
         "candidate_revision": "INTEGER NOT NULL DEFAULT 0",
         "candidate_digest": "TEXT NOT NULL DEFAULT ''",
         "proposal_json": "TEXT NOT NULL DEFAULT ''",
+        "candidate_contract_json": "TEXT NOT NULL DEFAULT ''",
     }
     if provider == "hermes":
         additions["lessons_draft_json"] = "TEXT NOT NULL DEFAULT '[]'"
