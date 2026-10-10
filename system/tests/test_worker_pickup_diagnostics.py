@@ -66,6 +66,23 @@ def test_disabled_filter_preserves_ownership_and_never_implies_permission():
     assert worker_selection_policy(slot)["unrouted_ownership"] == "bach_or_own_worker_role"
 
 
+@pytest.mark.parametrize("assigned_to", ["user", "claude", "gemini", "codex", "other-agent"])
+def test_generic_pickup_filter_does_not_override_foreign_ownership(assigned_to):
+    task = {"assigned_to": assigned_to, "category": "WORKER", "priority": "P1", "tags": ["ready"]}
+    assert pickup_filter_rejection(task, _slot()) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) == "ownership"
+
+
+def test_only_an_explicit_route_to_this_slot_overrides_personal_owner():
+    task = {"assigned_to": "user", "assigned_slot": "our-slot", "category": "GUI",
+            "priority": "P3", "tags": ["safe"]}
+    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_to": "other-agent"}, _slot()) == "ownership"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_slot": "another-slot"}, _slot()) == "slot_binding"
+
+
 def test_public_policy_is_read_only_bounded_and_has_no_private_fields():
     slot = _slot()
     slot["pickup_filter"]["api_key"] = "PRIVATE"

@@ -460,6 +460,21 @@ def test_explicit_slot_assignment_precedes_generic_pickup_filter(request, assign
         assert client.read(tid, now=T0).leased is False
 
 
+def test_explicit_task_id_remains_an_authorized_personal_task_route(mem_db):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    tid = _insert_task(mem_db, "Explicit personal route")
+    mem_db.execute("UPDATE tasks SET assigned_to='user', category='WORKER', priority='P1' WHERE id=?", (tid,))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    bound = WorkerLeaseBinding.acquire_next(client,
+        {"id": "our-slot", "task_id": tid, "model": "openrouter/free", "pickup_filter": {
+            "enabled": True, "categories": ["WORKER"], "priorities": ["P1"]}},
+        worker_id="physical-worker@HOST", host="HOST", generation="current",
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert bound.task_id == tid
+    assert client.read(tid, lease_id=bound._ack.lease_id, now=T0).own
+
+
 @pytest.mark.parametrize("assigned_slot, required_model", [
     ("other-slot", "openrouter/free"), ("our-slot", "paid-model")])
 def test_explicit_assignment_never_overrides_slot_or_model(request, monkeypatch, assigned_slot, required_model):

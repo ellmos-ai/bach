@@ -102,6 +102,17 @@ class WorkerLeaseBinding:
             required = str(snapshot.get(key) or "").strip().casefold()
             if required and required != str(slot.get(slot_key) or "").strip().casefold():
                 return reason
+        allowed = {"bach", "buddha", "ollama"}
+        allowed.update(str(slot.get(key) or "").strip().casefold()
+                       for key in ("id", "role_id", "sub_mode"))
+        allowed.discard("")
+        assigned_to = str(snapshot.get("assigned_to") or "").strip().casefold()
+        assigned_slot = str(snapshot.get("assigned_slot") or "").strip().casefold()
+        slot_id = str(slot.get("id") or "").strip().casefold()
+        own_explicit_route = bool(assigned_slot and slot_id and assigned_slot == slot_id)
+        if (assigned_to and assigned_to not in allowed
+                and not (assigned_to == "user" and own_explicit_route)):
+            return "ownership"
         if not cls._matches_slot(snapshot, slot):
             from .slots_config import pickup_filter_rejection
             pickup = slot.get("pickup_filter")
@@ -111,15 +122,11 @@ class WorkerLeaseBinding:
                 return pickup_filter_rejection(snapshot, {**slot, "pickup_filter": pickup}) or "pickup_filter"
             return "pickup_filter"
         pickup = slot.get("pickup_filter")
-        # Explicit routing/filter configuration may select a human-created
-        # task. A generic backlog scan has no such ownership instruction.
+        # Explicit routing may select a personal task. A pickup filter scopes
+        # general candidates but never overrides a foreign assignee.
         if snapshot.get("assigned_slot") or (isinstance(pickup, dict) and pickup.get("enabled")):
             return None
-        allowed = {"bach", "buddha", "ollama"}
-        allowed.update(str(slot.get(key) or "").strip().casefold()
-                       for key in ("id", "role_id", "sub_mode"))
-        allowed.discard("")
-        if str(snapshot.get("assigned_to") or "").strip().casefold() not in allowed:
+        if assigned_to not in allowed:
             return "ownership"
         return None
 
