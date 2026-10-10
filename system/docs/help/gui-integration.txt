@@ -21,6 +21,16 @@ die beiden Living-Bereiche bleiben beim ersten Öffnen eingeklappt.
 Die ehemaligen URLs /agents-board und /skills-board sind Weiterleitungen.
 Fabrika führt zum konsolidierten Blueprint-Editor.
 
+PORTRÄTAUSWAHL
+70 Bilder: sechs ursprüngliche Porträts, 19 bisherige Gemini-Bilder und drei neue
+Zehnerserien (Comic-Agenten, Gemini-Rollen, süße Werkstattroboter), zusätzlich
+zehn Monster und fünf Slime-Bälle. Die Auswahl
+steht in der Agenten-Werkstatt und den Agenten-Konfigurationsdialogen bereit.
+Die zusätzlichen Bilder verwenden 256-Pixel-PNGs innerhalb des bestehenden
+Bildvertrags. Gespeichert wird der Bildinhalt; neue Backend-Presetkennungen
+sind dafür nicht notwendig. Herkunft und Quellhashes liegen im gemeinsamen
+GUI-Repository unter src/assets/agent-portraits-20261010/provenance.json.
+
 PRÜFUNG
 GET /api/gui/backend-origin   Tatsächliches Backend und Instanzbindung
 GET /api/gui/capabilities     Registrierte Adapter und offene Abnahmen
