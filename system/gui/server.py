@@ -1790,6 +1790,8 @@ except Exception as e:
 try:
     from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
     app.include_router(core_system_agents_router)
+    from gui.api.model_sockets import router as model_sockets_router
+    app.include_router(model_sockets_router)
     from gui.api.agent_history import router as agent_history_router
     app.include_router(agent_history_router)
     from gui.api.docs_maintenance import router as docs_maintenance_router

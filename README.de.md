@@ -67,6 +67,7 @@ Scheduler für wiederkehrende Tasks und Event-basierte Workflows.
 
 ## Dokumentation
 
+- **[Modellsteckplätze und Agentenslots](docs/architecture/MODEL-SOCKETS.md)** – Quellvertrag, Bindungsprüfung und offene Aktivierungsabnahme
 - **[Gemeinsame GUI und Agenten](system/docs/help/gui-integration.txt)** – Bedienung und tatsächliche Adapterprüfung
 - **[Ocean–BACH-Transferplan](OCEAN-TRANSFER-PLAN.md)** – Installer, erster Modultransfer und weitere Aufgaben
 - **[Deprecation-Register](DEPRICATED.md)** – Ersatz, offene Abnahmen und Rollback

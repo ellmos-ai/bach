@@ -1097,6 +1097,22 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "system_slot_reader", None) is not None
             or getattr(session, "worker_slot_reader", None) is not None) else {})
         from hub._services.chat.local_resource_reserve import probe, read_policy, require_retryable, LocalReserveError
+        from hub._services.chat.model_sockets import model_binding_for_call
+        from hub._services.llm.model_backend import backend_identifier
+        target_backend = backend_identifier(backend) or getattr(backend, "backend_id", "")
+
+        def check_model_binding():
+            agent_id = getattr(session, "system_slot_id", None) if session is not None else None
+            if agent_id is None and session is not None and getattr(session, "worker_slot_reader", None):
+                agent_id = session.worker_slot_reader().get("id")
+            return model_binding_for_call(chat_id, target_backend, str(selected_model), agent_id=agent_id,
+                                          require_config=getattr(self, "require_model_socket_config", False))
+
+        def check_local_ready():
+            check_binding()
+            check_model_binding()
+
+        guard = {"check_ready": check_local_ready}
         deadline = None
         policy_bound = False
         policy_version = None
@@ -1127,7 +1143,11 @@ class ChatRuntime(_ModuleChatRuntime):
                     return await backend.chat(*args, **kwargs)
                 require_retryable(receipt)
                 if receipt["admitted"]:
-                    async with HostInferenceGate().turn(chat_id, priority, **guard):
+                    model_binding = check_model_binding()
+                    target = ({key: model_binding[key] for key in
+                              ("socket_id", "binding_id", "agent_id", "backend", "model")}
+                              if model_binding is not None else None)
+                    async with HostInferenceGate().turn(chat_id, priority, model_target=target, **guard):
                         # Resource availability can change while we waited for
                         # the existing host owner. Recheck under that owner.
                         receipt = await probe(backend, selected_model)
@@ -1135,9 +1155,14 @@ class ChatRuntime(_ModuleChatRuntime):
                         check_binding()
                         require_retryable(receipt)
                         if receipt["admitted"] and receipt["state"] != "external_target":
+                            current_binding = check_model_binding()
+                            if current_binding != model_binding:
+                                raise RuntimeError("model_socket_binding_changed")
                             await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
                             try:
                                 check_binding()
+                                if check_model_binding() != model_binding:
+                                    raise RuntimeError("model_socket_binding_changed")
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
