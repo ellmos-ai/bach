@@ -1237,6 +1237,11 @@ _global_defaults = {
     "model": "",
     "max_tool_rounds": 12,
 }
+# Native BACH requires its persisted, migrated registry; standalone callers
+# retain their existing no-registry contract. A lost native file never enables
+# unbound local inference after restart. Deployment requires explicit migration
+# and verified caller bindings; this source packet does not activate either.
+runtime.require_model_socket_config = True
 _runtime_state_lock = threading.RLock()
 
 
