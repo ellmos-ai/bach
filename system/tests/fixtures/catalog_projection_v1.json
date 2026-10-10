@@ -1,4 +1,129 @@
 {
+  "architecture": {
+    "areas": [
+      {
+        "cross": false,
+        "desc": {
+          "de": "Laufzeit in <pfad>",
+          "en": "Laufzeit in <pfad> (en)"
+        },
+        "dir": ".RUNTIME",
+        "id": "runtime",
+        "name": {
+          "de": "Laufzeit",
+          "en": "Laufzeit (en)"
+        },
+        "q": {
+          "de": "Worin laeuft es?",
+          "en": "Worin laeuft es? (en)"
+        }
+      },
+      {
+        "cross": false,
+        "desc": {
+          "de": "Werkzeuge",
+          "en": "Werkzeuge (en)"
+        },
+        "dir": ".TOOLS",
+        "id": "tools",
+        "name": {
+          "de": "Werkzeuge",
+          "en": "Werkzeuge (en)"
+        },
+        "q": {
+          "de": "Womit?",
+          "en": "Womit? (en)"
+        }
+      },
+      {
+        "cross": true,
+        "desc": {
+          "de": "Gedaechtnis",
+          "en": "Gedaechtnis (en)"
+        },
+        "dir": ".MEMORY",
+        "id": "memory",
+        "name": {
+          "de": "Gedaechtnis",
+          "en": "Gedaechtnis (en)"
+        },
+        "q": {
+          "de": "Was weiss ich?",
+          "en": "Was weiss ich? (en)"
+        }
+      }
+    ],
+    "available": true,
+    "basis": "declared",
+    "edges": [
+      {
+        "both": false,
+        "desc": {
+          "de": "Runtime nutzt Tools",
+          "en": "Runtime nutzt Tools (en)"
+        },
+        "from": "runtime",
+        "label": {
+          "de": "hantiert",
+          "en": "hantiert (en)"
+        },
+        "to": "tools"
+      },
+      {
+        "both": true,
+        "desc": {
+          "de": "Tools merken",
+          "en": "Tools merken (en)"
+        },
+        "from": "tools",
+        "label": {
+          "de": "merkt",
+          "en": "merkt (en)"
+        },
+        "to": "memory"
+      }
+    ],
+    "edges_note": "Kuratiert, keine Ableitung.",
+    "icons": {
+      "memory": "M",
+      "runtime": "R",
+      "tools": "T"
+    },
+    "layers": [
+      {
+        "d": {
+          "de": "Bausteine",
+          "en": "Bausteine (en)"
+        },
+        "id": "modules",
+        "n": {
+          "de": "Module",
+          "en": "Module (en)"
+        },
+        "s_tpl": {
+          "de": "{n} Bausteine",
+          "en": "{n} Bausteine (en)"
+        }
+      }
+    ],
+    "source_id": "schaltplan_authored",
+    "ui": {
+      "de": {
+        "layersH": "Wo diese Karte liegt",
+        "layersSub": "Schichten",
+        "status": {
+          "ok": "im Einsatz"
+        }
+      },
+      "en": {
+        "layersH": "Where this map sits",
+        "layersSub": "Layers",
+        "status": {
+          "ok": "in use"
+        }
+      }
+    }
+  },
   "count": 11,
   "counts": {
     "bundle": 3,
@@ -657,7 +782,7 @@
       "visibility": null
     }
   ],
-  "redactions": 3,
+  "redactions": 5,
   "schema": "bach.catalog.v1",
   "sources": [
     {
@@ -771,6 +896,20 @@
       "path_label": "GITHUBBOT/config/master_satellite_catalog.json",
       "schema": "master-satellite-catalog-v1",
       "source_version": "6ea05235af706ea7ee37dc6448cccd81f4422e4e3adea6553b1c4eb7d6c9b6d7"
+    },
+    {
+      "availability": "available",
+      "error": null,
+      "generated_at": "2025-10-09T08:53:20+00:00",
+      "generated_at_basis": "file_mtime",
+      "generated_at_raw": null,
+      "host": null,
+      "id": "schaltplan_authored",
+      "kind": "architecture",
+      "modified_at": "2025-10-09T08:53:20+00:00",
+      "path_label": ".TOPICS/.AI/ELLMOS-SCHALTPLAN.authored.json",
+      "schema": null,
+      "source_version": "ffcbcef9fc34d8945830a92915313a6179710956a9bb8f706c8fab7a7ae249df"
     }
   ],
   "truncated": false
