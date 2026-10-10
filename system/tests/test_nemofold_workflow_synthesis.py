@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from system.gui.api.unified_api import router as unified_router
+from system.gui.device_auth import create_device, revoke_device
 from system.hub._services.nemofold_workflow_service import NemoFoldWorkflowService
 
 # ═══════════════════════════════════════════════════════════════
@@ -211,6 +212,15 @@ def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
     test_service = NemoFoldWorkflowService(db_path=str(temp_db))
     monkeypatch.setattr("system.gui.api.unified_api._get_nemofold_service_instance", lambda: test_service)
     monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: sqlite3.connect(str(temp_db)))
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", temp_db)
+
+    device_conn = sqlite3.connect(str(temp_db))
+    try:
+        active_token = create_device("nemofold-candidate-reader", connection=device_conn)
+        revoked_token = create_device("nemofold-candidate-reader-revoked", connection=device_conn)
+        assert revoke_device("nemofold-candidate-reader-revoked", connection=device_conn)
+    finally:
+        device_conn.close()
 
     app = FastAPI()
     app.include_router(unified_router)
@@ -236,14 +246,26 @@ def test_api_synthesis_and_candidates_flow(monkeypatch, temp_db: Path):
     assert synth_data["chains_synthesized"] >= 1
 
     # 2. Kandidaten abrufen
-    cand_resp = client.get("/api/learning/nemofold/candidates?status=pending")
+    candidates_path = "/api/learning/nemofold/candidates?status=pending"
+    assert client.get(candidates_path).status_code == 401
+    assert client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {revoked_token}"},
+    ).status_code == 403
+    cand_resp = client.get(
+        candidates_path,
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert cand_resp.status_code == 200
     cand_data = cand_resp.json()
     assert cand_data["count"] >= 1
     target_id = cand_data["candidates"][0]["id"]
 
     # 3. Detailansicht
-    detail_resp = client.get(f"/api/learning/nemofold/candidates/{target_id}")
+    detail_resp = client.get(
+        f"/api/learning/nemofold/candidates/{target_id}",
+        headers={"Authorization": f"Bearer {active_token}"},
+    )
     assert detail_resp.status_code == 200
     assert detail_resp.json()["id"] == target_id
 
