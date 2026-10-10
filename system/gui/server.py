@@ -10639,10 +10639,10 @@ class PromptUpdateRequest(BaseModel):
 
 
 def _prompt_library_row(row):
-    """Keep the GUI's CSV editing contract for legacy and JSON database tags."""
-    from hub.prompt import prompt_tags_text
+    """Keep tags editable without losing boundaries in existing JSON lists."""
+    from hub.prompt import prompt_tags_edit_text
     result = row_to_dict(row)
-    result["tags"] = prompt_tags_text(result.get("tags"))
+    result["tags"] = prompt_tags_edit_text(result.get("tags"))
     return result
 
 

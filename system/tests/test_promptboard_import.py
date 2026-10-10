@@ -204,3 +204,16 @@ def test_imported_tags_gui_edit_roundtrip(gui_client, handler, prompt_env, tmp_p
     assert gui_client.put(f"/api/prompt-library/{prompt['id']}",
                           json={"text": "Changed", "tags": prompt["tags"]}).status_code == 200
     assert json.loads(rows(prompt_env)[0][2]) == ["QA", "Prüfung"]
+
+
+@pytest.mark.parametrize("tags", [["alpha,beta", "QA"], ['["literal"]'],
+                                   ["Prüfung,Entwurf", '"quoted"']])
+def test_imported_ambiguous_tags_keep_boundaries_on_gui_text_save(gui_client, handler, prompt_env, tmp_path, tags):
+    path = library(tmp_path, [{"name": "Imported", "content": "Text", "tags": tags}])
+    assert handler.import_promptboard(path)["imported"] == 1
+    prompt = gui_client.get("/api/prompt-library").json()["prompts"][0]
+    assert json.loads(prompt["tags"]) == tags
+    response = gui_client.put(f"/api/prompt-library/{prompt['id']}",
+                              json={"text": "Only the text changed", "tags": prompt["tags"]})
+    assert response.status_code == 200
+    assert json.loads(rows(prompt_env)[0][2]) == tags

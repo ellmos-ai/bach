@@ -52,6 +52,21 @@ def prompt_tags_text(tags):
     return tags
 
 
+def prompt_tags_edit_text(tags):
+    """Use CSV for simple tags and JSON when CSV would lose tag boundaries."""
+    display = prompt_tags_text(tags)
+    if tags is None:
+        return None
+    try:
+        parsed = json.loads(tags)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, list) and all(isinstance(tag, str) for tag in parsed):
+        if serialize_prompt_tags(display) != serialize_prompt_tags(parsed):
+            return json.dumps(parsed, ensure_ascii=False)
+    return display
+
+
 def promptboard_library_paths():
     """Discover the existing PromptBoard library without creating directories."""
     candidates = []
