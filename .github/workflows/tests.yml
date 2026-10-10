@@ -72,6 +72,12 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py
 
+      - name: Native documentation maintenance and atomic task ownership
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_docs_maintenance.py system/tests/test_task_handler.py system/tests/test_task_slot_fields.py system/tests/test_rheingold_handler.py
+
       - name: Native cognitive process model and read-only observations
         env:
           PYTHONIOENCODING: utf-8

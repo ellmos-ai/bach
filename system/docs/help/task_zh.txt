@@ -98,3 +98,11 @@ bach hook help           挂钩系统
 依赖性检测：任务会自动添加（BLOCKED）标志
 显示未完成的依赖关系
 钩子：after_task_create、after_task_done 在操作期间发出
+
+
+创建时的原子分配：bach task add "文档检查" --assigned bach。
+也支持 --assigned=bach 和 -a bach。空名称或缺失名称会在 INSERT 前被拒绝。
+未指定此选项时保留数据库默认值。
+API：task.add("文档检查", assigned_to="bach")。
+草稿晋升时保留分配信息。lead 的额外身份验证、模型/slot 和分配检查仍然适用。
+这些选项不会启动 worker，也不会获取任务 lease。

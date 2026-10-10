@@ -212,7 +212,7 @@ def sync_drafts_to_rheingold(
     # Finde alle Tasks mit Draft-Source
     cursor.execute("""
         SELECT id, title, description, priority, category, status, due_date, source, depends_on,
-               required_model, assigned_slot, creation_origin
+               required_model, assigned_slot, creation_origin, assigned_to
         FROM tasks
         WHERE source LIKE 'draft:%'
         ORDER BY id ASC
@@ -221,7 +221,7 @@ def sync_drafts_to_rheingold(
     promoted = []
 
     for row in drafts:
-        old_id, title, desc, prio, cat, stat, due, draft_src, deps, required_model, assigned_slot, creation_origin = row
+        old_id, title, desc, prio, cat, stat, due, draft_src, deps, required_model, assigned_slot, creation_origin, assigned_to = row
         payload = {
             "title": title,
             "description": desc or "",
@@ -236,6 +236,8 @@ def sync_drafts_to_rheingold(
             "source": draft_src,
             "created_by": socket.gethostname().split(".")[0].lower(),
         }
+        if assigned_to is not None:
+            payload["assigned_to"] = assigned_to
 
         ok, res = post_task_to_rheingold(base_url, payload)
         if ok and "id" in res:
