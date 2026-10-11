@@ -978,6 +978,7 @@ class TestBACHTray:
             {"ollama": {"status": "ok"}},
             {"models": ["qwen3.5", "llama3"]},
             {"ok": True, "slots": {"buddha_chat": {"model": "qwen3.5"}}, "dynamic_workers": []},
+            {"ok": True, "workers": []},
         ])
         tray._refresh()
         assert tray.state["backend"] == "ollama"

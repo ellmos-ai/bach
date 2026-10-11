@@ -30,6 +30,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 import sqlite3
 import sys
@@ -136,8 +137,10 @@ from hub._services.chat.slots_config import (
     reset_prompt_template,
     update_prompt_template,
     update_slot,
+    WORKER_EDITABLE_FIELDS,
     worker_configuration_snapshot,
     change_worker_configuration,
+    persistent_worker_startup_snapshot,
     _worker_configuration,
 )
 
@@ -190,6 +193,8 @@ class _WorkerControl:
 
     worker_id: str
     generation: str = field(default_factory=lambda: uuid.uuid4().hex)
+    physical_worker_id: Optional[str] = None
+    lease_worker_id: Optional[str] = None
     stop_event: threading.Event = field(default_factory=threading.Event)
     done_event: threading.Event = field(default_factory=threading.Event)
     thread: Any = None
@@ -203,6 +208,7 @@ class _WorkerControl:
     slot_policy_reader: Any = None
     stop_status: Optional[str] = None
     stop_activity: str = "Manuell gestoppt"
+    last_heartbeat_at: Optional[str] = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
     task_binding: Any = None
@@ -273,6 +279,7 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             "worker_thread_started": (None if control.launch_attempted and not control.worker_thread_started
                                       and not terminal else control.worker_thread_started),
             "worker_status": None, "error_code": control.start_error,
+            "heartbeat_at": control.last_heartbeat_at,
             "stop_requested": control.stop_event.is_set()}
         if control.queue_status is not None:
             from hub._services.chat.worker_queue_status import project_queue_status
@@ -393,6 +400,11 @@ def _execution_worker_slot(worker_id: str) -> dict:
 
 def _execution_worker_configuration(slot: dict):
     configuration = _worker_configuration(slot)
+    if not slot.get("system") and slot.get("id") not in DEFAULT_CORE_SLOTS:
+        # Consent is control-plane state, not a change to the running task profile.
+        from hub._services.chat.slots_config import _worker_profile_version
+        configuration.pop("persistent_opt_in", None)
+        configuration["configuration_version"] = _worker_profile_version(slot)
     if slot.get("id") == "buddha_always_on" or slot.get("system"):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
@@ -432,6 +444,10 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         return (_WORKER_CONTROLS.get(control.worker_id) is control
                 and not control.done_event.is_set())
     host = socket.gethostname()
+    expected_lease_worker_id = f"{physical_worker_id}@{host}"
+    lease_worker_id = control.lease_worker_id or expected_lease_worker_id
+    if lease_worker_id != expected_lease_worker_id:
+        raise RuntimeError("Persistierte Lease-Worker-Identität stimmt nicht")
     client = _native_task_client()
     if control.sequence_creator_authority is not None:
         if client.mode != "local":
@@ -443,7 +459,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                 control.creator_delegation = control.sequence_creator_authority.bind(
                     task_id=slot.get("task_id"), slot_id=control.worker_id,
                     start_request_id=control.start_request_id, generation=control.generation,
-                    worker_id=f"{physical_worker_id}@{host}", host=host)
+                    worker_id=lease_worker_id, host=host)
     startup_recovery = control.startup_recovery and control.worker_id == "buddha_always_on"
     explicit = slot.get("task_id")
     if startup_recovery and explicit not in (None, "", 0, "0"):
@@ -465,7 +481,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
 
     try:
         return WorkerLeaseBinding.acquire_next(
-            client, slot, worker_id=f"{physical_worker_id}@{host}", host=host,
+            client, slot, worker_id=lease_worker_id, host=host,
             generation=control.generation, is_current=is_current, stop_event=control.stop_event,
             policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
             _creator_delegation=control.creator_delegation,
@@ -535,6 +551,10 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker = dict(worker)
     worker.pop("generation", None)
     worker.pop("task_action_binding", None)
+    worker.pop("persistent_opt_in_id", None)
+    worker.pop("persistent_opt_in_profile_version", None)
+    worker.pop("_persistent_execution_checkpoint", None)
+    worker["persistent_opt_in"] = worker.get("persistent_opt_in") is True
     with _WORKER_CONTROL_LOCK:
         retained = _WORKER_EXECUTIONS.get(worker.get("id"))
         control = _WORKER_CONTROLS.get(worker.get("id"))
@@ -685,7 +705,8 @@ def _system_slots_snapshot() -> dict:
 def _change_worker_configuration(worker_id: str, version: str, changes: Dict[str, Any]):
     with _WORKER_CONTROL_LOCK:
         control = _WORKER_CONTROLS.get(worker_id)
-        if control is not None and not control.done_event.is_set():
+        revoke_only = changes == {"persistent_opt_in": False}
+        if control is not None and not control.done_event.is_set() and not revoke_only:
             raise RuntimeError("worker_not_editable")
         return change_worker_configuration(worker_id, version, changes)
 
@@ -791,6 +812,7 @@ def _wait_worker_backend_retry(control: _WorkerControl, seconds: float) -> bool:
     """Wait without a task lease, watching stop, generation, policy and TTL."""
     deadline = time.monotonic() + seconds
     while not control.stop_event.is_set():
+        control.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
         with _WORKER_CONTROL_LOCK:
             if _WORKER_CONTROLS.get(control.worker_id) is not control:
                 return False
@@ -991,6 +1013,31 @@ def _validate_worker_execution_fence(expected_execution):
                    or any(char not in "0123456789abcdef" for char in value)
                    for value in expected_execution.values())):
         raise ValueError("Ungültige Ausführungsbindung für Stop")
+
+
+def _revoke_persistent_worker_intent(worker_id: str) -> bool:
+    """CAS-revoke the stored user opt-in before a manual stop can race restart."""
+    for attempt in range(2):
+        try:
+            snapshot = worker_configuration_snapshot(worker_id)
+            configuration = snapshot.get("configuration")
+            if not isinstance(configuration, dict):
+                return False
+            if snapshot.get("persistent_opt_in") is not True:
+                return True
+            change_worker_configuration(
+                worker_id, snapshot["configuration_version"], {"persistent_opt_in": False}
+            )
+            return True
+        except RuntimeError as exc:
+            if str(exc) == "configuration_version_conflict" and attempt == 0:
+                continue
+            log.warning("Dauerbetriebsfreigabe nicht bestätigt (%s)", type(exc).__name__)
+            return False
+        except Exception as exc:
+            log.warning("Dauerbetriebsfreigabe nicht bestätigt (%s)", type(exc).__name__)
+            return False
+    return False
 
 
 def _request_worker_revocation(
@@ -3408,12 +3455,26 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            start_request_id: str | None = None,
                            expected_service_instance: str | None = None,
                            expected_configuration_version: str | None = None,
-                           _creator_authority=None, _startup_stop_event=None) -> tuple[dict, int]:
+                           _creator_authority=None, _startup_stop_event=None,
+                           _startup_generation: str | None = None,
+                           _startup_physical_worker_id: str | None = None,
+                           _startup_lease_worker_id: str | None = None) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
     if expected_service_instance is not None and expected_service_instance != _WORKER_SERVICE_INSTANCE:
         return {"error": "Control-Instanz wurde geändert", "error_code": "service_instance_conflict"}, 409
+    startup_identity = (_startup_generation, _startup_physical_worker_id, _startup_lease_worker_id)
+    if any(value is not None for value in startup_identity):
+        valid_startup_identity = (
+            _startup_stop_event is not None
+            and all(isinstance(value, str) for value in startup_identity)
+            and re.fullmatch(r"[0-9a-f]{32}", _startup_generation or "") is not None
+            and re.fullmatch(r"worker-[0-9a-f]{32}", _startup_physical_worker_id or "") is not None
+            and _startup_lease_worker_id == f"{_startup_physical_worker_id}@{socket.gethostname()}"
+        )
+        if not valid_startup_identity:
+            return {"error": "Private Startidentität ist ungültig"}, 400
     request_id = start_request_id if start_request_id is not None else uuid.uuid4().hex
     if (not isinstance(request_id, str) or len(request_id) != 32
             or any(char not in "0123456789abcdef" for char in request_id)):
@@ -3455,10 +3516,16 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
                 if slot.get("enabled", True) is not True:
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
-                control = _WorkerControl(worker_id, start_request_id=request_id,
-                                         admitted_worker={"id": worker_id, "type": slot.get("type")},
-                                         slot_policy_reader=_execution_slot_reader(slot),
-                                         sequence_creator_authority=_creator_authority)
+                control = _WorkerControl(
+                    worker_id,
+                    generation=_startup_generation or uuid.uuid4().hex,
+                    physical_worker_id=_startup_physical_worker_id,
+                    lease_worker_id=_startup_lease_worker_id,
+                    start_request_id=request_id,
+                    admitted_worker={"id": worker_id, "type": slot.get("type")},
+                    slot_policy_reader=_execution_slot_reader(slot),
+                    sequence_creator_authority=_creator_authority,
+                )
                 if _startup_stop_event is not None:
                     control.stop_event = _startup_stop_event
                     control.startup_recovery = True
@@ -3507,7 +3574,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
     # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
     sub_mode = (w.get("sub_mode") or "").strip().lower()
-    worker_instance_id = f"worker-{uuid.uuid4().hex}"
+    worker_instance_id = control.physical_worker_id or f"worker-{uuid.uuid4().hex}"
+    expected_lease_worker_id = f"{worker_instance_id}@{socket.gethostname()}"
+    if control.lease_worker_id is not None and control.lease_worker_id != expected_lease_worker_id:
+        return {"error": "Persistierte Lease-Worker-Identität stimmt nicht"}, 409
+    control.physical_worker_id = worker_instance_id
+    control.lease_worker_id = control.lease_worker_id or expected_lease_worker_id
     try:
         board_assignment = begin_assignment(
             role_id=(sub_mode or "task_worker"),
@@ -3594,6 +3666,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 newly_acquired_binding = None
                 if control.stop_event.is_set():
                     break
+                control.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
 
                 # Worker-State prüfen: wurde er pausiert oder gelöscht?
                 current_slot = control.slot_policy_reader()
@@ -4548,6 +4621,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
+                    w.pop("persistent_opt_in_id", None)
+                    w.pop("persistent_opt_in_profile_version", None)
+                    w.pop("_persistent_execution_checkpoint", None)
+                    w["persistent_opt_in"] = w.get("persistent_opt_in") is True
                 self._json({
                     "ok": True,
                     "slots": slots,
@@ -4915,7 +4992,18 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "slot_id und updates dict erforderlich"}, 400)
                 return
             try:
-                updated = update_slot(slot_id, updates)
+                with _WORKER_CONTROL_LOCK:
+                    current = _execution_worker_slot(slot_id)
+                    profile_fields = set(WORKER_EDITABLE_FIELDS) - {"persistent_opt_in"}
+                    manual_deactivation = (updates.get("enabled") is False
+                                           or updates.get("status") in {"paused", "idle"})
+                    profile_changed = bool(set(updates) & profile_fields)
+                    if (current.get("persistent_opt_in") is True
+                            and (manual_deactivation or profile_changed)
+                            and not _revoke_persistent_worker_intent(slot_id)):
+                        self._json({"error": "Dauerbetriebsfreigabe konnte nicht widerrufen werden"}, 503)
+                        return
+                    updated = update_slot(slot_id, updates)
                 record_activity(slot_id, f"Slot {slot_id} aktualisiert", "ok")
                 self._json({"ok": True, "slot": updated})
             except KeyError as e:
@@ -4959,15 +5047,27 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if not new_status:
                     new_status = "paused" if w.get("status") != "paused" else "idle"
                 if new_status in ("paused", "idle"):
+                    had_persistent_intent = w.get("persistent_opt_in") is True
+                    intent_revoked = (not had_persistent_intent
+                                      or _revoke_persistent_worker_intent(worker_id))
+                    if had_persistent_intent:
+                        try:
+                            w = _execution_worker_slot(worker_id) or w
+                        except Exception:
+                            pass
+                    effective_status = new_status if intent_revoked else "paused"
                     confirmed, updated, receipt, response_status = _request_worker_revocation(
                         worker_id,
                         w,
-                        requested_status=new_status,
-                        activity=f"Worker {new_status}",
+                        requested_status=effective_status,
+                        activity=f"Worker {effective_status}",
                     )
-                    response = {"ok": confirmed, "worker": updated, "receipt": receipt}
+                    response = {"ok": confirmed, "worker": updated, "receipt": receipt,
+                                "persistent_intent_revoked": intent_revoked}
                     if not confirmed:
                         response["error"] = "Worker-Ende noch nicht nachgewiesen"
+                    elif not intent_revoked:
+                        response["error"] = "Worker pausiert; Dauerbetriebsfreigabe konnte nicht bestätigt werden"
                     self._json(response, response_status)
                     return
                 updated = update_slot(worker_id, {"status": new_status})
@@ -5000,17 +5100,29 @@ class ControlHandler(BaseHTTPRequestHandler):
                 if not w:
                     self._json({"error": "Worker nicht gefunden"}, 404)
                     return
+                had_persistent_intent = w.get("persistent_opt_in") is True
+                intent_revoked = (not had_persistent_intent
+                                  or _revoke_persistent_worker_intent(worker_id))
+                if had_persistent_intent:
+                    try:
+                        w = _execution_worker_slot(worker_id) or w
+                    except Exception:
+                        pass
                 confirmed, updated, receipt, response_status = _request_worker_revocation(
                     worker_id,
                     w,
+                    requested_status="paused" if had_persistent_intent else None,
                     activity="Manuell gestoppt",
                     expected_execution=expected_execution,
                 )
-                response = {"ok": confirmed, "worker": updated, "receipt": receipt}
+                response = {"ok": confirmed, "worker": updated, "receipt": receipt,
+                            "persistent_intent_revoked": intent_revoked}
                 if receipt.get("execution") is not None:
                     response["execution"] = receipt["execution"]
                 if not confirmed:
                     response["error"] = "Worker-Ende noch nicht nachgewiesen"
+                elif not intent_revoked:
+                    response["error"] = "Worker gestoppt und pausiert; Dauerbetriebsfreigabe nicht bestätigt"
                 self._json(response, response_status)
             except ValueError:
                 self._json({"error": "Ungültige Ausführungsbindung für Stop"}, 400)
@@ -5158,6 +5270,496 @@ class ControlHandler(BaseHTTPRequestHandler):
 
 
 
+def _persistent_worker_trace_contract():
+    """Fingerprint the task-bound normal loop and canonical trace readers."""
+    try:
+        import hashlib
+        import inspect
+        from hub._services.chat.chat_runtime import ChatRuntime
+        from hub._services.chat.worker_tool_dispatch_trace import (
+            acknowledge_normal_tool_result, abandon_normal_tool_result, execute_normal_tool,
+        )
+        from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+        from hub._services.task_lease_client import TaskLeaseClient
+
+        process_entry = inspect.getsource(ChatRuntime._process_turn)
+        tool_loop_wrapper = inspect.getsource(ChatRuntime._tool_loop)
+        normal_tool_loop = inspect.getsource(ChatRuntime._tool_loop_impl)
+        binding_gate = inspect.getsource(ChatRuntime._worker_backend_gate)
+        dispatcher = inspect.getsource(execute_normal_tool)
+        start_writer = inspect.getsource(WorkerLeaseBinding.trace_tool_started)
+        phase_writer = inspect.getsource(WorkerLeaseBinding.trace_tool_phase)
+        acquire_wrapper = inspect.getsource(WorkerLeaseBinding.acquire_next)
+        acquire_next = inspect.getsource(WorkerLeaseBinding._acquire_next_observed)
+        worker_acquire = inspect.getsource(_acquire_worker_task)
+        worker_runner = inspect.getsource(_start_reserved_worker_execution)
+        candidates_reader = inspect.getsource(TaskLeaseClient.task_candidates)
+        snapshot_reader = inspect.getsource(TaskLeaseClient.task_snapshot)
+        lease_reader = inspect.getsource(TaskLeaseClient.read)
+        event_reader = inspect.getsource(TaskLeaseClient.tool_trace_events)
+        required = (
+            acknowledge_normal_tool_result, abandon_normal_tool_result, execute_normal_tool,
+            WorkerLeaseBinding.trace_tool_started, WorkerLeaseBinding.trace_tool_phase,
+            WorkerLeaseBinding.acquire_next, TaskLeaseClient.task_candidates,
+            TaskLeaseClient.task_snapshot, TaskLeaseClient.read, TaskLeaseClient.tool_trace_events,
+        )
+        if not all(callable(value) for value in required):
+            return None
+        if ("self._tool_loop(" not in process_entry
+                or "self._tool_loop_impl(" not in tool_loop_wrapper):
+            return None
+        if (not all(token in normal_tool_loop for token in (
+                "execute_normal_tool(", "abandon_normal_tool_result(",
+                "acknowledge_normal_tool_result("))
+                or "if binding is not None:" not in normal_tool_loop
+                or "self._worker_backend_gate(session" not in normal_tool_loop):
+            return None
+        if ("binding is None" not in binding_gate
+                or "require_task_binding" not in binding_gate
+                or "Taskbindung fehlt" not in binding_gate):
+            return None
+        if ("trace_tool_started(" not in dispatcher or "trace_tool_phase(" not in dispatcher
+                or "tool_trace_events" not in event_reader):
+            return None
+        if ("WorkerLeaseBinding.acquire_next(" not in worker_acquire
+                or "generation=control.generation" not in worker_acquire
+                or "lease_worker_id" not in worker_acquire
+                or "require_task_binding = True" not in worker_runner
+                or "_acquire_worker_task(" not in worker_runner):
+            return None
+        if ("_acquire_next_observed(" not in acquire_wrapper
+                or "client.task_candidates(" not in acquire_next
+                or "pending" not in candidates_reader or "in_progress" not in candidates_reader
+                or "task_version" not in snapshot_reader or "fence" not in lease_reader):
+            return None
+        sources = "\n\0".join((process_entry, tool_loop_wrapper, normal_tool_loop,
+            binding_gate, dispatcher, start_writer, phase_writer, acquire_wrapper,
+            acquire_next, worker_acquire, worker_runner, candidates_reader,
+            snapshot_reader, lease_reader, event_reader)).encode("utf-8")
+        return {"schema": "bach.worker-tool-trace.v1",
+                "source_sha256": hashlib.sha256(sources).hexdigest()}
+    except Exception:
+        return None
+
+def _persistent_worker_reconciliation_scan(client, checkpoint, profile_status):
+    """Read every task eligible for normal-loop pickup and its native lease/traces."""
+    import hashlib
+    import json
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    if getattr(client, "mode", None) != "local":
+        raise LeaseProtocolError("Lokaler kanonischer Task-Lead ist nicht verfügbar")
+    limit = 100
+    max_candidates = 100_000
+    max_trace_offset = 100_000
+    candidates = []
+    page_receipts = []
+    expected_total = None
+    offset = 0
+    while True:
+        if offset > max_candidates:
+            raise LeaseProtocolError("Task-Inventar überschreitet das Scanlimit")
+        page = client.task_candidates(limit=limit, offset=offset)
+        if (not isinstance(page, dict) or set(page) != {"tasks", "total", "has_more", "offset"}
+                or not isinstance(page.get("tasks"), list)
+                or type(page.get("total")) is not int or page["total"] < 0
+                or type(page.get("has_more")) is not bool or page.get("offset") != offset
+                or type(page.get("offset")) is not int or len(page["tasks"]) > limit):
+            raise LeaseProtocolError("Task-Inventarseite ist unvollständig")
+        if expected_total is None:
+            expected_total = page["total"]
+        elif page["total"] != expected_total:
+            raise LeaseProtocolError("Task-Inventar änderte sich während der Seite")
+        next_offset = offset + len(page["tasks"])
+        expected_more = next_offset < expected_total
+        if (page["has_more"] != expected_more
+                or (page["has_more"] and len(page["tasks"]) != limit)
+                or next_offset > expected_total):
+            raise LeaseProtocolError("Task-Inventar enthält eine fehlende Seite")
+        page_receipts.append({"offset": offset, "count": len(page["tasks"]),
+                              "total": page["total"], "has_more": page["has_more"]})
+        candidates.extend(page["tasks"])
+        if len(candidates) > max_candidates:
+            raise LeaseProtocolError("Task-Inventar überschreitet das Scanlimit")
+        if not page["has_more"]:
+            break
+        if next_offset <= offset:
+            raise LeaseProtocolError("Task-Inventarseite macht keinen Fortschritt")
+        offset = next_offset
+    if expected_total is None or len(candidates) != expected_total:
+        raise LeaseProtocolError("Task-Inventar ist nicht vollständig")
+    if len({item.get("id") for item in candidates if isinstance(item, dict)}) != len(candidates):
+        raise LeaseProtocolError("Task-Inventar enthält doppelte IDs")
+
+    retryable_statuses = {"pending", "open", "in_progress", "progress"}
+    generation = checkpoint["generation"]
+    expected_worker = checkpoint["lease_worker_id"]
+    expected_host = expected_worker.rsplit("@", 1)[1]
+    active_old_lease = False
+    old_generation_trace = False
+    identity_conflict = False
+    records = []
+    for candidate in sorted(candidates, key=lambda item: item["id"]):
+        task_id = candidate.get("id")
+        candidate_status = candidate.get("status")
+        candidate_version = candidate.get("task_version")
+        if (type(task_id) is not int or task_id <= 0
+                or not isinstance(candidate_status, str)
+                or candidate_status.strip().lower() not in retryable_statuses
+                or not isinstance(candidate_version, str)
+                or re.fullmatch(r"[0-9a-f]{64}", candidate_version) is None):
+            raise LeaseProtocolError("Task-Kandidat ist unvollständig")
+        snapshot = client.task_snapshot(task_id)
+        status = snapshot.get("status")
+        task_version = snapshot.get("task_version")
+        if (snapshot.get("id") != task_id or status != candidate_status
+                or task_version != candidate_version):
+            raise LeaseProtocolError("Taskstatus oder Version änderte sich beim Readback")
+        lease = client.read(task_id)
+        lease_status = getattr(lease, "status", None)
+        lease_version = getattr(lease, "task_version", None)
+        fence = getattr(lease, "fence", None)
+        leased = getattr(lease, "leased", None)
+        holder = getattr(lease, "holder", None)
+        if (getattr(lease, "task_id", None) != task_id or lease_status != status
+                or lease_version != task_version or type(fence) is not int or fence < 0
+                or type(leased) is not bool):
+            raise LeaseProtocolError("Lease-Fence oder Taskversion ist nicht stabil")
+        holder_worker = None
+        holder_host = None
+        holder_expires = None
+        if leased:
+            if not isinstance(holder, dict):
+                raise LeaseProtocolError("Aktiver Lease hat keinen kanonischen Holder")
+            holder_worker = holder.get("worker_id")
+            holder_host = holder.get("host")
+            holder_expires = holder.get("expires_at")
+            if not isinstance(holder_worker, str) or not isinstance(holder_host, str):
+                raise LeaseProtocolError("Aktiver Lease-Holder ist unvollständig")
+            if holder_worker == expected_worker:
+                if holder_host != expected_host:
+                    identity_conflict = True
+                else:
+                    active_old_lease = True
+
+        events = []
+        trace_offset = 0
+        while True:
+            if trace_offset > max_trace_offset:
+                raise LeaseProtocolError("Trace-Inventar überschreitet das Scanlimit")
+            trace_page = client.tool_trace_events(task_id, limit=limit, offset=trace_offset)
+            page_events = trace_page.get("events") if isinstance(trace_page, dict) else None
+            if (not isinstance(trace_page, dict)
+                    or trace_page.get("task_id") != task_id
+                    or trace_page.get("limit") != limit
+                    or trace_page.get("offset") != trace_offset
+                    or type(trace_page.get("count")) is not int
+                    or not isinstance(page_events, list)
+                    or trace_page["count"] != len(page_events)
+                    or len(page_events) > limit):
+                raise LeaseProtocolError("Trace-Seite ist unvollständig")
+            for event in page_events:
+                if (not isinstance(event, dict) or event.get("task_id") != task_id
+                        or type(event.get("event_id")) is not int
+                        or type(event.get("fence")) is not int
+                        or not isinstance(event.get("generation"), str)
+                        or not isinstance(event.get("worker_id"), str)
+                        or not isinstance(event.get("task_version"), str)):
+                    raise LeaseProtocolError("Trace-Ereignis ist unvollständig")
+                generation_match = event["generation"] == generation
+                worker_match = event["worker_id"] == expected_worker
+                if generation_match or worker_match:
+                    if generation_match and worker_match:
+                        old_generation_trace = True
+                    else:
+                        identity_conflict = True
+            events.extend(page_events)
+            if len(page_events) < limit:
+                break
+            trace_offset += len(page_events)
+            if trace_offset > max_trace_offset:
+                raise LeaseProtocolError("Trace-Seite liegt außerhalb des Readerlimits")
+        event_ids = [event["event_id"] for event in events]
+        if len(event_ids) != len(set(event_ids)):
+            raise LeaseProtocolError("Trace-Inventar enthält doppelte Ereignisse")
+        records.append({
+            "task_id": task_id,
+            "status": status,
+            "task_version": task_version,
+            "fence": fence,
+            "leased": leased,
+            "holder_worker_id": holder_worker,
+            "holder_host": holder_host,
+            "holder_expires_at": holder_expires,
+            "trace_events": sorted(events, key=lambda event: event["event_id"]),
+        })
+    canonical = {
+        "schema": "bach.persistent-worker-scan.v1",
+        "profile_status": profile_status,
+        "generation": generation,
+        "lease_worker_id": expected_worker,
+        "trace_contract_sha256": checkpoint["trace_contract_sha256"],
+        "candidate_total": expected_total,
+        "candidate_pages": page_receipts,
+        "tasks": records,
+    }
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return {
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "candidate_count": expected_total,
+        "complete": True,
+        "active_old_lease": active_old_lease,
+        "old_generation_trace": old_generation_trace,
+        "identity_conflict": identity_conflict,
+    }
+
+def _reconcile_persistent_cloud_worker(profile, trace_contract, *, client=None, path=None):
+    """Settle a stale generation only after two complete identical native scans."""
+    worker_id = profile.get("worker_id")
+    if not isinstance(worker_id, str) or profile.get("reason") != "prior_generation_unsettled":
+        return {"state": "blocked", "reason": "profile_not_reconcilable"}
+    if (not isinstance(trace_contract, dict)
+            or trace_contract.get("schema") != "bach.worker-tool-trace.v1"
+            or not isinstance(trace_contract.get("source_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", trace_contract["source_sha256"]) is None):
+        return {"state": "blocked", "reason": "trace_contract_unavailable"}
+    if worker_id in _active_worker_ids():
+        return {"state": "blocked", "reason": "generation_still_active"}
+    from hub._services.chat.slots_config import (
+        PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+        _valid_persistent_worker_controller_checkpoint,
+        _worker_profile_version,
+        get_worker_slot,
+        settle_persistent_worker_controller_checkpoint,
+        worker_configuration_snapshot,
+    )
+    slot = get_worker_slot(worker_id, path=path)
+    if not isinstance(slot, dict):
+        return {"state": "blocked", "reason": "profile_unavailable"}
+    checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+    if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
+            or checkpoint.get("worker_id") != worker_id
+            or checkpoint.get("trace_contract_sha256") != trace_contract["source_sha256"]):
+        return {"state": "blocked", "reason": "checkpoint_contract_mismatch"}
+    if checkpoint.get("service_instance") == _WORKER_SERVICE_INSTANCE:
+        return {"state": "blocked", "reason": "generation_belongs_to_current_service"}
+    status = slot.get("status")
+    if status not in {"idle", "running"}:
+        return {"state": "blocked", "reason": "profile_status_not_recoverable"}
+    try:
+        config_version = worker_configuration_snapshot(worker_id, path=path)["configuration_version"]
+        profile_version = _worker_profile_version(slot)
+        if (config_version != profile.get("configuration_version")
+                or profile_version != profile.get("profile_version")
+                or slot.get("persistent_opt_in_id") != profile.get("intent_id")):
+            return {"state": "blocked", "reason": "profile_binding_changed"}
+        task_client = client if client is not None else _native_task_client()
+        first = _persistent_worker_reconciliation_scan(task_client, checkpoint, status)
+        if first["active_old_lease"]:
+            return {"state": "blocked", "reason": "active_old_generation_lease"}
+        if first["old_generation_trace"]:
+            return {"state": "blocked", "reason": "old_generation_tool_trace"}
+        if first["identity_conflict"]:
+            return {"state": "blocked", "reason": "generation_identity_conflict"}
+        second = _persistent_worker_reconciliation_scan(task_client, checkpoint, status)
+        if second["active_old_lease"]:
+            return {"state": "blocked", "reason": "active_old_generation_lease"}
+        if second["old_generation_trace"]:
+            return {"state": "blocked", "reason": "old_generation_tool_trace"}
+        if second["identity_conflict"]:
+            return {"state": "blocked", "reason": "generation_identity_conflict"}
+        if first["sha256"] != second["sha256"]:
+            return {"state": "blocked", "reason": "task_inventory_unstable"}
+        import hashlib
+        import json
+        checkpoint_raw = json.dumps(checkpoint, ensure_ascii=False, sort_keys=True,
+                                    separators=(",", ":")).encode("utf-8")
+        proof = {
+            "schema": "bach.persistent-worker-reconciliation.v1",
+            "worker_id": worker_id,
+            "configuration_version": config_version,
+            "profile_version": profile_version,
+            "intent_id": profile["intent_id"],
+            "status_before": status,
+            "generation": checkpoint["generation"],
+            "lease_worker_id": checkpoint["lease_worker_id"],
+            "trace_contract_sha256": checkpoint["trace_contract_sha256"],
+            "checkpoint_sha256": hashlib.sha256(checkpoint_raw).hexdigest(),
+            "stable_scan_sha256": first["sha256"],
+            "stable_scans": 2,
+            "candidate_count": second["candidate_count"],
+            "complete": first["complete"] is True and second["complete"] is True,
+            "stable": True,
+            "active_old_lease": False,
+            "old_generation_trace": False,
+        }
+        settled = settle_persistent_worker_controller_checkpoint(
+            worker_id, config_version, profile_version, profile["intent_id"],
+            checkpoint, status, proof, path=path)
+        return {"state": "settled", "reason": "stable_no_old_generation_effects",
+                "candidate_count": second["candidate_count"],
+                "generation": settled["settled_generation"]}
+    except Exception as exc:
+        return {"state": "blocked", "reason": f"native_reconciliation_{type(exc).__name__}"}
+
+def _resume_persistent_cloud_workers_at_startup(stop_event):
+    """Resume opted-in Cloud profiles only after native reconciliation and admission."""
+    if stop_event.is_set():
+        return {"state": "shutdown", "profiles": []}
+    from hub.rheingold import get_lead_config
+    if get_lead_config().get("mode") != "lead":
+        return {"state": "not_lead", "profiles": []}
+    snapshot = persistent_worker_startup_snapshot()
+    outcomes = []
+    active = _active_worker_ids()
+    trace_contract = _persistent_worker_trace_contract()
+    for profile in snapshot["profiles"]:
+        worker_id = profile.get("worker_id")
+        recovered = False
+        if profile.get("reason") == "prior_generation_unsettled" and isinstance(worker_id, str):
+            if stop_event.is_set():
+                outcomes.append({"worker_id": worker_id, "state": "shutdown",
+                                 "reason": "startup_cancelled"})
+                break
+            if trace_contract is None:
+                outcomes.append({"worker_id": worker_id, "state": "not_started",
+                                 "reason": "trace_contract_unavailable"})
+                continue
+            recovery = _reconcile_persistent_cloud_worker(profile, trace_contract)
+            if recovery.get("state") != "settled":
+                outcomes.append({"worker_id": worker_id, "state": "not_started",
+                                 "reason": recovery.get("reason", "reconciliation_blocked")})
+                continue
+            fresh = persistent_worker_startup_snapshot()
+            profile = next((item for item in fresh["profiles"]
+                            if item.get("worker_id") == worker_id), None)
+            if not isinstance(profile, dict) or profile.get("state") != "ready":
+                outcomes.append({"worker_id": worker_id, "state": "not_started",
+                                 "reason": "profile_changed_after_reconciliation"})
+                continue
+            recovered = True
+        if profile.get("state") != "ready" or not isinstance(worker_id, str):
+            outcomes.append({"worker_id": worker_id, "state": "not_started",
+                             "reason": profile.get("reason")})
+            continue
+        if stop_event.is_set():
+            outcomes.append({"worker_id": worker_id, "state": "shutdown",
+                             "reason": "startup_cancelled"})
+            break
+        if worker_id in active:
+            execution = worker_execution_receipt(worker_id, verify_results=False)
+            outcomes.append({"worker_id": worker_id, "state": "existing_admission",
+                             "generation": execution.get("generation")})
+            continue
+        if trace_contract is None:
+            outcomes.append({"worker_id": worker_id, "state": "not_started",
+                             "reason": "trace_contract_unavailable"})
+            continue
+        material = (f"bach:persistent-cloud-worker:{_WORKER_SERVICE_INSTANCE}:"
+                    f"{worker_id}:{profile['intent_id']}:{profile['configuration_version']}")
+        request_id = uuid.uuid5(uuid.NAMESPACE_URL, material).hex
+        generation = uuid.uuid4().hex
+        physical_worker_id = f"worker-{uuid.uuid4().hex}"
+        lease_worker_id = f"{physical_worker_id}@{socket.gethostname()}"
+        from hub._services.chat.slots_config import (
+            PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+            get_worker_slot,
+            set_persistent_worker_controller_checkpoint,
+        )
+        slot = get_worker_slot(worker_id)
+        if not isinstance(slot, dict):
+            outcomes.append({"worker_id": worker_id, "state": "not_started",
+                             "reason": "profile_unavailable"})
+            continue
+        pending = {
+            "schema": "bach.persistent-worker-controller.v2",
+            "phase": "admission_pending",
+            "worker_id": worker_id,
+            "service_instance": _WORKER_SERVICE_INSTANCE,
+            "start_request_id": request_id,
+            "intent_id": profile["intent_id"],
+            "profile_version": profile["profile_version"],
+            "trace_contract_sha256": trace_contract["source_sha256"],
+            "generation": generation,
+            "physical_worker_id": physical_worker_id,
+            "lease_worker_id": lease_worker_id,
+        }
+        expected_checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+        try:
+            set_persistent_worker_controller_checkpoint(
+                worker_id, profile["configuration_version"], profile["profile_version"],
+                profile["intent_id"], expected_checkpoint, pending)
+        except Exception as exc:
+            outcomes.append({"worker_id": worker_id, "state": "not_started",
+                             "reason": type(exc).__name__})
+            continue
+        try:
+            response, status = _start_worker_execution(
+                worker_id,
+                start_request_id=request_id,
+                expected_service_instance=_WORKER_SERVICE_INSTANCE,
+                expected_configuration_version=profile["configuration_version"],
+                _startup_stop_event=stop_event,
+                _startup_generation=generation,
+                _startup_physical_worker_id=physical_worker_id,
+                _startup_lease_worker_id=lease_worker_id,
+            )
+        except Exception as exc:
+            outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
+                             "reason": type(exc).__name__})
+            continue
+        execution = response.get("execution") if isinstance(response, dict) else None
+        matching_execution = (
+            isinstance(execution, dict)
+            and execution.get("service_instance") == _WORKER_SERVICE_INSTANCE
+            and execution.get("start_request_id") == request_id
+            and execution.get("generation") == generation
+        )
+        if (status in {200, 202} and matching_execution
+                and execution.get("state") in {"starting", "running", "stopping"}):
+            admitted = {**pending, "phase": "admitted"}
+            try:
+                set_persistent_worker_controller_checkpoint(
+                    worker_id, profile["configuration_version"], profile["profile_version"],
+                    profile["intent_id"], pending, admitted)
+            except Exception:
+                outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
+                                 "reason": "checkpoint_readback_failed",
+                                 "generation": generation})
+                continue
+            outcome = {"worker_id": worker_id, "state": "admitted",
+                       "generation": generation,
+                       "active_task_id": execution.get("active_task_id")}
+            if recovered:
+                outcome["recovered_previous_generation"] = True
+            outcomes.append(outcome)
+            continue
+        admission = response.get("admission") if isinstance(response, dict) else None
+        proven_rejection = (
+            isinstance(admission, dict) and admission.get("admitted") is False
+            and admission.get("service_instance") == _WORKER_SERVICE_INSTANCE
+            and admission.get("start_request_id") == request_id
+        )
+        if proven_rejection:
+            try:
+                set_persistent_worker_controller_checkpoint(
+                    worker_id, profile["configuration_version"], profile["profile_version"],
+                    profile["intent_id"], pending, None)
+            except Exception:
+                outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
+                                 "reason": "checkpoint_clear_failed"})
+                continue
+            error_code = response.get("error_code") if isinstance(response, dict) else None
+            safe_error_code = (error_code if isinstance(error_code, str)
+                               and re.fullmatch(r"[a-z0-9_:-]{1,64}", error_code) else None)
+            outcomes.append({"worker_id": worker_id, "state": "not_started",
+                             "reason": safe_error_code or "start_rejected"})
+            continue
+        outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
+                         "reason": "unknown_start_result"})
+    return {"state": "checked", "profiles": outcomes}
+
 def _resume_always_on_at_startup(stop_event):
     """Resume only the persisted local Always-On policy through native admission."""
     from hub.rheingold import get_lead_config
@@ -5213,6 +5815,16 @@ def _start_always_on_startup_monitor(server):
     stop = threading.Event()
     server.always_on_startup_stop = stop
     def monitor():
+        try:
+            persistent_result = _resume_persistent_cloud_workers_at_startup(stop)
+            server.persistent_worker_startup_result = persistent_result
+            if persistent_result.get("profiles"):
+                admitted = sum(p.get("state") == "admitted" for p in persistent_result["profiles"])
+                log.info("Persistent-Cloudworker-Startprüfung: %d Profile, %d zugelassen",
+                         len(persistent_result["profiles"]), admitted)
+        except Exception as exc:
+            server.persistent_worker_startup_result = {"state": "unavailable", "profiles": []}
+            log.warning("Persistent-Cloudworker-Start nicht bestätigt (%s)", type(exc).__name__)
         while not stop.is_set():
             try:
                 result = _resume_always_on_at_startup(stop)
