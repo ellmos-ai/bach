@@ -342,4 +342,4 @@ def test_gui_capabilities_pages_name_the_endpoints_the_gui_reads(board):
     Only the declared requirements are pinned: under `from gui import server` the unified router is not mounted (circular import), so the status is not testable here."""
     pages = {p["path"]: p for p in board.client.get("/api/gui/capabilities").json()["pages"]}
     assert pages["/skills"]["requires"] == ["GET /api/capabilities/skills/library"]
-    assert pages["/skills#zuordnung"]["requires"] == ["GET /api/skills-board/hierarchy"]
+    assert not any("#" in path for path in pages)   # no fragment keys: pages are routes, the optional tab is declared through endpoints

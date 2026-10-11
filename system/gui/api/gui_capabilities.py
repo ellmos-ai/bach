@@ -17,8 +17,7 @@ PAGE_READS = {
     "/agenten/sessions": ["/api/system/core-agents/timeline"],
     # ellmos-system-gui reads the library inventory (capability-board-client.mjs INVENTORIES.skills), not /api/capabilities/skills.
     "/skills": ["/api/capabilities/skills/library"],
-    # The assignment tab of /skills is optional: a missing hierarchy adapter must not mark the whole page unavailable.
-    "/skills#zuordnung": ["/api/skills-board/hierarchy"],
+    # The assignment tab of /skills is optional and not a page of its own: it is declared through `endpoints` (GET/PUT /api/skills-board/hierarchy).
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
