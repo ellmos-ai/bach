@@ -27,11 +27,15 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .blueprint_service import (ALLOWED_KINDS, _ID, ensure_blueprint_schema,
@@ -164,19 +168,122 @@ def _child_env() -> dict[str, str]:
     return env
 
 
-def probe(provider: dict[str, Any], *, runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+class _OutputTooLarge(Exception):
+    """Interner Abbruch: stdout oder stderr des Providers überschritt MAX_OUTPUT_BYTES."""
+
+
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+
+    class _JobLimits(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION, flach
+        _fields_ = [("times", ctypes.c_int64 * 2), ("flags", wintypes.DWORD), ("working_set", ctypes.c_size_t * 2),
+                    ("active", wintypes.DWORD), ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD),
+                    ("scheduling", wintypes.DWORD), ("io", ctypes.c_uint64 * 6), ("memory", ctypes.c_size_t * 4)]
+
+
+def _tree_job(proc):
+    """Windows: Job mit KILL_ON_JOB_CLOSE um den Provider, damit beim Schließen auch Enkel sterben.
+
+    Der pip-Launcher startet Python mit SILENT_BREAKAWAY_OK; dessen Kinder (oder Enkel hinter
+    .cmd-Shims) überleben sonst den kill() und halten die Pipes offen. None = nur Kind-kill.
+    """
+    if os.name != "nt":
+        return None
+    job = wintypes.HANDLE(_kernel32.CreateJobObjectW(None, None))
+    limits = _JobLimits(flags=0x2000)  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    # ponytail: Zuweisung nach dem Start; Enkel aus den ersten ms entkommen (sonst CREATE_SUSPENDED + Resume).
+    if job.value and _kernel32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)) \
+            and _kernel32.AssignProcessToJobObject(job, wintypes.HANDLE(int(proc._handle))):
+        return job
+    if job.value:
+        _kernel32.CloseHandle(job)
+    return None
+
+
+def _kill_tree(proc, job):
+    """Beendet Provider samt Enkeln: Windows über den Job, POSIX über die eigene Sitzung/Prozessgruppe."""
+    if job is not None:
+        _kernel32.CloseHandle(job)
+    elif os.name != "nt":
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:  # Gruppe schon leer
+            pass
+
+
+def _bounded_run(command, *, timeout: float, **popen_kwargs):
+    """subprocess.run-Ersatz: liest stdout/stderr gedeckelt und beendet den Prozess beim Überschreiten.
+
+    Pro Strom höchstens MAX_OUTPUT_BYTES + 1 Byte im Speicher. Wirft subprocess.TimeoutExpired
+    bzw. _OutputTooLarge; der Kindprozess ist dann beendet und abgeholt, seine Enkel ebenfalls.
+    """
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                            start_new_session=True, **popen_kwargs)
+    job = _tree_job(proc)
+    chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
+    over = threading.Event()
+
+    def drain(name, stream):
+        total = 0
+        try:
+            while True:
+                data = stream.read(min(65536, MAX_OUTPUT_BYTES + 1 - total))
+                if not data:
+                    return
+                chunks[name].append(data)
+                total += len(data)
+                if total > MAX_OUTPUT_BYTES:
+                    over.set()
+                    return
+        except (OSError, ValueError):  # Pipe nach kill() geschlossen
+            return
+
+    readers = [threading.Thread(target=drain, args=(name, getattr(proc, name)), daemon=True)
+               for name in chunks]
+    for reader in readers:
+        reader.start()
+    deadline = time.monotonic() + timeout
+    try:
+        # ponytail: Polling alle 50 ms reicht für die seltene Probe.
+        while any(reader.is_alive() for reader in readers) and not over.is_set():
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(command, timeout)
+            over.wait(0.05)
+        if over.is_set():
+            raise _OutputTooLarge()
+        proc.wait(timeout=max(deadline - time.monotonic(), 0.001))
+    finally:
+        _kill_tree(proc, job)
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        for reader, stream in zip(readers, (proc.stdout, proc.stderr)):
+            reader.join(timeout=1)
+            if not reader.is_alive():  # sonst blockiert close() unter Windows, solange ein Enkel die Pipe hält
+                stream.close()
+    return SimpleNamespace(returncode=proc.returncode, stdout=b"".join(chunks["stdout"]),
+                           stderr=b"".join(chunks["stderr"]))
+
+
+def probe(provider: dict[str, Any], *, runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Echte Probe: Exitcode, Schema, Version und sha256. Wirft nie."""
     result = {"id": provider["id"], "available": False, "observed_at": datetime.now(timezone.utc).isoformat(),
               "template_id": None, "version": None, "sha256": None, "source_commit": None}
     try:
         try:
-            done = runner(provider["command"], capture_output=True, timeout=timeout, shell=False, check=False,
+            done = runner(provider["command"], timeout=timeout, shell=False,
                           stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                           env=_child_env(), cwd=tempfile.gettempdir())
         except FileNotFoundError as exc:
             raise TemplateProviderError("provider_missing") from exc
         except subprocess.TimeoutExpired as exc:
             raise TemplateProviderError("provider_timeout") from exc
+        except _OutputTooLarge as exc:
+            raise TemplateProviderError("provider_output_too_large") from exc
         except OSError as exc:
             raise TemplateProviderError("provider_not_executable") from exc
         if done.returncode != 0:
@@ -282,7 +389,7 @@ def _register(conn, provider_id, probed) -> dict[str, Any]:
 
 
 def sync_providers(conn: sqlite3.Connection, providers: list[dict[str, Any]] | None = None, *,
-                   runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+                   runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Probt jeden konfigurierten Provider und gleicht seine Vorlagen ab (nie still überschreibend)."""
     ensure_blueprint_schema(conn)
     providers = load_providers() if providers is None else providers
@@ -306,7 +413,7 @@ def sync_providers(conn: sqlite3.Connection, providers: list[dict[str, Any]] | N
 
 def migrate_template(conn: sqlite3.Connection, provider_id: str, template_id: str, *, to_version: str,
                      expected_sha256: str, providers: list[dict[str, Any]] | None = None,
-                     runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+                     runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Explizite Übernahme einer anderen Vorlagenversion; die alte Zeile bleibt als 'superseded'."""
     ensure_blueprint_schema(conn)
     providers = load_providers() if providers is None else providers
