@@ -6,6 +6,7 @@ Only canonical content snapshots and confirmed receipt strings leave it.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import threading
 from datetime import datetime, timezone
 
@@ -31,6 +32,7 @@ class WorkerLeaseBinding:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._injected_clock = clock is not None
         self._lock = threading.RLock()
+        self._trace_completion_tokens = {}
         self._active = True
         self._closed = False
         self._completion_result = None
@@ -341,6 +343,20 @@ class WorkerLeaseBinding:
             self._active = False
             raise LeaseProtocolError("Taskoperation fehlgeschlagen; Bestätigung fehlt") from None
 
+    def _adopt_task_version(self, version, *, previous_version):
+        # The caller holds the binding lock and supplies only a native ACK version.
+        if (self._snapshot.get("task_version") != previous_version
+                or self._ack.task_version != previous_version):
+            self._active = False
+            raise LeaseProtocolError("Taskversion passt nicht zur bestaetigten Workerbindung")
+        try:
+            current_ack = replace(self._ack, task_version=version)
+        except Exception:
+            self._active = False
+            raise LeaseProtocolError("Neue Taskversion ist nicht bestaetigt") from None
+        self._ack = current_ack
+        self._snapshot["task_version"] = current_ack.task_version
+
     def renew(self):
         with self._lock:
             self._assert_authority_active()
@@ -368,6 +384,49 @@ class WorkerLeaseBinding:
             if renew_due or remaining <= 120:
                 return self.renew()
             return False
+
+    def trace_tool_started(self, *, source, request_id, tool_name, arguments_sha256):
+        """Authorize and persist a start before dispatch; never return the lease id."""
+        from .worker_tool_trace import TraceIdentity
+        from hub._services.task_lease_client import ToolTraceStartAck
+        with self._lock:
+            self.assert_active()
+            ack = self._ack
+            generation = self._generation
+            if (ack.result_generation != generation
+                    or ack.task_version != self._snapshot.get("task_version")):
+                raise LeaseProtocolError("Taskbindung bestätigt keine aktuelle Trace-Generation")
+            identity = TraceIdentity(
+                task_id=self.task_id, fence=ack.fence, worker_id=ack.worker_id,
+                generation=generation, task_version=ack.task_version,
+                request_id=request_id, source=source, tool_name=tool_name)
+            start_ack = self._client.tool_trace_start(
+                identity, lease_id=ack.lease_id, arguments_sha256=arguments_sha256)
+            if not isinstance(start_ack, ToolTraceStartAck):
+                raise LeaseProtocolError("Werkzeug-Trace-Start ist nicht bestätigt")
+            self._trace_completion_tokens[identity] = start_ack.completion_token
+            return identity
+
+    def trace_tool_phase(self, identity, phase, *, receipt_id=None, result_sha256=None):
+        """Complete a started call even if the lease was returned while it ran."""
+        from .worker_tool_trace import TraceIdentity
+        if not isinstance(identity, TraceIdentity):
+            raise LeaseProtocolError("Werkzeug-Trace-Identität fehlt")
+        with self._lock:
+            ack = self._ack
+            if (identity.task_id != self.task_id or identity.fence != ack.fence
+                    or identity.worker_id != ack.worker_id
+                    or identity.generation != self._generation):
+                raise LeaseProtocolError("Werkzeug-Trace gehört nicht zu dieser Taskbindung")
+            completion_token = self._trace_completion_tokens.get(identity)
+            if completion_token is None:
+                raise LeaseProtocolError("Werkzeug-Trace-Abschluss ist nicht gebunden")
+            result = self._client.tool_trace_phase(
+                identity, phase, receipt_id=receipt_id, result_sha256=result_sha256,
+                completion_token=completion_token)
+            if phase in {"failed", "acknowledged"}:
+                self._trace_completion_tokens.pop(identity, None)
+            return result
 
     def return_lease(self):
         """Cleanup may return a stopped worker's known lease; ambiguity forbids it."""
@@ -426,7 +485,8 @@ class WorkerLeaseBinding:
             previous = self._snapshot.get("description") or ""
             description = str(previous) + ("\n\n" if previous else "") + annotation
             ack = self._operation(self._client.update, changes={"description": description})
-            self._snapshot.update(description=description, task_version=ack.task_version)
+            self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
+            self._snapshot["description"] = description
             if review:
                 release = self._operation(self._client.release, outcome="review", result_ref=result_ref)
                 if (not isinstance(release, LeaseReleaseAck) or release.released is not True
@@ -515,8 +575,8 @@ class WorkerLeaseBinding:
                     self._active = False
                 else:
                     ack = self._operation(self._client.update, changes=changes)
+                    self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
                     self._snapshot.update(changes)
-                    self._snapshot["task_version"] = ack.task_version
                 return f"Task #{self.task_id} aktualisiert: {', '.join(changes)}"
             if action in {"decompose", "add"}:
                 if action == "add":
@@ -547,7 +607,7 @@ class WorkerLeaseBinding:
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
-                self._snapshot["task_version"] = ack.task_version
+                self._adopt_task_version(ack.task_version, previous_version=previous_version)
                 self._snapshot["description"] = (self._snapshot.get("description") or "") + (
                     f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
                 if ack.parent_closed:
