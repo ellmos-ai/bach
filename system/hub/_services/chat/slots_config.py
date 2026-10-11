@@ -802,12 +802,69 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in",
+    "memory_hook_opt_in", "model_fallbacks",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
     "claude", "claude-api", "codex", "openai",
 })
+_MODEL_FALLBACK = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}\Z")
+_MODEL_FALLBACK_BACKENDS = CORE_KNOWN_BACKENDS
+
+
+def _validated_model_fallbacks(value: Any) -> list[dict[str, str]]:
+    """Validate an ordered, credential-free chain against existing provider IDs."""
+    if type(value) is not list:
+        raise ValueError("model_fallbacks muss eine Liste sein")
+    result: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for target in value:
+        if type(target) is not dict or set(target) != {"backend", "model"}:
+            raise ValueError("Fallbackziel darf nur Backend und Modell enthalten")
+        backend, model = target["backend"], target["model"]
+        if (not isinstance(backend, str) or backend not in _MODEL_FALLBACK_BACKENDS
+                or not isinstance(model, str) or not _MODEL_FALLBACK.fullmatch(model)
+                or any(ord(char) < 32 for char in model)):
+            raise ValueError("Fallbackziel ist ungültig oder nicht unterstützt")
+        lowered = model.lower()
+        if backend == "ollama" and lowered.endswith(":cloud"):
+            raise ValueError("Lokales Ollama-Fallback darf kein Cloudmodell sein")
+        if backend == "ollama-cloud" and not lowered.endswith(":cloud"):
+            raise ValueError("Ollama-Cloud-Fallback benötigt ein explizites :cloud-Modell")
+        identity = (backend, model)
+        if identity in seen:
+            raise ValueError("Fallbackkette enthält ein doppeltes Ziel")
+        seen.add(identity)
+        result.append({"backend": backend, "model": model})
+    return result
+
+
+def _validated_model_fallback_profile(profile: Any) -> list[dict[str, str]]:
+    """Validate the ordered chain against its effective primary model."""
+    if not isinstance(profile, dict):
+        # Config schema failures intentionally keep ValueError for the existing HTTP 422 contract.
+        raise ValueError("Fallbackprofil fehlt")  # noqa: TRY004
+    chain = _validated_model_fallbacks(profile.get("model_fallbacks", []))
+    if not chain:
+        return chain
+    primary_backend, primary_model = profile.get("backend"), profile.get("model")
+    if not isinstance(primary_backend, str) or not isinstance(primary_model, str):
+        # Config schema failures intentionally keep ValueError for the existing HTTP 422 contract.
+        raise ValueError("Fallbackprofil hat kein eindeutiges Primärziel")  # noqa: TRY004
+    if (primary_backend, primary_model) in {
+            (item["backend"], item["model"]) for item in chain}:
+        raise ValueError("Fallbackkette wiederholt das Primärziel")
+    primary_is_free = (
+        primary_backend == "openrouter"
+        and (primary_model == "openrouter/free" or primary_model.lower().endswith(":free"))
+    )
+    if primary_is_free and any(
+            item["backend"] not in {"ollama", "lmstudio"}
+            and not (item["backend"] == "openrouter" and
+                     (item["model"] == "openrouter/free" or item["model"].lower().endswith(":free")))
+            for item in chain):
+        raise ValueError("OpenRouter-Free darf nicht auf einen kostenpflichtigen externen Fallback wechseln")
+    return chain
 
 
 def _core_configuration_version(config: dict[str, Any]) -> str:
@@ -858,6 +915,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             raise ValueError("System-Steckplatz-ID stimmt nicht überein")
         defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
         memory_hook_opt_in = slot.get("memory_hook_opt_in", defaults.get("memory_hook_opt_in", False))
+        model_fallbacks = _validated_model_fallback_profile(slot)
         if type(memory_hook_opt_in) is not bool:
             raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
         pause_info = get_slot_pause_info(slot)
@@ -890,6 +948,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "type": slot.get("type", "continuous"),
             "backend": slot.get("backend"),
             "model": slot.get("model"),
+            "model_fallbacks": model_fallbacks,
             "resolved_model": slot.get("resolved_model") or "",
             "mode": slot.get("mode"),
             "think": slot.get("think"),
@@ -1033,7 +1092,9 @@ def _validated_core_edits(
         raise ValueError("memory_hook_opt_in ist nur über das explizite Konfigurations-CAS erlaubt")
     result: dict[str, Any] = {}
     for field, value in changes.items():
-        if field == "skill_refs":
+        if field == "model_fallbacks":
+            value = _validated_model_fallbacks(value)
+        elif field == "skill_refs":
             from hub._services.skill_source_service import load_skill_instructions
             load_skill_instructions(value)
             value = json.loads(json.dumps(value))
@@ -1107,6 +1168,7 @@ def change_core_system_agent(
     else:
         updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
     slot.update(updates)
+    _validated_model_fallback_profile(slot)
     save_slots_config(config, path)
     return core_system_agents_snapshot(path)
 
@@ -1668,7 +1730,7 @@ def record_activity(
 
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
-    "memory_hook_opt_in",
+    "memory_hook_opt_in", "model_fallbacks",
     "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -1678,9 +1740,11 @@ WORKER_EDITABLE_FIELDS = frozenset({
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     from .worker_queue_status import worker_selection_policy
     configuration = {
-        field: worker.get(field, False if field == "memory_hook_opt_in" else None)
+        field: worker.get(field, False if field == "memory_hook_opt_in" else
+                          [] if field == "model_fallbacks" else None)
         for field in sorted(WORKER_EDITABLE_FIELDS)
     }
+    configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
     if type(configuration["memory_hook_opt_in"]) is not bool:
         raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
     policy = worker_selection_policy(worker)
@@ -1720,7 +1784,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():
-        if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:
+        if field in {"allowed_tools", "skill_refs", "avatar", "symbol", "model_fallbacks"}:
             edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
             raise ValueError(f"{field} muss wahr oder falsch sein")
@@ -1755,6 +1819,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         raise ValueError("Experten-Modellzuordnungen gelten nur für Bossrouting")
     if updated["sub_mode"] == "task_worker" and not updated.get("task_id") and not updated.get("task_prompt"):
         raise ValueError("Taskworker benötigen eine Task-ID oder einen Auftragstext")
+    _validated_model_fallback_profile(updated)
     updated["system_prompt"] = compose_worker_prompt(updated, path=path)
     worker.update(updated)
     save_slots_config(config, path)
