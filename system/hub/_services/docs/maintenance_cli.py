@@ -14,8 +14,10 @@ from .maintenance_runtime import (
     CanonicalLockGuard,
     MaintenanceRuntime,
     load_config,
+    maintenance_exception_class,
     readonly_status,
     validate_config,
+    write_failure_receipt,
 )
 
 
@@ -146,20 +148,54 @@ def handle(handler, args, dry_run=False):
             )
     if dry_run:
         return True, json.dumps({"applied": False, "started": False})
+    phase = "config_load"
+    guard = None
+    runtime_service = None
     try:
         config = load_config(config_path)
+        guard = CanonicalLockGuard(config)
         if not config["enabled"]:
-            return False, "Wartungsbetrieb ist nicht ausdrücklich aktiviert"
+            raise RuntimeError("maintenance_not_activated")
+        phase = "runtime_init"
         runtime_service = MaintenanceRuntime(
-            root, handler._external_state_db(), runtime, config_path
+            root,
+            handler._external_state_db(),
+            runtime,
+            config_path,
+            guard=guard,
+            task_db=handler.user_db,
         )
         if options.action == "tick":
+            phase = "tick"
             return True, json.dumps(runtime_service.tick(), ensure_ascii=False)
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: runtime_service.stop_event.set())
+        phase = "serve"
         runtime_service.serve()
         return True, "Wartungsbetrieb beendet"
-    except Exception:  # noqa: BLE001 - CLI boundary must not disclose native credential-bearing errors
+    except Exception as error:  # noqa: BLE001 - keep native messages out of public output
+        phase = getattr(runtime_service, "failure_phase", phase)
+        owner_generation = getattr(runtime_service, "_failure_owner_generation", None)
+        try:
+            receipt_written = write_failure_receipt(
+                runtime,
+                root,
+                phase,
+                error,
+                guard,
+                task_db=handler.user_db,
+                owner_generation=owner_generation,
+            )
+        except Exception:  # noqa: BLE001 - preserve the original failure
+            receipt_written = False
+        receipt_state = "written" if receipt_written else "unavailable"
+        print(
+            f"maintenance failure phase={phase} "
+            f"exception={maintenance_exception_class(error)} "
+            f"receipt={receipt_state}",
+            file=sys.stderr,
+            flush=True,
+        )
         return (
             False,
             "Wartungsbetrieb nicht bestätigt; Konfiguration, Ownership und Provider prüfen",

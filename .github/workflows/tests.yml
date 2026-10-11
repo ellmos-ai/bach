@@ -72,6 +72,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py
 
+      - name: Native documentation maintenance and atomic task ownership
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_docs_maintenance.py system/tests/test_task_handler.py system/tests/test_task_slot_fields.py system/tests/test_rheingold_handler.py
       - uses: actions/checkout@v4
         with:
           repository: ellmos-ai/NemoFold
@@ -196,6 +201,7 @@ jobs:
             system/tests/test_gui_prompt_manager.py \
             system/tests/test_blueprint_runtime_delivery.py \
             system/tests/test_blueprint_teams_delivery.py \
+            system/tests/test_template_providers.py \
             system/tests/test_gui_gux_fabrika_blueprints.py \
             system/tests/test_system_slots_delivery.py \
             system/tests/test_gui_privacy_boundary.py \
@@ -203,6 +209,10 @@ jobs:
             system/tests/test_gui_server.py \
             system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
+            system/tests/test_catalog_projection.py \
+            system/tests/test_capability_boards.py \
+            system/tests/test_gui_capabilities_page_reads.py \
+            system/tests/test_skills_board_hardening.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
             system/tests/test_unified_dashboard_xss.py \

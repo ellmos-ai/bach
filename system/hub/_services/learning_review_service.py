@@ -108,7 +108,12 @@ def project_candidate(provider, row):
         review_state=item["status"] if bound else "legacy_unverified",
         review_available=bound and item["status"] == "pending",
         promotion_available=False,
-        promotion_unavailable_reason="Native Veröffentlichung und Rücknahme sind noch nicht angebunden.",
+        promotion_availability_deprecated=True,
+        promotion_availability_replacement="promotion_targets.targets.<target_kind>.state",
+        promotion_unavailable_reason=(
+            "Dieses Listenfeld ist veraltet; der zieltypbezogene Status steht in den Kandidatendetails "
+            "unter promotion_targets.targets.<target_kind>.state."
+        ),
     )
     return item
 

@@ -99,7 +99,7 @@ def _seed_skills_board_db(db_path: Path) -> None:
     conn.close()
 
 
-def test_get_skills_hierarchy_falls_back_to_db_when_json_missing(tmp_path, monkeypatch):
+def test_get_skills_hierarchy_reads_the_db_and_never_writes_the_json_file(tmp_path, monkeypatch):
     db_path = tmp_path / "bach.db"
     json_path = tmp_path / "skills_hierarchy.json"
     _seed_skills_board_db(db_path)
@@ -121,7 +121,7 @@ def test_get_skills_hierarchy_falls_back_to_db_when_json_missing(tmp_path, monke
     assert [item["id"] for item in data["items"]["services"]] == ["service-registry"]
     assert [item["id"] for item in data["items"]["workflows"]] == ["workflow-bugfix-protokoll"]
     assert data["assignments"]["bueroassistent"]["experts"] == ["steuer-agent"]
-    assert json_path.exists()
+    assert not json_path.exists()  # one store: the GUI no longer writes skills_hierarchy.json
 
 
 def test_resolve_skill_file_uses_live_agent_and_workflow_paths(tmp_path, monkeypatch):

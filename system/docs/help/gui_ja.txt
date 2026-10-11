@@ -302,10 +302,10 @@ GET /api/inbox/analyze/{file} ファイルを分析する
 PUT /api/inbox/settings 設定を更新
 
 スキルボード:
-GET /api/skills-board/item-file アイテムファイルの読み込み
-PUT /api/skills-board/item-file アイテムファイルを保存
-GET /api/skills-board/hierarchy 階層の読み取り
-PUT /api/skills-board/hierarchy 階層を保存
+GET /api/skills-board/item-file アイテムファイルの読み込み（廃止、HTTP 410。代替: GET /api/capabilities/skills/{id}/source）
+PUT /api/skills-board/item-file アイテムファイルを保存（廃止、HTTP 410。代替: PUT /api/capabilities/skills/{id}/source）
+GET /api/skills-board/hierarchy 階層の読み取り（hierarchy_assignments テーブル）
+PUT /api/skills-board/hierarchy 割り当てを保存（検証あり、hierarchy_assignments のみ）
 
 ヘルプ システム:
 GET /api/help ヘルプ ファイルの一覧表示

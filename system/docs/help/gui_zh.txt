@@ -302,10 +302,10 @@ GET /api/inbox/analyze/{file} 分析文件
 PUT /api/inbox/settings 更新设置
 
 技能板：
-GET /api/skills-board/item-file 读取物品文件
-PUT /api/skills-board/item-file 保存项目文件
-GET /api/skills-board/hierarchy 读取层次结构
-PUT /api/skills-board/hierarchy 保存层次结构
+GET /api/skills-board/item-file 读取物品文件（已停用，HTTP 410；替代：GET /api/capabilities/skills/{id}/source）
+PUT /api/skills-board/item-file 保存项目文件（已停用，HTTP 410；替代：PUT /api/capabilities/skills/{id}/source）
+GET /api/skills-board/hierarchy 读取层次结构（表 hierarchy_assignments）
+PUT /api/skills-board/hierarchy 保存分配（经验证，仅写入 hierarchy_assignments）
 
 帮助系统：
 GET /api/help 列出帮助文件

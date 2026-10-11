@@ -306,10 +306,10 @@ GET  /api/inbox/analyze/{file}  Datei analysieren
 PUT  /api/inbox/settings      Settings aktualisieren
 
 Skills-Board:
-GET  /api/skills-board/item-file  Item-Datei lesen
-PUT  /api/skills-board/item-file  Item-Datei speichern
-GET  /api/skills-board/hierarchy  Hierarchie lesen
-PUT  /api/skills-board/hierarchy  Hierarchie speichern
+GET  /api/skills-board/item-file  stillgelegt (410), Ersatz: GET /api/capabilities/skills/{id}/source
+PUT  /api/skills-board/item-file  stillgelegt (410), Ersatz: PUT /api/capabilities/skills/{id}/source
+GET  /api/skills-board/hierarchy  Hierarchie lesen (Quelle: Tabelle hierarchy_assignments)
+PUT  /api/skills-board/hierarchy  Zuordnungen speichern (validiert, nur hierarchy_assignments)
 
 Help-System:
 GET  /api/help               Help-Dateien auflisten

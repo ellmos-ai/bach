@@ -1,22 +1,54 @@
 """Canonical worktree receipts against isolated authority; no Git publication."""
+from pathlib import Path
+import os
+import subprocess
 from types import SimpleNamespace
 
 import pytest
+from core.sandbox import SandboxResult
 
 from system.tests.test_worker_tool_bridge import bridge
 from hub import worker_git
+from hub._services.chat import worker_write_guard
 from hub._services.chat.bach_tools import exec_tool
 from hub._services.task_lease_client import LeaseReleaseAck
 
 
 PR = "https://github.com/ellmos-ai/bach/pull/123"
+_REAL_SUBPROCESS_RUN = subprocess.run
+
+
+def _add_task_tree(task_id):
+    root = Path(os.environ["BACH_WORKTREES_DIR"])
+    repo = Path(os.environ["BACH_ROOT"])
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / f"task-{task_id}"
+    if not target.exists():
+        _REAL_SUBPROCESS_RUN(
+            ["git", "worktree", "add", str(target), "-b", f"bach-task/{task_id}", "main"],
+            cwd=str(repo), check=True, capture_output=True, text=True,
+        )
+    return target
 
 
 @pytest.fixture
 def git_run(bridge, tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _REAL_SUBPROCESS_RUN(["git", "init", "-b", "main"], cwd=str(repo), check=True, capture_output=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.name", "Test"], cwd=str(repo), check=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.email", "test@example.com"], cwd=str(repo), check=True)
+    (repo / "README.md").write_text("# Test", encoding="utf-8")
+    _REAL_SUBPROCESS_RUN(["git", "add", "."], cwd=str(repo), check=True)
+    _REAL_SUBPROCESS_RUN(["git", "commit", "-m", "initial"], cwd=str(repo), check=True, capture_output=True)
     root = tmp_path / "worktrees"
-    (root / f"task-{bridge.binding.task_id}").mkdir(parents=True)
+    root.mkdir()
+    monkeypatch.setenv("BACH_ROOT", str(repo))
     monkeypatch.setenv("BACH_WORKTREES_DIR", str(root))
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: root)
+    monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+    _add_task_tree(bridge.binding.task_id)
     monkeypatch.setattr(worker_git, "scan_for_secrets", lambda path: [])
     monkeypatch.setattr(worker_git, "check_git_diff", lambda path: [])
     calls = []
@@ -25,6 +57,125 @@ def git_run(bridge, tmp_path, monkeypatch):
         return SimpleNamespace(returncode=0, stdout=PR if cmd[:3] == ["gh", "pr", "create"] else "", stderr="")
     monkeypatch.setattr(worker_git.subprocess, "run", physical)
     return calls
+
+
+@pytest.mark.parametrize(
+    "test_result, succeeded, reason",
+    [
+        pytest.param(SandboxResult(returncode=0, stdout="1 passed", stderr=""), True, None, id="pass"),
+        pytest.param(SandboxResult(returncode=2, stdout="failed", stderr=""), False, "Exitcode 2", id="nonzero-exit"),
+        pytest.param(SandboxResult(returncode=-9, stdout="partial", stderr="", timed_out=True),
+                     False, "Timeout nach 60 Sekunden", id="timeout"),
+        pytest.param(SandboxResult(returncode=-9, stdout="partial", stderr="", memory_exceeded=True),
+                     False, "Speichergrenze", id="memory-exceeded"),
+        pytest.param(SimpleNamespace(returncode=0, timed_out=False, memory_exceeded=False),
+                     False, "nicht sicher bestätigt", id="unknown-result-shape"),
+    ],
+)
+def test_bound_finish_runs_tests_through_structured_bound_check(
+        bridge, git_run, monkeypatch, tmp_path, test_result, succeeded, reason):
+    target = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
+    (target / "test_generated.py").write_text("def test_generated():\n    assert True\n", encoding="utf-8")
+    bounded_calls = []
+
+    def bounded(binding, command, *, cwd, timeout=60, safe=False, return_result=False):
+        bounded_calls.append((binding, command, cwd, timeout, safe, return_result))
+        return test_result
+
+    def physical(cmd, **kwargs):
+        git_run.append(cmd)
+        if cmd[:2] == ["git", "diff"] and "--name-only" in cmd:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[:2] == ["git", "ls-files"]:
+            return SimpleNamespace(returncode=0, stdout="test_generated.py\0", stderr="")
+        return SimpleNamespace(returncode=0,
+                               stdout=PR if cmd[:3] == ["gh", "pr", "create"] else "", stderr="")
+
+    monkeypatch.setattr(worker_git.subprocess, "run", physical)
+    monkeypatch.setattr(worker_write_guard, "run_bound_check", bounded)
+    result = worker_git.finish_task(
+        bridge.binding.task_id, "Bound test finish", worker_task_binding=bridge.binding,
+        require_task_binding=True)
+
+    assert len(bounded_calls) == 1
+    binding, command, cwd, timeout, safe, return_result = bounded_calls[0]
+    assert binding is bridge.binding
+    assert command == "python -m pytest -q -- test_generated.py"
+    assert cwd == str(target) and timeout == 60 and safe is False and return_result is True
+    if succeeded:
+        assert result == {"success": True, "pr_url": PR, "status": "review"}
+        assert any(cmd[:2] == ["git", "commit"] for cmd in git_run)
+        assert any(cmd[:2] == ["git", "push"] for cmd in git_run)
+    else:
+        assert result["success"] is False and reason in result["error"]
+        assert not any(cmd[:2] in (["git", "add"], ["git", "commit"], ["git", "push"])
+                       or cmd[:3] == ["gh", "pr", "create"] for cmd in git_run)
+
+def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monkeypatch, tmp_path):
+    target = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
+    (target / "test_generated.py").write_text("def test_generated():\n    assert True\n", encoding="utf-8")
+    from core import sandbox
+    from hub import safe_exec
+    isolated = []
+    git_calls = []
+
+    def physical(cmd, **kwargs):
+        git_calls.append(cmd)
+        if cmd[:2] == ["git", "diff"] and "--name-only" in cmd:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[:2] == ["git", "ls-files"]:
+            return SimpleNamespace(returncode=0, stdout="test_generated.py\0", stderr="")
+        return SimpleNamespace(returncode=0,
+                               stdout=PR if cmd[:3] == ["gh", "pr", "create"] else "", stderr="")
+
+    monkeypatch.setattr(worker_git.subprocess, "run", physical)
+
+    def capture(argv, *, limits, cwd, shell, env=None):
+        isolated.append((list(argv), limits, cwd, shell, dict(env or {})))
+        return SandboxResult(returncode=0, stdout="1 passed", stderr="")
+
+    monkeypatch.setattr(sandbox, "run_isolated", capture)
+    result = worker_git.finish_task(
+        bridge.binding.task_id, "Bound parser integration", worker_task_binding=bridge.binding,
+        require_task_binding=True)
+
+    assert result == {"success": True, "pr_url": PR, "status": "review"}
+    assert any(cmd[:2] == ["git", "ls-files"] for cmd in git_calls)
+    assert len(isolated) == 1
+    argv, limits, cwd, shell, env = isolated[0]
+    assert argv[0] == safe_exec.resolve_executable("python", worker_write_guard._CHECK_BASES)[0]
+    assert argv[1:4] == ["-m", "pytest", "-q"]
+    state = target / ".worker-check"
+    separator = argv.index("--")
+    assert argv[4:separator] == [
+        "--basetemp", str(state / "pytest-temp"),
+        "-o", "cache_dir=" + str(state / "pytest-cache"),
+        "-o", "addopts=",
+        "-o", "log_file=",
+        "-o", "testpaths=" + str(target),
+        "-o", "confcutdir=" + str(target),
+    ]
+    assert argv[separator + 1:] == [str((target / "test_generated.py").resolve())]
+    assert cwd == str(target) and shell is False and limits.timeout_sec == 60
+    expected_paths = {
+        "HOME": state / "home", "TMPDIR": state / "tmp", "TMP": state / "tmp", "TEMP": state / "tmp",
+        "XDG_CACHE_HOME": state / "xdg-cache", "XDG_CONFIG_HOME": state / "xdg-config",
+        "XDG_STATE_HOME": state / "xdg-state", "PYTHONPYCACHEPREFIX": state / "python-pycache",
+        "RUFF_CACHE_DIR": state / "ruff-cache", "MYPY_CACHE_DIR": state / "mypy-cache",
+        "PYRIGHT_PYTHON_CACHE_DIR": state / "pyright-cache", "npm_config_cache": state / "npm-cache",
+        "PIP_CACHE_DIR": state / "pip-cache", "UV_CACHE_DIR": state / "uv-cache",
+        "PRE_COMMIT_HOME": state / "pre-commit-cache", "COVERAGE_FILE": state / ".coverage",
+        "PYTEST_DEBUG_TEMPROOT": state / "pytest-debug-temp", "BACH_DB": state / "worker-check.sqlite3",
+        "NPM_CONFIG_USERCONFIG": state / "npmrc", "NPM_CONFIG_GLOBALCONFIG": state / "npm-globalrc",
+        "LOCALAPPDATA": state / "local-app-data", "APPDATA": state / "app-data",
+    }
+    for key, value in expected_paths.items():
+        assert Path(env[key]).resolve() == value.resolve(), key
+    if os.name == "nt":
+        assert Path(env["USERPROFILE"]).resolve() == (state / "home").resolve()
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert env["PYTEST_ADDOPTS"] == "" and env["PYTEST_PLUGINS"] == ""
+    assert env["BACH_ALLOW_ONEDRIVE_DB_FALLBACK"] == "0"
 
 
 def test_bound_finish_records_review_only_at_canonical_authority(bridge, git_run, tmp_path):
@@ -76,7 +227,8 @@ def test_finish_tool_forwards_private_binding(bridge, monkeypatch):
         return {"success": True, "status": "review"}
     monkeypatch.setattr(worker_git, "finish_task", finish)
     result = exec_tool("finish_task", {"task_id": bridge.binding.task_id, "message": "Configured work"}, "safe",
-                       worker_task_binding=bridge.binding, require_task_binding=True)
+                       worker_task_binding=bridge.binding, require_task_binding=True,
+                       allowed_tools={"finish_task"})
     assert '"success": true' in result
     assert calls[0][1]["worker_task_binding"] is bridge.binding
     assert calls[0][1]["require_task_binding"] is True
@@ -172,7 +324,7 @@ def test_legacy_finish_acquires_canonical_ownership_before_publication(bridge, g
     from system.tests.test_task_lease_service import _connect, _insert
     with _connect(bridge.binding._client._db_path) as conn:
         task_id = _insert(conn, title="Unleased work", assigned_to="BACH")
-    (worker_git.get_worktrees_dir() / f"task-{task_id}").mkdir()
+    _add_task_tree(task_id)
     result = worker_git.finish_task(task_id, "Explicit finish", run_tests=False,
                                    db_path=bridge.binding._client._db_path)
     assert result["success"] is True and result["status"] == "review"
@@ -187,7 +339,7 @@ def test_legacy_wip_unknown_return_ack_has_no_success_or_retry(bridge, git_run, 
     from hub._services.task_lease_client import TaskLeaseClient
     with _connect(bridge.binding._client._db_path) as conn:
         task_id = _insert(conn, title="Unleased WIP", assigned_to="BACH")
-    (worker_git.get_worktrees_dir() / f"task-{task_id}").mkdir()
+    _add_task_tree(task_id)
     original = TaskLeaseClient.release
     calls = []
     def lost(client, *args, **kwargs):
@@ -218,3 +370,128 @@ def test_untyped_review_ack_cannot_prove_review_or_success(bridge, git_run, monk
     assert result["success"] is False
     assert bridge.binding.reviewed_task_ids == () and bridge.binding.completed_task_ids == ()
     assert bridge.binding.return_lease() is False
+
+
+
+def test_bound_file_write_requires_grant_and_exact_task_tree(bridge, git_run, tmp_path):
+    tree = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
+    outside = tmp_path / "outside.txt"
+    denied = exec_tool(
+        "write_file", {"path": str(outside), "content": "outside"}, "full",
+        worker_task_binding=bridge.binding, require_task_binding=True,
+        allowed_tools={"write_file"},
+    )
+    assert "BLOCKIERT" in denied and not outside.exists()
+
+    private_path = tree / "allowed.txt"
+    no_grant = exec_tool(
+        "write_file", {"path": str(private_path), "content": "no grant"}, "full",
+        worker_task_binding=bridge.binding, require_task_binding=True,
+    )
+    assert "freigegeben" in no_grant and not private_path.exists()
+
+    written = exec_tool(
+        "write_file", {"path": str(private_path), "content": "bound"}, "full",
+        worker_task_binding=bridge.binding, require_task_binding=True,
+        allowed_tools={"write_file"},
+    )
+    assert "Geschrieben" in written
+    assert private_path.read_text(encoding="utf-8") == "bound"
+
+
+def test_bound_command_requires_checked_cwd_and_rejects_python_code(bridge, git_run):
+    result = exec_tool(
+        "execute_command", {"command": "python -m pytest -q"}, "full",
+        worker_task_binding=bridge.binding, require_task_binding=True,
+        allowed_tools={"execute_command"},
+    )
+    assert "BLOCKIERT" in result
+    tree = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
+    result = exec_tool(
+        "execute_command", {"command": "python -c print(1)", "cwd": str(tree)}, "full",
+        worker_task_binding=bridge.binding, require_task_binding=True,
+        allowed_tools={"execute_command"},
+    )
+    assert "BLOCKIERT" in result
+
+@pytest.mark.parametrize("case", ["id-string", "id-bool", "id-missing", "result-empty", "result-too-long"])
+def test_bound_task_manage_rejects_public_arguments_before_private_operation(bridge, monkeypatch, case):
+    binding = bridge.binding
+    calls = []
+
+    def should_not_run(self, args, *, _dispatch_marked=False):
+        calls.append((args, _dispatch_marked))
+        return "unexpected private call"
+
+    monkeypatch.setattr(type(binding), "execute_task_manage", should_not_run)
+    args = {"action": "submit_result", "task_id": binding.task_id,
+            "result": "Konkretes Ergebnis mit Quellbeleg."}
+    expected = "numerische Ganzzahl"
+    if case == "id-string":
+        args["task_id"] = str(binding.task_id)
+    elif case == "id-bool":
+        args["task_id"] = True
+    elif case == "id-missing":
+        args.pop("task_id")
+    elif case == "result-empty":
+        args["result"] = "  "
+        expected = "Konkretes Ergebnis"
+    else:
+        args["result"] = "x" * 3001
+        expected = "höchstens 3000 Zeichen"
+
+    result = exec_tool(
+        "task_manage", args, "safe", worker_task_binding=binding,
+        require_task_binding=True, allowed_tools={"task_manage"},
+    )
+
+    assert expected in result
+    assert calls == []
+    assert bridge.binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
+
+
+def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge):
+    binding = bridge.binding
+    result = exec_tool(
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+                       "result": "Unabhängig belegtes Ergebnis mit konkreter Prüfgrenze."},
+        "safe", worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"task_manage"},
+    )
+
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert binding.completed_task_ids == ()
+    assert binding.reviewed_task_ids == (binding.task_id,)
+
+
+def test_bound_task_manage_hides_native_task_authority_failure(bridge):
+    binding = bridge.binding
+    result = exec_tool(
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id + 1,
+                       "result": "Ein synthetisches Ergebnis für den falschen Task."},
+        "safe", worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"task_manage"},
+    )
+
+    assert result == "Taskoperation nicht bestätigt; Taskbindung prüfen."
+    assert "Mutation gehört" not in result
+    assert bridge.binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
+
+
+def test_bound_task_manage_hides_unknown_native_submission_ack(bridge, monkeypatch):
+    binding = bridge.binding
+
+    def unknown_ack(*args, **kwargs):
+        raise OSError("PRIVATE synthetic lease/capability details")
+
+    monkeypatch.setattr(binding._client, "submit_result", unknown_ack)
+    result = exec_tool(
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+                       "result": "Ein synthetisches Ergebnis ohne bestätigten ACK."},
+        "safe", worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"task_manage"},
+    )
+
+    assert result == "Taskoperation nicht bestätigt; Taskbindung prüfen."
+    assert "PRIVATE" not in result and "capability" not in result.lower()
+    assert binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"

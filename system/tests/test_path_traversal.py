@@ -133,21 +133,21 @@ def test_auto_sessions_allows_valid_id(client):
 
 
 def test_skills_board_item_file_blocks_traversal(client):
-    """PUT /api/skills-board/item-file with path traversal returns 403."""
+    """PUT /api/skills-board/item-file is retired (410), also for traversal attempts; nothing is written."""
     response = client.put(
         "/api/skills-board/item-file",
         json={"path": "../../etc/passwd", "content": "malicious"}
     )
-    assert response.status_code == 403
+    assert response.status_code == 410
 
 
 def test_skills_board_item_file_blocks_absolute_path(client):
-    """PUT /api/skills-board/item-file with absolute outside path returns 403."""
+    """PUT /api/skills-board/item-file is retired (410), also for absolute paths."""
     response = client.put(
         "/api/skills-board/item-file",
         json={"path": "/etc/shadow", "content": "malicious"}
     )
-    assert response.status_code == 403
+    assert response.status_code == 410
 
 
 # ===========================================================================
@@ -216,9 +216,9 @@ class TestSiblingDirectoryDiscriminator:
         assert response.status_code == 403
 
     def test_skills_board_blocks_sibling_prefix(self, client):
-        """Skills-board item-file must block sibling-prefix paths."""
+        """Skills-board item-file is retired (410): sibling-prefix paths are not written either."""
         response = client.put(
             "/api/skills-board/item-file",
             json={"path": "../system_other/secret.py", "content": "x"}
         )
-        assert response.status_code == 403
+        assert response.status_code == 410

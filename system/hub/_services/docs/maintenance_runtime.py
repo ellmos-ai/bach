@@ -20,6 +20,11 @@ from uuid import uuid4
 from hub.scheduler_provider import create_documentation_scheduler
 
 from .maintenance_dispatch import PACKAGES, DocumentationDispatcher, read_state, stamp
+from .maintenance_failure import (
+    maintenance_exception_class,
+    read_failure_receipt,
+    write_failure_receipt,
+)
 from .maintenance_recurring import ROUTINES, dispatch_routine, routine_definitions
 
 CONFIG_SCHEMA = "bach.maintenance-config.v1"
@@ -275,13 +280,25 @@ def readonly_status(
     runtime: Path, *, root: Path, config_path=None, now=None, process_factory=None
 ) -> dict:
     """No imports of the store, migrations, database creation or process starts."""
-    empty = {
-        "schema": STATUS_SCHEMA,
-        "running": False,
-        "identity": "unknown",
-        "reason": "no_maintenance_receipt",
-        "semantic_review_completed": False,
-    }
+    failure, failure_reason = read_failure_receipt(runtime, now=now)
+
+    def empty_status(reason="no_maintenance_receipt"):
+        value = {
+            "schema": STATUS_SCHEMA,
+            "running": False,
+            "identity": "unknown",
+            "reason": reason,
+            "semantic_review_completed": False,
+        }
+        if failure is not None:
+            value["last_failure"] = failure
+            if reason == "no_maintenance_receipt":
+                value["reason"] = failure_reason or "maintenance_failure"
+        elif failure_reason is not None and reason == "no_maintenance_receipt":
+            value["reason"] = failure_reason
+        return value
+
+    empty = empty_status()
     path = runtime / "status.json"
     try:
         if not path.is_file():
@@ -431,15 +448,18 @@ def readonly_status(
             for row in public["jobs"]
             if isinstance(row, dict)
         ]
-        return {
+        result = {
             **public,
             "running": live,
             "identity": "verified" if live else "unverified",
             "age_seconds": max(0, int(age)),
             "reason": "process_and_heartbeat" if live else "receipt_not_current",
         }
+        if failure is not None:
+            result["last_failure"] = failure
+        return result
     except Exception:  # noqa: BLE001 - fail closed across optional process implementations
-        return {**empty, "reason": "maintenance_receipt_unverified"}
+        return empty_status("maintenance_receipt_unverified")
 
 
 class MaintenanceRuntime:
@@ -454,6 +474,7 @@ class MaintenanceRuntime:
         result_reader=None,
         clock=None,
         guard=None,
+        task_db=None,
     ):
         self.root, self.state_db, self.runtime, self.config_path = (
             root,
@@ -461,6 +482,9 @@ class MaintenanceRuntime:
             runtime,
             config_path,
         )
+        self.failure_phase = "runtime_init"
+        self._failure_owner_generation = None
+        self.task_db = Path(task_db) if task_db is not None else None
         self.config = load_config(config_path)
         self.owner_path = config_path.resolve().parent / "owner.lock"
         self.guard = guard or CanonicalLockGuard(self.config)
@@ -499,6 +523,28 @@ class MaintenanceRuntime:
         )
 
     def _executor(self, payload, timeout_seconds):
+        try:
+            return self._dispatch_job(payload, timeout_seconds)
+        except Exception as error:  # native errors may contain private data
+            write_failure_receipt(
+                self.runtime,
+                self.root,
+                "documentation_dispatch",
+                error,
+                self.guard,
+                task_db=self.task_db,
+                owner_generation=self._failure_owner_generation,
+                now=self.clock(),
+            )
+            print(
+                "maintenance failure "
+                f"phase=documentation_dispatch exception={maintenance_exception_class(error)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
+
+    def _dispatch_job(self, payload, timeout_seconds):
         if timeout_seconds != 60:
             raise ValueError("Invalid documentation job")
         if payload == {"schema": "bach.docs-delta-job.v1"}:
@@ -632,9 +678,13 @@ class MaintenanceRuntime:
         if not self.config["enabled"]:
             raise RuntimeError("maintenance_not_activated")
         if self._owner_thread == threading.get_ident():
+            self.failure_phase = "scheduler_tick"
             return self._tick()
+        self.failure_phase = "owner_acquire"
         with process_owner(self.owner_path, self.guard):
+            self._failure_owner_generation = self.generation
             self._owner_thread = threading.get_ident()
+            self.failure_phase = "scheduler_tick"
             try:
                 return self._tick()
             finally:
@@ -725,21 +775,27 @@ class MaintenanceRuntime:
         ][:5]
 
     def serve(self, *, max_ticks=None):
+        self.failure_phase = "serve"
         import psutil
 
         if not self.config["enabled"]:
             raise RuntimeError("maintenance_not_activated")
+        self._failure_owner_generation = None
+        self.failure_phase = "owner_acquire"
         with process_owner(self.owner_path, self.guard):
+            self._failure_owner_generation = self.generation
             self._owner_thread = threading.get_ident()
             count = 0
             current = None
             try:
                 while not self.stop_event.is_set():
+                    self.failure_phase = "config_reload"
                     config = load_config(self.config_path)
                     if config != self.config:
                         raise RuntimeError(
                             "maintenance_configuration_changed_restart_required"
                         )
+                    self.failure_phase = "scheduler_tick"
                     result = self.tick()
                     current = {
                         "schema": STATUS_SCHEMA,
@@ -764,13 +820,25 @@ class MaintenanceRuntime:
                         ),
                         "jobs": self.job_receipts(),
                     }
+                    self.failure_phase = "status_write"
                     _write_status(self.runtime / "status.json", current, self.guard)
                     count += 1
                     if max_ticks is not None and count >= max_ticks:
                         break
+                    self.failure_phase = "poll_wait"
                     self.stop_event.wait(self.config["poll_seconds"])
             finally:
                 self._owner_thread = None
+                failed_phase = self.failure_phase
+                primary_active = sys.exc_info()[0] is not None
                 if current is not None:
                     current.update(state="stopped", observed_at=stamp(self.clock()))
-                    _write_status(self.runtime / "status.json", current, self.guard)
+                    self.failure_phase = "shutdown_status_write"
+                    try:
+                        _write_status(
+                            self.runtime / "status.json", current, self.guard
+                        )
+                    except Exception:
+                        if not primary_active:
+                            raise
+                self.failure_phase = failed_phase if primary_active else "serve"
