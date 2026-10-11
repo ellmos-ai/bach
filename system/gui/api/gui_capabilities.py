@@ -6,15 +6,18 @@ from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
 PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
-            "/api/domains/", "/api/artifacts", "/api/calendar/", "/api/gui/")
+            "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/")
+# Page -> endpoints the ellmos-system-gui page actually reads (checked against ellmos-system-gui origin/main, 2026-10-11):
+# "/" src/components/SystemClusterStatus.astro:34 and src/pages/index.astro:227; "/agenten/sessions" src/lib/agent-history.mjs:77,89,92
+# (loaded by src/pages/agenten/sessions.astro:90); "/artefakte" src/pages/artefakte.astro:168,243,253; "/settings" src/pages/settings.astro:615.
 PAGE_READS = {
-    "/": ["/api/system/cluster-cockpit"],
+    "/": ["/api/system/cluster-cockpit", "/api/agent-studio/blueprints"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
     "/agenten/blueprints": ["/api/agent-studio/blueprints"],
     "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
-    "/agenten/sessions": ["/api/system/core-agents/timeline"],
+    "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions"],
     "/skills": ["/api/capabilities/skills"],
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
@@ -23,11 +26,11 @@ PAGE_READS = {
     "/user-inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
-    "/artefakte": ["/api/artifacts"],
+    "/artefakte": ["/api/artefakte", "/api/artifacts/content", "/api/artifacts/download"],
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
-    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/brand"],
+    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin"],
 }
 
 
