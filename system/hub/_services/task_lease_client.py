@@ -165,6 +165,47 @@ def _version(value, *, required=False):
     return value
 
 
+def _generation(value, *, required=False):
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None:
+        raise LeaseProtocolError("Ungültige Workergeneration")
+    return value
+
+
+def _trace_ack(data, *, task_id, request_id, phase):
+    from hub._services.chat.worker_tool_trace import SCHEMA, PHASES
+    if (not isinstance(data, dict) or data.get("schema") != SCHEMA
+            or data.get("accepted") is not True
+            or type(data.get("event_id")) is not int or data["event_id"] <= 0
+            or type(data.get("task_id")) is not int or data["task_id"] != task_id
+            or data.get("request_id") != request_id or not isinstance(phase, str)
+            or phase not in PHASES or data.get("phase") != phase):
+        raise LeaseProtocolError("Werkzeug-Trace-ACK passt nicht zur Anfrage")
+    return {"schema": SCHEMA, "accepted": True, "event_id": data["event_id"],
+            "task_id": task_id, "request_id": request_id, "phase": phase}
+
+
+@dataclass(frozen=True)
+class ToolTraceStartAck:
+    schema: str
+    accepted: bool
+    event_id: int
+    task_id: int
+    request_id: str
+    phase: str
+    completion_token: str = field(repr=False)
+
+
+def _trace_start_ack(data, *, task_id, request_id):
+    from hub._services.chat.worker_tool_trace import _COMPLETION_TOKEN
+    base = _trace_ack(data, task_id=task_id, request_id=request_id, phase="started")
+    token = data.get("completion_token") if isinstance(data, dict) else None
+    if not isinstance(token, str) or not _COMPLETION_TOKEN.fullmatch(token):
+        raise LeaseProtocolError("Werkzeug-Trace-Start-ACK ist unvollständig")
+    return ToolTraceStartAck(**base, completion_token=token)
+
+
 def _identity(task_id, lease_id=None, fence=None):
     if type(task_id) is not int or task_id <= 0:
         raise LeaseProtocolError("Task-ID muss eine positive Ganzzahl sein")
@@ -197,6 +238,7 @@ class LeaseAck:
     local_deadline: datetime = field(init=False)
     replayed: bool = False
     task_version: str | None = None
+    result_generation: str | None = None
 
     def __post_init__(self) -> None:
         if (not isinstance(self.lease_id, str) or type(self.fence) is not int or self.fence <= 0
@@ -204,6 +246,7 @@ class LeaseAck:
             raise LeaseProtocolError("Ungültige Lease-Capability oder Profil")
         _identity(self.task_id, self.lease_id, self.fence)
         _version(self.task_version)
+        _generation(self.result_generation)
         if (not isinstance(self.worker_id, str) or not isinstance(self.host, str)
                 or self.worker_id.rsplit("@", 1)[-1].lower() != self.host.lower()):
             raise LeaseProtocolError("Ungültiger Lease-Halter")
@@ -547,35 +590,40 @@ class TaskLeaseClient:
         return {"tasks": tasks, "total": data["total"], "has_more": data["has_more"], "offset": offset}
 
     def _grant(self, data, *, worker_id=None, host=None, lease_id=None, fence=None,
-               task_version=None, receive_time):
-        if data.get("granted") is not True:
+               task_version=None, result_generation=None, receive_time):
+        if not isinstance(data, dict) or data.get("granted") is not True:
             raise LeaseProtocolError("ACK bestätigt keine Lease-Erteilung")
         for key, expected in (("worker_id", worker_id), ("host", host), ("lease_id", lease_id),
                               ("fence", fence), ("task_version", task_version)):
             if expected is not None and data.get(key) != expected:
                 raise LeaseProtocolError("Lease-ACK stimmt nicht mit der Anfrage überein")
-        required = ("task_id", "lease_id", "fence", "worker_id", "host", "issued_at", "expires_at", "ttl_profile", "server_now", "task_version")
+        required = ("task_id", "lease_id", "fence", "worker_id", "host", "issued_at",
+                    "expires_at", "ttl_profile", "server_now", "task_version")
         if any(key not in data for key in required):
             raise LeaseProtocolError("Lease-ACK ist unvollständig")
         _version(data["task_version"], required=True)
+        generation = _generation(data.get("result_generation"), required=result_generation is not None)
+        if result_generation is not None and generation != result_generation:
+            raise LeaseProtocolError("Lease-ACK stimmt nicht mit der Workergeneration überein")
         ack = LeaseAck(**{key: data[key] for key in required},
-                       replayed=data.get("replayed") is True, local_receive_time=receive_time)
+                       replayed=data.get("replayed") is True, local_receive_time=receive_time,
+                       result_generation=generation)
         self._held[ack.task_id] = ack
         return ack
 
     def acquire(self, task_id, *, worker_id, host, request_id=None, ttl_profile="M", intent="",
                 task_version=None, result_generation=None, config=None, now=None):
         _version(task_version)
+        result_generation = _generation(result_generation)
         sent_at = now or datetime.now(timezone.utc)
         body = dict(worker_id=worker_id, host=host, request_id=request_id or str(uuid.uuid4()),
                     ttl_profile=ttl_profile, intent=intent, task_version=task_version)
         if result_generation is not None:
             body["result_generation"] = result_generation
         data = self._call("acquire", task_id, body, config=config, now=now)
-        if result_generation is not None and data.get("result_generation") != result_generation:
-            raise LeaseProtocolError("Reviewpflicht dieser Workergeneration nicht bestätigt")
         # Sending time is conservative: response latency cannot extend the local deadline.
-        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
+        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,
+                           result_generation=result_generation, receive_time=sent_at)
 
     def _acquire_native_creator(self, task_id, *, delegation, worker_id, host,
                                 task_version, config=None, now=None):
@@ -602,7 +650,8 @@ class TaskLeaseClient:
         _wire_time(data.get("server_now"))
         if data.get("result_generation") != delegation.generation:
             raise LeaseProtocolError("Creator-Reviewpflicht dieser Generation nicht bestätigt")
-        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
+        return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,
+                           result_generation=delegation.generation, receive_time=sent_at)
 
     def read(self, task_id, *, lease_id=None, config=None, now=None):
         headers = {"X-Lease-Id": lease_id} if lease_id else None
@@ -624,7 +673,145 @@ class TaskLeaseClient:
         previous = self._held.get(task_id)
         return self._grant(data, lease_id=lease_id, fence=fence, task_version=task_version,
                            worker_id=previous.worker_id if previous else None,
-                           host=previous.host if previous else None, receive_time=sent_at)
+                           host=previous.host if previous else None,
+                           result_generation=previous.result_generation if previous else None,
+                           receive_time=sent_at)
+
+    def tool_trace_start(self, identity, *, lease_id, arguments_sha256):
+        """Persist a tool start through the same canonical task authority."""
+        from hub._services.chat.worker_tool_trace import TraceIdentity, append_started
+        if not isinstance(identity, TraceIdentity):
+            raise LeaseProtocolError("Werkzeug-Trace-Identität fehlt")
+        _identity(identity.task_id, lease_id, identity.fence)
+        if self.mode == "remote":
+            payload = {"schema": "bach.worker-tool-trace.v1", "fence": identity.fence,
+                       "worker_id": identity.worker_id, "generation": identity.generation,
+                       "task_version": identity.task_version, "request_id": identity.request_id,
+                       "source": identity.source, "tool_name": identity.tool_name,
+                       "arguments_sha256": arguments_sha256}
+            status, data = self._http_request(
+                "POST", f"/api/tasks/{identity.task_id}/tool-trace/start", payload,
+                headers={"X-Lease-Id": lease_id})
+            if status != 200:
+                self._raise_denied(identity.task_id, data)
+            return _trace_start_ack(data, task_id=identity.task_id,
+                                    request_id=identity.request_id)
+        conn = self._get_local_connection()
+        try:
+            data = append_started(conn, identity, lease_id=lease_id,
+                                  arguments_sha256=arguments_sha256)
+            return _trace_start_ack(data, task_id=identity.task_id,
+                                    request_id=identity.request_id)
+        except Exception:
+            raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Start fehlgeschlagen") from None
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def tool_trace_phase(self, identity, phase, *, receipt_id=None, result_sha256=None,
+                         completion_token=None):
+        """Append a phase correlated to a privately bound durable start."""
+        from hub._services.chat.worker_tool_trace import (
+            TraceIdentity, append_phase, _COMPLETION_TOKEN,
+        )
+        if not isinstance(identity, TraceIdentity):
+            raise LeaseProtocolError("Werkzeug-Trace-Identität fehlt")
+        if (not isinstance(completion_token, str)
+                or not _COMPLETION_TOKEN.fullmatch(completion_token)):
+            raise LeaseProtocolError("Werkzeug-Trace-Abschluss fehlt")
+        payload = {"schema": "bach.worker-tool-trace.v1", "fence": identity.fence,
+                   "worker_id": identity.worker_id, "generation": identity.generation,
+                   "task_version": identity.task_version, "request_id": identity.request_id,
+                   "source": identity.source, "tool_name": identity.tool_name,
+                   "phase": phase, "receipt_id": receipt_id, "result_sha256": result_sha256}
+        if self.mode == "remote":
+            status, data = self._http_request(
+                "POST", f"/api/tasks/{identity.task_id}/tool-trace/events", payload,
+                headers={"X-Trace-Completion": completion_token})
+            if status != 200:
+                self._raise_denied(identity.task_id, data)
+            return _trace_ack(data, task_id=identity.task_id,
+                              request_id=identity.request_id, phase=phase)
+        conn = self._get_local_connection()
+        try:
+            data = append_phase(conn, identity, phase, receipt_id=receipt_id,
+                                result_sha256=result_sha256,
+                                completion_token=completion_token)
+            return _trace_ack(data, task_id=identity.task_id,
+                              request_id=identity.request_id, phase=phase)
+        except Exception:
+            raise LeaseProtocolError("Kanonische Werkzeug-Trace-Phase fehlgeschlagen") from None
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def tool_trace_events(self, task_id, *, limit=100, offset=0):
+        """Read a bounded safe page from the canonical task database or lead."""
+        from hub._services.chat.worker_tool_trace import (
+            SCHEMA, SOURCES, PHASES, _GENERATION, _HASH, _ID, _TOOL, _WORKER, list_events,
+        )
+        _identity(task_id)
+        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
+            raise LeaseProtocolError("Ungültige Werkzeug-Trace-Seite")
+        if self.mode == "remote":
+            status, data = self._http_request(
+                "GET", f"/api/tasks/{task_id}/tool-trace/events?limit={limit}&offset={offset}")
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            conn = self._get_local_connection()
+            try:
+                data = list_events(conn, task_id, limit=limit, offset=offset)
+            except Exception:
+                raise LeaseProtocolError("Kanonischer Werkzeug-Trace ist nicht verfügbar") from None
+            finally:
+                if self._conn is None:
+                    conn.close()
+        expected_fields = {"event_id", "schema", "task_id", "fence", "worker_id",
+                           "generation", "task_version", "request_id", "receipt_id",
+                           "source", "tool_name", "phase", "occurred_at",
+                           "arguments_sha256", "result_sha256", "effect_status"}
+        if not isinstance(data, dict):
+            raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Readback ist ungültig")
+        events = data.get("events")
+        if (data.get("schema") != SCHEMA or type(data.get("task_id")) is not int
+                or data["task_id"] != task_id or type(data.get("limit")) is not int
+                or data["limit"] != limit or type(data.get("offset")) is not int
+                or data["offset"] != offset or not isinstance(events, list)
+                or len(events) > limit or type(data.get("count")) is not int
+                or data["count"] != len(events)):
+            raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Readback ist ungültig")
+        for event in events:
+            if (not isinstance(event, dict) or set(event) != expected_fields
+                    or event.get("schema") != SCHEMA
+                    or type(event.get("event_id")) is not int or event["event_id"] <= 0
+                    or type(event.get("task_id")) is not int or event["task_id"] != task_id
+                    or type(event.get("fence")) is not int or event["fence"] <= 0
+                    or not isinstance(event.get("worker_id"), str) or not _WORKER.fullmatch(event["worker_id"])
+                    or not isinstance(event.get("generation"), str) or not _GENERATION.fullmatch(event["generation"])
+                    or not isinstance(event.get("task_version"), str) or not re.fullmatch(r"[a-f0-9]{64}", event["task_version"])
+                    or not isinstance(event.get("request_id"), str) or not _ID.fullmatch(event["request_id"])
+                    or not isinstance(event.get("source"), str) or event["source"] not in SOURCES
+                    or not isinstance(event.get("tool_name"), str) or not _TOOL.fullmatch(event["tool_name"])
+                    or not isinstance(event.get("phase"), str) or event["phase"] not in PHASES
+                    or event.get("effect_status") != "unknown"):
+                raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Eintrag ist ungültig")
+            _wire_time(event.get("occurred_at"))
+            receipt = event.get("receipt_id")
+            args_hash = event.get("arguments_sha256")
+            result_hash = event.get("result_sha256")
+            if ((receipt is not None and (not isinstance(receipt, str) or not _ID.fullmatch(receipt)))
+                    or (args_hash is not None and (not isinstance(args_hash, str) or not _HASH.fullmatch(args_hash)))
+                    or (result_hash is not None and (not isinstance(result_hash, str) or not _HASH.fullmatch(result_hash)))):
+                raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Digest ist ungültig")
+            phase = event["phase"]
+            if ((phase == "started" and (receipt is not None or args_hash is None or result_hash is not None))
+                    or (phase == "returned" and (receipt is None or args_hash is not None or result_hash is None))
+                    or (phase == "failed" and (receipt is not None or args_hash is not None or result_hash is not None))
+                    or (phase == "acknowledged" and (receipt is None or args_hash is not None or result_hash is not None))):
+                raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Phaseninhalt ist ungültig")
+        return {"schema": SCHEMA, "task_id": task_id, "events": events,
+                "count": len(events), "limit": limit, "offset": offset}
 
     def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result, config=None, now=None):
         from .task_result_service import validate_submission
