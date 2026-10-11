@@ -7,6 +7,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -194,6 +195,64 @@ def test_real_process_without_shell_and_timeout(state, tmp_path):
     assert tps.probe(slow, timeout=0.5)["reason"] == "provider_timeout"
     missing = {"id": "githubbot-core", "command": [str(tmp_path / "does-not-exist.exe")]}
     assert tps.probe(missing)["reason"] == "provider_missing"
+
+
+def _child(code):
+    return {"id": "githubbot-core", "command": [sys.executable, "-c", code]}
+
+
+def _probe_child(code, **kwargs):
+    started = time.monotonic()
+    return tps.probe(_child(code), **kwargs), time.monotonic() - started
+
+
+def test_bounded_run_limit_boundary_stdout():
+    limit = tps.MAX_OUTPUT_BYTES
+    ok = tps._bounded_run([sys.executable, "-c", f"import sys; sys.stdout.write('x' * {limit})"], timeout=20)
+    assert ok.returncode == 0 and len(ok.stdout) == limit
+    with pytest.raises(tps._OutputTooLarge):
+        tps._bounded_run([sys.executable, "-c", f"import sys; sys.stdout.write('x' * {limit + 1})"], timeout=20)
+
+
+def test_endless_stdout_is_killed_long_before_timeout():
+    code = "import sys\nwhile True: sys.stdout.write('x' * 65536); sys.stdout.flush()"
+    result, seconds = _probe_child(code, timeout=15)
+    assert result["reason"] == "provider_output_too_large" and seconds < 10
+
+
+def test_stderr_flood_is_bounded_and_killed():
+    code = "import sys\nwhile True: sys.stderr.write('e' * 65536); sys.stderr.flush()"
+    result, seconds = _probe_child(code, timeout=15)
+    assert result["reason"] == "provider_output_too_large" and seconds < 10
+
+
+def test_overflowing_child_is_reaped(monkeypatch):
+    started = []
+    real_popen = subprocess.Popen
+
+    def spy(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        started.append(proc)
+        return proc
+    monkeypatch.setattr(subprocess, "Popen", spy)
+    result, _ = _probe_child("import sys\nwhile True: sys.stdout.write('x' * 65536); sys.stdout.flush()", timeout=15)
+    assert result["reason"] == "provider_output_too_large"
+    assert started and all(proc.poll() is not None for proc in started)
+
+
+def test_silent_child_still_times_out_and_is_reaped(monkeypatch):
+    started = []
+    real_popen = subprocess.Popen
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: started.append(real_popen(*a, **k)) or started[-1])
+    result, seconds = _probe_child("import time; time.sleep(30)", timeout=0.5)
+    assert result["reason"] == "provider_timeout" and seconds < 10
+    assert all(proc.poll() is not None for proc in started)
+
+
+def test_bounded_run_returns_normal_output_and_exit_code():
+    done = tps._bounded_run([sys.executable, "-c", "import sys; print('hi'); sys.stderr.write('warn'); sys.exit(3)"],
+                            timeout=20)
+    assert (done.returncode, done.stdout.strip(), done.stderr) == (3, b"hi", b"warn")
 
 
 def test_version_change_requires_explicit_migration(state):

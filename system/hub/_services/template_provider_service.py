@@ -30,8 +30,11 @@ import re
 import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .blueprint_service import (ALLOWED_KINDS, _ID, ensure_blueprint_schema,
@@ -164,19 +167,76 @@ def _child_env() -> dict[str, str]:
     return env
 
 
-def probe(provider: dict[str, Any], *, runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+class _OutputTooLarge(Exception):
+    """Interner Abbruch: stdout oder stderr des Providers überschritt MAX_OUTPUT_BYTES."""
+
+
+def _bounded_run(command, *, timeout: float, **popen_kwargs):
+    """subprocess.run-Ersatz: liest stdout/stderr gedeckelt und beendet den Prozess beim Überschreiten.
+
+    Pro Strom höchstens MAX_OUTPUT_BYTES + 1 Byte im Speicher. Wirft subprocess.TimeoutExpired
+    bzw. _OutputTooLarge; der Kindprozess ist dann beendet und abgeholt.
+    """
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, **popen_kwargs)
+    chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
+    over = threading.Event()
+
+    def drain(name, stream):
+        total = 0
+        try:
+            while True:
+                data = stream.read(min(65536, MAX_OUTPUT_BYTES + 1 - total))
+                if not data:
+                    return
+                chunks[name].append(data)
+                total += len(data)
+                if total > MAX_OUTPUT_BYTES:
+                    over.set()
+                    return
+        except (OSError, ValueError):  # Pipe nach kill() geschlossen
+            return
+
+    readers = [threading.Thread(target=drain, args=(name, getattr(proc, name)), daemon=True)
+               for name in chunks]
+    for reader in readers:
+        reader.start()
+    deadline = time.monotonic() + timeout
+    try:
+        # ponytail: Polling alle 50 ms reicht für die seltene Probe; kein Prozessbaum-Kill (nur das Kind).
+        while any(reader.is_alive() for reader in readers) and not over.is_set():
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(command, timeout)
+            over.wait(0.05)
+        if over.is_set():
+            raise _OutputTooLarge()
+        proc.wait(timeout=max(deadline - time.monotonic(), 0.001))
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        for reader in readers:
+            reader.join(timeout=1)
+        for stream in (proc.stdout, proc.stderr):
+            stream.close()
+    return SimpleNamespace(returncode=proc.returncode, stdout=b"".join(chunks["stdout"]),
+                           stderr=b"".join(chunks["stderr"]))
+
+
+def probe(provider: dict[str, Any], *, runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Echte Probe: Exitcode, Schema, Version und sha256. Wirft nie."""
     result = {"id": provider["id"], "available": False, "observed_at": datetime.now(timezone.utc).isoformat(),
               "template_id": None, "version": None, "sha256": None, "source_commit": None}
     try:
         try:
-            done = runner(provider["command"], capture_output=True, timeout=timeout, shell=False, check=False,
+            done = runner(provider["command"], timeout=timeout, shell=False,
                           stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                           env=_child_env(), cwd=tempfile.gettempdir())
         except FileNotFoundError as exc:
             raise TemplateProviderError("provider_missing") from exc
         except subprocess.TimeoutExpired as exc:
             raise TemplateProviderError("provider_timeout") from exc
+        except _OutputTooLarge as exc:
+            raise TemplateProviderError("provider_output_too_large") from exc
         except OSError as exc:
             raise TemplateProviderError("provider_not_executable") from exc
         if done.returncode != 0:
@@ -282,7 +342,7 @@ def _register(conn, provider_id, probed) -> dict[str, Any]:
 
 
 def sync_providers(conn: sqlite3.Connection, providers: list[dict[str, Any]] | None = None, *,
-                   runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+                   runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Probt jeden konfigurierten Provider und gleicht seine Vorlagen ab (nie still überschreibend)."""
     ensure_blueprint_schema(conn)
     providers = load_providers() if providers is None else providers
@@ -306,7 +366,7 @@ def sync_providers(conn: sqlite3.Connection, providers: list[dict[str, Any]] | N
 
 def migrate_template(conn: sqlite3.Connection, provider_id: str, template_id: str, *, to_version: str,
                      expected_sha256: str, providers: list[dict[str, Any]] | None = None,
-                     runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
+                     runner=_bounded_run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Explizite Übernahme einer anderen Vorlagenversion; die alte Zeile bleibt als 'superseded'."""
     ensure_blueprint_schema(conn)
     providers = load_providers() if providers is None else providers
