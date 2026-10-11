@@ -1,4 +1,5 @@
 """Actual loopback relay, isolated authority, no CLI or provider starts."""
+from datetime import datetime, timezone
 import json
 import threading
 import urllib.error
@@ -13,7 +14,6 @@ from hub._services.chat.worker_tool_bridge import WorkerToolBridge
 @pytest.fixture
 def bridge(tmp_path, monkeypatch):
     from system.tests.test_task_lease_service import _create_db, _connect, _insert
-    from system.tests.test_task_lease_client_review import T0
     from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     database = tmp_path / "canonical.db"
@@ -25,7 +25,7 @@ def bridge(tmp_path, monkeypatch):
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
     binding = WorkerLeaseBinding.acquire(task_lease_client.TaskLeaseClient(db_path=database), task_id,
         worker_id="worker@HOST", host="HOST", generation="a" * 32, is_current=lambda: True,
-        stop_event=threading.Event(), clock=lambda: T0)
+        stop_event=threading.Event(), clock=lambda: datetime.now(timezone.utc))
     with WorkerToolBridge(binding, mode="safe") as relay:
         yield relay
 
@@ -87,14 +87,44 @@ def test_lost_relay_response_cannot_duplicate_open_parent_decomposition(bridge):
 
 
 def test_next_call_needs_previous_confirmed_receipt_and_new_request_id(bridge):
-    first = call(bridge, {"action": "update", "task_id": bridge.binding.task_id, "title": "Updated"})
+    from hub._services.chat.worker_tool_trace import TraceIdentity
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    task_id = bridge.binding.task_id
+    first = call(bridge, {"action": "update", "task_id": task_id, "title": "Updated"})
     acknowledge(bridge, first)
+    events = bridge.binding._client.tool_trace_events(task_id)["events"]
+    first_events = [event for event in events if event["request_id"] == first["request_id"]]
+    assert [event["phase"] for event in first_events] == ["started", "returned", "acknowledged"]
+    first_version = first_events[0]["task_version"]
+    assert all(event["task_version"] == first_version for event in first_events)
+    updated_version = bridge.binding._ack.task_version
+    assert updated_version == bridge.binding.task_snapshot()["task_version"]
+    assert updated_version != first_version
+
+    stale_identity = TraceIdentity(
+        task_id=task_id, fence=bridge.binding._ack.fence,
+        worker_id=bridge.binding._ack.worker_id, generation=bridge.binding._generation,
+        task_version=first_version, request_id=uuid.uuid4().hex,
+        source="cli-relay", tool_name="task_manage",
+    )
+    with pytest.raises(LeaseProtocolError):
+        bridge.binding._client.tool_trace_start(
+            stale_identity, lease_id=bridge.binding._ack.lease_id,
+            arguments_sha256="a" * 64,
+        )
+    assert len(bridge.binding._client.tool_trace_events(task_id)["events"]) == len(events)
+
     for previous, request_id in [(None, None), (first["receipt_id"], first["request_id"])]:
         with pytest.raises(urllib.error.HTTPError) as error:
             call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, previous, request_id)
         assert error.value.code == 409
-    second = call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, first["receipt_id"])
+    second = call(bridge, {"action": "done", "task_id": task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, first["receipt_id"])
     acknowledge(bridge, second)
+    events = bridge.binding._client.tool_trace_events(task_id)["events"]
+    second_events = [event for event in events if event["request_id"] == second["request_id"]]
+    assert [event["phase"] for event in second_events] == ["started", "returned", "acknowledged"]
+    assert all(event["task_version"] == updated_version for event in second_events)
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
 

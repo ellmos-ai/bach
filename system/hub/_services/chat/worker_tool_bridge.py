@@ -12,6 +12,7 @@ import threading
 import uuid
 
 from .bach_tools import BachToolProvider
+from .worker_tool_trace import digest_json, digest_text
 
 
 _ID = re.compile(r"[0-9a-f]{32}\Z")
@@ -46,6 +47,7 @@ class WorkerToolBridge:
         self._calls = threading.RLock()
         self._close_lock = threading.Lock()
         self._pending = None
+        self._pending_trace = None
         self._previous = None
         self._seen = set()
         self._server = None
@@ -144,16 +146,35 @@ class WorkerToolBridge:
                 raise _Rejected(403)
             self._seen.add(body["request_id"])
             try:
+                trace_identity = self.binding.trace_tool_started(
+                    source="cli-relay", request_id=body["request_id"], tool_name=body["name"],
+                    arguments_sha256=digest_json(body["arguments"]))
+            except Exception:
+                raise _Rejected(503) from None
+            try:
                 result = self._provider.execute(body["name"], body["arguments"], self._mode)
             except BaseException:
+                try:
+                    self.binding.trace_tool_phase(trace_identity, "failed")
+                except Exception:
+                    pass
                 self.binding.invalidate()
                 raise _Rejected(503) from None
             receipt = uuid.uuid4().hex
+            safe_result = str(result).replace(self._token, "[redacted]")
             self._pending = (body["request_id"], receipt)
+            self._pending_trace = trace_identity
+            try:
+                self.binding.trace_tool_phase(
+                    trace_identity, "returned", receipt_id=receipt,
+                    result_sha256=digest_text(safe_result))
+            except Exception:
+                self.binding.invalidate()
+                raise _Rejected(503) from None
             return {"request_id": body["request_id"], "receipt_id": receipt,
                     "generation": self.binding.generation, "task_id": self.binding.task_id,
-                    "result": str(result).replace(self._token, "[redacted]"),
-                    "is_error": str(result).startswith(("BLOCKIERT:", "Taskoperation nicht bestätigt", "Taskbindung fehlt"))}
+                    "result": safe_result,
+                    "is_error": safe_result.startswith(("BLOCKIERT:", "Taskoperation nicht bestätigt", "Taskbindung fehlt"))}
 
     def _ack(self, body):
         if not isinstance(body, dict) or set(body) != {"request_id", "receipt_id"}:
@@ -161,10 +182,17 @@ class WorkerToolBridge:
         with self._calls:
             if self._closing.is_set():
                 raise _Rejected(503)
-            if self._pending is None or self._pending != (body["request_id"], body["receipt_id"]):
+            if (self._pending is None or self._pending != (body["request_id"], body["receipt_id"])
+                    or self._pending_trace is None):
                 raise _Rejected(409)
+            try:
+                self.binding.trace_tool_phase(
+                    self._pending_trace, "acknowledged", receipt_id=body["receipt_id"])
+            except Exception:
+                raise _Rejected(503) from None
             self._previous = self._pending[1]
             self._pending = None
+            self._pending_trace = None
             return {"acknowledged": True, "receipt_id": self._previous}
 
     def close(self):
