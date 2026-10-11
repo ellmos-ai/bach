@@ -5455,9 +5455,14 @@ async def inbox_page():
 
 @app.get("/daemon", response_class=HTMLResponse)
 
-async def daemon_page():
+async def daemon_page(request: Request):
 
-    """Daemon Manager Seite."""
+    """Daemon Manager Seite; ?tab=chains liefert die gebaute Ketten-Seite, sonst das klassische Template."""
+
+    if request.query_params.get("tab") == "chains":
+        astro_page = ASTRO_DIST_DIR / "daemon.html"
+        if astro_page.is_file():
+            return FileResponse(astro_page)
 
     daemon_file = TEMPLATES_DIR / "daemon.html"
 

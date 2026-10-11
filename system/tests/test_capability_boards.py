@@ -197,3 +197,18 @@ def test_application_catalog_missing_registry_does_not_fall_back_to_repositories
     assert result["count"] == 0 and result["errors"]
     assert result["sources"][0]["available"] is False
     assert inventory.ocean_inventory([root])["count"] == 1
+
+
+def test_daemon_tab_chains_serves_the_built_page_and_everything_else_stays_classic(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    client = TestClient(server.app)
+    classic = client.get("/daemon")
+    assert classic.status_code == 200 and "tab-chains" in classic.text                       # classic template
+    assert "tab-chains" in client.get("/daemon?tab=chains").text                            # not built yet: unchanged fallback
+    (tmp_path / "daemon.html").write_text("<h1>Astro Daemon Chains</h1>", encoding="utf-8")
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=chains").text                   # built page for the chains tab only
+    assert "Astro Daemon Chains" not in client.get("/daemon").text                          # jobs/scheduler stay classic
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=jobs").text
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains%2F..").text          # exact match only
+    (tmp_path / "daemon.html").unlink()
+    assert "tab-chains" in client.get("/daemon?tab=chains").text                            # rollback: remove the built page
