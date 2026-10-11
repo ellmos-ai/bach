@@ -3591,6 +3591,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             backend_waited_seconds = 0
 
             while True:
+                newly_acquired_binding = None
                 if control.stop_event.is_set():
                     break
 
@@ -3644,6 +3645,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if control.stop_event.wait(10):
                             break
                         continue
+                    newly_acquired_binding = control.task_binding
                     if _update_worker_slot(control, {"task_id": control.task_binding.task_id}) is None:
                         break
                     current_slot = {**current_slot, "task_id": control.task_binding.task_id}
@@ -3672,6 +3674,36 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
                 if control.stop_event.is_set():
                     break
+                if newly_acquired_binding is control.task_binding:
+                    # A worker session is keyed by worker_id, so reusing it
+                    # across leases would expose the previous task transcript
+                    # to the next task. Archive and clear only after the new
+                    # binding and its assignment are active, but before the
+                    # runtime can restore that session for inference.
+                    if getattr(runtime, "session_store", None) is None:
+                        raise RuntimeError(
+                            "Worker-Taskkontext kann ohne persistenten Chatstore nicht isoliert werden"
+                        )
+                    runtime.clear_session(
+                        worker_id, archive_reason="Worker Taskwechsel"
+                    )
+                    if control.stop_event.is_set():
+                        break
+                    control.task_binding.assert_active()
+                    if control.lease_supervisor.failure is not None:
+                        raise control.lease_supervisor.failure
+                    # clear_session removes session-scoped worker settings as
+                    # well as transcript data. Rebind the new blank session
+                    # from the same slot snapshot that selected this backend.
+                    target_backend, model = _snapshot_chat_backend(
+                        worker_id, worker_slot=current_slot
+                    )
+                    if control.stop_event.is_set():
+                        break
+                    control.task_binding.assert_active()
+                    if control.lease_supervisor.failure is not None:
+                        raise control.lease_supervisor.failure
+                    newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
                 try:
