@@ -1,6 +1,8 @@
 """Model/socket identity, canonical CAS, binding admission and device authorization."""
 import asyncio
 import copy
+import hashlib
+import json
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock
 
@@ -24,6 +26,50 @@ def registry(tmp_path, monkeypatch):
     from hub._services import skill_source_service
     monkeypatch.setattr(skill_source_service, "check_write_locks", lambda target: None)
     return path
+
+
+@pytest.fixture
+def ready_local_reserve(registry, tmp_path, monkeypatch):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    policy = {
+        "schema": reserve.SCHEMA,
+        "enabled": True,
+        "memory_reserve_bytes": 512 * 1024**2,
+        "disk_reserve_bytes": 128 * 1024**2,
+        "wait_seconds": 1,
+        "poll_seconds": 1,
+        "models": {
+            "qwen3.8:27b-mlx": {
+                "digest": "0" * 64,
+                "weight_budget_bytes": 1,
+                "kv_headroom_bytes": 128 * 1024**2,
+                "overhead_bytes": 128 * 1024**2,
+                "num_ctx": 512,
+            }
+        },
+    }
+    reserve.validate_policy(policy)
+    raw = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    path = tmp_path / "runtime" / "local-inference" / "resource-reserve.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    version_hash = hashlib.sha256(raw).hexdigest()
+
+    async def probe(_backend, model):
+        assert model in policy["models"]
+        return {
+            "schema": reserve.SCHEMA,
+            "state": "ready",
+            "admitted": True,
+            "enforced": True,
+            "retryable": False,
+            "policy_version": version_hash,
+            "model": model,
+        }
+
+    monkeypatch.setattr(reserve, "probe", probe)
+    return version_hash
 
 
 def version():
@@ -239,7 +285,9 @@ def test_invalid_format_version_cannot_enable_legacy_admission(registry, format_
 
 
 @pytest.mark.parametrize("format_version", [3, 4])
-def test_runtime_missing_migrated_registry_never_dispatches_locally(registry, format_version):
+def test_runtime_missing_migrated_registry_never_dispatches_locally(
+    registry, ready_local_reserve, format_version
+):
     migrated()
     config = slots.load_slots_config()
     del config["model_sockets"]
@@ -275,7 +323,9 @@ def test_native_legacy_registry_requires_explicit_migration(registry, format_ver
     assert proof["socket_id"] == view["sockets"][0]["id"]
 
 
-def test_runtime_admits_actual_bound_target_and_publishes_host_owner(registry):
+def test_runtime_admits_actual_bound_target_and_publishes_host_owner(
+    registry, ready_local_reserve
+):
     migrated()
     seen = []
     async def answer(*args, **kwargs):
