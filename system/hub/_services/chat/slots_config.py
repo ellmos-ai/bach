@@ -1814,10 +1814,13 @@ def _is_supported_persistent_cloud_worker(worker: dict[str, Any]) -> bool:
 
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     from .worker_queue_status import worker_selection_policy
+    scalar_configuration_fields = (
+        WORKER_EDITABLE_FIELDS - {"persistent_opt_in"} - WORKER_EDITABLE_POLICY_FIELDS
+    )
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
                           [] if field == "model_fallbacks" else None)
-        for field in sorted(WORKER_EDITABLE_FIELDS - {"persistent_opt_in"})
+        for field in sorted(scalar_configuration_fields)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
     if type(configuration["memory_hook_opt_in"]) is not bool:

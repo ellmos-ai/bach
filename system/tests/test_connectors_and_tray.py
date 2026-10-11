@@ -1414,3 +1414,42 @@ class TestTrayIdleWorker:
         task = {"id": 99, "assigned_to": "OLLAMA", "required_model": "kimi-k3:cloud"}
         if route == "explicit": task["assigned_slot"] = "buddha_always_on"
         assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is False
+
+
+def test_worker_configuration_projects_pickup_filter_only_as_selection_policy(tmp_path):
+    from gui.api import worker_status_adapter
+    from hub._services.chat import slots_config
+
+    path = str(tmp_path / "slots.json")
+    slots_config.initialize_slots_config(path)
+    worker = slots_config.add_worker(
+        {"name": "Worker", "backend": "ollama", "model": "test",
+         "sub_mode": "hintergrund_worker"},
+        path=path,
+    )
+    worker_id = worker["id"]
+    before = slots_config.worker_configuration_snapshot(worker_id, path=path)
+
+    assert "pickup_filter" not in before["configuration"]
+    projected = worker_status_adapter._project_configuration(
+        {"ok": True, **before}, worker_id
+    )
+    assert projected["selection_policy"] == before["selection_policy"]
+
+    pickup_filter = {
+        "enabled": True,
+        "categories": ["BACH"],
+        "priorities": ["P1", "P2"],
+        "tags": [],
+        "exclude_tags": ["delegated", "waiting"],
+    }
+    changed = slots_config.change_worker_configuration(
+        worker_id, before["configuration_version"],
+        {"pickup_filter": pickup_filter}, path=path,
+    )
+    assert changed["configuration_version"] != before["configuration_version"]
+    assert "pickup_filter" not in changed["configuration"]
+    assert changed["selection_policy"]["pickup_filter"] == pickup_filter
+    assert worker_status_adapter._project_configuration(
+        {"ok": True, **changed}, worker_id
+    )["selection_policy"]["pickup_filter"] == pickup_filter
