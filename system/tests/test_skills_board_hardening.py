@@ -275,6 +275,10 @@ def test_the_body_reader_stops_reading_at_the_limit_and_checks_content_length_fi
     with pytest.raises(server.HTTPException) as bad:
         asyncio.run(server.read_limited_body(FakeRequest({"content-length": "abc"}, parts), 1_000_000))
     assert bad.value.status_code == 400
+    consumed.clear()
+    with pytest.raises(server.HTTPException) as lying:  # valid number, declared far too small, but the stream is oversized
+        asyncio.run(server.read_limited_body(FakeRequest({"content-length": "10"}, parts), 1_000_000))
+    assert lying.value.status_code == 413 and len(consumed) == 3  # the real byte count wins; reading stops early
     assert asyncio.run(server.read_limited_body(FakeRequest({}, [b"ab", b"cd"]), 10)) == b"abcd"
 
 

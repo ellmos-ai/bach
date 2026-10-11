@@ -302,10 +302,10 @@ GET /api/inbox/analyze/{file} Анализировать файл
 PUT /api/inbox/settings Обновить настройки
 
 Доска навыков:
-GET /api/skills-board/item-file Чтение файла элемента
-PUT /api/skills-board/item-file Сохранить файл элемента
-GET /api/skills-board/hierarchy Чтение иерархии
-PUT /api/skills-board/hierarchy Сохранить иерархию
+GET /api/skills-board/item-file Чтение файла элемента (выведено из эксплуатации, HTTP 410; замена: GET /api/capabilities/skills/{id}/source)
+PUT /api/skills-board/item-file Сохранить файл элемента (выведено из эксплуатации, HTTP 410; замена: PUT /api/capabilities/skills/{id}/source)
+GET /api/skills-board/hierarchy Чтение иерархии (таблица hierarchy_assignments)
+PUT /api/skills-board/hierarchy Сохранить назначения (с проверкой, только hierarchy_assignments)
 
 Справочная система:
 GET /api/help Получение списка файлов справки
