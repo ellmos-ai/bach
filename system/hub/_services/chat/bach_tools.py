@@ -1636,7 +1636,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 import shutil
                 source_path, destination_path = _authorized_file_mutation_paths(
                     src, dst, worker_task_binding)
-                shutil.move(str(source_path), str(destination_path))
+                source_stat = source_path.stat()
+                source_identity = (source_stat.st_dev, source_stat.st_ino)
+                source_is_directory = source_path.is_dir()
+                # Re-authorize both paths immediately before the move sink.
+                # This narrows the path-swap window but does not make it atomic.
+                confirmed_source, confirmed_destination = _authorized_file_mutation_paths(
+                    src, dst, worker_task_binding)
+                if (confirmed_source, confirmed_destination) != (source_path, destination_path):
+                    raise ValueError("Quelle oder Ziel wurde während der Pfadprüfung umgeleitet")
+                confirmed_stat = confirmed_source.stat()
+                if (confirmed_stat.st_dev, confirmed_stat.st_ino) != source_identity:
+                    raise ValueError("Quelle wurde während der Pfadprüfung ersetzt")
+                if confirmed_source.is_dir() != source_is_directory:
+                    raise ValueError("Quelltyp änderte sich während der Pfadprüfung")
+                shutil.move(str(confirmed_source), str(confirmed_destination))
                 log.info("MOVE: Datei im geprüften BACH-Bereich verschoben")
                 return f"Verschoben: {source_path} → {destination_path}"
             except Exception as e:

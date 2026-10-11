@@ -312,6 +312,46 @@ def test_unbound_copy_rechecks_ancestor_before_copy_sink(tmp_path, monkeypatch):
     assert not (outside / "escape.txt").exists()
 
 
+def test_unbound_move_rechecks_ancestor_before_move_sink(tmp_path, monkeypatch):
+    from hub import bach_paths
+    from hub._services.chat import bach_tools
+    import shutil
+
+    trusted_root = tmp_path / "bach"
+    user_dir = trusted_root / "user"
+    destination_parent = user_dir / "destination-parent"
+    destination_parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    source = user_dir / "source.txt"
+    source.write_text("inside", encoding="utf-8")
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    original_authorize = bach_tools._authorized_file_mutation_paths
+    calls = 0
+
+    def swap_ancestor_after_first_check(raw_source, raw_destination, binding=None):
+        nonlocal calls
+        calls += 1
+        checked = original_authorize(raw_source, raw_destination, binding)
+        if calls == 1:
+            destination_parent.rmdir()
+            destination_parent.symlink_to(outside, target_is_directory=True)
+        return checked
+
+    monkeypatch.setattr(
+        bach_tools, "_authorized_file_mutation_paths", swap_ancestor_after_first_check)
+    monkeypatch.setattr(shutil, "move", lambda *a, **k: pytest.fail("move sink must not run"))
+    result = exec_tool("move_file", {
+        "source": str(source),
+        "destination": str(destination_parent / "escape.txt"),
+    }, mode="full")
+    assert calls == 2
+    assert "BACH-Root" in result
+    assert source.read_text(encoding="utf-8") == "inside"
+    assert not (outside / "escape.txt").exists()
+
+
 def test_bound_copy_stays_in_registered_task_worktree(tmp_path, monkeypatch):
     _, _, target = _authorization_fixture(tmp_path, monkeypatch)
     source = target / "source.txt"
