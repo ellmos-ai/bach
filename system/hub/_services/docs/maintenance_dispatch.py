@@ -257,7 +257,7 @@ class DocumentationDispatcher:
                 priority,
                 "--category",
                 "WORKER",
-                "--assign",
+                "--assigned",
                 "bach",
                 "--description",
                 description,

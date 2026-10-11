@@ -98,3 +98,12 @@ Compatibilidad con múltiples ID: múltiples ID de tareas en una sola operación
 Detección de dependencia: las tareas se agregan automáticamente con el indicador (BLOQUEADO)
 Se muestran las dependencias inacabadas.
 Ganchos: after_task_create, after_task_done se emiten durante las operaciones
+
+
+Asignación atómica al crear: bach task add "Revisión de documentación" --assigned bach.
+También se admiten --assigned=bach y -a bach. Los nombres vacíos o ausentes se
+rechazan antes del INSERT. Sin esta opción se conserva el valor de la base de datos.
+La API ofrece task.add("Revisión de documentación", assigned_to="bach").
+Los borradores conservan su asignación al promoverse. Siguen vigentes las
+validaciones de autenticación, modelo/slot y asignación del lead.
+Estas opciones no inician workers ni adquieren leases de tareas.
