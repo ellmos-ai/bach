@@ -312,6 +312,41 @@ def system_slot_chat_id(chat_id: str) -> str | None:
     return match[1] if match else None
 
 
+def connector_provider_for_chat(chat_id: str) -> str | None:
+    """Recognize native connector IDs, without broad provider-prefix guesses."""
+    normalized = str(chat_id)
+    if re.fullmatch(r"-?[0-9]+", normalized):
+        return "telegram"
+    aliases = {"tg": "telegram", "telegram": "telegram", "wa": "whatsapp",
+               "whatsapp": "whatsapp", "signal": "signal"}
+    if normalized in ("telegram", "whatsapp", "signal"):
+        return aliases[normalized]
+    prefix, separator, suffix = normalized.partition(":")
+    if separator and suffix and prefix in aliases:
+        return aliases[prefix]
+    return None
+
+
+def connector_slot_for_provider(slot: dict, provider: str) -> dict:
+    """Overlay only supported connector target settings; keep profile authority."""
+    providers = slot.get("providers", {})
+    if not isinstance(providers, dict):
+        raise ValueError("Ungültige Connector-Anbieterkonfiguration")  # noqa: TRY004 - configuration API uses ValueError
+    override = providers.get(provider, {})
+    if (not isinstance(override, dict)
+            or set(override) - {"backend", "model", "max_tool_rounds"}):
+        raise ValueError("Ungültige Connector-Anbieterzuordnung")
+    if ("backend" in override and (not isinstance(override["backend"], str)
+            or override["backend"] not in CORE_KNOWN_BACKENDS)):
+        raise ValueError("Ungültiger Connector-Anbieter")
+    if "model" in override and not isinstance(override["model"], str):
+        raise ValueError("Ungültiges Connector-Modell")
+    if ("max_tool_rounds" in override and (type(override["max_tool_rounds"]) is not int
+            or not 0 <= override["max_tool_rounds"] <= 1000)):
+        raise ValueError("Ungültiges Connector-Rundenbudget")
+    return {**slot, **override}
+
+
 def _resolve_path(path: str | None = None) -> Path:
     target = path or DEFAULT_SLOTS_FILE
     return Path(os.path.expanduser(target)).resolve()
@@ -484,16 +519,21 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     slot's pickup_filter, so callers like chat_tray can fall back to standard
     assignee matching.
     """
+    return pickup_filter_rejection(task, slot) is None
+
+
+def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any]) -> str | None:
+    """Explain the same filter decision used by the selector; grant no authority."""
     if not isinstance(slot, dict):
-        return False
+        return "pickup_filter"
     if not task_matches_slot_binding(task, slot):
-        return False
+        return "pickup_filter"
     # Slot activation and pickup-filter activation are separate flags.
     pickup_filter = slot.get("pickup_filter") if "pickup_filter" in slot else slot
     if not isinstance(pickup_filter, dict):
-        return False
+        return "pickup_filter"
     if not pickup_filter.get("enabled", False):
-        return False
+        return "pickup_filter"
 
     task_categories = []
     if task.get("category"):
@@ -511,14 +551,14 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     if filter_categories:
         filter_cats_norm = {str(c).strip().lower() for c in filter_categories if str(c).strip()}
         if not any(str(c).strip().lower() in filter_cats_norm for c in task_categories):
-            return False
+            return "pickup_category"
 
     task_priority = str(task.get("priority") or "").strip().upper()
     filter_priorities = pickup_filter.get("priorities", []) or []
     if filter_priorities:
         filter_prios_norm = {str(p).strip().upper() for p in filter_priorities if str(p).strip()}
         if task_priority not in filter_prios_norm:
-            return False
+            return "pickup_priority"
 
     raw_tags = task.get("tags") or []
     if isinstance(raw_tags, str):
@@ -532,15 +572,15 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     if filter_tags:
         filter_tags_norm = {str(t).strip().lower() for t in filter_tags if str(t).strip()}
         if not any(t in filter_tags_norm for t in task_tags):
-            return False
+            return "pickup_tags"
 
     exclude_tags = pickup_filter.get("exclude_tags", []) or []
     if exclude_tags:
         exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags if str(t).strip()}
         if any(t in exclude_tags_norm for t in task_tags):
-            return False
+            return "excluded_tag"
 
-    return True
+    return None
 
 
 matches_pickup_filter = match_task_to_pickup_filter
@@ -1605,9 +1645,13 @@ WORKER_EDITABLE_FIELDS = frozenset({
 
 
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
+    from .worker_queue_status import worker_selection_policy
     configuration = {field: worker.get(field) for field in sorted(WORKER_EDITABLE_FIELDS)}
-    raw = json.dumps({"id": worker["id"], **configuration}, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    policy = worker_selection_policy(worker)
+    raw = json.dumps({"id": worker["id"], **configuration, "selection_policy": policy},
+                     sort_keys=True, ensure_ascii=False).encode("utf-8")
     return {"id": worker["id"], "configuration": configuration,
+            "selection_policy": policy,
             "configuration_version": hashlib.sha256(raw).hexdigest()}
 
 

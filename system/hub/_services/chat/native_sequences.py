@@ -233,10 +233,12 @@ class NativeSequences:
                 if previous["request_digest"] != request_digest or previous["owner_service"] != self.gateway.service_instance:
                     raise SequenceConflict("Startkennung bereits anders verwendet")
                 return {"accepted": True, "replayed": True, "run": self._project(previous)}
-            module = self.engine_loader()
             chain = self.store.chain(chain_id)
             if chain is None:
                 raise KeyError("Kette nicht gefunden")
+            if chain.get("is_active") != 1:
+                raise SequenceConflict("Kette ist nicht aktiviert")
+            module = self.engine_loader()
             if type(payload.get("version")) is not int or payload["version"] != chain["version"]:
                 raise SequenceConflict("Aktuelle Kettenversion erforderlich")
             clean = definition({key: chain[key] for key in ("name", "title", "description", "mode", "agent_slot", "steps")})

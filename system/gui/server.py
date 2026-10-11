@@ -1801,6 +1801,8 @@ try:
     app.include_router(task_assignment_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
+    from gui.api.catalog_projection import router as catalog_projection_router
+    app.include_router(catalog_projection_router)
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
@@ -2177,11 +2179,15 @@ async def api_get_tasks(
     assignment_group: str = "all",
     priority: str = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    q: str = None
 ):
     """Liefert Tasks mit kombiniertem Filter vor Zählung und Pagination."""
     if assignment_group not in {"all", "user", "auto", "unassigned"}:
         raise HTTPException(400, "Ungültige Task-Zuordnung")
+    q = (q or "").strip()
+    if len(q) > 200:
+        raise HTTPException(400, "Suchbegriff zu lang")
     try:
         conn = get_bach_db()
 
@@ -2235,6 +2241,20 @@ async def api_get_tasks(
         if assigned_to:
             query += " AND UPPER(assigned_to) = UPPER(?)"
             params.append(assigned_to)
+        # Suche: je Token (UND, alle innerhalb der 200 Zeichen) Titel/Beschreibung per Unicode-casefold-LIKE;
+        # Token ^#?\d+$ im SQLite-Integerbereich 1..2^63-1 trifft zusaetzlich die id.
+        if q:
+            conn.create_function("bach_casefold", 1, lambda v: v.casefold() if isinstance(v, str) else v, deterministic=True)
+        for token in q.casefold().split():
+            esc = token.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            like = f"%{esc}%"
+            clause = "(bach_casefold(title) LIKE ? ESCAPE '!' OR bach_casefold(description) LIKE ? ESCAPE '!'"
+            params.extend([like, like])
+            digits = token[1:] if token.startswith("#") else token
+            if digits.isascii() and digits.isdigit() and 1 <= int(digits) <= 9223372036854775807:
+                clause += " OR id = ?"
+                params.append(int(digits))
+            query += " AND " + clause + ")"
         if priority:
             prio_clean = priority.strip().upper()
             if prio_clean in ("P1", "1", "HIGH", "HOCH", "KRITISCH"):
@@ -2283,7 +2303,7 @@ async def api_get_tasks(
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
                 "offset": max(0, offset),
-                "applied_filters": {"assignment_group": assignment_group, "status": status}}
+                "applied_filters": {"assignment_group": assignment_group, "status": status, "q": q}}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -6933,141 +6953,171 @@ SKILLS_HIERARCHY_FILE = DATA_DIR / "skills_hierarchy.json"
 
 
 @app.get("/api/skills-board/item-file")
-
-async def get_skills_item_file(
-    type: str,
-    id: str,
-    description: Optional[str] = "",
-    path_hint: Optional[str] = "",
-):
-
-    """Sucht und liefert den Inhalt der Quelldatei eines Items."""
-
-    path = resolve_skill_file(type, id, description, path_hint or "")
-
-    if not path:
-
-        return {"success": False, "error": "Keine Quelldatei (.md/.txt) fuer dieses Element gefunden."}
-
-    
-
-    try:
-
-        content = path.read_text(encoding='utf-8')
-
-        return {
-
-            "success": True,
-
-            "path": str(path.relative_to(BACH_DIR)).replace("\\", "/"),
-
-            "absolute_path": str(path),
-
-            "content": content,
-
-            "filename": path.name
-
-        }
-
-    except Exception as e:
-
-        return {"success": False, "error": public_error_message()}
-
+async def get_skills_item_file():
+    """Stillgelegt: Der Weg las jede UTF-8-Datei unter BACH_DIR. Ersatz: GET /api/capabilities/skills/{id}/source."""
+    raise HTTPException(
+        410,
+        "Dieser Lesepfad ist stillgelegt. Skill-Quellen lesen: GET /api/capabilities/skills/{id}/source "
+        "(kanonische SKILL.md-Quelle mit Revision, Skill-Zentrale /skills).",
+    )
 
 
 @app.put("/api/skills-board/item-file")
-
-async def update_skills_item_file(request: FileUpdateRequest):
-
-    """Speichert den Inhalt der Quelldatei."""
-
-    path = resolve_under_base(BACH_DIR, request.path, allowed_suffixes={".md", ".txt", ".py"})
-
-        
-
-    # Nur .md, .txt, .py erlauben
-
-    if path.suffix.lower() not in ['.md', '.txt', '.py']:
-
-        raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt.")
-
-        
-
-    try:
-
-        path.write_text(request.content, encoding='utf-8')
-
-        return {"success": True}
-
-    except Exception as e:
-
-        return {"success": False, "error": public_error_message()}
-
+async def update_skills_item_file():
+    """Stillgelegt: Dieser Weg schrieb .md/.txt/.py unter BACH_DIR. Ersatz: PUT /api/capabilities/skills/{id}/source."""
+    raise HTTPException(
+        410,
+        "Dieser Schreibweg ist stillgelegt. Skill-Quellen ändern: PUT /api/capabilities/skills/{id}/source "
+        "(CAS-Revision und Verlauf in der Skill-Zentrale /skills).",
+    )
 
 
 @app.get("/api/skills-board/hierarchy")
-
 async def get_skills_hierarchy():
+    """Hierarchie aus bach.db (EIN Speicher: hierarchy_assignments). skills_hierarchy.json wird nicht mehr gelesen."""
+    return load_skills_board_from_db()
 
-    """Laedt die Skills-Hierarchie."""
 
-    import json
+HIERARCHY_BODY_LIMIT = 1_000_000
+HIERARCHY_ID = re.compile(r"^[^\x00-\x1f\x7f]{1,200}$")
+HIERARCHY_LIST_KEYS = ("experts", "skills", "services", "workflows")
+HIERARCHY_CHILD_TYPE = {"experts": "expert", "skills": "skill", "services": "service", "workflows": "workflow"}
+HIERARCHY_MAX_LIST = 5000
 
-    if SKILLS_HIERARCHY_FILE.exists():
+
+def _hierarchy_error(detail: str):
+    return HTTPException(status_code=400, detail="Ungültige Hierarchie: " + detail)
+
+
+def _hierarchy_id(value, where: str) -> str:
+    if not isinstance(value, str) or not HIERARCHY_ID.fullmatch(value):
+        raise _hierarchy_error(where + " muss ein Text von 1 bis 200 Zeichen ohne Steuerzeichen sein")
+    return value
+
+
+def validate_skills_hierarchy_payload(data) -> dict:
+    """Strict shape check; returns {agent_id: {key: [ids]}} (deduplicated, order kept). Items are checked but never stored."""
+    if not isinstance(data, dict):
+        raise _hierarchy_error("Wurzel ist kein Objekt")
+    unknown = set(data) - {"items", "assignments", "_meta"}
+    if unknown:
+        raise _hierarchy_error("unbekannter Schlüssel " + sorted(map(str, unknown))[0])
+    items = data.get("items", {})
+    if not isinstance(items, dict) or set(items) - set(HIERARCHY_TYPE_TO_KEY.values()):
+        raise _hierarchy_error("items hat eine unbekannte Gruppe")
+    for key, entries in items.items():
+        if not isinstance(entries, list) or len(entries) > HIERARCHY_MAX_LIST:
+            raise _hierarchy_error("items." + key + " muss eine Liste mit höchstens " + str(HIERARCHY_MAX_LIST) + " Einträgen sein")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise _hierarchy_error("items." + key + " enthält einen Nicht-Objekt-Eintrag")
+            _hierarchy_id(entry.get("id"), "items." + key + "[].id")
+    if "_meta" in data and not isinstance(data["_meta"], dict):
+        raise _hierarchy_error("_meta ist kein Objekt")
+    raw = data.get("assignments")
+    if not isinstance(raw, dict) or len(raw) > 2000:
+        raise _hierarchy_error("assignments muss ein Objekt mit höchstens 2000 Agenten sein")
+    result = {}
+    for parent, lists in raw.items():
+        _hierarchy_id(parent, "assignments-Schlüssel")
+        if not isinstance(lists, dict) or set(lists) - set(HIERARCHY_LIST_KEYS):
+            raise _hierarchy_error("assignments." + parent + " hat eine unbekannte Gruppe")
+        clean = {}
+        for key, ids in lists.items():
+            if not isinstance(ids, list) or len(ids) > HIERARCHY_MAX_LIST:
+                raise _hierarchy_error("assignments." + parent + "." + key + " muss eine Liste sein (max. " + str(HIERARCHY_MAX_LIST) + ")")
+            clean[key] = list(dict.fromkeys(_hierarchy_id(i, "assignments." + parent + "." + key + "[]") for i in ids))
+        result[parent] = clean
+    return result
+
+
+def persist_hierarchy_assignments(assignments: dict, items: dict | None = None) -> dict:
+    """Write assignments of the parents present in the payload into hierarchy_assignments (one transaction, diff-based).
+    Parents and children must exist in the DB-derived hierarchy; rows of other parents or with unknown children stay untouched."""
+    known = load_skills_board_from_db()
+    agents = {item["id"] for item in known["items"]["agents"]}
+    targets = {key: {item["id"] for item in known["items"][key]} for key in HIERARCHY_LIST_KEYS}
+    for key, entries in (items or {}).items():
+        known_ids = {item["id"] for item in known["items"][key]}
+        for entry in entries:
+            if entry["id"] not in known_ids:
+                raise _hierarchy_error("unbekanntes Element " + entry["id"] + " in items." + key)
+    desired = {}
+    for parent, lists in assignments.items():
+        if parent not in agents:
+            raise _hierarchy_error("unbekannter Agent " + parent)
+        for key, ids in lists.items():
+            for order, child in enumerate(ids):
+                if child not in targets[key]:
+                    raise _hierarchy_error("unbekanntes Element " + child + " in " + key)
+                desired[(parent, child)] = (HIERARCHY_CHILD_TYPE[key], order)
+    conn = get_bach_db()
+    try:
+        if not table_exists(conn, "hierarchy_assignments"):
+            raise HTTPException(503, "Tabelle hierarchy_assignments fehlt")
+        known_children = set().union(*targets.values())
+        inserted = updated = deleted = 0
+        with conn:
+            existing = {}
+            for row in conn.execute("SELECT id, parent_id, child_id, child_type, assignment_order FROM hierarchy_assignments WHERE parent_type = 'agent'"):
+                if row["parent_id"] in assignments and row["child_id"] in known_children:
+                    existing[(row["parent_id"], row["child_id"])] = row
+            for pair, row in existing.items():
+                if pair not in desired:
+                    conn.execute("DELETE FROM hierarchy_assignments WHERE id = ?", (row["id"],))
+                    deleted += 1
+            for (parent, child), (child_type, order) in desired.items():
+                row = existing.get((parent, child))
+                if row is None:
+                    conn.execute(
+                        "INSERT INTO hierarchy_assignments (parent_id, parent_type, child_id, child_type, assignment_order) VALUES (?, 'agent', ?, ?, ?)",
+                        (parent, child, child_type, order))
+                    inserted += 1
+                elif row["child_type"] != child_type or row["assignment_order"] != order:
+                    conn.execute("UPDATE hierarchy_assignments SET child_type = ?, assignment_order = ? WHERE id = ?", (child_type, order, row["id"]))
+                    updated += 1
+    finally:
+        conn.close()
+    return {"parents": len(assignments), "inserted": inserted, "updated": updated, "deleted": deleted}
+
+
+async def read_limited_body(request: Request, limit: int) -> bytes:
+    """Read the request body in chunks and stop as soon as the limit is exceeded (no full buffering)."""
+    declared = request.headers.get("content-length")
+    if declared is not None:
         try:
-            with open(SKILLS_HIERARCHY_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if hierarchy_has_items(data):
-                return data
-        except Exception as e:
-            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geladen werden: {e}")
+            size = int(declared)
+        except ValueError:
+            raise HTTPException(400, "Ungültiger Content-Length-Header") from None
+        if size > limit:
+            raise HTTPException(413, "Hierarchie überschreitet " + str(limit) + " Byte")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, "Hierarchie überschreitet " + str(limit) + " Byte")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
-    data = load_skills_board_from_db()
-    if hierarchy_has_items(data):
-        try:
-            SKILLS_HIERARCHY_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(SKILLS_HIERARCHY_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            print(f"[BACH GUI] skills_hierarchy.json konnte nicht geschrieben werden: {e}")
 
-    return data
-
+def _reject_duplicate_keys(pairs):
+    keys = [key for key, _ in pairs]
+    if len(keys) != len(set(keys)):
+        raise ValueError("doppelter Objektschlüssel")
+    return dict(pairs)
 
 
 @app.put("/api/skills-board/hierarchy")
-
 async def save_skills_hierarchy(request: Request):
-
-    """Speichert die Skills-Hierarchie."""
-
-    import json
-
-    from datetime import datetime
-
-
-
-    data = await request.json()
-
-
-
-    # Update timestamp
-
-    if '_meta' not in data:
-
-        data['_meta'] = {}
-
-    data['_meta']['last_updated'] = datetime.now().isoformat()
-
-
-
-    with open(SKILLS_HIERARCHY_FILE, 'w', encoding='utf-8') as f:
-
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-
-    return {"status": "saved"}
+    """Speichert die Zuordnungen (nur hierarchy_assignments). Items werden geprüft (bekannte IDs), aber nicht gespeichert."""
+    body = await read_limited_body(request, HIERARCHY_BODY_LIMIT)
+    try:
+        data = json.loads(body.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys)
+    except (UnicodeDecodeError, ValueError):
+        raise _hierarchy_error("kein gültiges JSON oder doppelter Objektschlüssel") from None
+    assignments = validate_skills_hierarchy_payload(data)
+    summary = persist_hierarchy_assignments(assignments, data.get("items", {}))
+    return {"status": "saved", "persisted": "hierarchy_assignments", "items_persisted": False, **summary}
 
 
 
@@ -10638,27 +10688,26 @@ class PromptUpdateRequest(BaseModel):
     tags: Optional[str] = None
 
 
+def _prompt_library_row(row):
+    """Keep tags editable without losing boundaries in existing JSON lists."""
+    from hub.prompt import prompt_tags_edit_text
+    result = row_to_dict(row)
+    result["tags"] = prompt_tags_edit_text(result.get("tags"))
+    return result
+
+
 def _promptboard_library_paths():
-    """Kandidaten fuer PromptBoard library.json (gleiche Logik wie chat_tray.py)."""
-    candidates = []
-    env_path = os.environ.get("BACH_PROMPTBOARD_LIBRARY")
-    if env_path:
-        candidates.append(Path(env_path).expanduser())
-    candidates.append(Path.home() / ".promptboard" / "library.json")
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        candidates.append(Path(appdata) / "PromptBoard" / "library.json")
-    user_profile = os.environ.get("USERPROFILE")
-    if user_profile:
-        project_dir = (Path(user_profile) / "OneDrive" / ".TOPICS" / ".SOFTWARE"
-                       / "LLM" / "REL-PUB_PromptBoard")
-        candidates.extend([project_dir / "library.json", project_dir / "data" / "library.json"])
-    return candidates
+    """Compatibility wrapper for the handler's shared library discovery."""
+    from hub.prompt import promptboard_library_paths
+    return promptboard_library_paths()
 
 
 @app.get("/prompt-library", response_class=HTMLResponse)
 async def prompt_library_page():
-    """Prompt-Bibliothek (BACH-DB) als GUI-Seite."""
+    """Prompt-Bibliothek (BACH-DB) als GUI-Seite; gebaute Dist-Seite zuerst, Legacy-Template als Rückweg."""
+    astro_page = ASTRO_DIST_DIR / "prompt-library.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
     template = TEMPLATES_DIR / "prompt-library.html"
     if template.exists():
         return HTMLResponse(content=template.read_text(encoding="utf-8"))
@@ -10668,14 +10717,16 @@ async def prompt_library_page():
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
+    from hub.prompt import prompt_tags_text
     conn = get_bach_db()
     try:
+        conn.create_function("prompt_tags_text", 1, prompt_tags_text)
         sql = ("SELECT id, name, category, purpose, tags, created_at, updated_at "
                "FROM prompt_templates")
         clauses, params = [], []
         if q:
-            clauses.append("(name LIKE ? OR text LIKE ? OR tags LIKE ? OR purpose LIKE ?)")
-            params.extend([f"%{q}%"] * 4)
+            clauses.append("(name LIKE ? OR text LIKE ? OR tags LIKE ? OR prompt_tags_text(tags) LIKE ? OR purpose LIKE ?)")
+            params.extend([f"%{q}%"] * 5)
         if category:
             clauses.append("category = ?")
             params.append(category)
@@ -10687,7 +10738,7 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
             "SELECT DISTINCT category FROM prompt_templates WHERE category IS NOT NULL ORDER BY category"
         ).fetchall()
         return {
-            "prompts": [row_to_dict(r) for r in rows],
+            "prompts": [_prompt_library_row(r) for r in rows],
             "categories": [c["category"] for c in cats],
         }
     finally:
@@ -10707,7 +10758,7 @@ async def get_prompt_library_entry(prompt_id: int):
             "WHERE prompt_id = ? ORDER BY version_number DESC",
             (prompt_id,),
         ).fetchall()
-        return {"prompt": row_to_dict(row), "versions": [row_to_dict(v) for v in versions]}
+        return {"prompt": _prompt_library_row(row), "versions": [_prompt_library_row(v) for v in versions]}
     finally:
         conn.close()
 
@@ -10715,6 +10766,7 @@ async def get_prompt_library_entry(prompt_id: int):
 @app.post("/api/prompt-library")
 async def create_prompt_library_entry(req: PromptCreateRequest):
     """Neues Template anlegen."""
+    from hub.prompt import serialize_prompt_tags
     name = req.name.strip()
     if not name or not req.text.strip():
         raise HTTPException(status_code=400, detail="name und text sind Pflicht")
@@ -10725,7 +10777,7 @@ async def create_prompt_library_entry(req: PromptCreateRequest):
             cur = conn.execute(
                 "INSERT INTO prompt_templates (name, purpose, text, tags, category, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (name, req.purpose, req.text, req.tags, req.category, now, now),
+                (name, req.purpose, req.text, serialize_prompt_tags(req.tags), req.category, now, now),
             )
             conn.commit()
         except sqlite3.IntegrityError:
@@ -10738,6 +10790,7 @@ async def create_prompt_library_entry(req: PromptCreateRequest):
 @app.put("/api/prompt-library/{prompt_id}")
 async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
     """Text aktualisieren — alter Stand wird als Version archiviert (wie hub/prompt.py)."""
+    from hub.prompt import serialize_prompt_tags
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text ist Pflicht")
     now = datetime.now().isoformat()
@@ -10756,7 +10809,7 @@ async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
         )
         conn.execute(
             "UPDATE prompt_templates SET text = ?, tags = COALESCE(?, tags), updated_at = ? WHERE id = ?",
-            (req.text, req.tags, now, prompt_id),
+            (req.text, serialize_prompt_tags(req.tags), now, prompt_id),
         )
         conn.commit()
         return {"ok": True, "archived_version": max_v + 1}
@@ -10783,55 +10836,16 @@ async def delete_prompt_library_entry(prompt_id: int):
 
 @app.post("/api/prompt-library/import-promptboard")
 async def import_promptboard_library():
-    """Importiert PromptBoard library.json in die BACH-Prompt-DB (idempotent per Name)."""
-    library_path = next((p for p in _promptboard_library_paths() if p.exists()), None)
+    """Import through the same handler used by CLI and library API."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
     if library_path is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Keine PromptBoard library.json gefunden (BACH_PROMPTBOARD_LIBRARY, "
-                   "~/.promptboard, %APPDATA%/PromptBoard, REL-PUB_PromptBoard)",
-        )
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        payload = json.loads(library_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=422, detail=f"library.json nicht lesbar: {e}")
-
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        raise HTTPException(status_code=422, detail="Unerwartetes Format: 'items'-Liste fehlt")
-
-    now = datetime.now().isoformat()
-    imported, skipped = 0, 0
-    conn = get_bach_db()
-    try:
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            content = str(item.get("content") or "").strip()
-            if not name or not content:
-                continue
-            category = str(item.get("category") or item.get("item_type") or "PromptBoard").strip()
-            tags = item.get("tags")
-            if isinstance(tags, list):
-                tags = ",".join(str(t) for t in tags)
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO prompt_templates "
-                "(name, purpose, text, tags, category, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (name, item.get("description"), content, tags, category, now, now),
-            )
-            if cur.rowcount:
-                imported += 1
-            else:
-                skipped += 1
-        conn.commit()
-        return {"ok": True, "source": str(library_path), "imported": imported, "skipped": skipped}
-    finally:
-        conn.close()
-
-
-
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")

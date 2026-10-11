@@ -139,7 +139,7 @@ def test_combined_assignment_and_status_filter_before_count_and_pagination(clien
     assert first["success"] and first["total"] == expected
     assert first["count"] == min(expected,100)
     assert first["has_more"] is (expected > 100)
-    assert first["applied_filters"] == {"assignment_group":assignment,"status":status}
+    assert first["applied_filters"] == {"assignment_group":assignment,"status":status,"q":""}
     if expected > 100:
         second = client.get(url + "&offset=100").json()
         assert second["total"] == expected and second["offset"] == 100

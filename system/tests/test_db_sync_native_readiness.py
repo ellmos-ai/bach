@@ -398,6 +398,22 @@ def test_linked_path_refused_before_sqlite(env, monkeypatch):
     assert _tree(env.root) == before
 
 
+def test_actual_symlink_path_refused_before_sqlite(env, tmp_path):
+    target = _canonical(env).resolve()
+    linked = tmp_path.resolve() / "actual-linked.db"
+    try:
+        linked.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlinks are unavailable in this test environment: {exc}")
+
+    try:
+        assert linked.is_symlink()
+        assert env.r.validate_native_db(linked).reason == "linked-path"
+        assert linked.is_symlink(), "Readiness checking must preserve the caller's symlink"
+    finally:
+        linked.unlink(missing_ok=True)
+
+
 @pytest.mark.parametrize("operation", ["backup", "merge"])
 def test_file_removed_after_readiness_not_recreated(env, monkeypatch, operation):
     db = _canonical(env)

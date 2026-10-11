@@ -188,8 +188,10 @@ Cloud-Anbieter zu geben. Sind wieder Fackeln frei, kann zurückdelegiert werden.
 | `belegt_bytes()` / `fremd_belegt_bytes(modell)` | was halten sie gerade |
 | `modell_bytes(name)` | was fordert ein Bewerber (Gewichte aus `/api/tags`) |
 | `frei(fuer_modell)` | freie Fackeln; negativ = überbucht |
-| `passt(bedarf, fuer_modell)` | darf dieser Bewerber laden |
+| `passt(bedarf, fuer_modell)` | passt der Bewerber in den GPU-/Metal-Modellgewichtsrahmen (kein OS-, KV-, Overhead- oder Diskgate, keine Inferenzfreigabe) |
 | `stand()` · `python3 -m hub._services.fackel` | alles auf einmal |
+
+Die Fackel-Funktion passt() ist ein GPU-/Metal-Gewichtsvorfilter, keine finale Inferenzfreigabe. Der tatsächliche lokale Chat-Rand fragt den bestehenden local_resource_reserve.probe-Vertrag ab: für Ollama prüft er Modellidentität und Kontextbudget, konfigurierte KV-/Overheadreserven sowie beobachtete OS- und Datenträgerreserven. Bei aktiviertem Modellsteckplatz-Zwang muss zusätzlich eine stabile lokale Bindung vorliegen. Fehlt die Reservekonfiguration oder ist sie abgeschaltet, bleibt die Kapazität unbekannt und der strikte lokale Aufruf wird mit unknown_capacity abgewiesen. Ein bestandener Budgetcheck ist keine Modellkapazitäts-Zertifizierung. Externe Cloudziele umgehen dieses lokale Gate; eine generische ChatRuntime ohne Modellsteckplatz-Zwang behält bei fehlender Reserve das bisherige, explizit unenforced Legacyverhalten.
 
 Drei Entwurfsentscheidungen, die im Betrieb tragen müssen:
 

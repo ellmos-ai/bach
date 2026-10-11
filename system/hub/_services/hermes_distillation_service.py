@@ -3,13 +3,14 @@
 hermes_distillation_service.py - Hermes Skill-Lernen & Destillation Engine v1.0.0
 =================================================================================
 
-Ocean Subsystem: Hermes (Category: Skill-Destillation)
+Lokale BACH-Heuristik: Hermes (kein nativer Hermes-Agent-Adapter)
 Destillation von Verhaltensweisen, Lessons Learned und neuen Skills aus Roh-Logs
-nach deterministischer Rauschreduzierung (~76% Rauschfilter nach Baddeley/Memory-Modell).
+nach deterministischer Rauschreduzierung; Reduktion wird je Lauf gemessen.
 
 Human-in-the-Loop:
 Generierte Skills werden als Kandidaten (hermes_skill_candidates) angelegt und
-erst nach Operator-Freigabe in die kanonischen skill_versions ueberfuehrt.
+mit Lessons als unveröffentlichte Entwürfe gespeichert. Inhaltsreview und native
+Veröffentlichung sind getrennt; ein skill_versions-INSERT veröffentlicht keinen Skill.
 """
 
 from __future__ import annotations
@@ -21,6 +22,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .learning_review_service import (
+    ensure_review_schema, project_candidate, proposal_binding,
+    prohibit_legacy_promotion, record_review,
+)
 
 # ═══════════════════════════════════════════════════════════════
 # 1. DATENSTRUKTUREN
@@ -42,7 +48,7 @@ class DistilledLesson:
     category: str
     title: str
     solution: str
-    is_active: int = 1
+    is_active: int = 0
     confidence: float = 0.9
 
 
@@ -222,6 +228,7 @@ class HermesDistillationService:
                 created_at TEXT
             );
         """)
+        ensure_review_schema(conn, "hermes")
         conn.commit()
         if close_needed:
             conn.close()
@@ -538,8 +545,8 @@ provenance:
 ## 1. Übersicht & Zweck
 {description}
 
-Dieser Skill wurde durch das **Ocean Subsystem Hermes** aus realen Chat-Sessions extrahiert.
-Er verdichtet die erprobten Lösungswege, Best Practices und Befehlsmuster der Sitzung in eine reproduzierbare Handlungsanweisung.
+Dieser unveröffentlichte Entwurf stammt aus der lokalen BACH-Heuristik **hermes_distillation_service**.
+Die enthaltenen Hinweise sind Kandidaten; Tests, Wiederverwendung und native Veröffentlichung sind noch nicht bestätigt.
 
 ## 2. Trigger-Bedingungen (Wann aktivieren?)
 Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
@@ -609,12 +616,8 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
             try:
                 cursor = conn.cursor()
 
-                # A. Lessons in memory_lessons speichern
-                for les in lessons:
-                    cursor.execute("""
-                        INSERT INTO memory_lessons (category, title, solution, is_active, created_at)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (les.category, les.title, les.solution, les.is_active, now_iso))
+                # Drafts stay inside the candidate, outside all active memory readers.
+                draft_json = json.dumps([asdict(lesson) for lesson in lessons], ensure_ascii=False)
 
                 # B. Kandidaten in hermes_skill_candidates speichern
                 cursor.execute("""
@@ -640,6 +643,15 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                 candidate_id = cursor.lastrowid
                 candidate.id = candidate_id
                 candidate_dict["id"] = candidate_id
+                cursor.execute("UPDATE hermes_skill_candidates SET lessons_draft_json=? WHERE id=?",
+                    (draft_json, candidate_id))
+                row = cursor.execute("SELECT * FROM hermes_skill_candidates WHERE id=?", (candidate_id,)).fetchone()
+                proposal, digest = proposal_binding("hermes", row)
+                cursor.execute("""UPDATE hermes_skill_candidates SET
+                    candidate_revision=1,candidate_digest=?,proposal_json=? WHERE id=?""",
+                    (digest, proposal, candidate_id))
+                candidate_dict.update(candidate_revision=1, candidate_digest=digest,
+                    lessons_draft=[asdict(lesson) for lesson in lessons], promotion_available=False)
 
                 # C. Run in hermes_distillation_runs speichern
                 cursor.execute("""
@@ -665,8 +677,8 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                     VALUES (?, ?, ?, ?)
                 """, (
                     max(0, cleaned.raw_char_count - cleaned.cleaned_char_count),
-                    len(lessons) + 1,
-                    f"Hermes Destillation Run #{run_id}: {cleaned.consolidated_summary[:120]}",
+                    0,  # Draft extraction is not active memory consolidation.
+                    f"Hermes Entwürfe Run #{run_id}: {cleaned.consolidated_summary[:120]}",
                     now_iso
                 ))
 
@@ -707,7 +719,7 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
             rows = cursor.execute(query, params).fetchall()
             candidates = []
             for r in rows:
-                item = dict(r)
+                item = project_candidate("hermes", r)
                 try:
                     item["trigger_phrases"] = json.loads(item.get("trigger_phrases") or "[]")
                 except (json.JSONDecodeError, TypeError):
@@ -716,6 +728,7 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                     item["frontmatter"] = json.loads(item.get("frontmatter") or "{}")
                 except (json.JSONDecodeError, TypeError):
                     item["frontmatter"] = {}
+                item["lessons_draft"] = json.loads(item["lessons_draft_json"])
                 candidates.append(item)
             return candidates
         finally:
@@ -733,7 +746,7 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
             ).fetchone()
             if not row:
                 return None
-            item = dict(row)
+            item = project_candidate("hermes", row)
             try:
                 item["trigger_phrases"] = json.loads(item.get("trigger_phrases") or "[]")
             except (json.JSONDecodeError, TypeError):
@@ -742,79 +755,40 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                 item["frontmatter"] = json.loads(item.get("frontmatter") or "{}")
             except (json.JSONDecodeError, TypeError):
                 item["frontmatter"] = {}
+            item["lessons_draft"] = json.loads(item["lessons_draft_json"])
             return item
         finally:
             conn.close()
 
     def approve_candidate(self, candidate_id: int, approved_by: str = "operator") -> dict[str, Any]:
-        """Operator-Freigabe: Ueberfuehrt den Kandidaten in skill_versions."""
+        """Legacy direct activation cannot stand in for native publication."""
         self.ensure_schema()
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            row = cursor.execute(
-                "SELECT * FROM hermes_skill_candidates WHERE id = ?",
-                (candidate_id,)
-            ).fetchone()
-
-            if not row:
-                return {"status": "error", "message": f"Kandidat #{candidate_id} nicht gefunden"}
-
-            cand = dict(row)
-            now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-            # 1. In skill_versions eintragen
-            cursor.execute("""
-                INSERT INTO skill_versions (skill_name, version, changelog, author, content, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                cand["name"],
-                cand.get("version") or "1.0.0",
-                f"Destilliert durch Hermes aus {cand.get('source_session') or 'Chat-Session'}",
-                f"hermes:{approved_by}",
-                cand["content"],
-                now_iso
-            ))
-
-            # 2. Kandidaten-Status aktualisieren
-            cursor.execute("""
-                UPDATE hermes_skill_candidates
-                SET status = 'approved', approved_at = ?, approved_by = ?
-                WHERE id = ?
-            """, (now_iso, approved_by, candidate_id))
-
-            conn.commit()
-
-            return {
-                "status": "approved",
-                "candidate_id": candidate_id,
-                "skill_name": cand["name"],
-                "version": cand.get("version") or "1.0.0",
-                "approved_by": approved_by,
-                "approved_at": now_iso
-            }
+            prohibit_legacy_promotion(conn, "hermes", candidate_id)
         finally:
             conn.close()
 
-    def reject_candidate(self, candidate_id: int, reason: str = "") -> dict[str, Any]:
-        """Lehnt einen Kandidaten ab und dokumentiert den Grund."""
+    def review_candidate(self, candidate_id: int, *, expected_revision=None, expected_digest=None,
+                         request_id=None, actor="", notes="") -> dict[str, Any]:
         self.ensure_schema()
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            cursor.execute("""
-                UPDATE hermes_skill_candidates
-                SET status = 'rejected', rejection_reason = ?
-                WHERE id = ?
-            """, (reason, candidate_id))
-            conn.commit()
-            return {
-                "status": "rejected",
-                "candidate_id": candidate_id,
-                "reason": reason,
-                "rejected_at": now_iso
-            }
+            return record_review(conn, "hermes", candidate_id,
+                expected_revision=expected_revision, expected_digest=expected_digest,
+                request_id=request_id, actor=actor, decision="reviewed", notes=notes)
+        finally:
+            conn.close()
+
+    def reject_candidate(self, candidate_id: int, reason: str = "", *, expected_revision=None,
+                         expected_digest=None, request_id=None, actor="operator") -> dict[str, Any]:
+        self.ensure_schema()
+        conn = self._get_connection()
+        try:
+            receipt = record_review(conn, "hermes", candidate_id,
+                expected_revision=expected_revision, expected_digest=expected_digest,
+                request_id=request_id, actor=actor, decision="rejected", notes=reason)
+            return {**receipt, "reason": reason}
         finally:
             conn.close()
 
@@ -838,6 +812,7 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                 "pending_candidates": pending_candidates,
                 "approved_candidates": approved_candidates,
                 "total_lessons_learned": total_lessons,
+                "native_promotion_available": False,
                 "status": "active"
             }
         finally:

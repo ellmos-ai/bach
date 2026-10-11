@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Fackeln: wie viel Modellspeicher ist frei, und passt der naechste Bewerber?
+"""Fackeln: wie viel GPU-/Metal-Modellspeicher ist frei, und passt der nächste Bewerber?
+
+Fackel prüft nur den GPU-/Metal-Modellgewichtsrahmen. Es misst keine
+OS-Speicher-, KV-, Overhead- oder Datenträgerreserve und ist keine
+Inferenzfreigabe. Der tatsächliche lokale Chat-Aufruf nutzt die separate
+Ressourcenreserve und den Modellsteckplatzvertrag am Dispatch-Rand.
 
 Zehn Fackeln pro System, eine Fackel = ein Zehntel des modelltauglichen
 Speichers. Die Zahl zehn ist ueberall gleich - dadurch bleiben

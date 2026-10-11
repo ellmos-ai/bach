@@ -56,9 +56,11 @@ def test_empty_queue_is_observed_without_acquisition(mem_db):
     ({"required_model": "paid-model"}, {"id": "our-slot", "model": "openrouter/free"}, "model_binding"),
     ({}, {"id": "our-slot", "require_assigned_slot": True}, "explicit_slot_required"),
     ({"assigned_to": "user"}, {"id": "our-slot"}, "ownership"),
-    ({"category": "GUI"}, {"id": "our-slot", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}}, "pickup_filter"),
+    ({"category": "GUI"}, {"id": "our-slot", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}}, "pickup_category"),
+    ({"priority": "P3"}, {"id": "our-slot", "pickup_filter": {"enabled": True, "priorities": ["P1"]}}, "pickup_priority"),
+    ({"tags": ""}, {"id": "our-slot", "pickup_filter": {"enabled": True, "tags": ["ready"]}}, "pickup_tags"),
     ({"assigned_slot": "our-slot", "tags": "waiting"},
-     {"id": "our-slot", "pickup_filter": {"enabled": True, "exclude_tags": ["waiting"]}}, "pickup_filter"),
+     {"id": "our-slot", "pickup_filter": {"enabled": True, "exclude_tags": ["waiting"]}}, "excluded_tag"),
 ])
 def test_selection_reasons_share_actual_constraints(mem_db, fields, slot, reason):
     tid = _insert_task(mem_db)

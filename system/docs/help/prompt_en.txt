@@ -120,3 +120,15 @@ SEE ALSO
   bach --help tasks        Task system
   bach --help memory       Memory system
   bach --help skills       SKILL.md system
+
+PROMPTBOARD IMPORT
+------------------
+  bach prompt import-promptboard [library.json] --dry-run
+  bach prompt import-promptboard [library.json]
+  For import-promptboard, -n is an alias for --dry-run (preview).
+  API: bach_api.prompt.import_promptboard("library.json", "--dry-run")
+Without a path, discovery includes BACH_PROMPTBOARD_LIBRARY.
+Preview writes nothing. Existing names keep their templates.
+Empty entries count as invalid; wrong field types reject the import.
+Valid new templates are saved together or rolled back together.
+GUI, CLI and API use the same handler.

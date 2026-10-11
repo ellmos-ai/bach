@@ -1,0 +1,37 @@
+{
+  "name": "agents-heart",
+  "version": "0.1.0",
+  "description": "Provider- und produktneutrale Besetzungs-/Autorisierungsgrenze mit stabilen, versionierten Rollenverträgen, Assignment-ID sowie korrelierten Start-/Ende-/Unterbrechungsbelegen.",
+  "author": "BACH/Ocean Shared Modules",
+  "license": "MIT",
+  "entry_point": "agents_heart.py",
+  "exports": [
+    "RoleContract",
+    "ROLE_CONTRACTS",
+    "Assignment",
+    "AssignmentDenied",
+    "authorize_role",
+    "begin_assignment",
+    "finish_assignment"
+  ],
+  "dependencies": [],
+  "consumers": [
+    {
+      "name": "BACH",
+      "version": ">=1.0",
+      "integration": "adapter"
+    },
+    {
+      "name": "Ocean",
+      "version": ">=1.0",
+      "integration": "adapter"
+    }
+  ],
+  "separation_of_concerns": {
+    "task_claim_lease": "Task-Master/Lead-TaskDB und Trithon-Adapter",
+    "process_lifecycle": "agent-launcher",
+    "llm_backend": "Backend-Modul",
+    "resource_arbitration": "Fackel/Compute-Lock",
+    "gui_tray": "Clients"
+  }
+}

@@ -79,16 +79,21 @@ def _new_binding(agent_id, target_id, priority="background"):
 def _legacy_projection(config, host_id):
     state = {"schema": SCHEMA, "host_id": host_id, "sockets": {}, "bindings": {}}
     for agent_id, profile in _profiles(config).items():
-        backend, model = profile.get("backend"), profile.get("model")
-        if backend not in _LOCAL_BACKENDS or str(model).lower().endswith(":cloud"):
-            continue
-        target = _new_socket(backend, model, host_id)
-        state["sockets"][target["id"]] = target
+        targets = [profile]
+        if agent_id == "buddha_connector":
+            for provider in ("telegram", "whatsapp", "signal"):
+                targets.append(store.connector_slot_for_provider(profile, provider))
         priority = "background" if (agent_id == "buddha_always_on" or
                     profile.get("execution_kind") == "worker" or
                     agent_id not in config["slots"]) else "foreground"
-        binding = _new_binding(agent_id, target["id"], priority)
-        state["bindings"][binding["id"]] = binding
+        for effective in targets:
+            backend, model = effective.get("backend"), effective.get("model")
+            if backend not in _LOCAL_BACKENDS or str(model).lower().endswith(":cloud"):
+                continue
+            target = _new_socket(backend, model, host_id)
+            state["sockets"][target["id"]] = target
+            binding = _new_binding(agent_id, target["id"], priority)
+            state["bindings"][binding["id"]] = binding
     return state
 
 

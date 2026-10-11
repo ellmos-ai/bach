@@ -77,6 +77,19 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_docs_maintenance.py system/tests/test_task_handler.py system/tests/test_task_slot_fields.py system/tests/test_rheingold_handler.py
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/NemoFold
+          ref: fe71fb58e510b8c819126da37a05332d0d189c79
+          path: .ci-sources/native-nemofold
+          persist-credentials: false
+
+      - name: Learning candidate quarantine and versioned review
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: ${{ github.workspace }}/.ci-sources/native-nemofold/src
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_learning_promotion_contract.py system/tests/test_hermes_skill_distillation.py system/tests/test_nemofold_workflow_synthesis.py system/tests/test_learning_sources.py system/tests/test_learning_source_http_limits.py
 
       - name: Native cognitive process model and read-only observations
         env:
@@ -88,7 +101,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
 
       - name: Native worker provider errors
         env:
@@ -195,6 +208,7 @@ jobs:
             system/tests/test_gui_server.py \
             system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
+            system/tests/test_skills_board_hardening.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
             system/tests/test_unified_dashboard_xss.py \
@@ -258,6 +272,8 @@ jobs:
             system/tests/test_prompt_chat_draft.py \
             system/tests/test_prompt_generator.py \
             system/tests/test_prompt_handler.py \
+            system/tests/test_promptboard_import.py \
+            system/tests/test_prompt_tag_compatibility.py \
             system/tests/test_prosync_race.py \
             system/tests/test_recurring_tasks.py \
             system/tests/test_reflection_handler.py \

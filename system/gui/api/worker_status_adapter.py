@@ -314,8 +314,15 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
             projected[key] = value
     from hub._services.skill_source_service import skill_binding_status
-    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
-            "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
+    result_projection = {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
+                         "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
+    if "selection_policy" in result:
+        from hub._services.chat.worker_queue_status import project_selection_policy
+        policy = project_selection_policy(result["selection_policy"])
+        if policy is None:
+            raise WorkerStatusUnavailable("Worker-Auswahlfilter ist ungültig")
+        result_projection["selection_policy"] = policy
+    return result_projection
 
 
 def read_worker_configuration(worker_id: str, *, device_token: str, timeout: float = 8.0):

@@ -201,6 +201,81 @@ def test_metadata_confirmed_remote_does_not_read_local_capacity(native_http):
     assert calls == [("POST", "/api/show")]
 
 
+def test_catalog_confirmed_cloud_alias_without_show_remote_fields(native_http):
+    calls, shown, tags, _ = native_http
+    # Native Ollama cloud /show has no remote fields and no local format.
+    shown["details"]["format"] = ""
+    tags[0].update(remote_host="https://provider.invalid", remote_model="cloud-model")
+    assert asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL)) == {"external": True}
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags")]
+
+
+@pytest.mark.parametrize("name,model", [("other:cloud", MODEL), (MODEL, "other:cloud")])
+def test_conflicting_catalog_names_cannot_exempt_local_reserve(native_http, name, model):
+    calls, _, tags, _ = native_http
+    tags[0].update(name=name, model=model, remote_host="https://provider.invalid")
+    with pytest.raises(ValueError, match="catalog identity"):
+        asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags")]
+
+
+@pytest.mark.parametrize("field", ["name", "model"])
+@pytest.mark.parametrize("value", [None, True, 1, [], ""])
+def test_malformed_catalog_names_cannot_exempt_local_reserve(native_http, field, value):
+    _, _, tags, _ = native_http
+    tags[0].update(name=MODEL, model=MODEL, remote_model="cloud-model")
+    tags[0][field] = value
+    with pytest.raises((TypeError, ValueError), match="catalog identity"):
+        asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+
+
+@pytest.mark.parametrize("names", [{"name": "example"}, {"model": "example:latest"},
+                                  {"name": "example", "model": "example:latest"}])
+def test_catalog_names_allow_consistent_latest_and_missing_compatibility_field(native_http, names):
+    _, _, tags, _ = native_http
+    tags[0].clear()
+    tags[0].update(names, remote_model="cloud-model")
+    assert asyncio.run(reserve.observe_ollama(OllamaBackend(), "example")) == {"external": True}
+
+
+@pytest.mark.parametrize("field", ["remote_host", "remote_model"])
+@pytest.mark.parametrize("value", [True, 1, {}, "x" * 2049])
+def test_malformed_catalog_remote_evidence_is_rejected(native_http, field, value):
+    calls, _, tags, _ = native_http
+    tags[0][field] = value
+    with pytest.raises((TypeError, ValueError), match="remote evidence"):
+        asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags")]
+
+
+def test_unrelated_remote_tag_does_not_exempt_unknown_local_format(native_http):
+    calls, shown, tags, _ = native_http
+    shown["details"]["format"] = ""
+    tags.append({"name": "other:cloud", "remote_host": "https://provider.invalid"})
+    with pytest.raises(ValueError, match="local metadata"):
+        asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags")]
+
+
+def test_ambiguous_catalog_remote_alias_is_not_admitted(native_http):
+    calls, shown, tags, _ = native_http
+    shown["details"]["format"] = ""
+    tags[0]["remote_model"] = "cloud-model"
+    tags.append(deepcopy(tags[0]))
+    with pytest.raises(ValueError, match="ambiguous catalog"):
+        asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags")]
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_empty_catalog_remote_evidence_keeps_local_reserve(native_http, value):
+    calls, _, tags, _ = native_http
+    tags[0].update(remote_host=value, remote_model=value)
+    observed = asyncio.run(reserve.observe_ollama(OllamaBackend(), MODEL))
+    assert observed["external"] is False
+    assert calls == [("POST", "/api/show"), ("GET", "/api/tags"), ("GET", "/api/ps")]
+
+
 def test_malformed_remote_flag_is_unknown_not_external(native_http):
     _, shown, _, _ = native_http
     shown["remote_host"] = True

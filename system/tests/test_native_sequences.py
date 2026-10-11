@@ -485,3 +485,21 @@ def test_result_handoff_requires_physical_thread_end_and_exact_request(binding,m
     run.thread=SimpleNamespace(is_alive=lambda:False)
     with pytest.raises(ValueError):control.worker_execution_result("owned-worker","b"*32,binding.generation,binding.task_id)
     assert control.worker_execution_result("owned-worker","a"*32,binding.generation,binding.task_id)["result"]=="Fachliches Ergebnis"
+
+
+
+def test_inactive_chain_start_does_not_load_engine_or_dispatch(store, profiles):
+    controller, transport = service(store, profiles)
+    chain = store.save_chain(draft())
+    payload = start_payload(chain)
+    with store.connection(write=True) as db:
+        db.execute("UPDATE marblerun_chains SET is_active=0 WHERE id=?", (chain["id"],))
+    def forbidden_engine():
+        raise AssertionError("Inactive chain must be blocked before module loading")
+    controller.engine_loader = forbidden_engine
+    with pytest.raises(SequenceConflict, match="nicht aktiviert"):
+        controller.start(chain["id"], payload)
+    assert transport.calls == []
+    assert store.runs() == []
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0

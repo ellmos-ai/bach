@@ -16,8 +16,10 @@ zweiter Aufgaben-, Konfigurations- oder Inferenzcontroller.
 Dieses Paket enthält Konfiguration, explizite Migration, native Bindungsprüfung
 am lokalen Modellaufruf und den Modellzielnachweis im bestehenden Host-Gate.
 Es ist noch keine Abnahme der vollständigen Anforderungen aus Task #2011:
-Katalogübernahme aller angebotenen Modelle, gemeinsamer Steckplatzeditor,
-Connector-Caller und die vollständige Haupt-/Fallbacksteuerung müssen folgen.
+Native Aktivierung, Katalogübernahme aller angebotenen Modelle und die
+vollständige Haupt-/Fallbacksteuerung müssen folgen. Der gemeinsame
+Steckplatzeditor ist als Source veröffentlicht; sein nativer Anschluss bleibt
+ein eigener Installations- und Laufzeitnachweis.
 Task #2012/#1949 führt die Ressourcenhierarchie, Messung und Kapazitätsregeln fort;
 #2027/#2028 ergänzen Fallbacks und die Running-/Leuchtpunktansicht. Die normative
 Nutzeranforderung bleibt vollständig bestehen.
@@ -38,8 +40,11 @@ Unbekannte Felder des äußeren Konfigurationsdokuments bleiben erhalten.
 Unbekannte beziehungsweise beschädigte Felder des neuen Steckplatzschemas
 werden abgelehnt. Fehlende Werte erzeugen keine erfundenen Kapazitäten.
 
-Legacy-Reads projizieren die aktuell konfigurierten lokalen Primärmodelle und
-deren Agentenbindungen im Speicher. Sie schreiben nichts und kennzeichnen
+Legacy-Reads projizieren die aktuell konfigurierten lokalen Primärmodelle,
+die konfigurierten Telegram-/WhatsApp-/Signal-Ziele und deren Agentenbindungen
+im Speicher. Ziele desselben Agenten und Modells werden dedupliziert.
+Connector-Overrides ändern nur Anbieter, Modell und Rundenbudget; Agenten-ID,
+Aktivierung und Werkzeugrechte bleiben beim Profil. Sie schreiben nichts und kennzeichnen
 `migration_required=true`. Erst die ausdrückliche, versionierte Migration legt
 das Schema ab und hebt die äußere Version auf mindestens 4.
 Ab Formatversion 4 ist die Registry verbindlich: Fehlt `model_sockets`, werden
@@ -89,7 +94,35 @@ nutzbare `ChatRuntime` behält seinen bisherigen Betrieb ohne BACH-Registry.
 Ein vorhandenes beschädigtes Dokument wird auch dort nicht als Legacy gelesen.
 
 Bekannte persistierte Chat-Aliasse und explizite Agenten-IDs sind zulässig.
-Unbekannte Connectorpräfixe werden nicht geraten. Deshalb erst alle betroffenen
+Der native Telegram-Eingang und seine bestätigte Compute-Fortsetzung binden
+vor dem Modellaufruf das bestehende Connector-Profil, auch bei wiederhergestellten
+Dialogen und negativen Gruppen-IDs. Native Control-/API-Dialoge erhalten am
+bisherigen Dispatchpfad die interaktive Profilidentität; gewähltes Backend,
+Modell und Gesprächskontext bleiben erhalten. Profilchats und dynamische Worker
+behalten ihre vorhandenen separaten Bindungsverträge. Der standalone Legacyworker
+übernimmt die Always-On-Identität ausschließlich in seinem expliziten Kontext.
+
+Connectorziele verwenden dieselbe validierte Anbieterprojektion in Migration
+und Dispatch. Nur numerische Telegram-IDs, bekannte Kanalaliasse und explizite
+Kanalpräfixe mit nicht leerer Kanal-ID sind zugeordnet. Unbekannte
+Connectorpräfixe werden abgelehnt. Änderungen am effektiven Profil oder
+Connectorziel während eines Wartens verhindern den alten Backendaufruf.
+Der eigenständige ChatRuntime rät keine Zuordnung aus solchen Präfixen.
+
+Eine gewählte dedizierte Route fällt bei einem Zulassungsfehler nicht auf das
+globale Backend zurück. Telegram prüft vor einer Compute-Pause denselben
+Runtime-Vertrag `prepare_inference_call` wie der spätere Modellaufruf. Die
+Metadatenprobe verändert keine Modelle und nimmt keinen Host-Besitz. Bekannte
+RAM-/Datenträgerwartefälle benötigen bereits eine aktive Modellbindung;
+unbekannte Ziel- oder Ressourcenbeobachtungen erlauben noch keine Compute-Pause.
+Ein anhand der Metadaten bestätigtes externes Ziel benötigt keine lokale
+Bindung, pausiert keine lokalen Compute-Jobs und setzt kein Inferenzsignal.
+Auch das native Compute-Gate prüft diesen tatsächlichen Zieltyp erneut.
+Probe, Profil und Modellbindung werden nach Warteschritten erneut geprüft;
+eine frühe Zulassung ersetzt keine Ressourcenfreigabe für die Inferenz.
+
+Diese Source-Verträge sind keine Prüfung externer Connectorprozesse und kein
+Nachweis einer großen lokalen Inferenz. Deshalb erst alle betroffenen
 Caller und Dialoge anbinden, dann die Migration im jeweiligen Konsumenten
 aktivieren. Dieser Quellstand darf deshalb erst nach dieser Prüfung und der
 ausdrücklichen Migration im nativen Control-Dienst aktiviert werden. Das reine

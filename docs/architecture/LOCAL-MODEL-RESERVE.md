@@ -36,7 +36,15 @@ Vertrag `bach.local-resource-reserve.v1`, ausschließlich folgende Felder:
 
 Ein Modellbudget enthält genau `digest`, `weight_budget_bytes`,
 `kv_headroom_bytes`, `overhead_bytes`, `num_ctx`. Digest und Gewichtsuntergrenze
-kommen aus der nativen `/api/tags`-Antwort, die Lokalität aus `/api/show`.
+kommen aus der nativen `/api/tags`-Antwort. Remoteherkunft wird aus `/api/show`
+oder dem exakt passenden, eindeutigen `/api/tags`-Eintrag bestätigt. Ollama kann
+die Remoteangaben in `/api/show` auslassen und dort ein leeres lokales Format
+melden. Ein bestätigter Cloudalias benötigt dann weder lokalen Format-/RAM-
+Nachweis noch `/api/ps`. Fremde Katalogeinträge, mehrdeutige Identität oder
+ungültige Remoteangaben geben keine Freigabe. Vorhandene `name`-/`model`-Felder
+müssen gültige, übereinstimmende Identitäten liefern; nur ein fehlender Tag wird
+auf `:latest` normalisiert. Ein fehlendes Kompatibilitätsfeld ist zulässig.
+Diese Metadatenprüfung startet keine Inferenz und lädt kein Modell.
 Die Gewichtsuntergrenze ist keine gesamte RAM-Messung. KV-/Overheadwerte sind
 explizite konservative Budgets; sie dürfen nicht als gemessene Nutzung ausgegeben
 werden. Kontext muss zum tatsächlich gesendeten `num_ctx` passen. Keine
@@ -62,6 +70,15 @@ etwa 14,4 GiB verfügbaren RAM und weniger als 1 GiB freien Plattenplatz. Das is
 eine Momentaufnahme und keine Abnahme des 27B-Modells. Die drei aktuellen eigenen
 Prüfkandidaten belegten zusammen ungefähr 196 MiB; größere fremde Forschungs- und
 Entwicklungsbestände wurden nicht verändert.
+
+Der spätere isolierte Kandidatenreadback um 13:28 UTC bestätigte die native
+Kontextvorgabe 16384. Mit ausdrücklich vorgeschlagenen 4 GiB OS-, 2 GiB KV- und
+1 GiB Overheadreserve verlangte 4B 10906176503 Bytes und war in dieser Probe
+budgetfähig; 27B verlangte 25690914615 Bytes bei rund 16031711232 verfügbaren
+Bytes und wartete. Die vorgeschlagene Diskreserve war 8 GiB. Das sind
+konfigurierte Budgets und Momentaufnahmen, keine gemessenen KV-/RAM-Verbräuche.
+Das Reservemodul und das Policyprofil waren dabei nicht produktiv installiert;
+`enforced=true` im isolierten Receipt gilt nur für den geprüften Kandidaten.
 
 Das große Hauptmodell bleibt das gewünschte Ziel. 4B ist kein abschließend
 akzeptierter Ersatz. #1994 führt die gesonderte Eigentums-/Speicherentscheidung;
