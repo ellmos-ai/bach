@@ -71,6 +71,47 @@ class ReportHostPortError(RuntimeError):
         super().__init__(self.reason_code)
 
 
+class OwnerExecutionProfileReader:
+    """Fixed-identity view supplied by the real Control process owner.
+
+    ``read_current`` must be the Control owner's execution-profile reader
+    (the closure built from ``_execution_slot_reader``), which rechecks the
+    worker configuration and its pinned governance on every read. This class
+    validates the returned projection and never accepts an agent ID from a
+    report request.
+    """
+
+    def __init__(self, agent_id: str, read_current: Any) -> None:
+        if (not isinstance(agent_id, str)
+                or re.fullmatch(r"[A-Za-z0-9_-]{1,80}", agent_id) is None
+                or not callable(read_current)):
+            raise ReportHostPortError("provider_route_unverified")
+        self.agent_id = agent_id
+        self._read_current = read_current
+
+    def read(self) -> dict[str, Any]:
+        try:
+            profile = _wire(self._read_current())
+        except Exception:
+            raise ReportHostPortError("provider_route_unverified") from None
+        if (profile.get("id") != self.agent_id
+                or profile.get("enabled") is not True
+                or profile.get("execution_kind") != "worker"
+                or type(profile.get("blueprint_id")) is not int
+                or profile["blueprint_id"] <= 0
+                or type(profile.get("blueprint_version")) is not int
+                or profile["blueprint_version"] < 1):
+            raise ReportHostPortError("provider_route_unverified")
+        governance = profile.get("governance_binding")
+        if (not isinstance(governance, Mapping)
+                or governance.get("legacy") is not False
+                or not isinstance(governance.get("effective_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", governance["effective_sha256"]) is None
+                or not isinstance(governance.get("refs"), (list, tuple))):
+            raise ReportHostPortError("provider_route_unverified")
+        return dict(profile)
+
+
 class BachOperatorConfirmationPort:
     """Verify host-issued confirmation receipts; this port cannot issue consent."""
 
@@ -787,6 +828,7 @@ class BachModelRoutePort:
         cloud_attestor: Any = None,
         runtime: Any = None,
         agent_id: str | None = None,
+        execution_profile_reader: OwnerExecutionProfileReader | None = None,
     ) -> None:
         if mode not in {"local", "cloud"} or not isinstance(model, str) or not model:
             raise ValueError("invalid report model route configuration")
@@ -796,6 +838,7 @@ class BachModelRoutePort:
         self._cloud_attestor = cloud_attestor
         self._runtime = runtime
         self._agent_id = agent_id
+        self._execution_profile_reader = execution_profile_reader
         self._pins: dict[tuple[str, str, str], tuple[str, str, str, dict[str, Any] | None]] = {}
 
     def _local_route_snapshot(self) -> dict[str, Any] | None:
@@ -821,6 +864,10 @@ class BachModelRoutePort:
                     or not callable(getattr(self._runtime, "prepare_inference_call", None))
                     or not callable(getattr(self._runtime, "_chat_with_compute_turn", None))):
                 return None
+            reader = self._execution_profile_reader
+            if (type(reader) is not OwnerExecutionProfileReader
+                    or reader.agent_id != self._agent_id):
+                return None
 
             identifier = backend_identifier(self._backend)
             base_url = getattr(self._backend, "base_url", None)
@@ -836,9 +883,10 @@ class BachModelRoutePort:
                     or self._model.lower() in {"auto", "default", "local-model"}):
                 return None
 
-            profile = slots_config.get_system_slot(self._agent_id)
+            profile = reader.read()
             if (not isinstance(profile, dict) or profile.get("id") != self._agent_id
                     or profile.get("enabled") is not True
+                    or profile.get("execution_kind") != "worker"
                     or profile.get("backend") != identifier
                     or profile.get("model") != self._model):
                 return None
@@ -862,6 +910,8 @@ class BachModelRoutePort:
             binding_fingerprint = "\0".join((
                 self._agent_id, binding["socket_id"], binding["binding_id"],
                 binding["configuration_version"], binding["priority"],
+                str(profile["blueprint_id"]), str(profile["blueprint_version"]),
+                profile["governance_binding"]["effective_sha256"],
             ))
             return {
                 "binding": dict(binding),
@@ -1010,7 +1060,7 @@ class BachModelRoutePort:
                     or current.get("local_only") is not True
                 ))
                 or (self._mode == "cloud" and current.get("cloud_route") is not True)):
-            raise ReportHostPortError("route_changed")
+            raise ReportHostPortError("provider_route_unverified")
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -1076,7 +1126,10 @@ class BachModelRoutePort:
         session.model = self._model
         session.resolved_model = self._model
         session.system_slot_id = self._agent_id
-        session.system_slot_reader = lambda: slots_config.get_system_slot(self._agent_id)
+        reader = self._execution_profile_reader
+        if type(reader) is not OwnerExecutionProfileReader or reader.agent_id != self._agent_id:
+            raise ReportHostPortError("provider_route_unverified")
+        session.system_slot_reader = reader.read
         session.system_slot_configuration = {
             key: profile.get(key)
             for key in slots_config.CORE_EDITABLE_FIELDS
@@ -1273,7 +1326,7 @@ def build_report_host_ports(
 
     local = _trusted_config(
         local_model,
-        {"backend", "model", "runtime", "agent_id"},
+        {"backend", "model", "runtime", "agent_id", "execution_profile_reader"},
         "local_model",
     )
     if local is not None:
@@ -1285,6 +1338,7 @@ def build_report_host_ports(
             "local",
             runtime=local.get("runtime"),
             agent_id=local.get("agent_id"),
+            execution_profile_reader=local.get("execution_profile_reader"),
         )
 
     cloud = _trusted_config(cloud_model, {"backend", "model", "cloud_attestor"}, "cloud_model")

@@ -3402,6 +3402,9 @@ def _control_bind_host() -> str:
 
 class QuietHTTPServer(ThreadingHTTPServer):
     def server_close(self):
+        report_owner = getattr(self, 'report_control_owner', None)
+        if report_owner is not None and not report_owner.close(timeout=5.0):
+            log.warning('Report-Owner laesst noch angenommene Aufrufe auslaufen')
         stop = getattr(self, "always_on_startup_stop", None)
         thread = getattr(self, "always_on_startup_thread", None)
         if stop is not None:
@@ -4254,6 +4257,76 @@ def _native_sequences():
         return _NATIVE_SEQUENCES
 
 
+
+def _create_control_report_owner(host_dependencies=None):
+    """Bind configured reports to this Control runtime, never request fields."""
+    from hub._services.document.report_control_rpc import ControlReportOwner
+    from hub._services.document.report_provider_host import (
+        ReportProviderHost, create_report_provider_host,
+    )
+    from hub._services.document.report_provider_adapter import OwnerExecutionProfileReader
+
+    def unavailable(operation, payload):
+        return ReportProviderHost._timeout_response(
+            operation, payload, "provider_owner_unavailable",
+        )
+
+    disabled = ControlReportOwner(None, unavailable)
+    configured = CONFIG.get("reports")
+    if (not isinstance(configured, dict) or configured.get("enabled") is not True
+            or set(configured) - {"enabled", "provider_name", "agent_id"}
+            or not isinstance(host_dependencies, dict)):
+        return disabled
+    agent_id = configured.get("agent_id")
+    provider_name = configured.get("provider_name")
+    if (not isinstance(agent_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,80}", agent_id) is None
+            or not isinstance(provider_name, str)
+            or re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", provider_name) is None):
+        return disabled
+    try:
+        slot = _execution_worker_slot(agent_id)
+        if not slot or slot.get("id") != agent_id:
+            return disabled
+        admitted = json.dumps(
+            _execution_worker_configuration({**slot, "task_id": None}),
+            sort_keys=True, ensure_ascii=False,
+        )
+        native_reader = _execution_slot_reader(slot)
+        governance_checked_at = []
+
+        def read_current():
+            current = native_reader()
+            current_policy = json.dumps(
+                _execution_worker_configuration({**current, "task_id": None}),
+                sort_keys=True, ensure_ascii=False,
+            )
+            if current_policy != admitted or current.get("id") != agent_id:
+                raise RuntimeError("report_owner_configuration_changed")
+            from hub._services.skill_source_service import load_skill_instructions
+            from hub._services.governance_binding import verify_slot_throttled
+            load_skill_instructions(current.get("skill_refs", []))
+            verify_slot_throttled(current, governance_checked_at)
+            return current
+
+        profile_reader = OwnerExecutionProfileReader(agent_id, read_current)
+        profile_reader.read()
+        dependencies = dict(host_dependencies)
+        owner = ControlReportOwner(
+            lambda loop: create_report_provider_host(
+                owner_runtime=runtime, owner_agent_id=agent_id,
+                owner_profile_reader=profile_reader,
+                host_dependencies=dependencies, provider_name=provider_name,
+                owner_loop=loop,
+            ),
+            unavailable,
+        )
+        owner.start()
+        return owner
+    except Exception as exc:
+        log.warning("Report-Owner nicht verfuegbar (%s)", type(exc).__name__)
+        return disabled
+
 class ControlHandler(BaseHTTPRequestHandler):
     def _sequence_response(self, action, body=None, query=None):
         from hub._services.chat.sequence_store import SequenceConflict
@@ -4420,9 +4493,49 @@ class ControlHandler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+
+    def _report_control_response(self, method):
+        """Fixed report RPC, behind the existing token/origin guard."""
+        from hub._services.document.report_control_rpc import (
+            ReportControlRequestError, parse_report_control_request, read_report_json,
+        )
+        try:
+            body = read_report_json(self.headers, self.rfile) if method == "POST" else None
+            operation, payload = parse_report_control_request(method, self.path, body)
+            owner = getattr(self.server, "report_control_owner", None)
+            if owner is None:
+                from hub._services.document.report_provider_host import ReportProviderHost
+                result = ReportProviderHost._timeout_response(
+                    operation, payload, "provider_owner_unavailable",
+                )
+            else:
+                result = owner.call(operation, payload)
+            self._json(result)
+        except ReportControlRequestError as exc:
+            self._json({"error": exc.reason_code}, exc.status_code)
+        except TimeoutError:
+            self._json({"error": "report_transport_timeout"}, 408)
+        except Exception as exc:
+            from hub._services.document.report_provider_host import ReportProviderRpcError
+            from hub._services.document.report_provider_contract import ReportContractError
+            if isinstance(exc, ReportProviderRpcError):
+                self._json({"error": exc.reason_code}, exc.status_code)
+            elif isinstance(exc, ReportContractError):
+                self._json({"error": "invalid_report_request"}, 422)
+            else:
+                # Provider exception details can contain private data.
+                log.warning("Report-RPC fehlgeschlagen (%s)", type(exc).__name__)
+                self._json({"error": "report_provider_unavailable"}, 503)
+
     def do_GET(self):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
+
+        if path == '/api/reports' or path.startswith('/api/reports/'):
+            if not self._allow_control_request():
+                return
+            self._report_control_response('GET')
+            return
 
         if path in {"/api/marblerun/catalog", "/api/marblerun/run"}:
             if not self._allow_control_request():
@@ -4818,6 +4931,9 @@ class ControlHandler(BaseHTTPRequestHandler):
         if not self._allow_json_post():
             return
         path = urlparse(self.path).path
+        if path == '/api/reports' or path.startswith('/api/reports/'):
+            self._report_control_response('POST')
+            return
         body = self._read_body()
         if not isinstance(body, dict):
             self._json({"error": "JSON-Objekt erforderlich"}, 400)
@@ -5902,7 +6018,7 @@ def _start_always_on_startup_monitor(server):
     return thread
 
 
-def start_control_api():
+def start_control_api(*, report_host_dependencies=None):
     try:
         from hub._services.chat.slots_config import initialize_system_slots
         initialize_system_slots()
@@ -5915,6 +6031,7 @@ def start_control_api():
         bind_host = _control_bind_host()
         server = QuietHTTPServer((bind_host, CONTROL_PORT), ControlHandler)
         server.daemon_threads = True
+        server.report_control_owner = _create_control_report_owner(report_host_dependencies)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         _start_always_on_startup_monitor(server)

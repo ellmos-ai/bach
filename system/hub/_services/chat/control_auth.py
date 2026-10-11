@@ -32,6 +32,9 @@ def get_control_api_token() -> str:
                 return configured
         except (OSError, UnicodeError):
             pass
+        # An explicitly selected source is authoritative. Never substitute a
+        # different credential when that file is missing, empty or unreadable.
+        return ""
 
     default_file = Path.home() / ".credentials" / "bach_control_api_token"
     if default_file.exists():
