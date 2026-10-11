@@ -704,8 +704,9 @@ def test_shutdown_during_assignment_prevents_own_physical_generation(startup, mo
     try:
         assert entered.wait(3)
         execution = control._WORKER_EXECUTIONS["buddha_always_on"]
-        assert execution.stop_event is stop
+        assert not execution.stop_event.is_set()
         stop.set()
+        assert execution.stop_event.is_set()
         release.set()
         caller.join(3)
         assert not caller.is_alive()

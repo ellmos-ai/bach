@@ -756,6 +756,9 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
     """Update properties of a core slot or dynamic worker."""
     if "memory_hook_opt_in" in updates:
         raise ValueError("memory_hook_opt_in darf nur über versioniertes Konfigurations-CAS geändert werden")
+    if {"persistent_opt_in", "persistent_opt_in_id", "persistent_opt_in_profile_version",
+            PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD} & set(updates):
+        raise ValueError("Dauerbetriebsfreigabe erfordert den Versions-CAS-Endpunkt")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
@@ -1250,26 +1253,41 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
 
 
 def system_worker_at_version(slot_id: str, expected_version: str,
-                             *, path: str | None = None) -> dict[str, Any]:
-    """Read approved configuration and current progress from one atomic file image."""
+                             *, version_scope: str = "core",
+                             path: str | None = None) -> dict[str, Any]:
+    """Read a worker using the requested native version scope.
+
+    Public admission uses the complete core snapshot CAS. The private persistent
+    startup path may explicitly bind a dynamic worker to its profile version.
+    """
+    if version_scope not in {"core", "worker_profile"}:
+        raise ValueError("Worker-Versionsbereich ist ungültig")
     raw = _resolve_path(path).read_bytes()
     snapshot = _core_snapshot_from_bytes(raw)
-    if expected_version != snapshot["configuration_version"]:
-        raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     slot = config["slots"].get(slot_id)
-    dynamic = [worker for worker in config.get("dynamic_workers", []) if worker.get("id") == slot_id]
+    dynamic = [worker for worker in config.get("dynamic_workers", [])
+               if isinstance(worker, dict) and worker.get("id") == slot_id]
     if dynamic:
         if slot is not None or slot_id in DEFAULT_CORE_SLOTS or len(dynamic) != 1:
             raise ValueError("Worker ist nicht eindeutig vorhanden")
         worker = dynamic[0]
         if worker.get("type") not in {"once", "continuous", "persistent"}:
             raise ValueError("Worker-Laufbegrenzung ist ungültig")
+        current_version = (snapshot["configuration_version"] if version_scope == "core"
+                           else _worker_configuration(worker)["configuration_version"])
+        if expected_version != current_version:
+            raise RuntimeError("configuration_version_conflict")
         return dict(worker)
+    if version_scope != "core":
+        raise ValueError("Worker-Profilversion gilt nur für dynamische Worker")
+    if expected_version != snapshot["configuration_version"]:
+        raise RuntimeError("configuration_version_conflict")
     if (not isinstance(slot, dict) or slot.get("id") != slot_id
             or (slot_id != "buddha_always_on" and
                 (slot.get("system") is not True or slot.get("execution_kind") != "worker"))
-            or any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", []))):
+            or any(isinstance(worker, dict) and worker.get("id") == slot_id
+                   for worker in config.get("dynamic_workers", []))):
         raise ValueError("System-Worker ist nicht eindeutig vorhanden")
     worker_type = slot.get("type", "continuous")
     if worker_type not in {"once", "continuous"}:
@@ -1633,6 +1651,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "task_id": task_id,
         "category": category,
         "type": worker_type,
+        # A newly created worker never inherits persistent start authority from payload fields.
+        "persistent_opt_in": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at,
         "status": "idle",
@@ -1733,6 +1753,7 @@ WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
     "allowed_tools", "skill_refs",
+    "allowed_tools", "skill_refs", "persistent_opt_in",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
 }) | WORKER_EDITABLE_POLICY_FIELDS
@@ -1764,7 +1785,7 @@ def _validated_worker_pickup_filter(value: Any) -> dict[str, Any]:
     return projected["pickup_filter"]
 
 
-def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
+def _worker_profile_version(worker: dict[str, Any]) -> str:
     from .worker_queue_status import worker_selection_policy
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
@@ -1774,10 +1795,43 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
     if type(configuration["memory_hook_opt_in"]) is not bool:
         raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
+    fields = WORKER_EDITABLE_FIELDS - {"persistent_opt_in"}
+    profile = {field: worker.get(field) for field in sorted(fields)}
     policy = worker_selection_policy(worker)
-    raw = json.dumps({"id": worker["id"], **configuration, "selection_policy": policy},
+    raw = json.dumps({"id": worker["id"], **profile, "selection_policy": policy},
                      sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _is_supported_persistent_cloud_worker(worker: dict[str, Any]) -> bool:
+    backend = worker.get("backend")
+    model = worker.get("model")
+    if not isinstance(model, str) or not model.strip():
+        return False
+    return (backend in {"ollama-cloud", "openrouter"}
+            or backend == "ollama" and model.lower().endswith(":cloud"))
+
+
+def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
+    from .worker_queue_status import worker_selection_policy
+    configuration = {
+        field: worker.get(field, False if field == "memory_hook_opt_in" else
+                          [] if field == "model_fallbacks" else None)
+        for field in sorted(WORKER_EDITABLE_FIELDS - {"persistent_opt_in"})
+    }
+    configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
+    if type(configuration["memory_hook_opt_in"]) is not bool:
+        raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
+    persistent_opt_in = worker.get("persistent_opt_in") is True
+    policy = worker_selection_policy(worker)
+    raw = json.dumps({
+        "id": worker["id"], **configuration, "selection_policy": policy,
+        "persistent_opt_in": persistent_opt_in,
+        "persistent_opt_in_id": worker.get("persistent_opt_in_id"),
+        "persistent_opt_in_profile_version": worker.get("persistent_opt_in_profile_version"),
+    }, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return {"id": worker["id"], "configuration": configuration,
+            "persistent_opt_in": persistent_opt_in,
             "selection_policy": policy,
             "configuration_version": hashlib.sha256(raw).hexdigest()}
 
@@ -1789,30 +1843,287 @@ def worker_configuration_snapshot(worker_id: str, *, path: str | None = None) ->
     return _worker_configuration(worker)
 
 
+PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD = "_persistent_execution_checkpoint"
+_PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_SCHEMA = "bach.persistent-worker-controller.v2"
+
+
+def _valid_persistent_worker_controller_checkpoint(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+            "schema", "phase", "worker_id", "service_instance", "start_request_id",
+            "intent_id", "profile_version", "trace_contract_sha256", "generation",
+            "physical_worker_id", "lease_worker_id"}:
+        return False
+    if value.get("schema") != _PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_SCHEMA:
+        return False
+    if value.get("phase") not in {"admission_pending", "admitted"}:
+        return False
+    patterns = {
+        "worker_id": r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}",
+        "service_instance": r"[0-9a-f]{32}",
+        "start_request_id": r"[0-9a-f]{32}",
+        "intent_id": r"[0-9a-f]{32}",
+        "profile_version": r"[0-9a-f]{64}",
+        "trace_contract_sha256": r"[0-9a-f]{64}",
+        "generation": r"[0-9a-f]{32}",
+        "physical_worker_id": r"worker-[0-9a-f]{32}",
+        "lease_worker_id": r"worker-[0-9a-f]{32}@[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}",
+    }
+    for field, pattern in patterns.items():
+        if not isinstance(value.get(field), str) or re.fullmatch(pattern, value[field]) is None:
+            return False
+    return value["lease_worker_id"].startswith(value["physical_worker_id"] + "@")
+
+
+def _persistent_worker_reconciliation_proof_valid(
+    proof: Any, *, worker_id: str, configuration_version: str,
+    profile_version: str, intent_id: str, status: str, checkpoint: dict[str, Any],
+) -> bool:
+    fields = {
+        "schema", "worker_id", "configuration_version", "profile_version", "intent_id",
+        "status_before", "generation", "lease_worker_id", "trace_contract_sha256",
+        "checkpoint_sha256", "stable_scan_sha256", "stable_scans", "candidate_count",
+        "complete", "stable", "active_old_lease", "old_generation_trace",
+    }
+    if not isinstance(proof, dict) or set(proof) != fields:
+        return False
+    if (proof.get("schema") != "bach.persistent-worker-reconciliation.v1"
+            or proof.get("worker_id") != worker_id
+            or proof.get("configuration_version") != configuration_version
+            or proof.get("profile_version") != profile_version
+            or proof.get("intent_id") != intent_id
+            or proof.get("status_before") != status
+            or proof.get("generation") != checkpoint.get("generation")
+            or proof.get("lease_worker_id") != checkpoint.get("lease_worker_id")
+            or proof.get("trace_contract_sha256") != checkpoint.get("trace_contract_sha256")):
+        return False
+    checkpoint_raw = json.dumps(checkpoint, ensure_ascii=False, sort_keys=True,
+                                separators=(",", ":")).encode("utf-8")
+    checkpoint_sha256 = hashlib.sha256(checkpoint_raw).hexdigest()
+    for name in ("checkpoint_sha256", "stable_scan_sha256"):
+        if not isinstance(proof.get(name), str) or re.fullmatch(r"[0-9a-f]{64}", proof[name]) is None:
+            return False
+    return (
+        proof["checkpoint_sha256"] == checkpoint_sha256
+        and type(proof.get("stable_scans")) is int and proof["stable_scans"] == 2
+        and type(proof.get("candidate_count")) is int and proof["candidate_count"] >= 0
+        and proof.get("complete") is True and proof.get("stable") is True
+        and proof.get("active_old_lease") is False
+        and proof.get("old_generation_trace") is False
+    )
+
+
+@_serialized_mutation
+def set_persistent_worker_controller_checkpoint(
+    worker_id: str, expected_configuration_version: str, expected_profile_version: str,
+    expected_intent_id: str, expected_checkpoint: dict[str, Any] | None,
+    checkpoint: dict[str, Any] | None, *, path: str | None = None,
+) -> dict[str, Any]:
+    """CAS-update private controller metadata without changing execution/consent digests."""
+    config = load_slots_config(path, strict=True)
+    workers = [w for w in config.get("dynamic_workers", [])
+               if isinstance(w, dict) and w.get("id") == worker_id]
+    if len(workers) != 1:
+        raise KeyError("Workerprofil nicht eindeutig gefunden")
+    worker = workers[0]
+    if _worker_configuration(worker)["configuration_version"] != expected_configuration_version:
+        raise RuntimeError("configuration_version_conflict")
+    if (worker.get("persistent_opt_in") is not True
+            or worker.get("persistent_opt_in_id") != expected_intent_id
+            or _worker_profile_version(worker) != expected_profile_version
+            or worker.get("persistent_opt_in_profile_version") != expected_profile_version):
+        raise RuntimeError("persistent_intent_conflict")
+    current = worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+    if current != expected_checkpoint:
+        raise RuntimeError("controller_checkpoint_conflict")
+    if checkpoint is not None:
+        if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
+                or checkpoint.get("worker_id") != worker_id
+                or checkpoint.get("intent_id") != expected_intent_id
+                or checkpoint.get("profile_version") != expected_profile_version):
+            raise ValueError("Ungültiger interner Worker-Checkpoint")
+        if current is None:
+            if checkpoint.get("phase") != "admission_pending":
+                raise ValueError("Ein Start muss mit admission_pending beginnen")
+        elif (not _valid_persistent_worker_controller_checkpoint(current)
+                or current.get("phase") != "admission_pending"
+                or checkpoint.get("phase") != "admitted"
+                or any(current.get(key) != checkpoint.get(key) for key in (
+                    "worker_id", "service_instance", "start_request_id", "intent_id",
+                    "profile_version", "trace_contract_sha256", "generation",
+                    "physical_worker_id", "lease_worker_id"))):
+            raise RuntimeError("controller_checkpoint_transition_conflict")
+        worker[PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD] = dict(checkpoint)
+    else:
+        worker.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+    save_slots_config(config, path)
+    return _worker_configuration(worker)
+
+
+@_serialized_mutation
+def settle_persistent_worker_controller_checkpoint(
+    worker_id: str, expected_configuration_version: str, expected_profile_version: str,
+    expected_intent_id: str, expected_checkpoint: dict[str, Any], expected_status: str,
+    reconciliation_proof: dict[str, Any], *, path: str | None = None,
+) -> dict[str, Any]:
+    """CAS-settle a stale opted-in generation after complete stable native reads."""
+    if expected_status not in {"idle", "running"}:
+        raise ValueError("Nur idle oder stale running darf reconciled werden")
+    if not _valid_persistent_worker_controller_checkpoint(expected_checkpoint):
+        raise ValueError("Ungültiger interner Worker-Checkpoint")
+    config = load_slots_config(path, strict=True)
+    workers = [w for w in config.get("dynamic_workers", [])
+               if isinstance(w, dict) and w.get("id") == worker_id]
+    if len(workers) != 1:
+        raise KeyError("Workerprofil nicht eindeutig gefunden")
+    worker = workers[0]
+    current_version = _worker_configuration(worker)["configuration_version"]
+    if current_version != expected_configuration_version:
+        raise RuntimeError("configuration_version_conflict")
+    if (worker.get("persistent_opt_in") is not True
+            or worker.get("persistent_opt_in_id") != expected_intent_id
+            or _worker_profile_version(worker) != expected_profile_version
+            or worker.get("persistent_opt_in_profile_version") != expected_profile_version):
+        raise RuntimeError("persistent_intent_conflict")
+    if worker.get("status") != expected_status:
+        raise RuntimeError("worker_status_conflict")
+    current = worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+    if current != expected_checkpoint:
+        raise RuntimeError("controller_checkpoint_conflict")
+    if not _persistent_worker_reconciliation_proof_valid(
+            reconciliation_proof, worker_id=worker_id,
+            configuration_version=expected_configuration_version,
+            profile_version=expected_profile_version, intent_id=expected_intent_id,
+            status=expected_status, checkpoint=expected_checkpoint):
+        raise ValueError("Native Reconciliation-Beleg ist ungültig")
+    worker["status"] = "idle"
+    worker.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+    save_slots_config(config, path)
+    return {**_worker_configuration(worker), "status": worker["status"],
+            "settled_generation": expected_checkpoint["generation"]}
+
+
+def persistent_worker_startup_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Project only explicitly opted-in, unchanged Cloud profiles for startup."""
+    raw = _resolve_path(path).read_bytes()
+    config = json.loads(raw.decode("utf-8"))
+    if not isinstance(config, dict) or not isinstance(config.get("slots"), dict):
+        raise ValueError("Slots-Konfiguration ist ungültig")
+    workers = config.get("dynamic_workers")
+    if not isinstance(workers, list):
+        raise ValueError("Worker-Liste ist ungültig")
+    duplicate_ids = {}
+    for worker in workers:
+        if isinstance(worker, dict) and isinstance(worker.get("id"), str):
+            duplicate_ids[worker["id"]] = duplicate_ids.get(worker["id"], 0) + 1
+    profiles = []
+    now = datetime.now(timezone.utc)
+    for worker in workers:
+        if not isinstance(worker, dict) or worker.get("persistent_opt_in") is not True:
+            continue
+        worker_id = worker.get("id")
+        state, reason = "unavailable", "invalid_profile"
+        configuration_version = None
+        current_profile_version = None
+        intent_id = worker.get("persistent_opt_in_id")
+        profile_version = worker.get("persistent_opt_in_profile_version")
+        if not isinstance(worker_id, str) or not worker_id:
+            reason = "invalid_profile_id"
+        elif (duplicate_ids.get(worker_id) != 1 or worker_id in config["slots"]
+              or worker_id in DEFAULT_CORE_SLOTS):
+            reason = "ambiguous_profile"
+        else:
+            try:
+                configuration_version = _worker_configuration(worker)["configuration_version"]
+                current_profile_version = _worker_profile_version(worker)
+            except Exception:
+                reason = "invalid_configuration"
+            else:
+                expiry = _parse_timestamp(worker.get("expires_at"))
+                if (not isinstance(intent_id, str) or re.fullmatch(r"[0-9a-f]{32}", intent_id) is None
+                        or not isinstance(profile_version, str)
+                        or re.fullmatch(r"[0-9a-f]{64}", profile_version) is None
+                        or profile_version != current_profile_version):
+                    reason = "profile_changed"
+                elif worker.get("enabled", True) is not True:
+                    reason = "disabled"
+                elif worker.get("type") not in {"continuous", "persistent"}:
+                    reason = "not_continuous"
+                elif not _is_supported_persistent_cloud_worker(worker):
+                    reason = "unsupported_provider"
+                elif worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD) is not None:
+                    checkpoint = worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+                    if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
+                            or checkpoint.get("worker_id") != worker_id
+                            or checkpoint.get("intent_id") != intent_id
+                            or checkpoint.get("profile_version") != current_profile_version):
+                        reason = "invalid_controller_checkpoint"
+                    elif worker.get("status") not in {"idle", "running"}:
+                        reason = "profile_not_idle"
+                    else:
+                        # A stale admitted generation can resume only after stable native
+                        # task/lease/trace reconciliation; legacy checkpoints remain closed.
+                        reason = "prior_generation_unsettled"
+                elif worker.get("status") != "idle":
+                    reason = "profile_not_idle"
+                elif worker.get("expires_at") and (expiry is None or expiry <= now):
+                    reason = "expired"
+                else:
+                    state, reason = "ready", "explicit_opt_in"
+        profiles.append({
+            "worker_id": worker_id if isinstance(worker_id, str) else None,
+            "state": state,
+            "reason": reason,
+            "configuration_version": configuration_version,
+            "profile_version": current_profile_version,
+            "intent_id": intent_id if isinstance(intent_id, str) else None,
+        })
+    return {"schema": "bach.persistent-worker-startup.v1", "profiles": profiles}
+
+
 @_serialized_mutation
 def change_worker_configuration(worker_id: str, expected_version: str, changes: dict[str, Any],
                                 *, path: str | None = None) -> dict[str, Any]:
     config = load_slots_config(path, strict=True)
-    workers = [w for w in config.get("dynamic_workers", []) if w.get("id") == worker_id]
+    workers = [w for w in config.get("dynamic_workers", []) if isinstance(w, dict) and w.get("id") == worker_id]
     if len(workers) != 1:
         raise KeyError("Workerprofil nicht eindeutig gefunden")
     worker = workers[0]
     if expected_version != _worker_configuration(worker)["configuration_version"]:
         raise RuntimeError("configuration_version_conflict")
-    if worker.get("status") not in {"idle", "paused", "completed", "error"}:
-        raise RuntimeError("worker_not_editable")
-    expiry = _parse_timestamp(worker.get("expires_at"))
-    if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
-        raise RuntimeError("worker_not_editable")
     if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
         raise ValueError("Unbekannte Worker-Konfigurationsfelder")
     boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role", "memory_hook_opt_in"}
+    if "persistent_opt_in" in changes and set(changes) != {"persistent_opt_in"}:
+        raise ValueError("Dauerbetriebsfreigabe muss getrennt bestätigt werden")
+    edits = dict(changes)
+    intent_change = "persistent_opt_in" in edits
+    if intent_change and type(edits["persistent_opt_in"]) is not bool:
+        raise ValueError("persistent_opt_in muss wahr oder falsch sein")
+    if intent_change and edits["persistent_opt_in"] is True:
+        if worker.get("persistent_opt_in") is True:
+            return _worker_configuration(worker)
+        if worker.get("status") != "idle" or worker.get("enabled", True) is not True:
+            raise RuntimeError("worker_not_idle")
+        if worker.get("type") not in {"continuous", "persistent"}:
+            raise ValueError("Worker ist nicht dauerhaft ausführbar")
+        if not _is_supported_persistent_cloud_worker(worker):
+            raise ValueError("Nur explizit konfigurierte Cloudprofile sind unterstützt")
+        expiry = _parse_timestamp(worker.get("expires_at"))
+        if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
+            raise RuntimeError("worker_not_editable")
+    elif not intent_change:
+        if worker.get("status") not in {"idle", "paused", "completed", "error"}:
+            raise RuntimeError("worker_not_editable")
+        expiry = _parse_timestamp(worker.get("expires_at"))
+        if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
+            raise RuntimeError("worker_not_editable")
     ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
-    edits = dict(changes)
     for field, value in edits.items():
         if field == "pickup_filter":
             edits[field] = _validated_worker_pickup_filter(value)
+        if field == "persistent_opt_in":
+            continue
         if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:
             edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
@@ -1834,6 +2145,21 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
                 or not model.strip() or len(model) > 180 for key, model in value.items())):
             raise ValueError("Experten-Modellzuordnung ist ungültig")
     updated = {**worker, **edits}
+    if intent_change:
+        if edits["persistent_opt_in"] is True:
+            updated["persistent_opt_in_id"] = uuid.uuid4().hex
+            updated["persistent_opt_in_profile_version"] = _worker_profile_version(worker)
+            updated.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+        else:
+            updated.pop("persistent_opt_in_id", None)
+            updated.pop("persistent_opt_in_profile_version", None)
+            updated.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+    elif worker.get("persistent_opt_in") is True:
+        # Any profile edit invalidates the previous user approval.
+        updated["persistent_opt_in"] = False
+        updated.pop("persistent_opt_in_id", None)
+        updated.pop("persistent_opt_in_profile_version", None)
+        updated.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
     if (updated.get("backend") not in {"ollama", "ollama-cloud", "openrouter"}
             or updated.get("mode") not in {"safe", "full"}
             or updated.get("pause_basis") not in {"runs", "tasks"}
@@ -1849,8 +2175,13 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
     if updated["sub_mode"] == "task_worker" and not updated.get("task_id") and not updated.get("task_prompt"):
         raise ValueError("Taskworker benötigen eine Task-ID oder einen Auftragstext")
     _validated_model_fallback_profile(updated)
-    updated["system_prompt"] = compose_worker_prompt(updated, path=path)
+    if not intent_change:
+        updated["system_prompt"] = compose_worker_prompt(updated, path=path)
     worker.update(updated)
+    if worker.get("persistent_opt_in") is not True:
+        worker.pop("persistent_opt_in_id", None)
+        worker.pop("persistent_opt_in_profile_version", None)
+    worker.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
     save_slots_config(config, path)
     return _worker_configuration(worker)
 
