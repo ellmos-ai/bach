@@ -14,6 +14,12 @@ def launch_plan(root: Path, python: Path, task_db: Path, runtime: Path, config: 
         or not all(p.is_absolute() for p in (root, python, task_db, runtime, config))
     ):
         raise ValueError("Explicit installed paths required")
+    local_runtime = task_db.resolve().parent / "maintenance"
+    runtime = runtime.resolve()
+    if runtime != local_runtime or any(
+        "onedrive" in part.casefold() for part in runtime.parts
+    ):
+        raise ValueError("Canonical local maintenance runtime required")
     arguments = [
         str(python),
         str(script),
@@ -28,6 +34,8 @@ def launch_plan(root: Path, python: Path, task_db: Path, runtime: Path, config: 
         "ProgramArguments": arguments,
         "WorkingDirectory": str(root),
         "RunAtLoad": True,
+        "StandardOutPath": str(runtime / "scheduler.stdout.log"),
+        "StandardErrorPath": str(runtime / "scheduler.stderr.log"),
         "KeepAlive": True,
         "ThrottleInterval": 60,
         "EnvironmentVariables": {
