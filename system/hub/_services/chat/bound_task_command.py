@@ -49,8 +49,14 @@ def bound_task_command(operation, arguments, binding):
     tail = arguments[1:]
     if operation in {"show", "detail"} and not tail:
         return binding.execute_task_manage({"action": "detail", "task_id": task_id})
-    if operation == "done" and not tail:
-        return binding.execute_task_manage({"action": "done", "task_id": task_id})
+    if operation in {"done", "submit_result"}:
+        if len(tail) == 1 and tail[0].startswith("--result="):
+            result = tail[0].split("=", 1)[1]
+        elif len(tail) == 2 and tail[0] == "--result":
+            result = tail[1]
+        else:
+            raise ValueError("Konkretes Ergebnis mit --result abgeben; danach Review statt automatischem Done")
+        return binding.execute_task_manage({"action": "submit_result", "task_id": task_id, "result": result})
     if operation in {"block", "reopen", "unblock"} and not tail:
         status = "blocked" if operation == "block" else "pending"
         return binding.execute_task_manage({"action": "update", "task_id": task_id, "status": status})

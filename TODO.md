@@ -12,6 +12,14 @@ Die Planung und ein Testlauf sind kein Produktions- oder Geräteabnahmenachweis.
 
 ## Offene Aufgaben
 
+### [BACH-PROMPTBOARD-IMPORT-01] Gemeinsamen PromptBoard-Import integrieren und live abnehmen
+- **Ziel:** PromptBoard-Vorlagen über denselben Handler in GUI, CLI und API importieren; bestehende Benutzervorlagen erhalten und Teilimporte verhindern.
+- **Diagnose 2026-10-08:** Der Import war ausschließlich im GUI-Server implementiert. JSON-Objekte wurden still zu Prompttext konvertiert; ungültiges UTF-8 führte zu HTTP 500.
+- **Kandidat:** Handler mit Vorschau, Feldprüfung und atomarer Transaktion; CLI/API-Anbindung, GUI-Status und sechs Hilfeübersetzungen. Automatisierte Prüfungen nutzen ausschließlich temporäre Datenbanken.
+- **Akzeptanzkriterien:** Unabhängiges Review und Integration; danach authentifizierte GUI-Abnahme des Imports und PromptBoard-Starts aus der Tray sowie Prompt-Ausführung in der Chatoberfläche. Ein HTTP-Test ist keine Desktop-Abnahme.
+- **Task-Verwaltung:** Offline-Draft im BACH-Taskhandler angelegt. Bei nicht erreichbarem Rheingold-Lead bis zur sicheren Writer-Reconciliation (#1694) lokal halten; nicht als zentral erledigt melden.
+- **Priorität:** medium
+
 ### [BACH-SEC-DEPS-01] GUI-Abhängigkeitslücken vor dem nächsten Release schließen
 - **Ziel:** Die 14 offenen GitHub-Dependabot-Alerts vom 2026-10-03 abarbeiten, ohne den vorhandenen Update-PR zu duplizieren.
 - **Quelle:** [PR #188](https://github.com/ellmos-ai/bach/pull/188), Alerts #29–#42 für `system/gui/web/package-lock.json`; [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).

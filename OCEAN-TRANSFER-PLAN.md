@@ -1,6 +1,6 @@
 # Ocean–BACH-Transferplan
 
-Stand: 8. Oktober 2026. Dieser Plan beschreibt den begrenzten Integrationsauftrag und die anschließenden Modultransfers. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 9. Oktober 2026. Dieser Plan beschreibt den begrenzten Integrationsauftrag und die anschließenden Modultransfers. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
 
 ## Umfang des aktuellen Auftrags
 
@@ -11,7 +11,7 @@ Stand: 8. Oktober 2026. Dieser Plan beschreibt den begrenzten Integrationsauftra
 
 ## Ersttransfer: policy-registry
 
-Provider: `ellmos-ai/policy-registry`, Version `0.2.3`, Commit `08add2bb598e9d301d225221ebef5721a7a0e833`.
+Provider: `ellmos-ai/policy-registry`, Version `0.2.4`, Commit `2c4896b70cb39e2e24748b384d5d0cc7fcd15a16`.
 
 BACH verwendet einen schmalen Adapter statt einer zweiten Registry. Die Aktivierung erfolgt explizit über `BACH_POLICY_REGISTRY_ENABLED=1`. Der native Provider bestimmt den Registryort über `POLICY_REGISTRY_PATH` oder seinen eigenen Standard. Paketversion, Git-Herkunft und Importpfad werden vor Verwendung geprüft.
 
@@ -23,7 +23,7 @@ Lesepfade:
 
 Fehlendes Paket, falsche Provenienz oder fehlende Registry ergeben einen Fehler; es gibt keinen stillen Rückfall auf feste Beispielpolicies. Die GUI erhält freigegebene Metadaten und Quellenprüfstände, keine privaten absoluten Pfade oder Regelvolltexte.
 
-Auf dem Mac wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert. Vier Dateizeiger sind durch SHA-256 bestätigt; der Verzeichniszeiger ist vorhanden und besitzt keinen Dateihash. Dies belegt einen funktionierenden lesenden Provider. Die vollständige Policy-Adoption des Macs und der menschliche DecisionClicker-Schreibpfad sind damit noch nicht abgenommen.
+Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert: vier bestätigte Dateihashes und ein vorhandener Verzeichniszeiger. Am 9. Oktober scheiterte ein erneuter Readback am Betriebssystemfehler EAGAIN einer Quelldatei. Der native Provider 0.2.4 weist solche Quellen einzeln als `unreadable` aus und prüft die übrigen Zeiger weiter. Dieser Stand ist ein Quellenprüfzustand; er bestätigt keine Durchsetzung der Policy. Das produktive Readback nach Installation des neuen Pins bleibt eine getrennte Abnahme. Die vollständige Policy-Adoption des Macs und der menschliche DecisionClicker-Schreibpfad sind ebenfalls noch nicht abgenommen.
 
 ## Installer und Paketgrenzen
 

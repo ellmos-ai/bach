@@ -77,6 +77,7 @@ For auditability, the GPT-5.6 automation attribution applies from that configura
 - **Session Steering Controls** - `bach scheduler session pause/resume/steer/clear-steer [--json]` lets operators gate or retarget the next profile-specific auto-session without editing daemon config by hand
 - **Scheduler Run Controls** - `bach scheduler pause/resume/steer/clear-steer [--json]` now exposes the same operator control plane for due scheduler jobs, including global pause and queued run guidance without hand-editing control files; queued scheduler hints now also hydrate llmauto chains into their next safe-checkpoint prompt path
 - **Machine-readable Control & Status Surfaces** - `bach agent list/start/stop/pause/resume/checkpoint/steer/clear-steer/status --json`, `bach scheduler status/jobs/session status --json`, and `bach scheduler session pause/resume/steer/clear-steer --json`, including queue state, `queued_for_next_start`, timestamps, checkpoint acknowledgements, and operator-note metadata for automation-safe polling
+- **Worker Queue Diagnostics** - [Selection observations](docs/worker-queue.md) expose dated candidate counts and binding, category, priority, tag, ownership and native claim rejections through the existing worker APIs; idle polls do not count as model blocks. The authenticated configuration response includes a separate read-only selection policy, and existing GUI cards receive a readable waiting summary. These observations grant no task or result acceptance authority.
 - **Upgrade Drift & Repair** - `bach upgrade list <path> --json`, `bach upgrade status/check --json`, and `bach upgrade repair [--dry-run] [--version <tag>]` expose automation-safe version, status, drift, repair hints, and recovery for broken distribution metadata
 - **Path Surface** - `bach path` exposes canonical system/workspace/DB paths, validation, resolve helpers, and DB overrides in text or JSON
 - **Prompt System** - Central prompt management with board system and versioning
@@ -201,6 +202,19 @@ duplicates fail closed instead of being guessed or deleted.
 
 ## Core Components
 
+Local inference can enforce an explicit host reserve policy at the existing
+model-call boundary. It checks native model identity, configured context and
+memory headroom, plus free space for task, slot and runtime persistence. Waiting
+returns the inference owner and preserves the current session without replaying
+tools. This is an optional reserve barrier; it does not replace the model-slot
+controller or certify model capacity. See [Local model reserves](docs/architecture/LOCAL-MODEL-RESERVE.md)
+for configuration, verification and the separate installation/runtime gates.
+The [model socket contract](docs/architecture/MODEL-SOCKETS.md) keeps native
+dialog and connector calls bound to stable agent identities, projects configured
+connector targets during explicit migration, and preserves existing dialog
+context. Source verification does not imply native migration or model capacity.
+
+
 ### 1. Task Management
 Full GTD system with prioritization, deadlines, tags, and context tracking.
 
@@ -242,7 +256,11 @@ All ellmos projects follow a water metaphor -- from a spring to a full stream:
 
 ## Documentation
 
+Native documentation maintenance, activation and evidence boundaries:
+[DOCS-MAINTENANCE.md](docs/architecture/DOCS-MAINTENANCE.md).
+
 - **[Shared GUI and agent controls](system/docs/help/gui-integration.txt)** - Consumer release pins and adapter checks
+- **[Learning sources and review candidates](docs/architecture/LEARNING-SOURCE-CONTRACT.md)** - Bounded source previews and inactive drafts; [command help](system/docs/help/learning_en.txt). Publication and independent reuse require separate acceptance.
 - **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
 - **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback
 

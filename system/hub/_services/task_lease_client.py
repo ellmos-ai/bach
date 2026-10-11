@@ -25,6 +25,7 @@ Besondere Eigenschaften:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -274,6 +275,13 @@ class LeaseReleaseAck:
     server_now: str
 
 
+@dataclass(frozen=True)
+class WorkerResultAck:
+    """Correlated Review release plus the exact canonical submitted result."""
+    release: LeaseReleaseAck
+    record: dict
+
+
 # ---------------------------------------------------------------------------
 # TaskLeaseClient
 # ---------------------------------------------------------------------------
@@ -452,6 +460,41 @@ class TaskLeaseClient:
                     conn.close()
         return self._public_snapshot(data, task_id)
 
+    def task_result_snapshot(self, task_id):
+        """Fresh canonical result/acceptance, never a provider or receipt cache."""
+        _identity(task_id)
+        if self.mode == "remote":
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}/result")
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            from .task_result_service import read_result
+            conn = self._get_local_connection()
+            try:
+                data = read_result(conn, task_id)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-readback.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or data.get("verified") is not True or type(data.get("status_revision")) is not int):
+            raise LeaseProtocolError("Kanonischer Ergebnis-Readback nicht bestätigt")
+        _version(data.get("task_version"), required=True)
+        record = data.get("result")
+        if record is not None:
+            if (not isinstance(record, dict) or record.get("schema") != "bach.worker-result.v1"
+                    or type(record.get("task_id")) is not int or record["task_id"] != task_id
+                    or not isinstance(record.get("result"), str)
+                    or record.get("result_sha256") != hashlib.sha256(record["result"].encode("utf-8")).hexdigest()
+                    or type(record.get("accepted")) is not bool):
+                raise LeaseProtocolError("Kanonischer Ergebnisinhalt nicht bestätigt")
+            if record["accepted"] and (data.get("status") not in {"done", "completed"}
+                    or record.get("task_version") != data["task_version"]
+                    or record.get("accepted_status_event_id") != data["status_revision"]
+                    or not record.get("accepted_by") or type(record.get("acceptance_event_id")) is not int):
+                raise LeaseProtocolError("Aktuelle kanonische Abnahme nicht bestätigt")
+        return data
+
     def task_candidates(self, *, limit=100, offset=0):
         """Canonical pending/open/in-progress page; Acquire decides claimability."""
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
@@ -521,12 +564,16 @@ class TaskLeaseClient:
         return ack
 
     def acquire(self, task_id, *, worker_id, host, request_id=None, ttl_profile="M", intent="",
-                task_version=None, config=None, now=None):
+                task_version=None, result_generation=None, config=None, now=None):
         _version(task_version)
         sent_at = now or datetime.now(timezone.utc)
         body = dict(worker_id=worker_id, host=host, request_id=request_id or str(uuid.uuid4()),
                     ttl_profile=ttl_profile, intent=intent, task_version=task_version)
+        if result_generation is not None:
+            body["result_generation"] = result_generation
         data = self._call("acquire", task_id, body, config=config, now=now)
+        if result_generation is not None and data.get("result_generation") != result_generation:
+            raise LeaseProtocolError("Reviewpflicht dieser Workergeneration nicht bestätigt")
         # Sending time is conservative: response latency cannot extend the local deadline.
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
 
@@ -553,6 +600,8 @@ class TaskLeaseClient:
         if not isinstance(data, dict) or type(data.get("task_id")) is not int or data["task_id"] != task_id:
             raise LeaseProtocolError("Creator-ACK passt nicht zur gebundenen Task")
         _wire_time(data.get("server_now"))
+        if data.get("result_generation") != delegation.generation:
+            raise LeaseProtocolError("Creator-Reviewpflicht dieser Generation nicht bestätigt")
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version, receive_time=sent_at)
 
     def read(self, task_id, *, lease_id=None, config=None, now=None):
@@ -576,6 +625,35 @@ class TaskLeaseClient:
         return self._grant(data, lease_id=lease_id, fence=fence, task_version=task_version,
                            worker_id=previous.worker_id if previous else None,
                            host=previous.host if previous else None, receive_time=sent_at)
+
+    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result, config=None, now=None):
+        from .task_result_service import validate_submission
+        _identity(task_id, lease_id, fence)
+        _version(task_version, required=True)
+        try:
+            _, _, digest = validate_submission({"generation": generation, "result": result})
+        except ValueError as exc:
+            raise LeaseProtocolError(str(exc)) from None
+        data = self._call("release", task_id, {
+            "lease_id": lease_id, "fence": fence, "task_version": task_version,
+            "outcome": "review", "worker_result": {"generation": generation, "result": result},
+        }, config=config, now=now)
+        record = data.get("worker_result")
+        if (data.get("released") is not True or data.get("outcome") != "review"
+                or data.get("status") != "review" or type(data.get("fence")) is not int or data["fence"] != fence
+                or not isinstance(record, dict) or record.get("schema") != "bach.worker-result.v1"
+                or type(record.get("result_id")) is not int or record["result_id"] <= 0
+                or type(record.get("task_id")) is not int or record["task_id"] != task_id
+                or type(record.get("fence")) is not int or record["fence"] != fence
+                or record.get("generation") != generation or record.get("task_version") != task_version
+                or record.get("result_sha256") != digest or record.get("result") != result
+                or record.get("accepted") is not False
+                or type(record.get("submission_event_id")) is not int
+                or type(record.get("status_revision")) is not int
+                or not 0 < record["status_revision"] < record["submission_event_id"]):
+            raise LeaseProtocolError("Ergebnisabgabe nicht kanonisch bestätigt")
+        self._held.pop(task_id, None)
+        return WorkerResultAck(LeaseReleaseAck(True, task_id, "review", "review", fence, data["server_now"]), record)
 
     def release(self, task_id, *, lease_id, fence, task_version=None, outcome="done", result_ref="", note="", config=None, now=None):
         _identity(task_id, lease_id, fence)

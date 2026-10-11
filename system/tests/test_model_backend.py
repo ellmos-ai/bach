@@ -55,6 +55,9 @@ class _FakeResponse:
     async def aiter_lines(self):
         yield json.dumps({**self.payload, "done": True})
 
+    async def aiter_bytes(self, chunk_size=4096):
+        yield json.dumps(self.payload).encode()
+
     def json(self):
         return self.payload
 
@@ -297,8 +300,10 @@ def test_ollama_chat_rejects_empty_success(monkeypatch, payload):
 
 
 def test_ollama_chat_propagates_api_error(monkeypatch):
-    with pytest.raises(RuntimeError, match="Modell fehlt"):
-        _run_chat(monkeypatch, {"error": "Modell fehlt"})
+    result = _run_chat(monkeypatch, {"error": "Modell fehlt PRIVATE_PROVIDER_BODY"})
+    assert result["backend_error"]["kind"] == "provider_error"
+    assert not result["content"]
+    assert "PRIVATE_PROVIDER_BODY" not in json.dumps(result)
 
 
 def test_ollama_chat_propagates_http_error(monkeypatch):
@@ -968,5 +973,4 @@ def test_hermes_fails_after_max_retries_on_429(monkeypatch):
     backend = HermesBackend(api_key="test-key", default_model="openrouter/free")
     with pytest.raises(RuntimeError, match="Hermes/OpenRouter Fehler \\(429\\)"):
         asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
-
 

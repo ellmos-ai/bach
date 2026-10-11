@@ -3,30 +3,61 @@ from datetime import datetime, timezone
 
 from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
 
-PREFIXES = ("/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
+PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
-            "/api/domains/", "/api/artifacts", "/api/calendar/", "/api/gui/")
+            "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/",
+            "/api/skills-board/hierarchy")
+# Exact "METHOD /path" pairs for single reads whose path or parent path also holds routes that are not page reads (GET+PUT on
+# /api/settings/theme, /api/agents/runtime, PUT /api/agents/{agent_id}/toggle, POST /api/system/external-artifacts/import):
+# a prefix or a path-only comparison would catalog those as well.
+EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/setup/ocean-map",
+               "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates", "GET /api/system/external-artifacts")
+# Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
+# page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
+LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
+# Page -> endpoints the ellmos-system-gui page actually reads (checked against ellmos-system-gui origin/main, 2026-10-11):
+# "/" src/pages/index.astro:227 (SystemClusterStatus is only included by settings.astro:4,253); "/agenten/sessions" src/lib/agent-history.mjs:77,89,92
+# (loaded by src/pages/agenten/sessions.astro:90), inbox tab src/scripts/user-inbox-tab.mjs:28, TaskCreateForm.astro:118,183 and
+# src/lib/task-assignment.mjs:127, session detail src/lib/agent-history.mjs:82, profiles src/scripts/agent-history.mjs:112;
+# "/" also src/lib/task-summary.js:2; "/artefakte" src/pages/artefakte.astro:168,243,253; "/settings" src/pages/settings.astro:253
+# (cluster-cockpit via the included component), 513 ocean-map, 562 theme, 615 backend-origin, 630 nemofold stats, 650 candidates,
+# 752 external-artifacts.
 PAGE_READS = {
-    "/": ["/api/system/cluster-cockpit"],
+    "/": ["/api/agent-studio/blueprints", "/api/tasks"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
     "/agenten/blueprints": ["/api/agent-studio/blueprints"],
     "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
-    "/agenten/sessions": ["/api/system/core-agents/timeline"],
-    "/skills": ["/api/capabilities/skills"],
+    "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
+                         "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
+    # ellmos-system-gui reads the library inventory (capability-board-client.mjs INVENTORIES.skills), not /api/capabilities/skills.
+    "/skills": ["/api/capabilities/skills/library"],
+    # The assignment tab of /skills is optional and not a page of its own: it is declared through `endpoints` (GET/PUT /api/skills-board/hierarchy).
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
     "/skills/ocean": ["/api/capabilities/ocean"],
+    "/user-inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
-    "/artefakte": ["/api/artifacts"],
+    "/artefakte": ["/api/artefakte"],
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
-    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/brand"],
+    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
+                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
+}
+# Optional reads (the page stays usable without them, so they never make it unavailable): layout reads and user-triggered or
+# detail reads. Only the four pages below are derived from the ellmos-system-gui page-reads manifest (cf42ef02,
+# public/page-reads.v1.json, frozen in tests/test_gui_capabilities_page_reads.py); the other pages stay hand-written until the
+# manifest is consumed for all pages (#2087 G2).
+PAGE_OPTIONAL_READS = {
+    "/": LAYOUT_READS,
+    "/agenten/sessions": ["/api/user-inbox", "/api/assignees", "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT_READS,
+    "/artefakte": ["/api/artifacts/content", "/api/artifacts/download"] + LAYOUT_READS,
+    "/settings": ["/api/domains/pins", "/api/gui/brand"],
 }
 
 
@@ -36,10 +67,11 @@ def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=
     registered = set()
     for route in routes:
         path = getattr(route, "path", "")
-        if not path.startswith(PREFIXES):
-            continue
+        by_prefix = path.startswith(PREFIXES)
         for method in sorted(getattr(route, "methods", ()) or ()):
             if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                continue
+            if not by_prefix and f"{method} {path}" not in EXACT_READS:
                 continue
             registered.add(f"{method} {path}")
             endpoints.append({"method": method, "path": path,

@@ -297,6 +297,7 @@ _WRITE_EVENTS = frozenset({
 _BACH_SERVICE_HINTS = (
     "chat_tray.py", "session_daemon.py", "bridge_daemon.py",
     "daemon_service.py", "bach.py",
+    "hub._services.chat.telegram_chat", "system/gui/server.py", r"system\gui\server.py",
 )
 
 # Source-runtime writes must be blocked independently of resident BACH services.

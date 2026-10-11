@@ -52,15 +52,15 @@ def test_runtime_uses_private_claude_transport_and_authoritative_completion(brid
         guard()
         assert binding is bridge.binding and mode == "safe"
         calls.append(messages)
-        result = binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+        result = binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis aus dem gebundenen Backend"})
         return {"content": result, "tool_calls": None, "raw_message": {"content": result}}
 
     monkeypatch.setattr(backend, "chat", forbidden)
     monkeypatch.setattr(backend, "chat_bound", private)
     result = asyncio.run(runtime.process("Complete the bound task", "leased-chat", work_priority="background"))
     assert len(calls) == 1
-    assert bridge.binding.completed_task_ids == (bridge.binding.task_id,)
-    assert "erledigt" in result
+    assert not bridge.binding.completed_task_ids and bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
+    assert "wartet in Review" in result
 
 
 def test_direct_script_imports_and_launchagent_use_package_safe_entry():

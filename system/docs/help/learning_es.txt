@@ -1,0 +1,68 @@
+# Portabilidad: UNIVERSAL
+# Versión: 1.0.0
+# Recursos: [hub/learning.py, hub/_services/learning_source_service.py, /api/learning/sources/*]
+
+APRENDIZAJE — Fuentes limitadas y candidatos para revisión
+==========================================================
+
+PROPÓSITO
+---------
+Learning verifica una fuente permitida explícitamente junto con una propuesta de aprendizaje entregada por quien llama. Comprueba procedencia, hashes, formato, señales de selección, privacidad y posibles duplicados. No selecciona experiencias por sí solo ni demuestra reutilización o calidad del resultado.
+
+LISTA DE FUENTES PERMITIDAS
+---------------------------
+BACH_LEARNING_SOURCE_ROOTS es un objeto JSON que asigna IDs de raíz a directorios absolutos existentes. El valor predeterminado es {}; no se permite ninguna fuente por defecto. Las solicitudes usan solo un ID de raíz y una ruta relativa. Se rechazan las rutas con .., las raíces que sean enlaces simbólicos y las rutas fuera de la raíz autorizada. Cada fuente necesita un hash SHA-256 explícito.
+
+FUENTES ADMITIDAS
+-----------------
+- session: exportación JSON preparada con el esquema bach.learning-source.v1, session_id y como máximo 200 eventos únicos. Los roles son user, assistant o tool; tool y outcome son opcionales. Para considerar un candidato, al menos un evento user seleccionado debe contener una señal de selección reconocida. De lo contrario, el resultado es no_candidate.
+- hermes_ledger: ledger Hermes JSONL en su formato nativo, con un entry_id único de 12 caracteres hexadecimales en minúscula. Un evento de mantenimiento create, edit, update o patch debe incluir un manifiesto after con rutas y hashes SHA-256. Todos los archivos deben permanecer dentro de la raíz autorizada. El ledger es telemetría, no una aprobación ni una prueba de calidad; el adaptador lee el formato y no inicia una ejecución del curator de Hermes.
+- nemofold_voyage: archivo original de la biblioteca nativa run-reports/web-console/voyages. NemoFold VoyageStore.load se ejecuta con require_receipt=True. Se comprueban el receipt, el contrato del trabajo, el hash del archivo y el ID del voyage. Esto demuestra un plan guardado, no su ejecución.
+
+LÍMITES Y PRIVACIDAD
+--------------------
+Una fuente tiene como máximo 1.000.000 bytes; el manifiesto Hermes y sus archivos referenciados comparten ese límite, y cada archivo referenciado se limita a 200.000 bytes. Un receipt se limita a 4.096 bytes. Una solicitud tiene como máximo 200.000 bytes. Los límites de fuente no son un límite total para todas las lecturas separadas del catálogo y de las guías.
+
+El servicio rechaza los patrones detectados de rutas, cuentas, direcciones IP y credenciales, así como los campos de credenciales. El filtro de patrones no es un detector semántico completo de secretos. Los literales privados se pueden sustituir mediante un parámetro con nombre, valor y descripción; la propuesta usa después el marcador <NAME>. Los nombres que parezcan credenciales también están prohibidos como claves de diccionario.
+
+Los localizadores de fuente y eventos permanecen como metadatos internos de procedencia en el contrato del candidato. Las listas y los detalles de candidatos requieren un token de dispositivo activo; estos localizadores no forman parte del contenido publicado de una skill o cadena.
+
+ANÁLISIS, ALMACENAMIENTO Y REVISIÓN
+-----------------------------------
+Una propuesta completa contiene kind (skill, chain o rule), name, trigger, reason, body, event_ids, parameters, side_effects, required_capabilities y dedup. El servicio lee los elementos vecinos existentes de los catálogos autorizados de skills y cadenas, y vincula la decisión de deduplicación proporcionada por quien llama y, cuando corresponde, la versión base; no decide de forma semántica e independiente si hay duplicados. La selección y la decisión de deduplicación siguen sujetas a revisión. El contrato registra semantic_review_required=true y empirically_validated=false.
+
+CLI:
+  bach learning analyze <request.json>
+  bach learning store <request.json> --dry-run
+  bach learning store <request.json> -n
+  bach learning store <request.json>
+
+analyze siempre es de solo lectura. store con --dry-run o -n muestra una vista previa sin guardar. store sin esas opciones guarda únicamente un candidato inactivo y versionado en el almacén de revisión Hermes o NemoFold existente. Las actualizaciones requieren expected_revision y expected_digest juntos. El contenido idéntico se reconoce de forma idempotente; los conflictos de versión se rechazan.
+
+HTTP:
+  POST /api/learning/sources/analyze
+  POST /api/learning/sources/store
+
+Ambas rutas exigen primero un token de dispositivo activo, enviado en el encabezado Authorization: Bearer o en la cookie bach_device_token. Después usan la misma canalización del handler. analyze sigue siendo de solo lectura. store no publica ni activa nada.
+
+API DE PYTHON
+-------------
+  from bach_api import learning
+  learning.analyze("request.json")
+  learning.store("request.json")
+
+Las llamadas abreviadas devuelven el resultado JSON como texto si tienen éxito, no como dict de Python. Si hay un error, el proxy lo imprime y devuelve como texto; no procese ese mensaje con json.loads. Para obtener el retorno legacy:
+  success, message = learning.raw("analyze", "request.json")
+success es booleano; message contiene JSON en texto si hay éxito y texto de error en caso contrario.
+
+LÍMITE DE REVISIÓN
+------------------
+Un candidato de revisión no es una skill aprobada. El adaptador no crea archivos de skill activos, no concede herramientas ni capacidades y no configura un scheduler. Las reglas son borradores sin autoridad de gobernanza; configurar un scheduler requiere autorización separada. Se mantienen la cuarentena y la revisión de la dependencia PR 303.
+
+Las guías skill-extractor y workflow-extract se leen realmente; se registran la versión y el hash resueltos. Las guías no se ejecutan. La versión no está fijada en 1.3.1 porque el catálogo resuelto en tiempo de ejecución puede seleccionar otra. Las referencias con soporte fijo neutralisierung.md, transcript-quellen.md y automation-bausteine.md se leen y se registra su hash cuando se mencionan en las guías; no se ejecutan.
+
+Los antiguos accesos directos Hermes distill y NemoFold synthesize y sus heurísticas siguen existiendo. No implementan este contrato compartido y no son integraciones nativas de fuentes originales. El éxito del código o de CI no demuestra instalación ni ejecución en Mac Studio. La promoción nativa, la reutilización independiente con prueba de calidad, los pins de proveedor, la exportación automática de sesiones y la programación son trabajos abiertos por separado.
+
+VÉASE TAMBIÉN
+--------------
+docs/architecture/LEARNING-SOURCE-CONTRACT.md

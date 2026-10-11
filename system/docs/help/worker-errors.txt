@@ -1,0 +1,70 @@
+Worker-Fehler und Anbieterlimits
+================================
+
+Ollama-Fehler werden zusätzlich als backend_error gespeichert und über die
+authentifizierte Worker-Status-API projiziert. Der Vertrag enthält nur geprüfte
+Felder: provider, kind, status_code (wenn tatsächlich vorhanden), quota_exceeded,
+quota_period=month (bei ausdrücklich gemeldetem Monatslimit),
+retry_after_seconds (wenn ein gültiger Retry-After-Header vorliegt) und eine
+aus festen Texten erzeugte message. Providerbodies, URLs, Schlüssel und übrige
+Header gehören nicht in diesen Vertrag. Fehlerbodies werden höchstens bis
+16 KiB ausgewertet. Das Lesen hält außerdem das verbleibende Gesamtbudget
+BACH_LLM_TOTAL_CAP und den bestehenden Read-Timeout ein. Unlesbare, zu langsam
+gelieferte oder größere Bodies liefern keine Quotenannahme; der tatsächlich
+empfangene HTTP-Status bleibt erhalten. Auch Systemslot-Snapshots enthalten
+ausschließlich die normalisierten Fehlerfelder.
+
+HTTP 429 allein beweist kein Monatslimit. Ohne konkrete Monatslimitmeldung
+erscheint ein Anfragelimit. Retry-After akzeptiert ganze, nichtnegative Sekunden
+oder ein HTTP-Datum mit Zeitzone; das Datum wird relativ zum aktuellen Zeitpunkt
+ausgewertet. Ungültige oder fehlende Header erzeugen keine Wartezeit. Ein
+Retry-After ist keine Zusage über die Rücksetzung eines Monatskontingents.
+
+FailedAnswer erhält den geprüften Vertrag auch beim Speichern und Wiederladen
+eines Chatverlaufs. Diese Metadaten werden nicht an ein Modell zurückgesendet.
+Bei harten Providerfehlern endet der Worker, gibt seine aktuelle Task-Lease
+bestätigt zurück und behält den Fehlertext. Das korrelierte assignment_ended-
+Ereignis bleibt getrennt im Verlauf erhalten; es überschreibt keine Fehlerursache.
+Ein bestätigter neuer Start entfernt den Fehler der vorherigen Generation.
+
+Ein bereits ausdrücklich gestarteter fortlaufender Ollama-Cloud-Worker kann
+nach einem vorübergehenden HTTP 429 im selben Lauf wiederaufnehmen, sofern
+für die aktuelle Task-Lease nachweislich noch kein Werkzeug gestartet wurde.
+Dieser Nachweis gilt auch über mehrere Modellblöcke und für Werkzeuge über
+die CLI-Bridge. Bereits begonnene Toolarbeit oder ein fehlender beziehungsweise
+ungültiger Nachweis unterdrücken die automatische Wiederaufnahme. Nach einem
+bestätigten Quarantäne-ACK ist die Task mit dem nativen Status blocked zur
+Prüfung gesperrt und ihre Lease freigegeben; die Fehleranzeige bleibt erhalten.
+Ein anderer Worker kann diese bestätigte Quarantäne nicht automatisch neu
+übernehmen. Fehlt der Quarantäne-ACK oder ist er ungültig, bleibt der Retry
+unterdrückt; der tatsächliche Taskstatus und die Lease sind über die kanonische
+Task-API zu prüfen. Ein fehlender ACK kann vor oder nach dem Commit auftreten
+und beweist daher weder blocked noch eine Freigabe. Der Worker fällt nicht auf
+Return-to-pending zurück. Vor einer erneuten Freigabe sind bereits erfolgte
+Toolwirkungen zu prüfen. Die Wiederholungsregel garantiert keine idempotente
+Toolarbeit.
+Vor der
+Wartephase werden der Lease-Renew-Thread beendet, die Task bestätigt zurückgegeben
+und das Assignment geschlossen. Ohne bestätigte Rückgabe wird nicht gewartet
+oder erneut gearbeitet. Während des Wartens ist der Worker aktiv, bearbeitet
+aber keine Task: worker_active=true, running=false, active_task_id=null.
+
+Die lokale Wiederaufnahmeregel erlaubt höchstens drei aufeinanderfolgende
+Wiederaufnahmen mit insgesamt höchstens 900 Sekunden geplanter Wartezeit.
+Ohne längeren gültigen Retry-After sind die Wartezeiten 60, 120 und 240 Sekunden.
+Ein tatsächlich vorhandener längerer Retry-After wird eingehalten; überschreitet
+er das verbleibende Wartebudget, endet der Worker. Diese Werte sind Programmregeln,
+keine beobachteten Kontingent-Rücksetzzeiten. Erst eine erfolgreiche Backendantwort
+setzt den Zähler zurück und entfernt die alte Fehleranzeige. Ein Monatslimit,
+Authentifizierungsfehler, unbekannte Fehler und Einzelläufe werden nicht wiederholt.
+
+Stop, Deaktivierung, Pause, Ablaufzeit und ein Generationenwechsel unterbrechen
+das Warten. Danach werden Slot, Modell, Taskversion, Abhängigkeiten, fremde Leases
+und die Creator-Schonfrist erneut geprüft. Es gibt keine neue Startfreigabe,
+keinen Modellwechsel und keinen Cloud-Autostart durch diese Wiederaufnahme.
+
+Die vorhandenen Shared-GUI-Karten zeigen current_activity. Deshalb bleibt der
+lesbare Fehlertext auch für GUI-Versionen nutzbar, die backend_error noch nicht
+auswerten. Alte Fehler ohne gespeicherten Vertrag werden nicht nachträglich als
+Monatslimit ausgegeben. Es gibt weder Cloud-Autostarts noch unbegrenzte Retries
+oder einen kostenpflichtigen Modellwechsel. Cloud-Worker startet der Nutzer.

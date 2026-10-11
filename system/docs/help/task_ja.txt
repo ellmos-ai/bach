@@ -98,3 +98,12 @@ bach hook help           フック システム
 依存関係の検出: タスクは (BLOCKED) フラグとともに自動的に追加されます
 未完了の依存関係が表示される
 フック: after_task_create、after_task_done は操作中に発行されます。
+
+
+作成時のアトミックな割り当て: bach task add "文書確認" --assigned bach。
+--assigned=bach と -a bach も使用できます。空または欠落した名前は INSERT 前に
+拒否されます。指定がない場合、データベースの既定値は維持されます。
+API: task.add("文書確認", assigned_to="bach")。
+下書きは昇格時にも割り当てを保持します。lead の認証、モデル/slot、割り当ての
+追加検証は引き続き適用されます。これらのオプションは worker を起動せず、
+タスクの lease も取得しません。

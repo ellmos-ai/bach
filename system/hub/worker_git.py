@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import socket
 import sqlite3
+import stat
 import subprocess
 import threading
 import uuid
@@ -96,118 +98,165 @@ def start_task_worktree(
     *,
     base_branch: str = DEFAULT_BASE_BRANCH,
     repo_root: Path | None = None,
+    worker_task_binding=None,
+    require_task_binding: bool = False,
 ) -> Path:
-    """Erzeugt oder aktualisiert einen isolierten Git-Worktree für task_id.
-
-    Befehl:
-      git fetch origin
-      git worktree add ~/services/bach-worktrees/task-<id> -b bach-task/<id> <base_branch>
-    """
+    """Create the exact task worktree; bound workers fail closed on stale authority."""
+    if require_task_binding and worker_task_binding is None:
+        raise RuntimeError("Private Taskbindung fehlt")
     repo = (repo_root or get_live_repo_root()).resolve()
     task_id_str = str(task_id).strip()
     worktrees_dir = get_worktrees_dir()
     target_dir = worktrees_dir / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
 
-    worktrees_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Fetch origin
-    try:
-        subprocess.run(
-            ["git", "fetch", "origin"],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
+    if worker_task_binding is not None:
+        from hub._services.chat.worker_write_guard import authorize_start, authorize_mutation
+        target_dir = authorize_start(worker_task_binding, task_id, repo_root=repo,
+                                     worktrees_dir=worktrees_dir)
+        if target_dir.exists():
+            return target_dir
+        if base_branch not in {"main", "origin/main"}:
+            raise RuntimeError("Gebundener Worker darf nur von main oder origin/main starten")
+        if worktrees_dir.is_symlink():
+            raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
+        worktrees_dir.mkdir(parents=True, exist_ok=True)
+        # Recheck after parent creation and immediately before the Git mutation.
+        authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
+        base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
+                              cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
+        if base.returncode != 0:
+            raise RuntimeError("Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet")
+        branch = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
+                                cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
+        if branch.returncode == 0:
+            raise RuntimeError("Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden")
+        authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
+        res = subprocess.run(
+            ["git", "worktree", "add", str(target_dir), "-b", branch_name, base_branch],
+            cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
         )
+        if res.returncode != 0:
+            raise RuntimeError(f"Task-Worktree konnte nicht registriert werden: {res.stderr}")
+        authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
+        return target_dir.resolve(strict=True)
+
+    worktrees_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(["git", "fetch", "origin"], cwd=str(repo), capture_output=True,
+                       text=True, check=False, timeout=30)
     except Exception:
         pass
-
-    # 2. Wenn Worktree bereits existiert, diesen zurückgeben
     if target_dir.exists() and (target_dir / ".git").exists():
         return target_dir.resolve()
-
-    # 3. Worktree anlegen
-    cmd_new_branch = [
-        "git", "worktree", "add",
-        str(target_dir),
-        "-b", branch_name,
-        base_branch,
-    ]
-    res = subprocess.run(
-        cmd_new_branch,
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
+    result = subprocess.run(
+        ["git", "worktree", "add", str(target_dir), "-b", branch_name, base_branch],
+        cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
     )
-    if res.returncode != 0:
-        # Branch existiert womöglich schon -> ohne -b versuchen
-        cmd_existing_branch = [
-            "git", "worktree", "add",
-            str(target_dir),
-            branch_name,
-        ]
-        res2 = subprocess.run(
-            cmd_existing_branch,
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
+    if result.returncode != 0:
+        result = subprocess.run(
+            ["git", "worktree", "add", str(target_dir), branch_name],
+            cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
         )
-        if res2.returncode != 0:
-            raise RuntimeError(
-                f"Fehler beim Erstellen des Worktrees {target_dir}: {res2.stderr or res.stderr}"
-            )
-
+        if result.returncode != 0:
+            raise RuntimeError(f"Fehler beim Erstellen des Worktrees {target_dir}: {result.stderr}")
     return target_dir.resolve()
 
 
-def scan_for_secrets(worktree_path: Path) -> list[str]:
-    """Prüft geänderte/staged Dateien auf mögliche Zugangsdaten."""
-    findings: list[str] = []
-    # diff gegen HEAD bzw. unstaged
+def _git_read_bytes(worktree_path: Path, argv: list[str], *, timeout=15) -> bytes:
     try:
-        res = subprocess.run(
-            ["git", "diff", "HEAD"],
-            cwd=str(worktree_path),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-        diff_text = res.stdout or ""
-    except Exception as exc:
-        return [f"Fehler beim Lesen von git diff: {exc}"]
+        result = subprocess.run(argv, cwd=str(worktree_path), capture_output=True,
+                                check=False, timeout=timeout)
+    except Exception:
+        raise RuntimeError("Git-Leseprüfung konnte nicht vollständig ausgeführt werden") from None
+    if result.returncode != 0:
+        raise RuntimeError("Git-Leseprüfung konnte nicht vollständig ausgeführt werden")
+    output = result.stdout or b""
+    return output.encode("utf-8", errors="surrogateescape") if isinstance(output, str) else bytes(output)
 
+
+def _untracked_names(worktree_path: Path) -> list[str]:
+    raw = _git_read_bytes(worktree_path,
+                          ["git", "ls-files", "--others", "--exclude-standard", "-z"])
+    return [os.fsdecode(item) for item in raw.split(b"\x00") if item]
+
+
+def _read_untracked_file(worktree_path: Path, relative: str) -> bytes:
+    root = Path(worktree_path).resolve(strict=True)
+    rel = Path(relative)
+    if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+        raise RuntimeError("Untracked-Pfad liegt außerhalb des Arbeitsbaums")
+    parent = root
+    for part in rel.parts[:-1]:
+        parent = parent / part
+        mode = parent.lstat().st_mode
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise RuntimeError("Untracked-Pfad enthält einen Link oder Nichtordner")
+    path = parent / rel.parts[-1]
+    mode = path.lstat().st_mode
+    if stat.S_ISLNK(mode):
+        return os.fsencode(os.readlink(path))
+    if not stat.S_ISREG(mode):
+        raise RuntimeError("Untracked-Datei ist kein regulärer Inhalt")
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise RuntimeError("Untracked-Datei änderte während der Prüfung ihren Typ")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            return stream.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def scan_for_secrets(worktree_path: Path) -> list[str]:
+    """Check tracked changes and every nonignored untracked file before staging."""
+    try:
+        diff = _git_read_bytes(worktree_path,
+            ["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])
+        pieces = [diff.decode("utf-8", errors="replace")]
+        for relative in _untracked_names(worktree_path):
+            content = _read_untracked_file(worktree_path, relative)
+            pieces.append(relative + "\n" + content.decode("utf-8", errors="replace"))
+    except Exception:
+        return ["Git-Änderungen oder untracked Dateien konnten nicht vollständig geprüft werden"]
+    diff_text = "\n".join(pieces)
+    findings: list[str] = []
     for pattern in SECRET_PATTERNS:
         matches = pattern.findall(diff_text)
         if matches:
             findings.append(f"Muster erkannt: {pattern.pattern[:30]} ({len(matches)} Treffer)")
-
     return findings
 
 
 def check_git_diff(worktree_path: Path) -> list[str]:
-    """Führt 'git diff --check' aus, um Whitespace- und Syntaxkonflikte abzufangen."""
+    """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
-        res = subprocess.run(
-            ["git", "diff", "--check"],
-            cwd=str(worktree_path),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
+        result = subprocess.run(
+            ["git", "diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD"],
+            cwd=str(worktree_path), capture_output=True, check=False, timeout=15,
         )
-        if res.returncode != 0:
-            lines = [l.strip() for l in (res.stdout or res.stderr).splitlines() if l.strip()]
-            return lines or ["git diff --check Fehler gemeldet"]
-    except Exception as exc:
-        return [f"Fehler bei git diff --check: {exc}"]
-    return []
+        output = result.stdout or b""
+        errors = output.decode("utf-8", errors="replace").splitlines()
+        stderr = result.stderr or b""
+        if result.returncode != 0 or output or stderr:
+            detail = stderr.decode("utf-8", errors="replace").splitlines()
+            return [line.strip() for line in errors + detail if line.strip()] or [
+                "Git-Diff-Prüfung nicht bestätigt"
+            ]
+        for index, relative in enumerate(_untracked_names(worktree_path), start=1):
+            content = _read_untracked_file(worktree_path, relative)
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                if line.endswith((b" ", b"\t")):
+                    errors.append(f"Untracked-Datei {index}, Zeile {line_number}: trailing whitespace")
+                leading = line[:len(line) - len(line.lstrip(b" \t"))]
+                if b" \t" in leading:
+                    errors.append(f"Untracked-Datei {index}, Zeile {line_number}: space before tab")
+        return errors
+    except Exception:
+        return ["Git-Diff- oder untracked-Datei-Prüfung konnte nicht vollständig ausgeführt werden"]
+
 
 
 def _get_db(db_path: Path | None = None) -> sqlite3.Connection:
@@ -367,7 +416,11 @@ def _finish_task(
 
     def run_checked(cmd, **kwargs):
         if worker_task_binding is not None:
-            worker_task_binding.assert_active()
+            from hub._services.chat.worker_write_guard import authorize_mutation
+            bound_cwd = kwargs.get("cwd", target_dir)
+            registered, _ = authorize_mutation(
+                worker_task_binding, int(task_id), paths=(bound_cwd,))
+            kwargs["cwd"] = str(registered)
         return subprocess.run(cmd, **kwargs)
 
     task_id_str = str(task_id).strip()
@@ -380,6 +433,10 @@ def _finish_task(
             "error": f"Worktree {target_dir} existiert nicht. Nutze start_task_worktree({task_id_str})",
         }
 
+    # Revalidate before all pre-commit inspection; these commands use the
+    # exact registered task tree, never a caller-provided cwd.
+    from hub._services.chat.worker_write_guard import authorize_mutation
+    authorize_mutation(worker_task_binding, int(task_id_str), paths=(target_dir,))
     # Secrets-Scan
     secrets = scan_for_secrets(target_dir)
     if secrets:
@@ -389,6 +446,7 @@ def _finish_task(
         }
 
     # Diff-Check
+    authorize_mutation(worker_task_binding, int(task_id_str), paths=(target_dir,))
     diff_errs = check_git_diff(target_dir)
     if diff_errs:
         return {
@@ -424,37 +482,57 @@ def _finish_task(
         worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert")
         return {"success": True, "wip": True, "branch": branch_name, "status": "wip_pushed"}
 
-    # Normaler Abschluss: Tests laufen lassen
+    # Normaler Abschluss: Tests aller geänderten getrackten und neuen Dateien.
     if run_tests:
-        # Finde geänderte Dateien
         try:
-            diff_files = run_checked(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=str(target_dir),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            ).stdout.splitlines()
+            diff_result = run_checked(
+                ["git", "diff", "--name-only", "--no-renames", "-z", "HEAD"],
+                cwd=str(target_dir), capture_output=True, text=True, encoding="utf-8",
+                errors="surrogateescape", check=False, timeout=10,
+            )
+            if diff_result.returncode != 0:
+                raise RuntimeError("tracked Dateiänderungen nicht bestätigt")
+            untracked_result = run_checked(
+                ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                cwd=str(target_dir), capture_output=True, text=True, encoding="utf-8",
+                errors="surrogateescape", check=False, timeout=10,
+            )
+            if untracked_result.returncode != 0:
+                raise RuntimeError("untracked Dateien nicht bestätigt")
+            changed_paths = (diff_result.stdout or "").split("\x00")
+            changed_paths += (untracked_result.stdout or "").split("\x00")
+            diff_files = list(dict.fromkeys(path for path in changed_paths if path))
         except Exception:
-            diff_files = []
+            return {"success": False,
+                    "error": "Geänderte Dateien und Testeingaben konnten nicht vollständig gelesen werden"}
 
         test_files = [f for f in diff_files if "test_" in f and f.endswith(".py")]
         if test_files:
-            cmd_test = ["pytest", "-q"] + test_files
-            test_res = run_checked(
-                cmd_test,
-                cwd=str(target_dir),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=60,
-            )
-            if test_res.returncode != 0:
-                return {
-                    "success": False,
-                    "error": f"Tests fehlgeschlagen: {test_res.stdout or test_res.stderr}",
-                }
+            cmd_test = ["python", "-m", "pytest", "-q", "--", *test_files]
+            try:
+                from hub._services.chat.worker_write_guard import run_bound_check
+                from core.sandbox import SandboxResult
+                test_res = run_bound_check(
+                    worker_task_binding, shlex.join(cmd_test), cwd=str(target_dir), timeout=60,
+                    return_result=True,
+                )
+            except Exception:
+                return {"success": False, "error": "Gebundener Testlauf nicht sicher bestätigt"}
+            if (not isinstance(test_res, SandboxResult)
+                    or type(getattr(test_res, "returncode", None)) is not int
+                    or type(getattr(test_res, "timed_out", None)) is not bool
+                    or type(getattr(test_res, "memory_exceeded", None)) is not bool):
+                return {"success": False, "error": "Gebundener Testlauf nicht sicher bestätigt"}
+            if test_res.timed_out or test_res.memory_exceeded or test_res.returncode != 0:
+                if test_res.timed_out:
+                    reason = "Timeout nach 60 Sekunden"
+                elif test_res.memory_exceeded:
+                    reason = "Speichergrenze"
+                else:
+                    reason = f"Exitcode {test_res.returncode}"
+                output = test_res.stdout or test_res.stderr or ""
+                detail = f": {output[:3000]}" if isinstance(output, str) and output else ""
+                return {"success": False, "error": f"Tests fehlgeschlagen ({reason}){detail}"}
 
     # Stage & Commit
     run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
@@ -537,37 +615,52 @@ def cleanup_task_worktree(
     *,
     delete_branch: bool = False,
     repo_root: Path | None = None,
+    worker_task_binding=None,
+    require_task_binding: bool = False,
 ) -> bool:
-    """Entfernt den Worktree für task_id und optional den Branch."""
+    """Remove only a registered, clean task worktree; never force-delete files."""
+    if require_task_binding and worker_task_binding is None:
+        return False
+    if worker_task_binding is not None:
+        # A live worker must leave its registered tree for independent review.
+        return False
     repo = (repo_root or get_live_repo_root()).resolve()
     task_id_str = str(task_id).strip()
-    target_dir = get_worktrees_dir() / f"task-{task_id_str}"
-    branch_name = f"bach-task/{task_id_str}"
-
-    if not target_dir.exists():
-        return False
-
-    res = subprocess.run(
-        ["git", "worktree", "remove", str(target_dir), "--force"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
-    )
-    if res.returncode != 0:
-        # Fallback: Ordner löschen und prune
-        shutil.rmtree(str(target_dir), ignore_errors=True)
-        subprocess.run(["git", "worktree", "prune"], cwd=str(repo), check=False, timeout=10)
-
-    if delete_branch:
-        subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
+    try:
+        tid = int(task_id_str)
+        if isinstance(task_id, bool) or tid <= 0 or str(tid) != task_id_str:
+            return False
+        from hub._services.chat import worker_write_guard as guard
+        if worker_task_binding is not None:
+            target, _ = guard.authorize_mutation(worker_task_binding, tid, repo_root=repo)
+        else:
+            _, worktrees_dir = guard._paths(repo, get_worktrees_dir())
+            target = guard._registered_tree(repo, worktrees_dir, tid)
+            guard._fresh_locks(repo, worktrees_dir, target)
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=str(target), capture_output=True, text=True, check=False, timeout=15,
         )
-
-    return True
+        if status.returncode != 0 or status.stdout.strip():
+            return False
+        if worker_task_binding is not None:
+            guard.authorize_mutation(worker_task_binding, tid, repo_root=repo)
+        else:
+            guard._fresh_locks(repo, get_worktrees_dir(), target)
+        removed = subprocess.run(
+            ["git", "worktree", "remove", str(target)],
+            cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
+        )
+        if removed.returncode != 0:
+            return False
+        if delete_branch:
+            guard._fresh_locks(repo, get_worktrees_dir(), None)
+            deleted = subprocess.run(
+                ["git", "branch", "-d", f"bach-task/{task_id_str}"],
+                cwd=str(repo), capture_output=True, text=True, check=False, timeout=15,
+            )
+            if deleted.returncode != 0:
+                return False
+        return True
+    except Exception:
+        return False

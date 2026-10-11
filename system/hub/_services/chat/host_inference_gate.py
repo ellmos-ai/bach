@@ -90,12 +90,19 @@ class HostInferenceGate:
             "priority": record.get("priority") if active else None,
             "started_at": record.get("started_at") if active else None,
             "foreground_waiters": self._foreground_waiters(),
+            "model_target": record.get("model_target") if active else None,
         }
 
     @asynccontextmanager
-    async def turn(self, chat_id: str, priority: str, *, check_ready=None):
+    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None):
         if priority not in {"foreground", "background"}:
             raise ValueError("Ungültige Inferenzpriorität")
+        if model_target is not None:
+            fields = {"socket_id", "binding_id", "agent_id", "backend", "model"}
+            if (not isinstance(model_target, dict) or set(model_target) != fields
+                    or any(not isinstance(value, str) or not value or len(value) > 192
+                           for value in model_target.values())):
+                raise ValueError("Ungültiger Modellzielnachweis")
         self.root.mkdir(parents=True, exist_ok=True)
         identity = self._identity()
         marker = self.root / f"foreground-{uuid.uuid4().hex}.json" if priority == "foreground" else None
@@ -129,6 +136,7 @@ class HostInferenceGate:
                 acquired = candidate
             self._write(self.root / "owner.json", {
                 **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
+                **({"model_target": dict(model_target)} if model_target is not None else {}),
             })
             if marker:
                 marker.unlink(missing_ok=True)

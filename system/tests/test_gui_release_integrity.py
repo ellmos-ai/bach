@@ -60,7 +60,7 @@ def test_consumer_catalog_preserves_modules_and_does_not_claim_readiness():
     route = SimpleNamespace(path="/api/tasks", methods={"GET", "POST"})
     result = declaration([route], {"verified": False}, {}, {"tasks": {"adapter_registered": True}})
     assert result["schema"] == "ellmos.gui.capabilities.v1" and isinstance(result["modules"], dict)
-    assert len(result["pages"]) == 21 and result["gui"]["status"] == "unverified"
+    assert len(result["pages"]) == 22 and result["gui"]["status"] == "unverified"
     assert all(e["verification_scope"] == "adapter" and not e["runtime_verified"] for e in result["endpoints"])
     tasks = next(p for p in result["pages"] if p["path"] == "/tasks")
     assert tasks["status"] == "unavailable" and tasks["missing"] == ["GET /api/task-assignees"]

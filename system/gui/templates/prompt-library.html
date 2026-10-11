@@ -338,7 +338,7 @@
         async function importPromptBoard() {
             try {
                 const data = await api('/api/prompt-library/import-promptboard', { method: 'POST' });
-                setStatus('Import: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden (' + data.source + ')');
+                setStatus('Import: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden, ' + data.invalid + ' ungültig (' + data.source + ')');
                 loadList();
             } catch (e) { setStatus(e.message, true); }
         }

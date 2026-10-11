@@ -214,7 +214,7 @@ class OllamaBackend(ModelBackend):
         probes = 0
         completed = False
 
-        def aborted(error: str) -> dict:
+        def aborted(error: str, *, backend_error=None) -> dict:
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
@@ -228,6 +228,7 @@ class OllamaBackend(ModelBackend):
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
                 "error": error,
+                **({"backend_error": backend_error} if backend_error else {}),
             }
 
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
@@ -237,6 +238,13 @@ class OllamaBackend(ModelBackend):
                 async with client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
                 ) as response:
+                    if response.status_code >= 400:
+                        from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
+                        error_budget = min(read_timeout, max(0, total_cap - (time.time() - started))) if total_cap > 0 else read_timeout
+                        detail = classify_ollama_error(await read_error_payload(response, timeout_seconds=error_budget),
+                            status_code=response.status_code,
+                            retry_after=response.headers.get("Retry-After"))
+                        return aborted("HTTPStatusError: " + detail["message"], backend_error=detail)
                     response.raise_for_status()
                     lines = response.aiter_lines().__aiter__()
                     while True:
@@ -282,7 +290,9 @@ class OllamaBackend(ModelBackend):
                             except ValueError:
                                 continue
                             if chunk.get("error"):
-                                raise RuntimeError(f"Ollama-Fehler: {chunk['error']}")
+                                from hub._services.llm.backend_errors import classify_ollama_error
+                                detail = classify_ollama_error(chunk)
+                                return aborted(detail["message"], backend_error=detail)
                             message = chunk.get("message") or {}
                             if message:
                                 last_message = message

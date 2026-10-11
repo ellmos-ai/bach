@@ -54,10 +54,10 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
     "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
     "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
-    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true). "
-    "Erst wenn das Werkzeug die angelegten Teilaufgaben und den geschlossenen Eltern-Task "
-    "bestätigt, gilt die Zerlegung als erfolgreicher Abschluss dieses Laufs; die Teilaufgaben "
-    "übernimmt ein späterer Lauf. Danach mit FERTIG enden. Ohne bestätigten Werkzeugbeleg "
+    "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
+    "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
+    "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
+    "bestätigte Kind-IDs, offene Arbeit>') den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
     "keinen Taskabschluss behaupten."
 )
 
@@ -208,6 +208,27 @@ from hub._services.chat.bach_tools import (
 log = logging.getLogger("bach.chat")
 
 
+def _tool_dispatch_kwargs(session, agent_operations):
+    """Build dispatcher context only from trusted runtime session state."""
+    binding = getattr(session, "worker_task_binding", None)
+    require_binding = getattr(session, "require_task_binding", False)
+    grants = getattr(session, "allowed_tools", None)
+    kwargs = {}
+    if agent_operations is not None:
+        # Preserve the existing managed-agent contract.
+        kwargs = {"agent_operations": agent_operations, "allowed_tools": grants}
+    if binding is not None or require_binding:
+        kwargs.update({
+            "worker_task_binding": binding,
+            "require_task_binding": require_binding,
+        })
+        # Bound workers need the runtime's grant even when the managed-agent
+        # controller is absent. Never infer it from the model's tool arguments.
+        if binding is not None and agent_operations is None:
+            kwargs["allowed_tools"] = grants
+    return kwargs
+
+
 class _SnapshotStoreAdapter:
     """The module's ``ChatStore`` protocol on BACH's snapshot session store.
 
@@ -273,6 +294,12 @@ class FailedAnswer(str):
     STATUS_KEY = "answer_status"
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
+
+    def __new__(cls, value, *, backend_error=None):
+        from hub._services.llm.backend_errors import normalize_backend_error
+        answer = super().__new__(cls, value)
+        answer.backend_error = normalize_backend_error(backend_error)
+        return answer
 
     @classmethod
     def looks_like(cls, text, *, status: str | None = None) -> bool:
@@ -393,7 +420,8 @@ def _managed_backend_answer(result: Any) -> str:
                 f"\n[Teilantwort vor dem Abbruch]\n{partial_text}"
                 if partial_text
                 else ""
-            )
+            ),
+            backend_error=result.get("backend_error"),
         )
 
     content = result.get("content")
@@ -434,6 +462,7 @@ class ChatSession(_ModuleChatSession):
         self.max_tool_rounds: Optional[int] = None
         self.allow_tools: bool = True
         self.worker_slot_reader: Any = None
+        self._trusted_memory_hook_opt_in: bool = False
         self.custom_system_prompt: str = ""
         self.profile_binding: dict | None = None
         self.profile_context_text: str = ""
@@ -525,6 +554,8 @@ class ChatRuntime(_ModuleChatRuntime):
         self._chat_turn_gates: dict[str, _ChatTurnGate] = {}
         self._chat_turn_gates_lock = threading.Lock()
         self._compute_turn_gate = _ComputeTurnGate()
+        self._local_resource_waiters: dict[str, dict] = {}
+        self._local_resource_waiters_lock = threading.Lock()
         self._compute_turn_context = ContextVar(
             f"bach_compute_turn_context_{id(self)}", default=None
         )
@@ -550,6 +581,11 @@ class ChatRuntime(_ModuleChatRuntime):
 
     @staticmethod
     def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
+        # This value is session-local and refreshed only from a native slot
+        # reader. Prompt/request text never supplies MemoryHook authority.
+        session._trusted_memory_hook_opt_in = False
+        system_memory_hook_opt_in = False
+        has_system_slot = False
         system_reader = getattr(session, "system_slot_reader", None)
         if system_reader is not None:
             try:
@@ -560,15 +596,21 @@ class ChatRuntime(_ModuleChatRuntime):
                 expected = getattr(session, "system_slot_configuration", {})
                 if any(system_slot.get(key) != value for key, value in expected.items()):
                     raise RuntimeError("Steckplatzkonfiguration hat sich während des Turns geändert")
+                system_memory_hook_opt_in = system_slot.get("memory_hook_opt_in", False)
+                if type(system_memory_hook_opt_in) is not bool:
+                    raise RuntimeError("Steckplatz MemoryHook-Opt-in ist nicht verifizierbar")
+                has_system_slot = True
                 session.allow_tools = system_slot.get("allow_tools", True) is True
                 session.allowed_tools = system_slot.get("allowed_tools")
                 from hub._services.skill_source_service import load_skill_instructions
                 load_skill_instructions(system_slot.get("skill_refs", []))
             except Exception as exc:
                 session.allow_tools = False
+                session._trusted_memory_hook_opt_in = False
                 return FailedAnswer.from_exception(exc)
         reader = getattr(session, "worker_slot_reader", None)
         if reader is None:
+            session._trusted_memory_hook_opt_in = system_memory_hook_opt_in if has_system_slot else False
             return None
         try:
             slot = reader()
@@ -576,6 +618,12 @@ class ChatRuntime(_ModuleChatRuntime):
                 raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
             if slot.get("enabled", True) is not True:
                 raise RuntimeError("Worker ist deaktiviert")
+            worker_memory_hook_opt_in = slot.get("memory_hook_opt_in", False)
+            if type(worker_memory_hook_opt_in) is not bool:
+                raise RuntimeError("Worker MemoryHook-Opt-in ist nicht verifizierbar")
+            # A worker reader is the more specific authority when a session
+            # carries both a system caller and a dynamic worker binding.
+            session._trusted_memory_hook_opt_in = worker_memory_hook_opt_in
             session.allow_tools = slot.get("allow_tools", True) is True
             session.allowed_tools = slot.get("allowed_tools")
             from hub._services.skill_source_service import load_skill_instructions
@@ -583,6 +631,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         except Exception as exc:
             session.allow_tools = False
+            session._trusted_memory_hook_opt_in = False
             return FailedAnswer.from_exception(exc)
 
     @classmethod
@@ -667,7 +716,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 if isinstance(content, FailedAnswer):
                     item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
                 elif status == FailedAnswer.STATUS_FAILED and isinstance(content, str):
-                    item["content"] = FailedAnswer(content)
+                    item["content"] = FailedAnswer(content, backend_error=item.get("backend_error"))
                 elif status == FailedAnswer.STATUS_SUCCESS:
                     if isinstance(content, str) and content.strip().startswith(FailedAnswer.PREFIX):
                         item["content"] = SuccessfulAnswer(content)
@@ -685,7 +734,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids")}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error")}
             for message in messages
         ]
 
@@ -711,6 +760,11 @@ class ChatRuntime(_ModuleChatRuntime):
                         else FailedAnswer.STATUS_SUCCESS
                     )
                 item[FailedAnswer.STATUS_KEY] = status
+                from hub._services.llm.backend_errors import normalize_backend_error
+                detail = normalize_backend_error(getattr(content, "backend_error", None) or item.get("backend_error"))
+                item.pop("backend_error", None)
+                if detail is not None and status == FailedAnswer.STATUS_FAILED:
+                    item["backend_error"] = detail
             stored.append(item)
         return stored
 
@@ -853,6 +907,8 @@ class ChatRuntime(_ModuleChatRuntime):
             session.allow_tools = True
         if not hasattr(session, "worker_slot_reader"):
             session.worker_slot_reader = None
+        if not hasattr(session, "_trusted_memory_hook_opt_in"):
+            session._trusted_memory_hook_opt_in = False
         if not hasattr(session, "operator_control"):
             session.operator_control = None
         if not hasattr(session, "custom_system_prompt"):
@@ -1039,6 +1095,68 @@ class ChatRuntime(_ModuleChatRuntime):
             gate.started_at = None
             gate.condition.notify_all()
 
+    def _model_binding_for_session(self, chat_id, backend, model, session):
+        from hub._services.chat.model_sockets import model_binding_for_call
+        from hub._services.llm.model_backend import backend_identifier
+
+        agent_id = getattr(session, "system_slot_id", None) if session is not None else None
+        if agent_id is None and session is not None and getattr(session, "worker_slot_reader", None):
+            agent_id = session.worker_slot_reader().get("id")
+        target_backend = backend_identifier(backend) or getattr(backend, "backend_id", "")
+        return model_binding_for_call(
+            chat_id, target_backend, str(model), agent_id=agent_id,
+            require_config=getattr(self, "require_model_socket_config", False),
+        )
+
+    async def prepare_inference_call(self, backend, model, *, chat_id=None):
+        """Probe the actual target and binding without taking a compute owner.
+
+        Resource waits are receipts, not admission to inference. Callers must
+        recheck after waiting; external aliases never need a local binding.
+        """
+        from hub._services.chat.local_resource_reserve import (
+            LocalReserveError,
+            probe,
+            read_policy,
+            require_retryable,
+        )
+        from hub._services.chat.local_model_admission import compose_admission_receipt
+
+        session = (self.sessions.get(str(chat_id)) or self.get_session(chat_id)) if chat_id is not None else None
+
+        def check_caller():
+            if session is not None and (
+                getattr(session, "worker_task_binding", None) is not None
+                or getattr(session, "require_task_binding", False)
+                or getattr(session, "system_slot_reader", None) is not None
+                or getattr(session, "worker_slot_reader", None) is not None
+            ):
+                problem = self._worker_backend_gate(session, backend, model)
+                if problem is not None:
+                    raise RuntimeError(str(problem))
+
+        check_caller()
+        if not self._uses_local_compute(backend) or str(model).lower().endswith(":cloud"):
+            return None, None
+        receipt = await probe(backend, model)
+        try:
+            _, version = read_policy()
+        except (OSError, ValueError, TypeError, UnicodeError):
+            raise LocalReserveError("Lokale Ressourcenfreigabe: invalid_policy") from None
+        if receipt.get("policy_version") != version:
+            raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
+        check_caller()
+        if receipt["state"] == "external_target":
+            return receipt, None
+        require_socket = bool(getattr(self, "require_model_socket_config", False))
+        binding = None
+        if receipt["admitted"] or receipt["state"] in {"waiting_memory_reserve", "waiting_disk_reserve"}:
+            binding = self._model_binding_for_session(chat_id or "runtime", backend, model, session)
+        receipt = compose_admission_receipt(
+            receipt, binding=binding, require_model_socket=require_socket)
+        require_retryable(receipt)
+        return receipt, binding
+
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         turn_context = self._compute_turn_context.get()
@@ -1065,6 +1183,7 @@ class ChatRuntime(_ModuleChatRuntime):
             )
         if not self._uses_local_compute(backend):
             return await backend.chat(*args, **kwargs)
+        selected_model = kwargs.get("model") or backend.get_default_model()
 
         chat_id, priority = turn_context or ("runtime", "foreground")
         from hub._services.chat.host_inference_gate import HostInferenceGate
@@ -1075,13 +1194,109 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "require_task_binding", False)
             or getattr(session, "system_slot_reader", None) is not None
             or getattr(session, "worker_slot_reader", None) is not None) else {})
-        async with HostInferenceGate().turn(chat_id, priority, **guard):
-            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
+        from hub._services.chat.local_resource_reserve import (
+            LocalReserveError,
+            read_policy,
+            require_retryable,
+        )
+
+        def check_model_binding():
+            return self._model_binding_for_session(chat_id, backend, selected_model, session)
+
+        def check_local_ready():
+            check_binding()
+            check_model_binding()
+
+        guard = {"check_ready": check_local_ready}
+        deadline = None
+        policy_bound = False
+        policy_version = None
+
+        def check_reserve_policy(receipt):
+            # A metadata request or gate wait can yield after the probe read
+            # its policy. Bind the file currently on disk before dispatch too.
             try:
+                _, current_version = read_policy()
+            except (OSError, ValueError, TypeError, UnicodeError):
+                raise LocalReserveError("Lokale Ressourcenfreigabe: invalid_policy") from None
+            if (receipt.get("policy_version") != policy_version
+                    or current_version != policy_version):
+                raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
+
+        try:
+            while True:
                 check_binding()
-                return await backend.chat(*args, **kwargs)
-            finally:
-                self._leave_compute_turn(self._compute_turn_gate)
+                receipt, _ = await self.prepare_inference_call(
+                    backend, selected_model, chat_id=chat_id if turn_context else None)
+                if receipt is None:
+                    return await backend.chat(*args, **kwargs)
+                if not policy_bound:
+                    policy_version = receipt.get("policy_version")
+                    policy_bound = True
+                check_reserve_policy(receipt)
+                check_binding()
+                if receipt["state"] == "external_target":
+                    with self._local_resource_waiters_lock:
+                        self._local_resource_waiters.pop(chat_id, None)
+                    return await backend.chat(*args, **kwargs)
+                require_retryable(receipt)
+                if receipt["admitted"]:
+                    model_binding = check_model_binding()
+                    target = ({key: model_binding[key] for key in
+                              ("socket_id", "binding_id", "agent_id", "backend", "model")}
+                              if model_binding is not None else None)
+                    async with HostInferenceGate().turn(chat_id, priority, model_target=target, **guard):
+                        # Resource availability can change while we waited for
+                        # the existing host owner. Recheck under that owner.
+                        receipt, _ = await self.prepare_inference_call(
+                            backend, selected_model, chat_id=chat_id if turn_context else None)
+                        if receipt is None:
+                            raise RuntimeError("model_socket_target_changed")
+                        check_reserve_policy(receipt)
+                        check_binding()
+                        require_retryable(receipt)
+                        if receipt["admitted"] and receipt["state"] != "external_target":
+                            current_binding = check_model_binding()
+                            if current_binding != model_binding:
+                                raise RuntimeError("model_socket_binding_changed")
+                            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
+                            try:
+                                check_binding()
+                                if check_model_binding() != model_binding:
+                                    raise RuntimeError("model_socket_binding_changed")
+                                check_reserve_policy(receipt)
+                                with self._local_resource_waiters_lock:
+                                    self._local_resource_waiters.pop(chat_id, None)
+                                return await backend.chat(*args, **kwargs)
+                            finally:
+                                self._leave_compute_turn(self._compute_turn_gate)
+                    if receipt["state"] == "external_target":
+                        # An alias may have changed while waiting. External
+                        # inference runs only after returning the host owner.
+                        check_binding()
+                        check_reserve_policy(receipt)
+                        with self._local_resource_waiters_lock:
+                            self._local_resource_waiters.pop(chat_id, None)
+                        return await backend.chat(*args, **kwargs)
+                # The host owner has been returned before reserve polling.
+                # We stay at this model-call boundary: previous tools and the
+                # task/session context are not replayed or reset.
+                with self._local_resource_waiters_lock:
+                    self._local_resource_waiters[chat_id] = dict(receipt)
+                if deadline is None:
+                    deadline = time.monotonic() + receipt["wait_seconds"]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
+                # Check cancellation, policy downgrades and native lease loss
+                # frequently even if the resource probe interval is longer.
+                poll_deadline = time.monotonic() + min(remaining, receipt["poll_seconds"])
+                while time.monotonic() < poll_deadline:
+                    check_binding()
+                    await asyncio.sleep(min(.1, max(0, poll_deadline - time.monotonic())))
+        finally:
+            with self._local_resource_waiters_lock:
+                self._local_resource_waiters.pop(chat_id, None)
 
     def _reset_task_completion_receipts(self, chat_id: str) -> None:
         with self._task_completion_receipts_lock:
@@ -1157,7 +1372,15 @@ class ChatRuntime(_ModuleChatRuntime):
         """Return live evidence about which BACH run currently owns local inference."""
         from hub._services.chat.host_inference_gate import HostInferenceGate
 
-        return HostInferenceGate().status()
+        result = HostInferenceGate().status()
+        with self._local_resource_waiters_lock:
+            if self._local_resource_waiters:
+                result["resource_waiters"] = [
+                    {"chat_id": chat_id, **receipt}
+                    for chat_id, receipt in list(self._local_resource_waiters.items())[:64]
+                ]
+                result["resource_waiter_count"] = len(self._local_resource_waiters)
+        return result
 
     @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
@@ -1460,10 +1683,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             and self.compute_gate is not None
             and self.compute_gate(selected_backend)
         ):
-            raise ComputeLocked(
-                "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
-                "Rechenjobs nicht in den Swap gedraengt werden."
-            )
+            actual_local = True
+            if self._uses_local_compute(selected_backend):
+                candidate_model = model or getattr(known_session, "model", "") or selected_backend.get_default_model()
+                receipt, _ = await self.prepare_inference_call(
+                    selected_backend, candidate_model, chat_id=chat_id if known_session is not None else None)
+                # A localhost Ollama cloud proxy does not compete for this
+                # host's compute. Do not bypass using a stale caller receipt.
+                actual_local = receipt is not None and receipt["state"] != "external_target"
+            if actual_local:
+                raise ComputeLocked(
+                    "Compute-Lock aktiv -- kein Modell-Load, damit laufende "
+                    "Rechenjobs nicht in den Swap gedraengt werden."
+                )
         session = self.get_session(chat_id)
         selected_model = model or session.model or selected_backend.get_default_model()
         if str(chat_id).startswith("agent:"):
@@ -1523,16 +1755,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
 
         bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
-        # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
-        # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
-        # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
-        hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)
-
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
-        if hook_ctx and not getattr(session, "custom_system_prompt", ""):
-            sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
+        custom_prompt = getattr(session, "custom_system_prompt", "")
+        legacy_memory_hook = session.profile_binding is None and not custom_prompt
+        configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
+        if legacy_memory_hook or configured_memory_hook:
+            # Assemble the persona first, then evaluate the existing hook once.
+            # Only a native slot reader can opt profile/custom-prompt sessions in.
+            hook_ctx = self._get_memory_hook_context(text, chat_id)
+            if hook_ctx:
+                sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
         if session.allow_tools is False:
             sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
@@ -1737,7 +1971,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 teil = result.get("content") or ""
                 return FailedAnswer(
                     f"{FailedAnswer.PREFIX}{result['error']}"
-                    + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else "")
+                    + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
+                    backend_error=result.get("backend_error"),
                 )
 
             if self._context_voll(
@@ -1843,12 +2078,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 grants = getattr(session, "allowed_tools", None)
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
-                tool_kwargs = {}
-                if self.agent_operations is not None:
-                    tool_kwargs = {"agent_operations": self.agent_operations, "allowed_tools": grants}
-                if binding is not None or getattr(session, "require_task_binding", False):
-                    tool_kwargs.update({"worker_task_binding": binding,
-                                   "require_task_binding": getattr(session, "require_task_binding", False)})
+                tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,
@@ -1859,9 +2089,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
                         actions.confirm(binding)
+                    completed = binding.completed_task_ids
                     with self._task_completion_receipts_lock:
                         receipts = self._task_completion_receipts.setdefault(str(session.chat_id), [])
-                        for task_id in binding.completed_task_ids:
+                        for task_id in completed:
                             if task_id not in receipts:
                                 receipts.append(task_id)
                     if binding.closed:

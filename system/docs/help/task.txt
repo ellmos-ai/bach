@@ -103,3 +103,12 @@ Abhängigkeitserkennung: Tasks werden automatisch mit (BLOCKED)-Flag bei
 unvollendeten Abhängigkeiten angezeigt
 Hooks: after_task_create, after_task_done werden bei Operationen emittiert
 Fälligkeit: --due akzeptiert ausschließlich ein gültiges ISO-Datum YYYY-MM-DD
+
+
+Atomare Zuweisung beim Anlegen: bach task add "Dokuprüfung" --assigned bach.
+Auch --assigned=bach und -a bach sind möglich. Ein leerer oder fehlender Name
+wird vor dem INSERT abgewiesen. Ohne Option bleibt der Datenbankstandard erhalten.
+Die strukturierte API bietet task.add("Dokuprüfung", assigned_to="bach").
+Offline-Entwürfe behalten ihre Zuweisung bei der Promotion. Die zusätzlichen
+Auth-, Modell-/Slot- und Assignment-Gates des Leads gelten weiterhin.
+Diese Optionen starten keinen Worker und vergeben keine Task-Lease.

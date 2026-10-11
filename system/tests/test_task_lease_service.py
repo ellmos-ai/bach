@@ -747,23 +747,32 @@ class TestLegacyPathsRespectLease:
     def test_generic_status_update_fences_acquire_after_preflight(self, db_path):
         other = _connect(db_path)
         ensure_task_lease_schema(other)
+        other.execute("PRAGMA busy_timeout = 0")
         tid = _insert(other)
+        acquire_blocked = []
 
         class AcquireBeforeUpdate(sqlite3.Connection):
             def execute(self, sql, parameters=(), /):
                 if sql.startswith("UPDATE tasks SET"):
-                    _acq(other, tid, now=datetime.now(timezone.utc))
+                    try:
+                        _acq(other, tid, now=datetime.now(timezone.utc))
+                    except sqlite3.OperationalError as exc:
+                        assert "locked" in str(exc)
+                        acquire_blocked.append(True)
                 return super().execute(sql, parameters)
 
         conn = sqlite3.connect(str(db_path), factory=AcquireBeforeUpdate)
         conn.row_factory = sqlite3.Row
         try:
             stale = _get(conn, tid)
-            with pytest.raises(LeaseRequired):
-                apply_task_field_changes(conn, tid, stale, {"status": "done"})
+            # Completion now takes BEGIN IMMEDIATE before checking result
+            # authority. An acquire cannot pass that check and race the UPDATE.
+            assert apply_task_field_changes(conn, tid, stale, {"status": "done"})
+            assert acquire_blocked == [True]
             conn.rollback()
-            assert _get(other, tid)["status"] == "in_progress"
+            assert _get(other, tid)["status"] == "pending"
             assert not other.execute("SELECT 1 FROM task_history WHERE action = 'status_change'").fetchone()
+            assert _acq(other, tid, now=datetime.now(timezone.utc)).payload["granted"]
         finally:
             conn.close()
             other.close()

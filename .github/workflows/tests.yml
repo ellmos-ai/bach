@@ -72,6 +72,49 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py
 
+      - name: Native documentation maintenance and atomic task ownership
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_docs_maintenance.py system/tests/test_task_handler.py system/tests/test_task_slot_fields.py system/tests/test_rheingold_handler.py
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/NemoFold
+          ref: fe71fb58e510b8c819126da37a05332d0d189c79
+          path: .ci-sources/native-nemofold
+          persist-credentials: false
+
+      - name: Learning candidate quarantine and versioned review
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: ${{ github.workspace }}/.ci-sources/native-nemofold/src
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_learning_promotion_contract.py system/tests/test_hermes_skill_distillation.py system/tests/test_nemofold_workflow_synthesis.py system/tests/test_learning_sources.py system/tests/test_learning_source_http_limits.py
+
+      - name: Native cognitive process model and read-only observations
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_gui_gux_kognitiver_schaltplan.py system/tests/test_cognitive_gui.py
+
+      - name: Local model sockets and host admission
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
+
+      - name: Native worker provider errors
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_backend_errors.py
+
+      - name: Native task assignment and dynamic worker profiles
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_task_assignment.py system/tests/test_task_worker_profiles.py system/tests/test_user_inbox_api.py
+
       - name: "pytest (T-20260927-676283213: alle lokal ohne Live-Dienste gruenen Dateien)"
         env:
           PYTHONIOENCODING: utf-8
@@ -151,11 +194,14 @@ jobs:
             system/tests/test_gesundheit_handler.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
+            system/tests/test_agent_history_delivery.py \
+            system/tests/test_domain_pin_store.py \
             system/tests/test_gui_domain_catalog.py \
             system/tests/test_gui_mounts_contract.py \
             system/tests/test_gui_prompt_manager.py \
             system/tests/test_blueprint_runtime_delivery.py \
             system/tests/test_blueprint_teams_delivery.py \
+            system/tests/test_template_providers.py \
             system/tests/test_gui_gux_fabrika_blueprints.py \
             system/tests/test_system_slots_delivery.py \
             system/tests/test_gui_privacy_boundary.py \
@@ -163,6 +209,10 @@ jobs:
             system/tests/test_gui_server.py \
             system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
+            system/tests/test_catalog_projection.py \
+            system/tests/test_capability_boards.py \
+            system/tests/test_gui_capabilities_page_reads.py \
+            system/tests/test_skills_board_hardening.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
             system/tests/test_unified_dashboard_xss.py \
@@ -226,6 +276,8 @@ jobs:
             system/tests/test_prompt_chat_draft.py \
             system/tests/test_prompt_generator.py \
             system/tests/test_prompt_handler.py \
+            system/tests/test_promptboard_import.py \
+            system/tests/test_prompt_tag_compatibility.py \
             system/tests/test_prosync_race.py \
             system/tests/test_recurring_tasks.py \
             system/tests/test_reflection_handler.py \

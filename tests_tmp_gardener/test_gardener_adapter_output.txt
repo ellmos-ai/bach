@@ -1,0 +1,24 @@
+=== test_gardener_adapter.py (Task 1675, M3 gardener-Adapter) ===
+[PASS] Lauf1: ok == True | ok=True, msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf1: Meldung '2 User- + 2 System-Eintraege indexiert' | msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf1 (a): Checksumme user.db unveraendert (read-only) | erwartet=cb6c139dd0e98131bc0813af1731d6cf31b745ab09c3c974365aea8256607fc8, ist=cb6c139dd0e98131bc0813af1731d6cf31b745ab09c3c974365aea8256607fc8
+[PASS] Lauf1 (a): Checksumme gardener.db unveraendert (read-only) | erwartet=af00121609103abc8a9c34f929571ccd3308a91a7349eccffea733c47cd4de38, ist=af00121609103abc8a9c34f929571ccd3308a91a7349eccffea733c47cd4de38
+[PASS] Lauf1 (b): 2 Eintraege source='gardener_user' | counts={'gardener_user': 2, 'gardener_system': 2}
+[PASS] Lauf1 (b): 2 Eintraege source='gardener_system' | counts={'gardener_user': 2, 'gardener_system': 2}
+[PASS] Lauf1 (c): Tags user-note-2 == {'a','obst','pinned'} | tags=['a', 'obst', 'pinned']
+[PASS] Lauf1 (d): 1 gardener_system-Zeile mit observed_at im meta-Anhang | count=1
+[PASS] Lauf1 (d): search('observed_at') -> genau 1 Treffer gardener_system | source='gardener_system', source_id='observed/src-1/test.md', source_path='/Users/lukas/services/bach-worktrees/task-1675/tests_tmp_gardener/fixture_data/gardener.db', category='observed', erwartet path='/Users/lukas/services/bach-worktrees/task-1675/tests_tmp_gardener/fixture_data/gardener.db'
+[PASS] Lauf2: ok == True (Idempotenz) | ok=True, msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf2: Meldung wieder 2 + 2 | msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf2: counts wieder 2 + 2 | counts={'gardener_user': 2, 'gardener_system': 2}
+[PASS] Lauf2: Checksummen unveraendert | user_unchanged=True, sys_unchanged=True
+[PASS] fail-soft1: ok == True und 'uebersprungen' in Meldung | ok=True, msg='[Gardener] Datenverzeichnis nicht gefunden: /Users/lukas/services/bach-worktrees/task-1675/tests_tmp_gardener/gibt_es_nicht, uebersprungen.'
+[PASS] fail-soft1 (Bonus): Index bleibt 2 + 2 | counts={'gardener_user': 2, 'gardener_system': 2}
+[PASS] fail-soft2: ok == True und 'nicht gefunden' in Meldung | ok=True, msg='[Gardener] 0 User- + 0 System-Eintraege indexiert; nicht gefunden: /Users/lukas/services/bach-worktrees/task-1675/tests_tmp_gardener/leeres_verzeichnis/user.db, /Users/lukas/services/bach-worktrees/task-1675/tests_tmp_gardener/leeres_verzeichnis/gardener.db'
+[PASS] fail-soft2: Loeschblock lief, Index danach 0 + 0 | counts={'gardener_user': 0, 'gardener_system': 0}
+[PASS] Lauf3: ok == True nach fail-soft2 | ok=True, msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf3: Meldung wieder 2 + 2 | msg='[Gardener] 2 User- + 2 System-Eintraege indexiert'
+[PASS] Lauf3: counts wieder 2 + 2 | counts={'gardener_user': 2, 'gardener_system': 2}
+[PASS] Lauf3: Checksummen unveraendert | user_unchanged=True, sys_unchanged=True
+Gesamt: 21/21 Checks bestanden, 0 fehlgeschlagen
+ERGEBNIS: PASSED
