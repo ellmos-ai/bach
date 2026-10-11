@@ -1078,6 +1078,7 @@ class ChatRuntime(_ModuleChatRuntime):
             read_policy,
             require_retryable,
         )
+        from hub._services.chat.local_model_admission import compose_admission_receipt
 
         session = (self.sessions.get(str(chat_id)) or self.get_session(chat_id)) if chat_id is not None else None
 
@@ -1105,10 +1106,13 @@ class ChatRuntime(_ModuleChatRuntime):
         check_caller()
         if receipt["state"] == "external_target":
             return receipt, None
-        require_retryable(receipt)
+        require_socket = bool(getattr(self, "require_model_socket_config", False))
         binding = None
         if receipt["admitted"] or receipt["state"] in {"waiting_memory_reserve", "waiting_disk_reserve"}:
             binding = self._model_binding_for_session(chat_id or "runtime", backend, model, session)
+        receipt = compose_admission_receipt(
+            receipt, binding=binding, require_model_socket=require_socket)
+        require_retryable(receipt)
         return receipt, binding
 
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
