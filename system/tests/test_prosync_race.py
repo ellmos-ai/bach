@@ -34,7 +34,10 @@ def _create_minimal_db(path: Path):
 def test_race_condition():
     """Modifying local DB after backup arrives must NOT hide the backup."""
     with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
+        # macOS may expose the temporary directory through /var -> /private.
+        # Use its physical spelling so the production linked-path guard is
+        # still exercised only by tests that intentionally create a link.
+        tmp = Path(tmp).resolve()
         transit = tmp / "transit"
         transit.mkdir()
         local_bach = tmp / "local_bach"
@@ -73,7 +76,10 @@ def test_race_condition():
 def test_own_backups_excluded():
     """Backups from own hostname must never appear in find_newer_backups()."""
     with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
+        # macOS may expose the temporary directory through /var -> /private.
+        # Use its physical spelling so the production linked-path guard is
+        # still exercised only by tests that intentionally create a link.
+        tmp = Path(tmp).resolve()
         transit = tmp / "transit"
         transit.mkdir()
         local_bach = tmp / "local_bach"
