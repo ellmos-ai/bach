@@ -36,6 +36,7 @@ def launch_plan(root: Path, python: Path, task_db: Path, runtime: Path, config: 
         "RunAtLoad": True,
         "StandardOutPath": str(runtime / "scheduler.stdout.log"),
         "StandardErrorPath": str(runtime / "scheduler.stderr.log"),
+        "Umask": "077",
         "KeepAlive": True,
         "ThrottleInterval": 60,
         "EnvironmentVariables": {
