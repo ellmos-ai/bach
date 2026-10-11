@@ -2085,11 +2085,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     msgs.append({"role": "user", "content": instruction})
 
             try:
+                previous_backend = selected_backend
+                previous_model = selected_model
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
                 )
-                context_limit = self._context_limit_for_backend(selected_backend, selected_model)
+                if selected_backend is not previous_backend or selected_model != previous_model:
+                    context_limit = self._context_limit_for_backend(selected_backend, selected_model)
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
