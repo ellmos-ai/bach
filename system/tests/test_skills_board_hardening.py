@@ -335,3 +335,11 @@ def test_gui_capabilities_declares_the_assignment_route(board):
     assert ("GET", "/api/skills-board/hierarchy") in declared
     assert ("PUT", "/api/skills-board/hierarchy") in declared
     assert not any(path.startswith("/api/skills-board/item-file") for _, path in declared)   # retired routes are not advertised
+
+
+def test_gui_capabilities_pages_name_the_endpoints_the_gui_reads(board):
+    """/skills reads the library inventory (not /api/capabilities/skills); the optional assignment tab is its own entry.
+    Only the declared requirements are pinned: under `from gui import server` the unified router is not mounted (circular import), so the status is not testable here."""
+    pages = {p["path"]: p for p in board.client.get("/api/gui/capabilities").json()["pages"]}
+    assert pages["/skills"]["requires"] == ["GET /api/capabilities/skills/library"]
+    assert pages["/skills#zuordnung"]["requires"] == ["GET /api/skills-board/hierarchy"]
