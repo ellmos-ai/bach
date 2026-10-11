@@ -325,3 +325,13 @@ def test_dryrun_handles_a_missing_json_file_and_cli_output(board, tmp_path, caps
     assert "DRY-RUN" in capsys.readouterr().out
     assert dryrun.main(["--json", str(tmp_path / "absent.json"), "--db", str(board.db_path), "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)["changes_made"] is False
+
+
+def test_gui_capabilities_declares_the_assignment_route(board):
+    """The GUI tab "Zuordnung" is offered only when GET and PUT of the hierarchy route are declared here (Ocean without the adapter shows it as unavailable)."""
+    response = board.client.get("/api/gui/capabilities")
+    assert response.status_code == 200
+    declared = {(e["method"], e["path"]) for e in response.json()["endpoints"]}
+    assert ("GET", "/api/skills-board/hierarchy") in declared
+    assert ("PUT", "/api/skills-board/hierarchy") in declared
+    assert not any(path.startswith("/api/skills-board/item-file") for _, path in declared)   # retired routes are not advertised

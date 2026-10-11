@@ -6,7 +6,7 @@ from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
 PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
-            "/api/domains/", "/api/artifacts", "/api/calendar/", "/api/gui/")
+            "/api/domains/", "/api/artifacts", "/api/calendar/", "/api/gui/", "/api/skills-board/hierarchy")
 PAGE_READS = {
     "/": ["/api/system/cluster-cockpit"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
