@@ -6134,7 +6134,11 @@ def register_handlers(app) -> None:
 
 def main():
     global TELEGRAM_VERIFIED
-    control_server = start_control_api()
+    from hub._services.document.report_host_loader import load_report_host_dependencies
+
+    control_server = start_control_api(
+        report_host_dependencies=load_report_host_dependencies(CONFIG.get("reports")),
+    )
     if control_server is None:
         print("Chat/Control konnte nicht gestartet werden.")
         return 1

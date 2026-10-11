@@ -71,3 +71,36 @@ Die Transportregressionen prüfen zusätzlich einen flüchtigen Loopback-HTTP-Se
 ## Auswahl der Control-Zugangsdaten
 
 Ein gesetzter BACH_CONTROL_API_TOKEN hat Vorrang. Wird BACH_CONTROL_API_TOKEN_FILE ausdrücklich gesetzt, ist allein diese Datei die nächste Quelle: fehlend, leer, nicht lesbar oder ungültiges UTF-8 bedeutet unavailable. Es erfolgt dann kein Rückfall auf einen anderen Standardschlüssel oder Keyring. Ohne expliziten Dateipfad bleibt die bestehende Standardschlüssel-/Keyringauflösung erhalten.
+
+## Installierte Hostabhängigkeiten und Operator-Client
+
+Der Control-Einstieg lädt optionale Hostabhängigkeiten beim Start über
+`load_report_host_dependencies(CONFIG.get("reports"))`. Nur ein vollständig
+valides, ausdrücklich aktiviertes Objekt mit `enabled`, `provider_name` und
+`agent_id` erlaubt die Auswahl. Im installierten Entry-Point-Verzeichnis
+`ellmos.report_host_dependencies` muss genau eine Factory mit dem konfigurierten
+Providernamen vorhanden sein. Sie erhält keine Argumente und löst ihre eigene
+private Konfiguration auf. Der öffentliche Loader enthält keine privaten Pfade,
+Vorlagen, Modelle oder Zugangsdaten.
+
+Die Factory liefert ausschließlich die vorhandenen Hostabhängigkeiten
+`word_template`, `anonymizer`, `document_reader`, `operator_confirmation` und
+`cloud_model`, soweit konfiguriert. Der bestehende Hostassembler prüft deren
+Ports. Das lokale Modell bleibt an den vorhandenen ChatRuntime und seinen
+Governance-Vertrag gebunden. Fehlende, mehrdeutige oder fehlerhafte Plugins bleiben
+unavailable; es gibt keine Auswahl eines Ersatzproviders und keine neue Runtime.
+Ein installierter Python-Entry-Point ist vertrauenswürdiger Hostcode, keine Sandbox.
+
+Der BACH-Editable-Install registriert `ellmos.report_clients / bach-control` mit
+`bach_report_client:create_report_control_client`. Der Root-Shim findet den
+Systemcode relativ zu seiner eigenen Installation. Der Client verwendet exakt
+den vorhandenen GUI-Control-Transport mit seinen neun festen RPC-Pfaden,
+konfigurierter Zielauflösung, Identitätsprüfung und Authentifizierung. Die
+Konstruktion startet weder Netzwerkverkehr noch Inferenz und stellt keine
+menschliche Bestätigung aus. Es gibt keine URL- oder Tokenparameter im Factoryvertrag.
+Die private Operator-CLI muss diesen installierten Client ausdrücklich konsumieren.
+
+Dieser Anschluss ergänzt den bestehenden quellgebundenen Editable-Install; er
+behauptet keinen eigenständigen BACH-Wheel mit vollständig enthaltenem Systembaum.
+Die produktive private Hostfactory, sichere persistente Ports, menschliche
+Bestätigung und tatsächliche Berichtausführung bleiben gesondert abzunehmen.

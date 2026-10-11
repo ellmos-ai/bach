@@ -17,8 +17,11 @@ dynamic = ["dependencies", "optional-dependencies"]
 [project.scripts]
 bach = "bach:main"
 
+[project.entry-points."ellmos.report_clients"]
+bach-control = "bach_report_client:create_report_control_client"
+
 [tool.setuptools]
-py-modules = ["bach", "bach_api"]
+py-modules = ["bach", "bach_api", "bach_report_client"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
