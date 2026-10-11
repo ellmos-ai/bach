@@ -446,7 +446,7 @@ def test_bound_check_keeps_compileall_bytecode_inside_task_tree(tmp_path, monkey
     assert calls[0][1] == str(target) and calls[0][2] is False
     assert calls[0][3]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert calls[0][3]["PYTHONPYCACHEPREFIX"] == str(target / ".worker-check" / "python-pycache")
-    assert calls[0][3]["BACH_DB"] == str(target / ".worker-check" / "bach.db")
+    assert calls[0][3]["BACH_DB"] == str(target / ".worker-check" / "worker-check.sqlite3")
 
 
 def test_bound_check_runs_pytest_with_task_local_inputs_outputs_and_environment(tmp_path, monkeypatch):
@@ -480,14 +480,14 @@ def test_bound_check_runs_pytest_with_task_local_inputs_outputs_and_environment(
     assert "testpaths=" + str(target) in argv and "confcutdir=" + str(target) in argv
     assert argv.index("--") > argv.index("cache_dir=" + str(target / ".worker-check" / "pytest-cache"))
     assert cwd == str(target) and shell is False
-    assert env["BACH_DB"] == str(target / ".worker-check" / "bach.db")
+    assert env["BACH_DB"] == str(target / ".worker-check" / "worker-check.sqlite3")
     assert env["PYTHONPYCACHEPREFIX"] == str(target / ".worker-check" / "python-pycache")
     assert env["PYTEST_ADDOPTS"] == "" and env["PYTEST_PLUGINS"] == ""
     assert env["RUFF_CACHE_DIR"] == str(target / ".worker-check" / "ruff-cache")
     authorized = set(authorized_paths)
     for relative in ("home", "tmp", "xdg-cache", "python-pycache", "ruff-cache", "mypy-cache",
                      "pyright-cache", "npm-cache", "pip-cache", "uv-cache", "pre-commit-cache",
-                     ".coverage", "pytest-debug-temp", "bach.db", "npmrc", "npm-globalrc",
+                     ".coverage", "pytest-debug-temp", "worker-check.sqlite3", "npmrc", "npm-globalrc",
                      "local-app-data", "app-data", "pytest-temp", "pytest-cache"):
         assert target / ".worker-check" / relative in authorized
     assert external_db not in authorized

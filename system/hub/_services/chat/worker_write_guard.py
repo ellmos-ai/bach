@@ -677,7 +677,7 @@ def _worker_check_environment(task_root):
         "PRE_COMMIT_HOME": state / "pre-commit-cache",
         "COVERAGE_FILE": state / ".coverage",
         "PYTEST_DEBUG_TEMPROOT": state / "pytest-debug-temp",
-        "BACH_DB": state / "bach.db",
+        "BACH_DB": state / "worker-check.sqlite3",
         "NPM_CONFIG_USERCONFIG": state / "npmrc",
         "NPM_CONFIG_GLOBALCONFIG": state / "npm-globalrc",
         "LOCALAPPDATA": state / "local-app-data",

@@ -357,10 +357,10 @@ def _authorized_file_mutation_paths(source, destination, worker_task_binding=Non
         def checked_path(value, *, must_exist):
             if not isinstance(value, str) or not value.strip() or chr(0) in value:
                 raise ValueError("Pfad fehlt oder ist ungültig")
-            candidate = Path(value).expanduser()
-            if not candidate.is_absolute():
-                candidate = Path.cwd() / candidate
-            lexical = os.path.abspath(os.fspath(candidate))
+            expanded = os.path.expanduser(value)
+            if not os.path.isabs(expanded):
+                expanded = os.path.join(os.getcwd(), expanded)
+            lexical = os.path.abspath(expanded)
             normalized = os.path.realpath(lexical)
             root_text = os.path.realpath(os.fspath(trusted_root))
             path_key = os.path.normcase(normalized)

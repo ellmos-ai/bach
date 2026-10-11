@@ -165,7 +165,7 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
         "PYRIGHT_PYTHON_CACHE_DIR": state / "pyright-cache", "npm_config_cache": state / "npm-cache",
         "PIP_CACHE_DIR": state / "pip-cache", "UV_CACHE_DIR": state / "uv-cache",
         "PRE_COMMIT_HOME": state / "pre-commit-cache", "COVERAGE_FILE": state / ".coverage",
-        "PYTEST_DEBUG_TEMPROOT": state / "pytest-debug-temp", "BACH_DB": state / "bach.db",
+        "PYTEST_DEBUG_TEMPROOT": state / "pytest-debug-temp", "BACH_DB": state / "worker-check.sqlite3",
         "NPM_CONFIG_USERCONFIG": state / "npmrc", "NPM_CONFIG_GLOBALCONFIG": state / "npm-globalrc",
         "LOCALAPPDATA": state / "local-app-data", "APPDATA": state / "app-data",
     }
