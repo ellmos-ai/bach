@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1783,7 +1784,9 @@ class TestControlHandlerEndpoints:
         assert started and ended
         start_details = started[0]["details"]
         asgn = start_details["assignment_id"]
-        assert asgn.startswith("asgn-")
+        parsed_assignment_id = uuid.UUID(asgn)
+        assert parsed_assignment_id.version == 4
+        assert str(parsed_assignment_id) == asgn
         assert start_details["role_id"] == "task_worker"
         assert start_details["initiated_by"] == f"board:{worker_id}"
         match = [e for e in ended if e["details"]["assignment_id"] == asgn]

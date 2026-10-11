@@ -261,6 +261,107 @@ def test_arbitrary_scanner_cannot_grant_lock_authority(tmp_path, monkeypatch):
         CanonicalLockGuard(config(tmp_path))(tmp_path)
 
 
+def _exact_delta_review_row(dispatcher, *, task_id=77):
+    files = ["system/hub/_services/chat/worker.py"]
+    root_id = hashlib.sha256(str(dispatcher.root.resolve()).encode()).hexdigest()[:8]
+    title = f"Doku-Delta workers {root_id} {REV[:12]}"
+    return {
+        "id": task_id,
+        "title": title,
+        "status": "review",
+        "description": dispatcher._description("workers", REV, files),
+        "category": "WORKER",
+        "assigned_to": "user",
+        "assigned_slot": dispatcher.binding.get("assigned_slot", ""),
+        "required_model": dispatcher.binding.get("required_model", ""),
+    }
+
+
+def test_exact_human_review_handoff_recovers_without_acceptance(fixture):
+    dispatcher, tasks = fixture
+    dispatcher.binding = {
+        "assigned_slot": "worker-5c70b1e2",
+        "required_model": "glm-5.3:cloud",
+    }
+    row = _exact_delta_review_row(dispatcher, task_id=2051)
+    tasks.rows.append(dict(row))
+    dispatcher.result_reader = lambda task_id: result(task_id, status="review")
+
+    outcome = dispatcher.dispatch()
+
+    item = read_state(dispatcher.state_path)["packages"]["workers"]
+    assert outcome["dispatch_action"] == "recovered"
+    assert outcome["task_id"] == row["id"]
+    assert outcome["semantic_review_completed"] is False
+    assert item["task_status"] == "review"
+    assert item["result_accepted"] is False
+    assert item["last_review_success"] is None
+    assert item["last_repair_success"] is None
+    assert tasks.rows == [row]
+    assert tasks.adds == 0
+
+
+def test_actual_2051_root_review_row_recovers_with_observed_payload(fixture):
+    dispatcher, tasks = fixture
+    dispatcher.binding = {
+        "assigned_slot": "worker-5c70b1e2",
+        "required_model": "glm-5.3:cloud",
+    }
+    revision = "1bfc1fe3634f01ad099f8eb15cbc43904da15610"
+    files = ["docs/GUX-Abnahmeblatt.md"]
+    title = "Doku-Delta root 969c569e 1bfc1fe3634f"
+    description = dispatcher._description("root", revision, files)
+    assert (
+        hashlib.sha256(description.encode("utf-8")).hexdigest()
+        == "25c522dfbbfee2e35d683df422ba2f9cf9df73a8dd5aebcc2ed6c114d08bf701"
+    )
+    row = {
+        "id": 2051,
+        "title": title,
+        "status": "review",
+        "description": description,
+        "category": "WORKER",
+        "assigned_to": "user",
+        "assigned_slot": "worker-5c70b1e2",
+        "required_model": "glm-5.3:cloud",
+    }
+    tasks.rows.append(dict(row))
+
+    task_id, action = dispatcher._ensure_task(title, description)
+
+    assert (task_id, action) == (2051, "recovered")
+    assert tasks.rows == [row]
+    assert tasks.rows[0]["status"] == "review"
+    assert tasks.adds == 0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("description", "foreign task"),
+        ("category", "GENERAL"),
+        ("assigned_slot", "slot-other"),
+        ("required_model", "model-other"),
+        ("status", "pending"),
+        ("assigned_to", ""),
+    ],
+)
+def test_human_review_handoff_requires_exact_identity_and_binding(
+    fixture, field, value
+):
+    dispatcher, tasks = fixture
+    dispatcher.binding = {"assigned_slot": "slot-a", "required_model": "model-a"}
+    row = _exact_delta_review_row(dispatcher)
+    row[field] = value
+    tasks.rows.append(dict(row))
+
+    with pytest.raises(RuntimeError, match="binding_conflict"):
+        dispatcher.dispatch()
+
+    assert tasks.rows == [row]
+    assert tasks.adds == 0
+
+
 def test_same_title_with_changed_authority_is_not_adopted(fixture):
     dispatcher, tasks = fixture
     tasks.fail_ack = True
@@ -397,22 +498,35 @@ def test_invalid_owner_config_blocks_only_doc_legacy(tmp_path):
 
 
 def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
+    import plistlib
     import sys
 
     from hub._services.docs.maintenance_launch import launch_plan
 
-    script = tmp_path / "system/tools/maintenance/scheduler_maintenance.py"
+    root = tmp_path / "repo"
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    script = root / "system/tools/maintenance/scheduler_maintenance.py"
     script.parent.mkdir(parents=True)
     script.touch()
+    local.mkdir()
     data = launch_plan(
-        tmp_path,
+        root,
         Path(sys.executable).resolve(),
-        tmp_path / "bach.db",
-        tmp_path / "runtime",
-        tmp_path / "runtime/config.json",
+        local / "bach.db",
+        runtime,
+        runtime / "config.json",
     )
+    plist = plistlib.loads(data["launch_agent"].encode("utf-8"))
     assert data["installed"] is False and data["started"] is False
-    assert not (tmp_path / "runtime").exists()
+    assert plist["StandardOutPath"] == str(runtime / "scheduler.stdout.log")
+    assert plist["StandardErrorPath"] == str(runtime / "scheduler.stderr.log")
+    assert all(
+        Path(plist[key]).parent == runtime
+        and "onedrive" not in plist[key].casefold()
+        for key in ("StandardOutPath", "StandardErrorPath")
+    )
+    assert not runtime.exists()
 
 
 def test_cli_launch_plan_preserves_virtual_environment_interpreter(tmp_path, monkeypatch):
@@ -441,6 +555,127 @@ def test_cli_launch_plan_preserves_virtual_environment_interpreter(tmp_path, mon
     assert plan["program_arguments"][0] == str(interpreter.absolute())
     assert not (tmp_path / "maintenance").exists()
     assert plan["installed"] is False and plan["started"] is False
+
+
+def test_entrypoint_imports_handler_and_coordinator_from_stage():
+    import importlib.util
+    import inspect
+
+    from hub._services.docs import maintenance_cli
+    from hub import scheduler as scheduler_module
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_entrypoint_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    handler_type = entrypoint.load_handler()
+    expected_root = entrypoint.SYSTEM_ROOT.resolve()
+    assert handler_type is scheduler_module.SchedulerHandler
+    assert Path(inspect.getsourcefile(handler_type)).resolve().is_relative_to(
+        expected_root
+    )
+    assert Path(maintenance_cli.__file__).resolve().is_relative_to(expected_root)
+
+
+def test_cli_failure_writes_redacted_runtime_receipt(tmp_path, monkeypatch, capsys):
+    from hub._services.docs import maintenance_cli
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    root = tmp_path / "repo"
+    system = root / "system"
+    system.mkdir(parents=True)
+    handler = SimpleNamespace(
+        base_path=system,
+        user_db=local / "bach.db",
+        _external_state_db=lambda: local / "scheduler.db",
+    )
+
+    class FailingRuntime:
+        def __init__(self, *_args, **_options):
+            self.stop_event = SimpleNamespace(set=lambda: None)
+
+        def tick(self):
+            raise RuntimeError("private_token=do-not-copy")
+
+    monkeypatch.setattr(
+        maintenance_cli, "CanonicalLockGuard", lambda _config: lambda _path: None
+    )
+    monkeypatch.setattr(maintenance_cli, "MaintenanceRuntime", FailingRuntime)
+
+    ok, message = maintenance_cli.handle(handler, ["tick"])
+    stderr = capsys.readouterr().err
+    receipt = json.loads((runtime / "failure.json").read_text(encoding="utf-8"))
+
+    assert ok is False
+    assert "private_token" not in message
+    assert "phase=tick exception=RuntimeError" in stderr
+    assert "private_token" not in stderr
+    assert receipt["schema"] == "bach.maintenance-failure.v1"
+    assert receipt["phase"] == "tick"
+    assert receipt["exception_class"] == "RuntimeError"
+    assert receipt["frames"]
+    assert "private_token" not in json.dumps(receipt)
+
+
+def test_cli_serve_failure_writes_redacted_receipt_and_status_stays_fail_closed(
+    tmp_path, monkeypatch, capsys
+):
+    from hub._services.docs import maintenance_cli
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    root = tmp_path / "repo"
+    system = root / "system"
+    system.mkdir(parents=True)
+    handler = SimpleNamespace(
+        base_path=system,
+        user_db=local / "bach.db",
+        _external_state_db=lambda: local / "scheduler.db",
+    )
+
+    class FailingRuntime:
+        def __init__(self, *_args, **_options):
+            self.stop_event = SimpleNamespace(set=lambda: None)
+
+        def serve(self):
+            raise RuntimeError("private_token=do-not-copy")
+
+    monkeypatch.setattr(
+        maintenance_cli, "CanonicalLockGuard", lambda _config: lambda _path: None
+    )
+    monkeypatch.setattr(maintenance_cli, "MaintenanceRuntime", FailingRuntime)
+    monkeypatch.setattr(maintenance_cli.signal, "signal", lambda *_args: None)
+
+    ok, message = maintenance_cli.handle(handler, ["serve"])
+    stderr = capsys.readouterr().err
+    receipt = json.loads((runtime / "failure.json").read_text(encoding="utf-8"))
+    status = readonly_status(runtime, root=root, config_path=config_path)
+
+    assert ok is False
+    assert "private_token" not in message
+    assert "phase=serve exception=RuntimeError" in stderr
+    assert "private_token" not in stderr
+    assert receipt["schema"] == "bach.maintenance-failure.v1"
+    assert receipt["phase"] == "serve"
+    assert receipt["exception_class"] == "RuntimeError"
+    assert receipt["frames"]
+    assert "private_token" not in json.dumps(receipt)
+    assert status["running"] is False
+    assert status.get("identity") in {None, "unknown"}
 
 
 def test_status_does_not_project_nested_private_values(tmp_path):

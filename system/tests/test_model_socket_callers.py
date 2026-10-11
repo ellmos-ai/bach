@@ -1,6 +1,8 @@
 """Native dialog admission and migration; no provider inference or real stores."""
 import asyncio
 import copy
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,6 +14,53 @@ from hub._services.chat.host_inference_gate import HostInferenceGate
 from hub._services.llm.model_backend import OllamaBackend
 
 
+_TEST_RESERVE_MODELS = (
+    "qwen3.8:27b-mlx", "qwen3.5:4b", "telegram:8b", "whatsapp:8b",
+    "signal:8b", "changed:8b",
+)
+
+
+def _reserve_policy():
+    from hub._services.chat import local_resource_reserve as reserve
+
+    return {
+        "schema": reserve.SCHEMA,
+        "enabled": True,
+        "memory_reserve_bytes": 512 * 1024**2,
+        "disk_reserve_bytes": 128 * 1024**2,
+        "wait_seconds": 1,
+        "poll_seconds": 1,
+        "models": {
+            model: {
+                "digest": "0" * 64,
+                "weight_budget_bytes": 1,
+                "kv_headroom_bytes": 128 * 1024**2,
+                "overhead_bytes": 128 * 1024**2,
+                "num_ctx": 512,
+            }
+            for model in _TEST_RESERVE_MODELS
+        },
+    }
+
+
+def _reserve_receipt(
+    state, *, admitted=False, enforced=True, retryable=False,
+    model="qwen3.8:27b-mlx",
+):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    _, policy_version = reserve.read_policy()
+    return {
+        "schema": reserve.SCHEMA,
+        "state": state,
+        "admitted": admitted,
+        "enforced": enforced,
+        "retryable": retryable,
+        "policy_version": policy_version,
+        "model": model,
+    }
+
+
 @pytest.fixture
 def native_caller(tmp_path, monkeypatch):
     from hub._services import skill_source_service
@@ -20,7 +69,21 @@ def native_caller(tmp_path, monkeypatch):
     path = tmp_path / "slots.json"
     slots.initialize_slots_config(str(path))
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(path))
-    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    runtime_dir = tmp_path / "runtime"
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
+    from hub._services.chat import local_resource_reserve as reserve
+    policy = _reserve_policy()
+    reserve.validate_policy(policy)
+    raw_policy = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    policy_path = Path(runtime_dir) / "local-inference" / "resource-reserve.json"
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    policy_path.write_bytes(raw_policy)
+
+    async def ready_probe(_backend, model):
+        assert model in policy["models"]
+        return _reserve_receipt("ready", admitted=True, enforced=True, model=model)
+
+    monkeypatch.setattr(reserve, "probe", ready_probe)
     monkeypatch.setattr(models.platform, "node", lambda: "test-host")
     monkeypatch.setattr(skill_source_service, "check_write_locks", lambda target: None)
     backend = OllamaBackend()
@@ -293,7 +356,7 @@ def test_known_local_reserve_wait_checks_binding_without_taking_torch(native_cal
 
     control, _, backend, _ = native_caller
     migrate()
-    receipt = {"state": state, "admitted": False, "retryable": True}
+    receipt = _reserve_receipt(state, admitted=False, enforced=True, retryable=True)
     monkeypatch.setattr(reserve, "probe", AsyncMock(return_value=receipt))
     assert asyncio.run(control._admit_chat_for_compute("12345")) == (backend, "qwen3.8:27b-mlx", True)
     assert not HostInferenceGate().status()["active"]
@@ -306,7 +369,7 @@ def test_unknown_target_receipt_denies_compute_pause(native_caller, monkeypatch,
 
     control, _, backend, _ = native_caller
     migrate()
-    receipt = {"state": state, "admitted": False, "retryable": True}
+    receipt = _reserve_receipt(state, admitted=False, enforced=True, retryable=True)
     monkeypatch.setattr(reserve, "probe", AsyncMock(return_value=receipt))
     with pytest.raises(reserve.LocalReserveError, match=state):
         asyncio.run(control._admit_chat_for_compute("12345"))
@@ -318,8 +381,8 @@ def test_metadata_cloud_alias_requires_no_local_model_binding_or_torch(native_ca
 
     control, _, backend, _ = native_caller
     # No migration: an actual metadata-confirmed external target needs no slot.
-    monkeypatch.setattr(reserve, "probe", AsyncMock(return_value={
-        "state": "external_target", "admitted": True, "retryable": False}))
+    monkeypatch.setattr(reserve, "probe", AsyncMock(return_value=_reserve_receipt(
+        "external_target", admitted=True, enforced=False, retryable=False, model="qwen3.8:27b-mlx")))
     assert asyncio.run(control._admit_chat_for_compute("12345")) == (backend, "qwen3.8:27b-mlx", False)
     assert not HostInferenceGate().status()["active"]
     backend.chat.assert_not_awaited()
@@ -334,7 +397,8 @@ def test_empty_dialog_does_not_rebind_profile_during_metadata_probe(native_calle
         config = slots.load_slots_config()
         config["slots"]["buddha_connector"]["providers"]["telegram"]["model"] = "changed:8b"
         slots.save_slots_config(config)
-        return {"state": "ready", "admitted": True, "retryable": False}
+        return _reserve_receipt(
+            "ready", admitted=True, enforced=True, retryable=False, model="telegram:8b")
     monkeypatch.setattr(reserve, "probe", change_profile)
     with pytest.raises(RuntimeError, match="[Kk]onfiguration"):
         asyncio.run(control._admit_chat_for_compute("12345"))
@@ -352,8 +416,8 @@ def test_native_cloud_handler_ignores_local_compute_without_pausing_jobs(native_
     config["slots"]["buddha_connector"]["allow_tools"] = False
     slots.save_slots_config(config)
     # No local registry; the selected target is genuinely external.
-    monkeypatch.setattr(reserve, "probe", AsyncMock(return_value={
-        "state": "external_target", "admitted": True, "retryable": False}))
+    monkeypatch.setattr(reserve, "probe", AsyncMock(return_value=_reserve_receipt(
+        "external_target", admitted=True, enforced=False, retryable=False, model=model)))
     backend.chat = AsyncMock(return_value={"content": "cloud answer"})
     runtime.compute_gate = control._compute_lock_blocks
     monkeypatch.setattr(runtime, "_memory_hook", lambda: None)
