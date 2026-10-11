@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import tempfile
@@ -171,13 +172,58 @@ class _OutputTooLarge(Exception):
     """Interner Abbruch: stdout oder stderr des Providers überschritt MAX_OUTPUT_BYTES."""
 
 
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+
+    class _JobLimits(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION, flach
+        _fields_ = [("times", ctypes.c_int64 * 2), ("flags", wintypes.DWORD), ("working_set", ctypes.c_size_t * 2),
+                    ("active", wintypes.DWORD), ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD),
+                    ("scheduling", wintypes.DWORD), ("io", ctypes.c_uint64 * 6), ("memory", ctypes.c_size_t * 4)]
+
+
+def _tree_job(proc):
+    """Windows: Job mit KILL_ON_JOB_CLOSE um den Provider, damit beim Schließen auch Enkel sterben.
+
+    Der pip-Launcher startet Python mit SILENT_BREAKAWAY_OK; dessen Kinder (oder Enkel hinter
+    .cmd-Shims) überleben sonst den kill() und halten die Pipes offen. None = nur Kind-kill.
+    """
+    if os.name != "nt":
+        return None
+    job = wintypes.HANDLE(_kernel32.CreateJobObjectW(None, None))
+    limits = _JobLimits(flags=0x2000)  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    # ponytail: Zuweisung nach dem Start; Enkel aus den ersten ms entkommen (sonst CREATE_SUSPENDED + Resume).
+    if job.value and _kernel32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)) \
+            and _kernel32.AssignProcessToJobObject(job, wintypes.HANDLE(int(proc._handle))):
+        return job
+    if job.value:
+        _kernel32.CloseHandle(job)
+    return None
+
+
+def _kill_tree(proc, job):
+    """Beendet Provider samt Enkeln: Windows über den Job, POSIX über die eigene Sitzung/Prozessgruppe."""
+    if job is not None:
+        _kernel32.CloseHandle(job)
+    elif os.name != "nt":
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:  # Gruppe schon leer
+            pass
+
+
 def _bounded_run(command, *, timeout: float, **popen_kwargs):
     """subprocess.run-Ersatz: liest stdout/stderr gedeckelt und beendet den Prozess beim Überschreiten.
 
     Pro Strom höchstens MAX_OUTPUT_BYTES + 1 Byte im Speicher. Wirft subprocess.TimeoutExpired
-    bzw. _OutputTooLarge; der Kindprozess ist dann beendet und abgeholt.
+    bzw. _OutputTooLarge; der Kindprozess ist dann beendet und abgeholt, seine Enkel ebenfalls.
     """
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, **popen_kwargs)
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                            start_new_session=True, **popen_kwargs)
+    job = _tree_job(proc)
     chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
     over = threading.Event()
 
@@ -202,7 +248,7 @@ def _bounded_run(command, *, timeout: float, **popen_kwargs):
         reader.start()
     deadline = time.monotonic() + timeout
     try:
-        # ponytail: Polling alle 50 ms reicht für die seltene Probe; kein Prozessbaum-Kill (nur das Kind).
+        # ponytail: Polling alle 50 ms reicht für die seltene Probe.
         while any(reader.is_alive() for reader in readers) and not over.is_set():
             if time.monotonic() >= deadline:
                 raise subprocess.TimeoutExpired(command, timeout)
@@ -211,13 +257,14 @@ def _bounded_run(command, *, timeout: float, **popen_kwargs):
             raise _OutputTooLarge()
         proc.wait(timeout=max(deadline - time.monotonic(), 0.001))
     finally:
+        _kill_tree(proc, job)
         if proc.poll() is None:
             proc.kill()
         proc.wait()
-        for reader in readers:
+        for reader, stream in zip(readers, (proc.stdout, proc.stderr)):
             reader.join(timeout=1)
-        for stream in (proc.stdout, proc.stderr):
-            stream.close()
+            if not reader.is_alive():  # sonst blockiert close() unter Windows, solange ein Enkel die Pipe hält
+                stream.close()
     return SimpleNamespace(returncode=proc.returncode, stdout=b"".join(chunks["stdout"]),
                            stderr=b"".join(chunks["stderr"]))
 

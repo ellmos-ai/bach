@@ -249,6 +249,20 @@ def test_silent_child_still_times_out_and_is_reaped(monkeypatch):
     assert all(proc.poll() is not None for proc in started)
 
 
+def test_grandchild_holding_the_pipes_dies_with_the_provider(tmp_path):
+    # Enkel erbt stdout/stderr (wie hinter cmd.exe-Shims oder eigenen Kindern des Providers) und schreibt Herzschläge.
+    beat = tmp_path / "beat"
+    grand = f"import time\nfor _ in range(400):\n    open({str(beat)!r}, 'a').write('.'); time.sleep(0.05)"
+    code = (f"import subprocess, sys, time\nsubprocess.Popen([sys.executable, '-c', {grand!r}], "
+            "stdout=sys.stdout, stderr=sys.stderr)\ntime.sleep(60)")
+    result, seconds = _probe_child(code, timeout=3)
+    assert result["reason"] == "provider_timeout" and seconds < 10
+    time.sleep(0.3)
+    size = beat.stat().st_size
+    time.sleep(0.5)
+    assert size > 0 and beat.stat().st_size == size
+
+
 def test_bounded_run_returns_normal_output_and_exit_code():
     done = tps._bounded_run([sys.executable, "-c", "import sys; print('hi'); sys.stderr.write('warn'); sys.exit(3)"],
                             timeout=20)
