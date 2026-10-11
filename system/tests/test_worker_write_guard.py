@@ -109,6 +109,218 @@ def test_authorization_rejects_symlinked_write_path(tmp_path, monkeypatch):
         guard.authorize_mutation(FakeBinding(), paths=(link / "file.txt",))
 
 
+@pytest.mark.parametrize("mode", ["safe", "full"])
+def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monkeypatch, mode):
+    from hub import bach_paths
+
+    trusted_root = tmp_path / "bach"
+    user_dir = trusted_root / "user"
+    user_dir.mkdir(parents=True)
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    copy_source = user_dir / "copy-source.txt"
+    copy_source.write_text("copy", encoding="utf-8")
+    copy_destination = user_dir / "copy-destination.txt"
+    copied = exec_tool("copy_file", {
+        "source": str(copy_source), "destination": str(copy_destination)
+    }, mode=mode)
+    assert "Kopiert:" in copied
+    assert copy_destination.read_text(encoding="utf-8") == "copy"
+
+    copy_tree_source = user_dir / "copy-tree-source"
+    copy_tree_source.mkdir()
+    (copy_tree_source / "nested.txt").write_text("tree", encoding="utf-8")
+    copy_tree_destination = user_dir / "copy-tree-destination"
+    tree_result = exec_tool("copy_file", {
+        "source": str(copy_tree_source), "destination": str(copy_tree_destination)
+    }, mode=mode)
+    assert "Kopiert:" in tree_result
+    assert (copy_tree_destination / "nested.txt").read_text(encoding="utf-8") == "tree"
+
+    external = tmp_path / "outside"
+    external.mkdir()
+    external_source = external / "source.txt"
+    external_source.write_text("outside", encoding="utf-8")
+    denied_source = exec_tool("copy_file", {
+        "source": str(external_source), "destination": str(user_dir / "denied-source.txt")
+    }, mode=mode)
+    assert "BACH-Root" in denied_source
+    assert not (user_dir / "denied-source.txt").exists()
+
+    external_tree = external / "tree"
+    external_tree.mkdir()
+    (external_tree / "outside.txt").write_text("outside tree", encoding="utf-8")
+    denied_tree = exec_tool("copy_file", {
+        "source": str(external_tree), "destination": str(user_dir / "denied-tree")
+    }, mode=mode)
+    assert "BACH-Root" in denied_tree
+    assert not (user_dir / "denied-tree").exists()
+
+    denied_destination = exec_tool("copy_file", {
+        "source": str(copy_source), "destination": str(external / "denied-destination.txt")
+    }, mode=mode)
+    assert "BACH-Root" in denied_destination
+    assert not (external / "denied-destination.txt").exists()
+
+    move_source = user_dir / "move-source.txt"
+    move_source.write_text("move", encoding="utf-8")
+    move_destination = user_dir / "move-destination.txt"
+    moved = exec_tool("move_file", {
+        "source": str(move_source), "destination": str(move_destination)
+    }, mode=mode)
+    assert "Verschoben:" in moved
+    assert move_destination.read_text(encoding="utf-8") == "move"
+    assert not move_source.exists()
+
+    external_move_source = external / "move-source.txt"
+    external_move_source.write_text("external move", encoding="utf-8")
+    denied_move_source = exec_tool("move_file", {
+        "source": str(external_move_source), "destination": str(user_dir / "denied-move.txt")
+    }, mode=mode)
+    assert "BACH-Root" in denied_move_source
+    assert external_move_source.read_text(encoding="utf-8") == "external move"
+
+    outside_move_destination = external / "move-destination.txt"
+    last_move_source = user_dir / "last-move-source.txt"
+    last_move_source.write_text("retained", encoding="utf-8")
+    denied_move_destination = exec_tool("move_file", {
+        "source": str(last_move_source), "destination": str(outside_move_destination)
+    }, mode=mode)
+    assert "BACH-Root" in denied_move_destination
+    assert last_move_source.read_text(encoding="utf-8") == "retained"
+    assert not outside_move_destination.exists()
+
+
+def test_unbound_copy_rejects_symlinked_source_and_destination_ancestors(tmp_path, monkeypatch):
+    from hub import bach_paths
+
+    trusted_root = tmp_path / "bach"
+    user_dir = trusted_root / "user"
+    user_dir.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    external_file = outside / "secret.txt"
+    external_file.write_text("not copied", encoding="utf-8")
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    inside_file = user_dir / "inside.txt"
+    inside_file.write_text("inside", encoding="utf-8")
+    source_link = user_dir / "source-link.txt"
+    try:
+        source_link.symlink_to(external_file)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable")
+    result = exec_tool("copy_file", {
+        "source": str(source_link), "destination": str(user_dir / "source-copy.txt")
+    }, mode="full")
+    assert "BACH-Root" in result
+    assert not (user_dir / "source-copy.txt").exists()
+
+    destination_link = user_dir / "destination-link"
+    try:
+        destination_link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable")
+    result = exec_tool("copy_file", {
+        "source": str(inside_file), "destination": str(destination_link / "copied.txt")
+    }, mode="full")
+    assert "BACH-Root" in result
+    assert not (outside / "copied.txt").exists()
+
+
+def test_unbound_move_rejects_symlinked_source_and_destination_ancestors(tmp_path, monkeypatch):
+    from hub import bach_paths
+
+    trusted_root = tmp_path / "bach"
+    user_dir = trusted_root / "user"
+    user_dir.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_source = outside / "source.txt"
+    outside_source.write_text("outside", encoding="utf-8")
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    source_link = user_dir / "source-link.txt"
+    try:
+        source_link.symlink_to(outside_source)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable")
+    result = exec_tool("move_file", {
+        "source": str(source_link), "destination": str(user_dir / "moved-source.txt")
+    }, mode="full")
+    assert "BACH-Root" in result
+    assert source_link.is_symlink()
+    assert outside_source.read_text(encoding="utf-8") == "outside"
+
+    destination_link = user_dir / "destination-link"
+    try:
+        destination_link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable")
+    inside_source = user_dir / "inside.txt"
+    inside_source.write_text("inside", encoding="utf-8")
+    result = exec_tool("move_file", {
+        "source": str(inside_source),
+        "destination": str(destination_link / "moved.txt"),
+    }, mode="full")
+    assert "BACH-Root" in result
+    assert inside_source.read_text(encoding="utf-8") == "inside"
+    assert not (outside / "moved.txt").exists()
+
+
+def test_unbound_copy_rechecks_ancestor_before_copy_sink(tmp_path, monkeypatch):
+    from hub import bach_paths
+    from hub._services.chat import bach_tools
+    import shutil
+
+    trusted_root = tmp_path / "bach"
+    user_dir = trusted_root / "user"
+    destination_parent = user_dir / "destination-parent"
+    destination_parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    source = user_dir / "source.txt"
+    source.write_text("inside", encoding="utf-8")
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    original_authorize = bach_tools._authorized_file_mutation_paths
+    calls = 0
+
+    def swap_ancestor_after_first_check(raw_source, raw_destination, binding=None):
+        nonlocal calls
+        calls += 1
+        checked = original_authorize(raw_source, raw_destination, binding)
+        if calls == 1:
+            destination_parent.rmdir()
+            destination_parent.symlink_to(outside, target_is_directory=True)
+        return checked
+
+    monkeypatch.setattr(
+        bach_tools, "_authorized_file_mutation_paths", swap_ancestor_after_first_check)
+    monkeypatch.setattr(shutil, "copy2", lambda *a, **k: pytest.fail("copy sink must not run"))
+    result = exec_tool("copy_file", {
+        "source": str(source),
+        "destination": str(destination_parent / "escape.txt"),
+    }, mode="full")
+    assert calls == 2
+    assert "BACH-Root" in result
+    assert not (outside / "escape.txt").exists()
+
+
+def test_bound_copy_stays_in_registered_task_worktree(tmp_path, monkeypatch):
+    _, _, target = _authorization_fixture(tmp_path, monkeypatch)
+    source = target / "source.txt"
+    destination = target / "copy.txt"
+    source.write_text("task-bound", encoding="utf-8")
+
+    result = exec_tool("copy_file", {
+        "source": str(source), "destination": str(destination)
+    }, mode="safe", worker_task_binding=FakeBinding(), allowed_tools={"copy_file"})
+
+    assert "Kopiert:" in result
+    assert destination.read_text(encoding="utf-8") == "task-bound"
+
+
 def test_unknown_lock_status_blocks_mutation(tmp_path, monkeypatch):
     _, _, target = _authorization_fixture(tmp_path, monkeypatch)
     def unknown(*args, **kwargs):

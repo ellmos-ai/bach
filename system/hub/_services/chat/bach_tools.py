@@ -334,6 +334,56 @@ def _contains_secret_location(p: Path) -> bool:
         return False
 
 
+def _authorized_file_mutation_paths(source, destination, worker_task_binding=None):
+    """Resolve file mutation paths through the bound task or trusted host root.
+
+    Unbound tools use only the code-derived BACH_ROOT. Environment variables and
+    caller-provided roots are not authority. This path check is not an OS sandbox
+    and cannot make path-based copy/move syscalls atomic against later renames.
+    """
+    if worker_task_binding is not None:
+        from hub._services.chat.worker_write_guard import authorize_mutation
+        _, paths = authorize_mutation(worker_task_binding, paths=(source, destination))
+        return paths
+
+    try:
+        from hub.bach_paths import BACH_ROOT
+        from tools.fs_protection import sanitize_host_path
+
+        trusted_root = Path(BACH_ROOT).expanduser().resolve(strict=True)
+        if not trusted_root.is_dir():
+            raise ValueError("BACH_ROOT ist kein Verzeichnis")
+
+        def checked_path(value, *, must_exist):
+            if not isinstance(value, str) or not value.strip() or chr(0) in value:
+                raise ValueError("Pfad fehlt oder ist ungültig")
+            candidate = Path(value).expanduser()
+            if not candidate.is_absolute():
+                candidate = Path.cwd() / candidate
+            candidate = Path(os.path.abspath(candidate))
+            candidate.relative_to(trusted_root)
+            sanitized = Path(sanitize_host_path(
+                candidate,
+                base_path=trusted_root,
+                allowed_roots=(trusted_root,),
+                must_exist=must_exist,
+            )).resolve(strict=must_exist)
+            if sanitized != candidate:
+                raise ValueError("Symlink- oder Ancestor-Umleitung erkannt")
+            sanitized.relative_to(trusted_root)
+            return sanitized
+
+        return (
+            checked_path(source, must_exist=True),
+            checked_path(destination, must_exist=False),
+        )
+    except Exception:
+        raise ValueError(
+            "Ungebundene Dateioperation blockiert: Quelle und Ziel müssen im "
+            "codegestützten BACH-Root liegen; ein externer Host-Root ist nicht freigegeben."
+        ) from None
+
+
 def is_safe_write_path(path_str: str, mode: str) -> Optional[str]:
     """Return error message if the path is blocked for writes, else None.
 
@@ -1567,47 +1617,54 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "move_file":
             src = args.get("source", "")
             dst = args.get("destination", "")
-            if not src or not dst:
-                return "source und destination sind erforderlich"
+            if not isinstance(src, str) or not isinstance(dst, str) or not src.strip() or not dst.strip():
+                return "source und destination müssen gültige Pfadtexte sein"
+            if chr(0) in src or chr(0) in dst:
+                return "source und destination enthalten einen ungültigen Pfad"
             if err := is_safe_write_path(src, mode):
                 return err
             if err := is_safe_write_path(dst, mode):
                 return err
             try:
                 import shutil
-                if worker_task_binding is not None:
-                    from hub._services.chat.worker_write_guard import authorize_mutation
-                    _, (source_path, destination_path) = authorize_mutation(
-                        worker_task_binding, paths=(src, dst))
-                    src, dst = str(source_path), str(destination_path)
-                shutil.move(src, dst)
-                log.info(f"MOVE: {src} -> {dst}")
-                return f"Verschoben: {src} → {dst}"
+                source_path, destination_path = _authorized_file_mutation_paths(
+                    src, dst, worker_task_binding)
+                shutil.move(str(source_path), str(destination_path))
+                log.info(f"MOVE: {source_path} -> {destination_path}")
+                return f"Verschoben: {source_path} → {destination_path}"
             except Exception as e:
                 return f"Fehler beim Verschieben: {e}"
 
         if name == "copy_file":
             src = args.get("source", "")
             dst = args.get("destination", "")
-            if not src or not dst:
-                return "source und destination sind erforderlich"
+            if not isinstance(src, str) or not isinstance(dst, str) or not src.strip() or not dst.strip():
+                return "source und destination müssen gültige Pfadtexte sein"
+            if chr(0) in src or chr(0) in dst:
+                return "source und destination enthalten einen ungültigen Pfad"
             if err := is_safe_write_path(dst, mode):
                 return err
             try:
                 import shutil
-                preserve_links = False
-                if worker_task_binding is not None:
-                    from hub._services.chat.worker_write_guard import authorize_mutation
-                    _, (source_path, destination_path) = authorize_mutation(
-                        worker_task_binding, paths=(src, dst))
-                    src, dst = str(source_path), str(destination_path)
-                    preserve_links = True
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst, symlinks=preserve_links)
+                source_path, destination_path = _authorized_file_mutation_paths(
+                    src, dst, worker_task_binding)
+                source_is_directory = source_path.is_dir()
+                # Re-resolve both raw caller paths immediately before the copy
+                # sink; this catches a changed symlink/ancestor during dispatch.
+                confirmed_source, confirmed_destination = _authorized_file_mutation_paths(
+                    src, dst, worker_task_binding)
+                if (confirmed_source, confirmed_destination) != (source_path, destination_path):
+                    raise ValueError("Quelle oder Ziel wurde während der Pfadprüfung umgeleitet")
+                if confirmed_source.is_dir() != source_is_directory:
+                    raise ValueError("Quelltyp änderte sich während der Pfadprüfung")
+                if source_is_directory:
+                    shutil.copytree(
+                        str(confirmed_source), str(confirmed_destination), symlinks=True)
                 else:
-                    shutil.copy2(src, dst, follow_symlinks=not preserve_links)
-                log.info(f"COPY: {src} -> {dst}")
-                return f"Kopiert: {src} → {dst}"
+                    shutil.copy2(
+                        str(confirmed_source), str(confirmed_destination), follow_symlinks=False)
+                log.info(f"COPY: {confirmed_source} -> {confirmed_destination}")
+                return f"Kopiert: {confirmed_source} → {confirmed_destination}"
             except Exception as e:
                 return f"Fehler beim Kopieren: {e}"
 
