@@ -15,6 +15,22 @@ from hub._services.llm.model_backend import OllamaBackend
 from gui.api.worker_status_adapter import _project_worker
 
 
+def _persistent_session_store(tmp_path):
+    session_db_path = tmp_path / "worker-session-snapshots.db"
+    with sqlite3.connect(session_db_path) as session_conn:
+        session_conn.execute("""
+            CREATE TABLE session_snapshots (
+                id INTEGER PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                snapshot_type TEXT NOT NULL,
+                snapshot_data TEXT,
+                name TEXT,
+                created_at TEXT
+            )
+        """)
+    return SQLiteChatSessionStore(session_db_path)
+
+
 def run_http(monkeypatch, payload, *, status=429, headers=None):
     real_client = httpx.AsyncClient
     calls = []
@@ -160,11 +176,13 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         "VALUES (42,'Native quota fixture','pending','P1','INBOX','BACH',?)", (ident,))
     conn.commit()
     monkeypatch.setattr(control, "_native_task_client", lambda: TaskLeaseClient(conn=conn))
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
     session.chat_id = ident
-    monkeypatch.setattr(control.runtime, "get_session", lambda _: session)
+    monkeypatch.setattr(runtime, "get_session", lambda _: session)
     calls = []
-    backend = OllamaBackend(default_model="glm-5.3:cloud")
     monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
     real_client = httpx.AsyncClient
     def reply(request):
@@ -177,7 +195,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         assert binding.task_id == 42 and not binding.closed
         assert slots.get_slot(ident, path).get("backend_error") is None
         return _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
-    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(runtime, "process", process)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -289,10 +307,12 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     conn.commit()
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
     session.chat_id = ident
-    monkeypatch.setattr(control.runtime, "get_session", lambda _: session)
-    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    monkeypatch.setattr(runtime, "get_session", lambda _: session)
     monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
     real_client = httpx.AsyncClient
     calls, fences, waits = [], [], []
@@ -312,7 +332,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         if not FailedAnswer.looks_like(answer):
             binding.execute_task_manage({"action": "submit_result", "task_id": 42, "result": str(answer)})
         return answer
-    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(runtime, "process", process)
     monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: False)
     foreign = []
     acquire_calls = []
@@ -434,21 +454,9 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         return binding
     monkeypatch.setattr(control, "_acquire_worker_task", acquire_record)
     backend = OllamaBackend(default_model="glm-5.3:cloud")
-    session_db_path = tmp_path / "worker-session-snapshots.db"
-    with sqlite3.connect(session_db_path) as session_conn:
-        session_conn.execute("""
-            CREATE TABLE session_snapshots (
-                id INTEGER PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                snapshot_type TEXT NOT NULL,
-                snapshot_data TEXT,
-                name TEXT,
-                created_at TEXT
-            )
-        """)
     runtime = ChatRuntime(
         backend,
-        session_store=SQLiteChatSessionStore(session_db_path),
+        session_store=_persistent_session_store(tmp_path),
     )
     # The lean lease-client fixture omits creation timestamps, which the real
     # decomposition tool needs when it creates a child task.
