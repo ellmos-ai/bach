@@ -10704,7 +10704,10 @@ def _promptboard_library_paths():
 
 @app.get("/prompt-library", response_class=HTMLResponse)
 async def prompt_library_page():
-    """Prompt-Bibliothek (BACH-DB) als GUI-Seite."""
+    """Prompt-Bibliothek (BACH-DB) als GUI-Seite; gebaute Dist-Seite zuerst, Legacy-Template als Rückweg."""
+    astro_page = ASTRO_DIST_DIR / "prompt-library.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
     template = TEMPLATES_DIR / "prompt-library.html"
     if template.exists():
         return HTMLResponse(content=template.read_text(encoding="utf-8"))

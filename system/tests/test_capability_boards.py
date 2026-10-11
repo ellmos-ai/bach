@@ -197,3 +197,16 @@ def test_application_catalog_missing_registry_does_not_fall_back_to_repositories
     assert result["count"] == 0 and result["errors"]
     assert result["sources"][0]["available"] is False
     assert inventory.ocean_inventory([root])["count"] == 1
+
+
+def test_prompt_library_serves_the_built_page_first_and_keeps_the_legacy_template_as_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    client = TestClient(server.app)
+    legacy = client.get("/prompt-library")
+    assert legacy.status_code == 200 and "Prompt-Bibliothek" in legacy.text and "pl-detail" in legacy.text  # legacy template
+    (tmp_path / "prompt-library.html").write_text("<h1>Astro Prompt Library</h1>", encoding="utf-8")
+    built = client.get("/prompt-library")
+    assert built.status_code == 200 and "Astro Prompt Library" in built.text and "pl-detail" not in built.text
+    (tmp_path / "prompt-library.html").unlink()
+    assert "pl-detail" in client.get("/prompt-library").text  # rollback path: remove the built page
+    assert client.get("/prompt-generator", follow_redirects=False).headers["location"] == "/prompt-library"

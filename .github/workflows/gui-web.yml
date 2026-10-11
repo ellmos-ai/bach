@@ -1,15 +1,10 @@
 name: GUI web
 
+# Stillgelegt 2026-10-11: system/gui/web ist eine veraltete Kopie, einzige GUI-Quelle ist
+# ellmos-system-gui (BACH bezieht das Release). Kein Auto-Trigger mehr; manuell startbar.
+# Rollback: pull_request/push-Trigger mit den paths system/gui/web/** wieder eintragen.
 on:
-  pull_request:
-    paths:
-      - 'system/gui/web/**'
-      - '.github/workflows/gui-web.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'system/gui/web/**'
-      - '.github/workflows/gui-web.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
