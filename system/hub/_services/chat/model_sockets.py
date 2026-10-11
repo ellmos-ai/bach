@@ -12,7 +12,9 @@ import hashlib
 import json
 import platform
 import re
+import sys
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import slots_config as store
 
@@ -87,13 +89,16 @@ def _legacy_projection(config, host_id):
                     profile.get("execution_kind") == "worker" or
                     agent_id not in config["slots"]) else "foreground"
         for effective in targets:
-            backend, model = effective.get("backend"), effective.get("model")
-            if backend not in _LOCAL_BACKENDS or str(model).lower().endswith(":cloud"):
-                continue
-            target = _new_socket(backend, model, host_id)
-            state["sockets"][target["id"]] = target
-            binding = _new_binding(agent_id, target["id"], priority)
-            state["bindings"][binding["id"]] = binding
+            candidates = [effective]
+            candidates.extend(store._validated_model_fallback_profile(effective))
+            for candidate in candidates:
+                backend, model = candidate.get("backend"), candidate.get("model")
+                if backend not in _LOCAL_BACKENDS or str(model).lower().endswith(":cloud"):
+                    continue
+                target = _new_socket(backend, model, host_id)
+                state["sockets"][target["id"]] = target
+                binding = _new_binding(agent_id, target["id"], priority)
+                state["bindings"][binding["id"]] = binding
     return state
 
 
@@ -256,7 +261,20 @@ def _binding_from_config(config, version, agent_id, backend, model):
     target_id = socket_id(backend, model, state["host_id"])
     target = state["sockets"].get(target_id)
     binding = state["bindings"].get(_binding_id(agent_id, target_id))
-    if not target or not binding or not target["enabled"] or not binding["enabled"]:
+    if not target and not binding:
+        profile = profiles[agent_id]
+        fallbacks = store._validated_model_fallback_profile(profile)
+        configured = any(item["backend"] == backend and item["model"] == model for item in fallbacks)
+        if not configured or profile.get("enabled", True) is not True:
+            raise RuntimeError("model_socket_binding_unavailable")
+        # A post-migration fallback is projected only when that local target
+        # is selected for a call. It is not persisted or pre-reserved.
+        target = _new_socket(backend, model, state["host_id"])
+        priority = ("background" if (agent_id == "buddha_always_on"
+                    or profile.get("execution_kind") == "worker"
+                    or agent_id not in config["slots"]) else "foreground")
+        binding = _new_binding(agent_id, target_id, priority)
+    if (not target or not binding or not target["enabled"] or not binding["enabled"]):
         raise RuntimeError("model_socket_binding_unavailable")
     return {"socket_id": target_id, "binding_id": binding["id"], "agent_id": agent_id,
             "backend": backend, "model": model, "configuration_version": version,
@@ -297,3 +315,85 @@ def model_binding_for_call(chat_id, backend, model, *, agent_id=None, path=None,
     if agent_id is None:
         agent_id = _agent_for_chat(config, chat_id)
     return _binding_from_config(config, version, agent_id, backend, model)
+
+def model_fallbacks_for_profile(profile):
+    """Read and validate the ordered chain against the native primary model."""
+    return store._validated_model_fallback_profile(profile)
+
+
+def _is_local_endpoint(backend):
+    base_url = getattr(backend, "base_url", None)
+    if not isinstance(base_url, str):
+        return False
+    try:
+        parsed = urlsplit(base_url)
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and parsed.hostname in {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0"
+    }
+
+
+def profile_backend_matches(profile_backend, backend, model=None):
+    """Match provider identity; Ollama cloud is external even via localhost."""
+    from hub._services.llm.model_backend import backend_identifier
+    actual = backend_identifier(backend)
+    local_endpoint = _is_local_endpoint(backend)
+    cloud_model = isinstance(model, str) and model.lower().endswith(":cloud")
+    if profile_backend == "ollama":
+        return actual == "ollama" and local_endpoint and not cloud_model
+    if profile_backend == "ollama-cloud":
+        return actual == "ollama" and cloud_model
+    if profile_backend == "lmstudio":
+        return actual == "lmstudio" and local_endpoint
+    return actual == profile_backend and not local_endpoint
+
+
+def resolve_fallback_backend(target):
+    """Use an already-loaded BACH resolver; importing the connector starts side effects."""
+    normalized = store._validated_model_fallbacks([target])[0]
+    if normalized["backend"] in {"claude", "codex"}:
+        raise RuntimeError("fallback_cli_backend_unsupported")
+    module = sys.modules.get("hub._services.chat.telegram_chat")
+    factory = getattr(module, "_get_or_create_backend", None) if module is not None else None
+    if not callable(factory):
+        # This is unavailable runtime state, not an invalid caller type.
+        raise RuntimeError("fallback_backend_resolver_unavailable")  # noqa: TRY004
+    backend = factory(normalized["backend"], normalized["model"])
+    from hub._services.llm.model_backend import (
+        AnthropicBackend,
+        HermesBackend,
+        LMStudioBackend,
+        OllamaBackend,
+        OpenAIBackend,
+        OpenRouterBackend,
+        backend_identifier,
+    )
+    target_backend = normalized["backend"]
+    local_endpoint = _is_local_endpoint(backend)
+    identifier = backend_identifier(backend)
+    if target_backend == "ollama":
+        valid = identifier == "ollama" and isinstance(backend, OllamaBackend) and local_endpoint
+    elif target_backend == "ollama-cloud":
+        # Cloud inference may use BACH's local Ollama proxy. The explicit
+        # :cloud model suffix, not the proxy URL, determines resource routing.
+        valid = (identifier == "ollama" and isinstance(backend, OllamaBackend)
+                 and normalized["model"].lower().endswith(":cloud"))
+    elif target_backend == "lmstudio":
+        valid = identifier == "lmstudio" and isinstance(backend, LMStudioBackend) and local_endpoint
+    elif target_backend == "openrouter":
+        valid = identifier == "openrouter" and isinstance(backend, OpenRouterBackend) and not local_endpoint
+    elif target_backend == "hermes":
+        valid = (identifier == "hermes" and isinstance(backend, HermesBackend)
+                 and not isinstance(backend, OpenRouterBackend) and not local_endpoint)
+    elif target_backend == "claude-api":
+        valid = identifier == "claude-api" and isinstance(backend, AnthropicBackend) and not local_endpoint
+    elif target_backend == "openai":
+        valid = (identifier == "openai" and isinstance(backend, OpenAIBackend)
+                 and not isinstance(backend, (LMStudioBackend, HermesBackend, OpenRouterBackend))
+                 and not local_endpoint)
+    else:
+        valid = False
+    if not valid or backend.get_default_model() != normalized["model"]:
+        raise RuntimeError("fallback_backend_identity_mismatch")
+    return backend

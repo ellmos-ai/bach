@@ -269,7 +269,12 @@ def request_worker_handoff(worker_id: str, generation: str, *, device_token: str
 
 
 def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, Any]:
-    from hub._services.chat.slots_config import WORKER_EDITABLE_FIELDS, DEFAULT_ROLE_PROMPTS, _validated_core_edits
+    from hub._services.chat.slots_config import (
+        DEFAULT_ROLE_PROMPTS,
+        WORKER_EDITABLE_FIELDS,
+        _validated_core_edits,
+        _validated_model_fallbacks,
+    )
     version = result.get("configuration_version")
     configuration = result.get("configuration")
     if (result.get("ok") is not True or result.get("id") != worker_id
@@ -295,6 +300,11 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
                 projected[key] = validate_skill_refs(value)
             except ValueError as exc:
                 raise WorkerStatusUnavailable("Gespeicherte Skill-Bindung ist ungültig") from exc
+        elif key == "model_fallbacks":
+            try:
+                projected[key] = _validated_model_fallbacks(value)
+            except ValueError as exc:
+                raise WorkerStatusUnavailable("Worker-Modellfallbacks sind ungültig") from exc
         elif key in {"avatar", "symbol", "allowed_tools"}:
             try:
                 projected[key] = _validated_core_edits({key: value})[key]

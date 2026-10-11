@@ -634,11 +634,152 @@ class ChatRuntime(_ModuleChatRuntime):
             session._trusted_memory_hook_opt_in = False
             return FailedAnswer.from_exception(exc)
 
+    @staticmethod
+    def _native_model_fallback_route(session: ChatSession, backend: Any, model: Any):
+        """Resolve a target only from the session's trusted native profile reader."""
+        reader = getattr(session, "worker_slot_reader", None)
+        expected_id = getattr(session, "chat_id", "")
+        if reader is None:
+            reader = getattr(session, "system_slot_reader", None)
+            expected_id = getattr(session, "system_slot_id", None)
+        if reader is None:
+            return None
+        if not callable(reader):
+            # Keep ValueError so callers retain the established redacted invalid-profile result.
+            raise ValueError("Native Profilquelle ist nicht aufrufbar")  # noqa: TRY004
+        profile = reader()
+        if (not isinstance(profile, dict) or profile.get("id") != expected_id
+                or profile.get("enabled", True) is not True):
+            raise ValueError("Native Profilquelle stimmt nicht überein")
+        from hub._services.chat.model_sockets import (
+            model_fallbacks_for_profile,
+            profile_backend_matches,
+        )
+        chain = model_fallbacks_for_profile(profile)
+        if not chain:
+            return None
+        primary_backend, primary_model = profile.get("backend"), profile.get("model")
+        if (not isinstance(primary_backend, str) or not isinstance(primary_model, str)
+                or not isinstance(model, str)):
+            # Keep ValueError for malformed native profile data; callers redact it as a failed route.
+            raise ValueError("Fallbackprofil hat kein eindeutiges Primärziel")  # noqa: TRY004
+        targets = [{"backend": primary_backend, "model": primary_model}, *chain]
+        matched = [
+            index for index, target in enumerate(targets)
+            if target["model"] == model
+            and profile_backend_matches(target["backend"], backend, model)
+        ]
+        if len(matched) != 1:
+            raise ValueError("Modellziel ist nicht in der nativen Fallbackkette")
+        return {"profile": profile, "targets": targets, "index": matched[0]}
+
+    @staticmethod
+    def _safe_preanswer_fallback_failure(*, result=None, error=None) -> bool:
+        """Allow only typed failures that prove no answer or tool call escaped."""
+        if error is not None:
+            from hub._services.chat.local_resource_reserve import LocalReserveError
+            if isinstance(error, LocalReserveError):
+                return str(error) in {
+                    "Lokale Ressourcenfreigabe: budget_exceeds_host",
+                    "Lokale Ressourcenfreigabe: reserve_wait_expired",
+                }
+            try:
+                import httpx
+            except ImportError:
+                return False
+            if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+                return True
+            if isinstance(error, httpx.HTTPStatusError):
+                # A bare status cannot distinguish rate limiting from provider quota.
+                return False
+            return False
+
+        if not isinstance(result, dict) or not result.get("error"):
+            return False
+        if result.get("content") or result.get("thinking") or result.get("tool_calls"):
+            return False
+        raw_message = result.get("raw_message")
+        if raw_message:
+            if not isinstance(raw_message, dict):
+                return False
+            if any(raw_message.get(key) for key in ("content", "thinking", "tool_calls")):
+                return False
+        from hub._services.llm.backend_errors import normalize_backend_error
+        detail = normalize_backend_error(result.get("backend_error"))
+        return bool(
+            detail
+            and not detail.get("quota_exceeded")
+            and detail.get("kind") in {"rate_limited", "http_error"}
+            and detail.get("status_code") in {429, 502, 503, 504, 529}
+        )
+
+    async def _chat_with_configured_fallbacks(self, session, backend, model, *args, **kwargs):
+        """Advance one explicit native chain only after a typed pre-answer failure."""
+        try:
+            route = self._native_model_fallback_route(session, backend, model)
+        except Exception:  # noqa: BLE001 - redact native profile reader details at the runtime boundary.
+            raise RuntimeError("Native Modellfallbackkette ist nicht verifizierbar") from None
+        if route is None:
+            result = await self._chat_with_compute_turn(
+                backend, *args, **{**kwargs, "model": model}
+            )
+            return result, backend, model
+
+        targets = route["targets"]
+        last_exception = None
+        from hub._services.chat.model_sockets import resolve_fallback_backend
+        for index in range(route["index"], len(targets)):
+            target = targets[index]
+            if index == route["index"]:
+                active_backend = backend
+            else:
+                try:
+                    active_backend = resolve_fallback_backend(target)
+                except Exception:  # noqa: BLE001 - redact resolver details; report only the configured target.
+                    raise RuntimeError(
+                        f"Konfiguriertes Fallbackziel ist nicht verfügbar: {target['backend']}"
+                    ) from None
+                problem = self._worker_backend_gate(session, active_backend, target["model"])
+                if problem is not None:
+                    raise RuntimeError(str(problem))
+
+            call_kwargs = dict(kwargs)
+            call_kwargs["model"] = target["model"]
+            try:
+                result = await self._chat_with_compute_turn(
+                    active_backend, *args, **call_kwargs
+                )
+            except Exception as exc:
+                # A self-managed CLI can finish tool effects before an exception.
+                # Without a typed no-tool receipt, the failure cannot authorize retry.
+                if (getattr(active_backend, "manages_own_tools", False)
+                        or not self._safe_preanswer_fallback_failure(error=exc)):
+                    raise
+                last_exception = exc
+                if index + 1 < len(targets):
+                    log.info("Konfiguriertes Modellfallback nach sicherem Vorabfehler: %s", target["backend"])
+                    continue
+                break
+            if (not getattr(active_backend, "manages_own_tools", False)
+                    and self._safe_preanswer_fallback_failure(result=result)
+                    and index + 1 < len(targets)):
+                log.info("Konfiguriertes Modellfallback nach sicherem Vorabfehler: %s", target["backend"])
+                continue
+            return result, active_backend, target["model"]
+
+        if last_exception is not None:
+            raise RuntimeError("Konfigurierte Modellfallbackkette ausgeschöpft") from None
+        return {"error": "Konfigurierte Modellfallbackkette ausgeschöpft"}, backend, model
+
     @classmethod
     def _worker_backend_gate(cls, session: ChatSession, backend: Any, model: Any = None) -> FailedAnswer | None:
         capability_error = cls._refresh_worker_tools(session)
         if capability_error is not None:
             return capability_error
+        try:
+            cls._native_model_fallback_route(session, backend, model)
+        except Exception:  # noqa: BLE001 - fail closed without exposing native profile details.
+            return FailedAnswer("Native Modellfallbackkette ist nicht verifizierbar")
         binding = getattr(session, "worker_task_binding", None)
         if binding is None and getattr(session, "require_task_binding", False):
             return FailedAnswer("Taskbindung fehlt; Workerlauf nicht verifizierbar")
@@ -1944,10 +2085,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     msgs.append({"role": "user", "content": instruction})
 
             try:
-                result = await self._chat_with_compute_turn(
-                    selected_backend,
-                    msgs, tools=tools, think=session.think, model=selected_model
+                previous_backend = selected_backend
+                previous_model = selected_model
+                result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
+                    session, selected_backend, selected_model,
+                    msgs, tools=tools, think=session.think,
                 )
+                if selected_backend is not previous_backend or selected_model != previous_model:
+                    context_limit = self._context_limit_for_backend(selected_backend, selected_model)
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
@@ -2052,7 +2197,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = t_name
                 if t_name and t_name not in session.last_tools:
                     session.last_tools = (session.last_tools + [t_name])[-5:]
-                log.info(f"Tool [{round_num}]: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
+                log.info("Tool [%d] dispatch", round_num)
                 cid = getattr(session, "chat_id", "")
                 if cid:
                     try:
@@ -2079,12 +2224,58 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
-                t_result = exec_tool(
-                    t_name, t_args, session.mode,
-                    bach_app=self.bach_app,
-                    default_model=selected_model,
-                    **tool_kwargs,
-                )
+                traced_outcome = None
+                if binding is not None:
+                    from hub._services.chat.worker_tool_dispatch_trace import (
+                        abandon_normal_tool_result,
+                        acknowledge_normal_tool_result,
+                        execute_normal_tool,
+                    )
+                    traced_outcome = execute_normal_tool(
+                        binding, t_name, t_args,
+                        lambda name, arguments: exec_tool(
+                            name, arguments, session.mode,
+                            bach_app=self.bach_app,
+                            default_model=selected_model,
+                            **tool_kwargs,
+                        ),
+                    )
+                    if traced_outcome.status != "returned":
+                        binding.invalidate()
+                        session.current_tool = ""
+                        return FailedAnswer(
+                            "Worker-Werkzeugnachweis fehlt oder Werkzeugwirkung ist ungeklärt"
+                        )
+                    t_result = traced_outcome.result
+                else:
+                    t_result = exec_tool(
+                        t_name, t_args, session.mode,
+                        bach_app=self.bach_app,
+                        default_model=selected_model,
+                        **tool_kwargs,
+                    )
+                tool_call_id = ""
+                if hasattr(selected_backend, "_last_tool_call_ids"):
+                    ids = selected_backend._last_tool_call_ids
+                    if i < len(ids):
+                        tool_call_id = ids[i]
+                try:
+                    msgs.append(
+                        selected_backend.tool_response_message(str(t_result), tool_call_id)
+                    )
+                except Exception:  # noqa: BLE001 - Never replay an unconsumed tool effect.
+                    if traced_outcome is not None:
+                        abandon_normal_tool_result(binding, traced_outcome)
+                    elif binding is not None:
+                        binding.invalidate()
+                    session.current_tool = ""
+                    raise RuntimeError("Werkzeugantwort konnte nicht konsumiert werden") from None
+                if traced_outcome is not None:
+                    # This confirms consumption, never semantic task acceptance.
+                    if not acknowledge_normal_tool_result(binding, traced_outcome):
+                        binding.invalidate()
+                        session.current_tool = ""
+                        return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
@@ -2104,14 +2295,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     self._record_task_completion_receipt(
                         getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
                     )
-                tool_call_id = ""
-                if hasattr(selected_backend, "_last_tool_call_ids"):
-                    ids = selected_backend._last_tool_call_ids
-                    if i < len(ids):
-                        tool_call_id = ids[i]
-                msgs.append(
-                    selected_backend.tool_response_message(str(t_result), tool_call_id)
-                )
 
             # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
             # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
@@ -2152,9 +2335,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.think if selected_model == "glm-5.3:cloud"
                         else False
                     )
-                    final_res = await self._chat_with_compute_turn(
-                        selected_backend,
-                        msgs, tools=None, think=final_think, model=selected_model
+                    final_res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
+                        session, selected_backend, selected_model,
+                        msgs, tools=None, think=final_think,
                     )
                     if final_res.get("error"):
                         return FailedAnswer(
@@ -2243,11 +2426,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_model = model or session.model or selected_backend.get_default_model()
         handoff_error = None
         try:
-            res = await self._chat_with_compute_turn(
-                selected_backend,
+            res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
+                session, selected_backend, selected_model,
                 frage, tools=None,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
-                model=selected_model,
             )
             if res.get("error"):
                 raise RuntimeError(str(res["error"]))
@@ -2315,11 +2497,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         ]
 
         try:
-            result = await self._chat_with_compute_turn(
-                selected_backend,
+            result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
+                session, selected_backend, selected_model,
                 prompt,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
-                model=selected_model,
             )
             if result.get("error"):
                 raise RuntimeError(str(result["error"]))

@@ -186,6 +186,30 @@ def test_edit_uses_config_version_and_recomposes_role_prompt(tmp_path):
         slots.change_worker_configuration(worker_id, before["configuration_version"], {"name": "Stale"}, path=path)
 
 
+def test_worker_fallback_chain_is_typed_and_projected(tmp_path):
+    from gui.api.worker_status_adapter import (
+        WorkerStatusUnavailable,
+        _project_configuration,
+    )
+
+    path, worker_id = _worker(tmp_path)
+    before = slots.worker_configuration_snapshot(worker_id, path=path)
+    chain = [
+        {"backend": "ollama", "model": "qwen3.5:4b"},
+        {"backend": "openrouter", "model": "openrouter/free"},
+    ]
+    saved = slots.change_worker_configuration(
+        worker_id, before["configuration_version"], {"model_fallbacks": chain}, path=path,
+    )
+    projected = _project_configuration({"ok": True, **saved}, worker_id)
+    assert projected["configuration"]["model_fallbacks"] == chain
+
+    invalid = {"ok": True, **saved}
+    invalid["configuration"] = {**saved["configuration"], "model_fallbacks": "ollama/qwen3.5:4b"}
+    with pytest.raises(WorkerStatusUnavailable, match="Modellfallbacks"):
+        _project_configuration(invalid, worker_id)
+
+
 def test_worker_portrait_is_saved_and_projected_without_truncation(tmp_path):
     from gui.api.worker_status_adapter import _project_configuration, _project_worker
     path, worker_id = _worker(tmp_path)
