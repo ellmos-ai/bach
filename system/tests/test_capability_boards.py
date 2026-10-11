@@ -216,6 +216,21 @@ def test_daemon_tab_chains_serves_the_built_page_and_everything_else_stays_class
     assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains&tab=chains").text
     (tmp_path / "daemon.html").unlink()
     assert "tab-chains" in client.get("/daemon?tab=chains").text                            # rollback: remove the built page
+
+
+def test_system_tab_ocean_serves_the_built_page_and_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    (tmp_path / "settings.html").write_text("<h1>Settings</h1>", encoding="utf-8")
+    client = TestClient(server.app)
+    assert "Settings" in client.get("/system?tab=ocean").text  # dist page not built: unchanged fallback
+    (tmp_path / "system").mkdir()
+    (tmp_path / "system" / "ocean.html").write_text("<h1>Ocean</h1>", encoding="utf-8")
+    assert "Ocean" in client.get("/system?tab=ocean").text
+    assert "Ocean" in client.get("/system?tab=ocean&view=satelliten").text
+    assert "Settings" in client.get("/system").text
+    assert "Settings" in client.get("/system?tab=other").text
+
+
 def test_prompt_library_serves_the_built_page_first_and_keeps_the_legacy_template_as_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
     client = TestClient(server.app)

@@ -325,3 +325,21 @@ def test_dryrun_handles_a_missing_json_file_and_cli_output(board, tmp_path, caps
     assert "DRY-RUN" in capsys.readouterr().out
     assert dryrun.main(["--json", str(tmp_path / "absent.json"), "--db", str(board.db_path), "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)["changes_made"] is False
+
+
+def test_gui_capabilities_declares_the_assignment_route(board):
+    """The GUI tab "Zuordnung" is offered only when GET and PUT of the hierarchy route are declared here (Ocean without the adapter shows it as unavailable)."""
+    response = board.client.get("/api/gui/capabilities")
+    assert response.status_code == 200
+    declared = {(e["method"], e["path"]) for e in response.json()["endpoints"]}
+    assert ("GET", "/api/skills-board/hierarchy") in declared
+    assert ("PUT", "/api/skills-board/hierarchy") in declared
+    assert not any(path.startswith("/api/skills-board/item-file") for _, path in declared)   # retired routes are not advertised
+
+
+def test_gui_capabilities_pages_name_the_endpoints_the_gui_reads(board):
+    """/skills reads the library inventory (not /api/capabilities/skills); the optional assignment tab is its own entry.
+    Only the declared requirements are pinned: under `from gui import server` the unified router is not mounted (circular import), so the status is not testable here."""
+    pages = {p["path"]: p for p in board.client.get("/api/gui/capabilities").json()["pages"]}
+    assert pages["/skills"]["requires"] == ["GET /api/capabilities/skills/library"]
+    assert not any("#" in path for path in pages)   # no fragment keys: pages are routes, the optional tab is declared through endpoints

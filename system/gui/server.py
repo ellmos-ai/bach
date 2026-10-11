@@ -1902,8 +1902,13 @@ async def get_gui_capabilities():
     modules["policy-registry"] = {"adapter_registered": "/api/governance/policy-registry" in registered_paths,
         "runtime_verified": False, "available": None if policy["verified"] else False,
         "reason_code": policy["reason"], "observed_at": observed}
+    # Last real probe per configured template provider (taken on explicit sync, never on this GET).
+    from hub._services.template_provider_service import capability_status
+    provider_modules, provider_sources = capability_status()
+    modules.update(provider_modules)
     return declaration(app.routes, kit_status, read_gui_brand(), modules,
-                       public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS, module_sources=[policy])
+                       public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS,
+                       module_sources=[policy, *provider_sources])
 
 
 @app.get("/api/gui/kit-manifest")
@@ -5665,8 +5670,12 @@ async def settings_page():
 
 
 @app.get("/system", response_class=HTMLResponse)
-async def system_page():
-    """System-Route leitet auf Einstellungen/Setup weiter."""
+async def system_page(request: Request):
+    """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
+    if request.query_params.get("tab") == "ocean":
+        ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
+        if ocean_page.is_file():
+            return FileResponse(ocean_page)
     return await settings_page()
 
 
