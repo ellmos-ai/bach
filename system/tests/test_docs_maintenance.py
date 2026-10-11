@@ -628,6 +628,56 @@ def test_cli_failure_writes_redacted_runtime_receipt(tmp_path, monkeypatch, caps
     assert "private_token" not in json.dumps(receipt)
 
 
+def test_cli_serve_failure_writes_redacted_receipt_and_status_stays_fail_closed(
+    tmp_path, monkeypatch, capsys
+):
+    from hub._services.docs import maintenance_cli
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    root = tmp_path / "repo"
+    system = root / "system"
+    system.mkdir(parents=True)
+    handler = SimpleNamespace(
+        base_path=system,
+        user_db=local / "bach.db",
+        _external_state_db=lambda: local / "scheduler.db",
+    )
+
+    class FailingRuntime:
+        def __init__(self, *_args, **_options):
+            self.stop_event = SimpleNamespace(set=lambda: None)
+
+        def serve(self):
+            raise RuntimeError("private_token=do-not-copy")
+
+    monkeypatch.setattr(
+        maintenance_cli, "CanonicalLockGuard", lambda _config: lambda _path: None
+    )
+    monkeypatch.setattr(maintenance_cli, "MaintenanceRuntime", FailingRuntime)
+    monkeypatch.setattr(maintenance_cli.signal, "signal", lambda *_args: None)
+
+    ok, message = maintenance_cli.handle(handler, ["serve"])
+    stderr = capsys.readouterr().err
+    receipt = json.loads((runtime / "failure.json").read_text(encoding="utf-8"))
+    status = readonly_status(runtime, root=root, config_path=config_path)
+
+    assert ok is False
+    assert "private_token" not in message
+    assert "phase=serve exception=RuntimeError" in stderr
+    assert "private_token" not in stderr
+    assert receipt["schema"] == "bach.maintenance-failure.v1"
+    assert receipt["phase"] == "serve"
+    assert receipt["exception_class"] == "RuntimeError"
+    assert receipt["frames"]
+    assert "private_token" not in json.dumps(receipt)
+    assert status["running"] is False
+    assert status.get("identity") in {None, "unknown"}
+
+
 def test_status_does_not_project_nested_private_values(tmp_path):
     data, proc = status_receipt(tmp_path)
     data["documentation"] = {
