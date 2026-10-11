@@ -360,18 +360,25 @@ def _authorized_file_mutation_paths(source, destination, worker_task_binding=Non
             candidate = Path(value).expanduser()
             if not candidate.is_absolute():
                 candidate = Path.cwd() / candidate
-            candidate = Path(os.path.abspath(candidate))
-            candidate.relative_to(trusted_root)
+            lexical = os.path.abspath(os.fspath(candidate))
+            normalized = os.path.realpath(lexical)
+            root_text = os.path.realpath(os.fspath(trusted_root))
+            path_key = os.path.normcase(normalized)
+            root_key = os.path.normcase(root_text)
+            root_prefix = root_key.rstrip(os.sep) + os.sep
+            if path_key == root_key or not path_key.startswith(root_prefix):
+                raise ValueError("Pfad liegt außerhalb des BACH-Roots")
+            if path_key != os.path.normcase(lexical):
+                raise ValueError("Symlink- oder Ancestor-Umleitung erkannt")
             sanitized = Path(sanitize_host_path(
-                candidate,
+                normalized,
                 base_path=trusted_root,
                 allowed_roots=(trusted_root,),
                 must_exist=must_exist,
             )).resolve(strict=must_exist)
-            if sanitized != candidate:
-                raise ValueError("Symlink- oder Ancestor-Umleitung erkannt")
-            sanitized.relative_to(trusted_root)
-            return sanitized
+            if os.path.normcase(os.fspath(sanitized)) != path_key:
+                raise ValueError("Sanitisierter Pfad weicht vom geprüften Pfad ab")
+            return Path(normalized)
 
         return (
             checked_path(source, must_exist=True),
@@ -1630,7 +1637,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 source_path, destination_path = _authorized_file_mutation_paths(
                     src, dst, worker_task_binding)
                 shutil.move(str(source_path), str(destination_path))
-                log.info(f"MOVE: {source_path} -> {destination_path}")
+                log.info("MOVE: Datei im geprüften BACH-Bereich verschoben")
                 return f"Verschoben: {source_path} → {destination_path}"
             except Exception as e:
                 return f"Fehler beim Verschieben: {e}"
@@ -1663,7 +1670,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 else:
                     shutil.copy2(
                         str(confirmed_source), str(confirmed_destination), follow_symlinks=False)
-                log.info(f"COPY: {confirmed_source} -> {confirmed_destination}")
+                log.info("COPY: Datei im geprüften BACH-Bereich kopiert")
                 return f"Kopiert: {confirmed_source} → {confirmed_destination}"
             except Exception as e:
                 return f"Fehler beim Kopieren: {e}"

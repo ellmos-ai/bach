@@ -110,13 +110,14 @@ def test_authorization_rejects_symlinked_write_path(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["safe", "full"])
-def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monkeypatch, mode):
+def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monkeypatch, mode, caplog):
     from hub import bach_paths
 
     trusted_root = tmp_path / "bach"
     user_dir = trusted_root / "user"
     user_dir.mkdir(parents=True)
     monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+    caplog.set_level("INFO", logger="bach.chat")
 
     copy_source = user_dir / "copy-source.txt"
     copy_source.write_text("copy", encoding="utf-8")
@@ -126,6 +127,8 @@ def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monk
     }, mode=mode)
     assert "Kopiert:" in copied
     assert copy_destination.read_text(encoding="utf-8") == "copy"
+    assert str(copy_source) not in caplog.text
+    assert str(copy_destination) not in caplog.text
 
     copy_tree_source = user_dir / "copy-tree-source"
     copy_tree_source.mkdir()
@@ -170,6 +173,8 @@ def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monk
     }, mode=mode)
     assert "Verschoben:" in moved
     assert move_destination.read_text(encoding="utf-8") == "move"
+    assert str(move_source) not in caplog.text
+    assert str(move_destination) not in caplog.text
     assert not move_source.exists()
 
     external_move_source = external / "move-source.txt"
