@@ -250,6 +250,11 @@ def test_slot_materialized_before_3b_stays_legacy_but_global_ban_applies(state, 
         start(state, saved, current)
 
 
+def test_client_cannot_write_the_pin_log(state):
+    saved = save(state, governance={"tool_whitelist": ["read_files"], "pin_log": [{"forged": True}]})
+    assert "pin_log" not in json.loads(row(state, saved["id"])["governance_json"])
+
+
 def test_binding_is_not_a_user_editable_slot_field(state):
     configured = materialize(state, save(state))
     with pytest.raises(ValueError):
@@ -325,7 +330,7 @@ def controller(state, monkeypatch):
     monkeypatch.setattr(control, "finish_assignment", lambda *args, **kw: None)
     assignments = []
     monkeypatch.setattr(control, "begin_assignment", lambda **kw: assignments.append(kw) or kw)
-    control.assignments = assignments
+    monkeypatch.setattr(control, "assignments", assignments, raising=False)
     return control
 
 
