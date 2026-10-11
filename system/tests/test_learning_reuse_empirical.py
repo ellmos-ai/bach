@@ -1,10 +1,12 @@
-"""Synthetic, isolated contract test for learning review, promotion and reuse.
+"""Synthetic, isolated test of review, promotion and prompt delivery.
 
-This test checks source-to-reader binding only. It does not call a model and
+The regression follows a promoted lesson through ExternalMemoryHook and
+ChatRuntime.process into a recording backend; it never calls a model and
 cannot establish answer quality.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -13,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from hub._services.chat.chat_runtime import ChatRuntime
-from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.hermes_distillation_service import HermesDistillationService
 from hub._services.learning_promotion_service import (
     LearningPromotionService,
@@ -31,6 +32,20 @@ EXPECTED_FILES = {
     "blind-rating.schema.json",
 }
 
+
+class _RecordingBackend:
+    def __init__(self):
+        self.calls = []
+
+    def get_default_model(self):
+        return "fixture-model"
+
+    def get_context_limit(self):
+        return 32768
+
+    async def chat(self, messages, **_kwargs):
+        self.calls.append(messages)
+        return {"content": "fixture-answer"}
 
 def _read_json(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
@@ -86,6 +101,64 @@ def _new_isolated_bach_db(tmp_path: Path) -> Path:
             """
         )
     return database
+
+
+def _process_with_memory_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    database: Path,
+    *,
+    opt_in: bool,
+    worker_label: str,
+    prompt: str,
+) -> str:
+    """Run the real hook through ChatRuntime.process into a local recorder."""
+    from hub._services.chat import slots_config as slots
+    from hub.memory_hook_provider import ExternalMemoryHook
+
+    monkeypatch.delenv("BACH_USE_EXTERNAL_MEMORYHOOKS", raising=False)
+    slots_path = tmp_path / f"{worker_label}-slots.json"
+    slots.initialize_slots_config(str(slots_path))
+    worker = slots.add_worker(
+        {
+            "name": f"Synthetic MemoryHook {worker_label}",
+            "model": "fixture-model",
+            "backend": "ollama",
+            "allow_tools": False,
+            "task_prompt": "Use the verified synthetic memory when relevant.",
+        },
+        path=str(slots_path),
+    )
+    worker_id = worker["id"]
+    snapshot = slots.worker_configuration_snapshot(worker_id, path=str(slots_path))
+    slots.change_worker_configuration(
+        worker_id, snapshot["configuration_version"],
+        {"memory_hook_opt_in": opt_in}, path=str(slots_path),
+    )
+
+    backend = _RecordingBackend()
+    runtime = ChatRuntime(backend)
+    runtime._get_bach_context = lambda _text: ""
+    hook = ExternalMemoryHook(
+        db_path=database,
+        config_path=tmp_path / f"{worker_label}-memoryhooker.toml",
+        mode="remember+search",
+    )
+    monkeypatch.setattr(runtime, "_memory_hook", lambda: hook)
+    session = runtime.get_session(worker_id)
+    session.custom_system_prompt = "PERSONA SYSTEMPROMPT"
+    session.worker_slot_reader = lambda: slots.get_worker_slot(
+        worker_id, path=str(slots_path)
+    )
+
+    answer = asyncio.run(
+        runtime.process(prompt, worker_id, backend=backend, model="fixture-model")
+    )
+    assert answer == "fixture-answer"
+    assert backend.calls
+    messages = backend.calls[-1]
+    assert messages and messages[0]["role"] == "system"
+    return messages[0]["content"]
 
 
 def test_synthetic_panel_and_reader_schemas_are_hash_bound() -> None:
@@ -226,32 +299,95 @@ def test_reviewed_hermes_lesson_is_retrievable_in_a_fresh_session(
     assert target_state["targets"]["lessons"]["state"] == "published"
     assert target_state["targets"]["lessons"]["targets_published"] is True
 
-    # The actual memoryhooker adapter reads only from this isolated database.
-    # No ChatRuntime.process call occurs, so this checks retrieval, not inference.
-    monkeypatch.delenv("BACH_USE_EXTERNAL_MEMORYHOOKS", raising=False)
-    from hub.memory_hook_provider import ExternalMemoryHook
+    # This is the actual process -> ExternalMemoryHook -> backend prompt path.
+    query = "Wie halte ich Änderungen klein und überprüfbar und prüfe freigegebene Dateien?"
+    delivered_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=True, worker_label="published-on",
+        prompt=query,
+    )
+    assert draft["title"] in delivered_prompt
+    assert "freigegebenen Dateien" in delivered_prompt
+    assert source["source_session_id"] not in delivered_prompt
+    assert delivered_prompt.index("PERSONA SYSTEMPROMPT") < delivered_prompt.index(
+        "--- MEMORY-HOOK ---"
+    ) < delivered_prompt.index(draft["title"])
 
-    hook = ExternalMemoryHook(
-        db_path=database,
-        config_path=tmp_path / "memoryhooker.toml",
-        mode="remember+search",
+    # Published content remains gated by the native worker opt-in.
+    opted_out_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=False, worker_label="published-off",
+        prompt=query,
     )
-    runtime = ChatRuntime(
-        backend=None,
-        session_store=SQLiteChatSessionStore(database),
-    )
-    monkeypatch.setattr(runtime, "_memory_hook", lambda: hook)
-    new_session_id = "synthetic-independent-session-v1"
-    fresh_session = runtime.get_session(new_session_id)
-    assert fresh_session.chat_id == new_session_id
-    assert fresh_session.messages == []
+    assert draft["title"] not in opted_out_prompt
+    assert "--- MEMORY-HOOK ---" not in opted_out_prompt
+    assert source["source_session_id"] not in opted_out_prompt
 
-    context = runtime._get_memory_hook_context(
-        "Wie halte ich Änderungen klein und überprüfbar und prüfe freigegebene Dateien?",
-        new_session_id,
+    # Revocation keeps the target row for audit but makes it unavailable to the hook.
+    revoked = promotion.revoke(
+        "hermes", candidate_id, target_kind="lessons",
+        expected_revision=revision, expected_digest=digest,
+        source_request_id="promote-synthetic-lesson-v1",
+        request_id="revoke-synthetic-lesson-v1", actor="test:synthetic-harness",
     )
-    assert isinstance(context, str) and context
-    assert draft["title"] in context
-    assert "freigegebenen Dateien" in context
-    assert fresh_session.messages == []
-    assert source["source_session_id"] not in context
+    assert revoked["status"] == "reverted"
+    assert revoked["targets_revoked"] is True
+    with sqlite3.connect(database) as conn:
+        target = conn.execute(
+            "SELECT title, solution, is_active FROM memory_lessons WHERE title=?",
+            (draft["title"],),
+        ).fetchone()
+    assert target is not None and target[2] == 0
+    assert target[0] == draft["title"] and "freigegebenen Dateien" in target[1]
+
+    revoked_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=True, worker_label="revoked-on",
+        prompt=query,
+    )
+    assert draft["title"] not in revoked_prompt
+    assert "freigegebenen Dateien" not in revoked_prompt
+    assert source["source_session_id"] not in revoked_prompt
+
+
+def test_pending_and_rejected_lessons_never_reach_backend_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _read_json("source-session-v1.json")
+    database = _new_isolated_bach_db(tmp_path)
+    hermes = HermesDistillationService(database)
+    query = "Wie halte ich Änderungen klein und überprüfbar und prüfe freigegebene Dateien?"
+
+    pending = hermes.run_pipeline(
+        source["messages"], session_id="synthetic-pending-source-v1",
+        skill_name_hint="synthetic-pending-learning-reuse", persist=True,
+    ).candidate
+    pending_title = pending["lessons_draft"][0]["title"]
+    assert pending["status"] == "pending"
+    pending_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=True, worker_label="pending-on",
+        prompt=query,
+    )
+    assert pending_title not in pending_prompt
+    assert "freigegebenen Dateien" not in pending_prompt
+    assert "synthetic-pending-source-v1" not in pending_prompt
+
+    rejected = hermes.run_pipeline(
+        source["messages"], session_id="synthetic-rejected-source-v1",
+        skill_name_hint="synthetic-rejected-learning-reuse", persist=True,
+    ).candidate
+    rejected_title = rejected["lessons_draft"][0]["title"]
+    rejection = hermes.reject_candidate(
+        rejected["id"], "Abgelehnter synthetischer Testkandidat.",
+        expected_revision=rejected["candidate_revision"],
+        expected_digest=rejected["candidate_digest"],
+        request_id="reject-synthetic-learning-reuse-v1",
+        actor="reviewer:synthetic-panel",
+    )
+    assert rejection["status"] == "rejected"
+    rejected_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=True, worker_label="rejected-on",
+        prompt=query,
+    )
+    assert rejected_title not in rejected_prompt
+    assert "freigegebenen Dateien" not in rejected_prompt
+    assert "synthetic-rejected-source-v1" not in rejected_prompt
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM memory_lessons").fetchone()[0] == 0
