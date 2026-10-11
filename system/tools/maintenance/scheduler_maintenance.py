@@ -63,18 +63,52 @@ def _serve_target():
     return task_db, runtime
 
 
+def _path_has_symlink(path):
+    current = Path(path)
+    while True:
+        if current.is_symlink():
+            return True
+        if current == current.parent:
+            return False
+        current = current.parent
+
+
 def _write_startup_failure(phase, error):
     try:
         target = _serve_target()
         if target is None:
             return False
         task_db, runtime = target
+        if _path_has_symlink(task_db) or _path_has_symlink(runtime):
+            return False
+        task_db = task_db.resolve()
+        runtime = runtime.resolve()
+        config_path = runtime / "config.json"
+        if (
+            _path_has_symlink(config_path)
+            or not config_path.is_file()
+            or config_path.resolve().parent != runtime
+        ):
+            return False
+
+        from hub._services.docs import maintenance_runtime
+
+        system_root = SYSTEM_ROOT.resolve()
+        runtime_source = Path(maintenance_runtime.__file__).resolve()
+        expected_runtime_source = (
+            system_root / "hub/_services/docs/maintenance_runtime.py"
+        ).resolve()
+        if runtime_source != expected_runtime_source:
+            return False
+        config = maintenance_runtime.load_config(config_path)
+        guard = maintenance_runtime.CanonicalLockGuard(config)
+
         helper_path = SYSTEM_ROOT / "hub/_services/docs/maintenance_failure.py"
         if (
             helper_path.is_symlink()
             or not helper_path.is_file()
             or helper_path.stat().st_size > 32768
-            or not helper_path.resolve().is_relative_to(SYSTEM_ROOT.resolve())
+            or not helper_path.resolve().is_relative_to(system_root)
         ):
             return False
         spec = importlib.util.spec_from_file_location(
@@ -86,12 +120,13 @@ def _write_startup_failure(phase, error):
         spec.loader.exec_module(module)
         return module.write_failure_receipt(
             runtime,
-            SYSTEM_ROOT.parent,
+            system_root.parent,
             phase,
             error,
+            guard=guard,
             task_db=task_db,
         )
-    except Exception:  # noqa: BLE001 - never expose launcher diagnostics
+    except Exception:  # noqa: BLE001 - preserve primary failure and redact diagnostics
         return False
 
 

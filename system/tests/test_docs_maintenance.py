@@ -729,6 +729,7 @@ def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
     assert data["installed"] is False and data["started"] is False
     assert plist["StandardOutPath"] == str(runtime / "scheduler.stdout.log")
     assert plist["StandardErrorPath"] == str(runtime / "scheduler.stderr.log")
+    assert plist["Umask"] == "077"
     assert all(
         Path(plist[key]).parent == runtime
         and "onedrive" not in plist[key].casefold()
@@ -969,6 +970,262 @@ def test_startup_import_failure_reports_receipt_unavailable_without_guard(
     stderr = capsys.readouterr().err
     assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
     assert "private_token" not in stderr
+    assert not (runtime / "failure.json").exists()
+
+
+def test_startup_import_failure_uses_validated_native_lock_guard(
+    tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    from hub._services.docs import maintenance_runtime
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_guarded_startup_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    config_path = runtime / "config.json"
+    expected_config = config(tmp_path)
+    config_path.write_text(json.dumps(expected_config), encoding="utf-8")
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(config_path),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+    guard_calls = []
+    guard_configurations = []
+
+    def make_guard(value):
+        guard_configurations.append(value)
+        return lambda path: guard_calls.append(Path(path))
+
+    monkeypatch.setattr(maintenance_runtime, "CanonicalLockGuard", make_guard)
+
+    def fail_import():
+        raise ImportError("private_token=never-copy-this")
+
+    monkeypatch.setattr(entrypoint, "load_handler", fail_import)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=written" in stderr
+    assert "private_token" not in stderr and "Traceback" not in stderr
+    assert guard_configurations == [expected_config]
+    assert len(guard_calls) == 3
+    assert guard_calls[0] == runtime / "failure.json"
+    assert guard_calls[1].parent == runtime
+    assert guard_calls[1].name.startswith(".failure-")
+    assert guard_calls[2] == runtime / "failure.json"
+    receipt = json.loads((runtime / "failure.json").read_text(encoding="utf-8"))
+    assert receipt["schema"] == "bach.maintenance-failure.v1"
+    assert receipt["phase"] == "handler_import"
+    assert receipt["exception_class"] == "ImportError"
+    assert set(receipt) == {
+        "schema",
+        "observed_at",
+        "phase",
+        "exception_class",
+        "host",
+        "revision",
+        "owner_generation",
+    }
+    assert "private_token" not in json.dumps(receipt)
+    assert (runtime / "failure.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_startup_import_failure_with_denied_lock_guard_is_unavailable(
+    tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    from hub._services.docs import maintenance_runtime
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_denied_startup_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(config_path),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+    secret = "private-lock-path-secret"
+
+    def deny_guard(_path):
+        raise PermissionError(secret)
+
+    monkeypatch.setattr(
+        maintenance_runtime, "CanonicalLockGuard", lambda _config: deny_guard
+    )
+    monkeypatch.setattr(
+        entrypoint,
+        "load_handler",
+        lambda: (_ for _ in ()).throw(ImportError("private startup secret")),
+    )
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
+    assert secret not in stderr and "private startup secret" not in stderr
+    assert "Traceback" not in stderr
+    assert not (runtime / "failure.json").exists()
+
+
+@pytest.mark.parametrize("scanner_state", ["missing", "untrusted"])
+def test_startup_failure_with_real_lock_guard_fails_closed(
+    scanner_state, tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    from hub._services.docs import maintenance_runtime
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        f"bach_maintenance_real_guard_{scanner_state}_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    config_path = runtime / "config.json"
+    lock_tools = tmp_path / "lock-tools"
+    lock_tools.mkdir()
+    expected_config = dict(config(tmp_path))
+    expected_config["lock_tools_root"] = str(lock_tools)
+    config_path.write_text(json.dumps(expected_config), encoding="utf-8")
+    assert maintenance_runtime.load_config(config_path) == expected_config
+
+    if scanner_state == "untrusted":
+        (lock_tools / "lock_scan.py").write_text(
+            "print('not the pinned scanner')", encoding="utf-8"
+        )
+        (lock_tools / "lock_utils.py").write_text(
+            "def not_the_pinned_lock_utility(): pass", encoding="utf-8"
+        )
+
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(config_path),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+    secret = "private_startup_failure_must_not_escape"
+
+    def fail_import():
+        raise ImportError(secret)
+
+    monkeypatch.setattr(entrypoint, "load_handler", fail_import)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
+    assert secret not in stderr
+    assert str(lock_tools) not in stderr
+    assert "Traceback" not in stderr
+    assert not (runtime / "failure.json").exists()
+
+
+def test_startup_failure_rejects_wrong_maintenance_runtime_origin(
+    tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    from hub._services.docs import maintenance_runtime
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_wrong_runtime_origin_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(config_path),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+    wrong_origin = tmp_path / "private-origin" / "maintenance_runtime.py"
+    monkeypatch.setattr(maintenance_runtime, "__file__", str(wrong_origin))
+
+    def fail_import():
+        raise ImportError("private startup path")
+
+    monkeypatch.setattr(entrypoint, "load_handler", fail_import)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
+    assert "private startup path" not in stderr
+    assert str(wrong_origin) not in stderr
+    assert "Traceback" not in stderr
     assert not (runtime / "failure.json").exists()
 
 

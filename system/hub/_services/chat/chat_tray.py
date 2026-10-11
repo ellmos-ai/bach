@@ -13,9 +13,11 @@ Start:
   BACH_IDLE_WORKER=0  -> Host startet keinen neuen Always-On-Lauf
 """
 import argparse
+import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -63,6 +65,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 
 
 class _NoWorkerRedirect(urllib.request.HTTPRedirectHandler):
@@ -366,6 +369,168 @@ class BACHTray:
         except (urllib.error.URLError, OSError):
             return False
 
+    @staticmethod
+    def _safe_worker_execution(worker_id, execution):
+        if not isinstance(execution, dict):
+            return None
+        if (execution.get("schema") != "bach.worker-execution.v1"
+                or execution.get("worker_id") != worker_id
+                or execution.get("state") not in {
+                    "idle", "starting", "running", "stopping", "finishing", "terminal", "unconfirmed"
+                }
+                or type(execution.get("terminal")) is not bool):
+            return None
+        safe = {"schema": execution["schema"], "worker_id": worker_id,
+                "state": execution["state"], "terminal": execution["terminal"]}
+        for key in ("service_instance", "start_request_id", "generation"):
+            value = execution.get(key)
+            if value is None and key != "service_instance":
+                safe[key] = None
+            elif isinstance(value, str) and len(value) == 32 and all(c in "0123456789abcdef" for c in value):
+                safe[key] = value
+            else:
+                return None
+        heartbeat = execution.get("heartbeat_at")
+        if heartbeat is not None:
+            if not isinstance(heartbeat, str) or len(heartbeat) > 40 or "\x00" in heartbeat:
+                return None
+            try:
+                datetime.datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            safe["heartbeat_at"] = heartbeat
+        error_code = execution.get("error_code")
+        if isinstance(error_code, str) and re.fullmatch(r"[a-z0-9_:-]{1,64}", error_code):
+            safe["error_code"] = error_code
+        task_id = execution.get("active_task_id")
+        if type(task_id) is int and task_id > 0:
+            safe["active_task_id"] = task_id
+        return safe
+
+    @staticmethod
+    def _persistent_cloud_profile(worker):
+        if not isinstance(worker, dict):
+            return False
+        backend, model = worker.get("backend"), worker.get("model")
+        if not isinstance(model, str) or not model.strip():
+            return False
+        return (backend in {"ollama-cloud", "openrouter"}
+                or backend == "ollama" and model.lower().endswith(":cloud"))
+
+    def _dynamic_worker_start_enabled(self, worker):
+        if (self.state.get("connected") is not True
+                or not isinstance(worker, dict)
+                or worker.get("runtime_verified") is not True
+                or worker.get("worker_active") is not False
+                or worker.get("running") is not False
+                or worker.get("enabled") is not True
+                or worker.get("status") not in {"idle", "error", "completed"}):
+            return False
+        pause = worker.get("pause_info")
+        if isinstance(pause, dict) and pause.get("is_paused") is True:
+            return False
+        execution = worker.get("execution")
+        if execution is not None:
+            execution = self._safe_worker_execution(worker.get("id"), execution)
+            if execution is None or execution["state"] not in {"idle", "terminal"}:
+                return False
+            if execution["state"] == "terminal" and execution["terminal"] is not True:
+                return False
+        return True
+
+    def _persistent_worker_toggle_enabled(self, worker):
+        if not isinstance(worker, dict):
+            return False
+        if worker.get("persistent_opt_in") is True:
+            return True
+        return (self._dynamic_worker_start_enabled(worker)
+                and worker.get("type") in {"continuous", "persistent"}
+                and self._persistent_cloud_profile(worker))
+
+    def _worker_runtime_lines(self, worker):
+        if not isinstance(worker, dict) or worker.get("runtime_verified") is not True:
+            return ["Laufstatus: nicht geprüft", "Generation: nicht bestätigt",
+                    "Task: unbekannt", "Heartbeat: unbekannt"]
+        execution = self._safe_worker_execution(worker.get("id"), worker.get("execution"))
+        active = worker.get("worker_active")
+        running = worker.get("running")
+        if execution is not None:
+            state = execution["state"]
+            if state == "running" and active is True:
+                runtime = "läuft"
+            elif state == "starting" and active is True:
+                runtime = "Start wird geprüft"
+            elif state in {"stopping", "finishing"} and active is True:
+                runtime = "Beendigung läuft"
+            elif state == "terminal" and execution["terminal"] is True:
+                runtime = "beendet"
+            elif state == "idle" and active is False and running is False:
+                runtime = "bereit"
+            elif state == "unconfirmed" or active is None or running is None:
+                runtime = "nicht bestätigt"
+            else:
+                runtime = "widersprüchlicher Status"
+            generation = execution.get("generation")
+            generation_label = (f"letzte Generation {generation[:8]}" if state == "terminal"
+                                else f"Generation {generation[:8]}" if generation
+                                else "keine aktive Generation")
+            heartbeat = execution.get("heartbeat_at")
+            heartbeat_label = (heartbeat[:19].replace("T", " ") if heartbeat else "unbekannt")
+            error_code = execution.get("error_code")
+            error_label = f"Fehlercode: {error_code}" if error_code else None
+            active_task_id = execution.get("active_task_id")
+        else:
+            runtime = "bereit" if active is False and running is False else "nicht bestätigt"
+            generation_label = "keine aktive Generation" if active is False else "Generation unbekannt"
+            heartbeat_label = "unbekannt"
+            error_label = None
+            active_task_id = None
+        task_label = f"aktive Task #{active_task_id}" if type(active_task_id) is int and active_task_id > 0 else (
+            "keine aktive Task" if running is False else "Task unbekannt")
+        lines = [f"Laufstatus: {runtime}", f"{generation_label}", f"Task: {task_label}",
+                 f"Heartbeat: {heartbeat_label}"]
+        queue_status = worker.get("queue_status")
+        outcome = queue_status.get("outcome") if isinstance(queue_status, dict) else None
+        if outcome in {"empty_queue", "selection_excluded", "acquire_denied", "selection_error"}:
+            lines.append(f"Wartegrund: {outcome}")
+        if error_label:
+            lines.append(error_label)
+        return lines
+
+    def _toggle_persistent_worker_action(self, worker_id):
+        def action(*_):
+            if self.state.get("connected") is not True:
+                self._notify_error("Controlstatus nicht bestätigt; Dauerstart bleibt unverändert")
+                return
+            endpoint = "/api/workers/configuration?" + urlencode({"id": worker_id})
+            current = self._api("GET", endpoint)
+            if (not isinstance(current, dict) or current.get("ok") is not True
+                    or current.get("id") != worker_id
+                    or not isinstance(current.get("configuration_version"), str)
+                    or type(current.get("persistent_opt_in")) is not bool):
+                self._notify_error("Dauerstart konnte nicht sicher gelesen werden")
+                return
+            desired = not current["persistent_opt_in"]
+            if desired:
+                profile = next((w for w in self.dynamic_workers if w.get("id") == worker_id), None)
+                if not self._persistent_worker_toggle_enabled({**(profile or {}), "persistent_opt_in": False}):
+                    self._notify_error("Dauerstart ist für dieses Profil derzeit nicht verfügbar")
+                    return
+            result = self._api("POST", "/api/workers/configuration", {
+                "id": worker_id,
+                "configuration_version": current["configuration_version"],
+                "changes": {"persistent_opt_in": desired},
+            })
+            if (not isinstance(result, dict) or result.get("ok") is not True
+                    or result.get("persistent_opt_in") is not desired):
+                self._notify_error("Dauerstart konnte nicht bestätigt werden")
+                return
+            if self.icon:
+                self.icon.notify("Dauerstart geändert", "BACH Worker")
+            self._refresh()
+            self._update_icon()
+        return action
+
     def _refresh(self):
         status = self._api("GET", "/api/status", timeout=8)
         if status and "backend" in status:
@@ -388,7 +553,31 @@ class BACHTray:
         slots_resp = self._api("GET", "/api/slots")
         if slots_resp and slots_resp.get("ok"):
             self.slots = slots_resp.get("slots", {})
-            self.dynamic_workers = slots_resp.get("dynamic_workers", [])
+            workers = slots_resp.get("dynamic_workers", [])
+            runtime_response = self._api("GET", "/api/workers")
+            runtime_by_id = {}
+            if (isinstance(runtime_response, dict) and runtime_response.get("ok") is True
+                    and isinstance(runtime_response.get("workers"), list)):
+                runtime_by_id = {w.get("id"): w for w in runtime_response["workers"]
+                                 if isinstance(w, dict) and isinstance(w.get("id"), str)}
+            self.dynamic_workers = []
+            for source in workers if isinstance(workers, list) else []:
+                if not isinstance(source, dict) or not isinstance(source.get("id"), str):
+                    continue
+                worker = dict(source)
+                live = runtime_by_id.get(worker["id"])
+                verified = (isinstance(live, dict) and live.get("runtime_verified") is True
+                            and type(live.get("worker_active")) is bool
+                            and type(live.get("running")) is bool)
+                worker["runtime_verified"] = verified
+                worker["worker_active"] = live.get("worker_active") if verified else None
+                worker["running"] = live.get("running") if verified else None
+                worker["queue_status"] = live.get("queue_status") if verified else None
+                worker["execution"] = (self._safe_worker_execution(worker["id"], live.get("execution"))
+                                        if verified else None)
+                worker["runtime_status"] = live.get("status") if verified else None
+                worker["persistent_opt_in"] = worker.get("persistent_opt_in") is True
+                self.dynamic_workers.append(worker)
             if "fackel_preference" in slots_resp:
                 self.state["fackel_preference"] = slots_resp["fackel_preference"]
 
@@ -851,24 +1040,31 @@ class BACHTray:
                 wstatus = w.get("status", "idle")
                 wmodel = w.get("model", "?")
                 wturns = w.get("max_tool_rounds", 20)
-                wact = w.get("current_activity", "Bereit")
                 wrole = w.get("role", "General")
+                persistent_label = "Dauerstart: an" if w.get("persistent_opt_in") is True else "Dauerstart: aus"
 
-                start_item = (
-                    pystray.MenuItem("⏳ Läuft...", None, enabled=False)
-                    if wstatus == "running"
-                    else pystray.MenuItem("▶ Starten", self._run_worker_action(wid))
-                )
+                if self._dynamic_worker_start_enabled(w):
+                    start_item = pystray.MenuItem("▶ Starten", self._run_worker_action(wid))
+                else:
+                    start_item = pystray.MenuItem("Start gesperrt: Laufstatus/Profil prüfen", None, enabled=False)
 
                 w_actions = [
                     pystray.MenuItem(f"Rolle: {wrole} | {wturns} Turns", None, enabled=False),
-                    pystray.MenuItem(f"Aktivität: {wact[:35]}", None, enabled=False),
+                    pystray.MenuItem(f"Profilstatus: {wstatus}", None, enabled=False),
+                    pystray.MenuItem(persistent_label, None, enabled=False),
+                    *[pystray.MenuItem(line, None, enabled=False) for line in self._worker_runtime_lines(w)],
                     start_item,
+                    pystray.MenuItem(
+                        "Dauerstart beim Control-Neustart",
+                        self._toggle_persistent_worker_action(wid),
+                        checked=lambda item, w=w: w.get("persistent_opt_in") is True,
+                        enabled=lambda item, w=w: self._persistent_worker_toggle_enabled(w),
+                    ),
                     pystray.MenuItem("▶ Fortsetzen" if wstatus == "paused" else "⏸ Pausieren",
                                      self._toggle_worker_action(wid, wstatus)),
                     pystray.MenuItem("🗑 Worker löschen", self._delete_worker_action(wid)),
                 ]
-                workers_subitems.append(pystray.MenuItem(f"{wname} [{wstatus}] ({wmodel})", pystray.Menu(*w_actions)))
+                workers_subitems.append(pystray.MenuItem(f"{wname} [Profil: {wstatus}] ({wmodel})", pystray.Menu(*w_actions)))
 
             if workers_subitems:
                 workers_subitems.append(pystray.Menu.SEPARATOR)
