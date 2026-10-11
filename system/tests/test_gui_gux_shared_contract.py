@@ -173,13 +173,13 @@ class TestPinnedKitManifest(unittest.TestCase):
         manifest = get_pinned_kit_manifest()
         self.assertTrue(manifest.get("verified"), f"Manifest failed: {manifest.get('error')}")
         self.assertEqual(manifest.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(manifest.get("pinned_source_commit"), "c226c3405f27d18ad83fba6326269412a2de42a5")
-        self.assertEqual(manifest.get("version"), "0.2.15")
-        self.assertEqual(manifest.get("expected_page_count"), 22)
-        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.15-c226c3405f27.zip")
+        self.assertEqual(manifest.get("pinned_source_commit"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+        self.assertEqual(manifest.get("version"), "0.2.19")
+        self.assertEqual(manifest.get("expected_page_count"), 25)
+        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.19-e909dd92bd2c.zip")
         self.assertEqual(
             manifest.get("release_archive_sha256"),
-            "0c0b0dcf20948ee4b4ec828a33e0046f4ffe5d03e69a5da8b8330adcdf002996",
+            "66aba8081743aa4c8e44c9cea09644ce7f88cfb15365ef0822f27536decc03b4",
         )
 
     def test_dist_manifest_verification_against_local_repo(self):
@@ -188,12 +188,13 @@ class TestPinnedKitManifest(unittest.TestCase):
         if not configured:
             self.skipTest("Explicit release distribution was not supplied")
         dist_path = Path(configured)
-        if dist_path.exists():
-            verification = verify_installed_dist(dist_path, expected_commit="c226c3405f27d18ad83fba6326269412a2de42a5")
+        self.assertTrue(dist_path.is_dir(), "Explicit release distribution must exist")
+        if dist_path.is_dir():
+            verification = verify_installed_dist(dist_path, expected_commit="e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
             self.assertTrue(verification["installed"])
             self.assertTrue(verification["verified"])
             self.assertEqual(verification["reason_code"], "verified")
-            self.assertEqual(verification["page_count"], 22)
+            self.assertEqual(verification["page_count"], 25)
 
 
 class TestUniversalGuiDifferentiation(unittest.TestCase):
@@ -257,6 +258,31 @@ class TestGuiServerEndpoints(unittest.TestCase):
         from starlette.testclient import TestClient
         cls.client = TestClient(app, base_url="http://testserver", raise_server_exceptions=False)
 
+    def test_all_pinned_release_pages_use_exact_shared_bytes(self):
+        import os
+        configured = os.environ.get("GUI_RELEASE_TEST_DIST")
+        if not configured:
+            self.skipTest("Explicit release distribution was not supplied")
+        dist_path = Path(configured)
+        self.assertTrue(dist_path.is_dir())
+        manifest = json.loads((dist_path / "dist-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source_commit"], "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+        self.assertIn("page-reads.v1.json", manifest["files"])
+        pages = [name for name in manifest["files"] if name.endswith(".html")]
+        self.assertEqual(len(pages), 25)
+        for name in pages:
+            route = "/" if name == "index.html" else "/" + name.removesuffix(".html")
+            if name == "system/ocean.html":
+                route = "/system?tab=ocean"
+            elif name == "daemon.html":
+                # The shared chain page has a documented tab route; /daemon
+                # continues to host the separate legacy daemon manager.
+                route = "/daemon?tab=chains"
+            with self.subTest(page=name, route=route):
+                response = self.client.get(route)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, (dist_path / name).read_bytes())
+
     def test_route_gui_brand(self):
         resp = self.client.get("/api/gui/brand")
         self.assertEqual(resp.status_code, 200)
@@ -279,7 +305,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(data.get("pinned_source_commit"), "c226c3405f27d18ad83fba6326269412a2de42a5")
+        self.assertEqual(data.get("pinned_source_commit"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
         self.assertIn("installed_dist", data)
 
     def test_route_gui_architecture_concepts(self):
@@ -297,7 +323,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos.gui.capabilities.v1")
         self.assertIn("kit", data)
-        self.assertEqual(data["kit"].get("revision"), "c226c3405f27d18ad83fba6326269412a2de42a5")
+        self.assertEqual(data["kit"].get("revision"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
         self.assertIn("brand", data)
         self.assertIn("modules", data)
 
