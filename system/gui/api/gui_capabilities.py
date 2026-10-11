@@ -7,17 +7,25 @@ PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
             "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/")
+# Exact paths for single GET reads whose parent path also holds routes that are not page reads (for example /api/agents/runtime,
+# PUT /api/agents/{agent_id}/toggle, POST /api/system/external-artifacts/import): a prefix would catalog those as well.
+EXACT_PATHS = ("/api/agents", "/api/settings/theme", "/api/setup/ocean-map", "/api/learning/nemofold/stats",
+               "/api/learning/nemofold/candidates", "/api/system/external-artifacts")
 # Page -> endpoints the ellmos-system-gui page actually reads (checked against ellmos-system-gui origin/main, 2026-10-11):
 # "/" src/components/SystemClusterStatus.astro:34 and src/pages/index.astro:227; "/agenten/sessions" src/lib/agent-history.mjs:77,89,92
-# (loaded by src/pages/agenten/sessions.astro:90); "/artefakte" src/pages/artefakte.astro:168,243,253; "/settings" src/pages/settings.astro:615.
+# (loaded by src/pages/agenten/sessions.astro:90), session detail src/lib/agent-history.mjs:82, profiles src/scripts/agent-history.mjs:112;
+# "/" also src/lib/task-summary.js:2; "/artefakte" src/pages/artefakte.astro:168,243,253; "/settings" src/pages/settings.astro:253
+# (cluster-cockpit via the included component), 513 ocean-map, 562 theme, 615 backend-origin, 630 nemofold stats, 650 candidates,
+# 752 external-artifacts.
 PAGE_READS = {
-    "/": ["/api/system/cluster-cockpit", "/api/agent-studio/blueprints"],
+    "/": ["/api/system/cluster-cockpit", "/api/agent-studio/blueprints", "/api/tasks"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
     "/agenten/blueprints": ["/api/agent-studio/blueprints"],
     "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
-    "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions"],
+    "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
+                         "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
     "/skills": ["/api/capabilities/skills"],
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
@@ -30,7 +38,8 @@ PAGE_READS = {
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
-    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin"],
+    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
+                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
 
 
@@ -40,7 +49,7 @@ def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=
     registered = set()
     for route in routes:
         path = getattr(route, "path", "")
-        if not path.startswith(PREFIXES):
+        if not (path.startswith(PREFIXES) or path in EXACT_PATHS):
             continue
         for method in sorted(getattr(route, "methods", ()) or ()):
             if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
