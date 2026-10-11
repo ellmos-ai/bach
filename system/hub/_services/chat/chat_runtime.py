@@ -208,6 +208,27 @@ from hub._services.chat.bach_tools import (
 log = logging.getLogger("bach.chat")
 
 
+def _tool_dispatch_kwargs(session, agent_operations):
+    """Build dispatcher context only from trusted runtime session state."""
+    binding = getattr(session, "worker_task_binding", None)
+    require_binding = getattr(session, "require_task_binding", False)
+    grants = getattr(session, "allowed_tools", None)
+    kwargs = {}
+    if agent_operations is not None:
+        # Preserve the existing managed-agent contract.
+        kwargs = {"agent_operations": agent_operations, "allowed_tools": grants}
+    if binding is not None or require_binding:
+        kwargs.update({
+            "worker_task_binding": binding,
+            "require_task_binding": require_binding,
+        })
+        # Bound workers need the runtime's grant even when the managed-agent
+        # controller is absent. Never infer it from the model's tool arguments.
+        if binding is not None and agent_operations is None:
+            kwargs["allowed_tools"] = grants
+    return kwargs
+
+
 class _SnapshotStoreAdapter:
     """The module's ``ChatStore`` protocol on BACH's snapshot session store.
 
@@ -2030,12 +2051,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 grants = getattr(session, "allowed_tools", None)
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
-                tool_kwargs = {}
-                if self.agent_operations is not None:
-                    tool_kwargs = {"agent_operations": self.agent_operations, "allowed_tools": grants}
-                if binding is not None or getattr(session, "require_task_binding", False):
-                    tool_kwargs.update({"worker_task_binding": binding,
-                                   "require_task_binding": getattr(session, "require_task_binding", False)})
+                tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,

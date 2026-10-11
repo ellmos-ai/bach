@@ -8,7 +8,9 @@ import pytest
 
 from hub._services.chat.chat_runtime import TOOLS_FULL, exec_tool
 from hub.task_audit import apply_task_field_changes
+from hub import worker_git
 from hub.worker_git import (
+    check_git_diff,
     cleanup_task_worktree,
     is_live_path_blocked,
     record_task_file_change,
@@ -109,7 +111,14 @@ class TestWorktreeLifecycle:
         wt2 = start_task_worktree(42, base_branch="main", repo_root=fake_repo)
         assert wt2 == wt
 
-        # Cleanup
+        # Cleanup refuses to discard a dirty task tree.
+        from hub._services.chat import worker_write_guard
+        monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+        dirty = wt / "uncommitted.txt"
+        dirty.write_text("preserve me", encoding="utf-8")
+        assert cleanup_task_worktree(42, repo_root=fake_repo) is False
+        assert dirty.read_text(encoding="utf-8") == "preserve me"
+        dirty.unlink()
         ok = cleanup_task_worktree(42, repo_root=fake_repo)
         assert ok is True
         assert not wt.exists()
@@ -132,6 +141,29 @@ class TestSecretsAndDiffScan:
         (fake_repo / "clean.txt").write_text("api_key = 'sk-123456789012345678901234'", encoding="utf-8")
         findings = scan_for_secrets(fake_repo)
         assert len(findings) > 0
+
+    def test_scan_and_diff_gate_include_untracked_files(self, tmp_path):
+        fake_repo = tmp_path / "repo"
+        fake_repo.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=str(fake_repo), check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(fake_repo), check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(fake_repo), check=True)
+        (fake_repo / "clean.txt").write_text("clean\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=str(fake_repo), check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(fake_repo), check=True, capture_output=True)
+        (fake_repo / "new_untracked.py").write_text(
+            "value = 'sk-000000000000000000000000'  \n", encoding="utf-8")
+        findings = scan_for_secrets(fake_repo)
+        assert findings and "Muster erkannt" in findings[0]
+        whitespace = check_git_diff(fake_repo)
+        assert any("trailing whitespace" in finding for finding in whitespace)
+
+    def test_secret_and_diff_git_read_errors_fail_closed(self, tmp_path, monkeypatch):
+        def failed_git_read(*args, **kwargs):
+            return type("Result", (), {"returncode": 128, "stdout": b"", "stderr": b"synthetic"})()
+        monkeypatch.setattr(worker_git.subprocess, "run", failed_git_read)
+        assert scan_for_secrets(tmp_path)
+        assert check_git_diff(tmp_path)
 
 
 class TestTaskCompletionGuard:

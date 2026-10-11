@@ -522,6 +522,7 @@ TOOLS_SAFE = [
     _tool("get_datetime", "Aktuelles Datum und Uhrzeit abfragen", {}),
     _tool("safe_shell", "Lesenden Shell-Befehl ausführen", {
         "command": {"type": "string", "description": "Shell-Befehl (nur lesende Befehle erlaubt)"},
+        "cwd": {"type": "string", "description": "Task-Arbeitsverzeichnis"},
     }, ["command"]),
     _tool("web_search", "Im Internet nach Informationen suchen (DuckDuckGo)", {
         "query": {"type": "string", "description": "Suchanfrage"},
@@ -627,6 +628,7 @@ TOOLS_FULL = TOOLS_SAFE + [
     _tool("execute_command", "Beliebigen Shell-Befehl ausführen (nur im Full-Modus)", {
         "command": {"type": "string", "description": "Shell-Befehl"},
         "timeout": {"type": "integer", "description": "Timeout in Sekunden (max 120)"},
+        "cwd": {"type": "string", "description": "Task-Arbeitsverzeichnis"},
     }, ["command"]),
     _tool("write_file", "Datei schreiben oder erstellen", {
         "path": {"type": "string", "description": "Dateipfad"},
@@ -734,6 +736,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             worker_task_binding.assert_active()
         except Exception:
             return "BLOCKIERT: Taskbindung oder Workerlauf ist nicht mehr aktiv."
+        from hub._services.chat import worker_write_guard
+        if worker_write_guard.is_write_tool(name):
+            try:
+                worker_write_guard.require_write_grant(name, allowed_tools)
+            except worker_write_guard.WorkerWriteGuardError as exc:
+                return f"BLOCKIERT: {exc}"
         if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
             return "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar."
         # Shared by the chat loop and the managed CLI bridge. Preserve proof
@@ -948,8 +956,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             reason = check_safe_shell_args(tokens)
             if reason:
                 return f"Befehl blockiert (Sicherheit): {reason}"
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import authorize_safe_read, run_bound_check
+                try:
+                    if args.get("cwd"):
+                        return run_bound_check(worker_task_binding, cmd, args.get("cwd"), safe=True)
+                    # Read-only analysis does not create or mutate a task tree.
+                    # It still requires the current private lease; the existing
+                    # shell allowlist, tokenization, and path/secret checks above
+                    # remain mandatory.
+                    authorize_safe_read(worker_task_binding)
+                    return run_shell_restricted(cmd, allowed=SAFE_BASES)
+                except Exception as e:
+                    return f"BLOCKIERT: Task-Prüfung nicht bestätigt: {e}"
             return run_shell_restricted(cmd, allowed=SAFE_BASES)
-
         if name == "execute_command":
             if mode != "full":
                 return "Nur im Full-Modus. Aktivieren: /mode full bestätigt"
@@ -957,6 +977,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             t = int(args.get("timeout", CMD_TIMEOUT))
             if is_blocked(cmd):
                 return f"Befehl blockiert (Sicherheit): {cmd}"
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import run_bound_check
+                try:
+                    return run_bound_check(worker_task_binding, cmd, args.get("cwd"), t)
+                except Exception as e:
+                    return f"BLOCKIERT: Task-Prüfung nicht bestätigt: {e}"
             from hub.worker_git import is_live_path_blocked
             cmd_lower = cmd.lower()
             if any(git_mut in cmd_lower for git_mut in ["git commit", "git checkout -b", "git merge", "git push", "git rebase"]):
@@ -971,7 +997,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             from hub.worker_git import start_task_worktree
             tid = args.get("task_id")
             try:
-                wt = start_task_worktree(tid)
+                private = ({"worker_task_binding": worker_task_binding,
+                            "require_task_binding": require_task_binding}
+                           if worker_task_binding is not None or require_task_binding else {})
+                wt = start_task_worktree(tid, **private)
                 return f"Worktree erstellt: {wt}"
             except Exception as e:
                 return f"Fehler bei start_task_worktree: {e}"
@@ -994,7 +1023,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             from hub.worker_git import cleanup_task_worktree
             tid = args.get("task_id")
             try:
-                ok = cleanup_task_worktree(tid)
+                private = ({"worker_task_binding": worker_task_binding,
+                            "require_task_binding": require_task_binding}
+                           if worker_task_binding is not None or require_task_binding else {})
+                ok = cleanup_task_worktree(tid, **private)
                 return f"Worktree aufgeräumt: {ok}"
             except Exception as e:
                 return f"Fehler bei cleanup_task_worktree: {e}"
@@ -1009,7 +1041,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             from hub.worker_git import is_live_path_blocked
             if err := is_live_path_blocked(p):
                 return err
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import authorize_mutation
+                try:
+                    _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
+                    p = str(target_file)
+                    authorize_mutation(worker_task_binding, paths=(target_file.parent,))
+                except Exception as e:
+                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
             Path(p).parent.mkdir(parents=True, exist_ok=True)
+            if worker_task_binding is not None:
+                try:
+                    _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
+                    p = str(target_file)
+                except Exception as e:
+                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
             with open(p, "w", encoding="utf-8") as f:
                 f.write(c)
             log.info(f"WRITE: {p} ({len(c)} chars)")
@@ -1039,10 +1085,24 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
         if name == "task_manage":
             if worker_task_binding is not None:
+                if not isinstance(args, dict):
+                    return "Ungültige Task-Werkzeugargumente."
+                action = args.get("action", "list")
+                if action in ("done", "submit_result"):
+                    if type(args.get("task_id")) is not int:
+                        return "task_id muss eine numerische Ganzzahl sein."
+                    try:
+                        from hub._services.task_result_service import validate_submission
+                        # Reuse canonical result checks without exposing private worker state.
+                        validate_submission({"generation": "argument-validation", "result": args.get("result")})
+                    except ValueError as exc:
+                        return str(exc)
+                    except Exception:
+                        return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                 try:
                     return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
                 except Exception:
-                    # Private authority/capability details never become tool text.
+                    # Ownership, capability and unknown ACK failures stay generic.
                     return "Taskoperation nicht bestätigt; Taskbindung prüfen."
             if require_task_binding:
                 return "Taskbindung fehlt; Taskoperation nicht ausgeführt."
@@ -1472,6 +1532,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return err
             if err := is_safe_write_path(p, mode):
                 return err
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import authorize_mutation
+                try:
+                    _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
+                    p = str(target_file)
+                except Exception as e:
+                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
             try:
                 content = Path(p).read_text(encoding="utf-8")
             except FileNotFoundError:
@@ -1487,6 +1554,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 new_content = content.replace(old_text, new_text, 1)
                 count = 1
             try:
+                if worker_task_binding is not None:
+                    from hub._services.chat.worker_write_guard import authorize_mutation
+                    _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
+                    p = str(target_file)
                 Path(p).write_text(new_content, encoding="utf-8")
                 log.info(f"EDIT: {p} ({count}x ersetzt)")
                 return f"Bearbeitet: {p} ({count} Ersetzung{'en' if count > 1 else ''})"
@@ -1504,6 +1575,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return err
             try:
                 import shutil
+                if worker_task_binding is not None:
+                    from hub._services.chat.worker_write_guard import authorize_mutation
+                    _, (source_path, destination_path) = authorize_mutation(
+                        worker_task_binding, paths=(src, dst))
+                    src, dst = str(source_path), str(destination_path)
                 shutil.move(src, dst)
                 log.info(f"MOVE: {src} -> {dst}")
                 return f"Verschoben: {src} → {dst}"
@@ -1519,10 +1595,17 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return err
             try:
                 import shutil
+                preserve_links = False
+                if worker_task_binding is not None:
+                    from hub._services.chat.worker_write_guard import authorize_mutation
+                    _, (source_path, destination_path) = authorize_mutation(
+                        worker_task_binding, paths=(src, dst))
+                    src, dst = str(source_path), str(destination_path)
+                    preserve_links = True
                 if os.path.isdir(src):
-                    shutil.copytree(src, dst)
+                    shutil.copytree(src, dst, symlinks=preserve_links)
                 else:
-                    shutil.copy2(src, dst)
+                    shutil.copy2(src, dst, follow_symlinks=not preserve_links)
                 log.info(f"COPY: {src} -> {dst}")
                 return f"Kopiert: {src} → {dst}"
             except Exception as e:
@@ -1572,6 +1655,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import block_bound_recycle
+                try:
+                    block_bound_recycle(worker_task_binding)
+                except Exception as e:
+                    return f"BLOCKIERT: {e}"
             if err := is_safe_write_path(p, mode):
                 return err
             if not os.path.exists(p):
@@ -1597,7 +1686,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if err := is_safe_write_path(p, mode):
                 return err
             try:
+                if worker_task_binding is not None:
+                    from hub._services.chat.worker_write_guard import authorize_mutation
+                    _, (target_dir,) = authorize_mutation(worker_task_binding, paths=(p,))
+                    p = str(target_dir)
                 Path(p).mkdir(parents=True, exist_ok=True)
+                if worker_task_binding is not None:
+                    authorize_mutation(worker_task_binding, paths=(p,))
                 log.info(f"MKDIR: {p}")
                 return f"Ordner erstellt: {p}"
             except Exception as e:
