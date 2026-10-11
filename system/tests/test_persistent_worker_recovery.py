@@ -225,6 +225,77 @@ def test_automatic_start_fails_closed_when_normal_trace_contract_is_missing(monk
                                     "reason": "trace_contract_unavailable"}]
 
 
+def test_dynamic_worker_version_scopes_keep_global_and_profile_cas_distinct(tmp_path):
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    profile = _startup_profile(path)
+    assert profile["state"] == "ready"
+    profile_version = profile["configuration_version"]
+    core_version = slots.core_system_agents_snapshot(path)["configuration_version"]
+    assert profile_version != core_version
+
+    assert slots.system_worker_at_version(worker_id, core_version, path=path)["id"] == worker_id
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        slots.system_worker_at_version(worker_id, profile_version, path=path)
+    assert slots.system_worker_at_version(
+        worker_id, profile_version, version_scope="worker_profile", path=path
+    )["id"] == worker_id
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        slots.system_worker_at_version(
+            worker_id, core_version, version_scope="worker_profile", path=path
+        )
+    with pytest.raises(ValueError, match="Versionsbereich"):
+        slots.system_worker_at_version(worker_id, core_version, version_scope="unknown", path=path)
+
+
+def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import socket
+
+    from hub._services.chat import telegram_chat
+
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    profile = _startup_profile(path)
+    assert profile["state"] == "ready"
+    version_scopes = []
+    read_worker = slots.system_worker_at_version
+
+    def read_isolated_worker(slot_id, expected_version, **kwargs):
+        version_scopes.append(kwargs.get("version_scope"))
+        return read_worker(slot_id, expected_version, path=path, **kwargs)
+
+    @contextmanager
+    def isolated_admission(path=None):
+        yield lambda: None
+
+    monkeypatch.setattr(slots, "system_worker_at_version", read_isolated_worker)
+    monkeypatch.setattr(slots, "worker_admission_transaction", isolated_admission)
+    monkeypatch.setattr(telegram_chat, "_active_worker_control", lambda _: (None, None))
+    monkeypatch.setattr(telegram_chat, "_start_reserved_worker_execution",
+                        lambda *args: ({"ok": True}, 200))
+    for name in ("_WORKER_CONTROLS", "_ACTIVE_WORKER_THREADS", "_WORKER_EXECUTIONS"):
+        monkeypatch.setattr(telegram_chat, name, {})
+
+    generation = "1" * 32
+    physical_worker_id = "worker-" + "2" * 32
+    response, status = telegram_chat._start_worker_execution(
+        worker_id,
+        start_request_id="a" * 32,
+        expected_service_instance=telegram_chat._WORKER_SERVICE_INSTANCE,
+        expected_configuration_version=profile["configuration_version"],
+        _startup_stop_event=threading.Event(),
+        _startup_generation=generation,
+        _startup_physical_worker_id=physical_worker_id,
+        _startup_lease_worker_id=f"{physical_worker_id}@{socket.gethostname()}",
+        _startup_profile_version=True,
+    )
+    assert status == 200
+    assert response["ok"] is True
+    assert response["execution"]["generation"] == generation
+    assert version_scopes == ["worker_profile"]
+
+
 def test_present_trace_contract_fingerprint_is_strictly_shaped():
     from hub._services.chat import telegram_chat
 
@@ -557,3 +628,167 @@ def test_missing_native_candidate_page_fails_closed(
     monkeypatch.setattr(client, "task_candidates", change_between_pages)
     with pytest.raises(LeaseProtocolError):
         telegram_chat._persistent_worker_reconciliation_scan(client, checkpoint, "running")
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("memory_hook_opt_in", "false"),
+    ("think", "false"),
+    ("allow_tools", 1),
+    ("multi_role", None),
+])
+def test_invalid_worker_boolean_edit_preserves_config_bytes(tmp_path, field, value):
+    from pathlib import Path
+
+    path, worker_id = _cloud_worker(tmp_path)
+    snapshot = slots.worker_configuration_snapshot(worker_id, path=path)
+    before = Path(path).read_bytes()
+
+    with pytest.raises(ValueError, match=field):
+        slots.change_worker_configuration(
+            worker_id, snapshot["configuration_version"], {field: value}, path=path,
+        )
+
+    assert Path(path).read_bytes() == before
+
+
+def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch):
+    from contextlib import contextmanager
+    from http.server import BaseHTTPRequestHandler
+    import socket
+
+    from hub._services.chat import telegram_chat as chat
+
+    profiles = {
+        "cloud-profile-a": {"id": "cloud-profile-a", "enabled": True, "type": "continuous",
+                            "status": "idle"},
+        "cloud-profile-b": {"id": "cloud-profile-b", "enabled": True, "type": "continuous",
+                            "status": "idle"},
+        "buddha_always_on": {"id": "buddha_always_on", "enabled": True, "type": "continuous",
+                              "status": "idle"},
+    }
+
+    @contextmanager
+    def no_revision_write():
+        yield lambda: None
+
+    monkeypatch.setattr(slots, "worker_admission_transaction", no_revision_write)
+    monkeypatch.setattr(
+        slots, "system_worker_at_version",
+        lambda worker_id, version, *, version_scope: dict(profiles[worker_id]),
+    )
+    monkeypatch.setattr(chat, "_execution_worker_slot", lambda worker_id: profiles.get(worker_id))
+    monkeypatch.setattr(chat, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(chat, "_ACTIVE_WORKER_THREADS", {})
+    monkeypatch.setattr(chat, "_WORKER_EXECUTIONS", {})
+
+    monitor_entered = threading.Event()
+    monkeypatch.setattr(
+        chat, "_resume_persistent_cloud_workers_at_startup",
+        lambda _stop: {"state": "ready", "profiles": []},
+    )
+
+    def retry_always_on(_stop_event):
+        monitor_entered.set()
+        return {"state": "waiting_for_local_provider", "retry": True}
+
+    monkeypatch.setattr(chat, "_resume_always_on_at_startup", retry_always_on)
+
+    controls = {}
+
+    def start_reserved(control, slot, _custom_prompt):
+        controls[slot["id"]] = control
+        if slot["id"] == "cloud-profile-a":
+            raise RuntimeError("fixture start failure")
+        control.launch_attempted = True
+        control.worker_thread_started = True
+
+        def wait_for_shutdown():
+            if control.stop_event.wait(5):
+                control.done_event.set()
+
+        worker_thread = threading.Thread(target=wait_for_shutdown, daemon=True)
+        control.thread = worker_thread
+        chat._ACTIVE_WORKER_THREADS[slot["id"]] = worker_thread
+        worker_thread.start()
+        return {"ok": True}, 200
+
+    monkeypatch.setattr(chat, "_start_reserved_worker_execution", start_reserved)
+    monkeypatch.setattr(
+        chat, "_write_revocation_receipt",
+        lambda control, worker, *, outcome: {
+            "confirmed": True, "status_persisted": True, "outcome": outcome,
+        },
+    )
+
+    server = chat.QuietHTTPServer(
+        ("127.0.0.1", 0), BaseHTTPRequestHandler, bind_and_activate=False,
+    )
+    server_closed = False
+    monitor_thread = None
+    try:
+        monitor_thread = chat._start_always_on_startup_monitor(server)
+        assert monitor_entered.wait(1)
+        shutdown_event = server.always_on_startup_stop
+
+        def start_profile(worker_id, generation_digit, *, profile_version):
+            physical_worker_id = "worker-" + generation_digit * 32
+            return chat._start_worker_execution(
+                worker_id,
+                expected_service_instance=chat._WORKER_SERVICE_INSTANCE,
+                expected_configuration_version=f"configuration-{worker_id}",
+                _startup_stop_event=shutdown_event,
+                _startup_generation=generation_digit * 32,
+                _startup_physical_worker_id=physical_worker_id,
+                _startup_lease_worker_id=f"{physical_worker_id}@{socket.gethostname()}",
+                _startup_profile_version=profile_version,
+            )
+
+        failed_response, failed_status = start_profile("cloud-profile-a", "a", profile_version=True)
+        active_response, active_status = start_profile("cloud-profile-b", "b", profile_version=True)
+        buddha_response, buddha_status = start_profile("buddha_always_on", "c", profile_version=False)
+        failed = controls["cloud-profile-a"]
+        active = controls["cloud-profile-b"]
+        buddha = controls["buddha_always_on"]
+
+        assert failed_status == 503
+        assert failed_response["execution"]["terminal"] is True
+        assert active_status == 200 and active_response["execution"]["state"] == "running"
+        assert buddha_status == 200 and buddha_response["execution"]["state"] == "running"
+        assert failed.stop_event.is_set()
+        assert not shutdown_event.is_set()
+        assert not active.stop_event.is_set() and active.thread.is_alive()
+        assert not buddha.stop_event.is_set() and buddha.thread.is_alive()
+        assert monitor_thread.is_alive()
+
+        # A normal Buddha Stop is routed through the same per-worker revocation
+        # path as the user action. It must not set the server-wide signal.
+        confirmed, _updated, receipt, status = chat._request_worker_revocation(
+            "buddha_always_on", profiles["buddha_always_on"], activity="Manuell gestoppt",
+        )
+        assert confirmed and status == 200 and receipt["confirmed"]
+        assert buddha.stop_event.is_set()
+        assert not shutdown_event.is_set()
+        assert not active.stop_event.is_set() and active.thread.is_alive()
+        assert monitor_thread.is_alive()
+        assert not buddha.thread.is_alive()
+
+        # The per-worker signal stays linked to the server-wide shutdown.
+        assert buddha.stop_event._shutdown_event is shutdown_event
+        server.server_close()
+        server_closed = True
+        assert shutdown_event.is_set()
+        assert active.stop_event.is_set() and active.stop_event.wait(0) is True
+        assert buddha.stop_event._shutdown_event.is_set()
+        active.thread.join(timeout=1)
+        assert not active.thread.is_alive() and active.done_event.is_set()
+        assert not monitor_thread.is_alive()
+    finally:
+        if not server_closed:
+            server.server_close()
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=1)
+        for control in controls.values():
+            worker_thread = control.thread
+            if worker_thread is not None and worker_thread.is_alive():
+                control.stop_event.set()
+                worker_thread.join(timeout=1)

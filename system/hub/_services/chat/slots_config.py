@@ -1253,8 +1253,15 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
 
 
 def system_worker_at_version(slot_id: str, expected_version: str,
-                             *, path: str | None = None) -> dict[str, Any]:
-    """Read a dynamic or system worker at its exact native configuration version."""
+                             *, version_scope: str = "core",
+                             path: str | None = None) -> dict[str, Any]:
+    """Read a worker using the requested native version scope.
+
+    Public admission uses the complete core snapshot CAS. The private persistent
+    startup path may explicitly bind a dynamic worker to its profile version.
+    """
+    if version_scope not in {"core", "worker_profile"}:
+        raise ValueError("Worker-Versionsbereich ist ungültig")
     raw = _resolve_path(path).read_bytes()
     snapshot = _core_snapshot_from_bytes(raw)
     config = json.loads(raw.decode("utf-8"))
@@ -1267,9 +1274,13 @@ def system_worker_at_version(slot_id: str, expected_version: str,
         worker = dynamic[0]
         if worker.get("type") not in {"once", "continuous", "persistent"}:
             raise ValueError("Worker-Laufbegrenzung ist ungültig")
-        if expected_version != _worker_configuration(worker)["configuration_version"]:
+        current_version = (snapshot["configuration_version"] if version_scope == "core"
+                           else _worker_configuration(worker)["configuration_version"])
+        if expected_version != current_version:
             raise RuntimeError("configuration_version_conflict")
         return dict(worker)
+    if version_scope != "core":
+        raise ValueError("Worker-Profilversion gilt nur für dynamische Worker")
     if expected_version != snapshot["configuration_version"]:
         raise RuntimeError("configuration_version_conflict")
     if (not isinstance(slot, dict) or slot.get("id") != slot_id
@@ -2106,7 +2117,6 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         expiry = _parse_timestamp(worker.get("expires_at"))
         if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
             raise RuntimeError("worker_not_editable")
-    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role"}
     ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     for field, value in edits.items():

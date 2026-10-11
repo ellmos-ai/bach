@@ -187,6 +187,39 @@ class _WorkerAdmission:
         self.finished.wait(timeout)
 
 
+class _WorkerStopSignal:
+    """One worker's cancellation composed with the service-wide shutdown event."""
+
+    _POLL_INTERVAL_SECONDS = 0.05
+
+    def __init__(self, shutdown_event: threading.Event):
+        if not isinstance(shutdown_event, threading.Event):
+            raise TypeError("shutdown_event muss ein threading.Event sein")
+        self._local = threading.Event()
+        self._shutdown_event = shutdown_event
+
+    def is_set(self) -> bool:
+        return self._local.is_set() or self._shutdown_event.is_set()
+
+    def set(self) -> None:
+        # A worker stop is private to this generation; server close sets the
+        # shared shutdown event and therefore reaches every composed signal.
+        self._local.set()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while not self.is_set():
+            if deadline is None:
+                wait_for = self._POLL_INTERVAL_SECONDS
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                wait_for = min(self._POLL_INTERVAL_SECONDS, remaining)
+            self._local.wait(wait_for)
+        return True
+
+
 @dataclass
 class _WorkerControl:
     """Generation-bound cooperative cancellation state for one worker run."""
@@ -195,7 +228,7 @@ class _WorkerControl:
     generation: str = field(default_factory=lambda: uuid.uuid4().hex)
     physical_worker_id: Optional[str] = None
     lease_worker_id: Optional[str] = None
-    stop_event: threading.Event = field(default_factory=threading.Event)
+    stop_event: Any = field(default_factory=threading.Event)
     done_event: threading.Event = field(default_factory=threading.Event)
     thread: Any = None
     start_request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -3458,13 +3491,15 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            _creator_authority=None, _startup_stop_event=None,
                            _startup_generation: str | None = None,
                            _startup_physical_worker_id: str | None = None,
-                           _startup_lease_worker_id: str | None = None) -> tuple[dict, int]:
+                           _startup_lease_worker_id: str | None = None,
+                           _startup_profile_version: bool = False) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
     if expected_service_instance is not None and expected_service_instance != _WORKER_SERVICE_INSTANCE:
         return {"error": "Control-Instanz wurde geändert", "error_code": "service_instance_conflict"}, 409
     startup_identity = (_startup_generation, _startup_physical_worker_id, _startup_lease_worker_id)
+    valid_startup_identity = False
     if any(value is not None for value in startup_identity):
         valid_startup_identity = (
             _startup_stop_event is not None
@@ -3475,6 +3510,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
         )
         if not valid_startup_identity:
             return {"error": "Private Startidentität ist ungültig"}, 400
+    if (type(_startup_profile_version) is not bool
+            or (_startup_profile_version and
+                (expected_configuration_version is None or not valid_startup_identity))):
+        return {"error": "Private Startidentität ist ungültig"}, 400
     request_id = start_request_id if start_request_id is not None else uuid.uuid4().hex
     if (not isinstance(request_id, str) or len(request_id) != 32
             or any(char not in "0123456789abcdef" for char in request_id)):
@@ -3509,7 +3548,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
             from hub._services.chat.slots_config import worker_admission_transaction, system_worker_at_version
             with worker_admission_transaction() as advance_revision:
                 if expected_configuration_version is not None:
-                    slot = system_worker_at_version(worker_id, expected_configuration_version)
+                    # Public/AgentManager and Always-On startup bind the full
+                    # core snapshot. Only the persistent Cloud recovery caller
+                    # sets this private flag after validating its generation identity.
+                    version_scope = "worker_profile" if _startup_profile_version else "core"
+                    slot = system_worker_at_version(
+                        worker_id, expected_configuration_version, version_scope=version_scope)
                 else:
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
@@ -3527,7 +3571,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     sequence_creator_authority=_creator_authority,
                 )
                 if _startup_stop_event is not None:
-                    control.stop_event = _startup_stop_event
+                    # Every startup worker gets a private Stop signal linked to
+                    # the shared server shutdown. Manual Stop must never cancel
+                    # sibling profiles or the startup monitor.
+                    control.stop_event = _WorkerStopSignal(_startup_stop_event)
                     control.startup_recovery = True
                 control.admission_handle = _WorkerAdmission()
                 control.admission_pending = True
@@ -5704,6 +5751,7 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
                 _startup_generation=generation,
                 _startup_physical_worker_id=physical_worker_id,
                 _startup_lease_worker_id=lease_worker_id,
+                _startup_profile_version=True,
             )
         except Exception as exc:
             outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
