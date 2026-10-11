@@ -85,11 +85,13 @@ def materialize(state, row, **changes):
         configuration_version=slots.core_system_agents_snapshot()["configuration_version"], **changes)
 
 
-def test_registers_validated_template_once_per_provider_id_and_version(state):
+def test_registers_validated_template_once_per_provider_id_and_version(state, monkeypatch):
+    monkeypatch.setenv("BACH_R7_SERVER_SECRET", "not-for-providers")
     runner = runner_for(envelope(descriptor()))
     first = tps.sync_providers(state, [PROVIDER], runner=runner)["providers"][0]
     command, kwargs = runner.calls[0]
     assert command == PROVIDER["command"] and kwargs["shell"] is False and kwargs["timeout"] == tps.TIMEOUT_SECONDS
+    assert "BACH_R7_SERVER_SECRET" not in kwargs["env"] and kwargs["cwd"]
     assert first["action"] == "registered" and first["available"] is True
     [row] = rows(state)
     assert row["name"] == "githubbot-core.githubbot.v0.2.0" and row["is_template"] == 1
@@ -140,6 +142,9 @@ def test_missing_provider_marks_template_unavailable_and_keeps_existing_agent(st
     (runner_for(envelope(descriptor(blueprint={**descriptor()["blueprint"], "modus": "chaos"}))), "blueprint_invalid"),
     (runner_for(envelope(descriptor(blueprint={**descriptor()["blueprint"], "persona_prompt": " "}))),
      "blueprint_invalid"),
+    (runner_for(envelope(descriptor(blueprint={**descriptor()["blueprint"],
+                                               "contractus": {"execution": {"symbol": "unknown"}}}))),
+     "blueprint_invalid"),
 ])
 def test_failing_or_invalid_provider_output_registers_nothing(state, runner, reason):
     result = sync(state, runner=runner)
@@ -175,6 +180,7 @@ def test_invalid_json_and_oversized_output_fail_closed(state):
     def text(stdout):
         return lambda command, **kwargs: SimpleNamespace(returncode=0, stdout=stdout)
     assert sync(state, runner=text(b"not json"))["reason"] == "provider_output_invalid_json"
+    assert sync(state, runner=text(b"[" * 200000 + b"]" * 200000))["reason"] == "provider_output_invalid_json"
     assert sync(state, runner=text(b" " * (tps.MAX_OUTPUT_BYTES + 1)))["reason"] == "provider_output_too_large"
 
 

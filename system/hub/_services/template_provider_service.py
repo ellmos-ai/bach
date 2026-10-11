@@ -29,6 +29,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from .blueprint_service import (ALLOWED_KINDS, _ID, ensure_blueprint_schema,
 
 TIMEOUT_SECONDS = 20
 MAX_OUTPUT_BYTES = 1024 * 1024
+CHILD_ENV_KEYS = ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE", "LANG", "LC_ALL")
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]{1,32})?$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -136,6 +138,16 @@ def validate_descriptor(provider_id: str, payload: Any) -> dict[str, Any]:
         validate_blueprint_fields(fields["title"], fields["description"], fields["persona_role"],
                                   fields["persona_prompt"], fields["animus_type"], fields["modus"],
                                   fields["skills"], fields["contractus"], fields["governance"])
+        # Wie save_blueprint: Ausführungsbild und Symbol prüfen.
+        from .chat.slots_config import validate_agent_avatar
+        from .display_assets import validate_symbol
+        execution = fields["contractus"].get("execution", {})
+        if not isinstance(execution, dict):
+            raise ValueError("execution")
+        if "avatar" in execution:
+            validate_agent_avatar(execution["avatar"])
+        if "symbol" in execution:
+            validate_symbol(execution["symbol"])
     except ValueError as exc:
         raise TemplateProviderError("blueprint_invalid") from exc
     if (not fields["title"] or not isinstance(fields["kind"], str) or fields["kind"] not in ALLOWED_KINDS
@@ -145,6 +157,13 @@ def validate_descriptor(provider_id: str, payload: Any) -> dict[str, Any]:
             "source_commit": commit, "fields": fields}
 
 
+def _child_env() -> dict[str, str]:
+    """Nur Laufzeitvariablen; Tokens und Schlüssel des Servers erreichen den Provider nicht."""
+    env = {key: os.environ[key] for key in CHILD_ENV_KEYS if key in os.environ}
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    return env
+
+
 def probe(provider: dict[str, Any], *, runner=subprocess.run, timeout: float = TIMEOUT_SECONDS) -> dict[str, Any]:
     """Echte Probe: Exitcode, Schema, Version und sha256. Wirft nie."""
     result = {"id": provider["id"], "available": False, "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -152,7 +171,8 @@ def probe(provider: dict[str, Any], *, runner=subprocess.run, timeout: float = T
     try:
         try:
             done = runner(provider["command"], capture_output=True, timeout=timeout, shell=False, check=False,
-                          stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                          stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                          env=_child_env(), cwd=tempfile.gettempdir())
         except FileNotFoundError as exc:
             raise TemplateProviderError("provider_missing") from exc
         except subprocess.TimeoutExpired as exc:
@@ -165,7 +185,7 @@ def probe(provider: dict[str, Any], *, runner=subprocess.run, timeout: float = T
             raise TemplateProviderError("provider_output_too_large")
         try:
             payload = json.loads((done.stdout or b"").decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as exc:
+        except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise TemplateProviderError("provider_output_invalid_json") from exc
         descriptor = validate_descriptor(provider["id"], payload)
     except TemplateProviderError as exc:
