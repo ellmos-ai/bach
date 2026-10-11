@@ -5,6 +5,7 @@
 Each pinned entry carries its GUI source line in gui_capabilities.py; this test holds the entries, proves that the BACH route
 exists for every one of them and that the declaration prefixes cover them (otherwise the page would be reported unavailable
 only because the route is not declared)."""
+import re
 import sys
 from pathlib import Path
 
@@ -19,17 +20,51 @@ from gui.api.task_assignment import router as task_assignment_router
 from gui.api.unified_api import router as unified_router
 from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
 
-LAYOUT = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]  # BachLayout -> Header.astro:242,280, domain-pins.mjs:46
-PINNED = {
-    "/": ["/api/agent-studio/blueprints", "/api/tasks"] + LAYOUT,
-    "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
-                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents", "/api/user-inbox", "/api/assignees",
-                          "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT,
-    "/artefakte": ["/api/artefakte", "/api/artifacts/content", "/api/artifacts/download"] + LAYOUT,
-    "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
-                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts",
-                  "/api/domains/pins", "/api/gui/brand"],
+# Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at commit cf42ef02 (PR ellmos-system-gui#35): (method, path, required).
+# Only these four pages are derived from the manifest; every other page of PAGE_READS stays hand-written (#2087 G2).
+MANIFEST_SOURCE = "ellmos-system-gui cf42ef02 public/page-reads.v1.json"
+MANIFEST_LAYOUT = [
+    ("GET", "/api/gui/brand", False), ("GET", "/api/gui/backend-origin", False), ("GET", "/api/domains/pins", False),
+    ("POST", "/api/domains/{id}/pin", False),
+]
+MANIFEST_PAGES = {
+    "/": [("GET", "/api/agent-studio/blueprints", True), ("GET", "/api/tasks", True)],
+    "/agenten/sessions": [
+        ("GET", "/api/agent-history/sessions", True), ("GET", "/api/agent-history/sessions/{snapshot_id}", True),
+        ("GET", "/api/agent-history/tasks", True), ("GET", "/api/memory/sessions", True), ("GET", "/api/agents", True),
+        ("GET", "/api/user-inbox", False), ("PATCH", "/api/user-inbox/{id}", False), ("GET", "/api/task-assignees", False),
+        ("GET", "/api/assignees", False), ("POST", "/api/tasks", False), ("GET", "/api/tasks/{id}", False),
+    ],
+    "/artefakte": [("GET", "/api/artefakte", True), ("GET", "/api/artifacts/content", False),
+                   ("GET", "/api/artifacts/download", False)],
+    "/settings": [
+        ("GET", "/api/gui/backend-origin", True), ("GET", "/api/system/cluster-cockpit", True),
+        ("GET", "/api/setup/ocean-map", True), ("GET", "/api/settings/theme", True),
+        ("GET", "/api/learning/nemofold/stats", True), ("GET", "/api/learning/nemofold/candidates", True),
+        ("GET", "/api/system/external-artifacts", True), ("PUT", "/api/settings/theme", False),
+        ("POST", "/api/learning/nemofold/candidates/{id}/approve", False),
+        ("POST", "/api/learning/nemofold/candidates/{id}/reject", False),
+        ("POST", "/api/learning/nemofold/synthesize", False), ("POST", "/api/system/external-artifacts/import", False),
+    ],
 }
+
+
+def _n(path):
+    return re.sub(r"\{[^}]*\}", "{}", path)
+
+
+def _derived(page):
+    """(required GET paths, optional GET paths) of a page: its own entries plus the layout ones; a read that is required on the
+    page is not repeated as optional."""
+    own = MANIFEST_PAGES[page]
+    required = [p for m, p, r in own if m == "GET" and r]
+    optional = [p for m, p, r in own if m == "GET" and not r]
+    optional += [p for m, p, r in MANIFEST_LAYOUT if m == "GET" and p not in required and p not in optional]
+    return required, optional
+
+
+PINNED = {page: caps.PAGE_READS[page] for page in MANIFEST_PAGES}
+PINNED_OPTIONAL = {page: caps.PAGE_OPTIONAL_READS[page] for page in MANIFEST_PAGES}
 
 
 def _get_routes():
@@ -45,14 +80,26 @@ def _get_routes():
     return found
 
 
-def test_page_reads_hold_the_endpoints_the_gui_reads():
-    for page, reads in PINNED.items():
-        assert caps.PAGE_READS[page] == reads, page
+def test_four_pages_equal_the_gui_manifest_required_and_optional():
+    for page in MANIFEST_PAGES:
+        required, optional = _derived(page)
+        assert sorted(map(_n, caps.PAGE_READS[page])) == sorted(map(_n, required)), (page, "required", MANIFEST_SOURCE)
+        assert sorted(map(_n, caps.PAGE_OPTIONAL_READS[page])) == sorted(map(_n, optional)), (page, "optional", MANIFEST_SOURCE)
+
+
+def test_optional_reads_never_decide_the_page_status():
+    required_all = [r for page in MANIFEST_PAGES for r in caps.PAGE_READS[page]]
+    routes = [_Route(read, {"GET"}) for read in required_all]  # every optional route missing
+    _, out = _cataloged(routes)
+    pages = {p["path"]: p for p in out["pages"]}
+    for page in MANIFEST_PAGES:
+        assert pages[page]["status"] == "configured", page
+        assert not set(caps.PAGE_OPTIONAL_READS[page]) & {r.removeprefix("GET ") for r in pages[page]["requires"]}, page
 
 
 def test_every_pinned_read_has_a_bach_route_and_a_declared_prefix():
     routes = _get_routes()
-    for page, reads in PINNED.items():
+    for page, reads in [(p, PINNED[p] + PINNED_OPTIONAL[p]) for p in PINNED]:
         for read in reads:
             assert read in routes, f"{page}: no GET route {read}"
             assert read.startswith(caps.PREFIXES) or f"GET {read}" in caps.EXACT_READS, f"{page}: {read} is not declared"

@@ -23,15 +23,14 @@ LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"
 # (cluster-cockpit via the included component), 513 ocean-map, 562 theme, 615 backend-origin, 630 nemofold stats, 650 candidates,
 # 752 external-artifacts.
 PAGE_READS = {
-    "/": ["/api/agent-studio/blueprints", "/api/tasks"] + LAYOUT_READS,
+    "/": ["/api/agent-studio/blueprints", "/api/tasks"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
     "/agenten/blueprints": ["/api/agent-studio/blueprints"],
     "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
-                         "/api/agent-history/sessions/{snapshot_id}", "/api/agents", "/api/user-inbox", "/api/assignees",
-                          "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT_READS,
+                         "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
     "/skills": ["/api/capabilities/skills"],
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
@@ -40,13 +39,22 @@ PAGE_READS = {
     "/user-inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
-    "/artefakte": ["/api/artefakte", "/api/artifacts/content", "/api/artifacts/download"] + LAYOUT_READS,
+    "/artefakte": ["/api/artefakte"],
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
     "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
-                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts",
-                 "/api/domains/pins", "/api/gui/brand"],
+                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
+}
+# Optional reads (the page stays usable without them, so they never make it unavailable): layout reads and user-triggered or
+# detail reads. Only the four pages below are derived from the ellmos-system-gui page-reads manifest (cf42ef02,
+# public/page-reads.v1.json, frozen in tests/test_gui_capabilities_page_reads.py); the other pages stay hand-written until the
+# manifest is consumed for all pages (#2087 G2).
+PAGE_OPTIONAL_READS = {
+    "/": LAYOUT_READS,
+    "/agenten/sessions": ["/api/user-inbox", "/api/assignees", "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT_READS,
+    "/artefakte": ["/api/artifacts/content", "/api/artifacts/download"] + LAYOUT_READS,
+    "/settings": ["/api/domains/pins", "/api/gui/brand"],
 }
 
 
