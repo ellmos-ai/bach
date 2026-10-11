@@ -6,6 +6,7 @@ import pytest
 from system.tests.test_task_lease_client import mem_db, _insert_task
 from system.tests.test_task_lease_client_review import T0
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
+from system.tests.test_worker_tool_trace import binding as trace_binding
 
 
 @pytest.fixture
@@ -235,7 +236,8 @@ def test_required_binding_cannot_fall_back_to_projection(monkeypatch):
     assert "Taskbindung fehlt" in result
 
 
-def test_real_native_process_releases_bound_task_without_post_completion_inference(binding, monkeypatch):
+def test_real_native_process_releases_bound_task_without_post_completion_inference(trace_binding, monkeypatch):
+    binding = trace_binding
     import asyncio
     from hub._services.chat import bach_tools
     from hub._services.chat.chat_runtime import ChatRuntime

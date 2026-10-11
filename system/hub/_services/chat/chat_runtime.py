@@ -2197,7 +2197,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = t_name
                 if t_name and t_name not in session.last_tools:
                     session.last_tools = (session.last_tools + [t_name])[-5:]
-                log.info(f"Tool [{round_num}]: {t_name}({json.dumps(t_args, ensure_ascii=False)[:200]})")
+                log.info("Tool [%d] dispatch", round_num)
                 cid = getattr(session, "chat_id", "")
                 if cid:
                     try:
@@ -2224,12 +2224,58 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
-                t_result = exec_tool(
-                    t_name, t_args, session.mode,
-                    bach_app=self.bach_app,
-                    default_model=selected_model,
-                    **tool_kwargs,
-                )
+                traced_outcome = None
+                if binding is not None:
+                    from hub._services.chat.worker_tool_dispatch_trace import (
+                        abandon_normal_tool_result,
+                        acknowledge_normal_tool_result,
+                        execute_normal_tool,
+                    )
+                    traced_outcome = execute_normal_tool(
+                        binding, t_name, t_args,
+                        lambda name, arguments: exec_tool(
+                            name, arguments, session.mode,
+                            bach_app=self.bach_app,
+                            default_model=selected_model,
+                            **tool_kwargs,
+                        ),
+                    )
+                    if traced_outcome.status != "returned":
+                        binding.invalidate()
+                        session.current_tool = ""
+                        return FailedAnswer(
+                            "Worker-Werkzeugnachweis fehlt oder Werkzeugwirkung ist ungeklärt"
+                        )
+                    t_result = traced_outcome.result
+                else:
+                    t_result = exec_tool(
+                        t_name, t_args, session.mode,
+                        bach_app=self.bach_app,
+                        default_model=selected_model,
+                        **tool_kwargs,
+                    )
+                tool_call_id = ""
+                if hasattr(selected_backend, "_last_tool_call_ids"):
+                    ids = selected_backend._last_tool_call_ids
+                    if i < len(ids):
+                        tool_call_id = ids[i]
+                try:
+                    msgs.append(
+                        selected_backend.tool_response_message(str(t_result), tool_call_id)
+                    )
+                except Exception:  # noqa: BLE001 - Never replay an unconsumed tool effect.
+                    if traced_outcome is not None:
+                        abandon_normal_tool_result(binding, traced_outcome)
+                    elif binding is not None:
+                        binding.invalidate()
+                    session.current_tool = ""
+                    raise RuntimeError("Werkzeugantwort konnte nicht konsumiert werden") from None
+                if traced_outcome is not None:
+                    # This confirms consumption, never semantic task acceptance.
+                    if not acknowledge_normal_tool_result(binding, traced_outcome):
+                        binding.invalidate()
+                        session.current_tool = ""
+                        return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
@@ -2249,14 +2295,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     self._record_task_completion_receipt(
                         getattr(session, "chat_id", ""), t_name, t_args, str(t_result)
                     )
-                tool_call_id = ""
-                if hasattr(selected_backend, "_last_tool_call_ids"):
-                    ids = selected_backend._last_tool_call_ids
-                    if i < len(ids):
-                        tool_call_id = ids[i]
-                msgs.append(
-                    selected_backend.tool_response_message(str(t_result), tool_call_id)
-                )
 
             # Ein Zähler pro Werkzeugrunde, nach allen Antworten der Runde.
             # Keine Tool-Ergebnisse verändern: deren exakter Text ist ein Receipt.
