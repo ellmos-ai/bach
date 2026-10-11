@@ -2,6 +2,7 @@
 import asyncio
 import importlib
 import json
+import sqlite3
 from datetime import datetime, timezone
 
 import httpx
@@ -9,6 +10,7 @@ import pytest
 
 from hub._services.chat import slots_config as slots
 from hub._services.chat.chat_runtime import ChatRuntime, FailedAnswer
+from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.llm.model_backend import OllamaBackend
 from gui.api.worker_status_adapter import _project_worker
 
@@ -432,7 +434,22 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         return binding
     monkeypatch.setattr(control, "_acquire_worker_task", acquire_record)
     backend = OllamaBackend(default_model="glm-5.3:cloud")
-    runtime = ChatRuntime(backend)
+    session_db_path = tmp_path / "worker-session-snapshots.db"
+    with sqlite3.connect(session_db_path) as session_conn:
+        session_conn.execute("""
+            CREATE TABLE session_snapshots (
+                id INTEGER PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                snapshot_type TEXT NOT NULL,
+                snapshot_data TEXT,
+                name TEXT,
+                created_at TEXT
+            )
+        """)
+    runtime = ChatRuntime(
+        backend,
+        session_store=SQLiteChatSessionStore(session_db_path),
+    )
     # The lean lease-client fixture omits creation timestamps, which the real
     # decomposition tool needs when it creates a child task.
     conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
