@@ -214,6 +214,7 @@ class _WorkerControl:
     queue_status: Any = None
     lease_supervisor: Any = None
     supports_step_actions: bool = False
+    run_receipt_fields: Optional[Dict[str, Any]] = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
 
@@ -279,6 +280,8 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             projected = project_queue_status(control.queue_status)
             if projected is not None:
                 receipt["queue_status"] = projected
+        if control.run_receipt_fields is not None:
+            receipt.update(control.run_receipt_fields)
     if not verify_results:
         # Stop already holds the controller lock. Its receipt confirms only the
         # physical lifecycle; a separate execution poll verifies TaskDB results.
@@ -397,7 +400,7 @@ def _execution_worker_configuration(slot: dict):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
              "custom_system_prompt", "custom_role_prompt", "role_id", "sub_mode",
-              "allowed_tools", "skill_refs", "blueprint_id", "blueprint_version")}}
+              "allowed_tools", "skill_refs", "blueprint_id", "blueprint_version", "governance_binding")}}
     return configuration
 
 
@@ -413,12 +416,17 @@ def _execution_slot_reader(slot: dict):
                           sort_keys=True, ensure_ascii=False)
 
     admitted = policy(slot)
+    governance_checked_at = []
     def read():
         current = _execution_worker_slot(worker_id)
         if policy(current) != admitted:
             raise RuntimeError("Worker-Konfiguration wurde seit dem Start geändert; neuer Start erforderlich")
         from hub._services.skill_source_service import load_skill_instructions
         load_skill_instructions(current.get("skill_refs", []))
+        if current.get("blueprint_id") is not None or current.get("governance_binding") is not None:
+            # P05 3b: the pinned governance must still resolve exactly (same path as skill_refs).
+            from hub._services.governance_binding import verify_slot_throttled
+            verify_slot_throttled(current, governance_checked_at)
         return current
     return read
 
@@ -3501,6 +3509,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     # Admission fixes the provider and execution policy for this generation.
     # A later edit requires an explicit new start, including while no task exists.
     control.slot_policy_reader()
+    # P05 3c: the reader above has just verified the governance binding of this admission.
+    from hub._services.governance_binding import run_receipt_fields
+    control.run_receipt_fields = run_receipt_fields(w)
     if control.stop_event.is_set():
         return {"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409
 
