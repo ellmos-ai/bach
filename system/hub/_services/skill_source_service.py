@@ -138,20 +138,20 @@ def skill_library(roots: list[Path] | None = None) -> dict:
             "source": "current_SKILL.md", "declared_only_included": False}
 
 
-def _history_directory(skill_id: str) -> tuple[Path, Path]:
+def _history_directory(skill_id: str, write_root: Path | None = None) -> tuple[Path, Path]:
     if not isinstance(skill_id, str) or not SKILL_ID.fullmatch(skill_id):
         raise ValueError("Ungültige Skill-ID")
-    root = user_skills_root()
+    root = Path(write_root).expanduser().resolve() if write_root is not None else user_skills_root()
     directory = root / ".history" / skill_id
     if directory.is_symlink() or not directory.resolve().is_relative_to(root.resolve()):
         raise ValueError("Skill-Historie liegt außerhalb ihrer Wurzel")
     return root, directory
 
 
-def read_skill_history(skill_id: str, revision: str) -> dict:
+def read_skill_history(skill_id: str, revision: str, *, write_root: Path | None = None) -> dict:
     if not isinstance(revision, str) or not REVISION.fullmatch(revision):
         raise ValueError("Ungültige Skill-Quellenversion")
-    root, directory = _history_directory(skill_id)
+    root, directory = _history_directory(skill_id, write_root)
     path = directory / (revision + ".md")
     if not path.is_file():
         raise KeyError("Historische Skill-Fassung fehlt")
@@ -336,3 +336,45 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
         raise RuntimeError("Gespeicherte Skill-Quelle nicht bestätigt")
     return {"success": True, **saved, "previous_version": actual,
             "receipt": {"source_saved": True, "tools_granted": False, "agent_started": False}}
+
+
+
+def delete_skill(skill_id: str, expected_version: str, *,
+                 roots: list[Path] | None = None, write_root: Path | None = None,
+                 guard: Callable[[Path], None] | None = None) -> dict:
+    """CAS-remove only the local override created by a native promotion."""
+    if not isinstance(skill_id, str) or not SKILL_ID.fullmatch(skill_id):
+        raise ValueError("Ungültige Skill-ID")
+    if not isinstance(expected_version, str) or not REVISION.fullmatch(expected_version):
+        raise ValueError("Aktuelle Quellenversion erforderlich")
+    write_root = (write_root or user_skills_root()).expanduser().resolve()
+    all_roots = list(dict.fromkeys([write_root, *(roots if roots is not None else skill_roots())]))
+    checker = guard or check_write_locks
+    target = write_root / skill_id / "SKILL.md"
+    checker(target)
+    if any(parent.is_symlink() for parent in (target, *target.parents)):
+        raise PermissionError("Skill-Schreibbereich darf kein Symlink sein")
+    with _exclusive_lock(target):
+        current = source_catalog(all_roots).get(skill_id)
+        if current is None or Path(current["root"]).resolve() != write_root:
+            raise RuntimeError("skill_source_version_conflict")
+        previous = _source_bytes(current["path"], current["root"])
+        actual = hashlib.sha256(previous).hexdigest()
+        if actual != expected_version:
+            raise RuntimeError("skill_source_version_conflict")
+        checker(target)
+        latest = source_catalog(all_roots).get(skill_id)
+        if (latest is None or Path(latest["root"]).resolve() != write_root
+                or hashlib.sha256(_source_bytes(latest["path"], latest["root"])).hexdigest() != expected_version):
+            raise RuntimeError("skill_source_version_conflict")
+        target.unlink()
+        try:
+            directory_fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    return {"success": True, "id": skill_id, "previous_version": expected_version,
+            "receipt": {"source_removed": True, "tools_granted": False, "agent_started": False}}

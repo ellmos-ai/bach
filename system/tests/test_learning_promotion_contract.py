@@ -305,6 +305,8 @@ def test_candidate_tampering_and_legacy_rows_are_not_reviewable(candidate_case, 
     assert current["status"] == "approved"  # Historical information remains intact.
     assert current["review_state"] == "legacy_unverified"
     assert current["promotion_available"] is False
+    assert current["promotion_availability_deprecated"] is True
+    assert current["promotion_availability_replacement"] == "promotion_targets.targets.<target_kind>.state"
 
 
 @pytest.mark.parametrize("identical_request", [True, False])
