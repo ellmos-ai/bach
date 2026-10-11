@@ -86,10 +86,15 @@ def _run_packaging_setup() -> None:
         long_description_content_type="text/markdown",
         python_requires=">=3.10",
         license="MIT",
-        py_modules=["bach", "bach_api"],
+        py_modules=["bach", "bach_api", "bach_report_client"],
         install_requires=_read_requirements(root / "requirements.txt"),
         extras_require={"console": [_CONSOLE_REQUIREMENT]},
-        entry_points={"console_scripts": ["bach=bach:main"]},
+        entry_points={
+            "console_scripts": ["bach=bach:main"],
+            "ellmos.report_clients": [
+                "bach-control=bach_report_client:create_report_control_client",
+            ],
+        },
     )
 
 
