@@ -103,6 +103,14 @@ def test_registers_validated_template_once_per_provider_id_and_version(state, mo
     assert sync(state)["action"] == "confirmed" and len(rows(state)) == 1
 
 
+def test_provider_env_keeps_posix_tmpdir_but_no_server_secrets(monkeypatch):
+    # macOS/Linux temp dir lives in TMPDIR; without it the provider falls back to /tmp (R12).
+    monkeypatch.setenv("TMPDIR", "/private/var/folders/xy/T/")
+    monkeypatch.setenv("BACH_R7_SERVER_SECRET", "not-for-providers")
+    env = tps._child_env()
+    assert env["TMPDIR"] == "/private/var/folders/xy/T/" and "BACH_R7_SERVER_SECRET" not in env
+
+
 def test_missing_provider_marks_template_unavailable_and_keeps_existing_agent(state):
     sync(state)
     [row] = rows(state)
