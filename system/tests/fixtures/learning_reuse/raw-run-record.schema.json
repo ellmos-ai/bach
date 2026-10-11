@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Learning reuse raw run record (private raw set)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_sha256",
+    "pair_id",
+    "run_index",
+    "order_seed",
+    "case_id",
+    "blind_submission_id",
+    "arm_code",
+    "model",
+    "tokenizer",
+    "parameters",
+    "prompt_sha256",
+    "context_sha256",
+    "context_tokens",
+    "input_tokens",
+    "outcome",
+    "elapsed_ms",
+    "retry_count",
+    "output_tokens",
+    "raw_output_sha256",
+    "source_artifact"
+  ],
+  "properties": {
+    "schema": {"const": "bach.learning-reuse.raw-run.v1"},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pair_id": {"type": "string", "pattern": "^pair-case-[0-9]{2}$"},
+    "run_index": {"type": "integer", "minimum": 1, "maximum": 16},
+    "order_seed": {"type": "integer"},
+    "case_id": {"type": "string", "pattern": "^case-[0-9]{2}$"},
+    "blind_submission_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,80}$"},
+    "arm_code": {"enum": ["A", "B"]},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model_id", "model_revision"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "model_revision": {"type": "string", "minLength": 1}
+      }
+    },
+    "tokenizer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokenizer_id", "tokenizer_revision"],
+      "properties": {
+        "tokenizer_id": {"type": "string", "minLength": 1},
+        "tokenizer_revision": {"type": "string", "minLength": 1}
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "top_p", "max_output_tokens", "seed"],
+      "properties": {
+        "temperature": {"type": "number"},
+        "top_p": {"type": "number"},
+        "max_output_tokens": {"type": "integer", "minimum": 1},
+        "seed": {"type": ["integer", "null"]}
+      }
+    },
+    "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "context_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "context_tokens": {"type": "integer", "minimum": 0},
+    "input_tokens": {"type": "integer", "minimum": 0},
+    "outcome": {"enum": ["success", "timeout", "provider_error", "empty_response", "budget_violation"]},
+    "elapsed_ms": {"type": "integer", "minimum": 0},
+    "retry_count": {"const": 0},
+    "output_tokens": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "raw_output_sha256": {
+      "oneOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        {"type": "null"}
+      ]
+    },
+    "source_artifact": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate_revision", "candidate_digest", "target_version"],
+          "properties": {
+            "candidate_revision": {"type": "integer", "minimum": 1},
+            "candidate_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "target_version": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    }
+  }
+}

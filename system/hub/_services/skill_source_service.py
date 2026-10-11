@@ -260,7 +260,7 @@ def check_write_locks(path: Path) -> None:
     while not target.exists() and target != target.parent:
         target = target.parent
     for parent in (target, *target.parents):
-        result = subprocess.run([sys.executable, "-S", str(scanner), "--check-dir", str(parent), "--json"],
+        result = subprocess.run([sys.executable, str(scanner), "--check-dir", str(parent), "--json"],
                                 capture_output=True, text=True, encoding="utf-8", timeout=15,
                                 env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
         try:
