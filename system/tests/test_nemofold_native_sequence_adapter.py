@@ -333,4 +333,3 @@ def test_changed_native_skill_pin_changes_proposal_for_transactional_recheck(reg
 
     assert first["resolved"]["skills"][0]["source_version"] != second["resolved"]["skills"][0]["source_version"]
     assert first != second
-
