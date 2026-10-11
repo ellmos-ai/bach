@@ -448,6 +448,38 @@ async def bootstrap_agent_templates():
         conn.close()
 
 
+def _template_provider_call(func, *args, **kwargs):
+    conn = _get_conn()
+    try:
+        return func(conn, *args, **kwargs)
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/template-providers/sync")
+async def sync_template_providers():
+    """Explicit probe of configured template providers; never overwrites another version."""
+    from hub._services.template_provider_service import TemplateProviderError, sync_providers
+    try:
+        return await asyncio.to_thread(_template_provider_call, sync_providers)
+    except TemplateProviderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/agent-studio/template-providers/migrate")
+async def migrate_system_template(payload: Dict[str, Any]):
+    """Explicitly adopt the version a provider currently offers; the old row stays."""
+    from hub._services.template_provider_service import TemplateProviderError, migrate_template
+    keys = ("provider", "template_id", "to_version", "expected_sha256")
+    if any(not isinstance(payload.get(key), str) for key in keys):
+        raise HTTPException(status_code=400, detail="provider, template_id, to_version und expected_sha256 sind erforderlich")
+    try:
+        return await asyncio.to_thread(_template_provider_call, migrate_template, payload["provider"],
+            payload["template_id"], to_version=payload["to_version"], expected_sha256=payload["expected_sha256"])
+    except TemplateProviderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
 @router.get("/agent-studio/tools")
 async def blueprint_tool_catalog():
     from hub._services.chat.bach_tools import tools_for_mode

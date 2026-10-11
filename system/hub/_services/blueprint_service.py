@@ -147,11 +147,23 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
         ("kind", "TEXT DEFAULT 'agent'"),
         ("start_prompt", "TEXT DEFAULT ''"),
         ("version", "INTEGER DEFAULT 1"),
+        # Paketgelieferte Systemvorlagen (template_provider_service); NULL = BACH-eigene Zeile.
+        ("provider", "TEXT"),
+        ("provider_template_id", "TEXT"),
+        ("provider_version", "TEXT"),
+        ("template_sha256", "TEXT"),
+        ("template_status", "TEXT"),
+        ("template_status_reason", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE agent_blueprints ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:
             pass
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_blueprints_provider_template
+        ON agent_blueprints(provider, provider_template_id, provider_version)
+        WHERE provider IS NOT NULL
+    """)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS partner_presence (
@@ -478,6 +490,22 @@ def list_blueprints(
     }
 
 
+def validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
+                              skills, contractus, governance) -> None:
+    """Feldprüfung für Nutzer-Saves und paketgelieferte Systemvorlagen."""
+    if any(not isinstance(text, str) or len(text) > 20000 or "\x00" in text
+           for text in (title, desc, persona_role, persona_prompt)):
+        raise ValueError("Blueprint enthält ungültigen Text")
+    if (len(title) > 120 or not isinstance(animus, str) or animus not in {"api", "cli", "subscription", "local"}
+            or not isinstance(modus, str) or modus not in {"casualis", "usus", "impetus_temporal", "impetus_causa"}):
+        raise ValueError("Blueprint-Titel oder Arbeitsmodus ist ungültig")
+    if (not isinstance(skills, list) or len(skills) > 100
+            or any(not isinstance(skill, str) or not _ID.fullmatch(skill) for skill in skills)
+            or not isinstance(contractus, dict) or not isinstance(governance, dict)
+            or len(json.dumps([contractus, governance])) > 300000):
+        raise ValueError("Blueprint-Konfiguration ist ungültig")
+
+
 def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
     """Erstellt oder aktualisiert einen Blueprint mit Validierung (GUX-025, GUX-029)."""
     ensure_blueprint_schema(conn)
@@ -536,20 +564,12 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
         conn.rollback()
         raise RuntimeError("blueprint_version_conflict")
-    if any(not isinstance(text, str) or len(text) > 20000 or "\x00" in text
-           for text in (title, desc, persona_role, persona_prompt)):
+    try:
+        validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
+                                  skills, contractus, governance)
+    except ValueError:
         conn.rollback()
-        raise ValueError("Blueprint enthält ungültigen Text")
-    if (len(title) > 120 or not isinstance(animus, str) or animus not in {"api", "cli", "subscription", "local"}
-            or not isinstance(modus, str) or modus not in {"casualis", "usus", "impetus_temporal", "impetus_causa"}):
-        conn.rollback()
-        raise ValueError("Blueprint-Titel oder Arbeitsmodus ist ungültig")
-    if (not isinstance(skills, list) or len(skills) > 100
-            or any(not isinstance(skill, str) or not _ID.fullmatch(skill) for skill in skills)
-            or not isinstance(contractus, dict) or not isinstance(governance, dict)
-            or len(json.dumps([contractus, governance])) > 300000):
-        conn.rollback()
-        raise ValueError("Blueprint-Konfiguration ist ungültig")
+        raise
     version = (curr_version + 1) if curr_version else 1
     now = datetime.now(timezone.utc).isoformat()
 
@@ -684,6 +704,9 @@ def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
     conn.execute("BEGIN IMMEDIATE")
     try:
         bp = _execution_blueprint(conn, blueprint_id, expected_version)
+        # Nur neue Konfiguration sperren; bestehende Steckplaetze bleiben startbar.
+        if bp.get("provider") and bp.get("template_status") != "available":
+            raise RuntimeError("template_unavailable")
         slot_id = f"system-blueprint-{blueprint_id}"
         if get_system_slot(slot_id, slots_path) and not terminal_verified:
             raise RuntimeError("worker_terminal_state_required")

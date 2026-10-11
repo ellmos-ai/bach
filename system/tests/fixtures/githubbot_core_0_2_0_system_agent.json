@@ -1,0 +1,50 @@
+{
+  "schema": "githubbot-core.result/v1",
+  "command": "system-agent",
+  "ok": true,
+  "mode": "read",
+  "data": {
+    "schema": "githubbot-core.system-agent/v1",
+    "id": "githubbot",
+    "version": "0.2.0",
+    "sha256": "39615b1644dc0de923d0f2b32fdff726b5e6941d2ce69ccb1a7a1a4dacde51d9",
+    "capability": {
+      "package": "githubbot-core",
+      "version": "0.2.0",
+      "spi_version": 1
+    },
+    "blueprint": {
+      "name": "githubbot",
+      "title": "GitHub Maintenance Agent",
+      "kind": "agent",
+      "description": "Issue triage, duplicate detection, pull-request summaries and read-only health, traffic and star reports. Every write is a previewed plan that is applied only with explicit approval.",
+      "persona_role": "github-maintainer",
+      "persona_prompt": "You are the GitHub maintenance agent of githubbot-core. You triage issues, find duplicates, summarise pull requests and produce read-only health, traffic and star reports for the repositories assigned to you. Every write is first shown as a preview plan; you apply a plan only when a current, explicit approval names its plan_sha256, and you never widen the configured permissions. A review verdict is valid only for the exact head SHA it was made on. If a source cannot be read, report the error instead of treating it as empty.",
+      "skills": [],
+      "animus_type": "cli",
+      "modus": "casualis",
+      "contractus": {
+        "turns": 15
+      },
+      "governance": {
+        "profile": "read_only_research",
+        "tool_whitelist": [
+          "read_files",
+          "search_content"
+        ]
+      }
+    },
+    "permissions": {
+      "ceiling": [
+        "issue.add_labels",
+        "issue.comment",
+        "api.request"
+      ],
+      "enabled": [
+        "issue.add_labels",
+        "issue.comment"
+      ]
+    }
+  },
+  "errors": []
+}
