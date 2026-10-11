@@ -26,7 +26,7 @@ Modellkette (3d), GUI-Tab „Installiert“ und Ocean-Adapter.
 Unbekannte Schlüssel, doppelte IDs oder ein `command`, der kein String-Array ist, führen zu
 `provider_config_invalid`. BACH führt den Befehl ohne Shell, ohne stdin, ohne Konsolenfenster
 und mit einem Timeout von 20 s aus, im Temp-Verzeichnis und mit minimaler Umgebung (`PATH`,
-Systemverzeichnisse, `HOME`, Locale, UTF-8); Tokens und Schlüssel des Servers erhält er nicht.
+Systemverzeichnisse, Temp-Verzeichnis `TEMP`/`TMP`/`TMPDIR`, `HOME`, Locale, UTF-8); Tokens und Schlüssel des Servers erhält er nicht.
 
 ## Providerausgabe und Prüfung
 
