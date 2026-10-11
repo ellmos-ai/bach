@@ -416,12 +416,17 @@ def _execution_slot_reader(slot: dict):
                           sort_keys=True, ensure_ascii=False)
 
     admitted = policy(slot)
+    governance_checked_at = []
     def read():
         current = _execution_worker_slot(worker_id)
         if policy(current) != admitted:
             raise RuntimeError("Worker-Konfiguration wurde seit dem Start geändert; neuer Start erforderlich")
         from hub._services.skill_source_service import load_skill_instructions
         load_skill_instructions(current.get("skill_refs", []))
+        if current.get("blueprint_id") is not None or current.get("governance_binding") is not None:
+            # P05 3b: the pinned governance must still resolve exactly (same path as skill_refs).
+            from hub._services.governance_binding import verify_slot_throttled
+            verify_slot_throttled(current, governance_checked_at)
         return current
     return read
 
@@ -3504,13 +3509,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     # Admission fixes the provider and execution policy for this generation.
     # A later edit requires an explicit new start, including while no task exists.
     control.slot_policy_reader()
-    from hub._services.governance_binding import GovernanceRejected, run_receipt_fields, verify_run
-    if w.get("blueprint_id") is not None:
-        try:
-            # P05 3b: every admission re-resolves the pinned governance, also outside Agent-Studio.
-            verify_run(w.get("governance_binding"), w.get("allowed_tools"))
-        except GovernanceRejected as exc:
-            return {"error": "Governance-Bindung löst nicht mehr exakt auf", "error_code": str(exc)}, 409
+    # P05 3c: the reader above has just verified the governance binding of this admission.
+    from hub._services.governance_binding import run_receipt_fields
     control.run_receipt_fields = run_receipt_fields(w)
     if control.stop_event.is_set():
         return {"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409

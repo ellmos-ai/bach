@@ -65,6 +65,11 @@ Untere Schichten ergänzen nur.
   Fehlt die Datei, verbietet er nichts zusätzlich. Ist sie ungültig, folgt
   `governance_global_invalid`. Die globalen Refs zeigen in die Registry; sie sind die
   Übernahmeliste des Hosts, keine zweite Registry.
+- Die Datei wird nur serverseitig gelesen. Keine Route schreibt sie oder gibt sie aus; nach
+  außen erscheinen nur die globalen Pins in `refs` und ihr Inhalt über `effective_sha256`.
+- `forbidden_tools` ist Durchsetzungskonfiguration, keine Norm. Jedes Verbot soll über
+  `policy_refs` (Rolle `global`) auf die Policy in der Registry zeigen, die es begründet.
+  Eine Prüfung dieser Zuordnung gibt es in v1 noch nicht.
 - Eine Schicht, die eine globale ID mit anderem Pin referenziert oder ein global verbotenes
   Werkzeug freigibt (Whitelist samt Aliasen, ohne Whitelist der Standardsatz), wird mit
   `governance_global_violation` abgewiesen. Das gilt auch, wenn ein Steckplatz später über die
@@ -79,17 +84,21 @@ Untere Schichten ergänzen nur.
 
 ## Bindung und effective_sha256
 
-Bei Materialize wird die Bindung serverseitig im Steckplatz gespeichert
-(`governance_binding`; kein editierbares Kernfeld):
+Bei Materialize wird die Bindung serverseitig im Steckplatz gespeichert. `governance_binding`,
+`blueprint_id` und `blueprint_version` setzt nur `materialize_system_blueprint`. Kein
+Slot-Editor und keine API ändert oder entfernt sie: Der Kerneditor kennt die Felder nicht, und
+`update_slot` (auch `POST /api/slots`) weist sie ab. Andere Slot-Edits lassen die Bindung
+unverändert.
 
 ```json
 {"schema": "bach.governance-binding.v1", "refs": [...], "inherits": [...],
- "global_sha256": "<64 hex>", "profile": "...", "tool_whitelist": [...],
+ "global": {"policy_refs": [...], "forbidden_tools": [...]}, "profile": "...", "tool_whitelist": [...],
  "legacy": false, "effective_sha256": "<64 hex>"}
 ```
 
 `refs` enthält alle Schichten mit Rolle, sortiert nach (global, role, agent) und ID.
-`global_sha256` ist der Hash des geladenen globalen Vertrags. **Hashregel:**
+`global` ist der Inhalt des geladenen globalen Vertrags (sortiert); er fließt damit kanonisch in
+`effective_sha256` ein, und der Beleg bindet die globale Schicht mit. **Hashregel:**
 `effective_sha256` = sha256 über das kanonische JSON aller übrigen Felder der Bindung
 (`sort_keys=True`, Trenner `,`/`:`, `ensure_ascii=False`, UTF-8). Es ist dieselbe Regel wie
 beim Provider-sha256 der Systemvorlagen. Der Wert lässt sich also aus der gespeicherten
@@ -104,17 +113,22 @@ Bindung nachrechnen. Ein Blueprint ohne `policy_refs` und ohne `inherits_from` i
   mit HTTP 400, `detail` ist der Fehlercode.
 - **Materialize:** Die Auflösung läuft vor der Schreibsperre. Der folgende Versions-CAS
   erkennt einen Save, der dazwischen kam.
-- **Jeder Lauf:** Jede Admission im Controller (`_start_reserved_worker_execution`) prüft die
-  gespeicherte Bindung erneut. Das gilt auch für Starts über `/api/workers/run` ohne
-  Agent-Studio. Die Pins müssen noch exakt auflösen und der globale Vertrag unverändert sein
-  (`governance_global_changed`). Eine Abweisung ergibt HTTP 409 mit `error_code`. Der
-  Agent-Studio-Start prüft zusätzlich die Vererbungskette gegen die Datenbank.
+- **Jeder Lauf:** Der Policy-Reader des Controllers (`_execution_slot_reader().read()`) prüft die
+  gespeicherte Bindung erneut. Er tut das neben der Prüfung der `skill_refs` und auf demselben
+  Ablehnungsweg; das gilt auch für Starts über `/api/workers/run` ohne Agent-Studio. Die Pins
+  müssen noch exakt auflösen, die Bindung muss sich nachrechnen lassen
+  (`governance_binding_invalid` bei Manipulation), und der globale Vertrag muss unverändert
+  sein (`governance_global_changed`). Bei der Admission folgt wie bei geänderten Skills HTTP 503
+  mit `error_code: admission_unconfirmed`; es entsteht kein Assignment und kein Worker-Thread.
+  Der Agent-Studio-Start prüft vorher selbst (HTTP 400 mit Fehlercode) und zusätzlich die
+  Vererbungskette gegen die Datenbank.
 - Steckplätze, die vor 3b materialisiert wurden, haben keine Bindung. Sie laufen als legacy
   weiter; global verbotene Werkzeuge werden auch für sie abgewiesen.
 
 Die Registry wird nur gelesen, wenn Refs vorhanden sind. Dabei prüft `verify()` alle lokalen
-Quellen; mitten im Lauf wird deshalb nicht erneut gelesen. Änderungen an der Bindung im
-Steckplatz erkennt der vorhandene Policy-Snapshot des Controllers.
+Quellen. Deshalb prüft die erste Lesung eines Readers (die Admission) immer; weitere Lesungen
+desselben Laufs prüfen höchstens alle `RUN_RECHECK_SECONDS` (60 s). Änderungen an der Bindung
+oder den Werkzeugen im Steckplatz erkennt der vorhandene Policy-Snapshot bei jeder Lesung.
 
 ## Migration (kein stiller Wechsel)
 

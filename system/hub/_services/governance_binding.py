@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -24,11 +25,12 @@ REGISTRY = "policy-registry"
 LAYER_ROLES = ("role", "agent")  # Blueprint-Schichten; "global" setzt nur der Host.
 REF_FIELDS = {"registry", "id", "version", "sha256", "role"}
 INHERITS_FIELDS = {"blueprint_id", "version", "sha256"}
-BINDING_FIELDS = {"schema", "refs", "inherits", "global_sha256", "profile", "tool_whitelist",
+BINDING_FIELDS = {"schema", "refs", "inherits", "global", "profile", "tool_whitelist",
                   "legacy", "effective_sha256"}
 MAX_REFS = 64
 MAX_INHERITANCE_DEPTH = 8
 PIN_LOG_LIMIT = 100
+RUN_RECHECK_SECONDS = 60.0  # Prüfabstand innerhalb eines Laufs, siehe verify_slot_throttled
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _TEXT = re.compile(r"^[^\x00-\x1f]{1,256}$")
 _ROLE_ORDER = {"global": 0, "role": 1, "agent": 2}
@@ -228,7 +230,8 @@ def resolve_layers(conn, governance: dict, *, blueprint_id: int | None = None,
             verify_ref(ref, index)
     binding = {"schema": SCHEMA, "refs": refs,
                "inherits": [parent["pin"] for parent in parents],
-               "global_sha256": canonical_sha256(contract),
+               # Inhalt der Host-Schicht selbst, damit effective_sha256 sie kanonisch mitbindet.
+               "global": contract,
                "profile": governance.get("profile"), "tool_whitelist": governance.get("tool_whitelist"),
                "legacy": not own_refs and inherits is None}
     binding["effective_sha256"] = _effective(binding)
@@ -239,6 +242,7 @@ def check_stored(binding: Any) -> dict:
     """Formprüfung einer gespeicherten Bindung; der Hash wird nachgerechnet."""
     if (type(binding) is not dict or set(binding) != BINDING_FIELDS or binding["schema"] != SCHEMA
             or type(binding["refs"]) is not list or type(binding["inherits"]) is not list
+            or type(binding["global"]) is not dict
             or type(binding["legacy"]) is not bool or binding["effective_sha256"] != _effective(binding)):
         raise GovernanceRejected("governance_binding_invalid")
     for ref in binding["refs"]:
@@ -260,13 +264,28 @@ def verify_run(binding: Any, allowed_tools: Any, *, observe: Callable | None = N
         raise GovernanceRejected("governance_global_violation")
     if binding is None:
         return None
-    if canonical_sha256(contract) != binding["global_sha256"]:
+    if contract != binding["global"]:
         raise GovernanceRejected("governance_global_changed")
     if binding["refs"]:
         index = _registry_index(observe)
         for ref in binding["refs"]:
             verify_ref(ref, index)
     return binding
+
+
+def verify_slot_throttled(slot: dict, checked_at: list, *, clock: Callable = time.monotonic) -> None:
+    """``verify_run`` im Policy-Reader des Controllers (Admission und laufende Lesungen).
+
+    Die erste Lesung eines Readers (= Admission) prüft immer. Weitere Lesungen desselben
+    Laufs prüfen höchstens alle ``RUN_RECHECK_SECONDS``; Slotinhalt und Freigaben deckt der
+    Policy-Snapshot des Controllers ohnehin bei jeder Lesung ab.
+    """
+    # ponytail: Zeitfenster, weil observe() bei jedem Lesen alle lokalen Registry-Quellen hasht;
+    # bei Bedarf durch einen Cache nach Registry-Stand ersetzen.
+    now = clock()
+    if not checked_at or now - checked_at[0] >= RUN_RECHECK_SECONDS:
+        verify_run(slot.get("governance_binding"), slot.get("allowed_tools"))
+        checked_at[:] = [now]
 
 
 def receipt_binding(binding: Any) -> dict[str, Any]:

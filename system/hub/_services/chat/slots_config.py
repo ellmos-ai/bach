@@ -760,6 +760,8 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
+    if MATERIALIZE_OWNED_FIELDS & set(updates):
+        raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
     capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
@@ -790,6 +792,8 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
     raise KeyError(f"Slot or worker {slot_id!r} not found")
 
 
+# Set only by materialize_system_blueprint (P05 3b); no slot editor or API may change them.
+MATERIALIZE_OWNED_FIELDS = frozenset({"governance_binding", "blueprint_id", "blueprint_version"})
 CORE_SYSTEM_AGENT_IDS = tuple(DEFAULT_CORE_SLOTS)
 REQUIRED_CORE_SYSTEM_AGENT_IDS = ("buddha_chat", "buddha_always_on", "buddha_connector")
 CORE_SYSTEM_AGENT_ICONS = {

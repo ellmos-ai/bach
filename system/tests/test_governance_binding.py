@@ -81,6 +81,10 @@ def row(state, blueprint_id):
     return dict(state.execute("SELECT * FROM agent_blueprints WHERE id = ?", (blueprint_id,)).fetchone())
 
 
+def saved_id(configured):
+    return int(configured["slot_id"].rsplit("-", 1)[1])
+
+
 def materialize(state, saved, **changes):
     return service.materialize_blueprint(state, saved["id"], expected_version=saved["version"],
         execution={"backend": "ollama", "model": "test-local", "mode": "full"},
@@ -255,11 +259,24 @@ def test_client_cannot_write_the_pin_log(state):
     assert "pin_log" not in json.loads(row(state, saved["id"])["governance_json"])
 
 
-def test_binding_is_not_a_user_editable_slot_field(state):
-    configured = materialize(state, save(state))
-    with pytest.raises(ValueError):
-        slots.change_core_system_agent(configured["slot_id"], configured["configuration_version"],
-                                       {"governance_binding": {"legacy": True}})
+@pytest.mark.parametrize("field, value", [("governance_binding", {"legacy": True}),
+    ("governance_binding", None), ("blueprint_id", None), ("blueprint_version", 99)])
+def test_binding_is_owned_by_materialize_and_survives_slot_edits(state, registry, field, value):
+    configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
+    slot_id = configured["slot_id"]
+    before = slots.get_system_slot(slot_id)["governance_binding"]
+    with pytest.raises(ValueError):  # core editor (GUI)
+        slots.change_core_system_agent(slot_id, configured["configuration_version"], {field: value})
+    with pytest.raises(ValueError):  # generic POST /api/slots
+        slots.update_slot(slot_id, {field: value, "model": "other"})
+    # Regular edits through every slot editor keep the binding byte-identical.
+    slots.update_slot(slot_id, {"model": "other-model", "status": "idle"})
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    slots.change_core_system_agent(slot_id, version, {"description": "edited", "max_tool_rounds": 7})
+    version = slots.core_system_agents_snapshot()["configuration_version"]
+    slots.change_core_system_agent(slot_id, version, reset=True)
+    after = slots.get_system_slot(slot_id)
+    assert after["governance_binding"] == before and after["blueprint_id"] == saved_id(configured)
 
 
 # --- inheritance ---------------------------------------------------------------------------
@@ -369,9 +386,32 @@ def test_controller_refuses_stale_pin_on_direct_worker_start(state, registry, co
     configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
     registry.entries[0] = entry(version="2", sha="d" * 64)
     response, status = run(controller, configured["slot_id"], "3" * 32)
-    assert status == 409 and response["error_code"] == "policy_ref_stale"
+    # Same rejection path as changed skill_refs: the admission is not confirmed, nothing runs.
+    assert status == 503 and response["execution"]["error_code"] == "admission_unconfirmed"
     assert controller.assignments == []  # no assignment, no worker thread
     assert response["execution"]["worker_thread_started"] is not True
+
+
+def test_controller_refuses_manipulated_binding_on_direct_worker_start(state, registry, controller):
+    configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
+    raw = json.loads(open(slots.DEFAULT_SLOTS_FILE, encoding="utf-8").read())
+    raw["slots"][configured["slot_id"]]["governance_binding"]["refs"][0]["version"] = "0"  # hash not updated
+    slots.save_slots_config(raw, slots.DEFAULT_SLOTS_FILE)
+    response, status = run(controller, configured["slot_id"], "4" * 32)
+    assert status == 503 and controller.assignments == []
+    with pytest.raises(gb.GovernanceRejected, match="^governance_binding_invalid$"):
+        gb.verify_run(raw["slots"][configured["slot_id"]]["governance_binding"], [])
+
+
+def test_policy_reader_rechecks_during_a_run(state, registry, controller, monkeypatch):
+    configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
+    reader = controller._execution_slot_reader(slots.get_system_slot(configured["slot_id"]))
+    assert reader()["id"] == configured["slot_id"]  # admission read verifies
+    registry.entries[0] = entry(version="2", sha="d" * 64)
+    assert reader()["id"] == configured["slot_id"]  # inside the window: no new registry read
+    monkeypatch.setattr(gb, "RUN_RECHECK_SECONDS", 0.0)
+    with pytest.raises(gb.GovernanceRejected, match="^policy_ref_stale$"):
+        reader()
 
 
 def test_adapter_projection_keeps_the_binding_fields(monkeypatch):
