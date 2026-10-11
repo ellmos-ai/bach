@@ -196,6 +196,59 @@ def test_unbound_copy_and_move_stay_inside_code_derived_bach_root(tmp_path, monk
     assert not outside_move_destination.exists()
 
 
+def test_unbound_path_result_is_exact_checked_normcase_expression(tmp_path, monkeypatch):
+    import os
+    from hub import bach_paths
+    from hub._services.chat import bach_tools
+
+    trusted_root = tmp_path / "BachRoot"
+    user_dir = trusted_root / "user"
+    user_dir.mkdir(parents=True)
+    source = user_dir / "MixedCase-Existing.txt"
+    source.write_text("existing", encoding="utf-8")
+    destination = user_dir / "MixedCase-New.txt"
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    checked_source, checked_destination = bach_tools._authorized_file_mutation_paths(
+        str(source), str(destination)
+    )
+    expected_source = Path(os.path.normcase(os.path.realpath(source)))
+    expected_destination = Path(os.path.normcase(os.path.realpath(destination)))
+    assert checked_source == expected_source
+    assert checked_destination == expected_destination
+    assert checked_source.read_text(encoding="utf-8") == "existing"
+    assert not checked_destination.exists()
+
+    if os.name == "nt":
+        differently_cased_source = Path(str(source).swapcase())
+        assert differently_cased_source.exists()
+        case_checked_source, _ = bach_tools._authorized_file_mutation_paths(
+            str(differently_cased_source), str(destination)
+        )
+        assert case_checked_source == checked_source
+        assert case_checked_source.read_text(encoding="utf-8") == "existing"
+
+
+def test_unbound_path_result_still_rejects_symlink_alias(tmp_path, monkeypatch):
+    from hub import bach_paths
+    from hub._services.chat import bach_tools
+
+    trusted_root = tmp_path / "BachRoot"
+    user_dir = trusted_root / "user"
+    user_dir.mkdir(parents=True)
+    source = user_dir / "Existing.txt"
+    source.write_text("existing", encoding="utf-8")
+    alias = user_dir / "SourceAlias.txt"
+    try:
+        alias.symlink_to(source)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable")
+    monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
+
+    with pytest.raises(ValueError, match="Ungebundene Dateioperation blockiert"):
+        bach_tools._authorized_file_mutation_paths(str(alias), str(user_dir / "destination.txt"))
+
+
 def test_unbound_copy_rejects_symlinked_source_and_destination_ancestors(tmp_path, monkeypatch):
     from hub import bach_paths
 

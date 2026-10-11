@@ -370,15 +370,17 @@ def _authorized_file_mutation_paths(source, destination, worker_task_binding=Non
                 raise ValueError("Pfad liegt außerhalb des BACH-Roots")
             if path_key != os.path.normcase(lexical):
                 raise ValueError("Symlink- oder Ancestor-Umleitung erkannt")
+            # Pass the exact normcase-normalized, prefix-checked value to both
+            # the native sanitizer and downstream filesystem sinks.
             sanitized = Path(sanitize_host_path(
-                normalized,
+                path_key,
                 base_path=trusted_root,
                 allowed_roots=(trusted_root,),
                 must_exist=must_exist,
             )).resolve(strict=must_exist)
             if os.path.normcase(os.fspath(sanitized)) != path_key:
                 raise ValueError("Sanitisierter Pfad weicht vom geprüften Pfad ab")
-            return Path(normalized)
+            return Path(path_key)
 
         return (
             checked_path(source, must_exist=True),
