@@ -29,6 +29,7 @@ Nutzt hub/bach_paths.py fuer Pfade (Single Source of Truth).
 """
 
 import inspect
+import json
 import os
 import sys
 from pathlib import Path
@@ -252,11 +253,17 @@ class App:
             'success': success, 'args': args or []
         })
 
-        # Interceptor-Meldungen sichtbar machen (MODULRUECKTRANSFER Stufe 6):
-        # z.B. workflowhooker-Abschluss-Gate. Listener-Rueckgaben bleiben
-        # weiterhin still, nur dynamisch injizierte Hooker werden angehaengt.
+        # Preserve machine-readable handler payloads. Hook diagnostics stay
+        # visible on stderr; ordinary text responses keep their existing suffix.
         hook_results = getattr(self.hooks, 'last_interceptor_results', None) or []
-        for hr in hook_results:
-            message = f"{message}\n{hr}"
+        if hook_results:
+            try:
+                json.loads(message)
+            except (TypeError, ValueError):
+                for hr in hook_results:
+                    message = f"{message}\n{hr}"
+            else:
+                for hr in hook_results:
+                    print(hr, file=sys.stderr)
 
         return (success, message)

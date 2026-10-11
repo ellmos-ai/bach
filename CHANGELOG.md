@@ -1,5 +1,9 @@
 # BACH Changelog
 
+## Unreleased — structured hook diagnostics
+
+- Hook notices remain visible on stderr when a handler returns valid JSON. JSON payloads remain byte-identical; ordinary text responses keep their existing notices. This fixes the PromptBoard API parsing regression recorded in task #2105.
+
 Alle wichtigen Änderungen an BACH werden hier dokumentiert.
 
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
