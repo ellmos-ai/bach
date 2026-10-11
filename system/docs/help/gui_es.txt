@@ -302,10 +302,10 @@ GET /api/inbox/analyze/{file} Analizar archivo
 PUT /api/inbox/settings Actualizar configuración
 
 Tablero de habilidades:
-GET /api/skills-board/item-file Leer archivo de elemento
-PUT /api/skills-board/item-file Guardar archivo de elemento
-GET /api/skills-board/hierarchy Leer jerarquía
-PUT /api/skills-board/hierarchy Guardar jerarquía
+GET /api/skills-board/item-file Leer archivo de elemento (retirado, HTTP 410; sustituto: GET /api/capabilities/skills/{id}/source)
+PUT /api/skills-board/item-file Guardar archivo de elemento (retirado, HTTP 410; sustituto: PUT /api/capabilities/skills/{id}/source)
+GET /api/skills-board/hierarchy Leer jerarquía (tabla hierarchy_assignments)
+PUT /api/skills-board/hierarchy Guardar asignaciones (validado, solo hierarchy_assignments)
 
 Sistema de ayuda:
 GET /api/help Listar archivos de ayuda
