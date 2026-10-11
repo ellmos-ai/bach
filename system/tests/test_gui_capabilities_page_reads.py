@@ -15,23 +15,30 @@ if str(SYSTEM_ROOT) not in sys.path:
 from gui import server  # noqa: E402
 from gui.api import gui_capabilities as caps  # noqa: E402
 from gui.api.agent_history import router as agent_history_router  # noqa: E402
-from gui.api.unified_api import router as unified_router  # noqa: E402
+from gui.api.task_assignment import router as task_assignment_router
+from gui.api.unified_api import router as unified_router
+from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
 
+LAYOUT = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]  # BachLayout -> Header.astro:242,280, domain-pins.mjs:46
 PINNED = {
-    "/": ["/api/system/cluster-cockpit", "/api/agent-studio/blueprints", "/api/tasks"],
+    "/": ["/api/agent-studio/blueprints", "/api/tasks"] + LAYOUT,
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
-                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
-    "/artefakte": ["/api/artefakte", "/api/artifacts/content", "/api/artifacts/download"],
+                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents", "/api/user-inbox", "/api/assignees",
+                          "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT,
+    "/artefakte": ["/api/artefakte", "/api/artifacts/content", "/api/artifacts/download"] + LAYOUT,
     "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
-                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
+                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts",
+                  "/api/domains/pins", "/api/gui/brand"],
 }
 
 
 def _get_routes():
-    # The unified router is not mounted under `from gui import server` (circular import in the test process), so the three route
-    # sources are read directly.
+    # The unified router is not mounted under `from gui import server` (circular import in the test process), so the route
+    # sources (the user-inbox router is built without a store) are read directly.
     found = set()
-    for source in (server.app.routes, unified_router.routes, agent_history_router.routes):
+    for source in (server.app.routes, unified_router.routes, agent_history_router.routes,
+                   task_assignment_router.routes,
+                   build_user_inbox_router(lambda: None).routes):
         for route in source:
             if "GET" in (getattr(route, "methods", None) or ()):
                 found.add(route.path)
@@ -48,7 +55,7 @@ def test_every_pinned_read_has_a_bach_route_and_a_declared_prefix():
     for page, reads in PINNED.items():
         for read in reads:
             assert read in routes, f"{page}: no GET route {read}"
-            assert read.startswith(caps.PREFIXES) or read in caps.EXACT_PATHS, f"{page}: {read} is not declared"
+            assert read.startswith(caps.PREFIXES) or f"GET {read}" in caps.EXACT_READS, f"{page}: {read} is not declared"
 
 
 class _Route:
@@ -63,12 +70,15 @@ def _cataloged(routes):
 
 def test_exact_paths_do_not_catalog_sibling_routes():
     routes = [_Route("/api/agents", {"GET"}), _Route("/api/agents/runtime", {"GET"}),
+              _Route("/api/settings/theme", {"GET", "PUT"}), _Route("/api/assignees", {"GET", "POST"}),
               _Route("/api/agents/{agent_id}/toggle", {"PUT"}),
               _Route("/api/system/external-artifacts", {"GET"}), _Route("/api/system/external-artifacts/import", {"POST"}),
               _Route("/api/learning/nemofold/candidates", {"GET"}),
               _Route("/api/learning/nemofold/candidates/{candidate_id}/approve", {"POST"})]
     cataloged, _ = _cataloged(routes)
-    assert cataloged == {"GET /api/agents", "GET /api/system/external-artifacts", "GET /api/learning/nemofold/candidates"}
+    # GET and PUT/POST on the same exact path: only the GET read is cataloged
+    assert cataloged == {"GET /api/agents", "GET /api/system/external-artifacts", "GET /api/learning/nemofold/candidates",
+                         "GET /api/settings/theme", "GET /api/assignees"}
 
 
 def test_new_page_reads_make_pages_configured_and_missing_route_makes_them_unavailable():
