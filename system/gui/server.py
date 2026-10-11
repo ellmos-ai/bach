@@ -1781,6 +1781,13 @@ class HostAllowlistMiddleware:
 app.add_middleware(HostAllowlistMiddleware)
 
 try:
+    from gui.api.report_provider import router as report_provider_router
+    app.include_router(report_provider_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning('Report-Provider-API konnte nicht geladen werden (%s)', type(e).__name__)
+
+try:
     from gui.api.unified_api import router as unified_router
     app.include_router(unified_router)
 except Exception as e:
