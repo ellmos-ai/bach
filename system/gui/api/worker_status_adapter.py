@@ -750,4 +750,5 @@ def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
         raise WorkerStatusUnavailable("Korrelierter Ausführungsbeleg nicht verfügbar")
     return {key: execution[key] for key in ("schema", "worker_id", "service_instance",
             "start_request_id", "generation", "state", "terminal", "worker_thread_started",
-            "worker_status", "error_code", "completed_task_ids", "reviewed_task_ids") if key in execution}
+            "worker_status", "error_code", "completed_task_ids", "reviewed_task_ids",
+            "governance_binding", "model_binding") if key in execution}
