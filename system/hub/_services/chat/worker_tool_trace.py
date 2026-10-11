@@ -6,17 +6,16 @@ effect or successful completion.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
 import re
 import secrets
 import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from hub._services import task_lease
-
 
 SCHEMA = "bach.worker-tool-trace.v1"
 SOURCES = frozenset({"normal-loop", "cli-relay"})
@@ -47,6 +46,10 @@ class TraceCorrelationError(WorkerToolTraceError):
 
 class TraceUnavailableError(WorkerToolTraceError):
     """The canonical trace table is unavailable for a read."""
+
+
+class TraceUnresolvedError(WorkerToolTraceError):
+    """A previous tool call has no fully correlated acknowledgement."""
 
 
 @dataclass(frozen=True)
@@ -163,6 +166,163 @@ def _row_dict(row):
     return dict(row) if hasattr(row, "keys") else row
 
 
+def task_trace_recovery_state(conn: sqlite3.Connection, task_id: int) -> str:
+    """Classify this task's trace history inside the caller's native transaction.
+
+    The check is read-only and never creates, migrates, commits, or repairs a trace
+    table. Missing trace storage is legacy; an existing unsupported/corrupt trace
+    fails closed. Only a started/returned/acknowledged chain with the exact same
+    receipt and identity is resolved.
+    """
+    if not conn.in_transaction or type(task_id) is not int or task_id <= 0:
+        raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+
+    try:
+        object_row = conn.execute(
+            "SELECT type FROM sqlite_master WHERE name=?", ("worker_tool_trace_events",)
+        ).fetchone()
+        if object_row is None:
+            return "legacy"
+        object_value = object_row[0] if not hasattr(object_row, "keys") else object_row["type"]
+        if object_value != "table":
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+
+        table_info = conn.execute("PRAGMA table_info(worker_tool_trace_events)").fetchall()
+        columns = {str(row[1]): row for row in table_info}
+        required_types = {
+            "event_id": "INTEGER", "schema": "TEXT", "task_id": "INTEGER", "fence": "INTEGER",
+            "worker_id": "TEXT", "generation": "TEXT", "task_version": "TEXT", "request_id": "TEXT",
+            "receipt_id": "TEXT", "source": "TEXT", "tool_name": "TEXT", "phase": "TEXT",
+            "occurred_at": "TEXT", "arguments_sha256": "TEXT", "result_sha256": "TEXT",
+            "completion_sha256": "TEXT", "effect_status": "TEXT",
+        }
+        if set(required_types) - set(columns):
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        required_not_null = {
+            "schema", "task_id", "fence", "worker_id", "generation", "task_version", "request_id",
+            "source", "tool_name", "phase", "occurred_at", "effect_status",
+        }
+        for name, expected_type in required_types.items():
+            info = columns[name]
+            if str(info[2]).upper() != expected_type:
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+            if name in required_not_null and info[3] != 1:
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        if columns["event_id"][5] != 1:
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+
+        index_rows = conn.execute("PRAGMA index_list(worker_tool_trace_events)").fetchall()
+        indexes = {str(row[1]): row for row in index_rows}
+        expected_indexes = {
+            "ux_worker_tool_trace_phase": (1, 0, ["task_id", "generation", "request_id", "source", "phase"]),
+            "ux_worker_tool_trace_returned_receipt": (1, 1, ["receipt_id"]),
+            "ix_worker_tool_trace_task_event": (0, 0, ["task_id", "event_id"]),
+        }
+        for name, (unique, partial, expected_columns) in expected_indexes.items():
+            row = indexes.get(name)
+            if row is None or row[2] != unique or (row[4] if len(row) > 4 else 0) != partial:
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+            actual_columns = [item[2] for item in conn.execute(f'PRAGMA index_info("{name}")').fetchall()]
+            if actual_columns != expected_columns:
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+
+        trigger_rows = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name=?",
+            ("worker_tool_trace_events",),
+        ).fetchall()
+        triggers = {
+            str(row[0]): "".join(str(row[1] or "").casefold().split())
+            for row in trigger_rows
+        }
+        for name, marker in (
+            ("worker_tool_trace_no_update", "beforeupdateonworker_tool_trace_events"),
+            ("worker_tool_trace_no_delete", "beforedeleteonworker_tool_trace_events"),
+        ):
+            sql = triggers.get(name, "")
+            if marker not in sql or "raise(abort," not in sql:
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+
+        row_columns = (
+            "event_id", "schema", "task_id", "fence", "worker_id", "generation", "task_version",
+            "request_id", "receipt_id", "source", "tool_name", "phase", "occurred_at",
+            "arguments_sha256", "result_sha256", "completion_sha256", "effect_status",
+        )
+        rows = conn.execute(
+            "SELECT " + ", ".join(row_columns) +
+            " FROM worker_tool_trace_events WHERE task_id=? ORDER BY event_id LIMIT 100001",
+            (task_id,),
+        ).fetchall()
+        if len(rows) > 100000:
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+    except TraceUnavailableError:
+        raise
+    except Exception:  # noqa: BLE001 -- Fail closed; raw database errors stay private.
+        raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar") from None
+
+    groups = {}
+    prior_event_id = 0
+    for row in rows:
+        event = dict(row) if hasattr(row, "keys") else dict(zip(row_columns, row))
+        if (type(event["event_id"]) is not int or event["event_id"] <= prior_event_id
+                or type(event["task_id"]) is not int or event["task_id"] != task_id
+                or type(event["fence"]) is not int or event["fence"] <= 0
+                or event["schema"] != SCHEMA or event["effect_status"] != "unknown"
+                or not isinstance(event["worker_id"], str) or not _WORKER.fullmatch(event["worker_id"])
+                or not isinstance(event["generation"], str) or not _GENERATION.fullmatch(event["generation"])
+                or not isinstance(event["task_version"], str) or not _HASH.fullmatch(event["task_version"])
+                or not isinstance(event["request_id"], str) or not _ID.fullmatch(event["request_id"])
+                or not isinstance(event["source"], str) or event["source"] not in SOURCES
+                or not isinstance(event["tool_name"], str) or not _TOOL.fullmatch(event["tool_name"])
+                or not isinstance(event["occurred_at"], str) or not event["occurred_at"]):
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        prior_event_id = event["event_id"]
+        phase = event["phase"]
+        if phase == "started":
+            valid_shape = (
+                event["receipt_id"] is None and isinstance(event["arguments_sha256"], str)
+                and _HASH.fullmatch(event["arguments_sha256"]) and event["result_sha256"] is None
+                and isinstance(event["completion_sha256"], str) and _HASH.fullmatch(event["completion_sha256"])
+            )
+        elif phase == "returned":
+            valid_shape = (
+                isinstance(event["receipt_id"], str) and _ID.fullmatch(event["receipt_id"])
+                and event["arguments_sha256"] is None and isinstance(event["result_sha256"], str)
+                and _HASH.fullmatch(event["result_sha256"]) and event["completion_sha256"] is None
+            )
+        elif phase == "failed":
+            valid_shape = (event["receipt_id"] is None and event["arguments_sha256"] is None
+                           and event["result_sha256"] is None and event["completion_sha256"] is None)
+        elif phase == "acknowledged":
+            valid_shape = (
+                isinstance(event["receipt_id"], str) and _ID.fullmatch(event["receipt_id"])
+                and event["arguments_sha256"] is None and event["result_sha256"] is None
+                and event["completion_sha256"] is None
+            )
+        else:
+            valid_shape = False
+        if not valid_shape:
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        key = (event["generation"], event["request_id"], event["source"])
+        groups.setdefault(key, []).append(event)
+
+    unresolved = False
+    identity_fields = ("task_id", "fence", "worker_id", "generation", "task_version", "request_id", "source", "tool_name")
+    for events in groups.values():
+        if any(any(event[name] != events[0][name] for name in identity_fields) for event in events[1:]):
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        phases = tuple(event["phase"] for event in events)
+        if phases == ("started",) or phases in {("started", "returned"), ("started", "failed")}:
+            unresolved = True
+        elif phases == ("started", "returned", "acknowledged"):
+            start, returned, acknowledged = events
+            if (not start["event_id"] < returned["event_id"] < acknowledged["event_id"]
+                    or acknowledged["receipt_id"] != returned["receipt_id"]):
+                raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+        else:
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
+    return "unresolved" if unresolved else "clear"
+
+
 def _insert(conn, identity, phase, *, receipt_id=None, arguments_sha256=None,
             result_sha256=None, completion_sha256=None):
     cursor = conn.execute(
@@ -216,6 +376,11 @@ def append_started(conn: sqlite3.Connection, identity: TraceIdentity, *,
         ).fetchone()
         if duplicate:
             raise TraceReplayError("Werkzeug-Request wurde bereits begonnen")
+        recovery_state = task_trace_recovery_state(conn, identity.task_id)
+        if recovery_state == "unresolved":
+            raise TraceUnresolvedError("Ein vorheriger Werkzeug-Trace ist noch offen")
+        if recovery_state not in {"legacy", "clear"}:
+            raise TraceUnavailableError("Kanonischer Werkzeug-Trace ist nicht lesbar")
         completion_token = secrets.token_urlsafe(32)
         completion_sha256 = hashlib.sha256(completion_token.encode("ascii")).hexdigest()
         event_id = _insert(conn, identity, "started", arguments_sha256=arguments_sha256,
