@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,14 @@ from .maintenance_recurring import ROUTINES, dispatch_routine, routine_definitio
 
 CONFIG_SCHEMA = "bach.maintenance-config.v1"
 STATUS_SCHEMA = "bach.maintenance-status.v1"
+FAILURE_SCHEMA = "bach.maintenance-failure.v1"
+FAILURE_PHASES = {
+    "config_load",
+    "runtime_init",
+    "tick",
+    "serve",
+    "documentation_dispatch",
+}
 JOB_ID = "bach.docs.delta"
 JOB_IDS = {JOB_ID, *["bach.docs.routine." + name for name in ROUTINES]}
 STATES = {"running", "busy", "backoff", "storage_budget", "storage_reserve", "stopped"}
@@ -271,6 +280,57 @@ def _write_status(path: Path, value: dict, guard):
     temporary.replace(path)
 
 
+def maintenance_exception_class(error: Exception) -> str:
+    """Return a bounded exception type without its potentially private message."""
+    name = type(error).__name__
+    return name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", name) else "Exception"
+
+
+def _failure_frames(error: Exception, root: Path) -> list[dict]:
+    try:
+        trusted_root = root.resolve()
+    except OSError:
+        trusted_root = Path(root)
+    result = []
+    for frame in traceback.extract_tb(error.__traceback__)[-12:]:
+        source = Path(frame.filename)
+        try:
+            relative = source.resolve().relative_to(trusted_root)
+            filename = "/".join(
+                re.sub(r"[^A-Za-z0-9_.-]", "_", part) for part in relative.parts
+            )
+        except (OSError, RuntimeError, ValueError):
+            basename = re.sub(r"[^A-Za-z0-9_.-]", "_", source.name)[:80]
+            filename = "<external>/" + (basename or "unknown")
+        function = re.sub(r"[^A-Za-z0-9_.<>-]", "_", frame.name)[:80]
+        result.append(
+            {
+                "file": filename,
+                "line": frame.lineno if type(frame.lineno) is int else 0,
+                "function": function or "unknown",
+            }
+        )
+    return result
+
+
+def write_failure_receipt(runtime: Path, root: Path, phase: str, error: Exception, guard, *, now=None) -> bool:
+    """Persist only phase, exception type and source-free traceback locations."""
+    if phase not in FAILURE_PHASES:
+        phase = "unknown"
+    value = {
+        "schema": FAILURE_SCHEMA,
+        "observed_at": stamp(now or datetime.now(timezone.utc)),
+        "phase": phase,
+        "exception_class": maintenance_exception_class(error),
+        "frames": _failure_frames(error, root),
+    }
+    try:
+        _write_status(runtime / "failure.json", value, guard)
+    except Exception:  # noqa: BLE001 - diagnostics must never bypass the lock guard
+        return False
+    return True
+
+
 def readonly_status(
     runtime: Path, *, root: Path, config_path=None, now=None, process_factory=None
 ) -> dict:
@@ -499,6 +559,26 @@ class MaintenanceRuntime:
         )
 
     def _executor(self, payload, timeout_seconds):
+        try:
+            return self._dispatch_job(payload, timeout_seconds)
+        except Exception as error:  # noqa: BLE001 - native errors may contain private data
+            write_failure_receipt(
+                self.runtime,
+                self.root,
+                "documentation_dispatch",
+                error,
+                self.guard,
+                now=self.clock(),
+            )
+            print(
+                "maintenance failure "
+                f"phase=documentation_dispatch exception={maintenance_exception_class(error)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
+
+    def _dispatch_job(self, payload, timeout_seconds):
         if timeout_seconds != 60:
             raise ValueError("Invalid documentation job")
         if payload == {"schema": "bach.docs-delta-job.v1"}:

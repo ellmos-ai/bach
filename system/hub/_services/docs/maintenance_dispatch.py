@@ -277,12 +277,18 @@ class DocumentationDispatcher:
         if len(exact) != 1:
             raise RuntimeError("documentation_task_ack_unverified")
         row = exact[0]
+        assignee = row.get("assigned_to")
+        review_handoff = (
+            row.get("status") == "review"
+            and isinstance(assignee, str)
+            and bool(assignee.strip())
+        )
         if (
             type(row.get("id")) is not int
             or row["id"] <= 0
             or row.get("description") != description
             or row.get("category") != "WORKER"
-            or str(row.get("assigned_to", "")).lower() != "bach"
+            or (str(assignee or "").strip().lower() != "bach" and not review_handoff)
             or any(
                 (row.get(key) or "") != self.binding.get(key, "")
                 for key in ("assigned_slot", "required_model")

@@ -21,7 +21,7 @@ WANN DATENBANK (STANDARD)?
 
 WANN JSON ERLAUBT (AUSNAHMEN)?
 ------------------------------
-1. KOMPLEXE HIERARCHIEN: `system/data/skills_hierarchy.json` (Interaktive Bäume).
+1. KOMPLEXE HIERARCHIEN: Tabelle `hierarchy_assignments` (bach.db); `system/data/skills_hierarchy.json` ist seit 2026-10-11 nicht mehr die Quelle (Interaktive Bäume).
 2. LOCAL CONFIG: Falls individuell benötigt (z.B. UI-Präferenzen).
 3. MCP-CONFIG: Falls Claude Desktop Integration gewünscht.
 4. Kurzlebige Prozess-Daten: Temporäre Snapshots bei Bedarf.

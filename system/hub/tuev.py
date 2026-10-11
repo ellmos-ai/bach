@@ -18,6 +18,7 @@ v1.1.83: Initial Implementation (WF-TUEV-02)
 """
 import json
 import sqlite3
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -423,6 +424,38 @@ class UsecaseHandler(BaseHandler):
 
         return candidates
 
+    @staticmethod
+    def _has_exact_case_file(candidate: Path) -> bool:
+        """Verlangt die gespeicherte Schreibweise jedes Pfadbestandteils.
+
+        Path.is_file() ist auf üblichen macOS-Dateisystemen
+        groß-/kleinschreibungsunabhängig und kann sonst einen früheren
+        Kandidaten mit falscher Schreibweise akzeptieren.
+        """
+        absolute = candidate if candidate.is_absolute() else Path.cwd() / candidate
+        current = Path(absolute.anchor)
+        for component in absolute.parts[1:]:
+            if component == "..":
+                current = current.parent
+                continue
+            try:
+                entries = current.iterdir()
+                entry = next(
+                    (
+                        item
+                        for item in entries
+                        if unicodedata.normalize("NFC", item.name)
+                        == unicodedata.normalize("NFC", component)
+                    ),
+                    None,
+                )
+            except OSError:
+                return False
+            if entry is None:
+                return False
+            current = current / entry.name
+        return current.is_file()
+
     def _resolve_workflow_path(
         self, row: sqlite3.Row, conn: sqlite3.Connection
     ) -> Tuple[Optional[Path], List[Path]]:
@@ -430,7 +463,7 @@ class UsecaseHandler(BaseHandler):
         checked_paths: List[Path] = []
         for candidate in self._workflow_candidates(row, conn):
             checked_paths.append(candidate)
-            if candidate.is_file():
+            if self._has_exact_case_file(candidate):
                 return candidate, checked_paths
         return None, checked_paths
 
