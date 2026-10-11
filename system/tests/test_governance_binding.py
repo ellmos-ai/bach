@@ -279,6 +279,19 @@ def test_binding_is_owned_by_materialize_and_survives_slot_edits(state, registry
     assert after["governance_binding"] == before and after["blueprint_id"] == saved_id(configured)
 
 
+# Herkunft: Review R14 (Sonnet 5.5) zu #347; ein abgewiesenes Update lässt den Slot vollständig unverändert.
+@pytest.mark.parametrize("field,value", [("governance_binding", None), ("governance_binding", {"legacy": True}),
+                                         ("blueprint_id", None), ("blueprint_version", 99)])
+def test_generic_slot_update_cannot_touch_binding_or_blueprint_link(state, registry, field, value):
+    configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
+    before = slots.get_system_slot(configured["slot_id"])
+    with pytest.raises(ValueError):
+        slots.update_slot(configured["slot_id"], {field: value})
+    assert slots.get_system_slot(configured["slot_id"]) == before
+    slots.update_slot(configured["slot_id"], {"current_activity": "x"})  # normal updates still work
+    assert slots.get_system_slot(configured["slot_id"])["governance_binding"] == before["governance_binding"]
+
+
 # --- inheritance ---------------------------------------------------------------------------
 
 def test_inherits_from_narrows_tools_carries_refs_and_pins_the_parent(state, registry):
