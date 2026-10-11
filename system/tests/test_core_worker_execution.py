@@ -9,6 +9,8 @@ from hub._services.chat.chat_runtime import ChatSession, ChatRuntime, FailedAnsw
 from hub._services.task_lease_client import TaskLeaseClient
 from hub._services import task_lease_client as lease_module
 from system.tests.test_task_lease_client import mem_db
+from system.tests.test_chat_session_store import snapshot_db
+from hub._services.chat.session_store import SQLiteChatSessionStore
 
 
 CORE = "buddha_always_on"
@@ -60,10 +62,20 @@ def test_core_execution_reader_fails_closed(core_file, bad):
 
 @pytest.mark.parametrize("outcome", ["done", "review"])
 @pytest.mark.parametrize("idle_polls", [0, 3])
-def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypatch, mem_db, outcome, idle_polls):
+def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypatch, mem_db, snapshot_db, outcome, idle_polls):
     control = importlib.import_module("hub._services.chat.telegram_chat")
     session = ChatSession()
     session.chat_id = CORE
+    # Task switches use the real persistent store contract on an isolated DB.
+    monkeypatch.setattr(control.runtime, "session_store", SQLiteChatSessionStore(snapshot_db))
+    clear_calls = []
+    real_clear = control.runtime.clear_session
+
+    def recorded_clear(chat_id, *, archive_reason):
+        clear_calls.append((chat_id, archive_reason))
+        return real_clear(chat_id, archive_reason=archive_reason)
+
+    monkeypatch.setattr(control.runtime, "clear_session", recorded_clear)
     calls, assignments, endings, pauses = [], [], [], []
     activities = []
     mem_db.executemany("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
@@ -129,6 +141,7 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     response, status = control.start_worker_execution(CORE)
     assert status == 200 and response["ok"] is True
     assert len(calls) == 2
+    assert clear_calls == [(CORE, "Worker Taskwechsel"), (CORE, "Worker Taskwechsel")]
     assert len(acquire_calls) == idle_polls + 2
     assert any("Block 1: block finished" in str(a) for a in activities)
     assert any("Block 2: block finished" in str(a) for a in activities)
