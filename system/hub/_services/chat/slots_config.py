@@ -1237,6 +1237,11 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
     worker_type = fields.pop("worker_type", None)
     if worker_type not in {"once", "continuous"}:
         raise ValueError("Worker-Laufbegrenzung muss ausdrücklich festgelegt werden")
+    # Serverseitig aufgelöste Governance-Bindung (P05 3b); bewusst kein editierbares Kernfeld.
+    binding = fields.pop("governance_binding", None)
+    if binding is not None:
+        from hub._services.governance_binding import check_stored
+        binding = json.loads(json.dumps(check_stored(binding)))
     edits = _validated_core_edits(fields)
     core = {**DEFAULT_CORE_SLOTS["buddha_chat"], **(existing or {}),
             "id": slot_id, "system": True, "execution_kind": "worker",
@@ -1244,6 +1249,9 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
             "blueprint_id": blueprint_id, "blueprint_version": blueprint_version,
             "enabled": True, "status": "idle", "current_activity": "",
             "chat_id": "", "task_id": None, "category": "all", **edits}
+    core.pop("governance_binding", None)
+    if binding is not None:
+        core["governance_binding"] = binding
     config["slots"][slot_id] = core
     save_slots_config(config, path)
     return {"slot_id": slot_id, **core_system_agents_snapshot(path)}

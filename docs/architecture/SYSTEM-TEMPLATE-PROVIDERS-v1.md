@@ -10,8 +10,9 @@ keine zweite Vorlagen-Registry: Vorlagen bleiben in `agent_blueprints`, Normen i
 `policy-registry`, Modellbindung in Slots/`model_sockets`. Nutzer-Saves mit `is_template`
 bleiben verboten. Felder wie `provider` in einem Nutzer-Payload werden nicht gespeichert.
 
-Nicht Teil dieses Schritts: `policy_refs`/`inherits_from` (3b), Laufbeleg-Erweiterung (3c),
-Modellkette (3d), GUI-Tab „Installiert“ und Ocean-Adapter.
+Nicht Teil dieses Schritts: `policy_refs`/`inherits_from` (3b) und die Laufbeleg-Erweiterung
+(3c), beide inzwischen in `GOVERNANCE-BINDING-v1.md`, außerdem Modellkette (3d), GUI-Tab
+„Installiert“ und Ocean-Adapter.
 
 ## Konfiguration
 
