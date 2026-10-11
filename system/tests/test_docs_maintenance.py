@@ -561,8 +561,8 @@ def test_entrypoint_imports_handler_and_coordinator_from_stage():
     import importlib.util
     import inspect
 
-    from hub._services.docs import maintenance_cli
     from hub import scheduler as scheduler_module
+    from hub._services.docs import maintenance_cli
 
     script = (
         Path(__file__).resolve().parents[1]
@@ -624,7 +624,9 @@ def test_cli_failure_writes_redacted_runtime_receipt(tmp_path, monkeypatch, caps
     assert receipt["schema"] == "bach.maintenance-failure.v1"
     assert receipt["phase"] == "tick"
     assert receipt["exception_class"] == "RuntimeError"
-    assert receipt["frames"]
+    assert "frames" not in receipt
+    assert receipt["owner_generation"] is None
+    assert receipt["revision"] is None
     assert "private_token" not in json.dumps(receipt)
 
 
@@ -672,10 +674,362 @@ def test_cli_serve_failure_writes_redacted_receipt_and_status_stays_fail_closed(
     assert receipt["schema"] == "bach.maintenance-failure.v1"
     assert receipt["phase"] == "serve"
     assert receipt["exception_class"] == "RuntimeError"
-    assert receipt["frames"]
+    assert "frames" not in receipt
+    assert receipt["owner_generation"] is None
+    assert receipt["revision"] is None
     assert "private_token" not in json.dumps(receipt)
     assert status["running"] is False
     assert status.get("identity") in {None, "unknown"}
+
+
+def test_cli_config_load_failure_reports_receipt_unavailable_without_guard(
+    tmp_path, monkeypatch, capsys
+):
+    from hub._services.docs import maintenance_cli
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    config_path = runtime / "config.json"
+    config_path.write_text("{malformed", encoding="utf-8")
+    root = tmp_path / "repo"
+    system = root / "system"
+    system.mkdir(parents=True)
+    handler = SimpleNamespace(
+        base_path=system,
+        user_db=local / "bach.db",
+        _external_state_db=lambda: local / "scheduler.db",
+    )
+    monkeypatch.setattr(
+        maintenance_cli,
+        "CanonicalLockGuard",
+        lambda _config: pytest.fail("guard must not be fabricated before config"),
+    )
+
+    ok, _message = maintenance_cli.handle(handler, ["serve"])
+    stderr = capsys.readouterr().err
+    status = readonly_status(runtime, root=root, config_path=config_path)
+
+    assert ok is False
+    assert "phase=config_load exception=JSONDecodeError receipt=unavailable" in stderr
+    assert not (runtime / "failure.json").exists()
+    assert status["running"] is False
+    assert status["reason"] == "no_maintenance_receipt"
+    assert "last_failure" not in status
+
+
+def test_startup_import_failure_reports_receipt_unavailable_without_guard(
+    tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_startup_failure_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    task_db.write_bytes(b"")
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(runtime / "config.json"),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+
+    def fail_import():
+        raise ImportError("private_token=never-copy-this")
+
+    monkeypatch.setattr(entrypoint, "load_handler", fail_import)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
+    assert "private_token" not in stderr
+    assert not (runtime / "failure.json").exists()
+
+
+def test_launcher_bad_configured_path_does_not_mask_primary_failure(
+    tmp_path, monkeypatch, capsys
+):
+    import importlib.util
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_bad_configured_path_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+    private_component = "private-token-no-output"
+    malformed_root = tmp_path / private_component
+    malformed_root.symlink_to(malformed_root)
+    malformed_db = malformed_root / "bach.db"
+    monkeypatch.setenv("BACH_DB", str(malformed_db))
+    monkeypatch.setattr(entrypoint.sys, "argv", [str(script), "serve"])
+
+    def fail_import():
+        raise ImportError("primary startup failure")
+
+    monkeypatch.setattr(entrypoint, "load_handler", fail_import)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_import exception=ImportError receipt=unavailable" in stderr
+    assert "primary startup failure" not in stderr
+    assert private_component not in stderr
+    assert "Traceback" not in stderr
+    assert list(tmp_path.iterdir()) == [malformed_root]
+
+
+def test_launcher_handler_dispatch_failure_is_redacted(tmp_path, monkeypatch, capsys):
+    import importlib.util
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "tools/maintenance/scheduler_maintenance.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bach_maintenance_dispatch_failure_test", script
+    )
+    assert spec is not None and spec.loader is not None
+    entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(entrypoint)
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    task_db.write_bytes(b"")
+    monkeypatch.setenv("BACH_DB", str(task_db))
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        [
+            str(script),
+            "serve",
+            "--config",
+            str(runtime / "config.json"),
+            "--runtime-dir",
+            str(runtime),
+        ],
+    )
+
+    class FailingHandler:
+        def __init__(self, _root):
+            pass
+
+        def handle(self, *_args):
+            raise RuntimeError("private_token=dispatch-secret")
+
+    monkeypatch.setattr(entrypoint, "load_handler", lambda: FailingHandler)
+    assert entrypoint.main() == 1
+    stderr = capsys.readouterr().err
+    assert "phase=handler_dispatch exception=RuntimeError receipt=unavailable" in stderr
+    assert "private_token" not in stderr
+    assert not (runtime / "failure.json").exists()
+
+
+def test_failure_receipt_writer_failure_does_not_mask_primary_cli_error(
+    tmp_path, monkeypatch, capsys
+):
+    from hub._services.docs import maintenance_cli
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    config_path = runtime / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    root = tmp_path / "repo"
+    system = root / "system"
+    system.mkdir(parents=True)
+    handler = SimpleNamespace(
+        base_path=system,
+        user_db=local / "bach.db",
+        _external_state_db=lambda: local / "scheduler.db",
+    )
+
+    class FailingRuntime:
+        def __init__(self, *_args, **_options):
+            self.failure_phase = "scheduler_tick"
+            self._failure_owner_generation = None
+
+        def tick(self):
+            raise RuntimeError("private_token=primary")
+
+    monkeypatch.setattr(
+        maintenance_cli, "CanonicalLockGuard", lambda _config: lambda _path: None
+    )
+    monkeypatch.setattr(maintenance_cli, "MaintenanceRuntime", FailingRuntime)
+
+    def fail_receipt(*_args, **_kwargs):
+        raise OSError("private_token=secondary")
+
+    monkeypatch.setattr(maintenance_cli, "write_failure_receipt", fail_receipt)
+    ok, message = maintenance_cli.handle(handler, ["tick"])
+    stderr = capsys.readouterr().err
+    assert ok is False
+    assert "private_token" not in message
+    assert "exception=RuntimeError receipt=unavailable" in stderr
+    assert "private_token" not in stderr
+
+
+def test_failure_receipt_readback_rejects_stale_and_malformed(tmp_path):
+    from hub._services.docs.maintenance_failure import write_failure_receipt
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    assert write_failure_receipt(
+        runtime,
+        tmp_path,
+        "serve",
+        RuntimeError("private_token=never-copy"),
+        guard=lambda _path: None,
+        task_db=task_db,
+        now=NOW,
+    )
+    stale = readonly_status(runtime, root=tmp_path, now=NOW.replace(day=12))
+    assert stale["running"] is False
+    assert stale["reason"] == "maintenance_failure_stale"
+    data = json.loads((runtime / "failure.json").read_text(encoding="utf-8"))
+    data["private_payload"] = "secret"
+    (runtime / "failure.json").write_text(json.dumps(data), encoding="utf-8")
+    invalid = readonly_status(runtime, root=tmp_path, now=NOW)
+    assert invalid["running"] is False
+    assert invalid["reason"] == "maintenance_failure_unverified"
+    assert "last_failure" not in invalid
+
+
+def test_serve_cleanup_write_does_not_mask_primary_status_error(
+    tmp_path, monkeypatch
+):
+    from contextlib import contextmanager
+
+    import hub._services.docs.maintenance_runtime as module
+
+    config_path = tmp_path / "maintenance/config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    service = object.__new__(MaintenanceRuntime)
+    service.config = config(tmp_path)
+    service.config_path = config_path
+    service.owner_path = config_path.parent / "owner.lock"
+    service.guard = lambda _path: None
+    service.root = tmp_path
+    service.runtime = config_path.parent
+    service.generation = "a" * 32
+    service._owner_thread = None
+    service._failure_owner_generation = None
+    service.failure_phase = "owner_acquire"
+    service.stop_event = SimpleNamespace(is_set=lambda: False, wait=lambda _s: None)
+    service.clock = lambda: NOW
+    service.tick = lambda: {"state": "running", "runs": []}
+    service.run_receipts = list
+    service.job_receipts = list
+
+    @contextmanager
+    def owner(_path, _guard):
+        yield
+
+    writes = []
+
+    def fail_writes(*_args, **_kwargs):
+        writes.append(True)
+        if len(writes) == 1:
+            raise RuntimeError("primary status failure")
+        raise OSError("secondary cleanup failure")
+
+    monkeypatch.setattr(module, "process_owner", owner)
+    monkeypatch.setattr(module, "_write_status", fail_writes)
+    with pytest.raises(RuntimeError, match="primary status failure"):
+        service.serve(max_ticks=1)
+    assert len(writes) == 2
+    assert service.failure_phase == "status_write"
+    assert service._failure_owner_generation == service.generation
+
+
+def test_failure_writer_requires_an_available_lock_guard(tmp_path):
+    from hub._services.docs.maintenance_failure import write_failure_receipt
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    error = RuntimeError("private_token=never-copy")
+
+    assert not write_failure_receipt(
+        runtime, tmp_path, "serve", error, task_db=task_db
+    )
+
+    def unavailable_guard(_path):
+        raise OSError("private lock details")
+
+    assert not write_failure_receipt(
+        runtime,
+        tmp_path,
+        "serve",
+        error,
+        guard=unavailable_guard,
+        task_db=task_db,
+    )
+    assert not (runtime / "failure.json").exists()
+
+
+def test_failure_writer_is_unavailable_without_fchmod(tmp_path, monkeypatch):
+    import hub._services.docs.maintenance_failure as module
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    task_db = local / "bach.db"
+    monkeypatch.delattr(module.os, "fchmod", raising=False)
+
+    assert not module.write_failure_receipt(
+        runtime,
+        tmp_path,
+        "serve",
+        RuntimeError("private_token=never-copy"),
+        guard=lambda _path: None,
+        task_db=task_db,
+    )
+    assert not (runtime / "failure.json").exists()
+
+
+def test_failure_writer_rejects_noncanonical_output_location(tmp_path):
+    from hub._services.docs.maintenance_failure import write_failure_receipt
+
+    local = tmp_path / "local"
+    runtime = local / "maintenance"
+    runtime.mkdir(parents=True)
+    elsewhere = tmp_path / "other"
+    elsewhere.mkdir()
+    assert not write_failure_receipt(
+        elsewhere,
+        tmp_path,
+        "serve",
+        RuntimeError("no"),
+        guard=lambda _path: None,
+        task_db=local / "bach.db",
+    )
+    assert not (elsewhere / "failure.json").exists()
 
 
 def test_status_does_not_project_nested_private_values(tmp_path):

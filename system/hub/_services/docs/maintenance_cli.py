@@ -14,9 +14,9 @@ from .maintenance_runtime import (
     CanonicalLockGuard,
     MaintenanceRuntime,
     load_config,
+    maintenance_exception_class,
     readonly_status,
     validate_config,
-    maintenance_exception_class,
     write_failure_receipt,
 )
 
@@ -150,6 +150,7 @@ def handle(handler, args, dry_run=False):
         return True, json.dumps({"applied": False, "started": False})
     phase = "config_load"
     guard = None
+    runtime_service = None
     try:
         config = load_config(config_path)
         guard = CanonicalLockGuard(config)
@@ -157,7 +158,12 @@ def handle(handler, args, dry_run=False):
             raise RuntimeError("maintenance_not_activated")
         phase = "runtime_init"
         runtime_service = MaintenanceRuntime(
-            root, handler._external_state_db(), runtime, config_path, guard=guard
+            root,
+            handler._external_state_db(),
+            runtime,
+            config_path,
+            guard=guard,
+            task_db=handler.user_db,
         )
         if options.action == "tick":
             phase = "tick"
@@ -168,11 +174,25 @@ def handle(handler, args, dry_run=False):
         runtime_service.serve()
         return True, "Wartungsbetrieb beendet"
     except Exception as error:  # noqa: BLE001 - keep native messages out of public output
-        if guard is not None:
-            write_failure_receipt(runtime, root, phase, error, guard)
+        phase = getattr(runtime_service, "failure_phase", phase)
+        owner_generation = getattr(runtime_service, "_failure_owner_generation", None)
+        try:
+            receipt_written = write_failure_receipt(
+                runtime,
+                root,
+                phase,
+                error,
+                guard,
+                task_db=handler.user_db,
+                owner_generation=owner_generation,
+            )
+        except Exception:  # noqa: BLE001 - preserve the original failure
+            receipt_written = False
+        receipt_state = "written" if receipt_written else "unavailable"
         print(
             f"maintenance failure phase={phase} "
-            f"exception={maintenance_exception_class(error)}",
+            f"exception={maintenance_exception_class(error)} "
+            f"receipt={receipt_state}",
             file=sys.stderr,
             flush=True,
         )
