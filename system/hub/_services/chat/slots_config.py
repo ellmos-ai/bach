@@ -1666,13 +1666,40 @@ def record_activity(
     save_slots_config(cfg, path)
 
 
+WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
     "memory_hook_opt_in",
     "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
-})
+}) | WORKER_EDITABLE_POLICY_FIELDS
+
+
+_WORKER_PICKUP_FILTER_KEYS = frozenset({"enabled", "categories", "priorities", "tags", "exclude_tags"})
+
+
+def _validated_worker_pickup_filter(value: Any) -> dict[str, Any]:
+    """Validate and copy the bounded pickup policy without granting ownership."""
+    list_fields = ("categories", "priorities", "tags", "exclude_tags")
+    if (type(value) is not dict or set(value) != _WORKER_PICKUP_FILTER_KEYS
+            or type(value.get("enabled")) is not bool
+            or any(type(value[field]) is not list
+                   or any(type(item) is not str for item in value[field])
+                   for field in list_fields)):
+        raise ValueError("Worker-Auswahlfilter ist ung\u00fcltig")
+
+    # Reuse the public policy projector bounds for list sizes, item lengths,
+    # and NUL rejection, then persist only its copied allowlisted projection.
+    from .worker_queue_status import project_selection_policy
+    projected = project_selection_policy({
+        "schema": "bach.worker-selection.v1",
+        "require_assigned_slot": False,
+        "pickup_filter": value,
+    })
+    if projected is None:
+        raise ValueError("Worker-Auswahlfilter ist ung\u00fcltig")
+    return projected["pickup_filter"]
 
 
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
@@ -1720,6 +1747,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
     for field, value in edits.items():
+        if field == "pickup_filter":
+            edits[field] = _validated_worker_pickup_filter(value)
         if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:
             edits[field] = _validated_core_edits({field: value})[field]
         if field in boolean_fields and type(value) is not bool:
