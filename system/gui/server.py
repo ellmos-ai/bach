@@ -1902,8 +1902,13 @@ async def get_gui_capabilities():
     modules["policy-registry"] = {"adapter_registered": "/api/governance/policy-registry" in registered_paths,
         "runtime_verified": False, "available": None if policy["verified"] else False,
         "reason_code": policy["reason"], "observed_at": observed}
+    # Last real probe per configured template provider (taken on explicit sync, never on this GET).
+    from hub._services.template_provider_service import capability_status
+    provider_modules, provider_sources = capability_status()
+    modules.update(provider_modules)
     return declaration(app.routes, kit_status, read_gui_brand(), modules,
-                       public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS, module_sources=[policy])
+                       public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS,
+                       module_sources=[policy, *provider_sources])
 
 
 @app.get("/api/gui/kit-manifest")
