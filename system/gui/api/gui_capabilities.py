@@ -6,7 +6,8 @@ from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
 PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
-            "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/")
+            "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/",
+            "/api/skills-board/hierarchy")
 # Exact "METHOD /path" pairs for single reads whose path or parent path also holds routes that are not page reads (GET+PUT on
 # /api/settings/theme, /api/agents/runtime, PUT /api/agents/{agent_id}/toggle, POST /api/system/external-artifacts/import):
 # a prefix or a path-only comparison would catalog those as well.
@@ -31,7 +32,9 @@ PAGE_READS = {
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
-    "/skills": ["/api/capabilities/skills"],
+    # ellmos-system-gui reads the library inventory (capability-board-client.mjs INVENTORIES.skills), not /api/capabilities/skills.
+    "/skills": ["/api/capabilities/skills/library"],
+    # The assignment tab of /skills is optional and not a page of its own: it is declared through `endpoints` (GET/PUT /api/skills-board/hierarchy).
     "/skills/plugins": ["/api/capabilities/plugins/inventory"],
     "/skills/mcp": ["/api/capabilities/mcp/connections"],
     "/skills/software": ["/api/capabilities/software"],
