@@ -1,0 +1,66 @@
+{
+  "schema": "bach.learning-reuse.paired-plan.v1",
+  "provenance": "synthetic",
+  "version": 1,
+  "source_binding": {
+    "path": "source-session-v1.json",
+    "sha256": "2045da786ef663755d24a6e09dcae278b7d2c7e042ac1325934d18a40ea68ee0"
+  },
+  "panel_binding": {
+    "path": "panel-v1.json",
+    "sha256": "88948d9c3ac4ee9dd2e1e819785c9b23406aabd6b065a13af9ed41fe95ad0d02"
+  },
+  "case_ids": [
+    "case-01",
+    "case-02",
+    "case-03",
+    "case-04",
+    "case-05",
+    "case-06",
+    "case-07",
+    "case-08"
+  ],
+  "arms": ["A", "B"],
+  "conditions": {
+    "A": "Kontrollbedingung mit neutralem Inhalt im fest reservierten Lernkontextplatz.",
+    "B": "Wiederverwendung genau einer gebundenen, geprüften und promovierten Lesson im selben Kontextplatz."
+  },
+  "randomization": {
+    "algorithm": "sha256-rank-v1",
+    "seed": 2002,
+    "run_order_sha256": "500c6fd31bfbd84d0a09974c1dd1a810d1eb300a0d088b6c44edf049e93e1f63",
+    "blind_display_seed": 2003
+  },
+  "budget": {
+    "context_slot_tokens": 128,
+    "max_input_tokens": 512,
+    "max_output_tokens": 512
+  },
+  "inference_parameters": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_output_tokens": 512,
+    "seed": 2002
+  },
+  "execution_policy": {
+    "retry_count": 0,
+    "fallback_allowed": false
+  },
+  "execution_binding": {
+    "model": null,
+    "tokenizer": null,
+    "source_artifact": null
+  },
+  "rating": {
+    "schema": "bach.learning-reuse.blind-rating.v1",
+    "rater_count": 2,
+    "rubric_dimensions": [
+      "correctness",
+      "completeness",
+      "constraint_adherence",
+      "evidence_and_verification"
+    ],
+    "critical_failures_count_as_failures": true
+  },
+  "provenance_note": "Synthetischer Planentwurf. Modell, Modellrevision, Tokenizerrevision und tatsächlich promovierte Quellrevision sind absichtlich ungebunden; prepare_runs muss vor Kontextabruf und Inferenz fail-closed abbrechen, bis eine neue konkrete Präregistrierung diese Werte bindet."
+}

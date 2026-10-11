@@ -2557,7 +2557,123 @@ async def get_hermes_candidate_detail(candidate_id: int, request: Request):
     cand = service.get_candidate(candidate_id)
     if not cand:
         raise HTTPException(status_code=404, detail=f"Kandidat #{candidate_id} nicht gefunden")
-    return cand
+    return _attach_learning_promotion_availability(cand, "hermes")
+
+
+
+def _get_learning_promotion_service_instance():
+    from hub._services.learning_promotion_service import LearningPromotionService
+    from hub._services.skill_source_service import check_write_locks
+
+    adapter = None
+    try:
+        from hub._services.nemofold_native_sequence_adapter import build_native_sequence_proposal
+        adapter = build_native_sequence_proposal
+    except ModuleNotFoundError as exc:
+        if exc.name != "hub._services.nemofold_native_sequence_adapter":
+            raise
+    return LearningPromotionService(
+        db_path=BACH_DB,
+        write_guard=check_write_locks,
+        sequence_adapter=adapter,
+    )
+
+
+def _attach_learning_promotion_availability(candidate, provider):
+    targets = _get_learning_promotion_service_instance().target_states(provider, candidate)
+    candidate["promotion_targets"] = targets
+    target_states = [
+        item.get("state")
+        for item in targets.get("targets", {}).values()
+        if isinstance(item, dict)
+    ]
+    ready = any(state == "ready_for_target_cas" for state in target_states)
+    candidate["promotion_available"] = ready
+    candidate["promotion_availability_deprecated"] = False
+    candidate["promotion_availability_source"] = "promotion_targets"
+    candidate["promotion_unavailable_reason"] = (
+        None if ready else
+        "Kein Zieltyp ist für einen neuen CAS-Request bereit; siehe promotion_targets.targets."
+    )
+    return candidate
+
+
+def _learning_promotion_action(action, provider, candidate_id, request, payload):
+    actor = f"device:{_require_memory_device(request)}"
+    target_kind = payload.get("target_kind") if isinstance(payload, dict) else None
+    allowed = {"skill", "lessons"} if provider == "hermes" else {"sequence"}
+    if target_kind not in allowed:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_learning_target",
+            "message": "Nur ein ausdrücklich unterstützter Zieltyp ist erlaubt.",
+        })
+    fields = {"target_kind", "expected_revision", "expected_digest", "request_id"}
+    fields.add("expected_target_version" if action == "promote" else "source_request_id")
+    if set(payload) != fields:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_learning_promotion_request",
+            "message": "Promotions- und Rücknahmeanfragen müssen genau die gebundenen Ziel- und Revisionsfelder enthalten.",
+        })
+    try:
+        service = _get_learning_promotion_service_instance()
+        if action == "promote":
+            return service.promote(
+                provider,
+                candidate_id,
+                target_kind=target_kind,
+                expected_revision=payload["expected_revision"],
+                expected_digest=payload["expected_digest"],
+                request_id=payload["request_id"],
+                expected_target_version=payload["expected_target_version"],
+                actor=actor,
+            )
+        return service.revoke(
+            provider,
+            candidate_id,
+            target_kind=target_kind,
+            expected_revision=payload["expected_revision"],
+            expected_digest=payload["expected_digest"],
+            source_request_id=payload["source_request_id"],
+            request_id=payload["request_id"],
+            actor=actor,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        from hub._services.learning_promotion_service import (
+            LearningPromotionConflict, LearningPromotionUnavailable,
+        )
+        from hub._services.learning_review_service import LearningNotFound
+        from hub._services.chat.sequence_store import SequenceConflict
+
+        if isinstance(exc, LearningNotFound):
+            raise HTTPException(status_code=404, detail={"code": "candidate_not_found", "message": str(exc)}) from None
+        if isinstance(exc, (LearningPromotionConflict, SequenceConflict)):
+            raise HTTPException(status_code=409, detail={"code": "learning_promotion_conflict", "message": str(exc)}) from None
+        if isinstance(exc, LearningPromotionUnavailable):
+            message = str(exc)
+            code = getattr(exc, "code", "native_learning_promotion_unavailable")
+            if message.startswith("waiting_for_native_definition:"):
+                code = "waiting_for_native_definition"
+            elif message.startswith("waiting_for_atomic_sequence_receipt:"):
+                code = "waiting_for_atomic_sequence_receipt"
+            raise HTTPException(status_code=409, detail={"code": code, "message": message}) from None
+        if isinstance(exc, PermissionError):
+            raise HTTPException(status_code=423, detail={
+                "code": "learning_promotion_locked",
+                "message": "Der native Schreibbereich ist gesperrt oder ungeprüft.",
+            }) from None
+        if isinstance(exc, (OSError, sqlite3.Error)):
+            raise HTTPException(status_code=503, detail={
+                "code": "learning_promotion_store_unavailable",
+                "message": "Der native Promotionsspeicher ist nicht verfügbar.",
+            }) from None
+        if isinstance(exc, (ValueError, TypeError)):
+            raise HTTPException(status_code=422, detail={
+                "code": getattr(exc, "code", "invalid_learning_promotion"),
+                "message": str(exc),
+            }) from None
+        raise
 
 
 def _learning_decision(action, request, service_factory, candidate_id, payload):
@@ -2596,6 +2712,18 @@ async def review_hermes_candidate(candidate_id: int, request: Request, payload: 
 async def reject_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
     """Reject the exact displayed candidate revision."""
     return _learning_decision("reject", request, _get_hermes_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/promote")
+async def promote_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Promote exactly one reviewed Hermes target with a native CAS receipt."""
+    return _learning_promotion_action("promote", "hermes", candidate_id, request, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/revoke")
+async def revoke_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Revoke only the exact target version recorded by a prior promotion."""
+    return _learning_promotion_action("revoke", "hermes", candidate_id, request, payload)
 
 
 @router.get("/learning/hermes/stats")
@@ -2667,7 +2795,7 @@ async def get_nemofold_candidate_detail(candidate_id: int, request: Request):
     candidate = service.get_candidate(candidate_id)
     if not candidate:
         raise HTTPException(status_code=404, detail="Kandidat nicht gefunden")
-    return candidate
+    return _attach_learning_promotion_availability(candidate, "nemofold")
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/approve")
@@ -2686,6 +2814,18 @@ async def review_nemofold_candidate(candidate_id: int, request: Request, payload
 async def reject_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
     """Reject the exact displayed candidate revision."""
     return _learning_decision("reject", request, _get_nemofold_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/promote")
+async def promote_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Publish only an internally adapted, reviewed native SequenceStore definition."""
+    return _learning_promotion_action("promote", "nemofold", candidate_id, request, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/revoke")
+async def revoke_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Revoke only the exact native SequenceStore version from its promotion receipt."""
+    return _learning_promotion_action("revoke", "nemofold", candidate_id, request, payload)
 
 
 @router.get("/learning/nemofold/stats")

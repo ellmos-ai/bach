@@ -1,0 +1,31 @@
+{
+  "schema": "bach.learning-reuse.fixture-manifest.v1",
+  "provenance": "synthetic",
+  "files": [
+    {
+      "path": "source-session-v1.json",
+      "bytes": 423,
+      "sha256": "2045da786ef663755d24a6e09dcae278b7d2c7e042ac1325934d18a40ea68ee0"
+    },
+    {
+      "path": "panel-v1.json",
+      "bytes": 4137,
+      "sha256": "88948d9c3ac4ee9dd2e1e819785c9b23406aabd6b065a13af9ed41fe95ad0d02"
+    },
+    {
+      "path": "paired-experiment-plan-v1.json",
+      "bytes": 1960,
+      "sha256": "2bf9968afa443b7360065ac76c00628e36b7915d1bdb0f70a58ca0fcf27ea7c4"
+    },
+    {
+      "path": "raw-run-record.schema.json",
+      "bytes": 3352,
+      "sha256": "53e6972c81286e553632c754d0eacaad608865d77947cd615b330ad7825b08a3"
+    },
+    {
+      "path": "blind-rating.schema.json",
+      "bytes": 1252,
+      "sha256": "4795048112c550fa2972298054b68ff21de03e5010d8ee51220bfd1e3e10b2ad"
+    }
+  ]
+}
