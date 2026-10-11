@@ -55,6 +55,7 @@ from hub._services.blueprint_service import (
     start_blueprint_worker as svc_start_blueprint_worker,
     synthesize_start_prompt,
 )
+from hub._services.governance_binding import blueprint_sha256
 from hub._services.cognitive_service import (
     CANONICAL_MERMAID_DIAGRAM,
     DIAGRAM_LEGEND,
@@ -347,6 +348,10 @@ async def list_agent_blueprints(
                 item["governance"] = json.loads(item.get("governance_json") or "{}")
             except Exception:
                 item["governance"] = {}
+            try:  # Pin-Wert für governance.inherits_from (P05 3b)
+                item["content_sha256"] = blueprint_sha256(dict(r))
+            except ValueError:
+                item["content_sha256"] = None
 
             # Filter by kind
             if isinstance(kind, str) and kind.strip() and item["kind"].lower() != kind.strip().lower():

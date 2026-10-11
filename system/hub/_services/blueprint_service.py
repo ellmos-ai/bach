@@ -425,6 +425,7 @@ def list_blueprints(
     is_template: int | None = None
 ) -> dict[str, Any]:
     """Listet Schablonen und Blueprints gefiltert nach Kind und Suchbegriff (GUX-024, GUX-025)."""
+    from .governance_binding import blueprint_sha256
     ensure_blueprint_schema(conn)
     seed_default_blueprints(conn)
 
@@ -458,6 +459,10 @@ def list_blueprints(
             item["governance"] = json.loads(item.get("governance_json") or "{}")
         except (ValueError, TypeError):
             item["governance"] = {}
+        try:  # Pin-Wert für governance.inherits_from (P05 3b)
+            item["content_sha256"] = blueprint_sha256(dict(r))
+        except (ValueError, TypeError):
+            item["content_sha256"] = None
 
         if not item.get("kind"):
             item["kind"] = "agent"
@@ -548,9 +553,16 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         if "symbol" in execution:
             validate_symbol(execution["symbol"])
 
+    if isinstance(governance, dict):
+        # P05 3b: Pins exakt auflösen, bevor die Schreibsperre genommen wird (Registry-Lesen kann dauern).
+        from .governance_binding import resolve
+        own = conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
+        resolve(conn, governance, blueprint_id=own[0] if own else None)
+
     # Serialize the revision check with its write across SQLite writers.
     conn.execute("BEGIN IMMEDIATE")
-    existing = conn.execute("SELECT id, is_template, version FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
+    existing = conn.execute("SELECT id, is_template, version, governance_json FROM agent_blueprints WHERE name = ?",
+                            (name,)).fetchone()
     if existing:
         is_tmpl = existing[1] if isinstance(existing, tuple) else existing["is_template"]
         if is_tmpl == 1:
@@ -572,6 +584,15 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         raise
     version = (curr_version + 1) if curr_version else 1
     now = datetime.now(timezone.utc).isoformat()
+    from .governance_binding import with_pin_log
+    previous = {}
+    if existing:
+        try:
+            previous = json.loads((existing[3] if isinstance(existing, tuple) else existing["governance_json"]) or "{}")
+        except ValueError:
+            pass
+    governance = with_pin_log(previous if isinstance(previous, dict) else {}, governance,
+                              blueprint_version=version)
 
     # Startprompt erzeugen
     item_for_prompt = {
@@ -645,10 +666,36 @@ def _execution_blueprint(conn, blueprint_id, expected_version):
     return bp
 
 
-def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
-    """Translate the saved role and real tool grants into controller config."""
-    from .chat.slots_config import DEFAULT_ROLE_PROMPTS
+TOOL_ALIASES = {"read_files": ["read_file", "list_directory"], "search_content": ["search_text"],
+                "directory_list": ["list_directory"], "write_files": ["write_file", "edit_file", "create_directory"],
+                "execute_command": ["safe_shell"], "run_tests": ["safe_shell"],
+                "git_guarded_p001": ["start_task_worktree", "finish_task"],
+                "code_analyze": ["read_file", "search_text"], "web_fetch": ["web_fetch"]}
+DEFAULT_TOOL_WHITELIST = ["read_file", "list_directory", "search_text", "task_manage"]
+
+
+def expand_tool_whitelist(raw_tools) -> set[str]:
+    """Real tool names granted by a blueprint whitelist (aliases resolved, None = default)."""
     from .chat.bach_tools import TOOLS_FULL
+    known = {tool["function"]["name"] for tool in TOOLS_FULL}
+    if raw_tools is None:
+        raw_tools = DEFAULT_TOOL_WHITELIST
+    if not isinstance(raw_tools, list) or len(raw_tools) > 100:
+        raise ValueError("Ungültige Toolfreigabe")
+    allowed = set()
+    for name in raw_tools:
+        if not isinstance(name, str) or name not in known | TOOL_ALIASES.keys():
+            raise ValueError("Toolfreigabe enthält ein unbekanntes Werkzeug")
+        allowed.update([name] if name in known else TOOL_ALIASES[name])
+    return allowed & known
+
+
+def blueprint_slot_changes(bp: dict, execution: dict, parents: list[dict] = ()) -> dict:
+    """Translate the saved role and real tool grants into controller config.
+
+    ``parents`` are the governance dicts of the pinned parent templates; they only narrow.
+    """
+    from .chat.slots_config import DEFAULT_ROLE_PROMPTS
     if not isinstance(execution, dict) or not execution.get("backend") or not execution.get("model"):
         raise ValueError("Anbieter und konkretes Modell sind erforderlich")
     modus = bp.get("modus", "casualis")
@@ -659,23 +706,11 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
     skills = json.loads(bp.get("skills_json") or "[]")
     if not isinstance(governance, dict) or not isinstance(contractus, dict) or not isinstance(skills, list):
         raise ValueError("Gespeicherte Blueprint-Konfiguration ist ungültig")
-    known = {tool["function"]["name"] for tool in TOOLS_FULL}
-    aliases = {"read_files": ["read_file", "list_directory"], "search_content": ["search_text"],
-               "directory_list": ["list_directory"], "write_files": ["write_file", "edit_file", "create_directory"],
-               "execute_command": ["safe_shell"], "run_tests": ["safe_shell"],
-               "git_guarded_p001": ["start_task_worktree", "finish_task"],
-               "code_analyze": ["read_file", "search_text"], "web_fetch": ["web_fetch"]}
-    raw_tools = governance.get("tool_whitelist")
-    if raw_tools is None:
-        raw_tools = ["read_file", "list_directory", "search_text", "task_manage"]
-    if not isinstance(raw_tools, list) or len(raw_tools) > 100:
-        raise ValueError("Ungültige Toolfreigabe")
-    allowed = set()
-    for name in raw_tools:
-        if not isinstance(name, str) or name not in known | aliases.keys():
-            raise ValueError("Toolfreigabe enthält ein unbekanntes Werkzeug")
-        allowed.update([name] if name in known else aliases[name])
-    allowed &= known
+    allowed = expand_tool_whitelist(governance.get("tool_whitelist"))
+    for parent in parents:
+        if parent.get("tool_whitelist") is not None:
+            allowed &= expand_tool_whitelist(parent["tool_whitelist"])
+    read_only = any(layer.get("profile") == "read_only_research" for layer in [governance, *parents])
     role = bp["persona_role"] if bp["persona_role"] in DEFAULT_ROLE_PROMPTS else "task_worker"
     prompt = bp["persona_prompt"]
     from .skill_source_service import pin_skills
@@ -688,7 +723,7 @@ def blueprint_slot_changes(bp: dict, execution: dict) -> dict:
         "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
         "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True,
         "worker_type": "once" if modus == "casualis" else "continuous"})
-    if governance.get("profile") == "read_only_research":
+    if read_only:
         changes["mode"] = "safe"
         changes["allowed_tools"] = sorted(allowed & {"read_file", "list_directory", "search_text", "web_fetch", "system_status", "ollama_info", "task_manage"})
         changes["allow_tools"] = bool(changes["allowed_tools"])
@@ -700,7 +735,14 @@ def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
                           configuration_version: str, terminal_verified: bool = False,
                           slots_path: str | None = None) -> dict[str, Any]:
     from .chat.slots_config import get_system_slot, materialize_system_blueprint
+    from .governance_binding import receipt_binding, resolve_layers
     ensure_blueprint_schema(conn)
+    # P05 3b: effektiven Governance-Satz vor der Schreibsperre auflösen; jeder Save
+    # erhöht die Version, die CAS-Prüfung unten erkennt also eine Änderung dazwischen.
+    governance = json.loads(_execution_blueprint(conn, blueprint_id, expected_version).get("governance_json") or "{}")
+    if not isinstance(governance, dict):
+        raise ValueError("Gespeicherte Blueprint-Konfiguration ist ungültig")
+    binding, parents = resolve_layers(conn, governance, blueprint_id=blueprint_id)
     conn.execute("BEGIN IMMEDIATE")
     try:
         bp = _execution_blueprint(conn, blueprint_id, expected_version)
@@ -710,15 +752,18 @@ def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
         slot_id = f"system-blueprint-{blueprint_id}"
         if get_system_slot(slot_id, slots_path) and not terminal_verified:
             raise RuntimeError("worker_terminal_state_required")
+        changes = blueprint_slot_changes(bp, execution, parents)
+        changes["governance_binding"] = binding
         result = materialize_system_blueprint(blueprint_id, expected_version,
-            blueprint_slot_changes(bp, execution), configuration_version, path=slots_path)
+            changes, configuration_version, path=slots_path)
         conn.execute("UPDATE agent_blueprints SET is_materialized = 1 WHERE id = ? AND version = ?",
                      (blueprint_id, expected_version))
         conn.commit()
         return {"success": True, "id": blueprint_id, "name": bp["name"], "title": bp["title"],
                 "status": "configured", "is_materialized": True, "is_living": None,
                 "is_running": False, "worker_started": False, "slot_id": slot_id,
-                "configuration_version": result["configuration_version"]}
+                "configuration_version": result["configuration_version"],
+                "governance_binding": receipt_binding(binding)}
     except Exception:
         conn.rollback()
         raise
@@ -745,6 +790,11 @@ def start_blueprint_worker(conn: sqlite3.Connection, blueprint_id: int, task: st
         raise ValueError("Zeit- und Ereignissteuerung sind noch nicht ausführbar")
     if slot.get("type") != ("once" if modus == "casualis" else "continuous"):
         raise RuntimeError("blueprint_instance_not_current")
+    # P05 3b: gepinnte Bindung vor dem Start erneut exakt auflösen; kein stiller Wechsel.
+    from .governance_binding import inheritance, verify_run
+    binding = verify_run(slot.get("governance_binding"), slot.get("allowed_tools"))
+    if binding is not None and binding["inherits"]:
+        inheritance(conn, binding["inherits"][0], self_id=blueprint_id)
     execution = dispatcher(slot_id, configuration_version)
     if (not isinstance(execution, dict) or execution.get("schema") != "bach.worker-execution.v1"
             or execution.get("worker_id") != slot_id

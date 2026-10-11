@@ -10,8 +10,9 @@ keine zweite Vorlagen-Registry: Vorlagen bleiben in `agent_blueprints`, Normen i
 `policy-registry`, Modellbindung in Slots/`model_sockets`. Nutzer-Saves mit `is_template`
 bleiben verboten. Felder wie `provider` in einem Nutzer-Payload werden nicht gespeichert.
 
-Nicht Teil dieses Schritts: `policy_refs`/`inherits_from` (3b), Laufbeleg-Erweiterung (3c),
-Modellkette (3d), GUI-Tab „Installiert“ und Ocean-Adapter.
+Nicht Teil dieses Schritts: `policy_refs`/`inherits_from` (3b) und die Laufbeleg-Erweiterung
+(3c), beide inzwischen in `GOVERNANCE-BINDING-v1.md`, außerdem Modellkette (3d), GUI-Tab
+„Installiert“ und Ocean-Adapter.
 
 ## Konfiguration
 
@@ -26,7 +27,7 @@ Modellkette (3d), GUI-Tab „Installiert“ und Ocean-Adapter.
 Unbekannte Schlüssel, doppelte IDs oder ein `command`, der kein String-Array ist, führen zu
 `provider_config_invalid`. BACH führt den Befehl ohne Shell, ohne stdin, ohne Konsolenfenster
 und mit einem Timeout von 20 s aus, im Temp-Verzeichnis und mit minimaler Umgebung (`PATH`,
-Systemverzeichnisse, `HOME`, Locale, UTF-8); Tokens und Schlüssel des Servers erhält er nicht.
+Systemverzeichnisse, Temp-Verzeichnis `TEMP`/`TMP`/`TMPDIR`, `HOME`, Locale, UTF-8); Tokens und Schlüssel des Servers erhält er nicht.
 
 ## Providerausgabe und Prüfung
 
