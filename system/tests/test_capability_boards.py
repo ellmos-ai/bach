@@ -210,5 +210,9 @@ def test_daemon_tab_chains_serves_the_built_page_and_everything_else_stays_class
     assert "Astro Daemon Chains" not in client.get("/daemon").text                          # jobs/scheduler stay classic
     assert "Astro Daemon Chains" not in client.get("/daemon?tab=jobs").text
     assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains%2F..").text          # exact match only
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=Chains").text                   # case-insensitive
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=CHAINS").text
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains&tab=jobs").text      # repeated tab: ambiguous, stays classic
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains&tab=chains").text
     (tmp_path / "daemon.html").unlink()
     assert "tab-chains" in client.get("/daemon?tab=chains").text                            # rollback: remove the built page
