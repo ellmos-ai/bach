@@ -41,7 +41,8 @@ CLI-BEFEHLE (bach task)
   list --assigned   Tasks für einen bestimmten Partner
   list --unassigned Tasks ohne Zuweisung
   show <ID>         Details inkl. Beschreibung und Historie
-  edit <ID>         Bearbeitet Task (--title, --description, --category, --assigned)
+  edit <ID>         Bearbeitet Task (--title, --description, --category, --assigned,
+                    --required-model MODEL, --assigned-slot SLOT)
   done <ID>         Markiert Task als erledigt (Multi-ID, --note)
   block <ID>        Blockiert Task(s) (Multi-ID, --reason)
   unblock <ID>      Entblockt Task(s) (Multi-ID)
@@ -73,14 +74,29 @@ LIBRARY-API BEISPIELE
   task.list("all", "--assigned", "GEMINI")
   task.list("--unassigned")
 
-  # Tasks bearbeiten
-  task.edit(42, "--title", "Neuer Titel")
+  # Titel und weitere CLI-Felder über den gemeinsamen Handler bearbeiten
+  task.raw("edit", "42", "--title", "Neuer Titel")
+
+  # Keyword-only API für Worker-Routingfelder
+  task.edit(42, required_model="<Modell-ID>", assigned_slot="<Worker-ID>")
   task.done(100, 101, 102, "--note", "Alle erledigt")
   task.assign(200, "--to", "COPILOT")
 
   # Abhängigkeiten
   task.depends(306, "--on", "305")  # Task 306 wartet auf 305
   task.depends(306)                 # Abhängigkeiten anzeigen
+
+KOORDINATION UND WORKER-ROUTING
+------------------------------
+  # Den eigenen Lease-Anspruch mit der erhaltenen Lease-ID prüfen
+  task.lease_read(42, lease_id="<eigene Lease-ID>")
+
+Ohne übergebene Lease-ID beweist own=false keinen Hostkonflikt. Eine
+Zuweisung allein ist keine Lease; produktive Arbeit benötigt einen gültigen
+Anspruch mit Fence und aktueller Taskversion. assigned_slot ist in diesen
+Task-APIs ein internes Legacy-Routingfeld. Cloud- und Free-Worker benötigen
+keinen lokalen Modellslot. Lokale Modellressourcen werden separat geregelt.
+Priorität wird über priority <ID> <P1-P4> geändert, nicht über edit.
 
 SCAN-TASKS (hub/ati.py)
 -----------------------
