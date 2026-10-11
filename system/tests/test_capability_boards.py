@@ -199,6 +199,25 @@ def test_application_catalog_missing_registry_does_not_fall_back_to_repositories
     assert inventory.ocean_inventory([root])["count"] == 1
 
 
+def test_daemon_tab_chains_serves_the_built_page_and_everything_else_stays_classic(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    client = TestClient(server.app)
+    classic = client.get("/daemon")
+    assert classic.status_code == 200 and "tab-chains" in classic.text                       # classic template
+    assert "tab-chains" in client.get("/daemon?tab=chains").text                            # not built yet: unchanged fallback
+    (tmp_path / "daemon.html").write_text("<h1>Astro Daemon Chains</h1>", encoding="utf-8")
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=chains").text                   # built page for the chains tab only
+    assert "Astro Daemon Chains" not in client.get("/daemon").text                          # jobs/scheduler stay classic
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=jobs").text
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains%2F..").text          # exact match only
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=Chains").text                   # case-insensitive
+    assert "Astro Daemon Chains" in client.get("/daemon?tab=CHAINS").text
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains&tab=jobs").text      # repeated tab: ambiguous, stays classic
+    assert "Astro Daemon Chains" not in client.get("/daemon?tab=chains&tab=chains").text
+    (tmp_path / "daemon.html").unlink()
+    assert "tab-chains" in client.get("/daemon?tab=chains").text                            # rollback: remove the built page
+
+
 def test_system_tab_ocean_serves_the_built_page_and_falls_back(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
     (tmp_path / "settings.html").write_text("<h1>Settings</h1>", encoding="utf-8")
@@ -210,3 +229,16 @@ def test_system_tab_ocean_serves_the_built_page_and_falls_back(tmp_path, monkeyp
     assert "Ocean" in client.get("/system?tab=ocean&view=satelliten").text
     assert "Settings" in client.get("/system").text
     assert "Settings" in client.get("/system?tab=other").text
+
+
+def test_prompt_library_serves_the_built_page_first_and_keeps_the_legacy_template_as_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
+    client = TestClient(server.app)
+    legacy = client.get("/prompt-library")
+    assert legacy.status_code == 200 and "Prompt-Bibliothek" in legacy.text and "pl-detail" in legacy.text  # legacy template
+    (tmp_path / "prompt-library.html").write_text("<h1>Astro Prompt Library</h1>", encoding="utf-8")
+    built = client.get("/prompt-library")
+    assert built.status_code == 200 and "Astro Prompt Library" in built.text and "pl-detail" not in built.text
+    (tmp_path / "prompt-library.html").unlink()
+    assert "pl-detail" in client.get("/prompt-library").text  # rollback path: remove the built page
+    assert client.get("/prompt-generator", follow_redirects=False).headers["location"] == "/prompt-library"
