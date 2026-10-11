@@ -582,6 +582,10 @@ def test_conflict_copy_of_the_architecture_file_is_never_read(tmp_path):
     lambda d: d["layers"][0].update({"id": ""}),
     lambda d: d["layers"][0].update({"id": "   "}),
     lambda d: d["layers"][0].update({"id": "../escape"}),
+    lambda d: d["layers"][0].update({"id": "."}),
+    lambda d: d["layers"][0].update({"id": ".."}),
+    lambda d: d["areas"][0].update({"id": "."}),
+    lambda d: d["areas"][0].update({"id": ".."}),
     lambda d: d["layers"][0].update({"id": 5}),
     lambda d: d["layers"][0].pop("id"),
     lambda d: d["layers"].append(dict(d["layers"][0])),  # duplicate layer id

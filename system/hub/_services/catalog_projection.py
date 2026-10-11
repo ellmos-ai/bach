@@ -726,7 +726,7 @@ def _architecture(config, sources):
     for entry in raw_areas:
         area = _dict(entry)
         area_id = _text(area.get("id"), 80)
-        if not area_id or not SAFE_SEGMENT.fullmatch(area_id) or area_id in ids:
+        if not area_id or area_id in (".", "..") or not SAFE_SEGMENT.fullmatch(area_id) or area_id in ids:
             raise ValueError("area_id")
         ids.add(area_id)
         areas.append({"id": area_id, "dir": _text(area.get("dir"), 80) or "", "name": _bilingual(area.get("name"), "name"),
@@ -743,7 +743,7 @@ def _architecture(config, sources):
     for entry in raw_layers:
         layer = _dict(entry)
         layer_id = _text(layer.get("id"), 80)
-        if not layer_id or not SAFE_SEGMENT.fullmatch(layer_id) or layer_id in layer_ids:
+        if not layer_id or layer_id in (".", "..") or not SAFE_SEGMENT.fullmatch(layer_id) or layer_id in layer_ids:
             raise ValueError("layer_id")
         layer_ids.add(layer_id)
         layers.append({"id": layer_id, "n": _bilingual(layer.get("n"), "layer_n"),

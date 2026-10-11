@@ -203,6 +203,8 @@ jobs:
             system/tests/test_gui_server.py \
             system/tests/test_gui_task_summary.py \
             system/tests/test_gui_skills_board.py \
+            system/tests/test_catalog_projection.py \
+            system/tests/test_capability_boards.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
             system/tests/test_unified_dashboard_xss.py \
