@@ -280,6 +280,11 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
     for key, value in configuration.items():
         if key not in WORKER_EDITABLE_FIELDS:
             continue
+        if key == "memory_hook_opt_in":
+            if type(value) is not bool:
+                raise WorkerStatusUnavailable("Worker-Konfiguration enthält ein ungültiges memory_hook_opt_in")
+            projected[key] = value
+            continue
         if value is None:
             if key == "task_id":
                 projected[key] = None
@@ -314,6 +319,7 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
             projected[key] = value
     from hub._services.skill_source_service import skill_binding_status
+    projected.setdefault("memory_hook_opt_in", False)
     result_projection = {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
                          "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
     if "selection_policy" in result:
@@ -340,6 +346,8 @@ def update_worker_configuration(worker_id: str, version: str, changes: dict[str,
             or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)
             or not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS):
         raise WorkerActionRejected("Worker-Konfigurationsanfrage ist ungültig", 400)
+    if "memory_hook_opt_in" in changes and type(changes["memory_hook_opt_in"]) is not bool:
+        raise WorkerActionRejected("memory_hook_opt_in muss wahr oder falsch sein", 400)
     current = read_worker_status(device_token=device_token, timeout=timeout)
     worker = next((w for w in current["workers"] if w["id"] == worker_id), None)
     if not worker or worker.get("status") not in {"idle", "paused", "completed", "error"}:
