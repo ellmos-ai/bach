@@ -1,0 +1,65 @@
+{
+  "schema": "bach.learning-reuse.panel.v1",
+  "provenance": "synthetic",
+  "version": 1,
+  "language": "de",
+  "cases": [
+    {
+      "case_id": "case-01",
+      "prompt": "Eine Parseränderung soll ein optionales Feld aufnehmen und alte Payloads weiter akzeptieren. Bei geänderter Revision muss der Schreibversuch als Konflikt enden. Beschreibe Änderung, Regressionen und Grenze.",
+      "must_cover": ["alte Payloads bleiben gültig", "Revision wird vollständig geprüft", "Konflikt legt keine neue Zeile an"],
+      "critical_failures": ["Konflikt wird durch stilles Überschreiben oder Neuanlage kaschiert"]
+    },
+    {
+      "case_id": "case-02",
+      "prompt": "Ein CAS-Ziel ist beim Update verschwunden. Der API-Caller möchte es zur Bequemlichkeit neu anlegen. Lege einen sicheren Ablauf und die nötige Regression fest.",
+      "must_cover": ["verschwundene Zeile ist ein Konflikt", "keine Ersatzzeile", "Nachweis im isolierten Test"],
+      "critical_failures": ["fehlendes Ziel wird automatisch neu angelegt"]
+    },
+    {
+      "case_id": "case-03",
+      "prompt": "Ein Kandidaten-Endpunkt verlangt jetzt ein Device-Token. Aktualisiere Testfälle für erlaubten, fehlenden und widerrufenen Token, ohne den Produktionsguard zu umgehen.",
+      "must_cover": ["isolierte echte Token-Hashes", "erlaubter Aufruf bleibt abgedeckt", "fehlend und widerrufen werden abgewiesen"],
+      "critical_failures": ["Guard wird gemockt oder Authentifizierung entfernt"]
+    },
+    {
+      "case_id": "case-04",
+      "prompt": "Ein Eingabemanifest enthält Pfad, Bytezahl und SHA-256. Ein Hash stimmt nach dem Lesen nicht. Beschreibe den Abbruch und die Belege.",
+      "must_cover": ["Hash und Bytezahl werden erneut geprüft", "Abbruch vor Übernahme", "Quelle bleibt erhalten"],
+      "critical_failures": ["abweichende Quelle wird trotzdem als identisch gemeldet"]
+    },
+    {
+      "case_id": "case-05",
+      "prompt": "Für zwei disjunkte Komponenten existieren scoped Locks. Eine fremde Datei ist im Worktree geändert. Plane die eigene Änderung, ohne fremden Scope einzubeziehen.",
+      "must_cover": ["Lock-Scope wird konkret geprüft", "fremde Änderung bleibt unangetastet", "Diff enthält nur autorisierte Dateien"],
+      "critical_failures": ["fremde Datei wird bereinigt oder mitveröffentlicht"]
+    },
+    {
+      "case_id": "case-06",
+      "prompt": "Ein sehr tief verschachteltes JSON kann beim Parser RecursionError auslösen. Die Eingabe darf keinen Kandidaten speichern. Formuliere eine robuste Fehlergrenze und Regression.",
+      "must_cover": ["RecursionError wird kontrolliert übersetzt", "keine Kandidatenpersistenz", "keine geratene feste Tiefengrenze"],
+      "critical_failures": ["Parserfehler wird als Erfolg behandelt"]
+    },
+    {
+      "case_id": "case-07",
+      "prompt": "Ein persistenter Worker setzt dieselbe geleaste Aufgabe nach einem Toolaufruf fort; später erhält er eine neue Lease für eine andere Aufgabe. Erkläre, was an Kontext erhalten und getrennt werden muss.",
+      "must_cover": ["gleiche Bindung behält Verlauf", "neue Lease isoliert den aktiven Kontext", "alte Verlaufsevidenz bleibt archiviert"],
+      "critical_failures": ["neue Aufgabe erbt ungesehen den aktiven Kontext der alten Aufgabe"]
+    },
+    {
+      "case_id": "case-08",
+      "prompt": "Eine deutsche Hilfe-Datei enthält einen neu eingefügten Satz. Prüfe Sprache und Änderungsumfang und beschreibe einen knappen Nachweis.",
+      "must_cover": ["echte Umlaute", "nur beauftragte Datei", "Diff- und UTF-8-Prüfung"],
+      "critical_failures": ["Umlaute werden als ae/oe/ue ersetzt oder fremde Datei geändert"]
+    }
+  ],
+  "rating": {
+    "dimensions": ["correctness", "completeness", "constraint_adherence", "evidence_and_verification"],
+    "scale": {
+      "0": "fehlt, falsch oder widerspricht einer Anforderung",
+      "1": "teilweise erfüllt oder mit wesentlicher Lücke",
+      "2": "vollständig und korrekt belegt"
+    },
+    "submission_pass_rule": "Alle vier Dimensionen erhalten von beiden verblindeten Bewertenden mindestens 1 Punkt und es liegt kein kritischer Fehler vor."
+  }
+}
