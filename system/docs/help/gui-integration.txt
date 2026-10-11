@@ -14,8 +14,22 @@ ANSICHTEN
 /skills/mcp           MCP-Board
 /skills/software      Software-Board
 
+Die drei Karten für Erstellung, fertige Agenten und fertige Teams bilden eine
+gemeinsame Gruppe mit blauen Akzenten. Im hellen Modus sind ihre Flächen weiß;
+die beiden Living-Bereiche bleiben beim ersten Öffnen eingeklappt.
+
 Die ehemaligen URLs /agents-board und /skills-board sind Weiterleitungen.
 Fabrika führt zum konsolidierten Blueprint-Editor.
+
+PORTRÄTAUSWAHL
+70 Bilder: sechs ursprüngliche Porträts, 19 bisherige Gemini-Bilder und drei neue
+Zehnerserien (Comic-Agenten, Gemini-Rollen, süße Werkstattroboter), zusätzlich
+zehn Monster und fünf Slime-Bälle. Die Auswahl
+steht in der Agenten-Werkstatt und den Agenten-Konfigurationsdialogen bereit.
+Die zusätzlichen Bilder verwenden 256-Pixel-PNGs innerhalb des bestehenden
+Bildvertrags. Gespeichert wird der Bildinhalt; neue Backend-Presetkennungen
+sind dafür nicht notwendig. Herkunft und Quellhashes liegen im gemeinsamen
+GUI-Repository unter src/assets/agent-portraits-20261010/provenance.json.
 
 PRÜFUNG
 GET /api/gui/backend-origin   Tatsächliches Backend und Instanzbindung
@@ -28,12 +42,24 @@ Living bedeutet verfügbar; Running benötigt einen beobachteten Lauf.
 Die Modellbezeichnung allein bestätigt keine erfolgreiche Inferenz.
 Ein lokal gestarteter Worker teilt sich den tatsächlichen Compute-Besitz.
 Cloud-Worker werden ausdrücklich gestartet.
+Der aktivierte feste Always-On-Worker kann auf dem Lead nach einem Control-Start
+mit nachgewiesen lokalem Modell wieder aufgenommen werden. Manuelle Pause und
+Stop bleiben erhalten; siehe always-on-startup.txt. Diese lokale Wiederaufnahme
+ist kein Cloud-Autostart.
 
 ZUWEISUNG
 Native Zuweisungen verwenden assigned_slot, assigned_to und required_model.
 Änderungen einschließlich Freigeben einer bisherigen nativen Zuweisung benötigen
 die aktuelle assignment_configuration_version. Ein Konflikt erfordert neues
 Einlesen; es gibt keinen stillen Wiederholungsversuch oder automatischen Start.
+
+Auch dynamische Workerprofile sind typisierte Zuweisungsziele. Ihr gespeicherter
+Anbieter, ihr Modell und der authentifizierte Statusnachweis müssen zusammenpassen.
+Pausierte, fehlerhafte, abgelaufene oder private Staffelprofile sind nicht wählbar.
+Aufgabe zuweisen in Living/Running öffnet das Aufgabenformular mit dem Profil;
+Speichern bindet die Aufgabe an seine tatsächliche ID. Die globale Konfigurations-
+version wird nach dem Statusabruf und unmittelbar vor dem Task-Commit geprüft.
+Eine Zuweisung startet keinen Worker und erwirbt keine Task-Lease.
 
 GOVERNANCE
 BACH_POLICY_REGISTRY_ENABLED=1 aktiviert den optionalen kanonischen Reader.
@@ -45,3 +71,4 @@ Der DecisionClicker-Schreibpfad ist eine gesondert freizugebende Fähigkeit.
 WEITERLESEN
 Root: OCEAN-TRANSFER-PLAN.md, DEPRICATED.md und TODO.md.
 Aufgabenstatus wird in der TaskDB geführt.
+Konkrete Worker-Ergebnisse und getrennte Abnahme: worker-results.txt.

@@ -6,8 +6,8 @@ Scope: GUX-032 bis GUX-043 (Register GUX-94-2026-10-04-v1.1, Task #1700)
 
 Validiert:
 1. GUX-032: Architekturansicht rendert kanonische Mermaid-Quelle direkt.
-2. GUX-033: Diagrammfarben codieren belegte funktionale Beziehungen mit Legende.
-3. GUX-034 bis GUX-041: Die 8 kognitiven Prozessblöcke als echte Datenquellen mit Telemetrie.
+2. GUX-033: Diagrammfarben zeigen die Prozesszugehörigkeit mit Legende.
+3. GUX-034 bis GUX-041: Die 8 kognitiven Prozessblöcke trennen Tabellenstände und fehlende Laufzeitbelege.
 4. GUX-041/042: Schema-agnostischer USMC Lessons-Reader ohne Absturz bei fehlender 'source_kind'.
 5. GUX-042: /agenten/sessions bindet echte Sessions, Lessons und Working Memory quellengetreu ein.
 6. GUX-043 & NAV-ASS-04: Denkarium-Trennung (Mensch vs. Agent-Dumps), reversible Archivierung
@@ -173,13 +173,16 @@ def test_gux_033_diagram_colors_and_clean_legend():
 
 
 def test_gux_034_to_041_eight_process_blocks_telemetry(isolated_memory_db):
-    """GUX-034 bis GUX-041: Alle 8 kognitiven Prozessblöcke sind echte Datenquellen mit Telemetrie."""
+    """Tabellenstände sind messbar; Prozessmodell und fehlende Laufzeitbelege bleiben getrennt."""
     conn = sqlite3.connect(str(isolated_memory_db))
     conn.row_factory = sqlite3.Row
     topology = get_cognitive_topology(conn)
     assert topology["success"] is True
     blocks = topology["blocks"]
     assert len(blocks) == 8
+    assert topology["architecture_model"]["module_boundaries"] == "not_implied"
+    assert topology["architecture_model"]["runtime_verified"] is False
+    assert all(not block["runtime_verified"] for block in blocks.values())
 
     # 1. kontextfenster (GUX-034)
     b_ctx = get_process_block("kontextfenster", conn=conn)
@@ -197,18 +200,31 @@ def test_gux_034_to_041_eight_process_blocks_telemetry(isolated_memory_db):
     b_sens = get_process_block("sensoren_messtechnik", conn=conn)
     assert b_sens["success"] is True
     assert "sensor_receipt" in b_sens["block"]
-    assert b_sens["block"]["sensor_receipt"]["status"] == "nominal"
+    sensor = b_sens["block"]["sensor_receipt"]
+    assert sensor["status"] == "not_verified"
+    assert sensor["receipt_id"] is None
+    assert sensor["timestamp"] is None
+    assert sensor["context_usage_percent"] is None
 
     # 4. guards (GUX-037)
     b_guards = get_process_block("guards", conn=conn)
     assert b_guards["success"] is True
     assert "guard_receipt" in b_guards["block"]
-    assert b_guards["block"]["guard_receipt"]["decision"] == "allow"
+    guard = b_guards["block"]["guard_receipt"]
+    assert guard["decision"] is None
+    assert guard["receipt_id"] is None
+    assert guard["timestamp"] is None
+    assert guard["status"] == "not_verified"
 
     # 5. berechtigung_hooker (GUX-038)
     b_hk = get_process_block("berechtigung_hooker", conn=conn)
     assert b_hk["success"] is True
-    assert b_hk["block"]["injection_gate"]["has_control_logic"] is False
+    gate = b_hk["block"]["injection_gate"]
+    assert gate["has_control_logic"] is None
+    assert gate["authorized"] is None
+    assert gate["delivery_receipt"] is None
+    assert gate["status"] == "not_verified"
+    assert "im selben Hooker" in b_hk["block"]["role"]
 
     # 6. startprompt (GUX-039)
     b_sp = get_process_block("startprompt", conn=conn)
@@ -227,6 +243,43 @@ def test_gux_034_to_041_eight_process_blocks_telemetry(isolated_memory_db):
     assert "ssot_architecture" in b_ltm["block"]
 
     conn.close()
+
+
+def test_cognitive_reads_do_not_create_schema_or_fake_empty_tables():
+    with sqlite3.connect(":memory:") as conn:
+        conn.execute("PRAGMA query_only = ON")
+        topology = get_cognitive_topology(conn)
+        assert topology["counts"] == dict.fromkeys(("facts", "lessons", "sessions", "working"))
+        assert set(topology["source_availability"].values()) == {"unavailable"}
+        assert topology["blocks"]["langzeit_gedaechtnis"]["status"] == "unavailable"
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == []
+        block = get_process_block("guards", conn=conn)
+        assert block["block"]["guard_receipt"]["decision"] is None
+
+
+def test_cognitive_default_reads_do_not_create_missing_database(tmp_path, monkeypatch):
+    from hub._services import cognitive_service
+
+    missing = tmp_path / "not-created.db"
+    monkeypatch.setattr(cognitive_service, "BACH_DB", missing)
+    with pytest.raises(sqlite3.OperationalError):
+        get_cognitive_topology()
+    with pytest.raises(sqlite3.OperationalError):
+        get_process_block("guards")
+    assert not missing.exists()
+
+
+def test_cognitive_http_reads_do_not_create_missing_database(tmp_path, monkeypatch):
+    from gui.api import unified_api
+
+    missing = tmp_path / "not-created-http.db"
+    monkeypatch.setattr(unified_api, "BACH_DB", missing)
+    client = TestClient(app)
+    for route in ("/api/cognitive/topology", "/api/cognitive/blocks/guards"):
+        response = client.get(route, headers=AUTH_HEADER)
+        assert response.status_code == 200
+        assert response.json()["success"] is False
+        assert not missing.exists()
 
 
 def test_gux_041_usmc_lessons_safe_schema_agnostic(tmp_path):

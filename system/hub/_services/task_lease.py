@@ -85,12 +85,13 @@ LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("claim_intent", "TEXT"),
     ("claim_request_id", "TEXT"),
     ("claim_task_version", "TEXT"),
+    ("claim_result_generation", "TEXT"),
 )
 #: Spalten, die Release/Invalidierung leert; claim_fence bleibt als Hochwassermarke.
 _CLEARED_ON_RELEASE = (
     "claim_id", "claim_host", "claim_issued_at", "claim_expires_at", "claim_heartbeat_at",
     "claim_ttl_profile", "claim_salt_ref", "claim_intent", "claim_request_id",
-    "claimed_by", "claimed_at", "claim_task_version",
+    "claimed_by", "claimed_at", "claim_task_version", "claim_result_generation",
 )
 
 _WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -364,6 +365,7 @@ def _ack(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         "ttl_profile": row["claim_ttl_profile"],
         "server_now": _fmt(now),
         "task_version": row.get("claim_task_version"),
+        "result_generation": row.get("claim_result_generation"),
     }
 
 
@@ -373,15 +375,16 @@ def _deny(task_id: int, reason: str, now: datetime, **extra: Any) -> LeaseResult
 
 
 def _history(conn: sqlite3.Connection, task_id: int, action: str, changed_by: str,
-             now: datetime, detail: Mapping[str, Any], old_value: Any = None) -> None:
+             now: datetime, detail: Mapping[str, Any], old_value: Any = None) -> int:
     """Audit-Zeile ohne lease_id (Capability gehört nicht ins Protokoll)."""
-    conn.execute(
+    cursor = conn.execute(
         """INSERT INTO task_history
            (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (task_id, action, "lease", old_value, json.dumps(dict(detail), ensure_ascii=False, sort_keys=True),
          changed_by, _local_naive(now)),
     )
+    return cursor.lastrowid
 
 
 def _begin(conn: sqlite3.Connection) -> None:
@@ -410,13 +413,13 @@ def _choose_profile(requested: str | None, row: Mapping[str, Any], cfg: LeaseCon
 
 def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
                   request_id: str, ttl_profile: str | None = None, intent: str = "",
-                  task_version: str | None = None,
+                  task_version: str | None = None, result_generation: str | None = None,
                   device: str | None = None, config: LeaseConfig | None = None,
                   now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=request_id, ttl_profile=ttl_profile, intent=intent,
-        task_version=task_version, device=device, config=config, now=now)
+        task_version=task_version, result_generation=result_generation, device=device, config=config, now=now)
 
 
 def _native_creator_grant(conn, binding, row, version):
@@ -468,18 +471,22 @@ def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
         raise LeaseValidationError("Private Creator-Delegation stimmt nicht mit dem Workerlauf überein")
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=delegation.acquire_request_id, task_version=task_version,
-        config=config, now=now, creator_delegation=delegation)
+        config=config, now=now, creator_delegation=delegation, result_generation=delegation.generation)
 
 
 def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
                    request_id: str, ttl_profile: str | None = None, intent: str = "",
                    task_version: str | None = None, device: str | None = None,
                    config: LeaseConfig | None = None, now: datetime | None = None,
-                   creator_delegation: _NativeCreatorBinding | None = None) -> LeaseResult:
+                   creator_delegation: _NativeCreatorBinding | None = None,
+                   result_generation: str | None = None) -> LeaseResult:
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
     task_version = _validate_task_version(task_version)
+    if result_generation is not None and (not isinstance(result_generation, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", result_generation)):
+        raise LeaseValidationError("Ungültige Ergebnisgeneration")
     if not isinstance(request_id, str) or not _REQUEST_ID_RE.fullmatch(request_id):
         raise LeaseValidationError("request_id muss 16-128 Zeichen [A-Za-z0-9._:-] haben")
     intent = str(intent or "")[:500]
@@ -518,6 +525,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
                 conn.rollback()
                 if row.get("claim_task_version") != version:
                     return _deny(task_id, "stale_task_version", now)
+                if row.get("claim_result_generation") != result_generation:
+                    return _deny(task_id, "conflict", now)
                 return LeaseResult(_ack(row, now) | {"replayed": True})
             conn.rollback()
             reason = "already_held_by_caller" if row.get("claimed_by") == worker_id else "held"
@@ -554,11 +563,12 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
                       claim_issued_at = ?, claim_expires_at = ?, claim_heartbeat_at = ?,
                       claim_fence = COALESCE(claim_fence, 0) + 1, claim_ttl_profile = ?,
                       claim_salt_ref = ?, claim_intent = ?, claim_request_id = ?, claim_task_version = ?,
+                      claim_result_generation = ?,
                       claimed_at = ?, updated_at = ?,
                       started_at = COALESCE(started_at, ?)
                 WHERE id = ? AND COALESCE(claim_fence, 0) = ? AND status = ?""",
             (lease_id, worker_id, host, issued, expires, issued, profile, _salt_ref(row.get("source")),
-             intent or None, request_id, version, _local_naive(now), _local_naive(now), _local_naive(now),
+             intent or None, request_id, version, result_generation, _local_naive(now), _local_naive(now), _local_naive(now),
              task_id, old_fence, status),
         )
         if cursor.rowcount != 1:  # unter BEGIN IMMEDIATE nicht erwartbar; fail-closed
@@ -688,6 +698,7 @@ def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence:
 def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                   task_version: str | None = None,
                   outcome: str, result_ref: str = "", note: str = "",
+                  worker_result: dict | None = None,
                   config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
 
@@ -701,7 +712,15 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     if outcome not in RELEASE_OUTCOMES:
         raise LeaseValidationError(f"outcome muss einer von {sorted(RELEASE_OUTCOMES)} sein")
     result_ref = str(result_ref or "")[:500]
-    if outcome == "review" and not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", result_ref):
+    if worker_result is not None:
+        from .task_result_service import validate_submission
+        try:
+            validate_submission(worker_result)
+        except ValueError as exc:
+            raise LeaseValidationError(str(exc)) from None
+        if outcome != "review" or result_ref or note:
+            raise LeaseValidationError("Worker-Ergebnisabgabe benötigt Review ohne fremden Ergebnisbezug")
+    elif outcome == "review" and not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", result_ref):
         raise LeaseValidationError("Review-Abschluss braucht eine bestätigte GitHub-PR-Referenz")
     note = str(note or "")[:4000]
     ensure_task_lease_schema(conn)
@@ -721,6 +740,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         row, problem = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
         if problem:
             recorded = False
+            if worker_result is not None:
+                note = worker_result["result"]
             if result_ref or note:
                 _history(conn, task_id, "late_result", "lease-holder", now,
                          {"fence": fence, "outcome": outcome, "result_ref": result_ref,
@@ -732,6 +753,17 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             return _deny(task_id, problem, now, late_result_recorded=recorded)
 
         worker = row.get("claimed_by") or "lease-holder"
+        submitted = None
+        required_generation = row.get("claim_result_generation")
+        if required_generation and (outcome == "done" or
+                worker_result is not None and worker_result.get("generation") != required_generation):
+            conn.rollback()
+            return _deny(task_id, "completion_guard", now,
+                         detail="Native Worker geben ihr generationgebundenes Ergebnis zur getrennten Review-Abnahme ab")
+        if worker_result is not None:
+            from .task_result_service import insert_submission, result_reference
+            submitted = insert_submission(conn, row, worker_result, worker=worker, now=_local_naive(now))
+            result_ref = result_reference(submitted)
         new_status = RELEASE_OUTCOMES[outcome]
         try:
             apply_task_field_changes(conn, task_id, row, {"status": new_status},
@@ -748,7 +780,7 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         if cursor.rowcount != 1:
             conn.rollback()
             return _deny(task_id, "stale_fence", now)
-        _history(conn, task_id, "lease_release", worker, now,
+        event_id = _history(conn, task_id, "lease_release", worker, now,
                  {"fence": fence, "outcome": outcome, "result_ref": result_ref, "note": note},
                  old_value="in_progress")
         after = _row(conn, task_id) or {}
@@ -756,6 +788,9 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             "released": True, "task_id": task_id, "outcome": outcome, "status": after.get("status"),
             "fence": int(after.get("claim_fence") or 0), "server_now": _fmt(now),
         }
+        if submitted is not None:
+            from .task_result_service import finish_submission
+            ack["worker_result"] = finish_submission(conn, submitted, event_id)
         conn.commit()
     except BaseException:
         if conn.in_transaction:
@@ -858,6 +893,9 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
         if problem:
             conn.rollback()
             return _deny(task_id, problem, now)
+        if close_parent and parent.get("claim_result_generation"):
+            conn.rollback()
+            return _deny(task_id, "completion_guard", now, detail="Native Zerlegung darf den Parent nicht als Done abschließen")
         created = []
         for item in normalized:
             dependency = item.get("depends_on") or (str(created[-1]) if sequential and created else "")

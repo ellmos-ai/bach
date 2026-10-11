@@ -1,5 +1,7 @@
 # NemoFold: Workflow-Lernen & Step-Ketten Synthese (Ocean Subsystem)
 
+> Historisches Design vor Task #2000. Angaben zur Direktfreigabe, nativen Provideranbindung und aktiven Lessons gelten nicht als aktueller Source- oder Betriebsnachweis. Maßgeblich ist [LEARNING-PROMOTION-CONTRACT.md](LEARNING-PROMOTION-CONTRACT.md).
+
 **Dokument-ID:** `NEMOFOLD-WORKFLOW-SYNTHESIS-v1`  
 **Datum:** 2026-10-05  
 **Verbund-Rolle:** Ocean Subsystem (Workflow-Lernen, Heuristik-Detektion, MarbleRun-Synthese)  

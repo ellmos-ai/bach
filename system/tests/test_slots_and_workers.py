@@ -5,10 +5,12 @@ multi-backend slot assignment, and activity dashboard.
 import asyncio
 import importlib
 import os
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +24,7 @@ pytest.importorskip("telegram", reason="braucht python-telegram-bot (T-20260927-
 
 from hub._services.chat import telegram_chat
 from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, FailedAnswer
+from hub._services.chat.session_store import SQLiteChatSessionStore
 from hub._services.chat.slots_config import (
     DEFAULT_CORE_SLOTS,
     add_worker,
@@ -47,6 +50,26 @@ from hub._services.chat.telegram_chat import (
     _snapshot_chat_backend,
     legacy_worker_binding,
 )
+
+
+@pytest.fixture
+def persistent_worker_runtime(tmp_path):
+    """Give worker lifecycle tests the same durable store as Control."""
+    db_path = tmp_path / "worker-session-snapshots.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE session_snapshots (
+                id INTEGER PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                snapshot_type TEXT NOT NULL,
+                snapshot_data TEXT,
+                name TEXT,
+                created_at TEXT
+            )
+        """)
+    backend = MagicMock()
+    backend.get_default_model.return_value = "test-model"
+    return ChatRuntime(backend, session_store=SQLiteChatSessionStore(db_path))
 
 
 def test_control_chat_response_carries_receipts_bound_to_this_answer():
@@ -1129,7 +1152,7 @@ class TestControlHandlerEndpoints:
         (0, "idle"), ("ungültig", "error"),
     ])
     def test_api_worker_custom_id_binds_no_tools_fail_closed(
-        self, monkeypatch, rounds, expected_status,
+        self, monkeypatch, rounds, expected_status, persistent_worker_runtime,
     ):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
@@ -1138,13 +1161,13 @@ class TestControlHandlerEndpoints:
                   "backend": "ollama-cloud", "model": "kimi-k3:cloud",
                   "allow_tools": False, "max_tool_rounds": rounds,
                   "sub_mode": "task_worker", "task_prompt": "Nur CLOUD_OK"}
-        session = ChatSession()
-        session.chat_id = "alpha"
+        monkeypatch.setattr(control, "runtime", persistent_worker_runtime)
+        session = persistent_worker_runtime.get_session("alpha")
         session.messages = [{"role": "user", "content": "persistierter Verlauf"}]
+        persistent_worker_runtime.session_store.save("alpha", session.messages)
         updates = []
         process_calls = []
         monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
-        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
         monkeypatch.setattr(control, "_get_or_create_backend",
                             lambda *_args: object())
         monkeypatch.setattr(control, "update_slot",
@@ -1155,7 +1178,9 @@ class TestControlHandlerEndpoints:
         monkeypatch.setattr(control, "finish_assignment", lambda *_a, **_k: None)
 
         async def fake_process(*_args, **_kwargs):
-            process_calls.append(session.allow_tools)
+            active_session = persistent_worker_runtime.get_session("alpha")
+            assert active_session.allow_tools is False
+            process_calls.append(active_session.allow_tools)
             return "CLOUD_OK"
 
         monkeypatch.setattr(control.runtime, "process", fake_process)
@@ -1185,7 +1210,6 @@ class TestControlHandlerEndpoints:
 
         statuses = [change["status"] for change in updates if "status" in change]
         assert statuses[-1] == expected_status
-        assert session.allow_tools is False
         if expected_status == "idle":
             assert process_calls == [False]
         else:
@@ -1234,8 +1258,11 @@ class TestControlHandlerEndpoints:
         assert "Safe (begrenzte Schreibtools, keine freie Shell)" in source
 
     @pytest.mark.parametrize("answer_kind", ["ok", "failed-type", "failed-text"])
-    def test_once_worker_marks_failed_answer_as_error(self, monkeypatch, answer_kind):
+    def test_once_worker_marks_failed_answer_as_error(
+        self, monkeypatch, answer_kind, persistent_worker_runtime,
+    ):
         control = importlib.import_module("hub._services.chat.telegram_chat")
+        monkeypatch.setattr(control, "runtime", persistent_worker_runtime)
 
         worker_id = "worker-test-failed-answer"
         worker = {"id": worker_id, "name": "Probe", "status": "running",
@@ -1561,7 +1588,8 @@ class TestControlHandlerEndpoints:
         ],
     )
     def test_worker_revocation_waits_for_block_and_keeps_terminal_state(
-        self, tmp_path, monkeypatch, route, requested_status, expected_status, expected_activity
+        self, tmp_path, monkeypatch, route, requested_status, expected_status,
+        expected_activity, persistent_worker_runtime,
     ):
         """A blocked TTL run must not be reported stopped before it exits."""
         monkeypatch.setenv("BACH_CONTROL_API_TOKEN", "test-control-token")
@@ -1576,14 +1604,15 @@ class TestControlHandlerEndpoints:
         }, path=str(cfg_file))
         worker_id = worker["id"]
 
-        class BlockingRuntime:
+        class BlockingRuntime(ChatRuntime):
             def __init__(self):
+                super().__init__(
+                    persistent_worker_runtime.backend,
+                    session_store=persistent_worker_runtime.session_store,
+                )
                 self.started = threading.Event()
                 self.release = threading.Event()
                 self.calls = 0
-
-            def get_session(self, _worker_id):
-                return ChatSession()
 
             async def process(self, *args, **kwargs):
                 self.calls += 1
@@ -1712,9 +1741,12 @@ class TestControlHandlerEndpoints:
                 telegram_chat._ACTIVE_WORKER_THREADS.clear()
                 telegram_chat._WORKER_CONTROLS.clear()
 
-    def test_api_worker_run_emits_assignment_events_end_to_end(self, tmp_path, monkeypatch):
+    def test_api_worker_run_emits_assignment_events_end_to_end(
+        self, tmp_path, monkeypatch, persistent_worker_runtime,
+    ):
         control = importlib.import_module("hub._services.chat.telegram_chat")
         heart = importlib.import_module("hub._services.agents_heart")
+        monkeypatch.setattr(control, "runtime", persistent_worker_runtime)
 
         cfg_file = tmp_path / "board-authz-slots.json"
         initialize_slots_config(str(cfg_file))
@@ -1723,9 +1755,7 @@ class TestControlHandlerEndpoints:
         worker_id = worker["id"]
         update_slot(worker_id, {"status": "running"}, path=str(cfg_file))
 
-        session = ChatSession()
-        session.chat_id = worker_id
-        session.messages = []
+        session = persistent_worker_runtime.get_session(worker_id)
         responses = []
         monkeypatch.setattr(control, "get_worker_slot",
                             lambda _id: get_worker_slot(_id, path=str(cfg_file)))
@@ -1739,7 +1769,6 @@ class TestControlHandlerEndpoints:
                             lambda _a, **_kw: heart.finish_assignment(_a, **_kw, path=str(cfg_file)))
         monkeypatch.setattr(control, "_snapshot_chat_backend",
                             lambda _id, **_kwargs: (object(), "glm-5.3:cloud"))
-        monkeypatch.setattr(control.runtime, "get_session", lambda _id: session)
         monkeypatch.setattr(control, "_get_or_create_backend",
                             lambda *_args: object())
 
@@ -1783,7 +1812,9 @@ class TestControlHandlerEndpoints:
         assert started and ended
         start_details = started[0]["details"]
         asgn = start_details["assignment_id"]
-        assert asgn.startswith("asgn-")
+        parsed_assignment_id = uuid.UUID(asgn)
+        assert parsed_assignment_id.version == 4
+        assert str(parsed_assignment_id) == asgn
         assert start_details["role_id"] == "task_worker"
         assert start_details["initiated_by"] == f"board:{worker_id}"
         match = [e for e in ended if e["details"]["assignment_id"] == asgn]
@@ -2025,18 +2056,18 @@ class TestMatchTaskToPickupFilter:
             assert match_task_to_pickup_filter(task, slot_filter) is expected
 
     @pytest.mark.parametrize(
-        "task_changes,expected",
+        "task_changes,expected,assigned_expected",
         [
-            ({}, True),
-            ({"category": "WORKER", "priority": "P2"}, True),
-            ({"category": "OTHER"}, False),
-            ({"priority": "P3"}, False),
-            ({"tags": "waiting"}, False),
-            ({"assigned_slot": "buddha_chat"}, False),
-            ({"required_model": "glm-5.3:cloud"}, False),
+            ({}, True, True),
+            ({"category": "WORKER", "priority": "P2"}, True, True),
+            ({"category": "OTHER"}, False, True),
+            ({"priority": "P3"}, False, True),
+            ({"tags": "waiting"}, False, False),
+            ({"assigned_slot": "buddha_chat"}, False, False),
+            ({"required_model": "glm-5.3:cloud"}, False, False),
         ],
     )
-    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected):
+    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected, assigned_expected):
         from hub._services.chat.slots_config import get_always_on_execution_slot
         from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
@@ -2061,7 +2092,7 @@ class TestMatchTaskToPickupFilter:
 
         assert slot["enabled"] is True
         assert match_task_to_pickup_filter(task, slot) is expected
-        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
+        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is assigned_expected
 
     def test_empty_slot_filter_dict_rejects(self):
         # A slot with an empty dict as pickup_filter is treated as missing/malformed

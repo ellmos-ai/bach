@@ -152,7 +152,7 @@ FEATURE-MATRIX
 | DB Tabellen       | 25   | 138  | OK     |
 | Connectors        | 3    | 3+   | OK     |
 
-*) Skills & Experten werden primär über skills_hierarchy.json verwaltet.
+*) Skills & Experten werden primär über die Tabelle hierarchy_assignments (bach.db) und die Skill-Zentrale verwaltet; skills_hierarchy.json ist seit 2026-10-11 nicht mehr aktiv.
 
 Handler (Auto-Discovery in hub/):
   abo, agents, ati, backup, bericht, calendar, chain, connections,

@@ -34,7 +34,8 @@ _SAFE_TEXT_FIELDS = (
     "current_activity", "created_at", "expires_at",
 )
 _NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
-_BOOL_FIELDS = ("auto_paused", "system", "deletable")
+_BOOL_FIELDS = ("auto_paused", "system", "deletable", "runtime_verified",
+                "worker_active", "running", "has_task_prompt")
 _ALLOWED_CONTROL = {
     ("GET", "marblerun/catalog"), ("GET", "marblerun/run"), ("POST", "marblerun/action"),
     ("GET", "status"), ("GET", "auth/check"), ("GET", "workers"), ("GET", "system-slots"), ("GET", "activity"),
@@ -94,6 +95,14 @@ def _project_worker(raw: Any) -> dict[str, Any]:
         raise WorkerStatusUnavailable("Workerantwort enthält eine ungültige ID")
 
     item: dict[str, Any] = {"id": worker_id}
+    from hub._services.llm.backend_errors import normalize_backend_error
+    error = normalize_backend_error(raw.get("backend_error"))
+    if error is not None:
+        item["backend_error"] = error
+    from hub._services.chat.worker_queue_status import project_queue_status
+    queue_status = project_queue_status(raw.get("queue_status"))
+    if queue_status is not None:
+        item["queue_status"] = queue_status
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
     for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):
@@ -128,6 +137,9 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     task_id = raw.get("task_id")
     if isinstance(task_id, int) and not isinstance(task_id, bool):
         item["task_id"] = task_id
+    active_task_id = raw.get("active_task_id")
+    if type(active_task_id) is int and active_task_id > 0:
+        item["active_task_id"] = active_task_id
     generation = raw.get("generation")
     if isinstance(generation, str) and _RUN_ID.fullmatch(generation):
         item["generation"] = generation
@@ -268,6 +280,11 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
     for key, value in configuration.items():
         if key not in WORKER_EDITABLE_FIELDS:
             continue
+        if key == "memory_hook_opt_in":
+            if type(value) is not bool:
+                raise WorkerStatusUnavailable("Worker-Konfiguration enthält ein ungültiges memory_hook_opt_in")
+            projected[key] = value
+            continue
         if value is None:
             if key == "task_id":
                 projected[key] = None
@@ -302,8 +319,16 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültigen Text")
             projected[key] = value
     from hub._services.skill_source_service import skill_binding_status
-    return {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
-            "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
+    projected.setdefault("memory_hook_opt_in", False)
+    result_projection = {"ok": True, "id": worker_id, "configuration_version": version, "configuration": projected,
+                         "skill_bindings": skill_binding_status(projected.get("skill_refs", []))}
+    if "selection_policy" in result:
+        from hub._services.chat.worker_queue_status import project_selection_policy
+        policy = project_selection_policy(result["selection_policy"])
+        if policy is None:
+            raise WorkerStatusUnavailable("Worker-Auswahlfilter ist ungültig")
+        result_projection["selection_policy"] = policy
+    return result_projection
 
 
 def read_worker_configuration(worker_id: str, *, device_token: str, timeout: float = 8.0):
@@ -321,6 +346,8 @@ def update_worker_configuration(worker_id: str, version: str, changes: dict[str,
             or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)
             or not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS):
         raise WorkerActionRejected("Worker-Konfigurationsanfrage ist ungültig", 400)
+    if "memory_hook_opt_in" in changes and type(changes["memory_hook_opt_in"]) is not bool:
+        raise WorkerActionRejected("memory_hook_opt_in muss wahr oder falsch sein", 400)
     current = read_worker_status(device_token=device_token, timeout=timeout)
     worker = next((w for w in current["workers"] if w["id"] == worker_id), None)
     if not worker or worker.get("status") not in {"idle", "paused", "completed", "error"}:
@@ -418,7 +445,12 @@ def _request_control_api(
 
 def read_worker_status(*, device_token: str, timeout: float = 5.0) -> dict[str, Any]:
     """Read one authenticated live worker snapshot from the local Control API."""
-    payload = _request_control_api("GET", "workers", device_token=device_token, timeout=timeout)
+    try:
+        payload = _request_control_api("GET", "workers", device_token=device_token, timeout=timeout)
+    except WorkerActionRejected as exc:
+        # The GUI caller is separately enrolled. A rejected internal read
+        # means status is unavailable; it is not an unhandled action error.
+        raise WorkerStatusUnavailable("Lokale Control-API hat keinen Workerstatus bestätigt") from exc
     if payload.get("ok") is not True or not isinstance(payload.get("workers"), list):
         raise WorkerStatusUnavailable("Lokale Control-API lieferte keinen Workerstatus")
     workers = [_project_worker(entry) for entry in payload["workers"]]

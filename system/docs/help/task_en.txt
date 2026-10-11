@@ -101,3 +101,12 @@ Dependency detection: Tasks are automatically added with (BLOCKED) flag
 unfinished dependencies are displayed
 Hooks: after_task_create, after_task_done are emitted during operations
 Due dates: --due accepts only a valid ISO date in YYYY-MM-DD format
+
+
+Atomic assignment at creation: bach task add "Documentation review" --assigned bach.
+--assigned=bach and -a bach are also supported. Empty or missing names are
+rejected before INSERT. Without this option, the database default is retained.
+The structured API provides task.add("Documentation review", assigned_to="bach").
+Offline drafts retain their assignment during promotion. The lead's additional
+authentication, model/slot and assignment gates still apply.
+These options do not start workers or acquire task leases.

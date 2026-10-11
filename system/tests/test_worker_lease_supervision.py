@@ -5,11 +5,15 @@ import threading
 import time
 
 import pytest
-
-from system.tests.test_task_lease_service import _create_db, _connect, _insert
 from hub._services import task_lease_client as client_module
-from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+from hub._services.task_lease_client import (
+    LeaseConnectionError,
+    LeaseError,
+    TaskLeaseClient,
+)
+
+from system.tests.test_task_lease_service import _connect, _create_db, _insert
 
 
 @pytest.fixture
@@ -74,7 +78,7 @@ def test_lost_renew_ack_revokes_writes_but_waits_for_actual_provider_completion(
         assert supervisor.failure is not None
         assert not task.done()  # Missing ACK is not a physical provider cancellation.
         with pytest.raises(LeaseError):
-            binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+            binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis unter Lease-Überwachung"})
         assert binding.return_lease() is False
         release.set()
         with pytest.raises(LeaseError): await asyncio.wait_for(task, 1)
@@ -98,7 +102,9 @@ def test_manual_stop_waits_for_provider_then_allows_known_lease_return(binding):
         task = asyncio.create_task(supervisor.run(provider))
         await asyncio.wait_for(started.wait(), 1)
         binding._stop_event.set()
-        await asyncio.sleep(.03)
+        deadline = time.monotonic() + 1
+        while supervisor.is_alive and time.monotonic() < deadline:
+            await asyncio.sleep(.01)
         assert not task.done()
         assert not supervisor.is_alive
         release.set()
@@ -123,7 +129,7 @@ def test_local_deadline_loss_revokes_binding_without_fabricated_completion(bindi
 def test_heartbeat_runs_even_when_provider_blocks_its_event_loop(binding):
     from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
     async def provider():
-        time.sleep(.08)  # Controlled stand-in for a blocking native/provider call.
+        time.sleep(.08)  # noqa: ASYNC251 -- Deliberately blocked provider event loop.
         return "actual terminal"
     supervisor = WorkerLeaseSupervisor(binding, poll_interval=.005, renew_interval=.005)
     assert asyncio.run(supervisor.run(provider)) == "actual terminal"
@@ -134,12 +140,16 @@ def test_heartbeat_runs_even_when_provider_blocks_its_event_loop(binding):
 
 @pytest.mark.parametrize("gate_kind", ["host", "runtime"])
 def test_stopping_before_inference_aborts_gate_wait_without_provider_call(binding, monkeypatch, tmp_path, gate_kind):
-    from unittest.mock import AsyncMock
     from contextlib import AsyncExitStack
+    from unittest.mock import AsyncMock
+
     from hub._services.chat.chat_runtime import ChatRuntime
     from hub._services.chat.host_inference_gate import HostInferenceGate
     monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
-    backend = type("Backend", (), {"chat": AsyncMock(return_value={"content": "unused"})})()
+    backend = type("Backend", (), {
+        "get_default_model": lambda self: "example:small",
+        "chat": AsyncMock(return_value={"content": "unused"}),
+    })()
     runtime = ChatRuntime(backend)
     session = runtime.get_session("worker-waiting")
     session.worker_task_binding = binding
@@ -177,10 +187,10 @@ def test_max_total_denial_keeps_known_lease_valid_until_its_deadline(binding, mo
     async def provider():
         await asyncio.sleep(.03)
         binding.assert_active()
-        return binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
+        return binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis unter Lease-Überwachung"})
     supervisor = WorkerLeaseSupervisor(binding, poll_interval=.005, renew_interval=.005)
-    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id} erledigt."
+    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
     assert supervisor.failure is None
     assert len(calls) == 1  # Exhaustion is known; never retry Renew for this lease.
-    assert binding.completed_task_ids == (binding.task_id,)
+    assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
     assert not supervisor.is_alive

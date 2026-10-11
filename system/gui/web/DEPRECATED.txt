@@ -1,0 +1,3 @@
+Veraltete Kopie (stillgelegt seit 2026-10-11).
+Einzige Quelle der GUI ist ellmos-system-gui; BACH bezieht nur dessen Release.
+Nicht mehr bearbeiten. Siehe DEPRICATED.md im Repo-Root.

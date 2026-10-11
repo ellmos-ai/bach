@@ -21,12 +21,13 @@ import logging
 import os
 import re
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body
 from fastapi.responses import FileResponse, PlainTextResponse
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ from hub._services.blueprint_service import (
 from hub._services.cognitive_service import (
     CANONICAL_MERMAID_DIAGRAM,
     DIAGRAM_LEGEND,
+    PROCESS_MODEL,
     get_cognitive_topology,
     get_process_block,
     read_usmc_lessons_safe,
@@ -444,6 +446,38 @@ async def bootstrap_agent_templates():
         return {"success": True, "source": "BACH role templates"}
     finally:
         conn.close()
+
+
+def _template_provider_call(func, *args, **kwargs):
+    conn = _get_conn()
+    try:
+        return func(conn, *args, **kwargs)
+    finally:
+        conn.close()
+
+
+@router.post("/agent-studio/template-providers/sync")
+async def sync_template_providers():
+    """Explicit probe of configured template providers; never overwrites another version."""
+    from hub._services.template_provider_service import TemplateProviderError, sync_providers
+    try:
+        return await asyncio.to_thread(_template_provider_call, sync_providers)
+    except TemplateProviderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/agent-studio/template-providers/migrate")
+async def migrate_system_template(payload: Dict[str, Any]):
+    """Explicitly adopt the version a provider currently offers; the old row stays."""
+    from hub._services.template_provider_service import TemplateProviderError, migrate_template
+    keys = ("provider", "template_id", "to_version", "expected_sha256")
+    if any(not isinstance(payload.get(key), str) for key in keys):
+        raise HTTPException(status_code=400, detail="provider, template_id, to_version und expected_sha256 sind erforderlich")
+    try:
+        return await asyncio.to_thread(_template_provider_call, migrate_template, payload["provider"],
+            payload["template_id"], to_version=payload["to_version"], expected_sha256=payload["expected_sha256"])
+    except TemplateProviderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.get("/agent-studio/tools")
@@ -1639,6 +1673,8 @@ async def get_cognitive_state():
 
     return {
         "source": "bach_memory_tables",
+        "architecture_model": dict(PROCESS_MODEL),
+        "measurement_scope": "bach_memory_table_counts",
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "availability": "available" if db_error is None else "unavailable",
         "error": db_error,
@@ -1693,7 +1729,7 @@ async def get_cognitive_state():
         },
         "kontextfenster": {
             "title": "Aktives Kontextfenster (Im Zentrum des Kognitiven Baums)",
-            "role_in_llm": "Das aktive LLM-Kontextfenster IST die Phonologische Schleife! Alle Organe speisen hier ein oder lesen daraus.",
+            "role_in_llm": "Kognitive Analogie im Soll-Modell: Das Kontextfenster übernimmt die Rolle eines Arbeitsgedächtnisses.",
             "mental_health": {
                 "active_tokens": None,
                 "max_tokens": None,
@@ -1794,8 +1830,8 @@ async def get_cognitive_state():
             ]
         },
         "hooker_governance": {
-            "title": "Selbstkontrolle & Hooker-Injektions-Engpass",
-            "concept": "Hooker sind reine Injektoren (Zustell-Pipeline), KEINE Kontrolleure! Die Kontrolle liegt in den Selbstkontroll-Mechanismen der Zentralen Exekutive (Sensoren -> Deterministische & LLM-Guards -> Berechtigungskontrolle -> Hooker-Zustellung).",
+            "title": "Teilprozesse: Bedarf erkennen, Prüfen und Zustellen",
+            "concept": "Die Map trennt Bedarfserkennung, Kontextauswahl, Regelprüfung und Zustellung als Tätigkeiten. Ein Hooker kann mehrere dieser Teilprozesse und Aktionsguards implementieren. Ihre Durchsetzung hängt vom jeweiligen Laufzeitanschluss ab.",
             "status": "Nicht geprüft",
             "safety_rules": [
                 {"rule": "Sanitization & Prompt-Injection-Filter", "desc": "Prüft externe Inputs vor Einspeisung ins Kontextfenster"},
@@ -1832,7 +1868,9 @@ async def get_cognitive_state():
                 "verification": "Nicht geprüft"
             },
             "reiner_injektor_hooker": {
-                "definition": "Der Hooker ist das reine Ausführungsorgan (Zusteller). Er besitzt keine eigene Kontrolllogik, sondern führt nach Berechtigung die Injektion ins Kontextfenster aus."
+                "definition": "Zustellung ist ein Teilprozess. Die Prüfung und Zustellung dürfen im selben Hooker liegen; die Prozessgrenze verlangt keine getrennten Module.",
+                "legacy_key": True,
+                "process_id": "kontext_zustellen"
             }
         },
         "disambiguierung_knoten": {
@@ -1981,7 +2019,7 @@ async def get_cognitive_state():
                 {"from": "sensoren_messtechnik", "to": "selbstkontroll_guards", "type": "Sensordaten (Token, CoT-Loops, Stress)", "wire": "wire-sensor-guards"},
                 {"from": "selbstkontroll_guards", "to": "berechtigungskontrolle", "type": "Entscheidungsfindung (Skript- & LLM-Guards)", "wire": "wire-guards-auth"},
                 {"from": "berechtigungskontrolle", "to": "hooker_injektor", "type": "Freigegebener Payload (Gedanke / Faktenanker)", "wire": "wire-auth-hooker"},
-                {"from": "hooker_injektor", "to": "kontextfenster", "type": "Reine physische Injektion / Zustellung", "wire": "wire-hook-ctx-inject", "is_critical": True},
+                {"from": "hooker_injektor", "to": "kontextfenster", "type": "Zusatzkontext zustellen (Teilprozess; Anschluss separat prüfen)", "wire": "wire-hook-ctx-inject", "is_critical": True},
                 {"from": "agenten_fabrika", "to": "startprompt", "type": "Rolle + Persona + Skills + Governance", "wire": "wire-fab-start"},
                 {"from": "langzeit_gedaechtnis", "to": "startprompt", "type": "Initialer Kontext beim Booten", "wire": "wire-lzg-start"},
                 {"from": "disambiguierung_knoten", "to": "startprompt", "type": "Vorab-Sicherheitsleitplanke (Nichtwissen erlaubt)", "wire": "wire-dis-start"},
@@ -2006,10 +2044,10 @@ async def get_cognitive_state():
 async def get_cognitive_topology_endpoint():
     """Liefert die vollständige kognitive Topologie mit 8 Prozessblöcken, Mermaid und Legende (GUX-032..041)."""
     try:
-        conn = _get_conn()
-        res = get_cognitive_topology(conn)
-        conn.close()
-        return res
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only = ON")
+            return get_cognitive_topology(conn)
     except Exception as e:
         logger.exception("Fehler beim Abruf der kognitiven Topologie: %s", e)
         return {"success": False, "error": "Interner Serverfehler", "blocks": {}}
@@ -2019,10 +2057,10 @@ async def get_cognitive_topology_endpoint():
 async def get_cognitive_block_endpoint(block_id: str):
     """Liefert detaillierte Inspektionsdaten zu einem der 8 kognitiven Prozessblöcke (GUX-034..041)."""
     try:
-        conn = _get_conn()
-        res = get_process_block(block_id, conn=conn)
-        conn.close()
-        return res
+        with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only = ON")
+            return get_process_block(block_id, conn=conn)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
@@ -2072,51 +2110,108 @@ async def unarchive_denkarium_endpoint(entry_id: int):
 # 6. ECHTE GEDAECHTNIS-ENDPUNKTE (FACTS, LESSONS, WORKING, SESSIONS)
 # ═══════════════════════════════════════════════════════════════
 
+MEMORY_FACT_CATEGORIES = ("user", "project", "system", "domain")
+
+
+def _memory_fact_values(payload: dict[str, Any], *, partial: bool = False) -> dict[str, Any]:
+    """Validiert Facts vor dem Öffnen einer Schreibverbindung; Lessons bleiben separat."""
+    values: dict[str, Any] = {}
+    if not partial or "category" in payload:
+        category = payload.get("category", "user")
+        if not isinstance(category, str) or category not in MEMORY_FACT_CATEGORIES:
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_category",
+                "message": "Kategorie muss user, project, system oder domain sein.",
+                "allowed_categories": list(MEMORY_FACT_CATEGORIES),
+            })
+        values["category"] = category
+    for field in ("key", "value"):
+        if not partial or field in payload:
+            value = payload.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise HTTPException(status_code=400, detail={
+                    "code": "invalid_fact_text", "message": "Schlüssel und Wert müssen nicht leere Texte sein.",
+                })
+            values[field] = value.strip()
+    if not partial or "confidence" in payload:
+        confidence = payload.get("confidence", 1.0)
+        try:
+            if isinstance(confidence, bool):
+                raise TypeError
+            confidence = float(confidence)
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_confidence", "message": "Konfidenz muss eine Zahl zwischen 0 und 1 sein.",
+            }) from None
+        if not isfinite(confidence) or not 0 <= confidence <= 1:
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_confidence", "message": "Konfidenz muss eine Zahl zwischen 0 und 1 sein.",
+            })
+        values["confidence"] = confidence
+    if not partial:
+        source = payload.get("source", "user_gui")
+        if source is not None and not isinstance(source, str):
+            raise HTTPException(status_code=400, detail={
+                "code": "invalid_fact_source", "message": "Quelle muss ein Text sein.",
+            })
+        values["source"] = source
+    if not values:
+        raise HTTPException(status_code=400, detail="Keine gültigen Felder übergeben")
+    return values
+
+
+@contextmanager
+def _memory_fact_write():
+    """Commit oder Rollback und Schließen für jeden Facts-Schreibweg."""
+    try:
+        with closing(_get_conn()) as conn, conn:
+            yield conn
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail={
+            "code": "fact_conflict", "message": "Fakt konnte wegen eines Datenkonflikts nicht verändert werden.",
+        }) from None
+    except sqlite3.Error:
+        logger.exception("Memory-Facts-Datenbank nicht verfügbar")
+        raise HTTPException(status_code=503, detail={
+            "code": "memory_unavailable", "message": "Faktenspeicher ist derzeit nicht verfügbar.",
+        }) from None
+
+
 @router.get("/memory/facts")
 async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
     """Liefert Faktenwissen aus memory_facts."""
     try:
-        conn = _get_conn()
-        _ensure_capabilities_db(conn)
-        conn.row_factory = sqlite3.Row
-        query = "SELECT id, category, key, value, value_type, confidence, source, created_at FROM memory_facts"
-        params: List[Any] = []
-        if category and category != "all":
-            query += " WHERE category = ?"
-            params.append(category)
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(limit)
-        rows = conn.execute(query, params).fetchall()
-        facts = [dict(r) for r in rows]
-        conn.close()
-        return {"facts": facts, "count": len(facts)}
-    except Exception as e:
-        logger.exception("Fehler beim Abruf von memory_facts: %s", e)
-        return {"facts": [], "count": 0, "error": "Interner Serverfehler"}
+        with closing(_get_conn()) as conn:
+            conn.row_factory = sqlite3.Row
+            query = "SELECT id, category, key, value, value_type, confidence, source, created_at FROM memory_facts"
+            params: List[Any] = []
+            if category and category != "all":
+                query += " WHERE category = ?"
+                params.append(category)
+            query += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(query, params).fetchall()
+            facts = [dict(r) for r in rows]
+        return {"facts": facts, "count": len(facts), "allowed_categories": list(MEMORY_FACT_CATEGORIES)}
+    except sqlite3.Error:
+        logger.exception("Fehler beim Abruf von memory_facts")
+        raise HTTPException(status_code=503, detail={
+            "code": "memory_unavailable", "message": "Faktenspeicher ist derzeit nicht verfügbar.",
+        }) from None
 
 
 @router.post("/memory/facts")
 async def create_memory_fact(payload: Dict[str, Any]):
     """Erstellt einen neuen Fakt in memory_facts."""
-    category = payload.get("category", "general")
-    key = payload.get("key", "").strip()
-    value = payload.get("value", "").strip()
-    confidence = float(payload.get("confidence", 1.0))
-    source = payload.get("source", "user_gui")
-    if not key or not value:
-        raise HTTPException(status_code=400, detail="Key und Value erforderlich")
-    conn = _get_conn()
-    _ensure_capabilities_db(conn)
-    cursor = conn.cursor()
-    now = datetime.now().isoformat()
-    cursor.execute("""
-        INSERT INTO memory_facts (category, key, value, value_type, confidence, source, created_at)
-        VALUES (?, ?, ?, 'text', ?, ?, ?)
-    """, (category, key, value, confidence, source, now))
-    new_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return {"status": "created", "id": new_id, "key": key, "category": category}
+    values = _memory_fact_values(payload)
+    with _memory_fact_write() as conn:
+        cursor = conn.execute("""
+            INSERT INTO memory_facts (category, key, value, value_type, confidence, source, created_at)
+            VALUES (?, ?, ?, 'text', ?, ?, ?)
+        """, (values["category"], values["key"], values["value"], values["confidence"],
+              values["source"], datetime.now().isoformat()))
+        new_id = cursor.lastrowid
+    return {"status": "created", "id": new_id, "key": values["key"], "category": values["category"]}
 
 
 @router.get("/memory/lessons")
@@ -2229,32 +2324,23 @@ async def get_memory_sessions(limit: int = 20):
 @router.put("/memory/facts/{fact_id}")
 async def update_memory_fact(fact_id: int, payload: Dict[str, Any]):
     """Aktualisiert einen Fakt in memory_facts."""
-    conn = _get_conn()
-    cursor = conn.cursor()
-    fields = []
-    values = []
-    for k in ["category", "key", "value", "confidence"]:
-        if k in payload:
-            fields.append(f"{k} = ?")
-            values.append(payload[k])
-    if not fields:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Keine gueltigen Felder uebergeben")
-    values.append(fact_id)
-    cursor.execute(f"UPDATE memory_facts SET {', '.join(fields)} WHERE id = ?", values)
-    conn.commit()
-    conn.close()
+    values = _memory_fact_values(payload, partial=True)
+    fields = [f"{field} = ?" for field in values]
+    with _memory_fact_write() as conn:
+        cursor = conn.execute(f"UPDATE memory_facts SET {', '.join(fields)} WHERE id = ?",
+                              [*values.values(), fact_id])
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Fakt wurde nicht gefunden")
     return {"status": "updated", "id": fact_id}
 
 
 @router.delete("/memory/facts/{fact_id}")
 async def delete_memory_fact(fact_id: int):
-    """Loescht einen Fakt aus memory_facts."""
-    conn = _get_conn()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM memory_facts WHERE id = ?", (fact_id,))
-    conn.commit()
-    conn.close()
+    """Löscht einen Fakt aus memory_facts."""
+    with _memory_fact_write() as conn:
+        cursor = conn.execute("DELETE FROM memory_facts WHERE id = ?", (fact_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Fakt wurde nicht gefunden")
     return {"status": "deleted", "id": fact_id}
 
 
@@ -2316,6 +2402,54 @@ async def toggle_memory_lesson(lesson_id: int):
 
 # ═══════════════════════════════════════════════════════════════
 # 6.5. HERMES: SKILL-DESTILLATION & LERN-PIPELINE (/api/learning/hermes/*)
+def _learning_source_request(request, payload, *, persist=False):
+    actor = f"device:{_require_memory_device(request)}"
+    from hub.learning import LearningHandler
+    try:
+        return LearningHandler.analyze_payload(
+            payload, db_path=BACH_DB, actor=actor, persist=persist,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=getattr(exc, "http_status", 422),
+            detail={"code": getattr(exc, "code", "invalid_learning_source"),
+                    "message": str(exc)}) from exc
+
+
+async def _bounded_learning_source_payload(request: Request):
+    """Authenticate before reading and cap streamed bytes before JSON parsing."""
+    _require_memory_device(request)
+    from hub._services.learning_source_service import MAX_REQUEST_BYTES
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="Learning request exceeds byte limit")
+        raw.extend(chunk)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise HTTPException(status_code=422, detail="Learning request needs valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Learning request needs a JSON object")
+    return payload
+
+
+_LEARNING_SOURCE_OPENAPI = {"requestBody": {"required": True, "content": {
+    "application/json": {"schema": {"type": "object", "additionalProperties": True}}
+}}}
+
+
+@router.post("/learning/sources/analyze", openapi_extra=_LEARNING_SOURCE_OPENAPI)
+def analyze_learning_source(request: Request, payload: Dict[str, Any] = Depends(_bounded_learning_source_payload)):
+    return _learning_source_request(request, payload)
+
+
+@router.post("/learning/sources/store", openapi_extra=_LEARNING_SOURCE_OPENAPI)
+def store_learning_source(request: Request, payload: Dict[str, Any] = Depends(_bounded_learning_source_payload)):
+    return _learning_source_request(request, payload, persist=True)
+
+
 # ═══════════════════════════════════════════════════════════════
 
 def _get_hermes_service_instance():
@@ -2403,8 +2537,9 @@ async def run_hermes_distillation(payload: Dict[str, Any] = Body(...)):
 
 
 @router.get("/learning/hermes/candidates")
-async def get_hermes_candidates(status: str = Query("pending", description="pending|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
+async def get_hermes_candidates(request: Request, status: str = Query("pending", description="pending|reviewed|approved|rejected|all"), limit: int = Query(50, ge=1, le=200)):
     """Liefert Skill-Kandidaten zur Human-in-the-Loop Inspektion."""
+    _require_memory_device(request)
     service = _get_hermes_service_instance()
     try:
         candidates = service.list_candidates(status=status, limit=limit)
@@ -2415,33 +2550,180 @@ async def get_hermes_candidates(status: str = Query("pending", description="pend
 
 
 @router.get("/learning/hermes/candidates/{candidate_id}")
-async def get_hermes_candidate_detail(candidate_id: int):
+async def get_hermes_candidate_detail(candidate_id: int, request: Request):
     """Liefert vollständige Details und SKILL.md-Inhalt eines Kandidaten."""
+    _require_memory_device(request)
     service = _get_hermes_service_instance()
     cand = service.get_candidate(candidate_id)
     if not cand:
         raise HTTPException(status_code=404, detail=f"Kandidat #{candidate_id} nicht gefunden")
-    return cand
+    return _attach_learning_promotion_availability(cand, "hermes")
+
+
+
+def _get_learning_promotion_service_instance():
+    from hub._services.learning_promotion_service import LearningPromotionService
+    from hub._services.skill_source_service import check_write_locks
+
+    adapter = None
+    try:
+        from hub._services.nemofold_native_sequence_adapter import build_native_sequence_proposal
+        adapter = build_native_sequence_proposal
+    except ModuleNotFoundError as exc:
+        if exc.name != "hub._services.nemofold_native_sequence_adapter":
+            raise
+    return LearningPromotionService(
+        db_path=BACH_DB,
+        write_guard=check_write_locks,
+        sequence_adapter=adapter,
+    )
+
+
+def _attach_learning_promotion_availability(candidate, provider):
+    targets = _get_learning_promotion_service_instance().target_states(provider, candidate)
+    candidate["promotion_targets"] = targets
+    target_states = [
+        item.get("state")
+        for item in targets.get("targets", {}).values()
+        if isinstance(item, dict)
+    ]
+    ready = any(state == "ready_for_target_cas" for state in target_states)
+    candidate["promotion_available"] = ready
+    candidate["promotion_availability_deprecated"] = False
+    candidate["promotion_availability_source"] = "promotion_targets"
+    candidate["promotion_unavailable_reason"] = (
+        None if ready else
+        "Kein Zieltyp ist für einen neuen CAS-Request bereit; siehe promotion_targets.targets."
+    )
+    return candidate
+
+
+def _learning_promotion_action(action, provider, candidate_id, request, payload):
+    actor = f"device:{_require_memory_device(request)}"
+    target_kind = payload.get("target_kind") if isinstance(payload, dict) else None
+    allowed = {"skill", "lessons"} if provider == "hermes" else {"sequence"}
+    if target_kind not in allowed:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_learning_target",
+            "message": "Nur ein ausdrücklich unterstützter Zieltyp ist erlaubt.",
+        })
+    fields = {"target_kind", "expected_revision", "expected_digest", "request_id"}
+    fields.add("expected_target_version" if action == "promote" else "source_request_id")
+    if set(payload) != fields:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_learning_promotion_request",
+            "message": "Promotions- und Rücknahmeanfragen müssen genau die gebundenen Ziel- und Revisionsfelder enthalten.",
+        })
+    try:
+        service = _get_learning_promotion_service_instance()
+        if action == "promote":
+            return service.promote(
+                provider,
+                candidate_id,
+                target_kind=target_kind,
+                expected_revision=payload["expected_revision"],
+                expected_digest=payload["expected_digest"],
+                request_id=payload["request_id"],
+                expected_target_version=payload["expected_target_version"],
+                actor=actor,
+            )
+        return service.revoke(
+            provider,
+            candidate_id,
+            target_kind=target_kind,
+            expected_revision=payload["expected_revision"],
+            expected_digest=payload["expected_digest"],
+            source_request_id=payload["source_request_id"],
+            request_id=payload["request_id"],
+            actor=actor,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        from hub._services.learning_promotion_service import (
+            LearningPromotionConflict, LearningPromotionUnavailable,
+        )
+        from hub._services.learning_review_service import LearningNotFound
+        from hub._services.chat.sequence_store import SequenceConflict
+
+        if isinstance(exc, LearningNotFound):
+            raise HTTPException(status_code=404, detail={"code": "candidate_not_found", "message": str(exc)}) from None
+        if isinstance(exc, (LearningPromotionConflict, SequenceConflict)):
+            raise HTTPException(status_code=409, detail={"code": "learning_promotion_conflict", "message": str(exc)}) from None
+        if isinstance(exc, LearningPromotionUnavailable):
+            message = str(exc)
+            code = getattr(exc, "code", "native_learning_promotion_unavailable")
+            if message.startswith("waiting_for_native_definition:"):
+                code = "waiting_for_native_definition"
+            elif message.startswith("waiting_for_atomic_sequence_receipt:"):
+                code = "waiting_for_atomic_sequence_receipt"
+            raise HTTPException(status_code=409, detail={"code": code, "message": message}) from None
+        if isinstance(exc, PermissionError):
+            raise HTTPException(status_code=423, detail={
+                "code": "learning_promotion_locked",
+                "message": "Der native Schreibbereich ist gesperrt oder ungeprüft.",
+            }) from None
+        if isinstance(exc, (OSError, sqlite3.Error)):
+            raise HTTPException(status_code=503, detail={
+                "code": "learning_promotion_store_unavailable",
+                "message": "Der native Promotionsspeicher ist nicht verfügbar.",
+            }) from None
+        if isinstance(exc, (ValueError, TypeError)):
+            raise HTTPException(status_code=422, detail={
+                "code": getattr(exc, "code", "invalid_learning_promotion"),
+                "message": str(exc),
+            }) from None
+        raise
+
+
+def _learning_decision(action, request, service_factory, candidate_id, payload):
+    """Use existing device authority; body display names confer no identity."""
+    actor = f"device:{_require_memory_device(request)}"
+    try:
+        service = service_factory()
+        if action == "approve":
+            # The old target writers are intentionally unavailable.
+            return service.approve_candidate(candidate_id)
+        fields = {"expected_revision", "expected_digest", "request_id", "notes" if action == "review" else "reason"}
+        if set(payload) - fields:
+            raise ValueError("Unbekannte Reviewfelder")
+        kwargs = {key: payload.get(key) for key in ("expected_revision", "expected_digest", "request_id")}
+        if action == "review":
+            return service.review_candidate(candidate_id, actor=actor, notes=payload.get("notes", ""), **kwargs)
+        return service.reject_candidate(candidate_id, actor=actor, reason=payload.get("reason", ""), **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=getattr(exc, "http_status", 422),
+            detail={"code": getattr(exc, "code", "invalid_learning_review"), "message": str(exc)}) from exc
 
 
 @router.post("/learning/hermes/candidates/{candidate_id}/approve")
-async def approve_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Operator-Freigabe (Human-in-the-Loop): Überführt Kandidat in skill_versions."""
-    service = _get_hermes_service_instance()
-    approved_by = payload.get("approved_by", "operator")
-    res = service.approve_candidate(candidate_id, approved_by=approved_by)
-    if res.get("status") == "error":
-        raise HTTPException(status_code=404, detail=res.get("message", "Freigabe fehlgeschlagen"))
-    return res
+async def approve_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Legacy publication is unavailable until a native provider contract exists."""
+    return _learning_decision("approve", request, _get_hermes_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/review")
+async def review_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Record a bound content review; publish no skills or lessons."""
+    return _learning_decision("review", request, _get_hermes_service_instance, candidate_id, payload)
 
 
 @router.post("/learning/hermes/candidates/{candidate_id}/reject")
-async def reject_hermes_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Lehnt einen Skill-Kandidaten ab."""
-    service = _get_hermes_service_instance()
-    reason = payload.get("reason", "")
-    res = service.reject_candidate(candidate_id, reason=reason)
-    return res
+async def reject_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Reject the exact displayed candidate revision."""
+    return _learning_decision("reject", request, _get_hermes_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/promote")
+async def promote_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Promote exactly one reviewed Hermes target with a native CAS receipt."""
+    return _learning_promotion_action("promote", "hermes", candidate_id, request, payload)
+
+
+@router.post("/learning/hermes/candidates/{candidate_id}/revoke")
+async def revoke_hermes_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Revoke only the exact target version recorded by a prior promotion."""
+    return _learning_promotion_action("revoke", "hermes", candidate_id, request, payload)
 
 
 @router.get("/learning/hermes/stats")
@@ -2473,7 +2755,7 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
     """
     Führt die NemoFold Heuristik-Detektion und Step-Ketten Synthese aus.
     Nimmt Session-Logs, Transkripte oder Snapshot-IDs entgegen und erzeugt
-    strukturierte, TÜV-geprüfte Step-Ketten für MarbleRun.
+    unveröffentlichte Entwürfe mit statischer Metadatenprüfung.
     """
     service = _get_nemofold_service_instance()
     source_type = payload.get("source_type", "transcript")
@@ -2494,55 +2776,56 @@ async def run_nemofold_synthesis(payload: Dict[str, Any] = Body(...)):
 
 @router.get("/learning/nemofold/candidates")
 async def get_nemofold_candidates(
-    status: str = Query("pending", description="pending|approved|rejected|all"),
+    request: Request,
+    status: str = Query("pending", description="pending|reviewed|approved|rejected|all"),
     limit: int = Query(50, ge=1, le=200)
 ):
     """Listet gelernte Workflow-Kandidaten zur Prüfung auf."""
+    _require_memory_device(request)
     service = _get_nemofold_service_instance()
     candidates = service.list_candidates(status=status)
     return {"candidates": candidates[:limit], "count": len(candidates)}
 
 
 @router.get("/learning/nemofold/candidates/{candidate_id}")
-async def get_nemofold_candidate_detail(candidate_id: int):
+async def get_nemofold_candidate_detail(candidate_id: int, request: Request):
     """Liefert die vollständige Spezifikation und TÜV-Bewertung eines Kandidaten."""
+    _require_memory_device(request)
     service = _get_nemofold_service_instance()
     candidate = service.get_candidate(candidate_id)
     if not candidate:
         raise HTTPException(status_code=404, detail="Kandidat nicht gefunden")
-    return candidate
+    return _attach_learning_promotion_availability(candidate, "nemofold")
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/approve")
-async def approve_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Operator-Freigabe: Überführt die Kette direkt in `marblerun_chains`."""
-    service = _get_nemofold_service_instance()
-    operator = payload.get("approved_by", "operator")
-    notes = payload.get("notes", "")
-    try:
-        res = service.approve_candidate(candidate_id, operator=operator, notes=notes)
-        return res
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception("Freigabe-Fehler: %s", e)
-        raise HTTPException(status_code=500, detail="Freigabe-Fehler")
+async def approve_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Legacy direct chain activation is unavailable."""
+    return _learning_decision("approve", request, _get_nemofold_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/review")
+async def review_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Record content review; static metadata is no execution receipt."""
+    return _learning_decision("review", request, _get_nemofold_service_instance, candidate_id, payload)
 
 
 @router.post("/learning/nemofold/candidates/{candidate_id}/reject")
-async def reject_nemofold_candidate(candidate_id: int, payload: Dict[str, Any] = Body(default={})):
-    """Lehnt einen gelernten Workflow-Kandidaten mit Begründung ab."""
-    service = _get_nemofold_service_instance()
-    operator = payload.get("rejected_by", "operator")
-    reason = payload.get("reason", "")
-    try:
-        res = service.reject_candidate(candidate_id, reason=reason, operator=operator)
-        return res
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception("Ablehnungs-Fehler: %s", e)
-        raise HTTPException(status_code=500, detail="Ablehnungs-Fehler")
+async def reject_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Reject the exact displayed candidate revision."""
+    return _learning_decision("reject", request, _get_nemofold_service_instance, candidate_id, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/promote")
+async def promote_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Publish only an internally adapted, reviewed native SequenceStore definition."""
+    return _learning_promotion_action("promote", "nemofold", candidate_id, request, payload)
+
+
+@router.post("/learning/nemofold/candidates/{candidate_id}/revoke")
+async def revoke_nemofold_candidate(candidate_id: int, request: Request, payload: Dict[str, Any] = Body(...)):
+    """Revoke only the exact native SequenceStore version from its promotion receipt."""
+    return _learning_promotion_action("revoke", "nemofold", candidate_id, request, payload)
 
 
 @router.get("/learning/nemofold/stats")
@@ -2569,32 +2852,55 @@ async def get_installed_domains(scope: str = Query("all"), probe: bool = Query(T
     return discover_domains(scope=scope, probe=probe, include_repos=True)
 
 
-@router.get("/domains/pins")
-async def get_domain_pins_endpoint():
-    """Liefert konfigurierte Untermenü-Pins mit stabilen IDs und Fallback (GUX-071)."""
-    from gui.api.domain_catalog import get_domain_pins
+def _domain_pin_call(operation):
+    from hub._services.domain_pin_store import PinConflict, PinUnavailable, PinVersionRequired
+    try:
+        return operation()
+    except PinVersionRequired as exc:
+        raise HTTPException(status_code=428, detail=str(exc)) from None
+    except PinConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except PermissionError:
+        raise HTTPException(status_code=423, detail="Pin-Speicher ist gesperrt oder ungeprüft") from None
+    except (PinUnavailable, OSError, TimeoutError):
+        raise HTTPException(status_code=503, detail="Pin-Speicher nicht verfügbar; bitte erneut prüfen") from None
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
-    pins = get_domain_pins()
-    return {"pins": pins, "total": len(pins)}
+
+@router.get("/domains/pins")
+def get_domain_pins_endpoint():
+    from gui.api.domain_catalog import domain_pins_snapshot
+    return _domain_pin_call(domain_pins_snapshot)
 
 
 @router.post("/domains/pins")
-async def save_domain_pins_endpoint(payload: Dict[str, Any] = Body(...)):
-    """Aktualisiert Untermenü-Pins persistent mit stabilen IDs (GUX-071)."""
+def save_domain_pins_endpoint(request: Request, payload: Dict[str, Any] = Body(...)):
+    _require_memory_device(request)
     from gui.api.domain_catalog import save_domain_pins
-
-    pinned_ids = payload.get("pinned_ids", [])
-    pins = save_domain_pins(pinned_ids)
-    return {"pins": pins, "total": len(pins), "status": "saved"}
+    def save():
+        if set(payload) != {"pinned_ids", "version"}:
+            if "version" not in payload:
+                from hub._services.domain_pin_store import PinVersionRequired
+                raise PinVersionRequired("Aktuelle Pin-Version erforderlich")
+            raise ValueError("Nur pinned_ids und version sind erlaubt")
+        snapshot = save_domain_pins(payload["pinned_ids"], expected_version=payload["version"])
+        return {**snapshot, "status": "saved"}
+    return _domain_pin_call(save)
 
 
 @router.post("/domains/{domain_id}/pin")
-async def toggle_domain_pin_endpoint(domain_id: str, payload: Optional[Dict[str, Any]] = Body(None)):
-    """Toggelt oder setzt den Pin-Status einer Domäne mit stabiler ID (GUX-071)."""
+def toggle_domain_pin_endpoint(domain_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    _require_memory_device(request)
     from gui.api.domain_catalog import toggle_domain_pin
-
-    pinned = payload.get("pinned") if payload else None
-    return toggle_domain_pin(domain_id, pinned=pinned)
+    def save():
+        if set(payload) != {"pinned", "version"}:
+            if "version" not in payload:
+                from hub._services.domain_pin_store import PinVersionRequired
+                raise PinVersionRequired("Aktuelle Pin-Version erforderlich")
+            raise ValueError("Nur pinned und version sind erlaubt")
+        return toggle_domain_pin(domain_id, pinned=payload["pinned"], expected_version=payload["version"])
+    return _domain_pin_call(save)
 
 
 @router.get("/domains/{domain_id}")

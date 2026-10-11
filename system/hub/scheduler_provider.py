@@ -9,6 +9,7 @@ environment variable ``BACH_USE_EXTERNAL_SCHEDULER=0`` forces BACH back onto
 the internal legacy path immediately, even when the external module is
 importable. No other switch is required to revert a deployment.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -16,7 +17,6 @@ import importlib.util
 import os
 from dataclasses import dataclass
 from typing import Any
-
 
 EXTERNAL_MODULE = "ellmos_scheduler"
 ROLLBACK_ENV_VAR = "BACH_USE_EXTERNAL_SCHEDULER"
@@ -69,7 +69,7 @@ def load_external_scheduler() -> Any:
     return importlib.import_module(EXTERNAL_MODULE)
 
 
-def create_external_scheduler_adapter(state_db: Any) -> Any:
+def create_external_scheduler_adapter(state_db: Any, **options: Any) -> Any:
     """Build a ``BachSchedulerAdapter`` for the external scheduler store.
 
     This is the only sanctioned way for BACH handlers to obtain the external
@@ -84,4 +84,33 @@ def create_external_scheduler_adapter(state_db: Any) -> Any:
             f"{EXTERNAL_MODULE} does not export {ADAPTER_FACTORY}(); "
             "ellmos-scheduler >= 0.3 with the BACH adapter contract is required"
         )
-    return factory(state_db)
+    return factory(state_db, **options)
+
+
+def create_documentation_scheduler(
+    state_db: Any, executor: Any, *, worker_id: str
+) -> Any:
+    """Compose a BACH executor with the existing module's scheduling authority."""
+    if not probe_scheduler_provider().external:
+        raise RuntimeError("External scheduler unavailable or rollback requested")
+    module = load_external_scheduler()
+    registry = module.ExecutorRegistry(include_standard=False)
+
+    def execute(payload, timeout_seconds):
+        try:
+            value = executor(payload, timeout_seconds)
+            import json
+
+            return module.ExecutionResult(
+                "succeeded", exit_code=0, output=json.dumps(value, ensure_ascii=False)
+            )
+        except Exception:  # noqa: BLE001 - native errors may contain private configuration
+            # Native API responses/configuration can contain private details.
+            return module.ExecutionResult(
+                "failed", error="documentation_dispatch_failed"
+            )
+
+    registry.register("bach-docs", execute)
+    return create_external_scheduler_adapter(
+        state_db, registry=registry, worker_id=worker_id
+    )

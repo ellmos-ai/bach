@@ -1,5 +1,9 @@
 # TaskDB: versionierte Lease-Aktionen für Running
 
+Für native Worker ergänzt [WORKER-RESULT-ACCEPTANCE-v1.md](WORKER-RESULT-ACCEPTANCE-v1.md)
+den Abschlussvertrag: Zerlegung schließt den Parent nicht ab; Ergebnisabgabe
+führt zu Review und verlangt eine getrennte Abnahme.
+
 Ergänzung zu `TASKDB-SALT-LEASE-VERTRAG-v1.md`, Task #1727.
 Implementierung und isolierte Prüfungen; Integration und Laufzeitabnahme stehen aus.
 

@@ -1,135 +1,105 @@
-# -*- coding: utf-8 -*-
-"""Kleiner Besetzungs-Seam für den ersten agents-heart-Pfad.
+"""BACH-Import-Adapter für das provider-/produktneutrale Modul agents-heart.
 
-Dieses Modul entscheidet weder Modelle noch Backends. Es prüft nur den
-Vertrag des ausführenden Pfads und schreibt die korrelierbaren Start-/Ende-
-Ereignisse einer Besetzung. Dadurch kann der produktive Worker später aus
-BACH herausgelöst werden, ohne die Fachlogik der Aufgabenbearbeitung
-mitzunehmen.
+Task #1716: Die Besetzungs- und Autorisierungslogik (Role Contracts,
+Assignment-Tracking, korrelierte Start-/Ende-Ereignisse, fail-closed
+Autorisierung) lebt als versioniertes, produktneutrales Modul unter
+``.MODULES/.CONTROL/agents-heart/`` (MANIFEST.json, SemVer v0.1.0, MIT,
+dependencies = []). Diese Datei ist der dünne BACH-seitige Adapter:
+
+- Lädt das neutrale Modul per ``importlib`` aus seinem Pfad (kein
+  sys.path-Eingriff); die Umgebungsvariable ``BACH_AGENTS_HEART_MODULE``
+  überschreibt den Pfad für Tests/Integration.
+- Re-exportiert dessen Symbole 1:1 (inkl. ``_REQUIRED_RIGHTS``).
+- Übersetzt die neutralen Ereignisse (``assignment.started`` /
+  ``assignment.ended``) in BACH-Aktivitätseinträge über
+  ``hub._services.chat.slots_config.record_activity`` mit dem flachen
+  Legacy-Feld ``event`` (``assignment_started``/``assignment_ended``).
+
+BACH-spezifisch ist ausschließlich dieser Adapter; das neutrale Modul
+kommt mit Python-Stdlib allein aus. Migration: alle Aufrufer
+(``telegram_chat.py``, ``worker.py``, ``trithon_dispatch.py``) bleiben
+unverändert, weil die Adapter-Signatur dem bisherigen BACH-Original
+entspricht (``session_id``/``initiated_by`` Pflicht-Keywords, ``path``
+optional, ``finish_assignment`` mit positionalem ``assignment``).
+
+Rollback: ``git checkout <HEAD> -- system/hub/_services/agents_heart.py``
+stellt das eigenständige BACH-Original wieder her; das neutrale Modul
+ist rein additiv und kann bleiben.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-import uuid
-from typing import Any, Dict
+import importlib.util
+import os
+import sys
+from pathlib import Path
+from typing import Any, Callable, Dict
 
 from hub._services.chat.slots_config import record_activity
 
-
-class AssignmentDenied(RuntimeError):
-    """Die Rolle besitzt den angeforderten Ausführungszugriff nicht."""
-
-
-@dataclass(frozen=True)
-class RoleContract:
-    """Minimaler, versionierter Rechtevertrag für einen produktiven Pfad."""
-
-    role_id: str
-    revision: str
-    rights: frozenset[str]
+_MODULE_NAME = "bach_agents_heart_core"
+_DEFAULT_MODULE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / ".MODULES" / ".CONTROL" / "agents-heart" / "agents_heart.py"
+)
 
 
-ROLE_CONTRACTS: Dict[str, RoleContract] = {
-    "hintergrund_worker": RoleContract(
-        role_id="hintergrund_worker",
-        revision="v1",
-        rights=frozenset({"task.claim", "task.execute"}),
-    ),
-    "task_worker": RoleContract(
-        role_id="task_worker",
-        revision="v1",
-        rights=frozenset({"task.claim", "task.execute"}),
-    ),
-    "boss_routing": RoleContract(
-        role_id="boss_routing",
-        revision="v1",
-        rights=frozenset({"task.claim", "task.execute"}),
-    ),
-    "expert_role": RoleContract(
-        role_id="expert_role",
-        revision="v1",
-        rights=frozenset({"task.claim", "task.execute"}),
-    ),
-}
-
-_REQUIRED_RIGHTS = frozenset({"task.claim", "task.execute"})
+def _load_agents_heart():
+    """Lädt das neutrale agents-heart-Modul (Stdlib-only) via importlib."""
+    override = os.environ.get("BACH_AGENTS_HEART_MODULE")
+    module_path = Path(override) if override else _DEFAULT_MODULE_PATH
+    spec = importlib.util.spec_from_file_location(_MODULE_NAME, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"agents-heart-Modul nicht ladbar: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-@dataclass(frozen=True)
-class Assignment:
-    """Unveränderliche Identität einer einzelnen Task-Besetzung."""
+_agents_heart = _load_agents_heart()
 
-    assignment_id: str
-    role_id: str
-    role_revision: str
-    agent_instance_id: str
-    backend_id: str
-    model_id: str
-    slot_id: str
-    task_id: int | str
-    session_id: str
-    initiated_by: str
-    started_at: str
+# ------------------------------------------------------------- Re-Exports
+RoleContract = _agents_heart.RoleContract
+ROLE_CONTRACTS = _agents_heart.ROLE_CONTRACTS
+_REQUIRED_RIGHTS = _agents_heart._REQUIRED_RIGHTS
+Assignment = _agents_heart.Assignment
+AssignmentDenied = _agents_heart.AssignmentDenied
+authorize_role = _agents_heart.authorize_role
 
 
-def authorize_role(role_id: str, mode: str) -> RoleContract:
-    """Prüft den Rechtevertrag fail-closed, bevor der Executor startet."""
-    normalized = str(role_id or "").strip()
-    contract = ROLE_CONTRACTS.get(normalized)
-    if contract is None:
-        raise AssignmentDenied(f"unbekannte Rolle: {normalized or '(leer)'}")
-    if mode not in {"safe", "full"}:
-        raise AssignmentDenied(f"unbekannter Ausführungsmodus: {mode!r}")
-    if not _REQUIRED_RIGHTS.issubset(contract.rights):
-        raise AssignmentDenied(
-            f"Rolle {contract.role_id!r} besitzt nicht alle Rechte für Task-Ausführung"
-        )
-    return contract
+def _event_recorder(path: str | None) -> Callable[[Dict[str, Any]], None]:
+    """Baut den BACH-Event-Recorder für genau diesen Aufruf (``path``-Scope).
 
+    Das neutrale Modul liefert ein Ereignis-Details-Dict; der Recorder
+    übersetzt es in einen ``record_activity``-Eintrag im flachen
+    BACH-Legacy-Format (``event`` = ``assignment_started`` bzw.
+    ``assignment_ended``). ``path`` kommt aus dem Aufruf-Scope, weil es
+    nicht Teil der neutralen Details ist.
+    """
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    def record(details: Dict[str, Any]) -> None:
+        event = details.get("event")
+        if event == "assignment.started":
+            record_activity(
+                details["slot_id"],
+                f"Task #{details['task_id']} Besetzung gestartet",
+                status="running",
+                details={**details, "event": "assignment_started", "status": "running"},
+                path=path,
+            )
+        elif event == "assignment.ended":
+            record_activity(
+                details["slot_id"],
+                f"Task #{details['task_id']} Besetzung beendet",
+                status=str(details.get("status", "ok")),
+                details={**details, "event": "assignment_ended"},
+                path=path,
+            )
+        else:  # fail-closed: neutrales Modul kennt nur die zwei Ereignisse
+            raise ValueError(f"unbekanntes Besetzungsereignis: {event!r}")
 
-
-def _require_text(name: str, value: Any) -> str:
-    text = str(value or "").strip()
-    if not text:
-        raise ValueError(f"Besetzungsfeld {name} fehlt")
-    return text
-
-
-def _event_details(
-    assignment: Assignment,
-    *,
-    event: str,
-    status: str,
-    ended_at: str | None = None,
-    result: str = "",
-    reason: str = "",
-) -> Dict[str, Any]:
-    details: Dict[str, Any] = {
-        "assignment_id": assignment.assignment_id,
-        "event": event,
-        "role_id": assignment.role_id,
-        "role_revision": assignment.role_revision,
-        "agent_instance_id": assignment.agent_instance_id,
-        "backend_id": assignment.backend_id,
-        "model_id": assignment.model_id,
-        "slot_id": assignment.slot_id,
-        "task_id": assignment.task_id,
-        "session_id": assignment.session_id,
-        "initiated_by": assignment.initiated_by,
-        "started_at": assignment.started_at,
-        "status": status,
-    }
-    if ended_at:
-        details["ended_at"] = ended_at
-    if result:
-        details["result"] = result
-    if reason:
-        details["reason"] = reason
-    return details
+    return record
 
 
 def begin_assignment(
@@ -145,37 +115,19 @@ def begin_assignment(
     initiated_by: str,
     path: str | None = None,
 ) -> Assignment:
-    """Prüft die Rolle, erzeugt die ID und schreibt den Startnachweis."""
-    contract = authorize_role(role_id, mode)
-    if task_id is None:
-        raise ValueError("Besetzungsfeld task_id fehlt")
-
-    assignment = Assignment(
-        assignment_id=f"asgn-{uuid.uuid4().hex}",
-        role_id=contract.role_id,
-        role_revision=contract.revision,
-        agent_instance_id=_require_text("agent_instance_id", agent_instance_id),
-        backend_id=_require_text("backend_id", backend_id),
-        model_id=_require_text("model_id", model_id),
-        slot_id=_require_text("slot_id", slot_id),
+    """Beginnt eine Task-Besetzung und zeichnet den Startnachweis auf."""
+    return _agents_heart.begin_assignment(
+        role_id=role_id,
+        mode=mode,
+        agent_instance_id=agent_instance_id,
+        backend_id=backend_id,
+        model_id=model_id,
+        slot_id=slot_id,
         task_id=task_id,
-        session_id=_require_text("session_id", session_id),
-        initiated_by=_require_text("initiated_by", initiated_by),
-        started_at=_utc_now(),
+        session_id=session_id,
+        initiated_by=initiated_by,
+        event_recorder=_event_recorder(path),
     )
-    details = _event_details(
-        assignment,
-        event="assignment_started",
-        status="running",
-    )
-    record_activity(
-        assignment.slot_id,
-        f"Task #{assignment.task_id} Besetzung gestartet",
-        status="running",
-        details=details,
-        path=path,
-    )
-    return assignment
 
 
 def finish_assignment(
@@ -186,21 +138,11 @@ def finish_assignment(
     reason: str = "",
     path: str | None = None,
 ) -> None:
-    """Schreibt genau den korrelierten Endnachweis einer Besetzung."""
-    if status not in {"completed", "released", "error", "interrupted"}:
-        raise ValueError(f"ungültiger Besetzungsstatus: {status!r}")
-    details = _event_details(
-        assignment,
-        event="assignment_ended",
+    """Beendet eine Task-Besetzung und zeichnet den Endnachweis auf."""
+    _agents_heart.finish_assignment(
+        assignment=assignment,
         status=status,
-        ended_at=_utc_now(),
+        event_recorder=_event_recorder(path),
         result=result,
         reason=reason,
-    )
-    record_activity(
-        assignment.slot_id,
-        f"Task #{assignment.task_id} Besetzung beendet",
-        status=status,
-        details=details,
-        path=path,
     )

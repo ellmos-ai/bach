@@ -8,6 +8,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Mapping
 
 
 class SequenceConflict(RuntimeError):
@@ -189,6 +190,316 @@ class SequenceStore:
             if db.execute("DELETE FROM marblerun_chains WHERE id=? AND version=?", (chain_id, expected_version)).rowcount != 1:
                 raise SequenceConflict("Kette inzwischen geändert oder gelöscht")
 
+
+    @staticmethod
+    def _ensure_learning_promotion_schema(db):
+        db.execute("""CREATE TABLE IF NOT EXISTS native_sequence_learning_promotions (
+            request_id TEXT PRIMARY KEY,
+            action TEXT NOT NULL CHECK(action IN ('promote','revoke')),
+            request_digest TEXT NOT NULL,
+            source_request_id TEXT NOT NULL DEFAULT '',
+            candidate_id INTEGER NOT NULL,
+            candidate_revision INTEGER NOT NULL,
+            candidate_digest TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            target_chain_id INTEGER NOT NULL,
+            target_chain_name TEXT NOT NULL,
+            expected_target_version INTEGER NOT NULL,
+            target_version INTEGER,
+            previous_chain_json TEXT,
+            published_chain_json TEXT,
+            proposal_json TEXT NOT NULL DEFAULT '{}',
+            state TEXT NOT NULL,
+            receipt_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        db.execute("""CREATE INDEX IF NOT EXISTS native_sequence_learning_source_idx
+            ON native_sequence_learning_promotions(candidate_id,candidate_revision,candidate_digest,action,state)""")
+
+    @staticmethod
+    def _learning_proposal(proposal):
+        if not isinstance(proposal, Mapping) or set(proposal) != {"schema", "source", "definition", "resolved"}:
+            raise ValueError("Native Lernkette braucht genau schema, source, definition und resolved")
+        if proposal.get("schema") != "bach.learning.native-sequence.v1":
+            raise ValueError("Unbekannte native Lernkettenversion")
+        source = proposal.get("source")
+        if (not isinstance(source, Mapping)
+                or set(source) != {"provider", "candidate_id", "candidate_revision", "candidate_digest"}
+                or source.get("provider") != "nemofold"
+                or type(source.get("candidate_id")) is not int or source["candidate_id"] <= 0
+                or type(source.get("candidate_revision")) is not int or source["candidate_revision"] < 1
+                or not isinstance(source.get("candidate_digest"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", source["candidate_digest"])):
+            raise ValueError("Native Lernkette braucht eine genaue NemoFold-Quellbindung")
+        clean = definition(proposal.get("definition"))
+        if clean != proposal.get("definition"):
+            raise ValueError("Native Lernkettendefinition ist nicht kanonisch")
+        resolved = proposal.get("resolved")
+        if (not isinstance(resolved, Mapping)
+                or set(resolved) != {"config_version", "agent_slots", "skills"}
+                or not isinstance(resolved.get("config_version"), str)
+                or not resolved["config_version"].strip()
+                or len(resolved["config_version"]) > 200
+                or "\x00" in resolved["config_version"]
+                or not isinstance(resolved.get("agent_slots"), list)
+                or not isinstance(resolved.get("skills"), list)):
+            raise ValueError("Native Lernkette braucht gebundene Agenten- und Skillauflösung")
+        agent_ids = {step["agent_slot"] for step in clean["steps"]}
+        skill_ids = {skill for step in clean["steps"] for skill in step["skill_ids"]}
+        agents, skills = resolved["agent_slots"], resolved["skills"]
+        if (any(not isinstance(item, Mapping) or set(item) != {"id", "config_version"}
+                or not isinstance(item.get("id"), str) or not item["id"]
+                or not isinstance(item.get("config_version"), str) or not item["config_version"]
+                or len(item["config_version"]) > 200 or "\x00" in item["config_version"] for item in agents)
+                or len({item["id"] for item in agents}) != len(agents)
+                or {item["id"] for item in agents} != agent_ids
+                or any(not isinstance(item, Mapping) or set(item) != {"id", "source_version"}
+                       or not isinstance(item.get("id"), str) or not item["id"]
+                       or not isinstance(item.get("source_version"), str) or not item["source_version"]
+                       or len(item["source_version"]) > 200 or "\x00" in item["source_version"] for item in skills)
+                or len({item["id"] for item in skills}) != len(skills)
+                or {item["id"] for item in skills} != skill_ids):
+            raise ValueError("Agenten-/Skillversionen passen nicht eindeutig zu den Schritten")
+        return {
+            "schema": proposal["schema"],
+            "source": dict(source),
+            "definition": clean,
+            "resolved": {
+                "config_version": resolved["config_version"],
+                "agent_slots": [dict(item) for item in agents],
+                "skills": [dict(item) for item in skills],
+            },
+        }
+
+    @staticmethod
+    def _promotion_receipt(row):
+        try:
+            receipt = json.loads(row["receipt_json"])
+        except (TypeError, ValueError):
+            raise RuntimeError("Native Sequenz-Promotionsreceipt ist ungültig") from None
+        return {**receipt, "replayed": True}
+
+    @staticmethod
+    def _validate_learning_request(request_id, actor):
+        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", request_id):
+            raise ValueError("Explizite native Promotions-Request-ID erforderlich")
+        if not isinstance(actor, str) or not actor.strip() or len(actor) > 180 or "\x00" in actor:
+            raise ValueError("Authentifizierter Promotionsakteur erforderlich")
+
+    def publish_learning_candidate(self, proposal, *, request_id, expected_version,
+                                   actor, source_validator: Callable[[sqlite3.Connection], Mapping]):
+        """Atomically publish one reviewed, bound native definition and its receipt.
+
+        The validator runs under the same TaskDB write transaction as target CAS
+        and receipt persistence. It must re-read and re-bind the reviewed source.
+        """
+        self._validate_learning_request(request_id, actor)
+        if type(expected_version) is not int or expected_version < 0:
+            raise ValueError("Aktuelle SequenceStore-Zielversion erforderlich")
+        if not callable(source_validator):
+            raise ValueError("Native Quellvalidierung in der Zieltransaktion erforderlich")
+        clean = self._learning_proposal(proposal)
+        source = clean["source"]
+        stamp = now()
+        request_digest = digest({
+            "action": "promote",
+            "proposal": clean,
+            "expected_target_version": expected_version,
+            "actor": actor,
+        })
+        self.initialize()
+        with self.connection(write=True) as db:
+            self._ensure_learning_promotion_schema(db)
+            prior = db.execute(
+                "SELECT * FROM native_sequence_learning_promotions WHERE request_id=?",
+                (request_id,),
+            ).fetchone()
+            if prior is not None:
+                if prior["request_digest"] != request_digest or prior["action"] != "promote":
+                    raise SequenceConflict("Native Promotions-Request-ID wurde anders verwendet")
+                return self._promotion_receipt(prior)
+            current = self._learning_proposal(source_validator(db))
+            if current != clean:
+                raise SequenceConflict("Geprüfte NemoFold-Quelle oder native Auflösung änderte sich vor dem Ziel-CAS")
+            active = db.execute("""SELECT request_id FROM native_sequence_learning_promotions
+                WHERE action='promote' AND candidate_id=? AND candidate_revision=?
+                  AND candidate_digest=? AND state='published'""",
+                (source["candidate_id"], source["candidate_revision"], source["candidate_digest"])).fetchone()
+            if active is not None:
+                raise SequenceConflict("Diese Kandidatenrevision besitzt bereits eine aktive Sequenzpromotion")
+            chain = db.execute("SELECT * FROM marblerun_chains WHERE name=?",
+                               (clean["definition"]["name"],)).fetchone()
+            previous_json = None
+            if chain is None:
+                if expected_version != 0:
+                    raise SequenceConflict("Kette fehlt; erwartete Zielversion war nicht 0")
+                payload = clean["definition"]
+                cur = db.execute("""INSERT INTO marblerun_chains
+                    (name,title,description,steps_json,is_active,created_at,updated_at,mode,agent_slot,version)
+                    VALUES (?,?,?,?,1,?,?,?,?,1)""",
+                    (payload["name"], payload["title"], payload["description"], encoded(payload["steps"]),
+                     stamp, stamp, payload["mode"], payload["agent_slot"]))
+                chain_id = cur.lastrowid
+            else:
+                if type(chain["version"]) is not int or chain["version"] != expected_version:
+                    raise SequenceConflict("SequenceStore-Zielversion inzwischen geändert")
+                chain_id = chain["id"]
+                self._idle_chain(db, chain_id)
+                previous_json = encoded(dict(chain))
+                payload = clean["definition"]
+                cur = db.execute("""UPDATE marblerun_chains SET name=?,title=?,description=?,steps_json=?,
+                    mode=?,agent_slot=?,updated_at=?,version=version+1 WHERE id=? AND version=?""",
+                    (payload["name"], payload["title"], payload["description"], encoded(payload["steps"]),
+                     payload["mode"], payload["agent_slot"], stamp, chain_id, expected_version))
+                if cur.rowcount != 1:
+                    raise SequenceConflict("SequenceStore-Ziel änderte sich während der Promotion")
+            published = db.execute("SELECT * FROM marblerun_chains WHERE id=?", (chain_id,)).fetchone()
+            if published is None:
+                raise RuntimeError("Native Kette fehlt nach dem SequenceStore-Write")
+            published_json = encoded(dict(published))
+            receipt = {
+                "status": "published",
+                "request_id": request_id,
+                "target_kind": "sequence",
+                "candidate_id": source["candidate_id"],
+                "candidate_revision": source["candidate_revision"],
+                "candidate_digest": source["candidate_digest"],
+                "target_id": chain_id,
+                "target_name": clean["definition"]["name"],
+                "expected_target_version": expected_version,
+                "previous_target_version": expected_version if previous_json is not None else None,
+                "target_version": published["version"],
+                "target_active": bool(published["is_active"]),
+                "targets_published": True,
+                "empirically_validated": False,
+                "tools_granted": False,
+                "agent_started": False,
+                "replayed": False,
+                "created_at": stamp,
+            }
+            db.execute("""INSERT INTO native_sequence_learning_promotions (
+                request_id,action,request_digest,source_request_id,candidate_id,candidate_revision,
+                candidate_digest,actor,target_chain_id,target_chain_name,expected_target_version,
+                target_version,previous_chain_json,published_chain_json,proposal_json,state,
+                receipt_json,created_at,updated_at
+            ) VALUES (?,'promote',?,'',?,?,?,?,?,?,?,?,?,?,?,'published',?,?,?)""",
+                (request_id, request_digest, source["candidate_id"], source["candidate_revision"],
+                 source["candidate_digest"], actor, chain_id, clean["definition"]["name"],
+                 expected_version, published["version"], previous_json, published_json,
+                 encoded(clean), encoded(receipt), stamp, stamp))
+            return receipt
+
+    def revoke_learning_candidate(self, source_request_id, *, request_id, actor,
+                                  candidate_id, candidate_revision, candidate_digest):
+        """Revoke only the exact chain version recorded by a prior promotion."""
+        self._validate_learning_request(request_id, actor)
+        if not isinstance(source_request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", source_request_id):
+            raise ValueError("Native Promotions-Request-ID zur Rücknahme erforderlich")
+        if (type(candidate_id) is not int or candidate_id <= 0
+                or type(candidate_revision) is not int or candidate_revision < 1
+                or not isinstance(candidate_digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", candidate_digest)):
+            raise ValueError("Exakte NemoFold-Quellbindung zur Rücknahme erforderlich")
+        request_digest = digest({
+            "action": "revoke",
+            "source_request_id": source_request_id,
+            "candidate_id": candidate_id,
+            "candidate_revision": candidate_revision,
+            "candidate_digest": candidate_digest,
+            "actor": actor,
+        })
+        stamp = now()
+        self.initialize()
+        with self.connection(write=True) as db:
+            self._ensure_learning_promotion_schema(db)
+            prior = db.execute(
+                "SELECT * FROM native_sequence_learning_promotions WHERE request_id=?",
+                (request_id,),
+            ).fetchone()
+            if prior is not None:
+                if prior["request_digest"] != request_digest or prior["action"] != "revoke":
+                    raise SequenceConflict("Native Rücknahme-Request-ID wurde anders verwendet")
+                return self._promotion_receipt(prior)
+            source_row = db.execute("""SELECT * FROM native_sequence_learning_promotions
+                WHERE request_id=? AND action='promote'""", (source_request_id,)).fetchone()
+            if (source_row is None
+                    or source_row["candidate_id"] != candidate_id
+                    or source_row["candidate_revision"] != candidate_revision
+                    or source_row["candidate_digest"] != candidate_digest):
+                raise SequenceConflict("Keine passende native Sequenzpromotion für diese Quellrevision")
+            if source_row["state"] != "published":
+                raise SequenceConflict("Native Sequenzpromotion ist bereits zurückgenommen")
+            chain = db.execute("SELECT * FROM marblerun_chains WHERE id=?",
+                               (source_row["target_chain_id"],)).fetchone()
+            if chain is None or encoded(dict(chain)) != source_row["published_chain_json"]:
+                raise SequenceConflict("Native Kette wurde nach der Promotion verändert; Rücknahme-CAS abgelehnt")
+            self._idle_chain(db, chain["id"])
+            previous = json.loads(source_row["previous_chain_json"]) if source_row["previous_chain_json"] else None
+            if previous is None:
+                cur = db.execute("DELETE FROM marblerun_chains WHERE id=? AND version=?",
+                                 (chain["id"], source_row["target_version"]))
+                if cur.rowcount != 1:
+                    raise SequenceConflict("Neue native Kette änderte sich; Rücknahme-CAS abgelehnt")
+                resulting = None
+                target_state = "deleted"
+            else:
+                conflict = db.execute("SELECT 1 FROM marblerun_chains WHERE name=? AND id<>?",
+                                      (previous["name"], chain["id"])).fetchone()
+                if conflict is not None:
+                    raise SequenceConflict("Vorheriger Kettenname ist inzwischen belegt; Rücknahme bleibt gesperrt")
+                cur = db.execute("""UPDATE marblerun_chains SET name=?,title=?,description=?,steps_json=?,
+                    is_active=?,created_at=?,updated_at=?,mode=?,agent_slot=?,version=version+1
+                    WHERE id=? AND version=?""",
+                    (previous["name"], previous["title"], previous["description"], previous["steps_json"],
+                     previous["is_active"], previous["created_at"], stamp, previous["mode"],
+                     previous["agent_slot"], chain["id"], source_row["target_version"]))
+                if cur.rowcount != 1:
+                    raise SequenceConflict("Vorherige native Kette konnte nicht atomar wiederhergestellt werden")
+                restored = db.execute("SELECT * FROM marblerun_chains WHERE id=?", (chain["id"],)).fetchone()
+                resulting = restored["version"]
+                target_state = "restored"
+            receipt = {
+                "status": "reverted",
+                "request_id": request_id,
+                "source_request_id": source_request_id,
+                "target_kind": "sequence",
+                "candidate_id": candidate_id,
+                "candidate_revision": candidate_revision,
+                "candidate_digest": candidate_digest,
+                "target_id": source_row["target_chain_id"],
+                "target_name": source_row["target_chain_name"],
+                "target_state": target_state,
+                "target_version": resulting,
+                "targets_published": False,
+                "targets_revoked": True,
+                "empirically_validated": False,
+                "replayed": False,
+                "created_at": stamp,
+            }
+            db.execute("""INSERT INTO native_sequence_learning_promotions (
+                request_id,action,request_digest,source_request_id,candidate_id,candidate_revision,
+                candidate_digest,actor,target_chain_id,target_chain_name,expected_target_version,
+                target_version,previous_chain_json,published_chain_json,proposal_json,state,
+                receipt_json,created_at,updated_at
+            ) VALUES (?,'revoke',?,?,?,?,?,?,?,?,?,?,?,?,?,'reverted',?,?,?)""",
+                (request_id, request_digest, source_request_id, candidate_id, candidate_revision,
+                 candidate_digest, actor, source_row["target_chain_id"], source_row["target_chain_name"],
+                 source_row["target_version"], resulting, source_row["published_chain_json"],
+                 encoded(json.loads(source_row["previous_chain_json"])) if source_row["previous_chain_json"] else "",
+                 source_row["proposal_json"], encoded(receipt), stamp, stamp))
+            source_receipt = json.loads(source_row["receipt_json"])
+            source_receipt.update(
+                status="reverted",
+                targets_published=False,
+                historical_publication=True,
+                revoked_by=request_id,
+            )
+            db.execute("""UPDATE native_sequence_learning_promotions
+                SET state='reverted',receipt_json=?,updated_at=?
+                WHERE request_id=? AND action='promote' AND state='published'""",
+                (encoded(source_receipt), stamp, source_request_id))
+            return receipt
     def create_run(self, run_id, chain_id, version, request_digest, service, module_commit, plan):
         self.initialize()
         stamp = now()
@@ -198,9 +509,11 @@ class SequenceStore:
                 if existing["request_digest"] != request_digest or existing["owner_service"] != service:
                     raise SequenceConflict("Startkennung gehört zu einem anderen Auftrag oder Controller")
                 return False
-            row = db.execute("SELECT version FROM marblerun_chains WHERE id=?", (chain_id,)).fetchone()
+            row = db.execute("SELECT version,is_active FROM marblerun_chains WHERE id=?", (chain_id,)).fetchone()
             if row is None or row["version"] != version:
                 raise SequenceConflict("Kettenversion inzwischen geändert")
+            if row["is_active"] != 1:
+                raise SequenceConflict("Kette ist nicht aktiviert")
             self._idle_chain(db, chain_id)
             db.execute("""INSERT INTO native_sequence_runs
                 (run_id,chain_id,chain_version,request_digest,owner_service,module_commit,plan_json,created_at,updated_at)

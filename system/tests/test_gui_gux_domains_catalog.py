@@ -18,13 +18,21 @@ from gui.api.domain_catalog import (
     get_domain_pins,
     save_domain_pins,
     toggle_domain_pin,
+    domain_pins_snapshot,
 )
 from gui.server import app
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "gux-fixture" else None)
+    import sqlite3, hashlib
+    from gui.api import unified_api
+    database = tmp_path / "devices.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE devices(id INTEGER, token_hash TEXT, status TEXT)")
+        connection.execute("INSERT INTO devices VALUES(1, ?, 'active')", (hashlib.sha256(b"gux-fixture").hexdigest(),))
+    monkeypatch.setattr(unified_api, "BACH_DB", database)
     return TestClient(app, headers={"Authorization": "Bearer gux-fixture"})
 
 
@@ -33,6 +41,8 @@ def temp_pin_file(monkeypatch, tmp_path):
     pin_file = tmp_path / "domain_pins.json"
     import gui.api.domain_catalog as dc
     monkeypatch.setattr(dc, "PIN_STORAGE_FILE", pin_file)
+    from hub._services import skill_source_service
+    monkeypatch.setattr(skill_source_service, "check_write_locks", lambda p: None)
     return pin_file
 
 
@@ -158,74 +168,36 @@ def test_gux_070_direct_fachseiten_http_200(client):
 # =========================================================================
 
 def test_gux_071_pin_management_with_stable_ids(temp_pin_file):
-    """GUX-071: Domaenen-Pins speichern, lesen und mit stabilen IDs validieren."""
-    # Anfangs leer
-    initial = get_domain_pins()
-    assert isinstance(initial, list)
-
-    # Pin hinzufuegen
-    updated = save_domain_pins([
-        {"id": "foerderplaner", "label": "Förderplaner", "icon": "📋", "url": "/foerderplaner"},
-        {"id": "ati", "label": "ATI", "icon": "💼", "url": "/ati"},
-    ])
-    assert len(updated) == 2
-    assert updated[0]["id"] == "foerderplaner"
-    assert updated[1]["id"] == "ati"
-
-    # Readback aus Speicher pruefen
-    readback = get_domain_pins()
-    assert len(readback) == 2
-    assert {p["id"] for p in readback} == {"foerderplaner", "ati"}
-
-    # Ungueltige / gefaehrliche IDs muessen abgelehnt/ignoriert werden
-    saved = save_domain_pins([
-        {"id": "../invalid-path", "label": "Hack"},
-        {"id": "foerderplaner", "label": "Förderplaner"},
-    ])
-    assert len(saved) == 1
-    assert saved[0]["id"] == "foerderplaner"
+    initial = domain_pins_snapshot()
+    updated = save_domain_pins(["foerderplaner", "ati"], expected_version=initial["version"])
+    assert [p["id"] for p in updated["pins"]] == ["foerderplaner", "ati"]
+    assert domain_pins_snapshot()["version"] == updated["version"]
+    original = temp_pin_file.read_bytes()
+    with pytest.raises(ValueError):
+        save_domain_pins(["../invalid-path", "foerderplaner"], expected_version=updated["version"])
+    assert temp_pin_file.read_bytes() == original
 
 
 def test_gux_071_toggle_domain_pin(temp_pin_file):
-    """GUX-071: Einzelnen Pin ein- und ausschalten (toggle)."""
-    # Pin setzen
-    p1 = toggle_domain_pin("foerderplaner", pinned=True)
-    assert "foerderplaner" in p1["pins"]
-    assert p1["pinned"] is True
-
-    # Pin entfernen
-    p2 = toggle_domain_pin("foerderplaner", pinned=False)
-    assert "foerderplaner" not in p2["pins"]
-    assert p2["pinned"] is False
+    initial = domain_pins_snapshot()
+    added = toggle_domain_pin("foerderplaner", pinned=True, expected_version=initial["version"])
+    assert any(p["id"] == "foerderplaner" for p in added["pins"])
+    removed = toggle_domain_pin("foerderplaner", pinned=False, expected_version=added["version"])
+    assert not any(p["id"] == "foerderplaner" for p in removed["pins"])
+    assert removed["pinned"] is False
 
 
 def test_gux_071_fallback_on_missing_adapter(temp_pin_file):
-    """GUX-071: Fehlender Adapter liefert Fallback-Konfiguration."""
-    pins = save_domain_pins([
-        {"id": "unbekanntes-modul", "label": "Unbekannt"},
-    ])
-    assert len(pins) == 1
-    assert pins[0]["fallback"] is True
-    assert pins[0]["fallback_url"] == "/domains"
+    initial = domain_pins_snapshot()
+    saved = save_domain_pins(["unbekanntes-modul"], expected_version=initial["version"])
+    assert saved["pins"][0]["fallback"] is True
+    assert saved["pins"][0]["fallback_url"] == "/domains"
 
 
 def test_gux_071_api_endpoints(client, temp_pin_file):
-    """GUX-071: REST-API fuer Pins /api/domains/pins und /api/domains/{id}/pin."""
-    # 1. GET /api/domains/pins
-    res = client.get("/api/domains/pins")
-    assert res.status_code == 200
-    assert "pins" in res.json()
-
-    # 2. POST /api/domains/foerderplaner/pin
-    res_post = client.post("/api/domains/foerderplaner/pin", json={"pinned": True})
-    assert res_post.status_code == 200
-    data = res_post.json()
-    assert data["success"] is True
-    assert "foerderplaner" in data["pins"]
-
-    # 3. GET Detail /api/domains/foerderplaner
-    res_detail = client.get("/api/domains/foerderplaner")
-    assert res_detail.status_code == 200
-    detail = res_detail.json()
-    assert detail["domain"]["id"] == "foerderplaner"
-    assert detail["domain"]["is_agent"] is False
+    initial = client.get("/api/domains/pins")
+    assert initial.status_code == 200
+    saved = client.post("/api/domains/foerderplaner/pin", json={"pinned": True, "version": initial.json()["version"]})
+    assert saved.status_code == 200 and saved.json()["success"] is True
+    assert any(p["id"] == "foerderplaner" for p in saved.json()["pins"])
+    assert client.get("/api/domains/pins").json()["version"] == saved.json()["version"]

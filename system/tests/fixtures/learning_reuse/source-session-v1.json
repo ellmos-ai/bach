@@ -1,0 +1,11 @@
+{
+  "schema": "bach.learning-reuse.synthetic-source.v1",
+  "provenance": "synthetic",
+  "source_session_id": "synthetic-source-session-v1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Merke: Änderungen klein und überprüfbar halten\nPrüfe zuerst den aktuellen Stand. Begrenze jede Änderung auf die freigegebenen Dateien. Prüfe danach den Diff und die direkt betroffenen Regressionstests."
+    }
+  ]
+}

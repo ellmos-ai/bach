@@ -48,6 +48,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "safe",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 12,
         "chat_id": "gui-web",
@@ -67,6 +68,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "full",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 25,
         "category": "all",
@@ -93,6 +95,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "safe",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 10,
         "chat_id": "telegram",
@@ -259,7 +262,20 @@ AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset
                                 "preset:coordinator", "preset:engineer", "preset:researcher",
                                 "preset:gemini-claude-friendly", "preset:gemini-claude-neon",
                                 "preset:gemini-claude-opus", "preset:gemini-copilot",
-                                "preset:gemini-gemini", "preset:gemini-gemini-umbruch"})
+                                "preset:gemini-gemini", "preset:gemini-gemini-umbruch",
+                                "preset:gemini-buddha-chat",
+                                "preset:gemini-always-on",
+                                "preset:gemini-operator",
+                                "preset:gemini-ticket-master",
+                                "preset:gemini-maintenance",
+                                "preset:gemini-system-auditor",
+                                "preset:gemini-law-checker",
+                                "preset:gemini-researcher",
+                                "preset:gemini-connector-a",
+                                "preset:gemini-connector-b",
+                                "preset:gemini-maintainer",
+                                "preset:gemini-task-solver",
+                                "preset:gemini-task-writer"})
 
 
 def validate_agent_avatar(value: Any) -> str:
@@ -297,6 +313,41 @@ def get_system_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
 def system_slot_chat_id(chat_id: str) -> str | None:
     match = re.fullmatch(r"(?:agent:[1-9][0-9]*:)?slot:([A-Za-z0-9_-]{1,80}):[a-f0-9]{32}", str(chat_id))
     return match[1] if match else None
+
+
+def connector_provider_for_chat(chat_id: str) -> str | None:
+    """Recognize native connector IDs, without broad provider-prefix guesses."""
+    normalized = str(chat_id)
+    if re.fullmatch(r"-?[0-9]+", normalized):
+        return "telegram"
+    aliases = {"tg": "telegram", "telegram": "telegram", "wa": "whatsapp",
+               "whatsapp": "whatsapp", "signal": "signal"}
+    if normalized in ("telegram", "whatsapp", "signal"):
+        return aliases[normalized]
+    prefix, separator, suffix = normalized.partition(":")
+    if separator and suffix and prefix in aliases:
+        return aliases[prefix]
+    return None
+
+
+def connector_slot_for_provider(slot: dict, provider: str) -> dict:
+    """Overlay only supported connector target settings; keep profile authority."""
+    providers = slot.get("providers", {})
+    if not isinstance(providers, dict):
+        raise ValueError("Ungültige Connector-Anbieterkonfiguration")  # noqa: TRY004 - configuration API uses ValueError
+    override = providers.get(provider, {})
+    if (not isinstance(override, dict)
+            or set(override) - {"backend", "model", "max_tool_rounds"}):
+        raise ValueError("Ungültige Connector-Anbieterzuordnung")
+    if ("backend" in override and (not isinstance(override["backend"], str)
+            or override["backend"] not in CORE_KNOWN_BACKENDS)):
+        raise ValueError("Ungültiger Connector-Anbieter")
+    if "model" in override and not isinstance(override["model"], str):
+        raise ValueError("Ungültiges Connector-Modell")
+    if ("max_tool_rounds" in override and (type(override["max_tool_rounds"]) is not int
+            or not 0 <= override["max_tool_rounds"] <= 1000)):
+        raise ValueError("Ungültiges Connector-Rundenbudget")
+    return {**slot, **override}
 
 
 def _resolve_path(path: str | None = None) -> Path:
@@ -427,14 +478,25 @@ def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
     f = _resolve_path(path)
     config["updated_at"] = datetime.now(timezone.utc).isoformat()
     with _config_lock:
+        tmp = f.with_name(
+            f".{f.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        )
+        created = False
         try:
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            with tmp.open("x", encoding="utf-8") as handle:
+                created = True
+                handle.write(json.dumps(config, indent=2, ensure_ascii=False))
             tmp.replace(f)
         except OSError as e:
             log.error("Failed to write slots configuration to %s: %s", f, e)
             raise
+        finally:
+            if created:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError as e:
+                    log.error("Failed to remove temporary slots configuration %s: %s", tmp, e)
 
 
 def is_slot_paused(slot: dict[str, Any]) -> bool:
@@ -471,16 +533,21 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     slot's pickup_filter, so callers like chat_tray can fall back to standard
     assignee matching.
     """
+    return pickup_filter_rejection(task, slot) is None
+
+
+def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any]) -> str | None:
+    """Explain the same filter decision used by the selector; grant no authority."""
     if not isinstance(slot, dict):
-        return False
+        return "pickup_filter"
     if not task_matches_slot_binding(task, slot):
-        return False
+        return "pickup_filter"
     # Slot activation and pickup-filter activation are separate flags.
     pickup_filter = slot.get("pickup_filter") if "pickup_filter" in slot else slot
     if not isinstance(pickup_filter, dict):
-        return False
+        return "pickup_filter"
     if not pickup_filter.get("enabled", False):
-        return False
+        return "pickup_filter"
 
     task_categories = []
     if task.get("category"):
@@ -498,14 +565,14 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     if filter_categories:
         filter_cats_norm = {str(c).strip().lower() for c in filter_categories if str(c).strip()}
         if not any(str(c).strip().lower() in filter_cats_norm for c in task_categories):
-            return False
+            return "pickup_category"
 
     task_priority = str(task.get("priority") or "").strip().upper()
     filter_priorities = pickup_filter.get("priorities", []) or []
     if filter_priorities:
         filter_prios_norm = {str(p).strip().upper() for p in filter_priorities if str(p).strip()}
         if task_priority not in filter_prios_norm:
-            return False
+            return "pickup_priority"
 
     raw_tags = task.get("tags") or []
     if isinstance(raw_tags, str):
@@ -519,15 +586,15 @@ def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> b
     if filter_tags:
         filter_tags_norm = {str(t).strip().lower() for t in filter_tags if str(t).strip()}
         if not any(t in filter_tags_norm for t in task_tags):
-            return False
+            return "pickup_tags"
 
     exclude_tags = pickup_filter.get("exclude_tags", []) or []
     if exclude_tags:
         exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags if str(t).strip()}
         if any(t in exclude_tags_norm for t in task_tags):
-            return False
+            return "excluded_tag"
 
-    return True
+    return None
 
 
 matches_pickup_filter = match_task_to_pickup_filter
@@ -643,6 +710,33 @@ def get_always_on_execution_slot(path: str | None = None) -> dict[str, Any]:
     return _always_on_execution_slot_from_config(config)
 
 
+
+def always_on_startup_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Bind the persisted startup intent and native admission to one file image."""
+    with _config_lock:
+        raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    return {"configuration_version": snapshot["configuration_version"],
+            "slot": _always_on_execution_slot_from_config(json.loads(raw.decode("utf-8")))}
+
+
+
+@_serialized_mutation
+def clear_recovered_always_on_task(expected_task_id: int, path: str | None = None) -> bool:
+    """Clear only the unchanged controller task pointer after canonical terminal readback."""
+    if type(expected_task_id) is not int or expected_task_id <= 0:
+        raise ValueError("Gültige Taskbindung erforderlich")
+    config = load_slots_config(path, strict=True)
+    slot = _always_on_execution_slot_from_config(config)
+    if str(slot.get("task_id")) != str(expected_task_id):
+        return False
+    from hub._services.skill_source_service import check_write_locks
+    check_write_locks(_resolve_path(path))
+    config["slots"]["buddha_always_on"]["task_id"] = None
+    save_slots_config(config, path)
+    return True
+
+
 def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, Any]:
     """Use one persisted policy representation for physical and CAS admission."""
     if (not isinstance(config, dict) or not isinstance(config.get("slots"), dict)
@@ -660,6 +754,8 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
 @_serialized_mutation
 def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""
+    if "memory_hook_opt_in" in updates:
+        raise ValueError("memory_hook_opt_in darf nur über versioniertes Konfigurations-CAS geändert werden")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
@@ -706,6 +802,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
+    "memory_hook_opt_in",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -760,7 +857,12 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         if slot.get("id") != slot_id:
             raise ValueError("System-Steckplatz-ID stimmt nicht überein")
         defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
+        memory_hook_opt_in = slot.get("memory_hook_opt_in", defaults.get("memory_hook_opt_in", False))
+        if type(memory_hook_opt_in) is not bool:
+            raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
         pause_info = get_slot_pause_info(slot)
+        from hub._services.llm.backend_errors import normalize_backend_error
+        error = normalize_backend_error(slot.get("backend_error"))
         public_slots.append({
             "id": slot_id,
             "system": True,
@@ -780,6 +882,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "role_id": slot.get("role_id", defaults["role_id"]),
             "sub_mode": slot.get("sub_mode", defaults["sub_mode"]),
             "allow_tools": slot.get("allow_tools", True),
+            "memory_hook_opt_in": memory_hook_opt_in,
             "allowed_tools": slot.get("allowed_tools"),
             "blueprint_id": slot.get("blueprint_id"),
             "blueprint_version": slot.get("blueprint_version"),
@@ -798,6 +901,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "enabled": bool(slot.get("enabled", defaults.get("enabled", True))),
             "status": slot.get("status", defaults.get("status", "idle")),
             "current_activity": slot.get("current_activity", ""),
+            **({"backend_error": error} if error is not None else {}),
             "pause_info": {**pause_info, "auto_paused": slot.get("auto_paused") is True},
             "living": None,
             "running": None,
@@ -854,7 +958,7 @@ def _sequence_profiles_from_config(config, slot_ids):
         role = fields.get("role_id")
         fields["custom_system_prompt"] = fields.get("custom_system_prompt") or config.get("prompts", {}).get("system_default", DEFAULT_SYSTEM_PROMPT)
         fields["custom_role_prompt"] = fields.get("custom_role_prompt") or config.get("prompts", {}).get("role_" + str(role), DEFAULT_ROLE_PROMPTS.get(role, ""))
-        result[slot_id] = _validated_core_edits(fields)
+        result[slot_id] = _validated_core_edits(fields, allow_memory_hook_opt_in=True)
     return result
 
 
@@ -865,7 +969,7 @@ def materialize_sequence_slot(run_id, cursor, profile, task_id, *, source_slot, 
             or type(cursor) is not int or not 0 <= cursor < 32
             or type(task_id) is not int or task_id <= 0):
         raise ValueError("Ungültige Ketten-Schrittbindung")
-    edits = _validated_core_edits(profile)
+    edits = _validated_core_edits(profile, allow_memory_hook_opt_in=True)
     slot_id = f"system-sequence-{run_id}-{cursor}"
     raw = _resolve_path(path).read_bytes()
     _core_snapshot_from_bytes(raw)
@@ -920,9 +1024,13 @@ def initialize_system_slots(path: str | None = None) -> bool:
     return changed
 
 
-def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
+def _validated_core_edits(
+    changes: dict[str, Any], *, allow_memory_hook_opt_in: bool = False,
+) -> dict[str, Any]:
     if not isinstance(changes, dict) or not changes or set(changes) - CORE_EDITABLE_FIELDS:
         raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
+    if "memory_hook_opt_in" in changes and not allow_memory_hook_opt_in:
+        raise ValueError("memory_hook_opt_in ist nur über das explizite Konfigurations-CAS erlaubt")
     result: dict[str, Any] = {}
     for field, value in changes.items():
         if field == "skill_refs":
@@ -960,8 +1068,8 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
-        elif field in {"think", "enabled", "include_system_prompt", "allow_tools"}:
-            if not isinstance(value, bool):
+        elif field in {"think", "enabled", "include_system_prompt", "allow_tools", "memory_hook_opt_in"}:
+            if type(value) is not bool:
                 raise ValueError(f"{field} muss wahr oder falsch sein")
         elif field == "pause_basis":
             if value not in {"runs", "tasks"}:
@@ -997,7 +1105,7 @@ def change_core_system_agent(
         updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
         updates["icon"] = CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")
     else:
-        updates = _validated_core_edits(changes)
+        updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
     slot.update(updates)
     save_slots_config(config, path)
     return core_system_agents_snapshot(path)
@@ -1373,6 +1481,10 @@ def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) 
 @_serialized_mutation
 def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Create a new dynamic background worker."""
+    if not isinstance(worker_data, dict):
+        raise ValueError("Worker-Konfiguration muss ein JSON-Objekt sein")
+    if "memory_hook_opt_in" in worker_data:
+        raise ValueError("memory_hook_opt_in kann erst nach Erstellung per Konfigurations-CAS gesetzt werden")
     cfg = load_slots_config(path, strict=True)
     workers = cfg.setdefault("dynamic_workers", [])
 
@@ -1444,6 +1556,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "allow_tools": allow_tools,
+        "memory_hook_opt_in": False,
         "allowed_tools": capabilities.get("allowed_tools"),
         "skill_refs": capabilities.get("skill_refs", []),
         "system_prompt": composed_prompt,
@@ -1534,13 +1647,19 @@ def record_activity(
     if len(history) > 100:
         cfg["activity_history"] = history[:100]
 
+    # End receipts remain in the timeline but must not erase a worker failure.
+    def update_activity(profile):
+        if not (assignment_details.get("event") == "assignment_ended"
+                and profile.get("status") == "error"):
+            profile["current_activity"] = activity
+
     # Update slot current activity if matching
     if source in cfg.get("slots", {}):
-        cfg["slots"][source]["current_activity"] = activity
+        update_activity(cfg["slots"][source])
     else:
         for w in cfg.get("dynamic_workers", []):
             if w.get("id") == source:
-                w["current_activity"] = activity
+                update_activity(w)
                 w.setdefault("history", []).insert(0, entry)
                 w["history"] = w["history"][:20]
 
@@ -1549,6 +1668,7 @@ def record_activity(
 
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "memory_hook_opt_in",
     "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -1556,9 +1676,18 @@ WORKER_EDITABLE_FIELDS = frozenset({
 
 
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
-    configuration = {field: worker.get(field) for field in sorted(WORKER_EDITABLE_FIELDS)}
-    raw = json.dumps({"id": worker["id"], **configuration}, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    from .worker_queue_status import worker_selection_policy
+    configuration = {
+        field: worker.get(field, False if field == "memory_hook_opt_in" else None)
+        for field in sorted(WORKER_EDITABLE_FIELDS)
+    }
+    if type(configuration["memory_hook_opt_in"]) is not bool:
+        raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
+    policy = worker_selection_policy(worker)
+    raw = json.dumps({"id": worker["id"], **configuration, "selection_policy": policy},
+                     sort_keys=True, ensure_ascii=False).encode("utf-8")
     return {"id": worker["id"], "configuration": configuration,
+            "selection_policy": policy,
             "configuration_version": hashlib.sha256(raw).hexdigest()}
 
 
@@ -1586,7 +1715,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         raise RuntimeError("worker_not_editable")
     if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
         raise ValueError("Unbekannte Worker-Konfigurationsfelder")
-    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role"}
+    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role", "memory_hook_opt_in"}
     ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)

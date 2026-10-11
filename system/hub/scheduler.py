@@ -83,6 +83,7 @@ class SchedulerHandler(BaseHandler):
             "jobs": "Aktive Jobs auflisten",
             "run": "Job manuell ausfuehren (bach scheduler run ID)",
             "logs": "Letzte Logs anzeigen",
+            "maintenance": "Doku-Wartung: status|plan|configure|tick|serve (ellmos-scheduler)",
             "session": "Session-System verwalten (bach scheduler session ...)",
             "external": "Externer ellmos-Scheduler: status|jobs|verify [--apply] (Rollback: BACH_USE_EXTERNAL_SCHEDULER=0)"
         }
@@ -93,6 +94,10 @@ class SchedulerHandler(BaseHandler):
         # Session System (System-Service)
         if operation == "session":
             return self._handle_session(args, dry_run)
+
+        if operation == "maintenance":
+            from ._services.docs.maintenance_cli import handle
+            return handle(self, args, dry_run)
 
         # External scheduler module seam (TRANSFER-03, MODULRUECKTRANSFER Stufe 3)
         if operation == "external":

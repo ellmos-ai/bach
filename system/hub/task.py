@@ -279,7 +279,7 @@ class TaskHandler(BaseHandler):
             return False, (
                 "Usage: bach task add <titel> [--priority P1-P4] "
                 "[--description TEXT] [--due YYYY-MM-DD] "
-                "[--required-model MODEL] [--assigned-slot SLOT] [--local|--remote]"
+                "[--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT] [--local|--remote]"
             )
         
         title = self._sanitize_title(clean_args[0])
@@ -289,6 +289,7 @@ class TaskHandler(BaseHandler):
         due_date = None
         required_model = None
         assigned_slot = None
+        assigned_to = None
         creation_origin = None
         
         # Optionen parsen
@@ -314,6 +315,16 @@ class TaskHandler(BaseHandler):
                 due_date = self._normalize_due_date(clean_args[i].split("=", 1)[1])
                 if due_date is None:
                     return False, "Ungültiges Fälligkeitsdatum. Erwartet: YYYY-MM-DD"
+                i += 1
+            elif clean_args[i] in ("--assigned", "-a"):
+                if i + 1 >= len(clean_args) or not clean_args[i + 1].strip() or clean_args[i + 1].strip().startswith("-"):
+                    return False, "Fehler: --assigned erwartet einen Namen"
+                assigned_to = clean_args[i + 1].strip().upper()
+                i += 2
+            elif clean_args[i].startswith("--assigned="):
+                assigned_to = clean_args[i].split("=", 1)[1].strip().upper()
+                if not assigned_to or assigned_to.startswith("-"):
+                    return False, "Fehler: --assigned erwartet einen Namen"
                 i += 1
             elif clean_args[i] in ("--required-model", "--assigned-slot"):
                 if i + 1 >= len(clean_args) or not clean_args[i + 1].strip():
@@ -344,6 +355,10 @@ class TaskHandler(BaseHandler):
 
         is_isolated_test = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
         lead_cfg = get_lead_config()
+        # Omit the column when no assignment was requested: preserve the DB default.
+        assignment_column = ", assigned_to" if assigned_to is not None else ""
+        assignment_value = ", ?" if assigned_to is not None else ""
+        assignment_params = (assigned_to,) if assigned_to is not None else ()
 
         # Multi-Host Federation aktiv nur wenn als Worker mit festgelegtem Lead konfiguriert (oder --remote)
         if not is_isolated_test and not force_local and (lead_cfg["mode"] == "worker" or force_remote):
@@ -362,6 +377,8 @@ class TaskHandler(BaseHandler):
                             "creation_origin": creation_origin,
                             "created_by": socket.gethostname().split(".")[0].lower(),
                         }
+                        if assigned_to is not None:
+                            payload["assigned_to"] = assigned_to
                         ok, res = post_task_to_rheingold(rheingold_url, payload)
                         if ok and "id" in res:
                             task_id = res["id"]
@@ -373,17 +390,23 @@ class TaskHandler(BaseHandler):
                                     conn, task_id, title
                                 )
                                 if existing is None:
-                                    conn.execute("""
+                                    conn.execute(f"""
                                         INSERT INTO tasks
-                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
-                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
-                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin))
+                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin, *assignment_params))
                                 else:
-                                    conn.execute("""
-                                        UPDATE tasks
-                                        SET priority = ?, category = ?, description = ?, due_date = ?, required_model = ?, assigned_slot = ?, source = ?, creation_origin = ?
-                                        WHERE id = ?
-                                    """, (priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin, task_id))
+                                    # Existing mirrors are acknowledgements, never a
+                                    # licence to overwrite a local or leased task.
+                                    current = conn.execute(
+                                        "SELECT priority, category, description, due_date, "
+                                        "required_model, assigned_slot, source, creation_origin, "
+                                        "assigned_to FROM tasks WHERE id = ?", (task_id,)
+                                    ).fetchone()
+                                    expected = (priority, category, description, due_date,
+                                        required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin)
+                                    if tuple(current[:8]) != expected or (assigned_to is not None and current[8] != assigned_to):
+                                        raise RheingoldTaskCollision("Bestehende lokale Task stimmt nicht mit dem Lead-ACK überein; unverändert erhalten")
                                 conn.commit()
 
                             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -401,11 +424,11 @@ class TaskHandler(BaseHandler):
                     ensure_task_creation_origin(conn)
                     min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                     draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
-                    conn.execute("""
+                    conn.execute(f"""
                         INSERT INTO tasks
-                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
-                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
+                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin, *assignment_params))
                     conn.commit()
 
                 due_text = f" (fällig: {due_date})" if due_date else ""
@@ -428,11 +451,11 @@ class TaskHandler(BaseHandler):
                 ensure_task_creation_origin(conn)
                 min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                 draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
-                conn.execute("""
+                conn.execute(f"""
                     INSERT INTO tasks
-                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?)
-                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin))
+                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin, *assignment_params))
                 conn.commit()
 
             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -446,11 +469,11 @@ class TaskHandler(BaseHandler):
             ensure_task_due_date(conn)
             ensure_task_slot_columns(conn)
             ensure_task_creation_origin(conn)
-            cursor = conn.execute("""
+            cursor = conn.execute(f"""
                 INSERT INTO tasks
-                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, creation_origin)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?)
-            """, (title, priority, category, description, due_date, required_model, assigned_slot, creation_origin))
+                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, creation_origin{assignment_column})
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?{assignment_value})
+            """, (title, priority, category, description, due_date, required_model, assigned_slot, creation_origin, *assignment_params))
             task_id = cursor.lastrowid
             conn.commit()
 
@@ -462,6 +485,7 @@ class TaskHandler(BaseHandler):
                 'priority': priority, 'category': category,
                 'due_date': due_date,
                 'required_model': required_model, 'assigned_slot': assigned_slot,
+                **({'assigned_to': assigned_to} if assigned_to is not None else {}),
             })
         except Exception:
             pass
@@ -660,7 +684,7 @@ class TaskHandler(BaseHandler):
             params.append(f"%{filter_text}%")
         
         if assigned_filter:
-            conditions.append("(assigned_to = ? OR delegated_to = ?)")
+            conditions.append("(UPPER(assigned_to) = ? OR UPPER(delegated_to) = ?)")
             params.extend([assigned_filter, assigned_filter])
         
         if unassigned_only:
@@ -1729,7 +1753,7 @@ TASK-VERWALTUNG
 ===============
 
 Befehle:
-  bach task add <titel>              Task hinzufügen [--due YYYY-MM-DD]
+  bach task add <titel>              Task hinzufügen [--due YYYY-MM-DD] [--assigned NAME]
   bach task list [status]            Tasks auflisten (pending/open/in_progress/done/blocked/all)
   bach task list --filter TERM       Tasks nach Begriff filtern
   bach task list --assigned PARTNER  Tasks nach Partner filtern
