@@ -1,5 +1,12 @@
 # BACH Changelog
 
+## [3.15.0] – BACH fließt ins Meer (Releasekandidat)
+
+- Gemeinsame Frontendquelle: ellmos-system-gui; BACH behält seine nativen APIs und privaten Daten. Zielpin GUI 0.2.19/e909dd92 wird über den Verbraucher-PR angebunden.
+- Paketmetadaten und aktuelle README-Versionsangaben auf 3.15.0 vorbereitet. Abnahme, Mac-Deploy und Tag folgen erst nach den belegten Integrationsgates.
+- Exakte GUI-Hashes, Releasekriterien und offene Ocean-/Installer-/Worker-Grenzen: [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md).
+
+
 ## Unreleased — structured hook diagnostics
 
 - Hook notices remain visible on stderr when a handler returns valid JSON. JSON payloads remain byte-identical; ordinary text responses keep their existing notices. This fixes the PromptBoard API parsing regression recorded in task #2105.

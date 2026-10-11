@@ -97,3 +97,9 @@ Die Planung und ein Testlauf sind kein Produktions- oder Geräteabnahmenachweis.
 - **Erledigt:** 2026-09-14 auf WORKSTATION-LG gegengeprüft — Adapter-Vertrag
   `15 passed`, externer QUICK-Lauf `8/8` B-Tests erfolgreich, nativer
   Rollbackpfad `B001 + O001` jeweils 5,0/5; BACH-Task 1218 abgeschlossen.
+
+## Meilenstein: BACH fließt ins Meer – gemeinsame GUI
+
+- Task #2071 (Integrator), #2099 (Zuarbeit): [Abnahmekriterien für BACH 3.15.0](docs/operations/BACH-3.15.0-MILESTONE.md).
+- GUI 0.2.19 ist veröffentlicht. Reguläre BACH-Integration, sicherer Mac-Deploy, Produktivreadback und anschließender Tag bleiben vor dem Taskabschluss erforderlich.
+- Ocean-Adapter/Installer und produktive Hintergrundworker behalten ihre eigenen offenen Abnahmen; die 64 Folgetransfers werden weiterhin einzeln geführt.
