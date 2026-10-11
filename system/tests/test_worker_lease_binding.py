@@ -211,9 +211,12 @@ def test_missing_renew_ack_revokes_binding(binding, monkeypatch):
 def test_task_tool_dispatch_uses_private_binding_before_local_db(binding, monkeypatch):
     from hub._services.chat import bach_tools
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
-    result = bach_tools.exec_tool("task_manage", {"action": "done", "task_id": binding.task_id},
-                                  mode="safe", worker_task_binding=binding)
-    assert "Taskoperation nicht bestätigt" in result
+    result = bach_tools.exec_tool(
+        "task_manage",
+        {"action": "update", "task_id": binding.task_id,
+         "description": "Gebundene Teständerung ohne lokale Projektion"},
+        mode="safe", worker_task_binding=binding)
+    assert f"Task #{binding.task_id} aktualisiert: description" == result
     binding.assert_active()
     result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id,
                                                   "result": "Konkretes Ergebnis ohne Projektion"},

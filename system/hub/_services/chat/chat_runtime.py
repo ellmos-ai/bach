@@ -208,6 +208,27 @@ from hub._services.chat.bach_tools import (
 log = logging.getLogger("bach.chat")
 
 
+def _tool_dispatch_kwargs(session, agent_operations):
+    """Build dispatcher context only from trusted runtime session state."""
+    binding = getattr(session, "worker_task_binding", None)
+    require_binding = getattr(session, "require_task_binding", False)
+    grants = getattr(session, "allowed_tools", None)
+    kwargs = {}
+    if agent_operations is not None:
+        # Preserve the existing managed-agent contract.
+        kwargs = {"agent_operations": agent_operations, "allowed_tools": grants}
+    if binding is not None or require_binding:
+        kwargs.update({
+            "worker_task_binding": binding,
+            "require_task_binding": require_binding,
+        })
+        # Bound workers need the runtime's grant even when the managed-agent
+        # controller is absent. Never infer it from the model's tool arguments.
+        if binding is not None and agent_operations is None:
+            kwargs["allowed_tools"] = grants
+    return kwargs
+
+
 class _SnapshotStoreAdapter:
     """The module's ``ChatStore`` protocol on BACH's snapshot session store.
 
@@ -441,6 +462,7 @@ class ChatSession(_ModuleChatSession):
         self.max_tool_rounds: Optional[int] = None
         self.allow_tools: bool = True
         self.worker_slot_reader: Any = None
+        self._trusted_memory_hook_opt_in: bool = False
         self.custom_system_prompt: str = ""
         self.profile_binding: dict | None = None
         self.profile_context_text: str = ""
@@ -559,6 +581,11 @@ class ChatRuntime(_ModuleChatRuntime):
 
     @staticmethod
     def _refresh_worker_tools(session: ChatSession) -> FailedAnswer | None:
+        # This value is session-local and refreshed only from a native slot
+        # reader. Prompt/request text never supplies MemoryHook authority.
+        session._trusted_memory_hook_opt_in = False
+        system_memory_hook_opt_in = False
+        has_system_slot = False
         system_reader = getattr(session, "system_slot_reader", None)
         if system_reader is not None:
             try:
@@ -569,15 +596,21 @@ class ChatRuntime(_ModuleChatRuntime):
                 expected = getattr(session, "system_slot_configuration", {})
                 if any(system_slot.get(key) != value for key, value in expected.items()):
                     raise RuntimeError("Steckplatzkonfiguration hat sich während des Turns geändert")
+                system_memory_hook_opt_in = system_slot.get("memory_hook_opt_in", False)
+                if type(system_memory_hook_opt_in) is not bool:
+                    raise RuntimeError("Steckplatz MemoryHook-Opt-in ist nicht verifizierbar")
+                has_system_slot = True
                 session.allow_tools = system_slot.get("allow_tools", True) is True
                 session.allowed_tools = system_slot.get("allowed_tools")
                 from hub._services.skill_source_service import load_skill_instructions
                 load_skill_instructions(system_slot.get("skill_refs", []))
             except Exception as exc:
                 session.allow_tools = False
+                session._trusted_memory_hook_opt_in = False
                 return FailedAnswer.from_exception(exc)
         reader = getattr(session, "worker_slot_reader", None)
         if reader is None:
+            session._trusted_memory_hook_opt_in = system_memory_hook_opt_in if has_system_slot else False
             return None
         try:
             slot = reader()
@@ -585,6 +618,12 @@ class ChatRuntime(_ModuleChatRuntime):
                 raise RuntimeError("Worker-Slot fehlt oder stimmt nicht überein")
             if slot.get("enabled", True) is not True:
                 raise RuntimeError("Worker ist deaktiviert")
+            worker_memory_hook_opt_in = slot.get("memory_hook_opt_in", False)
+            if type(worker_memory_hook_opt_in) is not bool:
+                raise RuntimeError("Worker MemoryHook-Opt-in ist nicht verifizierbar")
+            # A worker reader is the more specific authority when a session
+            # carries both a system caller and a dynamic worker binding.
+            session._trusted_memory_hook_opt_in = worker_memory_hook_opt_in
             session.allow_tools = slot.get("allow_tools", True) is True
             session.allowed_tools = slot.get("allowed_tools")
             from hub._services.skill_source_service import load_skill_instructions
@@ -592,6 +631,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         except Exception as exc:
             session.allow_tools = False
+            session._trusted_memory_hook_opt_in = False
             return FailedAnswer.from_exception(exc)
 
     @classmethod
@@ -867,6 +907,8 @@ class ChatRuntime(_ModuleChatRuntime):
             session.allow_tools = True
         if not hasattr(session, "worker_slot_reader"):
             session.worker_slot_reader = None
+        if not hasattr(session, "_trusted_memory_hook_opt_in"):
+            session._trusted_memory_hook_opt_in = False
         if not hasattr(session, "operator_control"):
             session.operator_control = None
         if not hasattr(session, "custom_system_prompt"):
@@ -1713,16 +1755,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
 
         bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
-        # memoryhooker-Seam (MODULRUECKTRANSFER Stufe 6): dynamisch injizierter
-        # Memory-Kontext mit Session-Cap/Cooldown und Audit-Trail. Fail-soft,
-        # Rollback via BACH_USE_EXTERNAL_MEMORYHOOKS=0.
-        hook_ctx = "" if session.profile_binding else self._get_memory_hook_context(text, chat_id)
-
         sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
         if bach_ctx and not getattr(session, "custom_system_prompt", ""):
             sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
-        if hook_ctx and not getattr(session, "custom_system_prompt", ""):
-            sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
+        custom_prompt = getattr(session, "custom_system_prompt", "")
+        legacy_memory_hook = session.profile_binding is None and not custom_prompt
+        configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
+        if legacy_memory_hook or configured_memory_hook:
+            # Assemble the persona first, then evaluate the existing hook once.
+            # Only a native slot reader can opt profile/custom-prompt sessions in.
+            hook_ctx = self._get_memory_hook_context(text, chat_id)
+            if hook_ctx:
+                sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
         if session.allow_tools is False:
             sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
@@ -2034,12 +2078,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 grants = getattr(session, "allowed_tools", None)
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
-                tool_kwargs = {}
-                if self.agent_operations is not None:
-                    tool_kwargs = {"agent_operations": self.agent_operations, "allowed_tools": grants}
-                if binding is not None or getattr(session, "require_task_binding", False):
-                    tool_kwargs.update({"worker_task_binding": binding,
-                                   "require_task_binding": getattr(session, "require_task_binding", False)})
+                tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
                 t_result = exec_tool(
                     t_name, t_args, session.mode,
                     bach_app=self.bach_app,

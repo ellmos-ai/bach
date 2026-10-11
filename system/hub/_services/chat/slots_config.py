@@ -48,6 +48,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "safe",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 12,
         "chat_id": "gui-web",
@@ -67,6 +68,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "full",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 25,
         "category": "all",
@@ -93,6 +95,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "backend": "ollama",
         "model": "qwen3.8:27b-mlx",
         "mode": "safe",
+        "memory_hook_opt_in": False,
         "think": True,
         "max_tool_rounds": 10,
         "chat_id": "telegram",
@@ -475,14 +478,25 @@ def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
     f = _resolve_path(path)
     config["updated_at"] = datetime.now(timezone.utc).isoformat()
     with _config_lock:
+        tmp = f.with_name(
+            f".{f.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        )
+        created = False
         try:
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            with tmp.open("x", encoding="utf-8") as handle:
+                created = True
+                handle.write(json.dumps(config, indent=2, ensure_ascii=False))
             tmp.replace(f)
         except OSError as e:
             log.error("Failed to write slots configuration to %s: %s", f, e)
             raise
+        finally:
+            if created:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError as e:
+                    log.error("Failed to remove temporary slots configuration %s: %s", tmp, e)
 
 
 def is_slot_paused(slot: dict[str, Any]) -> bool:
@@ -740,6 +754,8 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
 @_serialized_mutation
 def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""
+    if "memory_hook_opt_in" in updates:
+        raise ValueError("memory_hook_opt_in darf nur über versioniertes Konfigurations-CAS geändert werden")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
@@ -786,6 +802,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
+    "memory_hook_opt_in",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -840,6 +857,9 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         if slot.get("id") != slot_id:
             raise ValueError("System-Steckplatz-ID stimmt nicht überein")
         defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
+        memory_hook_opt_in = slot.get("memory_hook_opt_in", defaults.get("memory_hook_opt_in", False))
+        if type(memory_hook_opt_in) is not bool:
+            raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
         pause_info = get_slot_pause_info(slot)
         from hub._services.llm.backend_errors import normalize_backend_error
         error = normalize_backend_error(slot.get("backend_error"))
@@ -862,6 +882,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "role_id": slot.get("role_id", defaults["role_id"]),
             "sub_mode": slot.get("sub_mode", defaults["sub_mode"]),
             "allow_tools": slot.get("allow_tools", True),
+            "memory_hook_opt_in": memory_hook_opt_in,
             "allowed_tools": slot.get("allowed_tools"),
             "blueprint_id": slot.get("blueprint_id"),
             "blueprint_version": slot.get("blueprint_version"),
@@ -937,7 +958,7 @@ def _sequence_profiles_from_config(config, slot_ids):
         role = fields.get("role_id")
         fields["custom_system_prompt"] = fields.get("custom_system_prompt") or config.get("prompts", {}).get("system_default", DEFAULT_SYSTEM_PROMPT)
         fields["custom_role_prompt"] = fields.get("custom_role_prompt") or config.get("prompts", {}).get("role_" + str(role), DEFAULT_ROLE_PROMPTS.get(role, ""))
-        result[slot_id] = _validated_core_edits(fields)
+        result[slot_id] = _validated_core_edits(fields, allow_memory_hook_opt_in=True)
     return result
 
 
@@ -948,7 +969,7 @@ def materialize_sequence_slot(run_id, cursor, profile, task_id, *, source_slot, 
             or type(cursor) is not int or not 0 <= cursor < 32
             or type(task_id) is not int or task_id <= 0):
         raise ValueError("Ungültige Ketten-Schrittbindung")
-    edits = _validated_core_edits(profile)
+    edits = _validated_core_edits(profile, allow_memory_hook_opt_in=True)
     slot_id = f"system-sequence-{run_id}-{cursor}"
     raw = _resolve_path(path).read_bytes()
     _core_snapshot_from_bytes(raw)
@@ -1003,9 +1024,13 @@ def initialize_system_slots(path: str | None = None) -> bool:
     return changed
 
 
-def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
+def _validated_core_edits(
+    changes: dict[str, Any], *, allow_memory_hook_opt_in: bool = False,
+) -> dict[str, Any]:
     if not isinstance(changes, dict) or not changes or set(changes) - CORE_EDITABLE_FIELDS:
         raise ValueError("Nur dokumentierte System-Agentenfelder dürfen geändert werden")
+    if "memory_hook_opt_in" in changes and not allow_memory_hook_opt_in:
+        raise ValueError("memory_hook_opt_in ist nur über das explizite Konfigurations-CAS erlaubt")
     result: dict[str, Any] = {}
     for field, value in changes.items():
         if field == "skill_refs":
@@ -1043,8 +1068,8 @@ def _validated_core_edits(changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
-        elif field in {"think", "enabled", "include_system_prompt", "allow_tools"}:
-            if not isinstance(value, bool):
+        elif field in {"think", "enabled", "include_system_prompt", "allow_tools", "memory_hook_opt_in"}:
+            if type(value) is not bool:
                 raise ValueError(f"{field} muss wahr oder falsch sein")
         elif field == "pause_basis":
             if value not in {"runs", "tasks"}:
@@ -1080,7 +1105,7 @@ def change_core_system_agent(
         updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
         updates["icon"] = CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")
     else:
-        updates = _validated_core_edits(changes)
+        updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
     slot.update(updates)
     save_slots_config(config, path)
     return core_system_agents_snapshot(path)
@@ -1456,6 +1481,10 @@ def compose_worker_prompt(worker_dict: dict[str, Any], path: str | None = None) 
 @_serialized_mutation
 def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Create a new dynamic background worker."""
+    if not isinstance(worker_data, dict):
+        raise ValueError("Worker-Konfiguration muss ein JSON-Objekt sein")
+    if "memory_hook_opt_in" in worker_data:
+        raise ValueError("memory_hook_opt_in kann erst nach Erstellung per Konfigurations-CAS gesetzt werden")
     cfg = load_slots_config(path, strict=True)
     workers = cfg.setdefault("dynamic_workers", [])
 
@@ -1527,6 +1556,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "allow_tools": allow_tools,
+        "memory_hook_opt_in": False,
         "allowed_tools": capabilities.get("allowed_tools"),
         "skill_refs": capabilities.get("skill_refs", []),
         "system_prompt": composed_prompt,
@@ -1638,6 +1668,7 @@ def record_activity(
 
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "memory_hook_opt_in",
     "allowed_tools", "skill_refs",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -1646,7 +1677,12 @@ WORKER_EDITABLE_FIELDS = frozenset({
 
 def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     from .worker_queue_status import worker_selection_policy
-    configuration = {field: worker.get(field) for field in sorted(WORKER_EDITABLE_FIELDS)}
+    configuration = {
+        field: worker.get(field, False if field == "memory_hook_opt_in" else None)
+        for field in sorted(WORKER_EDITABLE_FIELDS)
+    }
+    if type(configuration["memory_hook_opt_in"]) is not bool:
+        raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
     policy = worker_selection_policy(worker)
     raw = json.dumps({"id": worker["id"], **configuration, "selection_policy": policy},
                      sort_keys=True, ensure_ascii=False).encode("utf-8")
@@ -1679,7 +1715,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         raise RuntimeError("worker_not_editable")
     if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
         raise ValueError("Unbekannte Worker-Konfigurationsfelder")
-    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role"}
+    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role", "memory_hook_opt_in"}
     ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     edits = dict(changes)
