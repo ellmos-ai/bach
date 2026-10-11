@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """P05 3a/3e: package-supplied system templates and their capability status; isolated state only."""
 import asyncio
+import hashlib
 import importlib.util
 import json
 import sqlite3
@@ -18,6 +19,7 @@ from hub._services.chat import slots_config as slots
 
 PROVIDER = {"id": "githubbot-core", "command": ["githubbot-core", "--json", "system-agent"]}
 SYSTEM = Path(__file__).resolve().parents[1]
+V020_CONTENT_SHA256 = "2e72c000d1aaf00c8643082bd7efe3d80a028817c050f20b588938cad19646c8"
 
 
 @pytest.fixture
@@ -144,11 +146,29 @@ def test_failing_or_invalid_provider_output_registers_nothing(state, runner, rea
     assert result["available"] is False and result["reason"] == reason and rows(state) == []
 
 
-def test_githubbot_core_0_2_0_full_file_hash_is_not_recomputable_and_rejected(state):
-    # Measured 2026-10-11: v0.2.0 hashes its package file including _meta.description,
-    # which the output omits; BACH must not accept an unverifiable declaration.
-    declared = "39615b1644dc0de923d0f2b32fdff726b5e6941d2ce69ccb1a7a1a4dacde51d9"
-    assert sync(state, runner=runner_for(envelope(descriptor(sha256=declared))))["reason"] == "hash_mismatch"
+def test_provider_contract_hash_rule_is_canonical_utf8():
+    material = {"schema": "s", "id": "ü", "blueprint": {"b": 1, "a": [1, 2]}, "version": "9.9.9", "capability": {}}
+    canonical = '{"blueprint":{"a":[1,2],"b":1},"id":"ü","schema":"s"}'.encode("utf-8")
+    assert tps.template_sha256(material) == hashlib.sha256(canonical).hexdigest()
+
+
+def test_provider_contract_githubbot_core_0_2_0(state):
+    # Exact `githubbot-core --json system-agent` output of v0.2.0 (fixture, measured 2026-10-11).
+    output = json.loads((SYSTEM / "tests" / "fixtures" / "githubbot_core_0_2_0_system_agent.json")
+                        .read_text(encoding="utf-8"))
+    data = output["data"]
+    # v0.2.0 declares the hash of its whole package file including _meta.description,
+    # which the output omits: not recomputable from the delivered bytes.
+    assert data["sha256"] == "39615b1644dc0de923d0f2b32fdff726b5e6941d2ce69ccb1a7a1a4dacde51d9"
+    assert tps.template_sha256(data) == V020_CONTENT_SHA256
+    rejected = sync(state, runner=runner_for(output))
+    assert (rejected["available"], rejected["reason"]) == (False, "hash_mismatch") and rows(state) == []
+    fixed = {**output, "data": {**data, "sha256": V020_CONTENT_SHA256}}
+    accepted = sync(state, runner=runner_for(fixed))
+    assert (accepted["action"], accepted["sha256"]) == ("registered", V020_CONTENT_SHA256)
+    [row] = rows(state)
+    assert (row["name"], row["provider_version"], row["template_sha256"]) == (
+        "githubbot-core.githubbot.v0.2.0", "0.2.0", V020_CONTENT_SHA256)
 
 
 def test_invalid_json_and_oversized_output_fail_closed(state):

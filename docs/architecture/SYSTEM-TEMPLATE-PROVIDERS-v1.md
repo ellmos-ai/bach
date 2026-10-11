@@ -86,10 +86,20 @@ oder Pfade aus. Der Probenstand ist prozesslokal; nach einem Neustart gilt
 `provider_not_probed` bis zum nächsten Sync. Der deklarierte „running“-Status des
 Domain-Katalogs wird nicht als Probe verwendet.
 
-## Bekannter Providerstand
+## Provider-Vertrag sha256 (bestätigt) und bekannter Providerstand
 
-githubbot-core v0.2.0 hasht seine ganze Paketdatei einschließlich `_meta.description`, die
-in der Ausgabe fehlt. Der Hash ist damit nicht nachrechenbar, und BACH meldet
-`hash_mismatch`. Mit einer auf `{schema, id, blueprint}` umgestellten Hash-Eingabe
-registriert die echte CLI die Vorlage (gemessen mit einer lokal angepassten Scratch-Kopie,
-sha256 `2e72c000…46c8`).
+Die Hash-Regel oben ist der verbindliche Provider-Vertrag (Operator-Bestätigung vom
+2026-10-11). Der Hash muss sich aus den gelieferten Bytes nachrechnen lassen und genau den
+Inhalt decken, den BACH speichert und ausführt. Beschreibungstexte und Paketmetadaten (`_meta`)
+gehören nicht zur Identität. Die Version steckt im Eindeutigkeitsschlüssel
+(provider, id, version).
+
+Beispiel githubbot-core v0.2.0 (Fixture `system/tests/fixtures/githubbot_core_0_2_0_system_agent.json`):
+Der Inhalt `{schema, id, blueprint}` ergibt
+`2e72c000d1aaf00c8643082bd7efe3d80a028817c050f20b588938cad19646c8`. v0.2.0 selbst deklariert
+`39615b1644dc0de923d0f2b32fdff726b5e6941d2ce69ccb1a7a1a4dacde51d9`, den Hash seiner ganzen
+Paketdatei einschließlich `_meta.description`, die in der Ausgabe fehlt. BACH weist v0.2.0
+deshalb fail-closed mit `hash_mismatch` ab. Mit dem Vertragswert wird die Vorlage
+registriert (Test `test_provider_contract_githubbot_core_0_2_0`; mit einer lokal
+angepassten Scratch-Kopie der echten CLI ebenfalls gemessen). githubbot-core v0.2.1 stellt
+die Hash-Eingabe um.

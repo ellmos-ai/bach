@@ -9,8 +9,17 @@ eindeutig je (provider, id, version). Eine andere Version wird nie still
 übernommen, sondern nur über ``migrate_template``. Materialisierte Agenten
 behalten ihre Zeile; ein fehlender Provider sperrt nur neue Materialisierungen.
 
-Prüfregel für ``sha256``: sha256 über kanonisches JSON (sort_keys, kompakt,
-UTF-8) von ``{"schema", "id", "blueprint"}`` der Providerausgabe.
+Provider-Vertrag ``sha256`` (vom Operator bestätigt, 2026-10-11): Der Provider
+deklariert sha256 über das kanonische JSON von genau ``{"schema", "id",
+"blueprint"}`` seiner Ausgabe – ``json.dumps(..., sort_keys=True,
+separators=(",", ":"), ensure_ascii=False)``, UTF-8-kodiert. ``version``,
+``capability``, ``permissions`` und Paketmetadaten wie ``_meta`` gehören nicht
+dazu: Der Hash muss aus den gelieferten Bytes nachrechenbar sein und genau den
+Inhalt decken, den BACH speichert und ausführt; die Version steckt im
+Eindeutigkeitsschlüssel (provider, id, version). Beispiel githubbot-core 0.2.0:
+Inhalt ergibt ``2e72c000d1aaf00c8643082bd7efe3d80a028817c050f20b588938cad19646c8``;
+0.2.0 selbst deklariert ``39615b16…`` (ganze Paketdatei inklusive
+``_meta.description``) und wird daher fail-closed mit ``hash_mismatch`` abgewiesen.
 """
 from __future__ import annotations
 
@@ -78,6 +87,10 @@ def load_providers(path: Path | None = None) -> list[dict[str, Any]]:
 
 
 def template_sha256(descriptor: dict[str, Any]) -> str:
+    """Provider-Vertrag (siehe Moduldoc): sha256 über kanonisches {schema, id, blueprint}.
+
+    Beispiel githubbot-core 0.2.0 → ``2e72c000d1aaf00c8643082bd7efe3d80a028817c050f20b588938cad19646c8``.
+    """
     material = {key: descriptor[key] for key in ("schema", "id", "blueprint")}
     canonical = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
