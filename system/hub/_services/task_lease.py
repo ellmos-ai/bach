@@ -46,7 +46,11 @@ try:
         inspect_task_dependencies,
     )
 except ImportError:  # pragma: no cover - Paketimport aus system/hub
-    from .task_schema import ensure_task_claim_columns, ensure_task_slot_columns, inspect_task_dependencies
+    from .task_schema import (
+        ensure_task_claim_columns,
+        ensure_task_slot_columns,
+        inspect_task_dependencies,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -543,6 +547,19 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
             conn.rollback()
             return _deny(task_id, "not_claimable", now, status=status,
                          blocked_by={k: deps[k] for k in ("unfinished", "missing", "invalid")})
+
+        try:
+            from hub._services.chat.worker_tool_trace import task_trace_recovery_state
+            trace_state = task_trace_recovery_state(conn, task_id)
+        except Exception:  # noqa: BLE001 -- Fail closed; raw trace errors stay private.
+            conn.rollback()
+            return _deny(task_id, "tool_trace_unavailable", now, status=status)
+        if trace_state == "unresolved":
+            conn.rollback()
+            return _deny(task_id, "unresolved_tool_trace", now, status=status)
+        if trace_state not in {"legacy", "clear"}:
+            conn.rollback()
+            return _deny(task_id, "tool_trace_unavailable", now, status=status)
 
         created = parse_ts(row.get("created_at"))
         if created is not None and cfg.creator_window_seconds > 0 and created <= now + timedelta(seconds=60):
