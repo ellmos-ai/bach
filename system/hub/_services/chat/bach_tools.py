@@ -40,6 +40,7 @@ except ImportError:
         return Mode(str(getattr(v, "value", v)).strip().lower())
 
 from hub import safe_exec
+from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
 from hub._services.limits import limit
 
 log = logging.getLogger("bach.chat")
@@ -618,6 +619,7 @@ TOOLS_SAFE = [
         "assigned_to": {"type": "string", "description": "Zuständige Fachrolle oder Agentenkennung"},
         "assigned_slot": {"type": "string", "description": "Verfügbarer Steckplatz aus agent_manage action=list"},
         "required_model": {"type": "string", "description": "Optionale feste Modellbindung"},
+        "result_max_chars": {"type": "integer", "description": "Optionales Task-Ausgabelimit von 1 bis 3000 Zeichen; bei task_manage(update) weglassen zum Beibehalten"},
         "subtasks": {
             "type": "array",
             "items": {
@@ -630,6 +632,7 @@ TOOLS_SAFE = [
                     "assigned_slot": {"type": "string"},
                     "required_model": {"type": "string"},
                     "assigned_to": {"type": "string"},
+                    "result_max_chars": {"type": "integer"},
                 },
                 "required": ["title"]
             },
@@ -1245,13 +1248,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     try:
                         from hub._services.task_result_service import validate_submission
                         # Reuse canonical result checks without exposing private worker state.
-                        validate_submission({"generation": "argument-validation", "result": args.get("result")})
+                        validate_submission(
+                            {"generation": "argument-validation", "result": args.get("result")},
+                            max_chars=worker_task_binding.task_snapshot().get("result_max_chars"),
+                        )
                     except ValueError as exc:
                         return str(exc)
                     except Exception:
                         return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                 try:
                     return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                except WorkerResultLimitLockedError:
+                    # This bounded policy denial is safe to explain and leaves the lease active.
+                    return WorkerResultLimitLockedError.user_message
                 except Exception:
                     # Ownership, capability and unknown ACK failures stay generic.
                     return "Taskoperation nicht bestätigt; Taskbindung prüfen."
@@ -1288,6 +1297,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             "category": args.get("category", ""), "depends_on": args.get("depends_on", ""),
                             "priority": prio, "status": "pending", "assigned_to": assignee,
                             "created_at": now, "updated_at": now, **_task_route_fields(conn, args)}
+                        if "result_max_chars" in args:
+                            from hub._services.task_result_service import validate_submission
+                            try:
+                                validate_submission({"generation": "argument-validation", "result": "x"},
+                                                    max_chars=args["result_max_chars"])
+                            except ValueError as exc:
+                                return str(exc)
+                            from hub._services.task_schema import ensure_task_result_contract_columns
+                            ensure_task_result_contract_columns(conn)
+                            values["result_max_chars"] = args["result_max_chars"]
                         cur = conn.execute("INSERT INTO tasks (" + ", ".join(values) + ") VALUES ("
                             + ", ".join("?" for _ in values) + ")", list(values.values()))
                         conn.commit()
@@ -1347,6 +1366,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
                             if fld in args and args[fld] is not None:
                                 updates[fld] = args[fld]
+                        if "result_max_chars" in args:
+                            from hub._services.task_result_service import validate_submission
+                            try:
+                                validate_submission({"generation": "argument-validation", "result": "x"},
+                                                    max_chars=args["result_max_chars"])
+                            except ValueError as exc:
+                                return str(exc)
+                            from hub._services.task_schema import ensure_task_result_contract_columns
+                            ensure_task_result_contract_columns(conn)
+                            updates["result_max_chars"] = args["result_max_chars"]
                         updates.update(_task_route_fields(conn, args))
                         if not updates:
                             return "Keine Felder zum Aktualisieren angegeben"
@@ -1430,6 +1459,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                 "depends_on": st_dep, "priority": st_prio, "status": "pending",
                                 "assigned_to": st_assignee, "created_at": now, "updated_at": now,
                                 **_task_route_fields(conn, routing)}
+                            cap_present = ("result_max_chars" in st or "result_max_chars" in args
+                                           or "result_max_chars" in parent_dict)
+                            if cap_present:
+                                cap = st.get("result_max_chars", args.get(
+                                    "result_max_chars", parent_dict.get("result_max_chars")))
+                                from hub._services.task_result_service import validate_submission
+                                try:
+                                    validate_submission({"generation": "argument-validation", "result": "x"},
+                                                        max_chars=cap)
+                                except ValueError as exc:
+                                    conn.rollback()
+                                    return str(exc)
+                                from hub._services.task_schema import ensure_task_result_contract_columns
+                                ensure_task_result_contract_columns(conn)
+                                values["result_max_chars"] = cap
                             cur = conn.execute("INSERT INTO tasks (" + ", ".join(values) + ") VALUES ("
                                 + ", ".join("?" for _ in values) + ")", list(values.values()))
                             prev_id = cur.lastrowid

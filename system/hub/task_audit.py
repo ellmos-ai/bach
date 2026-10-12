@@ -45,7 +45,7 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
     "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
-    "due_date",
+    "due_date", "result_max_chars",
 })
 
 # Spalten, die NICHT ueber field_values gesetzt werden (sie sind Ergebnis der

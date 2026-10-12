@@ -414,6 +414,7 @@ class TaskCreate(BaseModel):
     created_by: Optional[str] = "user"
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
+    result_max_chars: Optional[StrictInt] = None
 
 
 class ThemeUpdate(BaseModel):
@@ -435,6 +436,7 @@ class TaskUpdate(BaseModel):
     due_date: Optional[str] = None
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
+    result_max_chars: Optional[StrictInt] = None
     assignment_configuration_version: Optional[str] = None
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
@@ -2340,10 +2342,15 @@ async def api_post_task(payload: dict = Body(...)):
             conn = get_bach_db()
             from hub._services.task_schema import (
                 ensure_task_creation_origin,
+                ensure_task_result_contract_columns,
                 ensure_task_slot_columns,
             )
             ensure_task_slot_columns(conn)
             ensure_task_creation_origin(conn)
+            ensure_task_result_contract_columns(conn)
+            result_max_chars = payload.get("result_max_chars")
+            if result_max_chars is not None and (type(result_max_chars) is not int or not 1 <= result_max_chars <= 3000):
+                raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
             draft_source = payload.get("source") or payload.get("draft_hash")
             if draft_source:
                 existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
@@ -2370,8 +2377,8 @@ async def api_post_task(payload: dict = Body(...)):
 
             now = datetime.now().isoformat()
             cursor = conn.execute("""
-                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin, result_max_chars)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 payload.get("title"),
                 payload.get("description", ""),
@@ -2388,6 +2395,7 @@ async def api_post_task(payload: dict = Body(...)):
                 payload.get("required_model") or None,
                 payload.get("assigned_slot") or None,
                 payload.get("creation_origin") or None,
+                result_max_chars,
             ))
 
             task_id = cursor.lastrowid
@@ -2398,6 +2406,20 @@ async def api_post_task(payload: dict = Body(...)):
         raise
     except Exception as e:
         return {"success": False, "error": public_error_message()}
+
+@app.get("/api/task-capabilities")
+async def get_task_capabilities():
+    """Veröffentlichte, versionierte Felder für Create/Edit-Clients."""
+    return {
+        "schema": "bach.task-capabilities.v1",
+        "result_max_chars": {
+            "supported": True,
+            "min": 1,
+            "max": 3000,
+            "nullable": True,
+        },
+    }
+
 
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: int):
@@ -2435,6 +2457,9 @@ def _public_task_snapshot(row):
     for secret in ("claim_id", "claim_request_id", "claim_task_version"):
         result.pop(secret, None)
     result["task_version"] = version
+    # Explicit nullable readback survives databases that have not yet materialized
+    # the lazily added column. None remains omitted from task_content_version().
+    result.setdefault("result_max_chars", None)
     return result
 
 
@@ -2494,14 +2519,53 @@ class TaskResultAcceptanceRequest(BaseModel):
 
 
 @app.get("/api/tasks/{task_id}/result")
-async def read_task_result(task_id: int):
+async def read_task_result(task_id: int, request: Request):
     """Ergebnis und heutige Abnahme aus einem kanonischen Lesesnapshot."""
     from hub._services.task_result_service import read_result
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
     conn = get_bach_db()
     try:
         if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        return read_result(conn, task_id)
+        return read_result(conn, task_id, operator_token=operator_token)
+    finally:
+        conn.close()
+
+
+@app.get("/api/tasks/{task_id}/result/history")
+async def read_task_result_history(task_id: int, before_event_id: Optional[int] = None, limit: int = 20):
+    from hub._services.task_result_service import (
+        read_result_history, ResultCorrectionValidation, ResultHistoryUnavailable, ResultConflict,
+    )
+    conn = get_bach_db()
+    try:
+        return read_result_history(conn, task_id, before_event_id=before_event_id, limit=limit)
+    except ResultHistoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "result_history_unavailable", "message": str(exc)}) from None
+    except ResultCorrectionValidation as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=404, detail={"code": "task_not_found", "message": str(exc)}) from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/tasks/{task_id}/result/correction")
+async def request_task_result_correction(task_id: int, body: dict, request: Request):
+    from hub._services.task_result_service import (
+        request_result_correction, ResultCorrectionValidation, ResultCorrectionConflict,
+        ResultPermissionDenied,
+    )
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    conn = get_bach_db()
+    try:
+        return request_result_correction(conn, task_id, body, operator_token=operator_token)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
+    except ResultCorrectionValidation as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultCorrectionConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     finally:
         conn.close()
 
@@ -2556,6 +2620,26 @@ async def read_task_lease(task_id: int, request: Request):
     """Wer hält die Task? (Vertrag §5.2). Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
     from hub._services.task_lease import read_lease
     return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.get("/api/tasks/{task_id}/lease/correction-context")
+async def read_task_correction_context(task_id: int, request: Request, fence: int,
+                                       task_version: str, generation: str):
+    """Expose an active correction only to its exact live task-lease holder."""
+    from hub._services.task_result_service import read_correction_context, CorrectionContextDenied
+    conn = get_bach_db()
+    try:
+        return read_correction_context(
+            conn, task_id, lease_id=request.headers.get("X-Lease-Id") or "", fence=fence,
+            task_version=task_version, generation=generation,
+        )
+    except CorrectionContextDenied:
+        raise HTTPException(status_code=409, detail={
+            "code": "task_correction_context_unavailable",
+            "message": "Task-Korrekturkontext nicht bestätigt",
+        }) from None
+    finally:
+        conn.close()
 
 
 @app.post("/api/tasks/{task_id}/lease/renew")
@@ -2685,7 +2769,11 @@ async def update_task(task_id: int, update: TaskUpdate):
     """
     conn = get_bach_db()
     try:
-        from hub._services.task_schema import ensure_task_slot_columns
+        from hub._services.task_schema import ensure_task_result_contract_columns, ensure_task_slot_columns
+        if "result_max_chars" in update.model_fields_set:
+            ensure_task_result_contract_columns(conn)
+            if update.result_max_chars is not None and not 1 <= update.result_max_chars <= 3000:
+                raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
         existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
@@ -2756,6 +2844,8 @@ async def update_task(task_id: int, update: TaskUpdate):
                 field_values["required_model"] = update.required_model or None
             if "assigned_slot" in update.model_fields_set:
                 field_values["assigned_slot"] = update.assigned_slot or None
+            if "result_max_chars" in update.model_fields_set:
+                field_values["result_max_chars"] = update.result_max_chars
 
             try:
                 # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von

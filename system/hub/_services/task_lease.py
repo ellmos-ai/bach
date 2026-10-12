@@ -42,12 +42,14 @@ from typing import Any
 try:
     from hub._services.task_schema import (
         ensure_task_claim_columns,
+        ensure_task_result_contract_columns,
         ensure_task_slot_columns,
         inspect_task_dependencies,
     )
 except ImportError:  # pragma: no cover - Paketimport aus system/hub
     from .task_schema import (
         ensure_task_claim_columns,
+        ensure_task_result_contract_columns,
         ensure_task_slot_columns,
         inspect_task_dependencies,
     )
@@ -241,6 +243,7 @@ def ensure_task_lease_schema(conn: sqlite3.Connection) -> None:
     try:
         ensure_task_claim_columns(conn)
         ensure_task_slot_columns(conn)
+        ensure_task_result_contract_columns(conn)
         existing = _columns(conn)
         if not {"id", "status"} <= existing:
             raise RuntimeError("tasks-Tabelle mit id/status fehlt")
@@ -740,6 +743,16 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     elif outcome == "review" and not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", result_ref):
         raise LeaseValidationError("Review-Abschluss braucht eine bestätigte GitHub-PR-Referenz")
     note = str(note or "")[:4000]
+    if worker_result is not None:
+        # Reject a task-specific overflow before schema setup or a release transaction.
+        # The current row is checked again under BEGIN IMMEDIATE before insertion.
+        preflight_row = _row(conn, task_id)
+        if preflight_row is not None:
+            from .task_result_service import validate_submission
+            try:
+                validate_submission(worker_result, max_chars=preflight_row.get("result_max_chars"))
+            except ValueError as exc:
+                raise LeaseValidationError(str(exc)) from None
     ensure_task_lease_schema(conn)
 
     try:
@@ -779,7 +792,13 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                          detail="Native Worker geben ihr generationgebundenes Ergebnis zur getrennten Review-Abnahme ab")
         if worker_result is not None:
             from .task_result_service import insert_submission, result_reference
-            submitted = insert_submission(conn, row, worker_result, worker=worker, now=_local_naive(now))
+            try:
+                submitted = insert_submission(
+                    conn, row, worker_result, worker=worker, now=_local_naive(now),
+                    max_chars=row.get("result_max_chars"),
+                )
+            except ValueError as exc:
+                raise LeaseValidationError(str(exc)) from None
             result_ref = result_reference(submitted)
         new_status = RELEASE_OUTCOMES[outcome]
         try:
@@ -829,7 +848,18 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
     allowed = ALLOWED_COLUMNS - {"status", "created_by"}
     if not isinstance(changes, dict) or not changes or set(changes) - allowed:
         raise LeaseValidationError("Unbekannte oder fehlende Inhaltsfelder")
-    if any(not isinstance(value, str) for value in changes.values()):
+    if any(
+        name == "result_max_chars"
+        and value is not None
+        and (type(value) is not int or not 1 <= value <= 3000)
+        for name, value in changes.items()
+    ):
+        raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+    if any(
+        not (name == "result_max_chars" and (value is None or type(value) is int))
+        and not isinstance(value, str)
+        for name, value in changes.items()
+    ):
         raise LeaseValidationError("Inhaltsfelder müssen Text sein")
     if "title" in changes and not changes["title"].strip():
         raise LeaseValidationError("Der Titel darf nicht leer sein")
@@ -890,14 +920,25 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
     if not isinstance(subtasks, list) or not 1 <= len(subtasks) <= 100:
         raise LeaseValidationError("subtasks braucht 1 bis 100 Teilaufgaben")
     allowed = {"title", "description", "priority", "depends_on", "assigned_to", "category",
-               "required_model", "assigned_slot"}
+               "required_model", "assigned_slot", "result_max_chars"}
     normalized = []
     for item in subtasks:
         if not isinstance(item, dict) or set(item) - allowed:
             raise LeaseValidationError("Unbekannte Teilaufgabenfelder")
         if not isinstance(item.get("title"), str) or not item["title"].strip():
             raise LeaseValidationError("Jede Teilaufgabe braucht einen Titel")
-        if any(not isinstance(value, str) for value in item.values()):
+        if any(
+            name == "result_max_chars"
+            and value is not None
+            and (type(value) is not int or not 1 <= value <= 3000)
+            for name, value in item.items()
+        ):
+            raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+        if any(
+            not (name == "result_max_chars" and (value is None or type(value) is int))
+            and not isinstance(value, str)
+            for name, value in item.items()
+        ):
             raise LeaseValidationError("Teilaufgabenfelder müssen Text sein")
         normalized.append({**item, "title": item["title"].strip()})
 
@@ -922,14 +963,15 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             cursor = conn.execute(
                 """INSERT INTO tasks (title, description, priority, category, assigned_to,
                                       depends_on, created_by, required_model, assigned_slot,
-                                      status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                                      result_max_chars, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
                 (item["title"], item.get("description", ""), item.get("priority") or parent.get("priority") or "P3",
                  item.get("category") or parent.get("category") or "",
                  item.get("assigned_to") or parent.get("assigned_to") or "bach", dependency,
                  parent.get("claimed_by") or "lease-holder",
                  item.get("required_model", parent.get("required_model")),
                  item.get("assigned_slot", parent.get("assigned_slot")),
+                 item.get("result_max_chars", parent.get("result_max_chars")),
                  _local_naive(now), _local_naive(now)),
             )
             created.append(cursor.lastrowid)

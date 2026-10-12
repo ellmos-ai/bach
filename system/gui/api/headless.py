@@ -83,7 +83,7 @@ BACH_DB = str(_PATHS_DB)
 try:
     from fastapi import FastAPI, HTTPException, Depends, Request, Query
     from fastapi.middleware.cors import CORSMiddleware
-    from pydantic import BaseModel
+    from pydantic import BaseModel, StrictInt
     import uvicorn
 except ImportError:
     print("FastAPI nicht installiert. Bitte: pip install fastapi uvicorn")
@@ -219,6 +219,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
+    result_max_chars: Optional[StrictInt] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -228,6 +229,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
+    result_max_chars: Optional[StrictInt] = None
     # T-20260906-240256515: optionaler Aufrufer-Bezeichner fuer task_history.changed_by,
     # analog zu TaskUpdate.changed_by im GUI-Server. Externe API-Clients identifizieren
     # sich damit; ohne Angabe greift der Default "headless-api" (siehe update_task).
@@ -277,19 +279,36 @@ async def list_tasks(status: str = "pending", limit: int = 50,
 async def create_task(task: TaskCreate, _=Depends(verify_auth)):
     conn = _get_db()
     try:
-        from hub._services.task_schema import ensure_task_slot_columns
+        from hub._services.task_schema import ensure_task_result_contract_columns, ensure_task_slot_columns
         ensure_task_slot_columns(conn)
+        ensure_task_result_contract_columns(conn)
+        if task.result_max_chars is not None and not 1 <= task.result_max_chars <= 3000:
+            raise HTTPException(422, {"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.execute("""
-            INSERT INTO tasks (title, priority, category, status, assigned_to, description, required_model, assigned_slot, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (title, priority, category, status, assigned_to, description, required_model, assigned_slot, result_max_chars, created_at, updated_at)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
         """, (task.title, task.priority, task.category,
               task.assigned_to or DEFAULT_TASK_ASSIGNEE, task.description,
-              task.required_model or None, task.assigned_slot or None, now, now))
+              task.required_model or None, task.assigned_slot or None, task.result_max_chars, now, now))
         conn.commit()
         return {"id": cur.lastrowid, "title": task.title, "status": "pending"}
     finally:
         conn.close()
+
+
+@app.get("/api/v1/task-capabilities")
+async def get_task_capabilities(_=Depends(verify_auth)):
+    """Versioned task-field discovery for headless Create/Edit clients."""
+    return {
+        "schema": "bach.task-capabilities.v1",
+        "result_max_chars": {
+            "supported": True,
+            "min": 1,
+            "max": 3000,
+            "nullable": True,
+        },
+    }
 
 
 @app.get("/api/v1/tasks/{task_id}")
@@ -299,7 +318,9 @@ async def get_task(task_id: int, _=Depends(verify_auth)):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Task nicht gefunden")
-        return dict(row)
+        result = dict(row)
+        result.setdefault("result_max_chars", None)
+        return result
     finally:
         conn.close()
 
@@ -317,9 +338,13 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
     """
     conn = _get_db()
     try:
-        from hub._services.task_schema import ensure_task_slot_columns
+        from hub._services.task_schema import ensure_task_result_contract_columns, ensure_task_slot_columns
         if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
             ensure_task_slot_columns(conn)
+        if "result_max_chars" in update.model_fields_set:
+            ensure_task_result_contract_columns(conn)
+            if update.result_max_chars is not None and not 1 <= update.result_max_chars <= 3000:
+                raise HTTPException(422, {"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
         existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(404, "Task nicht gefunden")
@@ -329,6 +354,8 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
         for name in ("required_model", "assigned_slot"):
             if name in update.model_fields_set:
                 field_values[name] = getattr(update, name) or None
+        if "result_max_chars" in update.model_fields_set:
+            field_values["result_max_chars"] = update.result_max_chars
         if not field_values:
             raise HTTPException(400, "Keine Felder zum Aktualisieren")
 

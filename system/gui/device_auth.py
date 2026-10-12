@@ -115,16 +115,23 @@ def create_device(name: str, connection: sqlite3.Connection | None = None) -> st
             connection.close()
 
 
-def create_task_result_operator(name: str, connection: sqlite3.Connection | None = None) -> str:
+def create_task_result_operator(
+    name: str, connection: sqlite3.Connection | None = None, *,
+    can_request_correction: bool = False,
+) -> str:
     """Local operator provisioning only; never called by general device enrollment.
 
     Issues a NEW credential, distinct from every existing worker/tray token.
-    Deliver it to the operator's browser/keyring, never to TaskLeaseClient.
+    The returned token is for the separate result-operator identity. It may be
+    supplied explicitly for result snapshots, history, or corrections, but it is
+    never a worker-lease credential and must not be stored in worker grants.
     """
     import secrets
     clean_name = (name or "").strip()
     if not clean_name:
         raise ValueError("Gerätename darf nicht leer sein.")
+    if type(can_request_correction) is not bool:
+        raise ValueError("can_request_correction muss boolesch sein")
     owned = connection is None
     connection = connection or GET_CONNECTION()
     try:
@@ -135,11 +142,17 @@ def create_task_result_operator(name: str, connection: sqlite3.Connection | None
         connection.execute("BEGIN IMMEDIATE")
         connection.execute("""CREATE TABLE IF NOT EXISTS task_result_operators (
             device_id INTEGER PRIMARY KEY,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            can_request_correction INTEGER NOT NULL DEFAULT 0
         )""")
+        operator_columns = {row[1] for row in connection.execute("PRAGMA table_info(task_result_operators)")}
+        if "can_request_correction" not in operator_columns:
+            connection.execute("ALTER TABLE task_result_operators ADD COLUMN "
+                               "can_request_correction INTEGER NOT NULL DEFAULT 0")
         cursor = connection.execute("INSERT INTO devices (name,token_hash,status) VALUES (?,?,'active')",
                                     (clean_name, _hash_token(token)))
-        connection.execute("INSERT INTO task_result_operators (device_id) VALUES (?)", (cursor.lastrowid,))
+        connection.execute("INSERT INTO task_result_operators (device_id,can_request_correction) VALUES (?,?)",
+                           (cursor.lastrowid, int(can_request_correction)))
         connection.commit()
         return token
     except BaseException:
