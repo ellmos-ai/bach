@@ -65,6 +65,7 @@ Modell: Die Ressourcenprobe bestimmt weiterhin das tatsächliche Laufziel.
 | PUT | `/api/system/model-sockets` | Lokales Modell anbieten oder Steckplatzeinstellungen ändern |
 | PUT | `/api/system/model-sockets/bindings/{agent_id}/{socket_id}` | Bestehenden Agenten einem Modell zuordnen |
 | DELETE | `/api/system/model-sockets/bindings/{binding_id}` | Bindung entfernen, Agentenprofil erhalten |
+| PUT | `/api/system/model-sockets/profiles/{agent_id}/rebind` | Primär- und Fallbackmodell samt lokalen Bindungen in einem Versionsschritt abgleichen |
 
 Writes benötigen den vorhandenen verifizierten Gerätetoken und eine aktuelle
 `configuration_version`. Änderungen stehen in `changes`; der Steckplatz wird
@@ -73,10 +74,22 @@ nativen Host abgeleitet und ist keine frei überschreibbare Nutzereingabe.
 Eine Bestätigung bestätigt ausschließlich die gespeicherte Konfiguration:
 `worker_started=false`, `runtime_verified=false`.
 
-Der Writer für die zusätzlichen Routerzeilen in `server.py` ist Task #2011 im
-Hauptworker. Der Partner baut keinen zweiten Router oder parallelen Speicher.
-Ein Ocean-Konsument muss denselben Vertrag über seinen tatsächlichen nativen
-Adapter anbieten; dieser BACH-Endpunkt beweist keine Ocean-Anbindung.
+Der Profil-Rebind verwendet denselben serialisierten Schreibpfad, Versionsvergleich
+und Dateisperren wie die übrigen Modellsteckplatzänderungen. Primärziel und
+`model_fallbacks` werden zusammen mit den lokalen Bindungen in einem
+Konfigurationsspeichervorgang aktualisiert. Jedes lokale Primär- oder Fallbackziel
+muss bereits als aktiviertes Angebot für den aktuellen Host existieren. Fehlt das
+Angebot, ist es deaktiviert oder passt der Host nicht, wird die Änderung verworfen;
+der Handler legt kein Angebot an und wählt kein anderes/globales Modell als Ersatz.
+Externe Ziele erhalten keine lokalen Bindungen. Ein ausschließlich externes Profil
+entfernt seine bisherigen lokalen Bindungen. Rebind löst weder Modellladung oder
+-pull noch Workerstart, Ressourcenbelegung oder Runtime-Aktivierung aus.
+
+`server.py` bindet den Model-Sockets-Router in diesem Quellstand ein. Das belegt
+den Source-Mount, nicht die Installation oder Erreichbarkeit des aktuell laufenden
+nativen Dienstes; beides bleibt ein separates Gate. Ein Ocean-Konsument muss
+denselben Vertrag über seinen eigenen nativen Adapter anbieten; dieser BACH-
+Endpunkt beweist keine Ocean-Anbindung.
 
 ## Lokaler Aufruf und tatsächliches Laufziel
 
