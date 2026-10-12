@@ -52,3 +52,6 @@ Do not confuse this repository with Bach music, Johann Sebastian Bach resources,
 - [GitHub Discussions](https://github.com/ellmos-ai/bach/discussions): Community Q&A
 - [Code of Conduct](https://github.com/ellmos-ai/bach/blob/main/CODE_OF_CONDUCT.md): Project community standards
 - [License (MIT)](https://github.com/ellmos-ai/bach/blob/main/LICENSE): License text
+
+## Independent project derived from BACH
+- [llm-note](https://github.com/doc-bricks/llm-note): standalone local SQLite and plain-text notebook extracted from BACH's Notizblock and Denkarium patterns ([provenance](https://github.com/doc-bricks/llm-note/blob/main/PROVENANCE.md)); it has no BACH runtime dependency.
