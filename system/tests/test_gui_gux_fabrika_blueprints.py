@@ -255,9 +255,18 @@ class TestFabrikaAndBlueprintsContract:
     def test_core_system_agents_live_status_and_toggle(self, tmp_path, monkeypatch):
         """Verifies core system slots include status, pause_info, enabled, and toggle works."""
         from gui.api import core_system_agents, worker_status_adapter
+        from hub._services import skill_source_service
         from hub._services.chat import slots_config
         path = str(tmp_path / "slots.json")
         slots_config.initialize_slots_config(path)
+        resolved_target = Path(path).resolve()
+
+        def fixture_lock_guard(target):
+            if Path(target).resolve() != resolved_target:
+                raise PermissionError("test lock guard denies paths outside the isolated config")
+
+        # Only the fixture's exact temporary config is treated as known-unlocked.
+        monkeypatch.setattr(skill_source_service, "check_write_locks", fixture_lock_guard)
         monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", path)
         monkeypatch.setattr(core_system_agents, "_snapshot", lambda: slots_config.core_system_agents_snapshot())
         monkeypatch.setattr(unified_api, "_require_memory_device_token", lambda request: "fixture-device")

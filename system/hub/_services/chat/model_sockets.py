@@ -22,6 +22,7 @@ SCHEMA = "bach.model-sockets.v1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}\Z")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}\Z")
 _LOCAL_BACKENDS = frozenset({"ollama", "lmstudio"})
+_PROFILE_MODEL_FIELDS = frozenset({"backend", "model", "model_fallbacks"})
 
 
 def _text(value, pattern):
@@ -76,6 +77,67 @@ def _new_binding(agent_id, target_id, priority="background"):
     key = _binding_id(agent_id, target_id)
     return {"id": key, "agent_id": agent_id, "socket_id": target_id,
             "enabled": True, "priority": priority, "context_tokens": None}
+
+
+def _profile_model_targets(profile):
+    backend, model = profile.get("backend"), profile.get("model")
+    if not isinstance(backend, str) or not isinstance(model, str):
+        raise TypeError("Agentenprofil benötigt ein Primärmodell")
+    if backend == "ollama" and model.lower().endswith(":cloud"):
+        raise ValueError("Lokales Primärmodell darf kein Cloudmodell sein")
+    if backend == "ollama-cloud" and not model.lower().endswith(":cloud"):
+        raise ValueError("Ollama-Cloud-Primärmodell benötigt ein explizites :cloud-Modell")
+    return [{"backend": backend, "model": model},
+            *store._validated_model_fallback_profile(profile)]
+
+
+def _reconcile_profile_bindings(config, agent_id):
+    """Reconcile one profile's local primary/fallback bindings in memory only."""
+    state = _validate_state(config.get("model_sockets"))
+    if state["host_id"] != platform.node():
+        raise RuntimeError("model_socket_host_mismatch")
+    profile = _profiles(config).get(agent_id)
+    if not isinstance(profile, dict):
+        raise KeyError(agent_id)
+
+    local_target_ids = []
+    for target in _profile_model_targets(profile):
+        if target["backend"] not in _LOCAL_BACKENDS:
+            continue
+        target_id = socket_id(target["backend"], target["model"], state["host_id"])
+        offer = state["sockets"].get(target_id)
+        if offer is None or offer["enabled"] is not True:
+            raise ValueError("Lokales Modellangebot fehlt oder ist deaktiviert")
+        local_target_ids.append(target_id)
+
+    required = set(local_target_ids)
+    for binding_id, binding in list(state["bindings"].items()):
+        if binding["agent_id"] == agent_id and binding["socket_id"] not in required:
+            del state["bindings"][binding_id]
+
+    priority = ("background" if agent_id == "buddha_always_on"
+                or profile.get("execution_kind") == "worker"
+                or agent_id not in config["slots"] else "foreground")
+    for target_id in local_target_ids:
+        binding_id = _binding_id(agent_id, target_id)
+        if binding_id not in state["bindings"]:
+            state["bindings"][binding_id] = _new_binding(agent_id, target_id, priority)
+    _validate_state(state)
+    config["model_sockets"] = state
+    return state
+
+
+def _apply_profile_model_changes(config, agent_id, changes):
+    if (type(changes) is not dict or not changes
+            or set(changes) - _PROFILE_MODEL_FIELDS):
+        raise ValueError("Ungültige Primär- oder Fallbackmodelländerung")
+    profile = _profiles(config).get(agent_id)
+    if not isinstance(profile, dict):
+        raise KeyError(agent_id)
+    profile.update(store._validated_core_edits(changes))
+    _profile_model_targets(profile)
+    _reconcile_profile_bindings(config, agent_id)
+    return profile
 
 
 def _legacy_projection(config, host_id):
@@ -187,6 +249,23 @@ def _mutate(expected_version, operation, path):
     _validate_state(config["model_sockets"])
     store.save_slots_config(config, path)
     return model_sockets_snapshot(path)
+
+
+@store._serialized_mutation
+def rebind_model_profile(expected_version: str, agent_id: str, changes: dict[str, Any], *,
+                         path: str | None = None):
+    """Atomically update a profile's primary/fallbacks and its local bindings."""
+    config, current_version = _read(path)
+    if expected_version != current_version:
+        raise RuntimeError("configuration_version_conflict")
+    if "model_sockets" not in config:
+        raise RuntimeError("model_socket_registry_unavailable")
+    from hub._services.skill_source_service import check_write_locks
+    check_write_locks(store._resolve_path(path))
+    _apply_profile_model_changes(config, agent_id, changes)
+    version = store._core_configuration_version(config)
+    store.save_slots_config(config, path)
+    return _snapshot(config, version)
 
 
 @store._serialized_mutation

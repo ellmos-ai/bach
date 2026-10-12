@@ -63,6 +63,12 @@ async def configure_model_socket(request: Request, payload: dict = Body(...)):
     return await _write(request, payload, service.configure_model_socket, payload.get("changes"))
 
 
+@router.put("/profiles/{agent_id}/rebind")
+async def rebind_model_profile(agent_id: str, request: Request, payload: dict = Body(...)):  # noqa: B008 - FastAPI body injection is intentional
+    return await _write(request, payload, service.rebind_model_profile,
+                        agent_id, payload.get("changes"))
+
+
 @router.put("/bindings/{agent_id}/{socket_id}")
 async def bind_model_agent(agent_id: str, socket_id: str, request: Request, payload: dict = Body(...)):
     return await _write(request, payload, service.bind_model_agent, agent_id, socket_id, payload.get("changes"))

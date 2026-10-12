@@ -442,3 +442,23 @@ def test_native_cloud_handler_ignores_local_compute_without_pausing_jobs(native_
     assert not HostInferenceGate().status()["active"]
     assert not control._pending_actions
     assert "cloud answer" in update.message.reply_text.call_args.args[0]
+
+
+
+def test_core_profile_rebind_dispatches_only_the_atomically_bound_local_target(native_caller):
+    _control, runtime, backend, _ = native_caller
+    current = migrate()
+    current = models.configure_model_socket(
+        current["configuration_version"], {"backend": "ollama", "model": "changed:8b"}
+    )
+    slots.change_core_system_agent(
+        "buddha_chat", current["configuration_version"],
+        {"backend": "ollama", "model": "changed:8b", "model_fallbacks": []},
+    )
+
+    proof = models.require_model_binding("buddha_chat", "ollama", "changed:8b")
+    assert proof["agent_id"] == "buddha_chat"
+    assert slots.get_system_slot("buddha_chat")["model"] == "changed:8b"
+    assert asyncio.run(local_call(runtime, backend, "buddha_chat", "changed:8b")) == "answer"
+    backend.chat.assert_awaited_once()
+    assert not HostInferenceGate().status()["active"]
