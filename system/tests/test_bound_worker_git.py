@@ -671,3 +671,73 @@ def test_github_public_metadata_reader_requires_https_api_host_and_sends_no_auth
     monkeypatch.setattr(urllib.request, "urlopen", lambda *_args, **_kwargs: Redirected())
     with pytest.raises(RuntimeError, match="Öffentliche Quellbindung"):
         worker_git._github_json("https://api.github.com/repos/ellmos-ai/bach")
+
+@pytest.mark.parametrize("task_id", [True, False, 0, -1, 1.5, "", "01", "+1", "-1", "1\n-c", "--help", "x", 2**63])
+def test_public_source_config_key_rejects_noncanonical_task_ids(task_id):
+    with pytest.raises(RuntimeError, match="Taskkennung"):
+        worker_git._public_source_config_key(task_id)
+
+
+@pytest.mark.parametrize("task_id", [1, "1", 2124, "2124", 2**63 - 1, str(2**63 - 1)])
+def test_public_source_config_key_uses_only_positive_numeric_identity(task_id):
+    assert worker_git._public_source_config_key(task_id) == f"branch.bach-task/{int(task_id)}.bach-public-source"
+
+
+@pytest.mark.parametrize("operation", ["", "status", "git", "--help", "origin\n-c"])
+def test_public_git_reader_rejects_unknown_operations_before_execution(tmp_path, monkeypatch, operation):
+    calls = []
+    monkeypatch.setattr(worker_git.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(RuntimeError, match="Git-Leseoperation"):
+        worker_git._git_text(tmp_path, operation)
+    assert calls == []
+
+
+def test_public_git_reader_constructs_fixed_git_commands(tmp_path, monkeypatch):
+    calls = []
+    def capture(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, stdout="verified\n", stderr="")
+    monkeypatch.setattr(worker_git.subprocess, "run", capture)
+    for operation in ["origin", "main", "head"]:
+        assert worker_git._git_text(tmp_path, operation) == "verified"
+    assert worker_git._git_text(tmp_path, "registration", task_id="2124") == "verified"
+    assert [entry[0] for entry in calls] == [
+        ["git", "remote", "get-url", "origin"],
+        ["git", "rev-parse", "--verify", "refs/heads/main^{commit}"],
+        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+        ["git", "config", "--local", "--get", "branch.bach-task/2124.bach-public-source"],
+    ]
+    assert all(kwargs["shell"] is False and kwargs["stdin"] == subprocess.DEVNULL for _, kwargs in calls)
+
+
+def test_public_git_registration_reader_validates_id_before_execution(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker_git.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(RuntimeError, match="Taskkennung"):
+        worker_git._git_text(tmp_path, "registration", task_id="1\n-c")
+    assert calls == []
+
+def test_bound_public_start_rejects_noncanonical_id_before_git_or_directory_creation(
+        tmp_path, request, monkeypatch):
+    task_bridge = request.getfixturevalue("bridge")
+    repo, worktrees, _proof = _public_bound_repo(tmp_path, monkeypatch)
+    calls = []
+    run = subprocess.run
+    def capture(argv, **kwargs):
+        calls.append(list(argv))
+        return run(argv, **kwargs)
+    monkeypatch.setattr(worker_git.subprocess, "run", capture)
+    invalid_id = f"0{task_bridge.binding.task_id}"
+    with pytest.raises(RuntimeError, match="Taskkennung"):
+        worker_git.start_task_worktree(
+            invalid_id, repo_root=repo, base_branch="main",
+            worker_task_binding=task_bridge.binding, require_task_binding=True,
+            task_code_capability=True,
+        )
+    assert calls == []
+    assert list(worktrees.iterdir()) == []
+    branch = _REAL_SUBPROCESS_RUN(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/bach-task/{invalid_id}"],
+        cwd=repo, capture_output=True,
+    )
+    assert branch.returncode == 1
