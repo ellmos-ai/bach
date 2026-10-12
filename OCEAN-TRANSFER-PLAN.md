@@ -59,3 +59,7 @@ Ein geplanter Transfer darf weder Cloud-Worker automatisch starten noch kostenpf
 Ein Release benötigt einen sauberen Quellcommit, vollständige Datei- und Archivhashes sowie die identische Pin-Konfiguration des Konsumenten. Vor Deployment werden die bisherige Releaseidentität und Dienstkonfiguration gesichert. Rollback betrifft Code und Konfiguration; TaskDB und Nutzerdaten werden nicht durch einen alten Codebestand ersetzt.
 
 Offene Abnahmen bleiben in der TaskDB. Ein erfolgreicher Testlauf ersetzt keinen produktiven Worker-Lauf und keine Browser- oder Tray-Abnahme.
+
+## GUI-Meilenstein 3.15.0 und weitere Reihenfolge
+
+Der [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md) bindet GUI 0.2.19/e909dd92, Verbraucherprüfung, sicheren Mac-Deploy und anschließenden BACH-Tag. Ein veröffentlichtes GUI-Paket ist noch keine produktive BACH- oder Ocean-Abnahme. Nach dem GUI-Umzug folgt der tatsächliche Ocean-Adapteranschluss; danach werden BACH-Fähigkeiten einzeln modularisiert. Die 64 Transferaufgaben bleiben einzeln gesteuert. Die alte web/-Kopie ist keine zweite Entwicklungsquelle; ihre vorhandenen Rückweg-/Testcaller müssen vor endgültiger Entfernung gesondert abgenommen werden.

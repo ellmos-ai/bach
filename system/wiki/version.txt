@@ -3,24 +3,23 @@ WIKI: version
 
 BESCHREIBUNG
 ------------
-Dokumentation der Versionsverwaltung und Kompatibilitätsregeln im BACH-Projekt.
+BACH verwendet Semantic Versioning (MAJOR.MINOR.PATCH). Paketversion,
+Skillvertragsversion, GUI-Pin und laufende Installation sind getrennte Größen.
 
-STRUKTUR
---------
-BACH verwendet Semantic Versioning (SemVer):
-`MAJOR.MINOR.PATCH`
+AKTUELLE PAKETVERSION
+--------------------
+1. pyproject.toml: [project].version
+2. setup.py: version im setuptools-Paketaufruf
+3. Aktuelle Versionsangaben in den sechs Root-READMEs
 
-- **MAJOR**: Inkompatible API-Änderungen oder große Architektur-Wechsel (z.B. v1.0 -> v1.1).
-- **MINOR**: Neue Funktionalitäten bei Rückwärtskompatibilität.
-- **PATCH**: Rückwärtskompatible Bugfixes.
+Die Paketmetadaten müssen übereinstimmen. GUI-Metadaten werden separat über
+system/gui/gui-consumer.v1.json und kit_manifest.json gebunden.
+Historische Handbücher und Skill-Frontmatter haben eigene Prüf- und Versionsstände;
+eine globale Ersetzung darf daraus keine neue Abnahmebehauptung machen.
 
-DEFINITION
-----------
-Die aktuelle Version ist an folgenden Stellen definiert:
-1. `bach.py` (Header-Docstring)
-2. `gui/server.py` (API-Metadaten)
-3. `ROADMAP_ADVANCED.md` (Release-Planung)
-
-HINWEIS
+RELEASE
 -------
-Bei jedem Update von Handlern sollte die Patch-Version im entsprechenden Docstring erhöht werden.
+Änderungsübersicht: CHANGELOG.md
+Meilenstein 3.15.0: docs/operations/BACH-3.15.0-MILESTONE.md
+Erst nach regulärer Integration, CI und Produktivreadback den geprüften Commit
+taggen. Deployment, Modellbetrieb und Taskabschluss benötigen eigene Nachweise.

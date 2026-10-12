@@ -21,3 +21,7 @@ Stand: 8. Oktober 2026. Der Dateiname bleibt für vorhandene Plan- und Taskverwe
 ## Pflege je künftigem Transfer
 
 Ergänzen: Modul/Altteil, tatsächliches Datum, Ersatz und Pin, alle betroffenen Endpunkte, offene Lücken, Abnahmen, Probleme, Rollbackereignisse und endgültige Entfernung. Keine geplanten Schritte als erledigt eintragen.
+
+## GUI-Meilenstein: Quelle und Produktivbetrieb unterscheiden
+
+Für Task #2071 gilt der [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md). Die gemeinsame GUI 0.2.19 ist veröffentlicht; ihre Aktivierung in BACH und der Produktivreadback bleiben eigene Gates. Zahlen und Zeilennummern in älteren Tabellenzeilen dokumentieren den dortigen Prüfstand. Insbesondere verbleibende web/-Fallback- und Testcaller dürfen erst nach bestätigter Parität entfernt werden. README- und Paketversionen allein belegen keine abgeschlossene Entfernung, Ocean-Anbindung oder Workerwirkung.
