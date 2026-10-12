@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Neutraler Lease-Kern ohne Task-Bezug (Polarstern P1, BACH #2121).
+"""Neutraler Lease-Kern ohne Task-Bezug (Polaris (Polarstern) P1, BACH #2121).
 
 Gemeinsame Helfer fuer Lease-Dienste: Zeitformat und -parsing, Validierung von
 Worker- und Lease-Referenz, Ergebnis-/Ablehnungstyp, TTL-Profil-Konfiguration

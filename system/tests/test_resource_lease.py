@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Tests fuer Polarstern P1: Ressourcen-Lease (BACH #2121).
+"""Tests fuer Polaris (Polarstern) P1: Ressourcen-Lease (BACH #2121).
 
 Alle Zeitpunkte werden injiziert (``now=``), ausser beim Zwei-Prozess-Rennen.
 Es wird ausschliesslich gegen temporaere SQLite-Dateien getestet.
@@ -118,14 +118,14 @@ def conn(db_path):
 
 def test_star_profile_defaults_and_env_override():
     cfg = ResourceLeaseConfig.from_env({})
-    assert cfg.profiles["STAR"] == (120, 86400)
+    assert cfg.profiles["POLARIS"] == (120, 86400)
     assert (cfg.renew_seconds, cfg.margin_seconds) == (40, 15)
-    env = {"BACH_RESOURCE_LEASE_PROFILES": '{"STAR": [60, 600]}', "BACH_RESOURCE_LEASE_RENEW": "20",
-           "BACH_RESOURCE_LEASE_MARGIN": "5"}
+    env = {"BACH_POLARIS_PROFILES": '{"POLARIS": [60, 600]}', "BACH_POLARIS_RENEW": "20",
+           "BACH_POLARIS_MARGIN": "5"}
     cfg = ResourceLeaseConfig.from_env(env)
-    assert cfg.profiles["STAR"] == (60, 600) and cfg.renew_seconds == 20 and cfg.margin_seconds == 5
-    bad = ResourceLeaseConfig.from_env({"BACH_RESOURCE_LEASE_PROFILES": '{"STAR": [900, 10]}'})
-    assert bad.profiles["STAR"] == (120, 86400)  # ungueltig -> Startwerte
+    assert cfg.profiles["POLARIS"] == (60, 600) and cfg.renew_seconds == 20 and cfg.margin_seconds == 5
+    bad = ResourceLeaseConfig.from_env({"BACH_POLARIS_PROFILES": '{"POLARIS": [900, 10]}'})
+    assert bad.profiles["POLARIS"] == (120, 86400)  # ungueltig -> Startwerte
 
 
 def test_register_validates_and_unknown_resource(conn):
@@ -255,7 +255,7 @@ def test_replay_renew_cap_and_release_keeps_fence_high_water(conn):
 
 
 def test_renew_is_capped_at_max_total(conn):
-    short = ResourceLeaseConfig(profiles={"STAR": (120, 130)})
+    short = ResourceLeaseConfig(profiles={"POLARIS": (120, 130)})
     ack = _acq(conn, config=short).payload
     kw = dict(lease_id=ack["lease_id"], fence=1, config=short)
     capped = renew_resource_lease(conn, RES, now=T0 + timedelta(seconds=100), **kw).payload
@@ -393,7 +393,7 @@ def test_no_reachable_authority_fails_closed(db_path, monkeypatch):
     with pytest.raises(LeaseConnectionError):
         dead.status(RES)
     # ohne Lead-Authority und ohne ausdrueckliche Freigabe kein lokaler Direktweg
-    monkeypatch.delenv("BACH_RESOURCE_LEASE_ALLOW_ISOLATED", raising=False)
+    monkeypatch.delenv("BACH_POLARIS_ALLOW_ISOLATED", raising=False)
     with pytest.raises(LeaseProtocolError):
         ResourceLeaseClient.for_db(lambda: _connect(db_path))
 
@@ -452,7 +452,7 @@ def test_fence_cas_blocks_interleaved_writer_and_removed_cas_turns_red(db_path, 
 
 def test_cli_round_trip(db_path, monkeypatch, tmp_path):
     from hub.lease import LeaseHandler
-    monkeypatch.setenv("BACH_RESOURCE_LEASE_ALLOW_ISOLATED", "1")
+    monkeypatch.setenv("BACH_POLARIS_ALLOW_ISOLATED", "1")
     handler = LeaseHandler(tmp_path)
     monkeypatch.setattr(handler, "_canonical_db", db_path, raising=False)
     ok, msg = handler.handle("cli-res", ["register", "--allowed", "agent@*", "--server-role", "agent@mac-studio"])
@@ -460,7 +460,7 @@ def test_cli_round_trip(db_path, monkeypatch, tmp_path):
     ok, msg = handler.handle("cli-res", ["acquire", "--by", "agent@mac-studio", "--intent", "test"])
     assert ok and "Fence 1" in msg, msg
     lease_id = msg.split("Lease-Capability: ")[1].strip()
-    assert handler.handle("cli-res", ["status", "--lease-id", lease_id])[1].count("EIGENER STERN") == 1
+    assert handler.handle("cli-res", ["status", "--lease-id", lease_id])[1].count("OWN POLARIS STAR") == 1
     ok, msg = handler.handle("cli-res", ["acquire", "--by", "agent@mac-studio"])
     assert not ok and "already_held_by_caller" in msg
     assert handler.handle("cli-res", ["renew", "--lease-id", lease_id, "--fence", "1"])[0]
@@ -476,7 +476,7 @@ def test_cli_discovered_by_registry():
     from core.registry import HandlerRegistry
     reg = HandlerRegistry()
     reg.discover(SYSTEM_ROOT / "hub")
-    assert "lease" in reg._handlers
+    assert "polaris" in reg._handlers
 
 
 # ---------------------------------------------------------------------------

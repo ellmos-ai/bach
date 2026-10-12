@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-"""Polarstern: Ressourcen-Lease fuer Einzelschreiber-Ressourcen (BACH #2121, P1).
+"""Polaris (Polarstern): Ressourcen-Lease fuer Einzelschreiber-Ressourcen (BACH #2121, P1).
 
-Fuer jede Ressource mit nur einem Schreiber schreibt nur, wer den "Stern"
+Fuer jede Ressource mit nur einem Schreiber schreibt nur, wer den Polaris star
 haelt: ein Lease wie die Task-Leases, mit Fence. Dieses Modul ist die
 Lead-seitige Authority (BACH auf dem Mac); es nutzt nur ``lease_core``.
 
@@ -52,9 +52,9 @@ except ImportError:  # pragma: no cover - Paketimport aus system/hub
 LeaseValidationError = core.LeaseValidationError
 LeaseResult = core.LeaseResult
 
-STAR = "STAR"
+POLARIS = "POLARIS"
 #: Profil -> (TTL je Acquire/Renew, Hoechstlaufzeit ab issued_at), Sekunden.
-DEFAULT_PROFILES: dict[str, tuple[int, int]] = {STAR: (120, 24 * 3600)}
+DEFAULT_PROFILES: dict[str, tuple[int, int]] = {POLARIS: (120, 24 * 3600)}
 DEFAULT_RENEW_SECONDS = 40
 DEFAULT_MARGIN_SECONDS = 15
 DEFAULT_SERVER_DOWN_AFTER_SECONDS = 120
@@ -67,7 +67,7 @@ _DDL = (
         allowed_workers TEXT NOT NULL,
         server_role TEXT NOT NULL,
         standby_roles TEXT NOT NULL DEFAULT '[]',
-        default_profile TEXT NOT NULL DEFAULT 'STAR',
+        default_profile TEXT NOT NULL DEFAULT 'POLARIS',
         updated_at TEXT NOT NULL
     )""",
     """CREATE TABLE IF NOT EXISTS resource_leases (
@@ -107,22 +107,22 @@ class ResourceNotFound(LookupError):
 @dataclass(frozen=True)
 class ResourceLeaseConfig:
     profiles: Mapping[str, tuple[int, int]] = field(default_factory=lambda: dict(DEFAULT_PROFILES))
-    default_profile: str = STAR
+    default_profile: str = POLARIS
     renew_seconds: int = DEFAULT_RENEW_SECONDS
     margin_seconds: int = DEFAULT_MARGIN_SECONDS
     server_down_after_seconds: int = DEFAULT_SERVER_DOWN_AFTER_SECONDS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> ResourceLeaseConfig:
-        """``BACH_RESOURCE_LEASE_PROFILES`` (JSON ``{"STAR": [120, 86400]}``),
+        """``BACH_POLARIS_PROFILES`` (JSON ``{"POLARIS": [120, 86400]}``),
         ``..._RENEW``, ``..._MARGIN``, ``..._SERVER_DOWN_AFTER`` (Sekunden)."""
         env = os.environ if environ is None else environ
         return cls(
-            profiles=core.load_profiles(DEFAULT_PROFILES, "BACH_RESOURCE_LEASE_PROFILES", env),
-            renew_seconds=core.env_seconds(env, "BACH_RESOURCE_LEASE_RENEW", DEFAULT_RENEW_SECONDS),
-            margin_seconds=core.env_seconds(env, "BACH_RESOURCE_LEASE_MARGIN", DEFAULT_MARGIN_SECONDS, minimum=0),
+            profiles=core.load_profiles(DEFAULT_PROFILES, "BACH_POLARIS_PROFILES", env),
+            renew_seconds=core.env_seconds(env, "BACH_POLARIS_RENEW", DEFAULT_RENEW_SECONDS),
+            margin_seconds=core.env_seconds(env, "BACH_POLARIS_MARGIN", DEFAULT_MARGIN_SECONDS, minimum=0),
             server_down_after_seconds=core.env_seconds(
-                env, "BACH_RESOURCE_LEASE_SERVER_DOWN_AFTER", DEFAULT_SERVER_DOWN_AFTER_SECONDS),
+                env, "BACH_POLARIS_SERVER_DOWN_AFTER", DEFAULT_SERVER_DOWN_AFTER_SECONDS),
         )
 
 
@@ -164,7 +164,7 @@ def _validate_patterns(value: Any, what: str, *, allow_empty: bool = False) -> l
 
 
 def register_resource(conn: sqlite3.Connection, resource: str, *, allowed_workers, server_role: str,
-                      standby_roles=(), default_profile: str = STAR,
+                      standby_roles=(), default_profile: str = POLARIS,
                       config: ResourceLeaseConfig | None = None, now: datetime | None = None) -> dict[str, Any]:
     """Registriert oder aktualisiert eine Ressource (nur lokal an der Authority,
     keine HTTP-Route). ``allowed_workers`` ist die Zulassung (fnmatch auf

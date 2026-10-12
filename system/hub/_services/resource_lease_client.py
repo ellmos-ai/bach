@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-"""Duenner Client fuer Ressourcen-Leases (Polarstern P1, BACH #2121).
+"""Duenner Client fuer Ressourcen-Leases (Polaris (Polarstern) P1, BACH #2121).
 
 Erbt Transport, Lead-Erkennung und Geraete-Token von ``TaskLeaseClient``
 (unveraendert). Ohne erreichbare Authority gibt es keine Uebernahme: ein
 Worker-Host ohne Lead-URL oder mit unerreichbarem Lead scheitert fail-closed;
 der lokale Direktweg gilt nur am Lead selbst (oder mit ``allow_isolated=True``
-bzw. ``BACH_RESOURCE_LEASE_ALLOW_ISOLATED=1`` fuer Tests und Einzelbetrieb).
+bzw. ``BACH_POLARIS_ALLOW_ISOLATED=1`` fuer Tests und Einzelbetrieb).
 
 Zeit (Festlegung 8): Die lokale Frist wird aus ``server_now`` und einer
 monotonen Uhr berechnet, nie aus der Wanduhr. Springt die Wanduhr gegenueber
@@ -64,7 +64,7 @@ class ResourceLeaseDeniedError(_tlc.LeaseDeniedError):
 
 
 class ResourceLeaseLostError(LeaseError):
-    """Der Stern gehoert nicht mehr diesem Halter (star_lost): sofort stoppen."""
+    """Der Polaris star gehoert nicht mehr diesem Halter (star_lost): sofort stoppen."""
 
 
 class ResourceLeaseExpiredError(LeaseError):
@@ -162,7 +162,7 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
         super().__init__(**kwargs)
         if self.mode == "local" and _tlc.get_lead_config().get("mode") == "isolated":
             allowed = allow_isolated if allow_isolated is not None else (
-                os.environ.get("BACH_RESOURCE_LEASE_ALLOW_ISOLATED") == "1")
+                os.environ.get("BACH_POLARIS_ALLOW_ISOLATED") == "1")
             if not allowed:
                 raise LeaseProtocolError("Keine erreichbare Lead-Authority: Ressource bleibt nur lesbar")
 
@@ -247,5 +247,5 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
         st = self.status(ack.resource, lease_id=ack.lease_id, config=config, now=now)
         if not (st.leased and st.own and st.fence == ack.fence):
             raise ResourceLeaseLostError(
-                f"Ressource {ack.resource}: Stern verloren (Fence {ack.fence} -> {st.fence}); sofort stoppen")
+                f"Ressource {ack.resource}: Polaris star verloren (Fence {ack.fence} -> {st.fence}); sofort stoppen")
         return st

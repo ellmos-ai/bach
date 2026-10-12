@@ -2,12 +2,12 @@
 # coding: utf-8
 # SPDX-License-Identifier: MIT
 """
-LeaseHandler - Polarstern: Ressourcen-Lease ("Stern") fuer Einzelschreiber-Ressourcen (BACH #2121)
+LeaseHandler - Polaris (Polarstern): Ressourcen-Lease ("star") fuer Einzelschreiber-Ressourcen (BACH #2121)
 
-Aufruf: bach lease <resource> <aktion> [optionen]
+Aufruf: bach polaris <resource> <aktion> [optionen]
 
 Aktionen:
-  acquire   --by <agent@host> [--ttl STAR] [--intent T] [--version <sha256>]
+  acquire   --by <agent@host> [--ttl POLARIS] [--intent T] [--version <sha256>]
   renew     --lease-id <uuid> --fence <n> [--version <sha256>]
   release   --lease-id <uuid> --fence <n> [--version <sha256>]
   status    [--lease-id <uuid>]
@@ -23,8 +23,8 @@ from typing import List, Tuple
 
 from .base import BaseHandler
 
-_USAGE = ("Usage: bach lease <resource> acquire|renew|release|status|register [optionen] "
-          "(Details: bach lease help)")
+_USAGE = ("Usage: bach polaris <resource> acquire|renew|release|status|register [optionen] "
+          "(Details: bach polaris help)")
 
 
 def _flags(args: List[str]) -> dict:
@@ -46,7 +46,7 @@ class LeaseHandler(BaseHandler):
 
     @property
     def profile_name(self) -> str:
-        return "lease"
+        return "polaris"
 
     @property
     def target_file(self) -> Path:
@@ -54,9 +54,9 @@ class LeaseHandler(BaseHandler):
 
     def get_operations(self) -> dict:
         return {
-            "<resource> acquire": "Stern anfordern (--by agent@host [--ttl STAR] [--version HASH])",
-            "<resource> renew": "Stern verlaengern (--lease-id --fence [--version HASH])",
-            "<resource> release": "Stern zurueckgeben (--lease-id --fence [--version HASH])",
+            "<resource> acquire": "Polaris star anfordern (--by agent@host [--ttl POLARIS] [--version HASH])",
+            "<resource> renew": "Polaris star verlaengern (--lease-id --fence [--version HASH])",
+            "<resource> release": "Polaris star zurueckgeben (--lease-id --fence [--version HASH])",
             "<resource> status": "Halter, Fence, Version anzeigen",
             "<resource> register": "Ressource registrieren (nur am Lead)",
             "help": "Hilfe anzeigen",
@@ -96,7 +96,7 @@ class LeaseHandler(BaseHandler):
                 lines.append(f"Halter: {st.holder.get('worker_id')} ({st.holder.get('role')}), "
                              f"Ablauf {st.expires_at}")
             if st.own:
-                lines.append("[EIGENER STERN BESTAETIGT]")
+                lines.append("[OWN POLARIS STAR CONFIRMED]")
             return True, "\n".join(lines)
 
         if action == "acquire":
@@ -106,20 +106,20 @@ class LeaseHandler(BaseHandler):
             ack = client.acquire(resource, worker_id=by, host=opts.get("host") or None,
                                  ttl_profile=opts.get("ttl") or None, intent=opts.get("intent", ""),
                                  resource_version=opts.get("version") or None)
-            return True, (f"[OK] Stern {resource} an {ack.worker_id} ({ack.role}, Fence {ack.fence}, "
+            return True, (f"[OK] Polaris star {resource} an {ack.worker_id} ({ack.role}, Fence {ack.fence}, "
                           f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at}, "
                           f"Renew alle {ack.renew_after_seconds}s)\nLease-Capability: {ack.lease_id}")
 
         if action in ("renew", "release"):
             lease_id, fence = opts.get("lease-id", ""), opts.get("fence", "")
             if not lease_id or not fence.isdigit():
-                return False, f"Usage: bach lease {resource} {action} --lease-id <uuid> --fence <n>"
+                return False, f"Usage: bach polaris {resource} {action} --lease-id <uuid> --fence <n>"
             version = opts.get("version") or None
             if action == "renew":
                 new = client.renew_ref(resource, lease_id, int(fence), resource_version=version)
-                return True, f"[OK] Stern {resource} verlaengert (Fence {new.fence}, bis {new.expires_at})"
+                return True, f"[OK] Polaris star {resource} verlaengert (Fence {new.fence}, bis {new.expires_at})"
             done = client.release_ref(resource, lease_id, int(fence), resource_version=version)
-            return True, (f"[OK] Stern {resource} zurueckgegeben (Fence {done.fence}"
+            return True, (f"[OK] Polaris star {resource} zurueckgegeben (Fence {done.fence}"
                           f"{', verspaetet' if done.late else ''})")
 
         if action == "register":
