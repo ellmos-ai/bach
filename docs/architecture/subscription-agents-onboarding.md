@@ -33,9 +33,16 @@ Composer lädt die gespeicherte Quelle über den vorhandenen
 `blueprint_service._execution_blueprint`-Validator aus der kanonischen BACH-DB,
 mit einer read-only Verbindung. Eine fehlende oder inzwischen veraltete Revision
 wird abgelehnt; Rollenprompt, Skills und Konfiguration können nicht vom Request
-überschrieben werden. Die SHA-256 bindet die tatsächlich verwendete Projektion,
-nicht die vollständige Datenbankzeile. Der lokale Datenbankpfad wird nicht
-ausgegeben.
+überschrieben werden. Die SHA-256 bindet die tatsächlich verwendete, typisierte Projektion,
+nicht die vollständige Datenbankzeile oder unveränderte Rohquelle. Die
+Contractus-Projektion ist mit bach.contractus-projection.v1 markiert und
+normalisiert nur bekannte Preset-/Seed-Aliase. Preset-ID, Titel und
+Beschreibung werden getrennt typisiert und in der Projektion gebunden, aber
+nicht in den Prompt übernommen. Widersprüchliche Aliaswerte, unbekannte
+Felder und verschachtelte contractus.execution-Werte werden abgewiesen.
+task_type und task_types bleiben getrennte Angaben. Die
+Contractus-Sektion im Prompt ist deklarativ und erteilt keine Laufzeit-,
+Werkzeug- oder Startfreigabe. Der lokale Datenbankpfad wird nicht ausgegeben.
 
 ## Transportvertrag
 

@@ -35,10 +35,7 @@ _SECRET = re.compile(
     r"password|passwd|authorization|credentials|secret)\s*[:=]\s*"
     r"(?:\"[^\"]{4,}\"|'[^']{4,}'|[^\s,;]{8,}))"
 )
-_CONTRACTUS_FIELDS = {
-    "turns", "max_turns", "cooldown", "cooldown_seconds", "task_type",
-    "modus", "wake_behavior", "animus_type",
-}
+_CONTRACTUS_FIELDS = blueprint_service.CONTRACTUS_FIELDS
 _GOVERNANCE_FIELDS = {"profile", "tool_whitelist", "scope"}
 
 
@@ -196,6 +193,7 @@ class SubscriptionAgentsComposer:
             "id": raw["id"],
             "name": raw.get("name"),
             "title": raw.get("title") or raw.get("name"),
+            "description": raw.get("description", ""),
             "version": raw["version"],
             "kind": raw.get("kind") or "agent",
             "persona_role": raw.get("persona_role"),
@@ -203,15 +201,15 @@ class SubscriptionAgentsComposer:
             "skills": _stored_json(raw.get("skills_json", "[]"), "skills_json", list, []),
             "contractus": _stored_json(raw.get("contractus_json", "{}"), "contractus_json", dict, {}),
             "governance": _stored_json(raw.get("governance_json", "{}"), "governance_json", dict, {}),
-            "modus": raw.get("modus") or "casualis",
-            "animus_type": raw.get("animus_type") or "subscription",
+            "modus": raw.get("modus"),
+            "animus_type": raw.get("animus_type"),
         }
         return self._normalize_blueprint(stored)
 
     @staticmethod
     def _normalize_blueprint(value: Any) -> tuple[dict, dict, dict]:
         allowed = {
-            "id", "name", "title", "version", "kind", "persona_role", "persona_prompt",
+            "id", "name", "title", "description", "version", "kind", "persona_role", "persona_prompt",
             "skills", "contractus", "governance", "modus", "animus_type",
         }
         raw = _strict_mapping(value, "blueprint", allowed)
@@ -232,6 +230,10 @@ class SubscriptionAgentsComposer:
         if len(name) < 2:
             raise ValueError("Blueprint-Name muss mindestens zwei Zeichen enthalten")
         title = _text(raw.get("title", name), "blueprint.title", 200)
+        description_value = raw.get("description", "")
+        if description_value is None:
+            description_value = ""
+        description = _text(description_value, "blueprint.description", 20_000, required=False)
         role = _text(raw.get("persona_role"), "blueprint.persona_role", 160)
         persona = _text(raw.get("persona_prompt"), "blueprint.persona_prompt", MAX_ROLE_PROMPT_CHARS)
         _no_credentials(persona, "Blueprint-Rolle")
@@ -244,16 +246,13 @@ class SubscriptionAgentsComposer:
         if len(set(skills)) != len(skills):
             raise ValueError("Blueprint enthält doppelte Skill-IDs")
 
-        contractus = _strict_mapping(raw.get("contractus", {}), "contractus", _CONTRACTUS_FIELDS)
-        normalized_contractus = {}
-        for key, item in contractus.items():
-            if key in {"turns", "max_turns", "cooldown", "cooldown_seconds"}:
-                if type(item) is not int or item < 0 or item > 100_000:
-                    raise ValueError("Contractus-Zeit- und Turnwerte müssen begrenzte Ganzzahlen sein")
-            else:
-                item = _text(item, f"contractus.{key}", 120)
-            normalized_contractus[key] = item
+        normalized_contractus, modus, animus, preset_metadata = blueprint_service.project_contractus(
+            raw.get("contractus", {}),
+            modus=raw.get("modus"),
+            animus_type=raw.get("animus_type"),
+        )
         _no_credentials(_canonical_bytes(normalized_contractus).decode("utf-8"), "Blueprint-Contractus")
+        _no_credentials(_canonical_bytes(preset_metadata).decode("utf-8"), "Contractus-Preset-Metadaten")
 
         governance = _strict_mapping(raw.get("governance", {}), "blueprint.governance", _GOVERNANCE_FIELDS)
         normalized_governance = {}
@@ -270,14 +269,14 @@ class SubscriptionAgentsComposer:
             normalized_governance["tool_whitelist"] = list(tools)
         _no_credentials(_canonical_bytes(normalized_governance).decode("utf-8"), "Blueprint-Governance")
 
-        modus = _text(raw.get("modus", "casualis"), "blueprint.modus", 64)
-        animus = _text(raw.get("animus_type", "subscription"), "blueprint.animus_type", 80)
         for label, item in (("Blueprint-Name", name), ("Blueprint-Titel", title),
-                            ("Blueprint-Rolle", role), ("Blueprint-Modus", modus),
-                            ("Blueprint-Animus", animus)):
+                            ("Blueprint-Beschreibung", description), ("Blueprint-Rolle", role),
+                            ("Blueprint-Modus", modus), ("Blueprint-Animus", animus)):
             _no_credentials(item, label)
         normalized = {
-            "id": blueprint_id, "name": name, "title": title, "version": version,
+            "id": blueprint_id, "name": name, "title": title, "description": description,
+            "version": version, "contractus_projection_version": blueprint_service.CONTRACTUS_PROJECTION_VERSION,
+            "contractus_preset": preset_metadata,
             "kind": kind, "persona_role": role, "persona_prompt": persona,
             "skills": list(skills), "contractus": normalized_contractus,
             "governance": normalized_governance, "modus": modus, "animus_type": animus,
@@ -571,6 +570,23 @@ class SubscriptionAgentsComposer:
         # Advertise only skills whose exact source pin was re-read successfully.
         prompt_blueprint = {**blueprint, "skills": [pin["id"] for pin in skill_pins]}
         base_prompt = blueprint_service.synthesize_start_prompt(prompt_blueprint, task_override=task_override)
+        contractus = blueprint["contractus"]
+        contractus_lines = [
+            "## [Contractus: deklarative Metadaten]",
+            f"- Maximale Turns: {contractus.get('turns', 15)}",
+            f"- Cooldown-Sekunden: {contractus.get('cooldown_seconds', 30)}",
+            f"- Arbeitsmodus: {blueprint['modus']}",
+            f"- Animus-Typ: {blueprint['animus_type']}",
+        ]
+        if "task_type" in contractus:
+            contractus_lines.append(f"- Aufgabentyp: {contractus['task_type']}")
+        if "task_types" in contractus:
+            contractus_lines.append("- Aufgabentypen: " + ", ".join(contractus["task_types"]))
+        if "wake_behavior" in contractus:
+            contractus_lines.append(f"- Weckverhalten: {contractus['wake_behavior']}")
+        contractus_lines.append(
+            "- Diese Angaben sind deklarative Metadaten; sie erteilen keine Laufzeit-, Werkzeug- oder Startfreigabe."
+        )
         prompt_parts = [
             "## Zielclient\n" + f"- Client: {target['name']} ({target['client_id']})\n"
             + f"- Zielhost: {target['host']}\n"
@@ -578,6 +594,7 @@ class SubscriptionAgentsComposer:
                if target.get("workspace") else "")
             + "- Dies ist nur eine Vorschau; den Client nicht automatisch starten.",
             base_prompt,
+            "\n".join(contractus_lines),
         ]
         if pinned_instructions:
             prompt_parts.append("## Ausgewählte Skill-Anleitungen\n\n" + pinned_instructions)

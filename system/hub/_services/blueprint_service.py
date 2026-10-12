@@ -32,6 +32,159 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 ALLOWED_KINDS = {"agent", "role", "skill", "workflow", "service", "contractus"}
 VALID_BLUEPRINT_KINDS = ALLOWED_KINDS
 
+CONTRACTUS_PROJECTION_VERSION = "bach.contractus-projection.v1"
+CONTRACTUS_MODES = frozenset({"casualis", "usus", "impetus_causa", "impetus_temporal"})
+CONTRACTUS_ANIMUS_TYPES = frozenset({"api", "cli", "subscription", "local"})
+CONTRACTUS_TASK_TYPES = frozenset({
+    "allround", "architecture", "audit", "chat", "code", "compliance",
+    "hygiene", "maintenance", "recherche", "routine", "routing", "triage",
+})
+CONTRACTUS_WAKE_BEHAVIORS = frozenset({"always_on", "idle_wake", "manual"})
+CONTRACTUS_METADATA_FIELDS = frozenset({"id", "title", "description"})
+CONTRACTUS_FIELDS = CONTRACTUS_METADATA_FIELDS | frozenset({
+    "turns", "max_turns", "cooldown", "cooldown_seconds", "task_type",
+    "task_types", "modus", "wake", "wake_behavior", "animus_type",
+})
+
+
+def _contractus_depth(value: Any, depth: int = 0) -> None:
+    if depth > 8:
+        raise ValueError("contractus_depth_limit")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError("Contractus-Feldname muss Text sein")
+            _contractus_depth(item, depth + 1)
+    elif isinstance(value, list):
+        for item in value:
+            _contractus_depth(item, depth + 1)
+
+
+def _contractus_alias(values: dict[str, Any], canonical: str, alias: str) -> Any:
+    has_canonical = canonical in values
+    has_alias = alias in values
+    if ((has_canonical and values[canonical] is None)
+            or (has_alias and values[alias] is None)):
+        raise ValueError("contractus_null_not_allowed")
+    if has_canonical and has_alias:
+        left, right = values[canonical], values[alias]
+        if type(left) is not type(right) or left != right:
+            raise ValueError(f"contractus_alias_conflict: {canonical}/{alias}")
+        return left
+    if has_canonical:
+        return values[canonical]
+    if has_alias:
+        return values[alias]
+    return None
+
+
+def project_contractus(
+    value: Any,
+    *,
+    modus: Any = None,
+    animus_type: Any = None,
+) -> tuple[dict[str, Any], str, str, dict[str, str]]:
+    """Validate native preset/seed variants and return their typed projection.
+
+    The projection is declarative metadata only. Nested execution settings
+    remain a separate controller contract and are deliberately not projected.
+    """
+    if not isinstance(value, dict):
+        raise TypeError("Contractus muss eine Zuordnung sein")
+    if any(not isinstance(key, str) for key in value):
+        raise ValueError("Ungültige Contractus-Zuordnung")
+    _contractus_depth(value)
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, RecursionError):
+        raise ValueError("Contractus-Quelle ist nicht sicher serialisierbar") from None
+    if len(encoded) > 32 * 1024:
+        raise ValueError("contractus_size_limit")
+    if "execution" in value:
+        raise ValueError("contractus_execution_not_projected")
+    unknown = set(value) - CONTRACTUS_FIELDS
+    if unknown:
+        raise ValueError("Nicht unterstützte Contractus-Felder")
+
+    preset_metadata: dict[str, str] = {}
+    if "id" in value:
+        preset_id = value["id"]
+        if not isinstance(preset_id, str) or not _ID.fullmatch(preset_id):
+            raise ValueError("Contractus-Preset-ID ist ungültig")
+        preset_metadata["id"] = preset_id
+    for key, limit in (("title", 120), ("description", 2_000)):
+        if key in value:
+            item = value[key]
+            if (not isinstance(item, str) or any(ord(char) < 32 for char in item)
+                    or len(item) > limit or not item.strip()):
+                raise ValueError(f"Contractus-Preset-{key} ist ungültig")
+            preset_metadata[key] = item.strip()
+
+    contractus_values = {
+        key: item for key, item in value.items()
+        if key not in CONTRACTUS_METADATA_FIELDS
+    }
+    turns = _contractus_alias(contractus_values, "turns", "max_turns")
+    cooldown = _contractus_alias(contractus_values, "cooldown_seconds", "cooldown")
+    wake = _contractus_alias(contractus_values, "wake_behavior", "wake")
+    for label, item in (("turns", turns), ("cooldown", cooldown)):
+        if item is not None and (type(item) is not int or item < 0 or item > 100_000):
+            raise ValueError(f"Contractus-{label} muss eine begrenzte Ganzzahl sein")
+
+    normalized: dict[str, Any] = {}
+    if turns is not None:
+        normalized["turns"] = turns
+    if cooldown is not None:
+        normalized["cooldown_seconds"] = cooldown
+    if "task_type" in contractus_values:
+        task_type = contractus_values["task_type"]
+        if not isinstance(task_type, str) or task_type not in CONTRACTUS_TASK_TYPES:
+            raise ValueError("Contractus-Aufgabentyp ist ungültig")
+        normalized["task_type"] = task_type
+    if "task_types" in contractus_values:
+        task_types = contractus_values["task_types"]
+        if (not isinstance(task_types, list) or len(task_types) > 32
+                or any(not isinstance(item, str) or item not in CONTRACTUS_TASK_TYPES
+                       for item in task_types)
+                or len(set(task_types)) != len(task_types)):
+            raise ValueError("Contractus-Aufgabentyp-Liste ist ungültig")
+        normalized["task_types"] = list(task_types)
+    if wake is not None:
+        if not isinstance(wake, str) or wake not in CONTRACTUS_WAKE_BEHAVIORS:
+            raise ValueError("Contractus-Weckverhalten ist ungültig")
+        normalized["wake_behavior"] = wake
+
+    if "modus" in contractus_values:
+        nested_modus = contractus_values["modus"]
+        if nested_modus is None:
+            raise ValueError("contractus_null_not_allowed")
+        if not isinstance(nested_modus, str) or nested_modus not in CONTRACTUS_MODES:
+            raise ValueError("Contractus-Arbeitsmodus ist ungültig")
+        if modus is not None and nested_modus != modus:
+            raise ValueError("contractus_alias_conflict: modus")
+        modus = nested_modus
+    if modus is None:
+        modus = "casualis"
+    if not isinstance(modus, str) or modus not in CONTRACTUS_MODES:
+        raise ValueError("Blueprint-Arbeitsmodus ist ungültig")
+
+    if "animus_type" in contractus_values:
+        nested_animus = contractus_values["animus_type"]
+        if nested_animus is None:
+            raise ValueError("contractus_null_not_allowed")
+        if not isinstance(nested_animus, str) or nested_animus not in CONTRACTUS_ANIMUS_TYPES:
+            raise ValueError("Contractus-Animus-Typ ist ungültig")
+        if animus_type is not None and nested_animus != animus_type:
+            raise ValueError("contractus_alias_conflict: animus_type")
+        animus_type = nested_animus
+    if animus_type is None:
+        animus_type = "subscription"
+    if not isinstance(animus_type, str) or animus_type not in CONTRACTUS_ANIMUS_TYPES:
+        raise ValueError("Blueprint-Animus-Typ ist ungültig")
+
+    return normalized, modus, animus_type, preset_metadata
+
 # Standard-Pfade fuer Skills
 SKILLS_SEARCH_PATHS = [
     Path("C:/Users/User/OneDrive/.TOPICS/.AI/.SKILLS/skills"),
