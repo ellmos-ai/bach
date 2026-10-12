@@ -2,7 +2,12 @@
 """Fake model metadata and isolated files; no real inference or task writes."""
 import asyncio
 import json
+import os
+import subprocess
+import sys
+import textwrap
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -572,3 +577,107 @@ def test_policy_change_during_internal_gate_wait_aborts(resources, tmp_path, mon
         asyncio.run(runtime._chat_with_compute_turn(backend, []))
     assert runtime._compute_turn_gate.active is False
     assert runtime.compute_turn_status()["active"] is False
+
+
+@pytest.mark.parametrize("operation", ["roots", "probe"])
+def test_root_api_shim_resource_paths_without_database_access(tmp_path, operation):
+    """Exercise the editable-install facade instead of the system-only import."""
+    source_root = Path(__file__).resolve().parents[2]
+    database_dir = tmp_path / "database"
+    slots_dir = tmp_path / "slots"
+    runtime_dir = tmp_path / "runtime"
+    for directory in (database_dir, slots_dir, runtime_dir):
+        directory.mkdir()
+    isolated_env = os.environ.copy()
+    isolated_env.update({
+        "BACH_DB": str(database_dir / "absent.db"),
+        "BACH_LOCAL_DIR": str(database_dir),
+        "BACH_RUNTIME_DIR": str(runtime_dir),
+        "BACH_SLOTS_CONFIG_PATH": str(slots_dir / "absent.json"),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONPATH": os.pathsep.join(filter(None, (
+            str(source_root), str(source_root / "system"),
+            isolated_env.get("PYTHONPATH", ""),
+        ))),
+    })
+    script = textwrap.dedent("""
+        import asyncio
+        import json
+        import os
+        import sqlite3
+        import sys
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        def forbidden_database(*args, **kwargs):
+            raise AssertionError("Resource path resolution must not open a DB")
+
+        sqlite3.connect = forbidden_database
+        import bach_api
+        source_root = Path(sys.argv[1])
+        assert Path(bach_api.__file__).resolve() == source_root / "bach_api.py"
+        assert not hasattr(bach_api, "_resolve_db_path")
+        from hub.bach_paths import BACH_DB
+        from hub._services.chat import local_resource_reserve as reserve
+        from hub._services.llm.model_backend import OllamaBackend
+        expected = {
+            "taskdb": Path(os.environ["BACH_DB"]).parent,
+            "slots": Path(os.environ["BACH_SLOTS_CONFIG_PATH"]).parent,
+            "runtime": Path(os.environ["BACH_RUNTIME_DIR"]).expanduser().resolve(),
+        }
+        # The process guard may supply its own isolated runtime directory.
+        expected["runtime"].mkdir(parents=True, exist_ok=True)
+        assert BACH_DB == Path(os.environ["BACH_DB"])
+        assert reserve._data_roots() == expected, (reserve._data_roots(), expected)
+        if sys.argv[2] == "probe":
+            model = "example:small"
+            digest = "a" * 64
+            gib = reserve.GIB
+            policy = {
+                "schema": reserve.SCHEMA, "enabled": True,
+                "memory_reserve_bytes": gib, "disk_reserve_bytes": gib,
+                "wait_seconds": 2, "poll_seconds": 1,
+                "models": {model: {
+                    "digest": digest, "weight_budget_bytes": 2 * gib,
+                    "kv_headroom_bytes": gib // 2,
+                    "overhead_bytes": gib // 4, "num_ctx": 1024,
+                }},
+            }
+            path = reserve.policy_path()
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(policy), encoding="utf-8")
+
+            async def fake_metadata(*args):
+                return {
+                    "external": False, "digest": digest,
+                    "weight_floor_bytes": 2 * gib, "resident_context": None,
+                }
+
+            reserve.observe_ollama = fake_metadata
+            reserve.psutil.virtual_memory = lambda: SimpleNamespace(
+                total=32 * gib, available=8 * gib
+            )
+            checked_roots = []
+
+            def fake_disk_usage(path):
+                checked_roots.append(path)
+                return SimpleNamespace(free=4 * gib)
+
+            reserve.shutil.disk_usage = fake_disk_usage
+            receipt = asyncio.run(reserve.probe(
+                OllamaBackend(default_model=model, num_ctx=1024), model
+            ))
+            assert receipt["state"] == "ready" and receipt["admitted"]
+            assert set(checked_roots) == set(expected.values())
+        assert not Path(os.environ["BACH_DB"]).exists()
+        assert not Path(os.environ["BACH_SLOTS_CONFIG_PATH"]).exists()
+        print("ROOT_API_RESOURCE_PATHS_OK")
+    """)
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(source_root), operation],
+        cwd=tmp_path, env=isolated_env, capture_output=True, text=True,
+        timeout=30, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "ROOT_API_RESOURCE_PATHS_OK" in completed.stdout
