@@ -102,8 +102,8 @@ def _data_roots():
     # Path resolution does not open or migrate the canonical task database.
     from hub._services.chat.slots_config import DEFAULT_SLOTS_FILE
 
-    from bach_api import _resolve_db_path
-    roots = {"taskdb": _resolve_db_path().parent, "runtime": runtime_root(),
+    from hub.bach_paths import BACH_DB
+    roots = {"taskdb": BACH_DB.parent, "runtime": runtime_root(),
              "slots": Path(DEFAULT_SLOTS_FILE).expanduser().parent}
     result = {}
     for label, root in roots.items():
