@@ -294,7 +294,7 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
                            resource_version: str | None = None, device: str | None = None,
                            config: ResourceLeaseConfig | None = None,
                            now: datetime | None = None) -> LeaseResult:
-    """Stern anfordern. Hoechstens ein lebender Halter je Ressource."""
+    """Polaris star anfordern. Hoechstens ein lebender Halter je Ressource."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)
     worker_id, host = core.validate_worker(worker_id, host)
@@ -446,7 +446,7 @@ def release_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id:
                            resource_version: str | None = None,
                            config: ResourceLeaseConfig | None = None,
                            now: datetime | None = None) -> LeaseResult:
-    """Rueckgabe. Ein abgelaufener, noch nicht uebernommener Stern darf noch
+    """Rueckgabe. Ein abgelaufener, noch nicht uebernommener Polaris star darf noch
     zurueckgegeben werden (``late``); nach einer Uebernahme gilt ``stale_fence``."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)

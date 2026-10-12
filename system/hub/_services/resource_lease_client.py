@@ -156,7 +156,7 @@ class ResourceReleaseAck:
 
 
 class ResourceLeaseClient(_tlc.TaskLeaseClient):
-    """Stern-Client: acquire, renew, release, status, verify."""
+    """Polaris-star-Client: acquire, renew, release, status, verify."""
 
     def __init__(self, *, allow_isolated: bool | None = None, **kwargs):
         super().__init__(**kwargs)
@@ -243,7 +243,7 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
             expires_at=data.get("expires_at"), own=bool(data.get("own")))
 
     def verify(self, ack: ResourceLeaseAck, *, config=None, now=None) -> ResourceStatus:
-        """Nachpruefung beim Lead: Stern und Fence noch dieselben? Sonst ``star_lost``."""
+        """Nachpruefung beim Lead: Polaris star und Fence noch dieselben? Sonst ``star_lost``."""
         st = self.status(ack.resource, lease_id=ack.lease_id, config=config, now=now)
         if not (st.leased and st.own and st.fence == ack.fence):
             raise ResourceLeaseLostError(
