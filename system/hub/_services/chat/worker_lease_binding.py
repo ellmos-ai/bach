@@ -20,6 +20,12 @@ class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
 
+class WorkerResultLimitLockedError(LeaseProtocolError):
+    """A worker may keep or tighten, but never loosen, its result limit."""
+
+    user_message = "Das Task-Ausgabelimit darf von einem Worker nicht gelockert werden."
+
+
 class WorkerLeaseBinding:
     def __init__(self, client, snapshot, ack, *, generation, is_current, stop_event, clock=None, policy_guard=None):
         self._client = client
@@ -307,6 +313,14 @@ class WorkerLeaseBinding:
         with self._lock:
             return copy.deepcopy(self._snapshot)
 
+    def correction_context(self):
+        with self._lock:
+            self._assert_authority_active()
+            return self._client.task_correction_context(
+                self.task_id, lease_id=self._ack.lease_id, fence=self._ack.fence,
+                task_version=self._snapshot["task_version"], generation=self._generation,
+            )
+
     def _assert_authority_active(self):
         with self._lock:
             if not self._active or self._closed or not self._is_current() or self._stop_event.is_set():
@@ -534,7 +548,10 @@ class WorkerLeaseBinding:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
                 from hub._services.task_result_service import validate_submission
                 try:
-                    _, text, digest = validate_submission({"generation": self._generation, "result": args.get("result")})
+                    _, text, digest = validate_submission(
+                    {"generation": self._generation, "result": args.get("result")},
+                    max_chars=self._snapshot.get("result_max_chars"),
+                )
                 except ValueError as exc:
                     raise LeaseProtocolError(str(exc)) from None
                 self._submission_expected = {"task_id": self.task_id, "fence": self._ack.fence,
@@ -560,10 +577,20 @@ class WorkerLeaseBinding:
                 return f"Task #{self.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
-                           "assigned_to", "required_model", "assigned_slot", "status"}
+                           "assigned_to", "required_model", "assigned_slot", "status", "result_max_chars"}
                 if set(args) - allowed - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Task-Inhaltsfelder")
                 changes = {key: value for key, value in args.items() if key in allowed}
+                if "result_max_chars" in changes:
+                    value = changes["result_max_chars"]
+                    if value is not None and (type(value) is not int or not 1 <= value <= 3000):
+                        raise LeaseProtocolError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+                    current_limit = self._snapshot.get("result_max_chars")
+                    if current_limit is not None and (
+                            type(current_limit) is not int or not 1 <= current_limit <= 3000):
+                        raise LeaseProtocolError("Aktuelles Task-Ausgabelimit kann nicht bestätigt werden")
+                    if current_limit is not None and (value is None or value > current_limit):
+                        raise WorkerResultLimitLockedError(WorkerResultLimitLockedError.user_message)
                 if changes.get("status") in {"done", "completed"}:
                     if len(changes) != 1:
                         raise LeaseProtocolError("Ergebnisabgabe und Inhaltsänderung getrennt ausführen")
@@ -588,14 +615,14 @@ class WorkerLeaseBinding:
             if action in {"decompose", "add"}:
                 if action == "add":
                     fields = {"title", "description", "priority", "depends_on", "assigned_to",
-                              "category", "required_model", "assigned_slot"}
+                              "category", "required_model", "assigned_slot", "result_max_chars"}
                     if set(args) - fields - {"action"}:
                         raise LeaseProtocolError("Unbekannte Teilaufgabenfelder")
                     subtasks = [{key: value for key, value in args.items() if key in fields}]
                     close_parent = False
                 else:
                     allowed = {"action", "task_id", "subtasks", "close_parent", "sequential",
-                               "category", "assigned_to", "assigned_slot", "required_model"}
+                               "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars"}
                     if set(args) - allowed:
                         raise LeaseProtocolError("Unbekannte Zerlegungsfelder")
                     subtasks = args.get("subtasks")
@@ -603,7 +630,8 @@ class WorkerLeaseBinding:
                     if close_parent is not False:
                         raise LeaseProtocolError("Worker-Zerlegung schließt den Parent nicht ab; Ergebnisabgabe und Abnahme erforderlich")
                     if isinstance(subtasks, list):
-                        subtasks = [{**{key: args[key] for key in ("category", "assigned_to", "assigned_slot", "required_model")
+                        subtasks = [{**{key: args[key] for key in (
+                                           "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
                                        if key in args}, **item} if isinstance(item, dict) else item
                                     for item in subtasks]
                 previous_version = self._snapshot["task_version"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import uuid
 import sqlite3
 
 
@@ -18,6 +19,29 @@ class ResultConflict(ValueError):
 
 class ResultPermissionDenied(PermissionError):
     """The dedicated operator credential is missing or revoked."""
+
+
+class ResultCorrectionError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+class ResultCorrectionValidation(ResultCorrectionError):
+    pass
+
+
+class ResultHistoryUnavailable(RuntimeError):
+    """History cannot be served with a bounded indexed query on this database."""
+
+
+class ResultCorrectionConflict(ResultCorrectionError):
+    pass
+
+
+class CorrectionContextDenied(Exception):
+    """A task-bound worker cannot prove the current correction context."""
+    pass
 
 
 def ensure_result_schema(conn):
@@ -38,11 +62,57 @@ def ensure_result_schema(conn):
         acceptance_event_id INTEGER,
         UNIQUE(task_id, fence)
     )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_submission_event "
+                 "ON worker_task_results(task_id, submission_event_id DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_acceptance_event "
+                 "ON worker_task_results(task_id, acceptance_event_id DESC)")
+    if _table_exists(conn, "task_history"):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_task_history_task_action_id "
+                     "ON task_history(task_id, action, id DESC)")
+
+
+def ensure_result_correction_schema(conn):
+    """Add the append-only correction ledger and explicit operator scope."""
+    ensure_result_schema(conn)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "result_correction_request_id" not in columns:
+        conn.execute("ALTER TABLE tasks ADD COLUMN result_correction_request_id INTEGER")
+    operators = conn.execute("SELECT type FROM sqlite_master WHERE name='task_result_operators'").fetchone()
+    if operators and operators[0] == "table":
+        operator_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_operators)")}
+        if "can_request_correction" not in operator_columns:
+            conn.execute("ALTER TABLE task_result_operators ADD COLUMN can_request_correction INTEGER NOT NULL DEFAULT 0")
+    conn.execute("""CREATE TABLE IF NOT EXISTS task_result_corrections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        request_id TEXT NOT NULL,
+        correction_round INTEGER NOT NULL,
+        source_result_id INTEGER NOT NULL,
+        source_result_sha256 TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        source_fence INTEGER NOT NULL,
+        source_task_version TEXT NOT NULL,
+        source_status_revision INTEGER NOT NULL,
+        correction_note TEXT NOT NULL,
+        requested_by_device_id INTEGER NOT NULL,
+        requested_at TEXT NOT NULL,
+        event_id INTEGER,
+        next_task_version TEXT,
+        UNIQUE(task_id, request_id),
+        UNIQUE(task_id, correction_round)
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_task_result_corrections_event "
+                 "ON task_result_corrections(task_id, event_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_task_result_corrections_task_event_desc "
+                 "ON task_result_corrections(task_id, event_id DESC)")
+
+
+def _table_exists(conn, name):
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def _has_results(conn):
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
-                        "AND name='worker_task_results'").fetchone() is not None
+    return _table_exists(conn, "worker_task_results")
 
 
 def _dict_row(cursor):
@@ -56,23 +126,26 @@ def _status_revision(conn, task_id):
     return int(row[0] or 0)
 
 
-def validate_submission(payload):
+def validate_submission(payload, *, max_chars=None):
+    if max_chars is not None and (type(max_chars) is not int or not 1 <= max_chars <= 3000):
+        raise ValueError("Task-Ausgabelimit muss eine Ganzzahl von 1 bis 3000 sein")
+    limit = min(max_chars, 3000) if max_chars is not None else 3000
     if not isinstance(payload, dict) or set(payload) != {"generation", "result"}:
         raise ValueError("Ergebnisabgabe erlaubt nur generation und result")
     generation, text = payload["generation"], payload["result"]
     if not isinstance(generation, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", generation):
         raise ValueError("Workergeneration fehlt oder ist ungültig")
-    if not isinstance(text, str) or not text.strip() or len(text) > 3000 or "\x00" in text:
-        raise ValueError("Konkretes Ergebnis mit höchstens 3000 Zeichen erforderlich")
+    if not isinstance(text, str) or not text.strip() or len(text) > limit or "\x00" in text:
+        raise ValueError(f"Konkretes Ergebnis mit höchstens {limit} Zeichen erforderlich")
     acknowledgement = re.sub(r"[\s.!:;✅]+", " ", text.casefold()).strip()
     if re.fullmatch(r"(?:(?:task|aufgabe)\s*#?\d+\s*)?(?:done|completed|erledigt|abgeschlossen)", acknowledgement):
         raise ValueError("Eine Erledigungsbestätigung ist kein fachliches Ergebnis")
     return generation, text, hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def insert_submission(conn, row, payload, *, worker, now):
+def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     from .task_lease import task_content_version
-    generation, text, digest = validate_submission(payload)
+    generation, text, digest = validate_submission(payload, max_chars=max_chars)
     ensure_result_schema(conn)
     cursor = conn.execute("""INSERT INTO worker_task_results
         (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at)
@@ -115,7 +188,73 @@ def _legacy_result(conn, task_id):
     return None
 
 
-def read_result(conn, task_id):
+def _operator_capabilities(conn, operator_token):
+    empty = {"accept_result": False, "request_correction": False}
+    if not isinstance(operator_token, str) or not operator_token.strip() or len(operator_token) > 256:
+        return empty
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {"devices", "task_result_operators"} <= tables:
+        return empty
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_operators)")}
+    correction_expr = "o.can_request_correction" if "can_request_correction" in columns else "0"
+    from gui.device_auth import _hash_token
+    row = conn.execute(
+        f"SELECT o.device_id, {correction_expr} FROM devices d "
+        "JOIN task_result_operators o ON o.device_id=d.id "
+        "WHERE d.token_hash=? AND d.status='active'",
+        (_hash_token(operator_token),),
+    ).fetchone()
+    if row is None:
+        return empty
+    return {"accept_result": True, "request_correction": bool(row[1])}
+
+
+_TASK_LEASE_CONTEXT_COLUMNS = frozenset({
+    "id", "status", "claimed_by", "claimed_at", "claim_id", "claim_fence",
+    "claim_expires_at", "claim_task_version", "claim_result_generation",
+})
+
+
+def _task_lease_context_schema_present(conn):
+    """Check existing lease columns without running a schema migration."""
+    try:
+        if not _table_exists(conn, "tasks"):
+            return False
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    except sqlite3.Error:
+        return False
+    return _TASK_LEASE_CONTEXT_COLUMNS <= columns
+
+
+def _correction_operator_device_id(conn, operator_token):
+    """Read an explicitly correction-enabled operator; missing schema denies."""
+    if not isinstance(operator_token, str) or not operator_token.strip() or len(operator_token) > 256:
+        return None
+    try:
+        if not _table_exists(conn, "devices") or not _table_exists(conn, "task_result_operators"):
+            return None
+        device_columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
+        operator_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_operators)")}
+        if not {"id", "token_hash", "status"} <= device_columns:
+            return None
+        if not {"device_id", "can_request_correction"} <= operator_columns:
+            return None
+        from gui.device_auth import _hash_token
+        row = conn.execute(
+            "SELECT d.id, o.can_request_correction FROM devices d "
+            "JOIN task_result_operators o ON o.device_id=d.id "
+            "WHERE d.token_hash=? AND d.status='active'",
+            (_hash_token(operator_token),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # A missing/revoked operator schema is a regular denial, never a 500 or migration.
+        return None
+    if row is None or type(row[0]) is not int or type(row[1]) is not int or row[1] != 1:
+        return None
+    return row[0]
+
+
+def read_result(conn, task_id, *, operator_token=None):
     """Read task, result and status event from one SQLite snapshot; never migrate."""
     owns_transaction = not conn.in_transaction
     if owns_transaction:
@@ -126,6 +265,7 @@ def read_result(conn, task_id):
         if task is None:
             raise ResultConflict("Task nicht vorhanden")
         revision = _status_revision(conn, task_id)
+        operator_capabilities = _operator_capabilities(conn, operator_token)
         record = (_dict_row(conn.execute("SELECT * FROM worker_task_results WHERE task_id=? "
                                         "ORDER BY id DESC LIMIT 1", (task_id,)))
                   if _has_results(conn) else None)
@@ -133,7 +273,8 @@ def read_result(conn, task_id):
             result = _legacy_result(conn, task_id)
             return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                     "task_version": task_content_version(task), "status": task["status"],
-                    "status_revision": revision, "result": result, "verified": True}
+                    "status_revision": revision, "result": result, "verified": True,
+                    "operator_capabilities": operator_capabilities}
         same_content = task_content_version(task) == record["task_version"]
         same_fence = int(task.get("claim_fence") or 0) == record["fence"]
         same_digest = hashlib.sha256(record["result"].encode("utf-8")).hexdigest() == record["result_sha256"]
@@ -159,10 +300,565 @@ def read_result(conn, task_id):
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
         return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                 "task_version": task_content_version(task), "status": task["status"],
-                "status_revision": revision, "result": record, "verified": True}
+                "status_revision": revision, "result": record, "verified": True,
+                "operator_capabilities": operator_capabilities}
     finally:
         if owns_transaction:
             conn.rollback()
+
+
+def _validate_correction_payload(payload):
+    fields = {"result_id", "result_sha256", "generation", "fence", "task_version",
+              "status_revision", "request_id", "correction_note"}
+    if not isinstance(payload, dict) or set(payload) != fields:
+        raise ResultCorrectionValidation("correction_request_invalid", "Korrekturanfrage hat unbekannte oder fehlende Felder")
+    if type(payload["result_id"]) is not int or payload["result_id"] <= 0:
+        raise ResultCorrectionValidation("correction_request_invalid", "result_id ist ungültig")
+    if type(payload["fence"]) is not int or payload["fence"] <= 0:
+        raise ResultCorrectionValidation("correction_request_invalid", "fence ist ungültig")
+    if type(payload["status_revision"]) is not int or payload["status_revision"] < 0:
+        raise ResultCorrectionValidation("correction_request_invalid", "status_revision ist ungültig")
+    for name in ("result_sha256", "task_version"):
+        if not isinstance(payload[name], str) or re.fullmatch(r"[a-f0-9]{64}", payload[name]) is None:
+            raise ResultCorrectionValidation("correction_request_invalid", f"{name} ist ungültig")
+    if not isinstance(payload["generation"], str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", payload["generation"]) is None:
+        raise ResultCorrectionValidation("correction_request_invalid", "generation ist ungültig")
+    try:
+        request_id = uuid.UUID(payload["request_id"])
+    except (ValueError, TypeError, AttributeError):
+        raise ResultCorrectionValidation("correction_request_invalid", "request_id ist ungültig") from None
+    if request_id.version != 4 or str(request_id) != payload["request_id"]:
+        raise ResultCorrectionValidation("correction_request_invalid", "request_id muss eine kanonische UUIDv4 sein")
+    note = payload["correction_note"]
+    if not isinstance(note, str) or not note.strip() or len(note) > 1200 or "\x00" in note:
+        raise ResultCorrectionValidation("correction_request_invalid", "correction_note muss 1 bis 1200 Zeichen enthalten")
+    return dict(payload)
+
+
+def _correction_ack(row, *, replayed=False):
+    return {
+        "schema": "bach.task-result-correction-request.v1",
+        "request_id": row["request_id"], "task_id": row["task_id"],
+        "correction_id": row["id"], "correction_round": row["correction_round"],
+        "source_result_id": row["source_result_id"],
+        "source_result_sha256": row["source_result_sha256"],
+        "status": "pending", "next_task_version": row["next_task_version"],
+        "replayed": replayed,
+    }
+
+
+def request_result_correction(conn, task_id, payload, *, operator_token):
+    """Atomically return the exact current review result to pending with a new task version."""
+    if type(task_id) is not int or task_id <= 0:
+        raise ResultCorrectionValidation("correction_request_invalid", "task_id ist ungültig")
+    request = _validate_correction_payload(payload)
+    if conn.in_transaction:
+        raise ResultCorrectionConflict("task_not_revisable", "Korrektur braucht eine eigene kanonische Transaktion")
+    from .task_lease import task_content_version, _history, _utcnow, _local_naive
+    from hub.task_audit import apply_task_field_changes
+    prechecked_device_id = _correction_operator_device_id(conn, operator_token)
+    if prechecked_device_id is None:
+        raise ResultPermissionDenied("Korrekturfreigabe fehlt oder wurde widerrufen")
+    if not _task_lease_context_schema_present(conn):
+        raise ResultCorrectionConflict("task_not_revisable", "Task-Lease-Schema ist nicht verfügbar")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        device_id = _correction_operator_device_id(conn, operator_token)
+        if device_id is None or device_id != prechecked_device_id:
+            raise ResultPermissionDenied("Korrekturfreigabe fehlt oder wurde widerrufen")
+        if not _task_lease_context_schema_present(conn):
+            raise ResultCorrectionConflict("task_not_revisable", "Task-Lease-Schema ist nicht verfügbar")
+        ensure_result_correction_schema(conn)
+        existing = _dict_row(conn.execute(
+            "SELECT * FROM task_result_corrections WHERE task_id=? AND request_id=?",
+            (task_id, request["request_id"]),
+        ))
+        if existing is not None:
+            same = (
+                existing["source_result_id"] == request["result_id"]
+                and existing["source_result_sha256"] == request["result_sha256"]
+                and existing["source_generation"] == request["generation"]
+                and existing["source_fence"] == request["fence"]
+                and existing["source_task_version"] == request["task_version"]
+                and existing["source_status_revision"] == request["status_revision"]
+                and existing["correction_note"] == request["correction_note"]
+                and existing["requested_by_device_id"] == device_id
+            )
+            if not same:
+                raise ResultCorrectionConflict("request_id_conflict", "request_id wurde bereits anders verwendet")
+            conn.commit()
+            return _correction_ack(existing, replayed=True)
+
+        observed = read_result(conn, task_id)
+        record = observed.get("result")
+        task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if task is None:
+            raise ResultCorrectionConflict("task_not_revisable", "Task ist nicht vorhanden")
+        if (observed.get("status") != "review" or observed.get("status_revision") != request["status_revision"]
+                or observed.get("task_version") != request["task_version"]
+                or not isinstance(record, dict) or record.get("result_id") is None
+                or record.get("reason") != "awaiting_review"
+                or record.get("result_id") != request["result_id"]
+                or record.get("result_sha256") != request["result_sha256"]
+                or record.get("generation") != request["generation"]
+                or record.get("fence") != request["fence"]
+                or record.get("task_version") != request["task_version"]
+                or type(record.get("submission_event_id")) is not int):
+            raise ResultCorrectionConflict("result_changed_reload", "Ergebnis oder Task hat sich geändert; bitte neu laden")
+        if task.get("status") != "review" or task.get("claim_id"):
+            raise ResultCorrectionConflict("task_not_revisable", "Nur ein freigegebenes Review-Ergebnis kann korrigiert werden")
+
+        now = _utcnow()
+        stamp = _local_naive(now)
+        correction_round = int(conn.execute(
+            "SELECT COALESCE(MAX(correction_round),0)+1 FROM task_result_corrections WHERE task_id=?",
+            (task_id,),
+        ).fetchone()[0])
+        cursor = conn.execute(
+            """INSERT INTO task_result_corrections
+               (task_id,request_id,correction_round,source_result_id,source_result_sha256,
+                source_generation,source_fence,source_task_version,source_status_revision,
+                correction_note,requested_by_device_id,requested_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (task_id, request["request_id"], correction_round, request["result_id"],
+             request["result_sha256"], request["generation"], request["fence"],
+             request["task_version"], request["status_revision"], request["correction_note"],
+             device_id, stamp),
+        )
+        correction_id = cursor.lastrowid
+        apply_task_field_changes(
+            conn, task_id, task, {"status": "pending"}, changed_by=f"operator-device:{device_id}",
+            now=stamp, allow_reopen=True,
+        )
+        pointer = conn.execute(
+            "UPDATE tasks SET result_correction_request_id=? WHERE id=? AND status='pending' "
+            "AND (claim_id IS NULL OR claim_id='') AND result_correction_request_id IS ?",
+            (correction_id, task_id, task.get("result_correction_request_id")),
+        )
+        if pointer.rowcount != 1:
+            raise ResultCorrectionConflict("result_changed_reload", "Task hat sich während der Korrektur geändert")
+        next_task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        next_version = task_content_version(next_task)
+        event_id = _history(conn, task_id, "result_correction_request", f"operator-device:{device_id}", now,
+            {"correction_id": correction_id, "request_id": request["request_id"],
+             "correction_round": correction_round, "result_id": request["result_id"],
+             "result_sha256": request["result_sha256"], "generation": request["generation"],
+             "fence": request["fence"], "task_version": request["task_version"],
+             "status_revision": request["status_revision"], "correction_note": request["correction_note"],
+             "next_task_version": next_version})
+        conn.execute("UPDATE task_result_corrections SET event_id=?,next_task_version=? WHERE id=?",
+                     (event_id, next_version, correction_id))
+        if next_task.get("status") != "pending" or next_task.get("result_correction_request_id") != correction_id:
+            raise ResultCorrectionConflict("task_not_revisable", "Korrekturanfrage konnte nicht bestätigt werden")
+        conn.commit()
+        row = _dict_row(conn.execute("SELECT * FROM task_result_corrections WHERE id=?", (correction_id,)))
+        return _correction_ack(row)
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+
+
+def _correction_audit_matches(row, detail):
+    """Bind every correction-ledger field to its event before exposing it."""
+    expected = {
+        "correction_id": row.get("correction_id"),
+        "request_id": row.get("request_id"),
+        "correction_round": row.get("correction_round"),
+        "result_id": row.get("source_result_id"),
+        "result_sha256": row.get("source_result_sha256"),
+        "generation": row.get("source_generation"),
+        "fence": row.get("source_fence"),
+        "task_version": row.get("source_task_version"),
+        "status_revision": row.get("source_status_revision"),
+        "correction_note": row.get("correction_note"),
+        "next_task_version": row.get("correction_next_task_version"),
+    }
+    if not isinstance(detail, dict) or any(name not in detail for name in expected):
+        return False
+    if any(type(detail[name]) is not type(value) or detail[name] != value
+           for name, value in expected.items()):
+        return False
+    correction_id = expected["correction_id"]
+    correction_round = expected["correction_round"]
+    source_result_id = expected["result_id"]
+    source_digest = expected["result_sha256"]
+    generation = expected["generation"]
+    fence = expected["fence"]
+    source_version = expected["task_version"]
+    status_revision = expected["status_revision"]
+    note = expected["correction_note"]
+    next_version = expected["next_task_version"]
+    device_id = row.get("requested_by_device_id")
+    if (type(correction_id) is not int or correction_id <= 0
+            or type(correction_round) is not int or correction_round <= 0
+            or type(source_result_id) is not int or source_result_id <= 0
+            or not isinstance(expected["request_id"], str) or not expected["request_id"]
+            or not isinstance(source_digest, str) or re.fullmatch(r"[a-f0-9]{64}", source_digest) is None
+            or not isinstance(generation, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", generation) is None
+            or type(fence) is not int or fence <= 0
+            or not isinstance(source_version, str) or re.fullmatch(r"[a-f0-9]{64}", source_version) is None
+            or type(status_revision) is not int or status_revision < 0
+            or not isinstance(note, str) or not note.strip() or len(note) > 1200 or "\x00" in note
+            or not isinstance(next_version, str) or re.fullmatch(r"[a-f0-9]{64}", next_version) is None
+            or type(device_id) is not int or device_id <= 0
+            or row.get("event_changed_by") != f"operator-device:{device_id}"):
+        return False
+    audit_time = _canonical_history_timestamp(row.get("event_changed_at"), None)
+    ledger_time = _canonical_history_timestamp(row.get("source_timestamp"), None)
+    return audit_time is not None and audit_time == ledger_time
+
+
+def _history_index_gaps(conn):
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    required = set()
+    if "worker_task_results" in tables:
+        required.update({
+            "idx_worker_task_results_task_submission_event",
+            "idx_worker_task_results_task_acceptance_event",
+        })
+    if "task_result_corrections" in tables:
+        required.add("idx_task_result_corrections_task_event_desc")
+    if required:
+        required.add("idx_task_history_task_action_id")
+    return required - indexes
+
+
+def _history_scan_limit(limit):
+    return min(max(limit * 10, 100), 500)
+
+
+def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
+    """Build one bounded, indexed candidate query; each event source has a cap."""
+    branches = []
+    params = []
+    cursor_clause = " AND h.id < ?" if before_event_id is not None else ""
+
+    if _table_exists(conn, "worker_task_results"):
+        result_sources = (
+            ("result_submitted", "submission_event_id", "submitted_at",
+             "idx_worker_task_results_task_submission_event", "lease_release"),
+            ("result_accepted", "acceptance_event_id", "COALESCE(r.accepted_at, h.changed_at)",
+             "idx_worker_task_results_task_acceptance_event", "result_acceptance"),
+        )
+        for event_type, event_column, timestamp, result_index, action in result_sources:
+            branch = f"""
+                SELECT h.id AS event_id, '{event_type}' AS event_type,
+                       h.new_value AS event_new_value, h.changed_at AS event_changed_at,
+                       h.changed_by AS event_changed_by, {timestamp} AS source_timestamp,
+                       r.id AS result_id, r.result AS result_text,
+                       r.result_sha256 AS result_sha256, r.generation AS generation,
+                       r.fence AS fence, r.task_version AS task_version,
+                       NULL AS correction_id, NULL AS correction_round,
+                       NULL AS source_result_id, NULL AS source_result_sha256,
+                       NULL AS source_generation, NULL AS source_fence,
+                       NULL AS source_task_version, NULL AS source_status_revision,
+                       NULL AS correction_note, NULL AS request_id,
+                       NULL AS requested_by_device_id, NULL AS correction_next_task_version
+                FROM task_history AS h INDEXED BY idx_task_history_task_action_id
+                JOIN worker_task_results AS r INDEXED BY {result_index}
+                  ON r.task_id = h.task_id AND r.{event_column} = h.id
+                WHERE h.task_id = ? AND h.action = ?{cursor_clause}
+                ORDER BY h.id DESC LIMIT ?
+            """
+            branches.append(f"SELECT * FROM ({branch}) AS source_{len(branches)}")
+            params.extend([task_id, action])
+            if before_event_id is not None:
+                params.append(before_event_id)
+            params.append(scan_limit + 1)
+
+    if _table_exists(conn, "task_result_corrections"):
+        branch = f"""
+            SELECT h.id AS event_id, 'correction_requested' AS event_type,
+                   h.new_value AS event_new_value, h.changed_at AS event_changed_at,
+                   h.changed_by AS event_changed_by, c.requested_at AS source_timestamp,
+                   NULL AS result_id, NULL AS result_text, NULL AS result_sha256,
+                   NULL AS generation, NULL AS fence, NULL AS task_version,
+                   c.id AS correction_id, c.correction_round AS correction_round,
+                   c.source_result_id AS source_result_id,
+                   c.source_result_sha256 AS source_result_sha256,
+                   c.source_generation AS source_generation, c.source_fence AS source_fence,
+                   c.source_task_version AS source_task_version,
+                   c.source_status_revision AS source_status_revision,
+                   c.correction_note AS correction_note, c.request_id AS request_id,
+                   c.requested_by_device_id AS requested_by_device_id,
+                   c.next_task_version AS correction_next_task_version
+            FROM task_history AS h INDEXED BY idx_task_history_task_action_id
+            LEFT JOIN task_result_corrections AS c INDEXED BY idx_task_result_corrections_task_event_desc
+              ON c.task_id = h.task_id AND c.event_id = h.id
+            WHERE h.task_id = ? AND h.action = ?{cursor_clause}
+            ORDER BY h.id DESC LIMIT ?
+        """
+        branches.append(f"SELECT * FROM ({branch}) AS source_{len(branches)}")
+        params.extend([task_id, "result_correction_request"])
+        if before_event_id is not None:
+            params.append(before_event_id)
+        params.append(scan_limit + 1)
+
+    if not branches:
+        return "", [], []
+    sql = "SELECT * FROM (" + " UNION ALL ".join(branches) + ") ORDER BY event_id DESC"
+    return sql, params, ["result_submitted", "result_accepted", "correction_requested"]
+
+
+def _canonical_history_timestamp(value, fallback):
+    from .task_lease import _fmt, parse_ts
+
+    for candidate in (value, fallback):
+        parsed = parse_ts(candidate)
+        if parsed is not None:
+            return _fmt(parsed)
+    return None
+
+
+def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
+    if type(task_id) is not int or task_id <= 0:
+        raise ResultCorrectionValidation("history_request_invalid", "task_id ist ungültig")
+    if before_event_id is not None and (type(before_event_id) is not int or before_event_id <= 0):
+        raise ResultCorrectionValidation("history_request_invalid", "before_event_id ist ungültig")
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise ResultCorrectionValidation("history_request_invalid", "limit muss zwischen 1 und 50 liegen")
+    owns_transaction = not conn.in_transaction
+    if owns_transaction:
+        conn.execute("BEGIN")
+    try:
+        if conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone() is None:
+            raise ResultConflict("Task nicht vorhanden")
+        if _history_index_gaps(conn):
+            raise ResultHistoryUnavailable("Ergebnisverlauf ist mit dem aktuellen Datenbankschema nicht verfügbar")
+        scan_limit = _history_scan_limit(limit)
+        sql, params, source_types = _history_candidate_query(conn, task_id, before_event_id, scan_limit)
+        raw_rows = []
+        if sql:
+            cursor = conn.execute(sql, params)
+            columns = [column[0] for column in cursor.description]
+            raw_rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        grouped = {event_type: [] for event_type in source_types}
+        for row in raw_rows:
+            grouped.setdefault(row["event_type"], []).append(row)
+        boundaries = []
+        candidates = []
+        for event_type in source_types:
+            ordered = sorted(grouped.get(event_type, []), key=lambda row: row["event_id"], reverse=True)
+            if len(ordered) > scan_limit:
+                boundaries.append(ordered[scan_limit - 1]["event_id"])
+                ordered = ordered[:scan_limit]
+            candidates.extend(ordered)
+        complete_before = max(boundaries) if boundaries else None
+        if complete_before is not None:
+            candidates = [row for row in candidates if row["event_id"] >= complete_before]
+        candidates.sort(key=lambda row: row["event_id"], reverse=True)
+
+        events = []
+        for row in candidates:
+            event_id = row.get("event_id")
+            if type(event_id) is not int:
+                raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Ereignis")
+            try:
+                detail = json.loads(row.get("event_new_value") or "null")
+            except (TypeError, ValueError):
+                raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Ereignis") from None
+            if not isinstance(detail, dict):
+                raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Ereignis")
+            occurred_at = _canonical_history_timestamp(
+                row.get("source_timestamp"), row.get("event_changed_at")
+            )
+            if occurred_at is None:
+                raise ResultHistoryUnavailable("Ergebnisverlauf enthält einen ungültigen Zeitstempel")
+
+            if row["event_type"] in {"result_submitted", "result_accepted"}:
+                result_id = row.get("result_id")
+                text = row.get("result_text")
+                stored_digest = row.get("result_sha256")
+                if type(result_id) is not int or not isinstance(text, str):
+                    raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Ergebnis")
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                if digest != stored_digest:
+                    raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Ergebnis")
+                if row["event_type"] == "result_submitted":
+                    if detail.get("result_ref") != f"bach-task-result:{result_id}:{digest}":
+                        raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Abgabeereignis")
+                    events.append({"event_id": event_id, "type": "result_submitted",
+                        "occurred_at": occurred_at, "result": {
+                            "result_id": result_id, "result_sha256": digest, "text": text,
+                            "generation": row.get("generation"), "fence": row.get("fence"),
+                            "task_version": row.get("task_version")}})
+                elif (detail.get("result_id") == result_id
+                      and detail.get("result_sha256") == digest):
+                    events.append({"event_id": event_id, "type": "result_accepted",
+                        "occurred_at": occurred_at, "result": {
+                            "result_id": result_id, "result_sha256": digest}})
+                else:
+                    raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Abnahmeereignis")
+            elif row["event_type"] == "correction_requested":
+                if not _correction_audit_matches(row, detail):
+                    raise ResultHistoryUnavailable("Ergebnisverlauf enthält eine unbestätigte Korrektur")
+                audit_time = _canonical_history_timestamp(row.get("event_changed_at"), None)
+                events.append({"event_id": event_id, "type": "correction_requested",
+                    "occurred_at": audit_time, "correction": {
+                        "correction_id": row.get("correction_id"),
+                        "correction_round": row.get("correction_round"),
+                        "source_result_id": row.get("source_result_id"),
+                        "source_result_sha256": row.get("source_result_sha256"),
+                        "note": row.get("correction_note"), "request_id": row.get("request_id")}})
+            else:
+                raise ResultHistoryUnavailable("Ergebnisverlauf enthält einen unbekannten Ereignistyp")
+
+        events.sort(key=lambda event: event["event_id"], reverse=True)
+        if complete_before is not None and len(events) <= limit:
+            raise ResultHistoryUnavailable(
+                "Ergebnisverlauf ist innerhalb des begrenzten Suchfensters unvollständig"
+            )
+        has_more = len(events) > limit
+        page = events[:limit]
+        next_before = page[-1]["event_id"] if has_more and page else None
+        return {"schema": "bach.task-result-history.v1", "task_id": task_id,
+                "events": page, "next_before_event_id": next_before, "has_more": has_more}
+    finally:
+        if owns_transaction:
+            conn.rollback()
+
+
+def read_correction_context(conn, task_id, *, lease_id, fence, task_version, generation):
+    """Read a correction only for the exact live task lease and result generation."""
+    from .task_lease import LeaseConfig, _lease_state, _row, _utcnow, task_content_version
+    if (type(task_id) is not int or task_id <= 0 or not isinstance(lease_id, str) or not lease_id
+            or type(fence) is not int or fence <= 0 or not isinstance(task_version, str)
+            or re.fullmatch(r"[a-f0-9]{64}", task_version) is None
+            or not isinstance(generation, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", generation) is None):
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    owns_transaction = not conn.in_transaction
+    if owns_transaction:
+        conn.execute("BEGIN")
+    try:
+        if not _task_lease_context_schema_present(conn):
+            raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+        task = _row(conn, task_id)
+        now = _utcnow()
+        state = _lease_state(task, now, LeaseConfig.from_env()) if task is not None else None
+        if (task is None or state is None or state.get("live") is not True or state.get("kind") != "lease"
+                or task.get("claim_id") != lease_id or task.get("claim_fence") != fence
+                or task.get("status") != "in_progress" or task_content_version(task) != task_version
+                or task.get("claim_task_version") != task_version
+                or task.get("claim_result_generation") != generation):
+            raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+        correction = active_correction_request(conn, task_id)
+        response = {"schema": "bach.task-result-correction-context.v1", "task_id": task_id,
+                    "fence": fence, "generation": generation, "task_version": task_version,
+                    "correction": None}
+        if correction is None:
+            return response
+        source = _dict_row(conn.execute(
+            "SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+            (correction["source_result_id"], task_id),
+        ))
+        if (source is None or source.get("result_sha256") != correction["source_result_sha256"]
+                or hashlib.sha256(source["result"].encode("utf-8")).hexdigest() != source["result_sha256"]):
+            raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+        response["correction"] = {
+            "correction_id": correction["correction_id"],
+            "correction_round": correction["correction_round"],
+            "correction_note": correction["correction_note"],
+            "source_result": {
+                "result_id": source["id"], "result_sha256": source["result_sha256"],
+                "text": source["result"], "generation": source["generation"],
+                "fence": source["fence"], "task_version": source["task_version"],
+                "submission_event_id": source["submission_event_id"],
+            },
+        }
+        return response
+    finally:
+        if owns_transaction and conn.in_transaction:
+            conn.rollback()
+
+
+def active_correction_request(conn, task_id):
+    """Return an audit-bound correction, or None only for legacy/inactive state."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "result_correction_request_id" not in columns:
+        return None
+    task = _dict_row(conn.execute(
+        "SELECT result_correction_request_id FROM tasks WHERE id=?", (task_id,)
+    ))
+    if task is None:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    pointer = task.get("result_correction_request_id")
+    if pointer is None:
+        return None
+    if type(pointer) is not int or pointer <= 0:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_result_corrections'"
+    ).fetchone():
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    request = _dict_row(conn.execute(
+        "SELECT * FROM task_result_corrections WHERE id=? AND task_id=?", (pointer, task_id)
+    ))
+    if request is None or request.get("id") != pointer or request.get("task_id") != task_id:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    event_id = request.get("event_id")
+    if type(event_id) is not int or event_id <= 0:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    audit = _dict_row(conn.execute(
+        "SELECT id,new_value,changed_by,changed_at FROM task_history "
+        "WHERE id=? AND task_id=? AND action='result_correction_request'",
+        (event_id, task_id),
+    ))
+    if audit is None:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    try:
+        detail = json.loads(audit.get("new_value") or "null")
+    except (TypeError, ValueError):
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt") from None
+    audit_row = {
+        "correction_id": request.get("id"),
+        "correction_round": request.get("correction_round"),
+        "source_result_id": request.get("source_result_id"),
+        "source_result_sha256": request.get("source_result_sha256"),
+        "source_generation": request.get("source_generation"),
+        "source_fence": request.get("source_fence"),
+        "source_task_version": request.get("source_task_version"),
+        "source_status_revision": request.get("source_status_revision"),
+        "correction_note": request.get("correction_note"),
+        "request_id": request.get("request_id"),
+        "requested_by_device_id": request.get("requested_by_device_id"),
+        "source_timestamp": request.get("requested_at"),
+        "event_changed_at": audit.get("changed_at"),
+        "event_changed_by": audit.get("changed_by"),
+        "correction_next_task_version": request.get("next_task_version"),
+    }
+    if not _correction_audit_matches(audit_row, detail):
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    if not _has_results(conn):
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    source = _dict_row(conn.execute(
+        "SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+        (request["source_result_id"], task_id),
+    ))
+    if (source is None or not isinstance(source.get("result"), str)
+            or source.get("result_sha256") != request.get("source_result_sha256")
+            or hashlib.sha256(source["result"].encode("utf-8")).hexdigest() != source.get("result_sha256")
+            or source.get("generation") != request.get("source_generation")
+            or source.get("fence") != request.get("source_fence")
+            or source.get("task_version") != request.get("source_task_version")):
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    latest = _dict_row(conn.execute(
+        "SELECT id FROM worker_task_results WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)
+    ))
+    if latest is None or type(latest.get("id")) is not int or latest["id"] < request["source_result_id"]:
+        raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
+    if latest["id"] > request["source_result_id"]:
+        return None
+    return {
+        "correction_id": request["id"],
+        "correction_round": request["correction_round"],
+        "source_result_id": request["source_result_id"],
+        "source_result_sha256": request["source_result_sha256"],
+        "correction_note": request["correction_note"],
+        "request_id": request["request_id"],
+    }
 
 
 class _Acceptance:
