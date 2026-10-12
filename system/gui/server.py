@@ -2574,6 +2574,70 @@ async def decompose_task_lease(task_id: int, body: LeaseDecomposeRequest):
                          close_parent=body.close_parent, sequential=body.sequential)
 
 
+class ResourceLeaseAcquireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str
+    host: str
+    request_id: str
+    ttl_profile: Optional[str] = None
+    intent: Optional[str] = None
+    resource_version: Optional[StrictStr] = None
+
+
+class ResourceLeaseRefRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lease_id: str
+    fence: StrictInt
+    resource_version: Optional[StrictStr] = None
+
+
+def _run_resource_lease_op(op, *args, **kwargs):
+    """Polarstern (BACH #2121): Ressourcen-Lease; Auth ueber DeviceAuthMiddleware."""
+    from hub._services.resource_lease import LeaseValidationError, ResourceNotFound
+    conn = get_bach_db()
+    try:
+        result = op(conn, *args, **kwargs)
+    except ResourceNotFound:
+        raise HTTPException(status_code=404, detail="Ressource nicht registriert")
+    except LeaseValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        conn.close()
+    return JSONResponse(status_code=result.http_status, content=result.payload)
+
+
+@app.post("/api/resources/{name}/lease")
+async def acquire_resource_lease_route(name: str, body: ResourceLeaseAcquireRequest, request: Request):
+    """Stern anfordern. 200 = ACK mit lease_id/fence, 409 = Ablehnung mit reason."""
+    from hub._services.resource_lease import acquire_resource_lease
+    return _run_resource_lease_op(
+        acquire_resource_lease, name, worker_id=body.worker_id, host=body.host,
+        request_id=body.request_id, ttl_profile=body.ttl_profile, intent=body.intent or "",
+        resource_version=body.resource_version, device=_lease_device_label(request))
+
+
+@app.get("/api/resources/{name}/lease")
+async def read_resource_lease_route(name: str, request: Request):
+    """Wer haelt den Stern? Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
+    from hub._services.resource_lease import read_resource_lease
+    return _run_resource_lease_op(read_resource_lease, name,
+                                  lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.post("/api/resources/{name}/lease/renew")
+async def renew_resource_lease_route(name: str, body: ResourceLeaseRefRequest):
+    from hub._services.resource_lease import renew_resource_lease
+    return _run_resource_lease_op(renew_resource_lease, name, lease_id=body.lease_id, fence=body.fence,
+                                  resource_version=body.resource_version)
+
+
+@app.post("/api/resources/{name}/lease/release")
+async def release_resource_lease_route(name: str, body: ResourceLeaseRefRequest):
+    from hub._services.resource_lease import release_resource_lease
+    return _run_resource_lease_op(release_resource_lease, name, lease_id=body.lease_id, fence=body.fence,
+                                  resource_version=body.resource_version)
+
+
 @app.put("/api/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
     """Aktualisiert Task in bach.db und protokolliert jede Feldaenderung in task_history.
