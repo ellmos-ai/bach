@@ -97,3 +97,29 @@ ausdrücklich gestartete tatsächliche Aufgabe mit Tool-/Ergebnis-/Leasebeleg.
 Rückweg: laufenden Versuch an sicherer Grenze beenden, Policy ausdrücklich
 deaktivieren oder den vorherigen integrierten Stand einsetzen. Das alte Verhalten
 ohne Reservensperre wird dadurch nicht zu einer Kapazitätsfreigabe.
+
+
+## Pfadprüfung über den installierten API-Einstieg
+
+Die Ressourcenprüfung bezieht den TaskDB-Pfad direkt aus der bestehenden
+Pfadautorität `hub.bach_paths.BACH_DB`. Sie benötigt keinen privaten Export
+aus `bach_api`. Der Root-Einstieg für editable Installationen exportiert
+nur die öffentliche API; eine andere Importreihenfolge darf die
+Ressourcenprüfung deshalb nicht verändern. Slot- und Runtimepfade folgen
+weiterhin ihrer vorhandenen Konfiguration. Die Pfadprüfung öffnet oder
+migriert keine Datenbank und legt fehlende Dateien nicht an.
+
+Die Regression verwendet einen eigenen Prozess mit dem echten Root-Einstieg
+vor `system`, isolierten TaskDB-/Slot-/Runtimepfaden und einem gesperrten
+Datenbankzugriff. Sie prüft sowohl die Dateisystemwurzeln als auch eine
+Ressourcenprobe mit synthetischen Modell- und Kapazitätswerten. Diese Prüfung
+belegt den Importvertrag, keine echte Inferenz oder Kapazität des Hauptmodells.
+
+Am 12.10.2026 wurden die native Ressourcenpolicy und die Modellsteckplatz-
+Registry explizit aktiviert. Der danach gestartete Buddha-Versuch für #2120
+scheiterte vor der Inferenz am privaten API-Import; die Task blieb offen und
+ihre Lease wurde zurückgegeben. Die vorherigen Metadatenproben verwendeten
+einen anderen Importkontext und deckten diesen Fehler nicht ab.
+Eine Quellenkorrektur allein startet den Worker nicht neu. Nach regulärer
+Integration sind der tatsächliche Control-Importkontext, ein ausdrücklich
+gestarteter Lauf, Werkzeugwirkung und Ergebnis erneut nachzuweisen.
