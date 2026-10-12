@@ -155,12 +155,10 @@ def _public_main_source(repo: Path) -> dict[str, str | bool]:
 
 
 def _public_source_config_key(task_id: int | str) -> str:
-    if type(task_id) is int:
-        numeric_id = task_id
-    elif type(task_id) is str and re.fullmatch(r"[1-9][0-9]{0,18}", task_id):
-        numeric_id = int(task_id)
-    else:
+    if not (type(task_id) is int
+            or (type(task_id) is str and re.fullmatch(r"[1-9][0-9]{0,18}", task_id))):
         raise RuntimeError("Öffentliche Taskkennung ist nicht gültig")
+    numeric_id = int(task_id)
     if not 0 < numeric_id <= 2**63 - 1:
         raise RuntimeError("Öffentliche Taskkennung ist nicht gültig")
     return f"branch.bach-task/{numeric_id}.bach-public-source"
