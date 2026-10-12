@@ -42,6 +42,12 @@ except ImportError:
 from hub import safe_exec
 from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
 from hub._services.limits import limit
+from hub._services.read_file_formatter import (
+    MAX_READ_FILE_LINES,
+    MAX_READ_FILE_OFFSET,
+    MAX_READ_FILE_OUTPUT_CHARS,
+    format_read_file_output,
+)
 
 log = logging.getLogger("bach.chat")
 
@@ -576,10 +582,11 @@ TOOLS_SAFE = [
         "path": {"type": "string", "description": "Verzeichnispfad"},
         "details": {"type": "boolean", "description": "Ausführlich mit Rechten und Größe"},
     }),
-    _tool("read_file", "Inhalt einer Datei lesen (max 200 Zeilen)", {
+    _tool("read_file", "Datei lesen (max. 200 physische Zeilen); Task-Reads zeigen standardmäßig 1-basierte Zeilennummern und Bereichs-/Abschneidungshinweise. Zeilenangaben sind Navigationshilfe, kein Wahrheitsbeleg; unnummerierte oder abgeschnittene Zitate sind nicht verifiziert. line_numbers=false erhält die rohe Legacy-Ausgabe.", {
         "path": {"type": "string", "description": "Dateipfad"},
-        "lines": {"type": "integer", "description": "Max Zeilen (Standard 50)"},
-        "offset": {"type": "integer", "description": "Startzeile (1-basiert, Standard 1)"},
+        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50)"},
+        "offset": {"type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Physische Startzeile (1-basiert, Standard 1)"},
+        "line_numbers": {"type": "boolean", "description": "Zeilennummern und Metadaten anzeigen; Standard an für Task-Reads, sonst aus."},
     }, ["path"]),
     _tool("search_text", "In Dateien nach einem Muster suchen (grep)", {
         "pattern": {"type": "string", "description": "Suchmuster (Regex)"},
@@ -914,6 +921,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return ("\n".join(lines) or "(leer)")[:4000]
 
         if name == "read_file":
+            if not isinstance(args, dict):
+                return "Fehler: Ungültige read_file-Parameter."
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
@@ -931,21 +940,44 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
                 if _is_secret_path(resolved):
                     return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
-            lines = min(int(args.get("lines", 50)), 200)
-            offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
-            end_line = offset + lines - 1
+            requested_lines = args.get("lines", 50)
+            if type(requested_lines) is not int or requested_lines < 1:
+                return "Fehler: lines muss eine positive Ganzzahl sein."
+            lines = min(requested_lines, MAX_READ_FILE_LINES)
+            if "offset" in args:
+                raw_offset = args["offset"]
+            elif "start" in args:
+                raw_offset = args["start"]
+            else:
+                raw_offset = args.get("start_line", 1)
+            if (type(raw_offset) is not int
+                    or not 1 <= raw_offset <= MAX_READ_FILE_OFFSET):
+                return "Fehler: offset muss eine gültige positive Ganzzahl sein."
+            if "line_numbers" in args:
+                line_numbers = args["line_numbers"]
+                if type(line_numbers) is not bool:
+                    return "Fehler: line_numbers muss boolesch sein."
+            else:
+                line_numbers = task_code_capability
+            end_line = raw_offset + lines - 1
+            picked = []
+            total_lines = 0
             try:
                 if task_code_capability:
                     with (
                         read_guard.open_authorized_task_file(scope, resolved) as binary,
                         io.TextIOWrapper(binary, encoding="utf-8", errors="replace") as fh,
                     ):
-                        picked = [line for i, line in enumerate(fh, start=1)
-                                  if offset <= i <= end_line]
+                        for line_number, line in enumerate(fh, start=1):
+                            total_lines = line_number
+                            if raw_offset <= line_number <= end_line:
+                                picked.append((line_number, line))
                 else:
                     with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
-                        picked = [line for i, line in enumerate(fh, start=1)
-                                  if offset <= i <= end_line]
+                        for line_number, line in enumerate(fh, start=1):
+                            total_lines = line_number
+                            if raw_offset <= line_number <= end_line:
+                                picked.append((line_number, line))
             except OSError as e:
                 if task_code_capability:
                     return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
@@ -954,7 +986,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 if task_code_capability:
                     return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
                 return "Fehler: Datei konnte nicht gelesen werden"
-            return ("".join(picked) or "(keine Zeilen)")[:4000]
+            if not line_numbers:
+                raw_text = "".join(line for _number, line in picked) or "(keine Zeilen)"
+                return raw_text[:MAX_READ_FILE_OUTPUT_CHARS]
+            return format_read_file_output(
+                picked,
+                offset=raw_offset,
+                requested_lines=requested_lines,
+                effective_lines=lines,
+                total_lines=total_lines,
+            )
 
         if name == "search_text":
             pat = args.get("pattern", "")
