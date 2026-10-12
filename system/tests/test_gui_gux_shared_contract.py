@@ -173,13 +173,13 @@ class TestPinnedKitManifest(unittest.TestCase):
         manifest = get_pinned_kit_manifest()
         self.assertTrue(manifest.get("verified"), f"Manifest failed: {manifest.get('error')}")
         self.assertEqual(manifest.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(manifest.get("pinned_source_commit"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
-        self.assertEqual(manifest.get("version"), "0.2.19")
-        self.assertEqual(manifest.get("expected_page_count"), 25)
-        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.19-e909dd92bd2c.zip")
+        self.assertEqual(manifest.get("pinned_source_commit"), "daac428d25c93c319489748f541d9c4459c233e7")
+        self.assertEqual(manifest.get("version"), "0.2.20")
+        self.assertEqual(manifest.get("expected_page_count"), 26)
+        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.20-daac428d25c9.zip")
         self.assertEqual(
             manifest.get("release_archive_sha256"),
-            "66aba8081743aa4c8e44c9cea09644ce7f88cfb15365ef0822f27536decc03b4",
+            "156aa9897c542c9751589f40689e37c29a135d4b1b364efdc4770f35401bd95a",
         )
 
     def test_dist_manifest_verification_against_local_repo(self):
@@ -190,11 +190,11 @@ class TestPinnedKitManifest(unittest.TestCase):
         dist_path = Path(configured)
         self.assertTrue(dist_path.is_dir(), "Explicit release distribution must exist")
         if dist_path.is_dir():
-            verification = verify_installed_dist(dist_path, expected_commit="e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+            verification = verify_installed_dist(dist_path, expected_commit="daac428d25c93c319489748f541d9c4459c233e7")
             self.assertTrue(verification["installed"])
             self.assertTrue(verification["verified"])
             self.assertEqual(verification["reason_code"], "verified")
-            self.assertEqual(verification["page_count"], 25)
+            self.assertEqual(verification["page_count"], 26)
 
 
 class TestUniversalGuiDifferentiation(unittest.TestCase):
@@ -266,11 +266,18 @@ class TestGuiServerEndpoints(unittest.TestCase):
         dist_path = Path(configured)
         self.assertTrue(dist_path.is_dir())
         manifest = json.loads((dist_path / "dist-manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["source_commit"], "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+        self.assertEqual(manifest["source_commit"], "daac428d25c93c319489748f541d9c4459c233e7")
         self.assertIn("page-reads.v1.json", manifest["files"])
         pages = [name for name in manifest["files"] if name.endswith(".html")]
-        self.assertEqual(len(pages), 25)
+        self.assertEqual(len(pages), 26)
         for name in pages:
+            if name == "agenten/subscription-agents.html":
+                # This release ships the candidate page, while its BACH route and
+                # public-shell allowlist remain a separate backend integration.
+                with self.subTest(page=name, route="candidate-dist-only"):
+                    page_bytes = (dist_path / name).read_bytes()
+                    self.assertEqual(hashlib.sha256(page_bytes).hexdigest(), manifest["files"][name])
+                continue
             route = "/" if name == "index.html" else "/" + name.removesuffix(".html")
             if name == "system/ocean.html":
                 route = "/system?tab=ocean"
@@ -305,7 +312,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(data.get("pinned_source_commit"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+        self.assertEqual(data.get("pinned_source_commit"), "daac428d25c93c319489748f541d9c4459c233e7")
         self.assertIn("installed_dist", data)
 
     def test_route_gui_architecture_concepts(self):
@@ -323,7 +330,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos.gui.capabilities.v1")
         self.assertIn("kit", data)
-        self.assertEqual(data["kit"].get("revision"), "e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2")
+        self.assertEqual(data["kit"].get("revision"), "daac428d25c93c319489748f541d9c4459c233e7")
         self.assertIn("brand", data)
         self.assertIn("modules", data)
 
