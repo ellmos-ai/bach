@@ -4,17 +4,17 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from core.app import App
 from core.registry import HandlerRegistry
+from hub import subscription_agents
+from hub._services import blueprint_service, policy_registry_adapter
+from hub._services.chat import slots_config
 from hub._services.subscription_agents_composer import (
     MAX_PROMPT_CHARS,
     PREVIEW_SCHEMA,
     REQUEST_SCHEMA,
     SubscriptionAgentsComposer,
 )
-from hub._services import policy_registry_adapter
-from hub import subscription_agents
 
 
 def _make_skill(root: Path, skill_id="task-notes", text="Prüfe den Auftrag sorgfältig.\n"):
@@ -328,3 +328,327 @@ def test_target_workspace_rejects_invalid_or_secret_like_metadata(workspace):
 def test_legacy_target_without_workspace_preserves_its_shape():
     target = _request()["target_client"]
     assert SubscriptionAgentsComposer._target(target) == target
+
+
+
+def _compose_contractus(tmp_path, contractus, *, modus="casualis",
+                        animus_type="subscription", description=""):
+    saved = _saved_blueprint(
+        contractus_json=json.dumps(contractus), modus=modus,
+        animus_type=animus_type, description=description,
+    )
+    composer = SubscriptionAgentsComposer(
+        skill_roots=[tmp_path],
+        task_snapshot_reader=lambda _task_id: (_ for _ in ()).throw(
+            AssertionError("request has no task references")
+        ),
+        blueprint_snapshot_reader=_blueprint_reader(saved),
+        policy_observer=_policy_observer,
+        host="ASUS-GEI",
+    )
+    return composer.compose(_request(
+        task_refs=[], selected_skill_ids=[], user_task="Prüfe die Vorlage."
+    ))
+
+
+@pytest.mark.parametrize(
+    ("contractus", "modus", "animus_type", "expected"),
+    [
+        (
+            {
+                "turns": 15, "cooldown_seconds": 30, "task_type": "allround",
+                "modus": "casualis", "wake_behavior": "idle_wake",
+                "animus_type": "subscription",
+            },
+            "casualis", "subscription",
+            ["- Aufgabentyp: allround", "- Weckverhalten: idle_wake"],
+        ),
+        (
+            {"max_turns": 30, "cooldown_seconds": 0,
+             "task_types": ["chat", "routing", "triage"]},
+            "casualis", "subscription",
+            ["- Aufgabentypen: chat, routing, triage"],
+        ),
+        (
+            {"turns": 10, "cooldown": 120, "task_type": "audit",
+             "modus": "impetus_temporal", "wake": "manual"},
+            "impetus_temporal", "cli",
+            ["- Aufgabentyp: audit", "- Weckverhalten: manual"],
+        ),
+        (
+            {"turns": 20, "cooldown_seconds": 30},
+            "casualis", "api",
+            ["- Maximale Turns: 20", "- Cooldown-Sekunden: 30"],
+        ),
+    ],
+)
+def test_native_contractus_preset_and_seed_shapes_are_projected_declaratively(
+    tmp_path, contractus, modus, animus_type, expected
+):
+    result = _compose_contractus(
+        tmp_path, contractus, modus=modus, animus_type=animus_type,
+    )
+    assert result["schema"] == PREVIEW_SCHEMA
+    assert result["status"] == "ready_for_review"
+    assert "## [Contractus: deklarative Metadaten]" in result["prompt"]
+    assert all(value in result["prompt"] for value in expected)
+    assert "- Diese Angaben sind deklarative Metadaten" in result["prompt"]
+    assert result["actions"]["agent_started"] is False
+    blueprint_record = next(item for item in result["sources"] if item["kind"] == "blueprint")
+    assert blueprint_record["projection_only"] is True
+    assert blueprint_record["snapshot_source"] == "blueprint_service._execution_blueprint"
+
+
+def test_absent_contractus_fields_keep_documented_defaults():
+    normalized, modus, animus_type, metadata = blueprint_service.project_contractus({})
+    assert normalized == {}
+    assert modus == "casualis"
+    assert animus_type == "subscription"
+    assert metadata == {}
+
+
+def test_contractus_task_type_and_task_types_remain_separate():
+    normalized, _, _, metadata = blueprint_service.project_contractus({
+        "task_type": "allround", "task_types": ["chat", "triage"],
+    })
+    assert normalized == {
+        "task_type": "allround", "task_types": ["chat", "triage"],
+    }
+    assert metadata == {}
+
+
+def test_equal_contractus_aliases_normalize_without_changing_meaning():
+    normalized, _, _, metadata = blueprint_service.project_contractus({
+        "turns": 8, "max_turns": 8, "cooldown": 10,
+        "cooldown_seconds": 10, "wake": "manual", "wake_behavior": "manual",
+    })
+    assert normalized == {
+        "turns": 8, "cooldown_seconds": 10, "wake_behavior": "manual",
+    }
+    assert metadata == {}
+
+
+@pytest.mark.parametrize(
+    ("contractus", "modus", "animus_type", "message"),
+    [
+        ({"turns": 8, "max_turns": 9}, "casualis", "subscription",
+         "contractus_alias_conflict"),
+        ({"cooldown": 5, "cooldown_seconds": 6}, "casualis", "subscription",
+         "contractus_alias_conflict"),
+        ({"wake": "manual", "wake_behavior": "idle_wake"}, "casualis", "subscription",
+         "contractus_alias_conflict"),
+        ({"modus": "usus"}, "casualis", "subscription",
+         "contractus_alias_conflict"),
+        ({"animus_type": "cli"}, "casualis", "subscription",
+         "contractus_alias_conflict"),
+        ({"unsupported_field": "value"}, "casualis", "subscription",
+         "Nicht unterstützte Contractus-Felder"),
+        ({"execution": {"backend": "ollama"}}, "casualis", "subscription",
+         "contractus_execution_not_projected"),
+        ({"turns": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"max_turns": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"turns": None, "max_turns": None}, "casualis", "subscription",
+         "contractus_null_not_allowed"),
+        ({"cooldown": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"cooldown_seconds": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"cooldown": None, "cooldown_seconds": None}, "casualis", "subscription",
+         "contractus_null_not_allowed"),
+        ({"wake": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"wake_behavior": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"wake": None, "wake_behavior": None}, "casualis", "subscription",
+         "contractus_null_not_allowed"),
+        ({"modus": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"animus_type": None}, "casualis", "subscription", "contractus_null_not_allowed"),
+        ({"turns": True}, "casualis", "subscription",
+         "Contractus-turns"),
+        ({"task_types": ["chat", "chat"]}, "casualis", "subscription",
+         "Contractus-Aufgabentyp-Liste"),
+        ({"task_type": "unknown"}, "casualis", "subscription",
+         "Contractus-Aufgabentyp"),
+        ({}, "", "subscription", "Blueprint-Arbeitsmodus"),
+        ({}, "casualis", "", "Blueprint-Animus-Typ"),
+        ({"task_types": ["chat"] * 33}, "casualis", "subscription",
+         "Contractus-Aufgabentyp-Liste"),
+        ({"task_types": ["chat"], "nested": {"a": {"b": {"c": {"d": {"e": {"f": {"g": {"h": 1}}}}}}}}},
+         "casualis", "subscription", "contractus_depth_limit"),
+        ({"task_type": "x" * 33_000}, "casualis", "subscription",
+         "Größenlimit"),
+    ],
+)
+def test_contractus_rejects_conflicts_unknowns_execution_and_invalid_bounds(
+    tmp_path, contractus, modus, animus_type, message
+):
+    with pytest.raises(ValueError, match=message):
+        _compose_contractus(
+            tmp_path, contractus, modus=modus, animus_type=animus_type,
+        )
+
+
+def test_contractus_projection_hash_binds_description_without_prompting_it(tmp_path):
+    left = _compose_contractus(
+        tmp_path, {"turns": 12, "cooldown_seconds": 20},
+        description="Description revision one",
+    )
+    right = _compose_contractus(
+        tmp_path, {"turns": 12, "cooldown_seconds": 20},
+        description="Description revision two",
+    )
+    assert left["blueprint"]["sha256"] != right["blueprint"]["sha256"]
+    assert "Description revision one" not in left["prompt"]
+    assert "Description revision two" not in right["prompt"]
+    source = SubscriptionAgentsComposer._normalize_blueprint({
+        "id": 7, "name": "research_helper", "title": "Recherchehilfe",
+        "description": "Description revision one", "version": 3, "kind": "agent",
+        "persona_role": "recherche", "persona_prompt": "Prüfe Quellen sorgfältig.",
+        "skills": [], "contractus": {"max_turns": 12, "cooldown_seconds": 20},
+        "governance": {}, "modus": "casualis", "animus_type": "subscription",
+    })[1]
+    assert source["contractus_projection_version"] == "bach.contractus-projection.v1"
+    assert source["contractus"] == {"turns": 12, "cooldown_seconds": 20}
+
+
+
+def test_contractus_projection_rejects_credential_like_metadata(tmp_path):
+    with pytest.raises(ValueError, match="Credential-ähnlicher Inhalt"):
+        _compose_contractus(
+            tmp_path, {"turns": 8},
+            description="password=NeverExposeThisValue123",
+        )
+
+
+
+def test_contractus_projector_applies_its_own_utf8_size_limit():
+    with pytest.raises(ValueError, match="contractus_size_limit"):
+        blueprint_service.project_contractus({"task_types": ["x" * 33_000]})
+
+
+
+def test_all_native_contractus_presets_and_seed_rows_are_supported():
+    for preset in blueprint_service.CONTRACTUS_PRESETS:
+        contractus = {
+            key: preset[key] for key in blueprint_service.CONTRACTUS_FIELDS
+            if key in preset
+        }
+        normalized, modus, animus_type, metadata = blueprint_service.project_contractus(
+            preset, modus=preset["modus"], animus_type=preset["animus_type"],
+        )
+        assert modus == preset["modus"]
+        assert animus_type == preset["animus_type"]
+        assert (("turns" in normalized) or ("max_turns" in contractus))
+        assert "execution" not in normalized
+        assert metadata == {
+            "id": preset["id"], "title": preset["title"],
+            "description": preset["description"],
+        }
+
+    connection = sqlite3.connect(":memory:")
+    try:
+        blueprint_service.ensure_blueprint_schema(connection)
+        blueprint_service.seed_default_blueprints(connection)
+        rows = connection.execute(
+            "SELECT contractus_json, modus, animus_type FROM agent_blueprints"
+        ).fetchall()
+        assert rows
+        for raw_contractus, modus, animus_type in rows:
+            projected, normalized_modus, normalized_animus, metadata = blueprint_service.project_contractus(
+                json.loads(raw_contractus), modus=modus, animus_type=animus_type,
+            )
+            assert normalized_modus == modus
+            assert normalized_animus == animus_type
+            assert "execution" not in projected
+            assert metadata == {}
+    finally:
+        connection.close()
+
+
+
+def test_full_preset_metadata_is_bound_but_not_added_to_prompt(tmp_path):
+    preset = dict(blueprint_service.CONTRACTUS_PRESETS[0])
+    result = _compose_contractus(
+        tmp_path, preset, modus=preset["modus"], animus_type=preset["animus_type"],
+    )
+    assert preset["title"] not in result["prompt"]
+    assert preset["description"] not in result["prompt"]
+    normalized, source, _ = SubscriptionAgentsComposer._normalize_blueprint({
+        "id": 7, "name": "research_helper", "title": "Recherchehilfe",
+        "version": 3, "kind": "agent", "persona_role": "recherche",
+        "persona_prompt": "Prüfe Quellen sorgfältig.", "skills": [],
+        "contractus": preset, "governance": {}, "modus": preset["modus"],
+        "animus_type": preset["animus_type"],
+    })
+    assert source["contractus_preset"] == {
+        "id": preset["id"], "title": preset["title"],
+        "description": preset["description"],
+    }
+    assert normalized["contractus"]["task_type"] == preset["task_type"]
+
+
+
+def test_contractus_preset_metadata_rejects_control_characters():
+    for description in ("contains" + chr(0) + "nul", "line1" + chr(10) + "line2"):
+        with pytest.raises(ValueError, match="Contractus-Preset-description"):
+            blueprint_service.project_contractus({"description": description})
+
+
+def test_shared_start_prompt_preserves_legacy_contractus_and_materialization(tmp_path, monkeypatch):
+    slots_path = tmp_path / "slots.json"
+    slots_config.initialize_slots_config(str(slots_path))
+    monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(slots_path))
+    conn = sqlite3.connect(tmp_path / "blueprints.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        blueprint_service.ensure_blueprint_schema(conn)
+        execution = {"backend": "ollama", "model": "test-local", "mode": "safe"}
+        contractus = {
+            "turns": 8, "cooldown": 7, "execution": execution,
+            "legacy_seed": {"schedule_hint": "manual"},
+        }
+        saved = blueprint_service.save_blueprint(conn, {
+            "name": "legacy_contractus", "title": "Altvertrag",
+            "persona_role": "recherche", "persona_prompt": "Prüfe Quellen sorgfältig.",
+            "kind": "agent", "skills": [], "modus": "usus", "animus_type": "cli",
+            "contractus": contractus,
+            "governance": {"tool_whitelist": ["read_files"]},
+        })
+        assert "Max. 8 Turns, 7s Cooldown" in saved["start_prompt"]
+        assert "Animus-Typ: cli" in saved["start_prompt"]
+        assert "Contractus: deklarative Metadaten" not in saved["start_prompt"]
+
+        stored = blueprint_service._execution_blueprint(conn, saved["id"], saved["version"])
+        assert json.loads(stored["contractus_json"]) == contractus
+        changes = blueprint_service.blueprint_slot_changes(stored, execution)
+        assert changes["max_tool_rounds"] == 8
+        assert changes["worker_type"] == "continuous"
+
+        materialized = blueprint_service.materialize_blueprint(
+            conn, saved["id"], expected_version=saved["version"], execution=execution,
+            configuration_version=slots_config.core_system_agents_snapshot()["configuration_version"],
+            slots_path=str(slots_path),
+        )
+        slot = slots_config.get_system_slot(materialized["slot_id"], str(slots_path))
+        assert materialized["worker_started"] is False
+        assert slot["max_tool_rounds"] == 8
+        assert json.loads(conn.execute(
+            "SELECT contractus_json FROM agent_blueprints WHERE id = ?", (saved["id"],)
+        ).fetchone()[0]) == contractus
+    finally:
+        conn.close()
+
+
+def test_composer_uses_nested_modus_animus_without_injected_defaults(tmp_path):
+    saved = _saved_blueprint(
+        contractus_json=json.dumps({"turns": 7, "modus": "usus", "animus_type": "cli"}),
+        modus=None, animus_type=None,
+    )
+    composer = SubscriptionAgentsComposer(
+        skill_roots=[tmp_path], blueprint_snapshot_reader=_blueprint_reader(saved),
+        policy_observer=_policy_observer, host="ASUS-GEI",
+    )
+
+    result = composer.compose(_request(task_refs=[], selected_skill_ids=[]))
+
+    assert result["status"] == "ready_for_review"
+    assert "Arbeitsmodus: usus" in result["prompt"]
+    assert "Animus-Typ: cli" in result["prompt"]
+    assert "- Maximale Turns: 7" in result["prompt"]
+    assert "- Diese Angaben sind deklarative Metadaten" in result["prompt"]
