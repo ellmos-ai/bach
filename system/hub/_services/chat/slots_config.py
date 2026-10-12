@@ -1174,8 +1174,19 @@ def change_core_system_agent(
         updates["icon"] = CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")
     else:
         updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
+    model_fields_changed = bool(set(updates) & {"backend", "model", "model_fallbacks"})
+    if model_fields_changed:
+        format_version = config.get("version", 1)
+        if (type(format_version) is int and format_version >= 4
+                and "model_sockets" not in config):
+            raise RuntimeError("model_socket_registry_unavailable")
     slot.update(updates)
     _validated_model_fallback_profile(slot)
+    if model_fields_changed and "model_sockets" in config:
+        from . import model_sockets
+        model_sockets._reconcile_profile_bindings(config, slot_id)
+    from hub._services.skill_source_service import check_write_locks
+    check_write_locks(target)
     save_slots_config(config, path)
     return core_system_agents_snapshot(path)
 

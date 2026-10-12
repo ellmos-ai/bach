@@ -410,3 +410,282 @@ def test_alias_target_and_binding_use_one_file_image(registry, monkeypatch):
     monkeypatch.setattr(models, "_read", once)
     proof = models.model_binding_for_call("gui-web", "ollama", "qwen3.8:27b-mlx")
     assert proof["agent_id"] == "buddha_chat" and len(calls) == 1
+
+
+
+def _bindings_for(agent_id):
+    config = slots.load_slots_config(strict=True)
+    return {
+        binding["id"]: dict(binding)
+        for binding in config["model_sockets"]["bindings"].values()
+        if binding["agent_id"] == agent_id
+    }
+
+
+def test_atomic_profile_rebind_updates_primary_and_fallback_once(registry, monkeypatch):
+    from pathlib import Path
+
+    migrated()
+    config = slots.load_slots_config(strict=True)
+    old_profile = dict(config["slots"]["buddha_chat"])
+    config["private_extension"] = {"kept": "äöüß"}
+    config["activity_history"] = [{"task_id": 77, "status": "running"}]
+    slots.save_slots_config(config)
+    configured = models.model_sockets_snapshot()
+    configured = models.configure_model_socket(
+        configured["configuration_version"],
+        {"backend": "ollama", "model": "rebind-target:8b"},
+    )
+    old_target = models.socket_id(old_profile["backend"], old_profile["model"], "test-host")
+    configured = models.bind_model_agent(
+        configured["configuration_version"], "buddha_chat", old_target,
+        {"priority": "foreground", "context_tokens": 8192},
+    )
+    before_config = slots.load_slots_config(strict=True)
+    other_bindings = {
+        key: value for key, value in before_config["model_sockets"]["bindings"].items()
+        if value["agent_id"] != "buddha_chat"
+    }
+    socket_ids = set(before_config["model_sockets"]["sockets"])
+    before_bytes = Path(registry).read_bytes()
+    save_calls = 0
+    original_save = slots.save_slots_config
+
+    def counted_save(updated, path=None):
+        nonlocal save_calls
+        save_calls += 1
+        return original_save(updated, path)
+
+    monkeypatch.setattr(slots, "save_slots_config", counted_save)
+    result = models.rebind_model_profile(
+        configured["configuration_version"], "buddha_chat",
+        {"backend": "ollama", "model": "rebind-target:8b",
+         "model_fallbacks": [{"backend": old_profile["backend"], "model": old_profile["model"]}]},
+    )
+
+    after = slots.load_slots_config(strict=True)
+    bindings = _bindings_for("buddha_chat")
+    expected_ids = {
+        models._binding_id("buddha_chat", models.socket_id("ollama", "rebind-target:8b", "test-host")),
+        models._binding_id("buddha_chat", old_target),
+    }
+    assert save_calls == 1
+    assert set(bindings) == expected_ids
+    assert bindings[models._binding_id("buddha_chat", old_target)]["context_tokens"] == 8192
+    assert set(after["model_sockets"]["sockets"]) == socket_ids
+    assert all(after["model_sockets"]["bindings"][key] == value for key, value in other_bindings.items())
+    assert after["slots"]["buddha_chat"]["model"] == "rebind-target:8b"
+    assert after["slots"]["buddha_chat"]["model_fallbacks"] == [
+        {"backend": old_profile["backend"], "model": old_profile["model"]}
+    ]
+    assert after["private_extension"] == {"kept": "äöüß"}
+    assert after["activity_history"] == [{"task_id": 77, "status": "running"}]
+    assert result["configuration_version"] == slots.core_system_agents_snapshot()["configuration_version"]
+    assert result["runtime_verified"] is False
+    assert Path(registry).read_bytes() != before_bytes
+
+
+def test_external_only_profile_rebind_removes_its_local_bindings(registry):
+    migrated()
+    current = models.model_sockets_snapshot()
+    result = models.rebind_model_profile(
+        current["configuration_version"], "buddha_chat",
+        {"backend": "openrouter", "model": "openrouter/free", "model_fallbacks": []},
+    )
+    config = slots.load_slots_config(strict=True)
+    assert config["slots"]["buddha_chat"]["backend"] == "openrouter"
+    assert config["slots"]["buddha_chat"]["model"] == "openrouter/free"
+    assert _bindings_for("buddha_chat") == {}
+    assert "buddha_chat" in result["unbound_agent_ids"]
+    assert result["runtime_verified"] is False
+
+
+@pytest.mark.parametrize("target_state", ["missing", "disabled"])
+def test_profile_rebind_requires_existing_enabled_local_offer(registry, target_state):
+    from pathlib import Path
+
+    current = migrated()
+    if target_state == "disabled":
+        current = models.configure_model_socket(
+            current["configuration_version"],
+            {"backend": "ollama", "model": "rebind-target:8b", "enabled": False},
+        )
+    before = Path(registry).read_bytes()
+    with pytest.raises(ValueError, match="Angebot|Steckplatz|Modellangebot"):
+        models.rebind_model_profile(
+            current["configuration_version"], "buddha_chat",
+            {"backend": "ollama", "model": "rebind-target:8b", "model_fallbacks": []},
+        )
+    assert Path(registry).read_bytes() == before
+
+
+def test_profile_rebind_rejects_stale_cas_invalid_profile_and_lock_without_write(
+    registry, monkeypatch
+):
+    from pathlib import Path
+
+    from hub._services import skill_source_service
+
+    current = migrated()
+    before = Path(registry).read_bytes()
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        models.rebind_model_profile("0" * 64, "buddha_chat", {"model": "unused:8b"})
+    assert Path(registry).read_bytes() == before
+    with pytest.raises(ValueError, match="Primär|Änderung"):
+        models.rebind_model_profile(
+            current["configuration_version"], "buddha_chat", {"backend": "ollama", "grant": "x"}
+        )
+    assert Path(registry).read_bytes() == before
+    with pytest.raises(KeyError):
+        models.rebind_model_profile(
+            current["configuration_version"], "missing-agent", {"model": "unused:8b"}
+        )
+    assert Path(registry).read_bytes() == before
+
+    def deny(target):
+        assert str(target) == registry
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(skill_source_service, "check_write_locks", deny)
+    with pytest.raises(RuntimeError, match="locked"):
+        models.rebind_model_profile(
+            current["configuration_version"], "buddha_chat", {"model": "unused:8b"}
+        )
+    assert Path(registry).read_bytes() == before
+
+
+def test_profile_rebind_save_failure_leaves_original_bytes(registry, monkeypatch):
+    from pathlib import Path
+
+    current = migrated()
+    current = models.configure_model_socket(
+        current["configuration_version"], {"backend": "ollama", "model": "unused:8b"}
+    )
+    before = Path(registry).read_bytes()
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("simulated atomic save failure")
+
+    monkeypatch.setattr(slots, "save_slots_config", fail_save)
+    with pytest.raises(OSError, match="simulated atomic save failure"):
+        models.rebind_model_profile(
+            current["configuration_version"], "buddha_chat", {"model": "unused:8b"}
+        )
+    assert Path(registry).read_bytes() == before
+
+
+def test_legacy_core_model_setter_reconciles_under_write_lock(registry, monkeypatch):
+    current = migrated()
+    current = models.configure_model_socket(
+        current["configuration_version"], {"backend": "ollama", "model": "rebind-target:8b"}
+    )
+    from hub._services import skill_source_service
+    checked = []
+    monkeypatch.setattr(skill_source_service, "check_write_locks", lambda target: checked.append(str(target)))
+
+    slots.change_core_system_agent(
+        "buddha_chat", current["configuration_version"],
+        {"backend": "ollama", "model": "rebind-target:8b", "model_fallbacks": []},
+    )
+
+    assert checked == [registry]
+    assert slots.get_system_slot("buddha_chat")["model"] == "rebind-target:8b"
+    assert len(_bindings_for("buddha_chat")) == 1
+    assert models.require_model_binding("buddha_chat", "ollama", "rebind-target:8b")
+
+
+def test_api_rebind_auth_precedes_write_and_success_ack_is_config_only(registry, monkeypatch):
+    from pathlib import Path
+
+    migrated()
+    before = Path(registry).read_bytes()
+
+    def deny(_request):
+        raise HTTPException(403, "device required")
+
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", deny)
+    payload = {"configuration_version": version(),
+               "changes": {"backend": "openrouter", "model": "openrouter/free", "model_fallbacks": []}}
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(api.rebind_model_profile("buddha_chat", object(), payload))
+    assert error.value.status_code == 403
+    assert Path(registry).read_bytes() == before
+
+    monkeypatch.setattr(unified_api, "_require_memory_device_token", lambda _request: "verified-test-device")
+    result = asyncio.run(api.rebind_model_profile("buddha_chat", object(), payload))
+    assert result["ack"] == {"configuration_saved": True, "worker_started": False, "runtime_verified": False}
+    assert result["configuration_version"] == slots.core_system_agents_snapshot()["configuration_version"]
+    assert _bindings_for("buddha_chat") == {}
+
+
+
+def test_concurrent_profile_rebind_cas_has_exactly_one_winner(registry):
+    current = migrated()
+    for model in ("race-one:8b", "race-two:8b"):
+        current = models.configure_model_socket(
+            current["configuration_version"], {"backend": "ollama", "model": model}
+        )
+    expected_version = current["configuration_version"]
+
+    def update(model):
+        try:
+            models.rebind_model_profile(
+                expected_version, "buddha_chat",
+                {"backend": "ollama", "model": model, "model_fallbacks": []},
+            )
+            return "saved"
+        except RuntimeError as exc:
+            return str(exc)
+
+    with ThreadPoolExecutor(2) as pool:
+        results = list(pool.map(update, ("race-one:8b", "race-two:8b")))
+    assert sorted(results) == ["configuration_version_conflict", "saved"]
+    final = slots.get_system_slot("buddha_chat")
+    assert final["model"] in {"race-one:8b", "race-two:8b"}
+    final_binding = models.require_model_binding("buddha_chat", "ollama", final["model"])
+    assert final_binding["model"] == final["model"]
+    assert len(_bindings_for("buddha_chat")) == 1
+
+
+def test_legacy_core_model_setter_lock_denial_leaves_config_unchanged(registry, monkeypatch):
+    from pathlib import Path
+
+    from hub._services import skill_source_service
+
+    current = migrated()
+    current = models.configure_model_socket(
+        current["configuration_version"], {"backend": "ollama", "model": "denied:8b"}
+    )
+    before = Path(registry).read_bytes()
+
+    def deny(target):
+        assert str(target) == registry
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(skill_source_service, "check_write_locks", deny)
+    with pytest.raises(RuntimeError, match="locked"):
+        slots.change_core_system_agent(
+            "buddha_chat", current["configuration_version"],
+            {"backend": "ollama", "model": "denied:8b", "model_fallbacks": []},
+        )
+    assert Path(registry).read_bytes() == before
+
+
+def test_legacy_core_text_edit_lock_denial_leaves_config_unchanged(registry, monkeypatch):
+    from pathlib import Path
+
+    from hub._services import skill_source_service
+
+    current = migrated()
+    before = Path(registry).read_bytes()
+
+    def deny(target):
+        assert str(target) == registry
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(skill_source_service, "check_write_locks", deny)
+    with pytest.raises(RuntimeError, match="locked"):
+        slots.change_core_system_agent(
+            "buddha_chat", current["configuration_version"], {"icon": "🔒"}
+        )
+    assert Path(registry).read_bytes() == before
