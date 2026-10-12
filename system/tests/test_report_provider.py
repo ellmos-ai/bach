@@ -13,6 +13,7 @@ from hub._services.document.report_provider_adapter import (
     BachDocumentReaderPort,
     BachModelRoutePort,
     BachWordTemplatePort,
+    OwnerExecutionProfileReader,
     ReportHostPortError,
     ReportProviderAdapter,
     build_report_host_ports,
@@ -581,6 +582,7 @@ async def test_local_model_route_without_runtime_and_slot_is_unavailable():
 
 def _local_report_runtime(
     tmp_path, monkeypatch, *, reserve_states=None, metadata_states=None, backend_chat=None,
+    execution_profile=None,
 ):
     import httpx
 
@@ -603,10 +605,20 @@ def _local_report_runtime(
     profile = config["slots"]["buddha_chat"]
     profile.update({
         "enabled": True,
+        "system": True,
         "backend": "ollama",
         "model": model,
+        "execution_kind": "worker",
+        "blueprint_id": 1,
+        "blueprint_version": 1,
         "skill_refs": [],
         "model_fallbacks": [],
+    })
+    profile.update(execution_profile or {})
+    profile.setdefault("governance_binding", {
+        "effective_sha256": "d" * 64,
+        "refs": [{"id": "P-SYNTHETIC", "role": "agent"}],
+        "legacy": False,
     })
     slots_config.save_slots_config(config, str(slots_path))
     version = slots_config.core_system_agents_snapshot(str(slots_path))["configuration_version"]
@@ -677,14 +689,21 @@ def _local_report_runtime(
         }
 
     monkeypatch.setattr(reserve, "probe", probe)
+    current_profile = slots_config.get_system_slot("buddha_chat", str(slots_path))
+    reader = OwnerExecutionProfileReader(
+        "buddha_chat", lambda: slots_config.get_system_slot("buddha_chat", str(slots_path)),
+    )
     local = BachModelRoutePort(
         backend, model, "local", runtime=runtime, agent_id="buddha_chat",
+        execution_profile_reader=reader,
     )
+    local._test_profile_reader = reader
+    local._test_profile = current_profile
     return local, runtime, backend, delegated, probe_count, states
 
 
 @pytest.mark.asyncio
-async def test_local_report_dispatch_uses_runtime_gates_and_foreground_slot(tmp_path, monkeypatch):
+async def test_local_report_dispatch_uses_runtime_gates_and_worker_priority(tmp_path, monkeypatch):
     from hub._services.chat.host_inference_gate import HostInferenceGate
 
     local, runtime, _backend, delegated, probes, states = _local_report_runtime(tmp_path, monkeypatch)
@@ -707,13 +726,148 @@ async def test_local_report_dispatch_uses_runtime_gates_and_foreground_slot(tmp_
     assert response["text"] == "synthetic local response"
     assert len(delegated) == 1 and delegated[0]["tools"] is None
     assert delegated[0]["gate"]["active"] is True
-    assert delegated[0]["gate"]["priority"] == "foreground"
+    assert delegated[0]["gate"]["priority"] == "background"
     assert delegated[0]["gate"]["model_target"]["agent_id"] == "buddha_chat"
     assert len(probes) == 3 and not states
     assert not runtime.sessions
     assert runtime._compute_turn_context.get() is None
     assert not runtime._session_locks and not runtime._chat_turn_gates
     assert HostInferenceGate().status()["active"] is False
+
+
+@pytest.mark.parametrize("change", [
+    {"execution_kind": "chat"},
+    {"governance_binding": {"effective_sha256": "e" * 64, "refs": [], "legacy": True}},
+    {"governance_binding": {"effective_sha256": "bad", "refs": [], "legacy": False}},
+])
+def test_owner_execution_profile_reader_rejects_untrusted_or_stale_profile(change):
+    profile = {
+        "id": "report-worker",
+        "enabled": True,
+        # Registered workers are eligible regardless of the system flag.
+        "system": False,
+        "execution_kind": "worker",
+        "blueprint_id": 1,
+        "blueprint_version": 1,
+        "governance_binding": {
+            "effective_sha256": "d" * 64,
+            "refs": [{"id": "P-1", "role": "agent"}],
+            "legacy": False,
+        },
+    }
+    reader = OwnerExecutionProfileReader("report-worker", lambda: dict(profile))
+    assert reader.read()["id"] == "report-worker"
+    profile.update(change)
+    with pytest.raises(ReportHostPortError) as error:
+        reader.read()
+    assert error.value.reason_code == "provider_route_unverified"
+
+
+def test_owner_execution_profile_reader_accepts_registered_non_system_worker():
+    profile = {
+        "id": "external-report-worker",
+        "enabled": True,
+        "system": False,
+        "execution_kind": "worker",
+        "blueprint_id": 12,
+        "blueprint_version": 4,
+        "governance_binding": {
+            "effective_sha256": "a" * 64,
+            "refs": [{"id": "P-12", "role": "agent"}],
+            "legacy": False,
+        },
+    }
+    reader = OwnerExecutionProfileReader(
+        "external-report-worker", lambda: dict(profile),
+    )
+
+    assert reader.read()["system"] is False
+
+
+@pytest.mark.asyncio
+async def test_local_report_rechecks_owner_governance_before_dispatch(tmp_path, monkeypatch):
+    local, runtime, _backend, delegated, _probes, _states = _local_report_runtime(
+        tmp_path, monkeypatch,
+    )
+    pin = await local.pin_route(
+        "run-route-governance-change", expected_mode="local", request_mode="local",
+        allow_fallback=False, local_only=True,
+    )
+    assert pin["verified"] is True
+    reader = local._test_profile_reader
+    original_reader = reader._read_current
+
+    def changed_governance():
+        profile = original_reader()
+        profile["governance_binding"] = {
+            "effective_sha256": "e" * 64,
+            "refs": [{"id": "P-2", "role": "agent"}],
+            "legacy": False,
+        }
+        return profile
+
+    reader._read_current = changed_governance
+    with pytest.raises(ReportHostPortError) as error:
+        await local.generate(
+            "synthetic prompt", run_id="run-route-governance-change", mode="local",
+            request_mode="local", route_id=pin["route_id"], route_ref=pin["route_ref"],
+            allow_fallback=False, local_only=True,
+        )
+    assert error.value.reason_code == "provider_route_unverified"
+    assert not delegated
+    assert not runtime.sessions
+
+
+@pytest.mark.asyncio
+async def test_local_report_rechecks_blueprint_version_before_dispatch(tmp_path, monkeypatch):
+    local, runtime, _backend, delegated, _probes, _states = _local_report_runtime(
+        tmp_path, monkeypatch,
+    )
+    pin = await local.pin_route(
+        "run-route-blueprint-version-change", expected_mode="local", request_mode="local",
+        allow_fallback=False, local_only=True,
+    )
+    assert pin["verified"] is True
+    reader = local._test_profile_reader
+    original_reader = reader._read_current
+
+    def changed_version():
+        profile = original_reader()
+        profile["blueprint_version"] += 1
+        return profile
+
+    reader._read_current = changed_version
+    with pytest.raises(ReportHostPortError) as error:
+        await local.generate(
+            "synthetic prompt", run_id="run-route-blueprint-version-change", mode="local",
+            request_mode="local", route_id=pin["route_id"], route_ref=pin["route_ref"],
+            allow_fallback=False, local_only=True,
+        )
+    assert error.value.reason_code == "provider_route_unverified"
+    assert not delegated
+    assert not runtime.sessions
+
+
+@pytest.mark.asyncio
+async def test_local_report_owner_reader_error_blocks_before_backend_dispatch(tmp_path, monkeypatch):
+    local, runtime, _backend, delegated, _probes, _states = _local_report_runtime(
+        tmp_path, monkeypatch,
+    )
+    pin = await local.pin_route(
+        "run-route-governance-read-error", expected_mode="local", request_mode="local",
+        allow_fallback=False, local_only=True,
+    )
+    assert pin["verified"] is True
+    local._test_profile_reader._read_current = lambda: (_ for _ in ()).throw(RuntimeError("private"))
+    with pytest.raises(ReportHostPortError) as error:
+        await local.generate(
+            "synthetic prompt", run_id="run-route-governance-read-error", mode="local",
+            request_mode="local", route_id=pin["route_id"], route_ref=pin["route_ref"],
+            allow_fallback=False, local_only=True,
+        )
+    assert error.value.reason_code == "provider_route_unverified"
+    assert not delegated
+    assert not runtime.sessions
 
 
 @pytest.mark.asyncio
