@@ -32,11 +32,11 @@ verify_installed_dist() prüft das konfigurierte Dist-Verzeichnis anhand von Com
 vollständiger Dateiliste und Datei-Hashes. Ein Quellpin allein belegt keine Installation
 oder Live-Auslieferung.
 
-## Aktueller Source-Pin: GUI 0.2.21
+## Aktueller Source-Pin: GUI 0.2.22
 
-Der veröffentlichte Release v0.2.21 bindet Commit 8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c,
-das ZIP ellmos-system-gui-0.2.21-8ea653e0061f.zip und die SHA-256-Prüfsumme
-9a10008b9506a7b69a09e1c7b8bf9f8c5ab0075358e5da17b8295ca816697d12. Das Release-Manifest
+Der veröffentlichte Release v0.2.22 bindet Commit cb0784089d723f80aa7f508b741198419a4bde82,
+das ZIP ellmos-system-gui-0.2.22-cb0784089d72.zip und die SHA-256-Prüfsumme
+31456f46aa8d87fa908575bad026583432eec577b9df8e454cf4f5e9eab507b9. Das Release-Manifest
 führt 197 Dateien, darunter 26 HTML-Seiten. Der Consumer-Pin und der operative Kit-Pin
 müssen Commit, Archiv-SHA-256, Dist-Manifest-Schema und Seitenzahl identisch binden.
 
@@ -44,6 +44,10 @@ Diese Release-Identität ist ein Quell-/Kit-Pin. Sie belegt allein keine Install
 keine aktive LaunchAgent-Konfiguration und keine Live-Auslieferung. Dafür bleibt die
 separate Prüfung des tatsächlich konfigurierten Dist-Verzeichnisses samt vollständiger
 Dateiliste und Datei-Hashes erforderlich.
+
+GUI 0.2.22 enthält den auf Mermaid 11.17.2 abgestimmten KaTeX-Fix (0.18.7).
+Die Veröffentlichung und Archivprüfung ersetzen weder die native Auslieferungsprüfung
+noch die Prüfung des tatsächlichen Renderings auf ASUS oder im Ocean-Konsumenten.
 
 ## Historischer Rollout-Plan für GUI 0.2.20
 
@@ -62,6 +66,8 @@ Verifikation und 26 Seiten erfolgen. Pin, LaunchAgent-Konfiguration und vorherig
 sollten für einen abgestimmten Rollback erhalten bleiben. Das dokumentiert den früheren
 Plan und ist kein Installations- oder Neustartnachweis für 0.2.20 oder 0.2.21.
 
-Die Subscription-Agents-Seite kann ohne die separat gemountete BACH-Route nicht
-komponieren; die Oberfläche muss diese Funktion als nicht verfügbar anzeigen. Der
-GUI-Release-Pin behauptet keine Backend- oder Launcher-Bereitschaft.
+Der aktuelle BACH-Quellstand enthält die Subscription-Agents-Seitenroute und den
+Composer-Endpunkt. Die Pin-Regression prüft die Seitenroute gegen die exakten
+Release-Bytes; ein fehlender Composer muss weiterhin als nicht verfügbar erscheinen.
+Die Endpunktregistrierung belegt weder eine erfolgreich bediente native Komposition
+noch einen Launcherstart. Der GUI-Pin behauptet diese Laufzeitabnahmen nicht.
