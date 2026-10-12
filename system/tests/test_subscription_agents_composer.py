@@ -300,3 +300,31 @@ def test_handler_is_discoverable_and_reads_request_file_without_logging_payload(
     assert hook_events[0][1]["args"] == [str(request_path)]
     assert "Vorschau" not in repr(hook_events)
 
+
+
+@pytest.mark.parametrize("workspace", ["/tmp/Arbeitsfläche", r"C:\Users\Example\Projekt"])
+def test_target_workspace_is_bounded_metadata_not_a_filesystem_grant(tmp_path, workspace):
+    _make_skill(tmp_path)
+    composer = SubscriptionAgentsComposer(
+        skill_roots=[tmp_path], blueprint_snapshot_reader=_blueprint_reader(),
+        policy_observer=_policy_observer, host="test-host",
+    )
+    target = {**_request()["target_client"], "workspace": workspace}
+    result = composer.compose(_request(target_client=target, task_refs=[]))
+    assert result["target_client"]["workspace"] == workspace
+    assert workspace in result["prompt"]
+    assert "Zugriff nicht geprüft" in result["prompt"]
+    assert all(value is False for value in result["actions"].values())
+    assert not any(item["path"] == workspace for item in result["sources"])
+    assert not (tmp_path / "Arbeitsfläche").exists()
+
+
+@pytest.mark.parametrize("workspace", [12, "x" * 1025, "line1\nline2", "tab\tpath", "\x00", "api_key=sk_" + "X" * 20])
+def test_target_workspace_rejects_invalid_or_secret_like_metadata(workspace):
+    with pytest.raises(ValueError):
+        SubscriptionAgentsComposer._target({**_request()["target_client"], "workspace": workspace})
+
+
+def test_legacy_target_without_workspace_preserves_its_shape():
+    target = _request()["target_client"]
+    assert SubscriptionAgentsComposer._target(target) == target

@@ -1521,6 +1521,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/",
         "/agenten/fabrika",
         "/agenten/blueprints",
+        "/agenten/subscription-agents",
         "/agenten/running",
         "/agenten/marblerun",
         "/governance",
@@ -1786,6 +1787,17 @@ try:
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
+
+try:
+    from gui.api.subscription_agents_transport import (
+        router as subscription_agents_transport_router,
+    )
+except ImportError:
+    import logging
+
+    logging.getLogger(__name__).warning("Subscription-Agenten-API konnte nicht geladen werden")
+else:
+    app.include_router(subscription_agents_transport_router)
 
 try:
     from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
@@ -5247,6 +5259,14 @@ async def agenten_blueprints_page():
     if template_file.exists():
         return FileResponse(template_file)
     raise HTTPException(status_code=404, detail="Blueprints-Seite nicht gefunden")
+
+
+@app.get("/agenten/subscription-agents", response_class=HTMLResponse)
+async def subscription_agents_page():
+    page = ASTRO_DIST_DIR / "agenten" / "subscription-agents.html"
+    if not page.is_file() or page.is_symlink():
+        raise HTTPException(status_code=503, detail="Subscription-Agents-Seite noch nicht installiert")
+    return FileResponse(page)
 
 
 @app.get("/agenten/running", response_class=HTMLResponse)

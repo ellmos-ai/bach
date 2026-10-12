@@ -289,7 +289,7 @@ class SubscriptionAgentsComposer:
 
     @staticmethod
     def _target(value: Any) -> dict:
-        target = _strict_mapping(value, "target_client", {"client_id", "host", "name"})
+        target = _strict_mapping(value, "target_client", {"client_id", "host", "name", "workspace"})
         client_id = _text(target.get("client_id"), "target_client.client_id", 64)
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", client_id):
             raise ValueError("Zielclient-ID ist ungültig")
@@ -298,7 +298,14 @@ class SubscriptionAgentsComposer:
         _no_credentials(client_id, "Zielclient-ID")
         _no_credentials(host, "Zielclient-Host")
         _no_credentials(name, "Zielclient-Name")
-        return {"client_id": client_id, "host": host, "name": name}
+        result = {"client_id": client_id, "host": host, "name": name}
+        if "workspace" in target:
+            workspace = _text(target["workspace"], "target_client.workspace", 1024, required=False)
+            if any(ord(character) < 32 or ord(character) == 127 for character in workspace):
+                raise ValueError("Arbeitskontext muss ein einzeiliger Text sein")
+            _no_credentials(workspace, "Arbeitskontext")
+            result["workspace"] = workspace
+        return result
 
     def _read_tasks(self, task_ids: list[int]) -> tuple[list[dict], list[dict]]:
         if not task_ids:
@@ -567,6 +574,8 @@ class SubscriptionAgentsComposer:
         prompt_parts = [
             "## Zielclient\n" + f"- Client: {target['name']} ({target['client_id']})\n"
             + f"- Zielhost: {target['host']}\n"
+            + (f"- Arbeitskontext: {target['workspace']} (Zugriff nicht geprüft)\n"
+               if target.get("workspace") else "")
             + "- Dies ist nur eine Vorschau; den Client nicht automatisch starten.",
             base_prompt,
         ]

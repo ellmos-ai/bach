@@ -48,19 +48,27 @@ nicht geprüft. Cookie- und Origin-Verhalten bleiben bis zum echten Mount offen.
 
 ## Integrations-Handoff
 
-Der Router ist bewusst noch nicht in `system/gui/server.py` eingebunden. Der
-zuständige Server-Writer kann nach eigener Scope- und Lockprüfung im statischen
-Routerblock ergänzen:
+Der BACH-Server bindet den bestehenden Router im Quellstand ein. Der statische
+Seitenpfad `/agenten/subscription-agents` liefert ausschließlich die installierte
+gemeinsame GUI-Seite; fehlende oder verlinkte Seiten bleiben mit 503 gesperrt.
+Die Quellintegration verwendet:
 
 ```python
 from gui.api.subscription_agents_transport import router as subscription_agents_transport_router
 app.include_router(subscription_agents_transport_router)
 ```
 
-Bis zu dieser Integration ist die Route nicht über den produktiven GUI-Server
-erreichbar. Für den späteren Browseraufruf bleiben Mount, Middleware-/Origin-
-Verhalten und echte Geräteabnahme separat zu prüfen.
+Die fokussierten Mounttests verwenden die tatsächliche BACH-ASGI-App samt
+Host-, Origin- und Geräte-Middleware mit temporären synthetischen Daten. Sie
+prüfen Bearer- und Cookie-Zugriff, Ablehnungen vor Body-/Composer-Aufruf und
+den statischen Seitenpfad ohne Legacy-Fallback. Der dienststartende Lifespan
+läuft dabei nicht. Das belegt keinen produktiven Dienststart, keine echte
+Geräteanmeldung, keine ASUS-Zwischenablage und keine Ocean-Anbindung.
 
-Der Adapter ist auf PR #318 mit dem Composer-Head
-`2d0838f55f349e13cc09d540792792b377c555a6` gestapelt. Dieser Folge-PR benötigt
-den vorhandenen Composer-Vertrag; er enthält keine Kopie seiner Implementierung.
+Die Capability-Projektion verlangt für diese Seite den registrierten
+`POST /api/agent-studio/subscription-agents/compose`, keinen erfundenen
+GET-Endpunkt. Routepräsenz bleibt von Runtime- und Nutzerabnahme getrennt.
+
+Composer und HTTP-Adapter aus PR #318 sind bereits in BACH-main enthalten.
+Der Servermount verwendet diese vorhandenen Komponenten; er kopiert weder
+Composer noch Blueprint- oder Skillbibliothek.

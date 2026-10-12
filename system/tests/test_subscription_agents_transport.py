@@ -316,3 +316,124 @@ def test_missing_skill_is_reported_without_inserting_its_id_into_prompt(http_cli
     assert "missing-skill" not in result["prompt"]
     assert result["actions"]["agent_started"] is False
     assert result["actions"]["task_claimed"] is False
+
+
+@pytest.fixture
+def mounted_server(http_client, tmp_path, monkeypatch):
+    """Exercise the actual consumer app, its mounted route and perimeter."""
+    _, db_path, _ = http_client
+    with sqlite3.connect(db_path) as conn:
+        for name in ("name", "created_at", "revoked_at", "last_seen_at"):
+            conn.execute(f"ALTER TABLE devices ADD COLUMN {name} TEXT")
+        conn.execute("UPDATE devices SET name = 'synthetic-device-' || id")
+    from gui import device_auth, server
+
+    def connection():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", connection)
+    monkeypatch.setattr(server, "BACH_DB", db_path)
+    dist = tmp_path / "shared-dist"
+    dist.mkdir()
+    monkeypatch.setattr(server, "ASTRO_DIST_DIR", dist)
+    monkeypatch.setenv("ELLMOS_SYSTEM_GUI_DIST", str(dist))
+    client = TestClient(server.app, base_url="http://127.0.0.1:8000")
+    try:
+        yield client, db_path, dist, server
+    finally:
+        client.close()
+
+
+def test_actual_consumer_mount_accepts_header_and_cookie_with_same_origin(mounted_server):
+    client, db_path, _, server = mounted_server
+    registered = [(route.path, getattr(route, "methods", set()))
+                  for route in server.app.routes if getattr(route, "path", "") == API_PATH]
+    assert len(registered) == 1 and "POST" in registered[0][1]
+    request = _request(target_client={
+        "client_id": "codex-cli", "host": "client-host",
+        "workspace": "/tmp/Arbeitsfläche",
+    })
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT * FROM agent_blueprints").fetchall()
+    header = client.post(API_PATH, json=request, headers={
+        **_auth(), "Origin": "http://127.0.0.1:8000", "Sec-Fetch-Site": "same-origin",
+    })
+    assert header.status_code == 200
+    client.cookies.set("bach_device_token", ACTIVE_TOKEN)
+    cookie = client.post(API_PATH, json=request, headers={"Origin": "http://127.0.0.1:8000"})
+    assert cookie.status_code == 200 and cookie.json() == header.json()
+    assert cookie.json()["target_client"]["workspace"] == "/tmp/Arbeitsfläche"
+    assert all(value is False for value in cookie.json()["actions"].values())
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT * FROM agent_blueprints").fetchall() == before
+
+
+@pytest.mark.parametrize("headers", [
+    {}, {"Authorization": "Bearer " + REVOKED_TOKEN},
+    {**_auth(), "Origin": "https://foreign.example"},
+    {**_auth(), "Sec-Fetch-Site": "cross-site"},
+    {**_auth(), "Host": "foreign.example"},
+])
+def test_actual_consumer_denies_before_stream_or_composer(mounted_server, monkeypatch, headers):
+    client, _, _, _ = mounted_server
+    calls = []
+    original = StarletteRequest.stream
+
+    async def observed(request):
+        calls.append("body")
+        async for chunk in original(request):
+            yield chunk
+
+    def composer():
+        calls.append("composer")
+        raise AssertionError("Rejected request reached composer")
+
+    monkeypatch.setattr(StarletteRequest, "stream", observed)
+    monkeypatch.setattr(subscription_agents_transport, "SubscriptionAgentsComposer", composer)
+    response = client.post(API_PATH, content=b"{", headers={
+        "Content-Type": "application/json", **headers,
+    })
+    assert response.status_code in {401, 403}
+    assert calls == []
+
+
+def test_subscription_shell_is_static_public_and_has_no_legacy_fallback(mounted_server):
+    client, _, dist, server = mounted_server
+    page = "/agenten/subscription-agents"
+    assert page in server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
+    missing = client.get(page)
+    assert missing.status_code == 503
+    target = dist / "agenten" / "subscription-agents.html"
+    target.parent.mkdir()
+    target.write_text("<!doctype html><title>Subscription-Agents</title>", encoding="utf-8")
+    shown = client.get(page)
+    assert shown.status_code == 200 and "Subscription-Agents" in shown.text
+    target.unlink()
+    outside = dist.parent / "foreign.html"
+    outside.write_text("must-not-render", encoding="utf-8")
+    target.symlink_to(outside)
+    denied = client.get(page)
+    assert denied.status_code == 503 and "must-not-render" not in denied.text
+
+
+def test_subscription_page_requires_post_compose_and_never_claims_runtime_readiness(mounted_server):
+    _, _, _, server = mounted_server
+    declaration = gui_capabilities.declaration(
+        server.app.routes, kit={}, brand={}, modules={},
+    )
+    page = next(item for item in declaration["pages"]
+                if item["path"] == "/agenten/subscription-agents")
+    assert "POST " + API_PATH in page["requires"]
+    assert "GET " + API_PATH not in page["requires"]
+    compose = next(item for item in declaration["endpoints"]
+                   if item["path"] == API_PATH and item["method"] == "POST")
+    assert compose["auth"] == "device-token"
+    assert compose["runtime_verified"] is False
+    without = [route for route in server.app.routes if getattr(route, "path", "") != API_PATH]
+    absent = gui_capabilities.declaration(without, kit={}, brand={}, modules={})
+    projection = next(item for item in absent["pages"]
+                      if item["path"] == "/agenten/subscription-agents")
+    assert projection["status"] == "unavailable"
+    assert "POST " + API_PATH in projection["missing"]
