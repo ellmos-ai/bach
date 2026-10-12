@@ -8,6 +8,7 @@ import math
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -28,6 +29,8 @@ from .maintenance_failure import (
 from .maintenance_recurring import ROUTINES, dispatch_routine, routine_definitions
 
 CONFIG_SCHEMA = "bach.maintenance-config.v1"
+BINDING_REQUEST_SCHEMA = "bach.maintenance-worker-binding-request.v1"
+BINDING_ACK_SCHEMA = "bach.maintenance-worker-binding-ack.v1"
 STATUS_SCHEMA = "bach.maintenance-status.v1"
 JOB_ID = "bach.docs.delta"
 JOB_IDS = {JOB_ID, *["bach.docs.routine." + name for name in ROUTINES]}
@@ -462,6 +465,361 @@ def readonly_status(
         return empty_status("maintenance_receipt_unverified")
 
 
+def _configuration_bytes(config: dict) -> bytes:
+    return json.dumps(config, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def _binding_digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _binding_path_guard(path: Path, guard):
+    if os.name != "posix":
+        raise PermissionError("maintenance_private_runtime_unavailable")
+    path = Path(path)
+    guard(path)
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+        raise PermissionError("maintenance_private_path_unverified")
+
+
+def _read_private_json(path: Path, guard):
+    _binding_path_guard(path, guard)
+    try:
+        info = path.lstat()
+        if (
+            not path.is_file()
+            or info.st_size > 32768
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise ValueError("maintenance_private_receipt_unverified")
+        data = path.read_bytes()
+        value = json.loads(data.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise ValueError("maintenance_private_receipt_unverified") from None
+    if not isinstance(value, dict):
+        raise TypeError("maintenance_private_receipt_unverified")
+    return data, value
+
+
+def _atomic_write_bytes(
+    path: Path,
+    data: bytes,
+    guard,
+    *,
+    mode: int,
+    exclusive=False,
+    expected_existing: bytes | None = None,
+):
+    if os.name != "posix":
+        raise PermissionError("maintenance_private_runtime_unavailable")
+    path = Path(path)
+    _binding_path_guard(path, guard)
+    if not path.parent.is_dir():
+        raise FileNotFoundError("maintenance_runtime_unavailable")
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    _binding_path_guard(temporary, guard)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(temporary, flags, mode)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        _binding_path_guard(path, guard)
+        if expected_existing is not None and path.read_bytes() != expected_existing:
+            raise RuntimeError("maintenance_configuration_conflict")
+        if exclusive:
+            os.link(temporary, path)
+            temporary.unlink()
+        else:
+            if path.is_symlink():
+                raise PermissionError("maintenance_private_path_unverified")
+            os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temporary.exists() and not temporary.is_symlink():
+            _binding_path_guard(temporary, guard)
+            temporary.unlink()
+
+
+def _write_private_json(path: Path, value: dict, guard, *, exclusive=False):
+    data = json.dumps(
+        value, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    _atomic_write_bytes(path, data, guard, mode=0o600, exclusive=exclusive)
+    return data
+
+
+def _remove_private_json(path: Path, guard):
+    if not path.exists():
+        return
+    _binding_path_guard(path, guard)
+    _read_private_json(path, guard)
+    path.unlink()
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _binding_ack_matches(ack: dict, request: dict, request_bytes: bytes) -> bool:
+    required = {
+        "schema",
+        "nonce",
+        "request_generation",
+        "owner_generation",
+        "request_sha256",
+        "status",
+        "error_code",
+        "old_config_sha256",
+        "new_config_sha256",
+        "worker_binding",
+        "observed_at",
+    }
+    if (
+        set(ack) != required
+        or ack.get("schema") != BINDING_ACK_SCHEMA
+        or ack.get("nonce") != request.get("nonce")
+        or ack.get("request_generation") != request.get("generation")
+        or ack.get("request_sha256") != _binding_digest(request_bytes)
+        or not isinstance(ack.get("owner_generation"), str)
+        or re.fullmatch(r"[a-f0-9]{32}", ack["owner_generation"]) is None
+        or ack.get("status") not in {"applied", "no_change", "rejected"}
+        or not isinstance(ack.get("observed_at"), str)
+    ):
+        return False
+    try:
+        if datetime.fromisoformat(ack["observed_at"]).tzinfo is None:
+            return False
+    except ValueError:
+        return False
+    hashes = (ack.get("old_config_sha256"), ack.get("new_config_sha256"))
+    if any(
+        value is not None
+        and (
+            not isinstance(value, str)
+            or re.fullmatch(r"[a-f0-9]{64}", value) is None
+        )
+        for value in hashes
+    ):
+        return False
+    if ack.get("status") == "rejected":
+        return ack.get("error_code") in {
+            "maintenance_binding_request_invalid",
+            "maintenance_configuration_unavailable",
+            "maintenance_generation_conflict",
+            "maintenance_binding_conflict",
+            "maintenance_configuration_conflict",
+        }
+    return (
+        ack["owner_generation"] == ack["request_generation"]
+        and ack.get("error_code") is None
+        and re.fullmatch(r"[a-f0-9]{64}", ack.get("old_config_sha256") or "")
+        is not None
+        and re.fullmatch(r"[a-f0-9]{64}", ack.get("new_config_sha256") or "")
+        is not None
+        and ack.get("worker_binding") == {}
+    )
+
+
+def request_provider_neutral_binding(
+    root: Path,
+    runtime: Path,
+    config_path: Path,
+    *,
+    timeout_seconds: int | None = None,
+) -> dict:
+    """Ask the live owner to CAS-clear only the future task's slot/model binding."""
+    if os.name != "posix":
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "error_code": "private_runtime_unavailable",
+        }
+    if timeout_seconds is not None and (
+        type(timeout_seconds) is not int or not 0 <= timeout_seconds <= 305
+    ):
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "error_code": "maintenance_binding_timeout_invalid",
+        }
+    root, runtime, config_path = Path(root), Path(runtime), Path(config_path)
+    if (
+        config_path.name != "config.json"
+        or config_path.parent.resolve() != runtime.resolve()
+        or runtime.is_symlink()
+        or config_path.is_symlink()
+    ):
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "error_code": "maintenance_path_unverified",
+        }
+    try:
+        config = load_config(config_path)
+        if not config["enabled"]:
+            raise ValueError("maintenance_not_activated")
+        guard = CanonicalLockGuard(config)
+        guard(runtime)
+        guard(config_path)
+        status = readonly_status(runtime, root=root, config_path=config_path)
+        status_path = runtime / "status.json"
+        guard(status_path)
+        raw_status = json.loads(status_path.read_text(encoding="utf-8"))
+        config_bytes = config_path.read_bytes()
+        config_sha = _binding_digest(config_bytes)
+        generation = status.get("generation")
+        if (
+            status.get("running") is not True
+            or status.get("identity") != "verified"
+            or not isinstance(generation, str)
+            or re.fullmatch(r"[a-f0-9]{32}", generation) is None
+            or raw_status.get("generation") != generation
+            or raw_status.get("config_hash") != config_sha
+        ):
+            return {
+                "ok": False,
+                "status": "unavailable",
+                "error_code": "maintenance_owner_unverified",
+            }
+        current = validate_config(json.loads(config_bytes.decode("utf-8")))
+        desired = dict(current)
+        desired["worker_binding"] = {}
+        desired_bytes = _configuration_bytes(desired)
+        request_path = runtime / "worker-binding.request.json"
+        ack_path = runtime / "worker-binding.ack.json"
+        guard(request_path)
+        guard(ack_path)
+        base = {
+            "schema": BINDING_REQUEST_SCHEMA,
+            "generation": generation,
+            "expected_config_sha256": config_sha,
+            "old_binding": current["worker_binding"],
+            "desired_config": desired,
+            "desired_config_sha256": _binding_digest(desired_bytes),
+        }
+        request = None
+        request_bytes = None
+        has_request = request_path.exists()
+        has_ack = ack_path.exists()
+        if has_request and has_ack:
+            old_bytes, old_request = _read_private_json(request_path, guard)
+            _, old_ack = _read_private_json(ack_path, guard)
+            if not _binding_ack_matches(old_ack, old_request, old_bytes):
+                raise ValueError("maintenance_binding_receipt_unverified")
+            if (
+                old_ack["status"] in {"applied", "no_change"}
+                and config_sha == old_ack.get("new_config_sha256")
+                and current == old_request.get("desired_config")
+            ):
+                return {
+                    "ok": True,
+                    "status": old_ack["status"],
+                    "applied": old_ack["status"] == "applied",
+                    "readback": True,
+                    "generation": generation,
+                    "config_sha256": config_sha,
+                    "worker_binding": current["worker_binding"],
+                    "reused_acknowledgement": True,
+                }
+            _remove_private_json(request_path, guard)
+            _remove_private_json(ack_path, guard)
+            has_request = has_ack = False
+        elif has_request:
+            request_bytes, request = _read_private_json(request_path, guard)
+            comparable = {key: value for key, value in request.items() if key != "nonce"}
+            if (
+                comparable != base
+                or not isinstance(request.get("nonce"), str)
+                or re.fullmatch(r"[a-f0-9]{32}", request["nonce"]) is None
+            ):
+                return {
+                    "ok": False,
+                    "status": "unknown",
+                    "error_code": "maintenance_binding_request_unresolved",
+                    "request_retained": True,
+                }
+        elif has_ack:
+            raise ValueError("maintenance_binding_receipt_unverified")
+        if request is None:
+            request = {**base, "nonce": uuid4().hex}
+            request_bytes = _write_private_json(
+                request_path, request, guard, exclusive=True
+            )
+        timeout = (
+            min(305, config["poll_seconds"] + 5)
+            if timeout_seconds is None
+            else timeout_seconds
+        )
+        deadline = time.monotonic() + timeout
+        while True:
+            if ack_path.exists():
+                _ack_bytes, ack = _read_private_json(ack_path, guard)
+                if not _binding_ack_matches(ack, request, request_bytes):
+                    return {
+                        "ok": False,
+                        "status": "unknown",
+                        "error_code": "maintenance_binding_ack_unverified",
+                        "request_retained": True,
+                    }
+                if ack["status"] == "rejected":
+                    return {
+                        "ok": False,
+                        "status": "rejected",
+                        "error_code": ack.get(
+                            "error_code", "maintenance_binding_rejected"
+                        ),
+                        "request_retained": True,
+                    }
+                physical_bytes = config_path.read_bytes()
+                physical_config = validate_config(
+                    json.loads(physical_bytes.decode("utf-8"))
+                )
+                if (
+                    _binding_digest(physical_bytes)
+                    != ack.get("new_config_sha256")
+                    or physical_config != desired
+                    or ack.get("worker_binding") != {}
+                ):
+                    return {
+                        "ok": False,
+                        "status": "unknown",
+                        "error_code": "maintenance_binding_readback_mismatch",
+                        "request_retained": True,
+                    }
+                return {
+                    "ok": True,
+                    "status": ack["status"],
+                    "applied": ack["status"] == "applied",
+                    "readback": True,
+                    "generation": generation,
+                    "config_sha256": _binding_digest(physical_bytes),
+                    "worker_binding": physical_config["worker_binding"],
+                }
+            if time.monotonic() >= deadline:
+                return {
+                    "ok": False,
+                    "status": "unknown",
+                    "error_code": "maintenance_binding_ack_timeout",
+                    "request_retained": True,
+                }
+            time.sleep(0.1)
+    except Exception:  # noqa: BLE001 - redact lock, path and receipt failures
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "error_code": "maintenance_binding_unavailable",
+        }
+
+
+
 class MaintenanceRuntime:
     def __init__(
         self,
@@ -774,6 +1132,209 @@ class MaintenanceRuntime:
             if row["job_id"] in JOB_IDS
         ][:5]
 
+    def _consume_provider_neutral_request(self):
+        if (
+            os.name != "posix"
+            or self._owner_thread != threading.get_ident()
+            or self._failure_owner_generation != self.generation
+        ):
+            return False
+        request_path = self.runtime / "worker-binding.request.json"
+        ack_path = self.runtime / "worker-binding.ack.json"
+        if not request_path.exists():
+            return False
+        raw_request, request = _read_private_json(request_path, self.guard)
+        request_sha = _binding_digest(raw_request)
+        if ack_path.exists():
+            _, existing_ack = _read_private_json(ack_path, self.guard)
+            if _binding_ack_matches(existing_ack, request, raw_request):
+                return False
+            return False
+
+        nonce = request.get("nonce")
+        request_generation = request.get("generation")
+        if (
+            not isinstance(nonce, str)
+            or re.fullmatch(r"[a-f0-9]{32}", nonce) is None
+            or not isinstance(request_generation, str)
+            or re.fullmatch(r"[a-f0-9]{32}", request_generation) is None
+        ):
+            return False
+
+        def acknowledge(status, error_code, old_sha, new_sha, binding):
+            ack = {
+                "schema": BINDING_ACK_SCHEMA,
+                "nonce": nonce,
+                "request_generation": request_generation,
+                "owner_generation": self.generation,
+                "request_sha256": request_sha,
+                "status": status,
+                "error_code": error_code,
+                "old_config_sha256": old_sha,
+                "new_config_sha256": new_sha,
+                "worker_binding": binding,
+                "observed_at": stamp(self.clock()),
+            }
+            _write_private_json(ack_path, ack, self.guard, exclusive=True)
+
+        required = {
+            "schema",
+            "nonce",
+            "generation",
+            "expected_config_sha256",
+            "old_binding",
+            "desired_config",
+            "desired_config_sha256",
+        }
+        if set(request) != required or request.get("schema") != BINDING_REQUEST_SCHEMA:
+            acknowledge(
+                "rejected",
+                "maintenance_binding_request_invalid",
+                None,
+                None,
+                None,
+            )
+            return True
+        try:
+            desired = validate_config(request["desired_config"])
+            old_binding = request["old_binding"]
+            expected_sha = request["expected_config_sha256"]
+            desired_sha = request["desired_config_sha256"]
+            if (
+                not isinstance(old_binding, dict)
+                or set(old_binding) - {"assigned_slot", "required_model"}
+                or any(
+                    not isinstance(value, str) or not value.strip() or len(value) > 128
+                    for value in old_binding.values()
+                )
+                or desired["worker_binding"] != {}
+                or re.fullmatch(r"[a-f0-9]{64}", expected_sha or "") is None
+                or re.fullmatch(r"[a-f0-9]{64}", desired_sha or "") is None
+                or _binding_digest(_configuration_bytes(desired)) != desired_sha
+            ):
+                raise ValueError("Invalid provider-neutral request")
+        except (TypeError, ValueError):
+            acknowledge(
+                "rejected",
+                "maintenance_binding_request_invalid",
+                request.get("expected_config_sha256"),
+                None,
+                None,
+            )
+            return True
+
+        current_bytes = self.config_path.read_bytes()
+        current_sha = _binding_digest(current_bytes)
+        try:
+            current = validate_config(json.loads(current_bytes.decode("utf-8")))
+        except (UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            acknowledge(
+                "rejected",
+                "maintenance_configuration_unavailable",
+                expected_sha,
+                current_sha,
+                None,
+            )
+            return True
+        if request_generation != self.generation:
+            acknowledge(
+                "rejected",
+                "maintenance_generation_conflict",
+                expected_sha,
+                current_sha,
+                current.get("worker_binding"),
+            )
+            return True
+        if (
+            {
+                key: value
+                for key, value in desired.items()
+                if key != "worker_binding"
+            }
+            != {
+                key: value
+                for key, value in current.items()
+                if key != "worker_binding"
+            }
+            or desired["worker_binding"] != {}
+        ):
+            acknowledge(
+                "rejected",
+                "maintenance_binding_conflict",
+                expected_sha,
+                current_sha,
+                current.get("worker_binding"),
+            )
+            return True
+        if current_sha == desired_sha and current == desired:
+            prior_binding = self.config.get("worker_binding")
+            same_prior = (
+                prior_binding == old_binding
+                and {
+                    key: value
+                    for key, value in self.config.items()
+                    if key != "worker_binding"
+                }
+                == {
+                    key: value
+                    for key, value in desired.items()
+                    if key != "worker_binding"
+                }
+            )
+            if self.config != desired and not same_prior:
+                acknowledge(
+                    "rejected",
+                    "maintenance_configuration_conflict",
+                    expected_sha,
+                    current_sha,
+                    current.get("worker_binding"),
+                )
+                return True
+            new_config = current
+            status = "applied" if self.config != desired else "no_change"
+        elif (
+            current_sha == expected_sha
+            and current == self.config
+            and current.get("worker_binding") == old_binding
+        ):
+            if current == desired:
+                new_config = current
+                status = "no_change"
+            else:
+                new_bytes = _configuration_bytes(desired)
+                mode = stat.S_IMODE(self.config_path.stat().st_mode)
+                _atomic_write_bytes(
+                    self.config_path,
+                    new_bytes,
+                    self.guard,
+                    mode=mode,
+                    expected_existing=current_bytes,
+                )
+                physical = self.config_path.read_bytes()
+                new_config = validate_config(json.loads(physical.decode("utf-8")))
+                if physical != new_bytes or new_config != desired:
+                    raise RuntimeError("maintenance_binding_readback_mismatch")
+                status = "applied"
+        else:
+            acknowledge(
+                "rejected",
+                "maintenance_configuration_conflict",
+                expected_sha,
+                current_sha,
+                current.get("worker_binding"),
+            )
+            return True
+        self.config = new_config
+        self.dispatcher.binding = dict(new_config["worker_binding"])
+        acknowledge(
+            status,
+            None,
+            expected_sha,
+            _binding_digest(self.config_path.read_bytes()),
+            self.config["worker_binding"],
+        )
+        return True
+
     def serve(self, *, max_ticks=None):
         self.failure_phase = "serve"
         import psutil
@@ -789,6 +1350,8 @@ class MaintenanceRuntime:
             current = None
             try:
                 while not self.stop_event.is_set():
+                    self.failure_phase = "binding_request"
+                    self._consume_provider_neutral_request()
                     self.failure_phase = "config_reload"
                     config = load_config(self.config_path)
                     if config != self.config:

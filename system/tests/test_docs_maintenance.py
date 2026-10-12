@@ -1702,3 +1702,310 @@ def test_native_module_runs_only_docs_job(tmp_path):
     )
     assert restarted.tick()["state"] == "backoff"
     assert tasks.adds == 3
+
+
+def test_provider_neutral_cli_uses_owner_request_ack_and_physical_cas(
+    tmp_path, monkeypatch
+):
+    import threading
+    import time
+
+    from hub._services.docs import maintenance_cli, maintenance_runtime
+
+    local = tmp_path / "local"
+    runtime_dir = local / "maintenance"
+    runtime_dir.mkdir(parents=True)
+    config_path = runtime_dir / "config.json"
+    before = config(tmp_path)
+    before["worker_binding"] = {
+        "assigned_slot": "worker-5c70b1e2",
+        "required_model": "glm-5.3:cloud",
+    }
+    config_bytes = json.dumps(before, ensure_ascii=False, indent=2).encode("utf-8")
+    config_path.write_bytes(config_bytes)
+    generation = "a" * 32
+    (runtime_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "generation": generation,
+                "config_hash": hashlib.sha256(config_bytes).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    guard_calls = []
+
+    def guard(path):
+        guard_calls.append(Path(path))
+
+    monkeypatch.setattr(
+        maintenance_runtime, "CanonicalLockGuard", lambda _config: guard
+    )
+    monkeypatch.setattr(
+        maintenance_runtime,
+        "readonly_status",
+        lambda *_args, **_kwargs: {
+            "running": True,
+            "identity": "verified",
+            "generation": generation,
+        },
+    )
+    service = MaintenanceRuntime(
+        tmp_path,
+        local / "scheduler.db",
+        runtime_dir,
+        config_path,
+        task_api=FakeTasks(),
+        result_reader=result,
+        guard=guard,
+        task_db=local / "bach.db",
+        clock=lambda: NOW,
+    )
+    service.generation = generation
+    request_path = runtime_dir / "worker-binding.request.json"
+    consumed = []
+
+    def owner_loop():
+        deadline = time.monotonic() + 5
+        while not request_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        with process_owner(service.owner_path, guard):
+            service._failure_owner_generation = generation
+            service._owner_thread = threading.get_ident()
+            try:
+                consumed.append(service._consume_provider_neutral_request())
+            finally:
+                service._owner_thread = None
+
+    owner = threading.Thread(target=owner_loop)
+    owner.start()
+    handler = SimpleNamespace(
+        base_path=tmp_path / "system",
+        user_db=local / "bach.db",
+    )
+    ok, payload = maintenance_cli.handle(
+        handler, ["provider-neutral", "--wait-seconds", "5"]
+    )
+    owner.join(5)
+
+    assert not owner.is_alive() and consumed == [True]
+    assert ok is True, payload
+    outcome = json.loads(payload)
+    assert outcome["status"] == "applied" and outcome["readback"] is True
+    actual = json.loads(config_path.read_text(encoding="utf-8"))
+    assert {key: value for key, value in actual.items() if key != "worker_binding"} == {
+        key: value for key, value in before.items() if key != "worker_binding"
+    }
+    assert actual["worker_binding"] == {}
+    assert service.config == actual and service.dispatcher.binding == {}
+    request_bytes = request_path.read_bytes()
+    ack_path = runtime_dir / "worker-binding.ack.json"
+    ack = json.loads(ack_path.read_text(encoding="utf-8"))
+    assert ack["request_sha256"] == hashlib.sha256(request_bytes).hexdigest()
+    assert ack["request_generation"] == ack["owner_generation"] == generation
+    assert ack["new_config_sha256"] == hashlib.sha256(config_path.read_bytes()).hexdigest()
+    assert request_path.stat().st_mode & 0o777 == 0o600
+    assert ack_path.stat().st_mode & 0o777 == 0o600
+    assert config_path in guard_calls and request_path in guard_calls and ack_path in guard_calls
+
+
+def test_provider_neutral_cli_timeout_reuses_the_same_private_request(
+    tmp_path, monkeypatch
+):
+    from hub._services.docs import maintenance_runtime
+
+    local = tmp_path / "local"
+    runtime_dir = local / "maintenance"
+    runtime_dir.mkdir(parents=True)
+    config_path = runtime_dir / "config.json"
+    before = config(tmp_path)
+    before["worker_binding"] = {"required_model": "glm-5.3:cloud"}
+    config_path.write_text(json.dumps(before, indent=2), encoding="utf-8")
+    config_bytes = config_path.read_bytes()
+    generation = "b" * 32
+    (runtime_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "generation": generation,
+                "config_hash": hashlib.sha256(config_bytes).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(maintenance_runtime, "CanonicalLockGuard", lambda _cfg: lambda _path: None)
+    monkeypatch.setattr(
+        maintenance_runtime,
+        "readonly_status",
+        lambda *_args, **_kwargs: {
+            "running": True,
+            "identity": "verified",
+            "generation": generation,
+        },
+    )
+
+    first = maintenance_runtime.request_provider_neutral_binding(
+        tmp_path, runtime_dir, config_path, timeout_seconds=0
+    )
+    request_path = runtime_dir / "worker-binding.request.json"
+    first_request = request_path.read_bytes()
+    second = maintenance_runtime.request_provider_neutral_binding(
+        tmp_path, runtime_dir, config_path, timeout_seconds=0
+    )
+
+    assert first["status"] == second["status"] == "unknown"
+    assert first["error_code"] == second["error_code"] == "maintenance_binding_ack_timeout"
+    assert first["request_retained"] is second["request_retained"] is True
+    assert request_path.read_bytes() == first_request
+    assert json.loads(first_request)["nonce"] == json.loads(request_path.read_bytes())["nonce"]
+    assert request_path.stat().st_mode & 0o777 == 0o600
+    assert not (runtime_dir / "worker-binding.ack.json").exists()
+
+
+def test_provider_neutral_dispatch_creates_future_tasks_without_slot_or_model(
+    native_task_proxy, tmp_path
+):
+    dispatcher = DocumentationDispatcher(
+        tmp_path,
+        tmp_path / "provider-neutral.json",
+        native_task_proxy,
+        result,
+        lambda _path: None,
+        snapshot=lambda *_args: (REV, ["docs/README.md"]),
+        clock=lambda: NOW,
+        binding={},
+    )
+
+    receipt = dispatcher.dispatch()
+    row = native_task_proxy.show(receipt["task_id"])
+
+    assert row["assigned_to"] == "BACH"
+    assert row.get("assigned_slot") in (None, "")
+    assert row.get("required_model") in (None, "")
+
+
+def _provider_neutral_fixture(tmp_path, monkeypatch, generation):
+    from hub._services.docs import maintenance_runtime
+
+    local = tmp_path / "local"
+    runtime_dir = local / "maintenance"
+    runtime_dir.mkdir(parents=True)
+    config_path = runtime_dir / "config.json"
+    initial = config(tmp_path)
+    initial["worker_binding"] = {
+        "assigned_slot": "worker-5c70b1e2",
+        "required_model": "glm-5.3:cloud",
+    }
+    config_bytes = json.dumps(initial, ensure_ascii=False, indent=2).encode("utf-8")
+    config_path.write_bytes(config_bytes)
+    (runtime_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "generation": generation,
+                "config_hash": hashlib.sha256(config_bytes).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    guard = lambda _path: None
+    monkeypatch.setattr(
+        maintenance_runtime, "CanonicalLockGuard", lambda _config: guard
+    )
+    monkeypatch.setattr(
+        maintenance_runtime,
+        "readonly_status",
+        lambda *_args, **_kwargs: {
+            "running": True,
+            "identity": "verified",
+            "generation": generation,
+        },
+    )
+    service = MaintenanceRuntime(
+        tmp_path,
+        local / "scheduler.db",
+        runtime_dir,
+        config_path,
+        task_api=FakeTasks(),
+        result_reader=result,
+        guard=guard,
+        task_db=local / "bach.db",
+        clock=lambda: NOW,
+    )
+    service.generation = generation
+    return maintenance_runtime, service, runtime_dir, config_path, config_bytes, guard
+
+
+def test_provider_neutral_request_is_owner_and_generation_bound(
+    tmp_path, monkeypatch
+):
+    import threading
+
+    runtime_module, service, runtime_dir, config_path, before_bytes, guard = (
+        _provider_neutral_fixture(tmp_path, monkeypatch, "c" * 32)
+    )
+    queued = runtime_module.request_provider_neutral_binding(
+        tmp_path, runtime_dir, config_path, timeout_seconds=0
+    )
+    assert queued["status"] == "unknown"
+    request_path = runtime_dir / "worker-binding.request.json"
+    assert service._consume_provider_neutral_request() is False
+    assert config_path.read_bytes() == before_bytes
+
+    service.generation = "d" * 32
+    with process_owner(service.owner_path, guard):
+        service._failure_owner_generation = service.generation
+        service._owner_thread = threading.get_ident()
+        try:
+            assert service._consume_provider_neutral_request() is True
+        finally:
+            service._owner_thread = None
+
+    ack = json.loads((runtime_dir / "worker-binding.ack.json").read_text("utf-8"))
+    assert ack["status"] == "rejected"
+    assert ack["error_code"] == "maintenance_generation_conflict"
+    assert ack["request_generation"] == "c" * 32
+    assert ack["owner_generation"] == "d" * 32
+    assert config_path.read_bytes() == before_bytes
+    assert service.dispatcher.binding == json.loads(before_bytes)["worker_binding"]
+    assert request_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_provider_neutral_request_cannot_change_other_config_fields(
+    tmp_path, monkeypatch
+):
+    import threading
+
+    runtime_module, service, runtime_dir, config_path, before_bytes, guard = (
+        _provider_neutral_fixture(tmp_path, monkeypatch, "e" * 32)
+    )
+    queued = runtime_module.request_provider_neutral_binding(
+        tmp_path, runtime_dir, config_path, timeout_seconds=0
+    )
+    assert queued["status"] == "unknown"
+    request_path = runtime_dir / "worker-binding.request.json"
+    request = json.loads(request_path.read_text("utf-8"))
+    desired = dict(request["desired_config"])
+    desired["poll_seconds"] = 61
+    request["desired_config"] = desired
+    request["desired_config_sha256"] = runtime_module._binding_digest(
+        runtime_module._configuration_bytes(desired)
+    )
+    request_path.write_text(
+        json.dumps(request, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    request_path.chmod(0o600)
+
+    with process_owner(service.owner_path, guard):
+        service._failure_owner_generation = service.generation
+        service._owner_thread = threading.get_ident()
+        try:
+            assert service._consume_provider_neutral_request() is True
+        finally:
+            service._owner_thread = None
+
+    ack = json.loads((runtime_dir / "worker-binding.ack.json").read_text("utf-8"))
+    assert ack["status"] == "rejected"
+    assert ack["error_code"] == "maintenance_binding_conflict"
+    assert config_path.read_bytes() == before_bytes
+    assert service.config["poll_seconds"] == 60
+    assert service.dispatcher.binding == json.loads(before_bytes)["worker_binding"]
