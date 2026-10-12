@@ -122,7 +122,9 @@ def create_task_result_operator(
     """Local operator provisioning only; never called by general device enrollment.
 
     Issues a NEW credential, distinct from every existing worker/tray token.
-    Deliver it to the operator's browser/keyring, never to TaskLeaseClient.
+    The returned token is for the separate result-operator identity. It may be
+    supplied explicitly for result snapshots, history, or corrections, but it is
+    never a worker-lease credential and must not be stored in worker grants.
     """
     import secrets
     clean_name = (name or "").strip()
