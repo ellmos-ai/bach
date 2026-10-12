@@ -861,3 +861,58 @@ def test_startup_unverifiable_automatic_pause_does_not_start(startup, stamp):
     result = control._resume_always_on_at_startup(threading.Event())
     assert result == {"state": "invalid_cooldown", "retry": False}
     assert not control._WORKER_EXECUTIONS
+
+
+def test_stale_system_configuration_version_is_http_409_before_admission(
+    admission, monkeypatch
+):
+    from hub._services.chat import slots_config as slots
+
+    control, _ = admission
+    worker = _system_fixture_worker()
+    current = slots.core_system_agents_snapshot()["configuration_version"]
+    stale = "0" * 64 if current != "0" * 64 else "f" * 64
+    monkeypatch.setattr(
+        control,
+        "begin_assignment",
+        lambda **_kwargs: pytest.fail("Stale configuration must be rejected before admission"),
+    )
+
+    result, code = control.start_worker_execution(
+        worker["id"],
+        start_request_id="9" * 32,
+        expected_configuration_version=stale,
+    )
+
+    assert code == 409
+    assert result["error_code"] == "configuration_version_conflict"
+    assert result["admission"]["admitted"] is False
+    assert result["admission"]["start_request_id"] == "9" * 32
+    assert control._WORKER_EXECUTIONS == {}
+    assert slots.get_system_slot(worker["id"])["status"] == "idle"
+
+
+def test_other_slot_admission_errors_remain_redacted_http_503(admission, monkeypatch):
+    import json
+
+    control, worker = admission
+
+    def unavailable(_worker_id):
+        raise RuntimeError("secret_path=/private/token")
+
+    monkeypatch.setattr(control, "_execution_worker_slot", unavailable)
+    monkeypatch.setattr(
+        control,
+        "begin_assignment",
+        lambda **_kwargs: pytest.fail("Unavailable slot must not be admitted"),
+    )
+
+    result, code = control.start_worker_execution(
+        worker["id"], start_request_id="8" * 32
+    )
+
+    assert code == 503
+    assert result["error_code"] == "worker_slot_unavailable"
+    assert result["admission"]["admitted"] is False
+    assert "secret_path" not in json.dumps(result)
+    assert control._WORKER_EXECUTIONS == {}

@@ -16,6 +16,7 @@ from .maintenance_runtime import (
     load_config,
     maintenance_exception_class,
     readonly_status,
+    request_provider_neutral_binding,
     validate_config,
     write_failure_receipt,
 )
@@ -27,7 +28,7 @@ def handle(handler, args, dry_run=False):
         "action",
         nargs="?",
         default="status",
-        choices=("status", "plan", "launch-plan", "configure", "tick", "serve"),
+        choices=("status", "plan", "launch-plan", "configure", "tick", "serve", "provider-neutral"),
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--config", type=Path)
@@ -38,6 +39,7 @@ def handle(handler, args, dry_run=False):
     parser.add_argument("--poll-seconds", type=int, default=60)
     parser.add_argument("--assigned-slot")
     parser.add_argument("--required-model")
+    parser.add_argument("--wait-seconds", type=int)
     parser.add_argument("--enable", action="store_true")
     try:
         options = parser.parse_args(args)
@@ -51,7 +53,7 @@ def handle(handler, args, dry_run=False):
     )
     config_path = (options.config or runtime / "config.json").expanduser().resolve()
     canonical_runtime = (handler.user_db.parent / "maintenance").resolve()
-    if options.action in {"configure", "tick", "serve", "launch-plan"} and (
+    if options.action in {"configure", "tick", "serve", "launch-plan", "provider-neutral"} and (
         runtime != canonical_runtime or config_path != canonical_runtime / "config.json"
     ):
         return (
@@ -146,6 +148,26 @@ def handle(handler, args, dry_run=False):
                 False,
                 "Wartungskonfiguration nicht bestätigt; Locks/Pfade/Budget prüfen",
             )
+    if options.action == "provider-neutral":
+        if options.assigned_slot or options.required_model or options.enable:
+            return False, "Providerneutrale Auswahl akzeptiert keine Slot- oder Modellbindung"
+        if dry_run:
+            return True, json.dumps(
+                {
+                    "action": "provider-neutral",
+                    "worker_binding": {},
+                    "applied": False,
+                    "started": False,
+                },
+                ensure_ascii=False,
+            )
+        outcome = request_provider_neutral_binding(
+            root,
+            runtime,
+            config_path,
+            timeout_seconds=options.wait_seconds,
+        )
+        return bool(outcome.get("ok")), json.dumps(outcome, ensure_ascii=False)
     if dry_run:
         return True, json.dumps({"applied": False, "started": False})
     phase = "config_load"

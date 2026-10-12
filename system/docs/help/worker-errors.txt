@@ -68,3 +68,11 @@ lesbare Fehlertext auch für GUI-Versionen nutzbar, die backend_error noch nicht
 auswerten. Alte Fehler ohne gespeicherten Vertrag werden nicht nachträglich als
 Monatslimit ausgegeben. Es gibt weder Cloud-Autostarts noch unbegrenzte Retries
 oder einen kostenpflichtigen Modellwechsel. Cloud-Worker startet der Nutzer.
+
+
+Bei einem veralteten Gesamtversions-Pin des Worker-Slots weist die Vorprüfung den
+Start mit HTTP 409 und error_code=configuration_version_conflict zurück.
+Die Antwort enthält admission.admitted=false; eine Generation oder ein Thread
+wird dabei nicht angelegt. Lies den aktuellen system-slots-Konfigurationsstand
+erneut und sende eine bewusst neue Startanforderung. Andere nicht verifizierbare
+Slot- oder Admissionfehler bleiben HTTP 503 mit error_code=worker_slot_unavailable.

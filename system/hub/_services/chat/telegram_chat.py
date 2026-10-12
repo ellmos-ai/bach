@@ -3593,8 +3593,30 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = control.thread
                 _WORKER_EXECUTIONS[worker_id] = control
-        except Exception as exc:
-            return rejected({"error": f"Worker-Slot nicht verifizierbar: {exc}"}, 503)
+        except RuntimeError as exc:
+            if str(exc) == "configuration_version_conflict":
+                return rejected(
+                    {
+                        "error": "Worker-Konfiguration hat sich geändert",
+                        "error_code": "configuration_version_conflict",
+                    },
+                    409,
+                )
+            return rejected(
+                {
+                    "error": "Worker-Slot nicht verifizierbar",
+                    "error_code": "worker_slot_unavailable",
+                },
+                503,
+            )
+        except Exception:  # noqa: BLE001 - return a stable redacted admission error
+            return rejected(
+                {
+                    "error": "Worker-Slot nicht verifizierbar",
+                    "error_code": "worker_slot_unavailable",
+                },
+                503,
+            )
     try:
         response, status = _start_reserved_worker_execution(control, slot, custom_prompt)
         if status != 200:
@@ -5862,6 +5884,8 @@ def _resume_always_on_at_startup(stop_event):
         return {"state": "configuration_changed" if rejected else "admission_unconfirmed",
                 "retry": rejected}
     if status == 409:
+        if response.get("error_code") == "configuration_version_conflict":
+            return {"state": "configuration_changed", "retry": True}
         pending = response.get("execution", {}).get("terminal") is False
         return {"state": "existing_admission" if pending else "denied", "retry": False,
                 "execution": response.get("execution")}
