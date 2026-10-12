@@ -77,11 +77,17 @@ class LeaseHandler(BaseHandler):
             return True, "[DRY-RUN] Keine Lease-Aenderung"
 
         from hub._services.resource_lease_client import (
-            LeaseError, LeaseProtocolError, ResourceLeaseClient, ResourceLeaseDeniedError,
+            LeaseError,
+            LeaseProtocolError,
+            ResourceLeaseClient,
+            ResourceLeaseDeniedError,
+            ResourceLeaseUnavailableError,
         )
         try:
             with ResourceLeaseClient.for_db(self._get_db) as client:
                 return self._run(client, operation, action, opts)
+        except ResourceLeaseUnavailableError as e:
+            return False, f"[UNAVAILABLE] {operation}: {e}"
         except ResourceLeaseDeniedError as e:
             return False, f"[CONFLICT] {operation}: {e.reason}"
         except (LeaseError, LeaseProtocolError) as e:

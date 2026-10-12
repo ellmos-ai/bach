@@ -28,6 +28,7 @@ try:
     from hub._services.resource_lease import (
         LeaseValidationError,
         ResourceLeaseConfig,
+        ResourceLeaseSchemaUnavailable,
         ResourceNotFound,
         acquire_resource_lease,
         read_resource_lease,
@@ -40,6 +41,7 @@ except ImportError:  # pragma: no cover
     from .resource_lease import (  # type: ignore
         LeaseValidationError,
         ResourceLeaseConfig,
+        ResourceLeaseSchemaUnavailable,
         ResourceNotFound,
         acquire_resource_lease,
         read_resource_lease,
@@ -61,6 +63,14 @@ class ResourceLeaseDeniedError(_tlc.LeaseDeniedError):
         self.resource = resource
         self.reason = reason
         self.payload = payload
+
+
+class ResourceLeaseUnavailableError(LeaseError):
+    code = "resource_lease_schema_unavailable"
+
+    def __init__(self, resource: str) -> None:
+        self.resource = resource
+        super().__init__(f"Ressource {resource}: Lease-Status nicht verfügbar (Schema nicht bereit)")
 
 
 class ResourceLeaseLostError(LeaseError):
@@ -174,6 +184,13 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
         """Nur wenn die lokale DB wirklich die Lead-Registry ist (nicht isolated)."""
         return self.mode == "local" and _tlc.get_lead_config().get("mode") == "lead"
 
+    def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
+        if status != 503 or not isinstance(payload, dict):
+            return False
+        detail = payload.get("detail")
+        return (isinstance(detail, dict)
+                and detail.get("code") == ResourceLeaseUnavailableError.code)
+
     @classmethod
     def for_db(cls, connection_factory, **kwargs):
         return cls.for_task_db(connection_factory, **kwargs)
@@ -195,14 +212,25 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
                     kwargs["lease_id"] = headers["X-Lease-Id"]
                 result = funcs[name](conn, core_name, **kwargs, config=config, now=now)
                 status, data = result.http_status, result.payload
+            except ResourceLeaseSchemaUnavailable:
+                raise ResourceLeaseUnavailableError(core_name) from None
             except (LeaseValidationError, ResourceNotFound) as exc:
                 raise ResourceLeaseDeniedError(core_name, type(exc).__name__, {"detail": str(exc)}) from None
             finally:
                 if self._conn is None:
                     conn.close()
         if status != 200:
-            reason = data.get("reason") or data.get("detail") or f"http_{status}"
-            raise ResourceLeaseDeniedError(core_name, str(reason), data)
+            detail = data.get("detail") if isinstance(data, dict) else None
+            code = detail.get("code") if isinstance(detail, dict) else (data.get("code") if isinstance(data, dict) else None)
+            if status == 503 and code == ResourceLeaseSchemaUnavailable.code:
+                raise ResourceLeaseUnavailableError(core_name)
+            if isinstance(data, dict):
+                reason = data.get("reason") or detail or f"http_{status}"
+                error_payload = data
+            else:
+                reason = f"http_{status}"
+                error_payload = {}
+            raise ResourceLeaseDeniedError(core_name, str(reason), error_payload)
         if not isinstance(data, dict) or data.get("resource") != core_name:
             raise LeaseProtocolError("ACK passt nicht zur angefragten Ressource")
         _tlc._wire_time(data.get("server_now"))
