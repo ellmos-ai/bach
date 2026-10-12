@@ -12,6 +12,11 @@ from hub._services.task_lease_client import TaskLeaseClient, LeaseAck, LeaseErro
 
 T0 = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
 
+
+@pytest.fixture
+def denial_mem_db(request):
+    return request.getfixturevalue("mem_db")
+
 def ack_payload(tid=1):
     return dict(granted=True, task_id=tid, lease_id=str(uuid.uuid4()), fence=1,
                 worker_id="worker@HOST", host="HOST", issued_at=T0.isoformat(),
@@ -331,3 +336,165 @@ def test_explicit_isolated_config_still_allows_local_adapter(tmp_path,monkeypatc
     for name in ("BACH_LEAD_URL","BACH_RHEINGOLD_URL","BACH_RHEINGOLD_DISABLED"):
         monkeypatch.delenv(name,raising=False)
     assert TaskLeaseClient().mode=="local"
+
+_DENIAL_NOW = "2026-10-12T08:00:00.000000Z"
+_DENIAL_UNTIL = "2026-10-12T08:10:00.000000Z"
+
+
+def _remote_denial_client(monkeypatch, denial):
+    monkeypatch.setattr(module, "get_lead_config", lambda: {
+        "mode": "worker", "lead_url": "https://lead.invalid"
+    })
+    client = TaskLeaseClient()
+    monkeypatch.setattr(
+        client, "_http_request",
+        lambda method, path, payload=None, headers=None: (409, denial),
+    )
+    return client
+
+
+def _acquire_denial(client):
+    client.acquire(1, worker_id="worker@HOST", host="HOST")
+
+
+def test_remote_creator_denial_preserves_only_valid_retry_metadata(monkeypatch):
+    secret = "PRIVATE_LEASE_CAPABILITY"
+    denial = {
+        "granted": False, "task_id": 1, "reason": "creator_priority",
+        "until": _DENIAL_UNTIL, "server_now": _DENIAL_NOW,
+        "holder": {"worker_id": "private-owner@HOST", "lease_id": secret},
+        "trace": {"private": "raw trace body"}, "authorization": secret,
+    }
+    client = _remote_denial_client(monkeypatch, denial)
+
+    with pytest.raises(module.LeaseDeniedError) as caught:
+        _acquire_denial(client)
+
+    error = caught.value
+    assert error.reason == "creator_priority"
+    assert error.server_now == _DENIAL_NOW
+    assert error.until == _DENIAL_UNTIL
+    assert error.payload == {
+        "task_id": 1, "reason": "creator_priority",
+        "server_now": _DENIAL_NOW, "until": _DENIAL_UNTIL,
+    }
+    assert secret not in str(error)
+    assert "raw trace body" not in repr(error.payload)
+
+
+@pytest.mark.parametrize("reason", ["unresolved_tool_trace", "tool_trace_unavailable"])
+def test_remote_tool_trace_denials_preserve_reason_without_trace_details(monkeypatch, reason):
+    denial = {
+        "granted": False, "task_id": 1, "reason": reason,
+        "status": "in_progress", "server_now": _DENIAL_NOW,
+        "trace": {"worker_id": "private-worker", "arguments": "private args"},
+        "lease_id": "PRIVATE_LEASE_CAPABILITY", "completion_token": "PRIVATE_TRACE_TOKEN",
+    }
+    client = _remote_denial_client(monkeypatch, denial)
+
+    with pytest.raises(module.LeaseDeniedError) as caught:
+        _acquire_denial(client)
+
+    error = caught.value
+    assert error.reason == reason
+    assert error.server_now == _DENIAL_NOW
+    assert error.until is None
+    assert error.payload == {"task_id": 1, "reason": reason, "server_now": _DENIAL_NOW}
+    assert "private args" not in str(error)
+    assert "PRIVATE_TRACE_TOKEN" not in repr(error.payload)
+
+
+@pytest.mark.parametrize("denial", [
+    {"reason": "private_path:/srv/secret", "server_now": _DENIAL_NOW, "lease_id": "secret"},
+    {"reason": ["creator_priority"], "server_now": _DENIAL_NOW, "until": _DENIAL_UNTIL},
+    {"reason": "tool_trace_unavailable", "server_now": "not-a-time", "trace": "private"},
+    {"reason": "creator_priority", "server_now": _DENIAL_NOW, "until": "not-a-time"},
+    {"reason": "creator_priority", "server_now": _DENIAL_NOW,
+     "until": "2026-10-12T07:59:59.000000Z"},
+    {"reason": "creator_priority", "server_now": "2026-10-12T10:00:00+02:00",
+     "until": "2026-10-12T08:10:00.000000Z"},
+])
+def test_unknown_or_malformed_denials_are_neutral(monkeypatch, denial):
+    client = _remote_denial_client(monkeypatch, denial)
+
+    with pytest.raises(module.LeaseDeniedError) as caught:
+        _acquire_denial(client)
+
+    assert type(caught.value) is module.LeaseDeniedError
+    assert caught.value.reason == "denied"
+    assert caught.value.until is None
+    assert caught.value.server_now is None
+    assert caught.value.payload == {"task_id": 1, "reason": "denied"}
+    assert "secret" not in str(caught.value)
+
+
+def test_local_client_preserves_native_creator_priority_deadline(denial_mem_db):
+    conn = denial_mem_db
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    now = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
+    created = now - timedelta(seconds=30)
+    tid = _insert_task(conn)
+    conn.execute(
+        "UPDATE tasks SET created_by = ?, created_at = ? WHERE id = ?",
+        ("creator@HOST", created.isoformat(), tid),
+    )
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+
+    with pytest.raises(module.LeaseDeniedError) as caught:
+        client.acquire(tid, worker_id="other@HOST", host="HOST", now=now)
+
+    expected_until = created + timedelta(seconds=module.LeaseConfig().creator_window_seconds)
+    assert caught.value.reason == "creator_priority"
+    assert caught.value.server_now == now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    assert caught.value.until == expected_until.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+@pytest.mark.parametrize(
+    ("corrupt_trace", "expected_reason"),
+    [(False, "unresolved_tool_trace"), (True, "tool_trace_unavailable")],
+)
+def test_local_client_preserves_native_tool_trace_denials(denial_mem_db, corrupt_trace, expected_reason):
+    from hub._services.chat.worker_tool_trace import TraceIdentity
+
+    conn = denial_mem_db
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    now = datetime.now(timezone.utc)
+    tid = _insert_task(conn)
+    conn.execute(
+        "UPDATE tasks SET created_by = ?, created_at = ? WHERE id = ?",
+        ("original@HOST", (now - timedelta(minutes=20)).isoformat(), tid),
+    )
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    task_version = client.task_snapshot(tid)["task_version"]
+    generation = uuid.uuid4().hex
+    ack = client.acquire(
+        tid, worker_id="original@HOST", host="HOST", task_version=task_version,
+        result_generation=generation, now=now,
+    )
+    identity = TraceIdentity(
+        task_id=tid, fence=ack.fence, worker_id=ack.worker_id,
+        generation=generation, task_version=ack.task_version,
+        request_id=uuid.uuid4().hex, source="normal-loop", tool_name="test_tool",
+    )
+    client.tool_trace_start(identity, lease_id=ack.lease_id, arguments_sha256="a" * 64)
+    if corrupt_trace:
+        conn.execute("DROP INDEX ux_worker_tool_trace_phase")
+        conn.commit()
+
+    with pytest.raises(module.LeaseDeniedError) as caught:
+        client.acquire(
+            tid, worker_id="next@HOST", host="HOST",
+            task_version=client.task_snapshot(tid)["task_version"],
+            result_generation=uuid.uuid4().hex, request_id=uuid.uuid4().hex,
+            now=now + timedelta(minutes=31),
+        )
+
+    assert caught.value.reason == expected_reason
+    assert caught.value.server_now == (now + timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    assert caught.value.until is None
+    assert caught.value.payload == {
+        "task_id": tid, "reason": expected_reason,
+        "server_now": (now + timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+    }

@@ -72,6 +72,11 @@ class TaskLeaseClient:
 - `LeaseHolderView`: Holder-Ansicht gemäss Vertrag §5.2. Verbirgt `lease_id` für Fremde; zeigt `own: True` nur bei Vorlage der passenden `lease_id`.
 - `LeaseReleaseAck`: Bestätigung über Statuswechsel (`done`, `pending`, `blocked`, `review`) und aktuellen Fence. `review` benötigt eine gültige GitHub-PR-Referenz und zählt nicht als Done.
 
+
+#### Sichere Denial-Metadaten
+
+`LeaseDeniedError.reason` erhält bekannte Authority-Gründe einschließlich `unresolved_tool_trace` und `tool_trace_unavailable`. `payload` enthält nur die Task-ID, den validierten Grund und eine gültige UTC-Autoritätszeit (`server_now`). Beim Grund `creator_priority` kommt `until` hinzu, sofern beide Zeitstempel gültig sind und die Frist nach `server_now` liegt. Diese beiden Zeitstempel sind zusätzlich als `error.server_now` und `error.until` verfügbar. Unbekannte Gründe sowie fehlende oder fehlerhafte Fristdaten werden neutral als `denied` ohne Retry-Metadaten gemeldet. Holder-, Lease-, Trace- und sonstige Rohfelder aus der Authority-Antwort werden nicht an die Exception weitergereicht.
+
 ### 2.2 CLI-Befehle (`system/hub/task.py`)
 
 Folgende Subcommands stehen zur Verfügung:
