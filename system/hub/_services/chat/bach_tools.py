@@ -10,6 +10,7 @@ lazily import ``hub._services.*``. The module never sees any of that -- it asks
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -314,6 +316,21 @@ def _is_secret_path(p: Path) -> bool:
             or name in _SECRET_FILE_NAMES
             or name == ".env" or name.startswith(".env."))
 
+def _task_code_reader_enabled(worker_task_binding, allowed_tools, mode: str) -> bool:
+    if worker_task_binding is None or not isinstance(allowed_tools, (set, frozenset, tuple, list)):
+        return False
+    if "start_task_worktree" not in allowed_tools:
+        return False
+    available = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}
+    return "start_task_worktree" in available
+
+
+def _authorize_task_reader(worker_task_binding, path):
+    from hub._services.chat import worker_write_guard
+    scope = worker_write_guard.authorize_task_read(
+        worker_task_binding, path, secret_check=_is_secret_path,
+    )
+    return worker_write_guard, scope
 
 def _contains_secret_location(p: Path) -> bool:
     """True, wenn ein REKURSIVER Befehl auf p an Secrets vorbeikommen
@@ -814,6 +831,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         except (json.JSONDecodeError, TypeError):
             args = {}
 
+    task_code_capability = _task_code_reader_enabled(worker_task_binding, allowed_tools, mode)
+
     if worker_task_binding is not None and name == "start_task_worktree":
         if (not isinstance(args, dict) or type(args.get("task_id")) is not int
                 or args["task_id"] != worker_task_binding.task_id):
@@ -838,6 +857,27 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return json.dumps({k: v for k, v in saved.items() if k != "content"}, ensure_ascii=False)
 
         if name == "list_directory":
+            if task_code_capability:
+                try:
+                    read_guard, scope = _authorize_task_reader(worker_task_binding, args.get("path") or ".")
+                except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
+                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                if scope.requested_is_file:
+                    return "Fehler: Pfad ist kein Verzeichnis"
+                children = {}
+                for child in (*scope.files, *scope.directories):
+                    if child != scope.requested and child.parent == scope.requested:
+                        children[child.name] = child
+                details = args.get("details")
+                lines = []
+                for name_part, child in sorted(children.items()):
+                    if details:
+                        is_dir = child in scope.directories
+                        size = 0 if is_dir else scope.sizes.get(child, 0)
+                        lines.append(f"{'d' if is_dir else '-'} {size:>10} {name_part}")
+                    else:
+                        lines.append(name_part)
+                return ("\n".join(lines) or "(leer)")[:4000]
             # Kein Subprocess/Shell mehr (frueher: run_shell("ls ..." per
             # shell=True) mit shlex.quote() auf den Pfad - shlex.quote()
             # eskript POSIX-Single-Quotes, die auf Windows'
@@ -874,43 +914,81 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             p = args.get("path", "")
             if not p:
                 return "Kein Pfad angegeben"
-            resolved = _resolve(p)
-            if not _fs_root_allowed(resolved):
-                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
-            if _is_secret_path(resolved):
-                return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
+            if task_code_capability:
+                try:
+                    read_guard, scope = _authorize_task_reader(worker_task_binding, p)
+                except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
+                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                if not scope.requested_is_file:
+                    return "BLOCKIERT: Im Task-Lesebereich muss eine freigegebene Datei angegeben werden."
+                resolved = scope.requested
+            else:
+                resolved = _resolve(p)
+                if not _fs_root_allowed(resolved):
+                    return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+                if _is_secret_path(resolved):
+                    return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
             lines = min(int(args.get("lines", 50)), 200)
             offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
             end_line = offset + lines - 1
             try:
-                with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
-                    picked = [
-                        line for i, line in enumerate(fh, start=1)
-                        if offset <= i <= end_line
-                    ]
+                if task_code_capability:
+                    with (
+                        read_guard.open_authorized_task_file(scope, resolved) as binary,
+                        io.TextIOWrapper(binary, encoding="utf-8", errors="replace") as fh,
+                    ):
+                        picked = [line for i, line in enumerate(fh, start=1)
+                                  if offset <= i <= end_line]
+                else:
+                    with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
+                        picked = [line for i, line in enumerate(fh, start=1)
+                                  if offset <= i <= end_line]
             except OSError as e:
+                if task_code_capability:
+                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
                 return f"Fehler: {e}"
+            except Exception:  # noqa: BLE001 - Task-Lesefehler bleiben fail-closed.
+                if task_code_capability:
+                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
+                return "Fehler: Datei konnte nicht gelesen werden"
             return ("".join(picked) or "(keine Zeilen)")[:4000]
 
         if name == "search_text":
             pat = args.get("pattern", "")
             if not isinstance(pat, str) or len(pat) > 1024:
                 return "BLOCKIERT: Suchmuster ist ungültig oder zu lang"
-            p = Path(args.get("path", "."))
-            resolved = _resolve(p)
-            if not _fs_root_allowed(resolved):
-                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
-            if _is_secret_path(resolved):
-                return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
+            p = Path(args.get("path") or ".")
+            task_scope = None
+            task_guard = None
+            if task_code_capability:
+                try:
+                    task_guard, task_scope = _authorize_task_reader(worker_task_binding, p)
+                except Exception:  # noqa: BLE001 - unklarer Task-Lesebereich bleibt gesperrt.
+                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                resolved = task_scope.requested
+            else:
+                resolved = _resolve(p)
+                if not _fs_root_allowed(resolved):
+                    return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+                if _is_secret_path(resolved):
+                    return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
             recursive = args.get("recursive", True)
             import regex
             try:
                 rx = regex.compile(pat, regex.VERSION0)
             except regex.error as e:
                 return f"Ungueltiges Muster: {e}"
-            files = resolved.rglob("*") if recursive and resolved.is_dir() else (
-                resolved.glob("*") if resolved.is_dir() else [resolved]
-            )
+            if task_scope is not None:
+                if task_scope.requested_is_file:
+                    files = [resolved]
+                else:
+                    files = [f for f in task_scope.files
+                             if f != resolved and resolved in f.parents
+                             and (recursive or f.parent == resolved)]
+            else:
+                files = resolved.rglob("*") if recursive and resolved.is_dir() else (
+                    resolved.glob("*") if resolved.is_dir() else [resolved]
+                )
             hits = []
             deadline = time.monotonic() + 5
             bytes_read = 0
@@ -919,13 +997,25 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return "BLOCKIERT: Suche hat das Zeitlimit erreicht"
                 if n >= 5000:
                     break
-                fr = _resolve(f)
-                if not _fs_root_allowed(fr) or _is_secret_path(fr):
+                fr = f if task_scope is not None else _resolve(f)
+                if task_scope is not None:
+                    if fr not in task_scope.files:
+                        continue
+                elif not _fs_root_allowed(fr) or _is_secret_path(fr):
                     continue
                 if not fr.is_file() or len(hits) >= 200:
                     continue
                 try:
-                    with open(fr, "r", encoding="utf-8", errors="replace") as fh:
+                    with ExitStack() as stack:
+                        if task_scope is not None:
+                            binary = stack.enter_context(
+                                task_guard.open_authorized_task_file(task_scope, fr)
+                            )
+                        else:
+                            binary = stack.enter_context(open(fr, "rb"))
+                        fh = stack.enter_context(
+                            io.TextIOWrapper(binary, encoding="utf-8", errors="replace")
+                        )
                         i = 0
                         while line := fh.readline(65536):
                             i += 1
@@ -1059,6 +1149,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 private = ({"worker_task_binding": worker_task_binding,
                             "require_task_binding": require_task_binding}
                            if worker_task_binding is not None or require_task_binding else {})
+                if task_code_capability:
+                    private["task_code_capability"] = True
                 wt = start_task_worktree(tid, **private)
                 return f"Worktree erstellt: {wt}"
             except Exception as e:

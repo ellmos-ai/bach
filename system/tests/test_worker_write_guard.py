@@ -257,7 +257,7 @@ def test_unbound_copy_rejects_symlinked_source_and_destination_ancestors(tmp_pat
     user_dir.mkdir(parents=True)
     outside = tmp_path / "outside"
     outside.mkdir()
-    external_file = outside / "secret.txt"
+    external_file = outside / "secret.pem"
     external_file.write_text("not copied", encoding="utf-8")
     monkeypatch.setattr(bach_paths, "BACH_ROOT", trusted_root)
 
@@ -864,3 +864,175 @@ def test_bound_safe_shell_still_blocks_writes_and_secret_paths(monkeypatch, comm
     assert "blockiert" in result.lower() or "nicht erlaubt" in result.lower()
     assert "synthetic-credential" not in result
 
+def _public_reader_tree(tmp_path, monkeypatch, task_id=41):
+    repo = tmp_path / "repo"
+    worktrees = tmp_path / "worktrees"
+    repo.mkdir()
+    worktrees.mkdir()
+    _run_git(["init", "-b", "main"], repo)
+    _run_git(["config", "user.name", "Reader Test"], repo)
+    _run_git(["config", "user.email", "reader@example.invalid"], repo)
+    (repo / ".gitignore").write_text("*.ignored\n", encoding="utf-8")
+    (repo / "README.md").write_text("public base\n", encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "base.py").write_text("base code\n", encoding="utf-8")
+    (repo / "tracked.ignored").write_text("must not read\n", encoding="utf-8")
+    _run_git(["add", ".gitignore", "README.md", "src/base.py"], repo)
+    _run_git(["add", "-f", "tracked.ignored"], repo)
+    _run_git(["commit", "-m", "public base"], repo)
+    _run_git(["remote", "add", "origin", "https://github.com/ellmos-ai/bach.git"], repo)
+    sha = _run_git(["rev-parse", "HEAD"], repo, text=True).stdout.strip()
+    target = worktrees / f"task-{task_id}"
+    _run_git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", sha], repo)
+    from hub import worker_git
+    worker_git._store_public_source_registration(repo, target, task_id, {
+        "schema": worker_git._PUBLIC_SOURCE_SCHEMA, "task_id": "",
+        "repository": "ellmos-ai/bach", "origin": "https://github.com/ellmos-ai/bach",
+        "source_ref": "refs/heads/main", "source_sha": sha, "visibility": "public",
+        "private": False, "metadata_verified": True, "ref_verified": True,
+        "verified_at": worker_git._utc_now(),
+    })
+    (target / "src" / "new.ignored").write_text("ignored secret marker\n", encoding="utf-8")
+    (target / "src" / "new.py").write_text("needle new task source\n", encoding="utf-8")
+    (target / "src" / "base.py").write_text("needle modified by task\n", encoding="utf-8")
+    (target / "src" / "secret.pem").write_text("needle secret\n", encoding="utf-8")
+    private = tmp_path / "outside-private.txt"
+    private.write_text("needle private target\n", encoding="utf-8")
+    try:
+        (target / "src" / "link.py").symlink_to(private)
+    except (OSError, NotImplementedError):
+        pass
+    monkeypatch.setattr(guard, "_paths", lambda *a, **k: (repo, worktrees))
+    monkeypatch.setattr(guard, "_fresh_locks", lambda *a, **k: None)
+    return repo, worktrees, target, private
+
+
+def _run_git(argv, cwd, *, text=False):
+    import subprocess
+    return subprocess.run(["git", *argv], cwd=cwd, check=True, capture_output=True,
+                          text=text, timeout=10)
+
+
+def test_task_reader_scope_includes_new_files_but_excludes_ignored_secret_and_symlink(
+        tmp_path, monkeypatch):
+    _repo, _worktrees, target, private = _public_reader_tree(tmp_path, monkeypatch)
+    binding = FakeBinding()
+    scope = guard.authorize_task_read(
+        binding, ".", secret_check=lambda path: path.name == "secret.pem",
+    )
+    relative = {path.relative_to(target).as_posix() for path in scope.files}
+    assert "README.md" in relative and "src/new.py" in relative
+    assert "src/new.ignored" not in relative and "tracked.ignored" not in relative
+    assert "src/secret.pem" not in relative and "src/link.py" not in relative
+    assert scope.provenance["README.md"] == "public_base"
+    assert scope.provenance["src/base.py"] == "task_artifact"
+    assert scope.provenance["src/new.py"] == "task_artifact"
+    assert scope.provenance[".gitignore"] == "public_base"
+    with pytest.raises(guard.WorkerWriteGuardError):
+        guard.authorize_task_read(binding, str(private), secret_check=lambda _path: False)
+
+
+def test_task_reader_uses_current_scope_and_symlink_free_open(tmp_path, monkeypatch):
+    _repo, _worktrees, target, private = _public_reader_tree(tmp_path, monkeypatch)
+    binding = FakeBinding()
+    result = exec_tool(
+        "read_file", {"path": str(target / "src" / "new.py")}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"read_file", "start_task_worktree"},
+    )
+    assert "needle new task source" in result
+    denied_secret = exec_tool(
+        "read_file", {"path": str(target / "src" / "secret.pem")}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"read_file", "start_task_worktree"},
+    )
+    assert "BLOCKIERT" in denied_secret and "needle secret" not in denied_secret
+    denied_link = exec_tool(
+        "read_file", {"path": str(target / "src" / "link.py")}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"read_file", "start_task_worktree"},
+    )
+    assert "BLOCKIERT" in denied_link and "needle private target" not in denied_link
+    denied = exec_tool(
+        "read_file", {"path": str(private)}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"read_file", "start_task_worktree"},
+    )
+    assert "BLOCKIERT" in denied and "needle private target" not in denied
+    listing = exec_tool(
+        "list_directory", {"path": str(target / "src")}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"list_directory", "start_task_worktree"},
+    )
+    assert "base.py" in listing and "new.py" in listing
+    assert "new.ignored" not in listing and "secret.pem" not in listing and "link.py" not in listing
+    listing = exec_tool(
+        "list_directory", {"path": str(target)}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"list_directory", "start_task_worktree"},
+    )
+    assert "README.md" in listing and "src" in listing
+    assert "new.py" not in listing and "tracked.ignored" not in listing
+    search = exec_tool(
+        "search_text", {"path": str(target), "pattern": "needle", "recursive": True}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"search_text", "start_task_worktree"},
+    )
+    assert "base.py" in search and "new.py" in search
+    assert "ignored" not in search and "secret.pem" not in search and "link.py" not in search
+
+
+
+def test_authorized_task_file_closes_stream_on_normal_and_exceptional_exit(tmp_path, monkeypatch):
+    import os
+
+    _repo, _worktrees, target, _private = _public_reader_tree(tmp_path, monkeypatch)
+    binding = FakeBinding()
+    scope = guard.authorize_task_read(
+        binding, ".", secret_check=lambda path: path.name == "secret.pem",
+    )
+    source = target / "src" / "new.py"
+
+    with guard.open_authorized_task_file(scope, source) as normal_stream:
+        normal_fd = normal_stream.fileno()
+        assert normal_stream.read() == b"needle new task source\n"
+    assert normal_stream.closed
+    with pytest.raises(OSError):
+        os.fstat(normal_fd)
+
+    class SentinelConsumerError(Exception):
+        pass
+
+    sentinel = SentinelConsumerError("synthetic consumer exit")
+    with pytest.raises(SentinelConsumerError) as caught, guard.open_authorized_task_file(scope, source) as exceptional_stream:
+        exceptional_fd = exceptional_stream.fileno()
+        raise sentinel
+    assert caught.value is sentinel
+    assert exceptional_stream.closed
+    with pytest.raises(OSError):
+        os.fstat(exceptional_fd)
+
+
+def test_task_reader_rejects_hardlinks_and_changed_base_registration(tmp_path, monkeypatch):
+    import os
+
+    repo, _worktrees, target, private = _public_reader_tree(tmp_path, monkeypatch)
+    binding = FakeBinding()
+    hardlink = target / "linked.txt"
+    try:
+        os.link(private, hardlink)
+    except OSError:
+        pytest.skip("Hardlinks are unavailable")
+    scope = guard.authorize_task_read(binding, ".", secret_check=lambda _path: False)
+    assert hardlink not in scope.files
+    from hub import worker_git
+    _run_git(["checkout", "main"], repo)
+    (repo / "moved-main.txt").write_text("main moved\n", encoding="utf-8")
+    _run_git(["add", "moved-main.txt"], repo)
+    _run_git(["commit", "-m", "advance main"], repo)
+    record = worker_git.read_task_public_source_registration(repo, target, 41)
+    assert record["source_sha"] != _run_git(["rev-parse", "main"], repo, text=True).stdout.strip()
+    _run_git(["add", "src/base.py", "src/new.py"], target)
+    _run_git(["commit", "-m", "task implementation"], target)
+    assert worker_git.read_task_public_source_registration(repo, target, 41)["source_sha"] == record["source_sha"]
+    assert guard.authorize_task_read(binding, ".", secret_check=lambda _path: False).root == target

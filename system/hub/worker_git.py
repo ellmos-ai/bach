@@ -15,6 +15,7 @@ Implementiert:
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -31,6 +32,209 @@ from typing import Any, Mapping, Optional
 
 DEFAULT_WORKTREES_DIR = Path.home() / "services" / "bach-worktrees"
 DEFAULT_BASE_BRANCH = "origin/main"
+
+_PUBLIC_REPO = "ellmos-ai/bach"
+_PUBLIC_SOURCE_SCHEMA = "bach.task-public-source.v1"
+_PUBLIC_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _canonical_bach_origin(value: str) -> str:
+    """Return the one approved BACH GitHub identity, or fail closed."""
+    raw = str(value or "").strip()
+    if raw.startswith("git@github.com:"):
+        host, path = raw[len("git@"):].split(":", 1)
+        if host.lower() != "github.com":
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+    else:
+        from urllib.parse import urlsplit
+        try:
+            parsed = urlsplit(raw)
+            port = parsed.port
+        except ValueError:
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand") from None
+        if parsed.scheme not in {"https", "ssh"} or parsed.hostname is None:
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+        if parsed.hostname.lower() != "github.com" or parsed.query or parsed.fragment:
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+        if parsed.scheme == "https" and (parsed.username or parsed.password or port not in (None, 443)):
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+        if parsed.scheme == "ssh" and (parsed.username not in (None, "git") or parsed.password or port not in (None, 22)):
+            raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+        path = parsed.path.lstrip("/")
+    path = path.rstrip("/")
+    if path.endswith(".git"):
+        path = path.removesuffix(".git")
+    if path.lower() != _PUBLIC_REPO:
+        raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
+    return "https://github.com/ellmos-ai/bach"
+
+
+def _git_text(
+    repo: Path, operation: str, *, task_id: int | str | None = None, timeout: int = 8,
+) -> str:
+    """Run only the four fixed public-source read operations."""
+    if operation == "origin":
+        argv = ["git", "remote", "get-url", "origin"]
+    elif operation == "main":
+        argv = ["git", "rev-parse", "--verify", "refs/heads/main^{commit}"]
+    elif operation == "head":
+        argv = ["git", "rev-parse", "--verify", "HEAD^{commit}"]
+    elif operation == "registration":
+        key = _public_source_config_key(task_id)
+        argv = ["git", "config", "--local", "--get", key]
+    else:
+        raise RuntimeError("Öffentliche Git-Leseoperation ist nicht zulässig")
+    try:
+        result = subprocess.run(
+            argv, cwd=str(repo), shell=False, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+            timeout=timeout, check=False,
+        )
+    except Exception:  # noqa: BLE001 - Gitfehler liefern keine Quellfreigabe.
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
+    if result.returncode != 0:
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+    return (result.stdout or "").strip()
+
+
+def _github_json(url: str) -> dict:
+    """Read anonymous GitHub metadata; credentials and response bodies stay private."""
+    from urllib.request import Request, urlopen
+    request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "BACH-task-reader"})
+    try:
+        with urlopen(request, timeout=8) as response:
+            from urllib.parse import urlsplit
+            final_url = urlsplit(response.geturl())
+            if (getattr(response, "status", 200) != 200
+                    or final_url.scheme != "https" or final_url.hostname != "api.github.com"):
+                raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+            payload = response.read(65537)
+        if len(payload) > 65536:
+            raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+        value = json.loads(payload.decode("utf-8"))
+    except Exception:  # noqa: BLE001 - Netzwerk-/JSONfehler liefern keine Quellfreigabe.
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
+    if not isinstance(value, dict):
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
+    return value
+
+
+def _public_main_source(repo: Path) -> dict[str, str | bool]:
+    """Pin only the exact current, anonymously verified public main commit."""
+    origin = _canonical_bach_origin(_git_text(repo, "origin"))
+    metadata = _github_json("https://api.github.com/repos/ellmos-ai/bach")
+    full_name = metadata.get("full_name")
+    if not (
+        isinstance(full_name, str) and full_name.lower() == _PUBLIC_REPO
+        and metadata.get("private") is False
+        and metadata.get("visibility") == "public"
+        and metadata.get("default_branch") == "main"
+    ):
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+    branch = _github_json("https://api.github.com/repos/ellmos-ai/bach/branches/main")
+    commit = branch.get("commit") if branch.get("name") == "main" else None
+    sha = commit.get("sha") if isinstance(commit, dict) else None
+    if not isinstance(sha, str) or not _PUBLIC_SHA.fullmatch(sha):
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+    local_sha = _git_text(repo, "main")
+    if local_sha != sha:
+        raise RuntimeError("Lokale BACH-Basis entspricht nicht dem verifizierten öffentlichen main")
+    return {
+        "schema": _PUBLIC_SOURCE_SCHEMA,
+        "task_id": "",  # set by the caller before persistence
+        "repository": _PUBLIC_REPO,
+        "origin": origin,
+        "source_ref": "refs/heads/main",
+        "source_sha": sha,
+        "visibility": "public",
+        "private": False,
+        "metadata_verified": True,
+        "ref_verified": True,
+        "verified_at": _utc_now(),
+    }
+
+
+def _public_source_config_key(task_id: int | str) -> str:
+    if not (type(task_id) is int
+            or (type(task_id) is str and re.fullmatch(r"[1-9][0-9]{0,18}", task_id))):
+        raise RuntimeError("Öffentliche Taskkennung ist nicht gültig")
+    numeric_id = int(task_id)
+    if not 0 < numeric_id <= 2**63 - 1:
+        raise RuntimeError("Öffentliche Taskkennung ist nicht gültig")
+    return f"branch.bach-task/{numeric_id}.bach-public-source"
+
+
+def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
+    record = dict(proof)
+    source_sha = record.get("source_sha")
+    if not (
+        record.get("schema") == _PUBLIC_SOURCE_SCHEMA
+        and record.get("repository") == _PUBLIC_REPO
+        and record.get("origin") == "https://github.com/ellmos-ai/bach"
+        and record.get("source_ref") == "refs/heads/main"
+        and isinstance(source_sha, str) and _PUBLIC_SHA.fullmatch(source_sha)
+        and record.get("visibility") == "public" and record.get("private") is False
+        and record.get("metadata_verified") is True and record.get("ref_verified") is True
+        and isinstance(record.get("verified_at"), str)
+    ):
+        raise RuntimeError("Task-Quellregistrierung konnte nicht bestätigt werden")
+    record["task_id"] = str(task_id)
+    encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    key = _public_source_config_key(task_id)
+    try:
+        write = subprocess.run(["git", "config", "--local", "--replace-all", key, encoded],
+                               cwd=str(target), capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", stdin=subprocess.DEVNULL, timeout=8, check=False)
+        read = subprocess.run(["git", "config", "--local", "--get", key],
+                              cwd=str(target), capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", stdin=subprocess.DEVNULL, timeout=8, check=False)
+    except Exception:  # noqa: BLE001 - Schreib-/Readbackfehler verhindern die Registrierung.
+        raise RuntimeError("Task-Quellregistrierung konnte nicht bestätigt werden") from None
+    if write.returncode != 0 or read.returncode != 0 or (read.stdout or "").strip() != encoded:
+        raise RuntimeError("Task-Quellregistrierung konnte nicht bestätigt werden")
+    return record
+
+
+def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
+    """Validate the stored task-worktree source pin without fetching or moving it."""
+    try:
+        raw = _git_text(target, "registration", task_id=task_id)
+        record = json.loads(raw)
+    except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
+        raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
+    if not isinstance(record, dict):
+        raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
+    try:
+        origin = _canonical_bach_origin(_git_text(repo, "origin"))
+    except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
+        raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
+    if not (
+        record.get("schema") == _PUBLIC_SOURCE_SCHEMA
+        and record.get("task_id") == str(task_id)
+        and record.get("repository") == _PUBLIC_REPO
+        and record.get("origin") == origin == "https://github.com/ellmos-ai/bach"
+        and record.get("source_ref") == "refs/heads/main"
+        and isinstance(record.get("source_sha"), str)
+        and _PUBLIC_SHA.fullmatch(record["source_sha"])
+        and record.get("visibility") == "public"
+        and record.get("private") is False
+        and record.get("metadata_verified") is True
+        and record.get("ref_verified") is True
+        and isinstance(record.get("verified_at"), str)
+    ):
+        raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")
+    head = _git_text(target, "head")
+    base = record["source_sha"]
+    try:
+        check = subprocess.run(["git", "merge-base", "--is-ancestor", base, head], cwd=str(target),
+                               capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                               timeout=8, check=False)
+    except Exception:  # noqa: BLE001 - Fehler beim Ancestorcheck sperren den Arbeitsbaum.
+        raise RuntimeError("Task-Arbeitsbaum weicht von der gepinnten öffentlichen Basis ab") from None
+    if check.returncode != 0:
+        raise RuntimeError("Task-Arbeitsbaum weicht von der gepinnten öffentlichen Basis ab")
+    return record
+
 
 # Regex-Muster fuer Secrets-Scan (API Keys, Tokens, Private Keys)
 SECRET_PATTERNS = [
@@ -100,10 +304,16 @@ def start_task_worktree(
     repo_root: Path | None = None,
     worker_task_binding=None,
     require_task_binding: bool = False,
+    task_code_capability: bool = False,
 ) -> Path:
-    """Create the exact task worktree; bound workers fail closed on stale authority."""
+    """Create the task worktree; the optional code-reader path pins public main."""
     if require_task_binding and worker_task_binding is None:
         raise RuntimeError("Private Taskbindung fehlt")
+    if type(task_code_capability) is not bool or (task_code_capability and worker_task_binding is None):
+        raise RuntimeError("Task-Codefähigkeit ist nicht privat gebunden")
+    if task_code_capability:
+        # Reject aliases before authorization, mkdir, or any Git side effect.
+        _public_source_config_key(task_id)
     repo = (repo_root or get_live_repo_root()).resolve()
     task_id_str = str(task_id).strip()
     worktrees_dir = get_worktrees_dir()
@@ -115,30 +325,42 @@ def start_task_worktree(
         target_dir = authorize_start(worker_task_binding, task_id, repo_root=repo,
                                      worktrees_dir=worktrees_dir)
         if target_dir.exists():
+            if task_code_capability:
+                read_task_public_source_registration(repo, target_dir, task_id_str)
+                authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
             return target_dir
         if base_branch not in {"main", "origin/main"}:
             raise RuntimeError("Gebundener Worker darf nur von main oder origin/main starten")
         if worktrees_dir.is_symlink():
             raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
         worktrees_dir.mkdir(parents=True, exist_ok=True)
-        # Recheck after parent creation and immediately before the Git mutation.
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-        base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
-                              cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
-        if base.returncode != 0:
-            raise RuntimeError("Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet")
+        public_record = _public_main_source(repo) if task_code_capability else None
+        if task_code_capability:
+            selected_base = public_record["source_sha"]
+        else:
+            base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
+                                  cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
+            if base.returncode != 0:
+                raise RuntimeError("Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet")
+            selected_base = base.stdout.strip()
         branch = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
                                 cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
         if branch.returncode == 0:
             raise RuntimeError("Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden")
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         res = subprocess.run(
-            ["git", "worktree", "add", str(target_dir), "-b", branch_name, base_branch],
+            ["git", "worktree", "add", str(target_dir), "-b", branch_name, selected_base],
             cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
         )
         if res.returncode != 0:
-            raise RuntimeError(f"Task-Worktree konnte nicht registriert werden: {res.stderr}")
+            raise RuntimeError("Task-Worktree konnte nicht sicher registriert werden")
         authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
+        if public_record is not None:
+            authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
+            _store_public_source_registration(repo, target_dir, task_id_str, public_record)
+            read_task_public_source_registration(repo, target_dir, task_id_str)
+            authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         return target_dir.resolve(strict=True)
 
     worktrees_dir.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,8 @@ import os
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Iterable
 
@@ -226,6 +228,207 @@ def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
         _scan_locks(directory)
 
 
+
+
+@dataclass(frozen=True)
+class TaskReadScope:
+    """One lease-bound view of public-base files and task-created artifacts."""
+    root: Path
+    requested: Path
+    files: tuple[Path, ...]
+    directories: frozenset[Path]
+    provenance: dict[str, str]
+    sizes: dict[Path, int]
+    requested_is_file: bool
+
+
+def _run_git_bytes(argv, cwd, *, input_bytes=None, allowed=(0,), timeout=15) -> bytes:
+    kwargs = {
+        "cwd": str(cwd), "shell": False, "capture_output": True,
+        "stdin": subprocess.DEVNULL, "timeout": timeout, "check": False,
+    }
+    if input_bytes is not None:
+        kwargs.pop("stdin")
+        kwargs["input"] = input_bytes
+    try:
+        result = _RUN(argv, **kwargs)
+    except Exception:  # noqa: BLE001 - Git-/Prozessfehler sperren den gesamten Lesescope.
+        raise WorkerWriteGuardError("Task-Leseumfang konnte nicht vollständig geprüft werden") from None
+    if result.returncode not in allowed:
+        raise WorkerWriteGuardError("Task-Leseumfang konnte nicht vollständig geprüft werden")
+    output = result.stdout or b""
+    return output.encode("utf-8", errors="surrogateescape") if isinstance(output, str) else bytes(output)
+
+
+def _task_relative_path(root: Path, candidate) -> Path:
+    if not isinstance(candidate, (str, os.PathLike)) or not str(candidate) or "\x00" in str(candidate):
+        raise WorkerWriteGuardError("Task-Lesepfad fehlt oder ist ungültig")
+    raw = _NATIVE_PATH(candidate).expanduser()
+    lexical = _NATIVE_PATH(os.path.abspath(raw if raw.is_absolute() else root / raw))
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError:
+        raise WorkerWriteGuardError("Task-Lesepfad liegt außerhalb des gebundenen Arbeitsbaums") from None
+    cursor = root
+    try:
+        if stat.S_ISLNK(cursor.lstat().st_mode) or cursor.resolve(strict=True) != root:
+            raise WorkerWriteGuardError("Task-Arbeitsbaum ist nicht physisch gebunden")
+        for part in relative.parts:
+            cursor = cursor / part
+            mode = cursor.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                raise WorkerWriteGuardError("Symlinks sind im Task-Lesebereich gesperrt")
+    except FileNotFoundError:
+        raise WorkerWriteGuardError("Task-Lesepfad ist nicht vorhanden") from None
+    except OSError:
+        raise WorkerWriteGuardError("Task-Lesepfad konnte nicht sicher geprüft werden") from None
+    resolved = cursor.resolve(strict=True)
+    if resolved != cursor:
+        raise WorkerWriteGuardError("Task-Lesepfad wird umgeleitet")
+    return cursor
+
+
+def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, worktrees_dir=None) -> TaskReadScope:
+    """Authorize a tool-level read under the exact public-pinned Task worktree."""
+    if not callable(secret_check):
+        raise WorkerWriteGuardError("Vorhandene Secrets-Prüfung fehlt")
+    tid = _task_id(getattr(binding, "task_id", None))
+    _fresh_lease(binding, tid)
+    repo, root = _paths(repo_root, worktrees_dir)
+    target = _registered_tree(repo, root, tid)
+    from hub import worker_git
+    registration = worker_git.read_task_public_source_registration(repo, target, tid)
+    requested = _task_relative_path(target, candidate)
+    if secret_check(requested):
+        raise WorkerWriteGuardError("Task-Lesepfad ist als geheim eingestuft")
+
+    names_raw = _run_git_bytes(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], target,
+    )
+    if len(names_raw) > 8_388_608:
+        raise WorkerWriteGuardError("Task-Lesebestand überschreitet die sichere Grenze")
+    names = [item for item in names_raw.split(b"\x00") if item]
+    if len(names) > 25000:
+        raise WorkerWriteGuardError("Task-Lesebestand überschreitet die sichere Grenze")
+    if names:
+        ignored_raw = _run_git_bytes(
+            ["git", "check-ignore", "--no-index", "-z", "--stdin"], target,
+            input_bytes=b"\x00".join(names) + b"\x00", allowed=(0, 1),
+        )
+        ignored = {item for item in ignored_raw.split(b"\x00") if item}
+    else:
+        ignored = set()
+
+    base = registration["source_sha"]
+    base_raw = _run_git_bytes(["git", "ls-tree", "-r", "-z", "--name-only", base], target)
+    if len(base_raw) > 8_388_608:
+        raise WorkerWriteGuardError("Gepinnte Quellbasis überschreitet die sichere Grenze")
+    base_names = {item for item in base_raw.split(b"\x00") if item}
+    changed_raw = _run_git_bytes(["git", "diff", "--name-only", "-z", base, "--"], target)
+    changed = {item for item in changed_raw.split(b"\x00") if item}
+
+    files: list[Path] = []
+    directories: set[Path] = {target}
+    provenance: dict[str, str] = {}
+    sizes: dict[Path, int] = {}
+    for raw_name in names:
+        if raw_name in ignored:
+            continue
+        rel_text = os.fsdecode(raw_name)
+        rel = _NATIVE_PATH(rel_text)
+        if rel.is_absolute() or not rel.parts or any(part in {".", ".."} for part in rel.parts):
+            raise WorkerWriteGuardError("Git meldet einen ungültigen Task-Pfad")
+        path = target / rel
+        cursor = target
+        safe = True
+        try:
+            for part in rel.parts:
+                cursor = cursor / part
+                mode = cursor.lstat().st_mode
+                if stat.S_ISLNK(mode):
+                    safe = False
+                    break
+            if not safe:
+                continue
+            mode = path.lstat().st_mode
+            if not stat.S_ISREG(mode) or secret_check(path) or path.lstat().st_nlink != 1:
+                continue
+            if path.resolve(strict=True) != path:
+                continue
+        except FileNotFoundError:
+            # A deleted tracked path is not readable and is not an incomplete scan.
+            continue
+        except OSError:
+            raise WorkerWriteGuardError("Task-Dateibestand konnte nicht vollständig geprüft werden") from None
+        files.append(path)
+        sizes[path] = path.lstat().st_size
+        for parent in path.parents:
+            if parent == target or target in parent.parents:
+                directories.add(parent)
+            if parent == target:
+                break
+        provenance[rel.as_posix()] = (
+            "public_base" if raw_name in base_names and raw_name not in changed else "task_artifact"
+        )
+
+    if requested.is_file():
+        if requested not in files:
+            raise WorkerWriteGuardError("Datei gehört nicht zum freigegebenen Task-Lesebestand")
+        requested_is_file = True
+    elif requested.is_dir():
+        if requested not in directories:
+            raise WorkerWriteGuardError("Verzeichnis gehört nicht zum freigegebenen Task-Lesebestand")
+        requested_is_file = False
+    else:
+        raise WorkerWriteGuardError("Task-Lesepfad ist weder Datei noch freigegebenes Verzeichnis")
+    _fresh_lease(binding, tid)
+    return TaskReadScope(
+        root=target, requested=requested, files=tuple(sorted(files)),
+        directories=frozenset(directories), provenance=provenance,
+        sizes=sizes, requested_is_file=requested_is_file,
+    )
+
+
+@contextmanager
+def open_authorized_task_file(scope: TaskReadScope, path: Path):
+    """Open without following any path component; unsupported hosts fail closed."""
+    if path not in scope.files:
+        raise WorkerWriteGuardError("Datei gehört nicht zum freigegebenen Task-Lesebestand")
+    if not all(hasattr(os, flag) for flag in ("O_NOFOLLOW", "O_DIRECTORY")) or os.open not in os.supports_dir_fd:
+        raise WorkerWriteGuardError("Sicheres symlinkfreies Öffnen ist auf diesem Host nicht verfügbar")
+    relative = path.relative_to(scope.root)
+    flags_dir = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    flags_file = os.O_RDONLY | os.O_NOFOLLOW
+    descriptor = None
+    current = None
+    stream = None
+    try:
+        try:
+            current = os.open(scope.root, flags_dir)
+            for part in relative.parts[:-1]:
+                next_fd = os.open(part, flags_dir, dir_fd=current)
+                os.close(current)
+                current = next_fd
+            descriptor = os.open(relative.parts[-1], flags_file, dir_fd=current)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise WorkerWriteGuardError("Task-Datei ist kein sicherer regulärer Inhalt")
+            stream = os.fdopen(descriptor, "rb")
+            descriptor = None
+        except WorkerWriteGuardError:
+            raise
+        except Exception:  # noqa: BLE001 - unsicherer Dateizugriff bleibt gesperrt.
+            raise WorkerWriteGuardError("Task-Datei konnte nicht symlinkfrei geöffnet werden") from None
+        yield stream
+    finally:
+        try:
+            if stream is not None:
+                stream.close()
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            if current is not None:
+                os.close(current)
 
 def authorize_start(binding, task_id, *, repo_root=None, worktrees_dir=None) -> Path:
     tid = _task_id(task_id)

@@ -348,3 +348,151 @@ class TestSecretsPathDenylist:
         result = exec_tool("read_file", {"path": str(traversal_path)}, "safe")
         assert "BLOCKIERT" in result
         assert "PRIVATE" not in result
+
+class _ReaderCapabilityBinding:
+    task_id = 41
+    def assert_active(self):
+        return None
+
+
+def test_model_argument_cannot_activate_task_code_reader(tmp_path):
+    source = tmp_path / "ordinary-authorized-reader.txt"
+    source.write_text("existing private workflow remains readable\n", encoding="utf-8")
+    result = exec_tool(
+        "read_file", {"path": str(source), "task_code_capability": True}, "safe",
+        worker_task_binding=_ReaderCapabilityBinding(), require_task_binding=True,
+        allowed_tools={"read_file"},
+    )
+    assert "existing private workflow remains readable" in result
+
+
+def test_private_code_capability_is_forwarded_only_from_allowed_tools(monkeypatch, tmp_path):
+    from hub import worker_git
+
+    calls = {}
+    def start(task_id, **kwargs):
+        calls.update(kwargs)
+        return tmp_path / f"task-{task_id}"
+
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
+    result = exec_tool(
+        "start_task_worktree", {"task_id": 41, "task_code_capability": False}, "safe",
+        worker_task_binding=_ReaderCapabilityBinding(), require_task_binding=True,
+        allowed_tools={"start_task_worktree"},
+    )
+    assert "Worktree erstellt" in result
+    assert calls["task_code_capability"] is True
+
+
+def test_model_argument_cannot_grant_start_task_worktree(monkeypatch):
+    from hub import worker_git
+
+    binding = _ReaderCapabilityBinding()
+    calls = {}
+
+    def start(task_id, **kwargs):
+        calls["task_id"] = task_id
+        calls.update(kwargs)
+        return "should-not-start"
+
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
+    result = exec_tool(
+        "start_task_worktree", {"task_id": 41, "task_code_capability": True}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"read_file"},
+    )
+    assert "BLOCKIERT" in result
+    assert calls == {}
+
+
+def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path, monkeypatch):
+    import os
+
+    import regex
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard as guard
+
+    repo = tmp_path / "repo"
+    worktrees = tmp_path / "worktrees"
+    repo.mkdir()
+    worktrees.mkdir()
+
+    def run_git(arguments, cwd):
+        return subprocess.run(
+            ["git", *arguments], cwd=cwd, check=True, capture_output=True,
+            text=True, encoding="utf-8", timeout=10,
+        )
+
+    run_git(["init", "-b", "main"], repo)
+    run_git(["config", "user.name", "Reader Test"], repo)
+    run_git(["config", "user.email", "reader@example.invalid"], repo)
+    (repo / "README.md").write_text("public base\n", encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "source.py").write_text("public source\n", encoding="utf-8")
+    run_git(["add", "README.md", "src/source.py"], repo)
+    run_git(["commit", "-m", "public base"], repo)
+    run_git(["remote", "add", "origin", "https://github.com/ellmos-ai/bach.git"], repo)
+    source_sha = run_git(["rev-parse", "HEAD"], repo).stdout.strip()
+    target = worktrees / "task-41"
+    run_git(["worktree", "add", str(target), "-b", "bach-task/41", source_sha], repo)
+    worker_git._store_public_source_registration(repo, target, 41, {
+        "schema": worker_git._PUBLIC_SOURCE_SCHEMA,
+        "task_id": "",
+        "repository": "ellmos-ai/bach",
+        "origin": "https://github.com/ellmos-ai/bach",
+        "source_ref": "refs/heads/main",
+        "source_sha": source_sha,
+        "visibility": "public",
+        "private": False,
+        "metadata_verified": True,
+        "ref_verified": True,
+        "verified_at": worker_git._utc_now(),
+    })
+    monkeypatch.setattr(guard, "_paths", lambda *args, **kwargs: (repo, worktrees))
+    monkeypatch.setattr(guard, "_fresh_locks", lambda *args, **kwargs: None)
+
+    class LeaseClient:
+        def read(self, task_id, *, lease_id=None, now=None):
+            assert task_id == 41 and lease_id == "lease-41"
+            return {
+                "own": True, "leased": True, "fence": 4,
+                "status": "in_progress", "task_version": "v" * 64,
+            }
+
+    class TaskBinding:
+        task_id = 41
+        _client = LeaseClient()
+
+        def assert_active(self):
+            return None
+
+        def _ref(self):
+            return {"lease_id": "lease-41", "fence": 4, "task_version": "v" * 64}
+
+    class TimedOutPattern:
+        def search(self, _line, **_kwargs):
+            raise TimeoutError("synthetic regex timeout")
+
+    monkeypatch.setattr(regex, "compile", lambda *_args, **_kwargs: TimedOutPattern())
+    opened = []
+    real_fdopen = guard.os.fdopen
+
+    def capture_stream(fd, *args, **kwargs):
+        stream = real_fdopen(fd, *args, **kwargs)
+        opened.append((stream, fd))
+        return stream
+
+    monkeypatch.setattr(guard.os, "fdopen", capture_stream)
+    result = exec_tool(
+        "search_text", {"pattern": "timeout", "path": str(target), "recursive": True}, "safe",
+        worker_task_binding=TaskBinding(), require_task_binding=True,
+        allowed_tools={"search_text", "start_task_worktree"},
+    )
+
+    assert result == "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
+    assert "Tool-Fehler" not in result
+    assert len(opened) == 1
+    stream, file_descriptor = opened[0]
+    assert stream.closed
+    with pytest.raises(OSError):
+        os.fstat(file_descriptor)
