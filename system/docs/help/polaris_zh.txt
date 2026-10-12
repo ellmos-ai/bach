@@ -1,0 +1,20 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-12
+# Next review: 2027-10-12
+
+
+POLARIS (POLARSTERN)
+--------------------
+
+Polaris 为只允许一个写入者的资源发放 lease("star")。只有持有者可以写入;fence 与到期时间由 lead 决定。
+
+bach polaris <resource> <操作>
+
+操作
+  acquire  申请 Polaris star (--by agent@host [--ttl POLARIS] [--version HASH] [--show-capability])
+  renew    续期 (--lease-id UUID --fence N [--version HASH])
+  release  归还 (--lease-id UUID --fence N [--version HASH])
+  status   显示持有者、fence、version
+  register 注册资源(仅限 lead 权威端; --allowed --server-role [--standby] [--bind 设备=模式])
+
+无法连接 lead 时不能接管,资源保持只读。仅在使用 --show-capability 时才输出 capability。

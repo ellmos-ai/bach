@@ -1,0 +1,20 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-12
+# Next review: 2027-10-12
+
+
+POLARIS (POLARSTERN)
+--------------------
+
+Polaris выдаёт lease ("star") для ресурсов с единственным писателем. Писать может только владелец; fence и срок действия определяет lead.
+
+bach polaris <resource> <действие>
+
+Действия
+  acquire  запросить Polaris star (--by agent@host [--ttl POLARIS] [--version HASH] [--show-capability])
+  renew    продлить (--lease-id UUID --fence N [--version HASH])
+  release  вернуть (--lease-id UUID --fence N [--version HASH])
+  status   показать владельца, fence, version
+  register зарегистрировать ресурс (только на lead; --allowed --server-role [--standby] [--bind устройство=шаблон])
+
+Без доступного lead передача невозможна, ресурс остаётся только для чтения. Capability выводится только с --show-capability.
