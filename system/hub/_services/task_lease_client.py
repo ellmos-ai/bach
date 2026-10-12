@@ -100,7 +100,10 @@ class LeaseDeniedError(LeaseError):
         super().__init__(f"Task {task_id}: Lease abgelehnt ({reason})")
         self.task_id = task_id
         self.reason = reason
-        self.payload = payload
+        self.payload = dict(payload)
+        # Only _raise_denied populates these with authority-validated UTC values.
+        self.until = self.payload.get("until")
+        self.server_now = self.payload.get("server_now")
 
 
 class LeaseStaleFenceError(LeaseDeniedError):
@@ -155,6 +158,35 @@ def _wire_time(value: str | None) -> datetime:
     if stamp.tzinfo is None:
         raise LeaseProtocolError("Lease-Zeitstempel ohne Zeitzone")
     return stamp.astimezone(timezone.utc)
+
+
+_SAFE_DENIAL_REASONS = frozenset({
+    "stale_fence", "expired", "max_total_reached", "held", "already_held_by_caller",
+    "stale_task_version", "not_claimable", "creator_priority", "completion_guard", "conflict",
+    "creator_delegation_invalid", "creator_delegation_revoked", "creator_delegation_consumed",
+    "unresolved_tool_trace", "tool_trace_unavailable",
+})
+_SAFE_UTC_DENIAL_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)\Z"
+)
+
+
+def _validated_denial_utc(value):
+    """Parse the authority's bounded UTC timestamp form without retaining raw payloads."""
+    if type(value) is not str or not _SAFE_UTC_DENIAL_TIME.fullmatch(value):
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        stamp = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if stamp.tzinfo is None or stamp.utcoffset() != timedelta(0):
+        return None
+    return stamp.astimezone(timezone.utc)
+
+
+def _format_denial_utc(stamp):
+    return stamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _version(value, *, required=False):
@@ -897,12 +929,26 @@ class TaskLeaseClient:
         return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"])
 
     def _raise_denied(self, task_id, payload):
-        known = {"stale_fence", "expired", "max_total_reached", "held", "already_held_by_caller",
-                 "stale_task_version", "not_claimable", "creator_priority", "completion_guard", "conflict",
-                 "creator_delegation_invalid", "creator_delegation_revoked", "creator_delegation_consumed"}
-        reason = payload.get("reason") if isinstance(payload, dict) else None
-        if reason not in known:
-            reason = "denied"
+        raw_reason = payload.get("reason") if isinstance(payload, dict) else None
+        reason = raw_reason if type(raw_reason) is str and raw_reason in _SAFE_DENIAL_REASONS else "denied"
+        safe_payload = {"task_id": task_id, "reason": reason}
+
+        if reason != "denied":
+            server_now = _validated_denial_utc(payload.get("server_now"))
+            if server_now is None:
+                reason = "denied"
+                safe_payload = {"task_id": task_id, "reason": reason}
+            elif reason == "creator_priority":
+                until = _validated_denial_utc(payload.get("until"))
+                if until is None or until <= server_now:
+                    reason = "denied"
+                    safe_payload = {"task_id": task_id, "reason": reason}
+                else:
+                    safe_payload["server_now"] = _format_denial_utc(server_now)
+                    safe_payload["until"] = _format_denial_utc(until)
+            else:
+                safe_payload["server_now"] = _format_denial_utc(server_now)
+
         classes = {"stale_fence": LeaseStaleFenceError, "expired": LeaseExpiredError,
                    "max_total_reached": LeaseMaxTotalReachedError}
-        raise classes.get(reason, LeaseDeniedError)(task_id, reason, {"task_id": task_id, "reason": reason})
+        raise classes.get(reason, LeaseDeniedError)(task_id, reason, safe_payload)
