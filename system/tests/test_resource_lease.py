@@ -73,8 +73,7 @@ def _register(conn, name=RES, **kw):
     kw.setdefault("allowed_workers", ["decision-writer@*"])
     kw.setdefault("server_role", SERVER)
     kw.setdefault("standby_roles", [STANDBY])
-    kw.setdefault("device_bindings", {"test-device": ["decision-writer@*"], "other-device": [STANDBY]})
-    kw.setdefault("device_bindings", {"test-device": ["decision-writer@*"], "other-device": [STANDBY]})
+    kw.setdefault("device_bindings", {"test-device": [SERVER, STANDBY], "other-device": [STANDBY]})
     return register_resource(conn, name, **kw)
 
 
@@ -737,3 +736,70 @@ def test_migration_053_only_via_dispatch_books_nothing_else(tmp_path):
         "resource_registry", "resource_leases", "resource_lease_events", "sqlite_sequence"}
     default = [r for r in conn.execute("PRAGMA table_info(resource_registry)") if r[1] == "default_profile"][0]
     assert default[4] == "'POLARIS'"
+
+
+# ---------------------------------------------------------------------------
+# R28b
+# ---------------------------------------------------------------------------
+
+_OLD_SHAPE = (
+    "CREATE TABLE resource_registry (resource TEXT PRIMARY KEY, allowed_workers TEXT NOT NULL,"
+    " server_role TEXT NOT NULL, standby_roles TEXT NOT NULL DEFAULT '[]',"
+    " default_profile TEXT NOT NULL DEFAULT 'POLARIS', updated_at TEXT NOT NULL)",
+    "CREATE TABLE resource_leases (resource TEXT PRIMARY KEY, claim_id TEXT, claim_worker TEXT,"
+    " claim_host TEXT, claim_role TEXT, claim_intent TEXT, claim_issued_at TEXT, claim_expires_at TEXT,"
+    " claim_heartbeat_at TEXT, fence INTEGER NOT NULL DEFAULT 0, ttl_profile TEXT, request_id TEXT,"
+    " resource_version TEXT, server_last_at TEXT, server_wanted_at TEXT)",
+    "CREATE TABLE resource_lease_events (id INTEGER PRIMARY KEY AUTOINCREMENT, resource TEXT NOT NULL,"
+    " at TEXT NOT NULL, action TEXT NOT NULL, worker_id TEXT, fence INTEGER, detail TEXT)",
+)
+
+
+def test_ensure_adds_missing_columns_additively_and_idempotently(tmp_path):
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    for stmt in _OLD_SHAPE:  # aeltere Tabellenform: ohne device_bindings und claim_device
+        old.execute(stmt)
+    old.execute("INSERT INTO resource_registry VALUES ('decisions-chain', '[\"decision-writer@*\"]',"
+                " 'decision-writer@mac-studio', '[]', 'POLARIS', 'x')")
+    old.execute("INSERT INTO resource_leases (resource, fence) VALUES ('decisions-chain', 4)")
+    old.commit()
+    old.close()
+
+    def shape():
+        c = sqlite3.connect(path)
+        try:
+            return [(t, [r[1] for r in c.execute(f"PRAGMA table_info({t})")]) for t in
+                    ("resource_registry", "resource_leases", "resource_lease_events")]
+        finally:
+            c.close()
+
+    conn = _connect(path)
+    ensure_resource_lease_schema(conn)
+    after = shape()
+    assert "device_bindings" in dict(after)["resource_registry"] and "claim_device" in dict(after)["resource_leases"]
+    ack = _acq(conn).payload  # Bestandsdaten bleiben nutzbar, Fence setzt bei 4 fort
+    assert ack["granted"] and ack["fence"] == 5
+    assert _acq(conn, device="x", enforce_device=True, worker=STANDBY, now=T0 + timedelta(seconds=1)
+                ).payload["reason"] == "device_not_bound"  # leere Zuordnung (Default '{}')
+    ensure_resource_lease_schema(conn)  # zweiter Lauf aendert nichts
+    assert shape() == after
+    conn.close()
+
+
+def test_device_bindings_are_exact_worker_ids_without_wildcards(conn):
+    for bad in (["decision-writer@*"], ["*@mac-studio"], ["decision-writer@mac-?tudio"], ["decision-writer"],
+                ["*"], [], [""]):
+        with pytest.raises(core.LeaseValidationError):
+            register_resource(conn, "wild", allowed_workers=["a@b"], server_role="a@b",
+                              device_bindings={"dev": bad})
+    assert conn.execute("SELECT 1 FROM resource_registry WHERE resource = 'wild'").fetchone() is None
+    # exakter Vergleich, case-sensitiv
+    register_resource(conn, "exact", allowed_workers=["*@*"], server_role="Agent@Mac-Studio",
+                      device_bindings={"dev": ["Agent@Mac-Studio"]})
+    ok = acquire_resource_lease(conn, "exact", worker_id="Agent@Mac-Studio", host="Mac-Studio",
+                                request_id=_rid(), device="dev", enforce_device=True, now=T0, config=CFG)
+    assert ok.granted
+    other_case = acquire_resource_lease(conn, "exact", worker_id="agent@mac-studio", host="mac-studio",
+                                        request_id=_rid(), device="dev", enforce_device=True, now=T0, config=CFG)
+    assert other_case.payload["reason"] == "device_not_bound"

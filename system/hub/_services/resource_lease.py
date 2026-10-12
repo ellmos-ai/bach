@@ -133,20 +133,65 @@ class ResourceLeaseConfig:
 # Schema und Registrierung
 # ---------------------------------------------------------------------------
 
+def _expected_columns() -> dict[str, dict[str, str]]:
+    """Spalten je Tabelle samt ALTER-tauglicher Deklaration, aus dem DDL abgeleitet."""
+    mem = sqlite3.connect(":memory:")
+    try:
+        for stmt in _DDL:
+            mem.execute(stmt)
+        out: dict[str, dict[str, str]] = {}
+        for table in ("resource_registry", "resource_leases", "resource_lease_events"):
+            cols = {}
+            for _cid, name, ctype, notnull, dflt, pk in mem.execute(f"PRAGMA table_info({table})"):
+                if pk:
+                    continue
+                decl = ctype or "TEXT"
+                if notnull:
+                    decl += " NOT NULL DEFAULT " + (dflt if dflt is not None else "''")
+                elif dflt is not None:
+                    decl += f" DEFAULT {dflt}"
+                cols[name] = decl
+            out[table] = cols
+        return out
+    finally:
+        mem.close()
+
+
+_EXPECTED_COLUMNS = _expected_columns()
+
+
 def ensure_resource_lease_schema(conn: sqlite3.Connection) -> None:
-    """Legt die Tabellen an (idempotent). Laeuft innerhalb einer offenen
-    Transaktion (Migration) ohne eigenes Commit, sonst in eigener."""
-    have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if {"resource_registry", "resource_leases", "resource_lease_events"} <= have:
-        return
-    if conn.in_transaction:
+    """Legt Tabellen an und ergaenzt fehlende Spalten additiv (idempotent). Laeuft
+    innerhalb einer offenen Transaktion (Migration) ohne eigenes Commit, sonst in eigener."""
+    def present() -> dict[str, set[str]]:
+        rows = conn.execute(
+            "SELECT m.name, p.name FROM sqlite_master m, pragma_table_info(m.name) p "
+            "WHERE m.type = 'table' AND m.name LIKE 'resource%'").fetchall()
+        have: dict[str, set[str]] = {}
+        for table, col in rows:
+            have.setdefault(table, set()).add(col)
+        return have
+
+    def complete(have) -> bool:
+        return all(t in have and set(cols) <= have[t] for t, cols in _EXPECTED_COLUMNS.items())
+
+    def apply() -> None:
         for stmt in _DDL:
             conn.execute(stmt)
+        have = present()
+        for table, cols in _EXPECTED_COLUMNS.items():
+            for name, decl in cols.items():
+                if name not in have.get(table, set()):
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+    if complete(present()):
+        return
+    if conn.in_transaction:
+        apply()
         return
     conn.execute("BEGIN IMMEDIATE")
     try:
-        for stmt in _DDL:
-            conn.execute(stmt)
+        apply()
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -154,6 +199,14 @@ def ensure_resource_lease_schema(conn: sqlite3.Connection) -> None:
 
 
 _validate_resource = core.validate_resource_name
+
+
+def _validate_exact_workers(value: Any) -> list[str]:
+    """device_bindings: nur exakte Worker-IDs ``agent@host`` (keine Wildcards)."""
+    items = [value] if isinstance(value, str) else list(value or [])
+    if not items or any(not isinstance(w, str) or not core.WORKER_RE.fullmatch(w) for w in items):
+        raise LeaseValidationError("device_bindings braucht exakte Worker-IDs der Form agent@host (keine Wildcards)")
+    return items
 
 
 def _validate_patterns(value: Any, what: str, *, allow_empty: bool = False) -> list[str]:
@@ -184,7 +237,7 @@ def register_resource(conn: sqlite3.Connection, resource: str, *, allowed_worker
     for device, patterns in dict(device_bindings or {}).items():
         if not isinstance(device, str) or not _DEVICE_RE.fullmatch(device):
             raise LeaseValidationError("device_bindings: Geraetename ungueltig")
-        bindings[device] = _validate_patterns(patterns, "device_bindings")
+        bindings[device] = _validate_exact_workers(patterns)
     ensure_resource_lease_schema(conn)
     stamp = core.fmt(now or core.utcnow())
     _begin(conn)
@@ -259,7 +312,7 @@ def _role(reg: Mapping[str, Any], worker_id: str) -> str | None:
 def _device_bound(reg: Mapping[str, Any], device: str | None, worker_id: str) -> bool:
     """HTTP-Weg: das authentifizierte Geraet darf nur als die ihm zugeordneten
     Worker handeln. Keine Zuordnung oder kein Geraet = fail-closed."""
-    return bool(device) and _match(worker_id, reg["device_bindings"].get(device, []))
+    return bool(device) and worker_id in reg["device_bindings"].get(device, [])  # exakt, case-sensitiv
 
 
 def _live(row: Mapping[str, Any], now: datetime) -> bool:
