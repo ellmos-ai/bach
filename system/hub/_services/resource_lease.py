@@ -421,11 +421,13 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
         rebased = False
         if stored is not None and resource_version is None:
             return _finish(conn, core.deny("resource_version_required", now, resource=resource,
-                                           expected_resource_version=stored), keep=is_server)
+                                           expected_resource_version=stored,
+                                           version_inflight=bool(row["version_inflight"])), keep=is_server)
         if stored is not None and resource_version != stored:
             if not (rebaseline and is_server):
                 return _finish(conn, core.deny("stale_resource_version", now, resource=resource,
-                                               expected_resource_version=stored), keep=is_server)
+                                               expected_resource_version=stored,
+                                               version_inflight=bool(row["version_inflight"])), keep=is_server)
             if row["version_inflight"]:  # offene Transaktion: erst Recovery, auch fuer den Server
                 return _finish(conn, core.deny("inflight_open", now, resource=resource,
                                                expected_resource_version=stored), keep=True)

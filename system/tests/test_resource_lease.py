@@ -778,6 +778,8 @@ def test_ensure_adds_missing_columns_additively_and_idempotently(tmp_path):
     ensure_resource_lease_schema(conn)
     after = shape()
     assert "device_bindings" in dict(after)["resource_registry"] and "claim_device" in dict(after)["resource_leases"]
+    # R29-5: auch die Rebaseline-/In-flight-Spalten kommen an einer alten Tabelle additiv dazu
+    assert {"version_inflight", "last_rebaseline_at"} <= set(dict(after)["resource_leases"])
     ack = _acq(conn).payload  # Bestandsdaten bleiben nutzbar, Fence setzt bei 4 fort
     assert ack["granted"] and ack["fence"] == 5
     assert _acq(conn, device="x", enforce_device=True, worker=STANDBY, now=T0 + timedelta(seconds=1)
@@ -855,6 +857,9 @@ def test_rebaseline_is_ignored_for_standby_and_blocked_by_open_inflight(conn):
     _renew(conn, first, t + timedelta(seconds=2), resource_version=V2, inflight=True)
     blocked = _acq(conn, resource_version="c" * 64, rebaseline=True, now=t + timedelta(seconds=200))
     assert blocked.payload["reason"] == "inflight_open"
+    # R29-2: die Ablehnung verraet dem Standby, dass ein In-flight-Marker offen ist (Journal fehlt lokal)
+    stale = _acq(conn, resource_version="c" * 64, now=t + timedelta(seconds=201))
+    assert stale.payload["reason"] == "stale_resource_version" and stale.payload["version_inflight"] is True
     # Recovery (Version = In-flight-Marker) wird weiter exakt akzeptiert; Commit raeumt das Flag
     recovered = _acq(conn, resource_version=V2, now=t + timedelta(seconds=210)).payload
     assert recovered["granted"]
