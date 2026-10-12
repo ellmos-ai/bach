@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS devices (
 
 2. **`system/gui/server.py` (Task #1499)**:
    - `DeviceAuthMiddleware`: Prüft `Authorization: Bearer <token>` gegen die `devices`-Tabelle.
-   - Fail-Open bei uninitialisiertem System (0 aktive Geräte registriert), scharf geschaltet sobald Geräte existieren.
+   - **Fail-Closed auf geschützten Pfaden:** Ohne gültigen Geräte-Token verweigert die Middleware den Zugriff. Das gilt auch für unkonfigurierte Systeme ohne aktive Geräte und für Loopback-Clients; fehlende Tokens führen zu HTTP 401. Explizit öffentliche Pfade bleiben davon ausgenommen.
+   - **Erstanlage:** Das erste Gerät wird durch eine ausdrückliche lokale Administrationsaktion angelegt (`gui.device_auth.create_device`); der öffentliche Hinweis steht in `system/gui/templates/token-dashboard.html`. HTTP-Anfragen ohne Token erhalten dadurch keinen Bootstrap-Schreibzugriff.
    - Endpunkte:
      - `GET /api/devices`: Liste registrierter Geräte.
      - `POST /api/devices`: Registrierung eines neuen Geräts.
