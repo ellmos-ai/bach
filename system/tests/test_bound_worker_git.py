@@ -495,3 +495,179 @@ def test_bound_task_manage_hides_unknown_native_submission_ack(bridge, monkeypat
     assert result == "Taskoperation nicht bestätigt; Taskbindung prüfen."
     assert "PRIVATE" not in result and "capability" not in result.lower()
     assert binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
+@pytest.mark.parametrize("origin", [
+    "https://github.com/ellmos-ai/bach.git",
+    "https://github.com/ellmos-ai/bach",
+    "git@github.com:ellmos-ai/bach.git",
+    "ssh://git@github.com/ellmos-ai/bach.git",
+])
+def test_canonical_public_bach_origin_accepts_only_supported_forms(origin):
+    assert worker_git._canonical_bach_origin(origin) == "https://github.com/ellmos-ai/bach"
+
+
+@pytest.mark.parametrize("origin", [
+    "https://github.com/ellmos-ai/other.git",
+    "https://user:token@github.com/ellmos-ai/bach.git",
+    "https://github.com.evil.invalid/ellmos-ai/bach.git",
+    "http://github.com/ellmos-ai/bach.git",
+    "https://github.com:bad/ellmos-ai/bach.git",
+    "https://github.com/ellmos-ai/bach.git?mirror=other",
+])
+def test_canonical_public_bach_origin_rejects_untrusted_identity(origin):
+    with pytest.raises(RuntimeError):
+        worker_git._canonical_bach_origin(origin)
+
+
+def test_public_source_proof_requires_anonymous_public_metadata_and_exact_local_main(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _REAL_SUBPROCESS_RUN(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.name", "Reader Test"], cwd=repo, check=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.email", "reader@example.invalid"], cwd=repo, check=True)
+    (repo / "README.md").write_text("public source", encoding="utf-8")
+    _REAL_SUBPROCESS_RUN(["git", "add", "README.md"], cwd=repo, check=True)
+    _REAL_SUBPROCESS_RUN(["git", "commit", "-m", "public base"], cwd=repo, check=True, capture_output=True)
+    _REAL_SUBPROCESS_RUN(["git", "remote", "add", "origin", "git@github.com:ellmos-ai/bach.git"], cwd=repo, check=True)
+    sha = _REAL_SUBPROCESS_RUN(["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+                               capture_output=True, text=True).stdout.strip()
+    payloads = {
+        "https://api.github.com/repos/ellmos-ai/bach": {
+            "full_name": "ellmos-ai/bach", "private": False,
+            "visibility": "public", "default_branch": "main",
+        },
+        "https://api.github.com/repos/ellmos-ai/bach/branches/main": {
+            "name": "main", "commit": {"sha": sha},
+        },
+    }
+    monkeypatch.setattr(worker_git, "_github_json", lambda url: payloads[url])
+    proof = worker_git._public_main_source(repo)
+    assert proof["source_sha"] == sha
+    assert proof["source_ref"] == "refs/heads/main"
+    assert proof["private"] is False and proof["visibility"] == "public"
+    assert proof["origin"] == "https://github.com/ellmos-ai/bach"
+
+    payloads["https://api.github.com/repos/ellmos-ai/bach"]["private"] = True
+    with pytest.raises(RuntimeError, match="Öffentliche Quellbindung"):
+        worker_git._public_main_source(repo)
+    payloads["https://api.github.com/repos/ellmos-ai/bach"]["private"] = False
+    payloads["https://api.github.com/repos/ellmos-ai/bach/branches/main"]["commit"]["sha"] = "f" * 40
+    with pytest.raises(RuntimeError, match="Lokale BACH-Basis"):
+        worker_git._public_main_source(repo)
+
+
+def _public_bound_repo(tmp_path, monkeypatch):
+    repo = tmp_path / "public-repo"
+    worktrees = tmp_path / "worktrees"
+    repo.mkdir()
+    worktrees.mkdir()
+    _REAL_SUBPROCESS_RUN(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.name", "Reader Test"], cwd=repo, check=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.email", "reader@example.invalid"], cwd=repo, check=True)
+    (repo / "README.md").write_text("base source", encoding="utf-8")
+    _REAL_SUBPROCESS_RUN(["git", "add", "README.md"], cwd=repo, check=True)
+    _REAL_SUBPROCESS_RUN(["git", "commit", "-m", "public base"], cwd=repo, check=True, capture_output=True)
+    _REAL_SUBPROCESS_RUN(["git", "remote", "add", "origin", "https://github.com/ellmos-ai/bach.git"], cwd=repo, check=True)
+    sha = _REAL_SUBPROCESS_RUN(["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+                               capture_output=True, text=True).stdout.strip()
+    proof = {
+        "schema": worker_git._PUBLIC_SOURCE_SCHEMA, "task_id": "",
+        "repository": "ellmos-ai/bach", "origin": "https://github.com/ellmos-ai/bach",
+        "source_ref": "refs/heads/main", "source_sha": sha, "visibility": "public",
+        "private": False, "metadata_verified": True, "ref_verified": True,
+        "verified_at": worker_git._utc_now(),
+    }
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: worktrees)
+    monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+    monkeypatch.setattr(worker_git, "_public_main_source", lambda _repo: dict(proof))
+    return repo, worktrees, proof
+
+
+def test_bound_public_worktree_pins_exact_ref_and_rejects_unregistered_existing_tree(
+        tmp_path, request, monkeypatch):
+    task_bridge = request.getfixturevalue("bridge")
+    repo, _worktrees, proof = _public_bound_repo(tmp_path, monkeypatch)
+    commands = []
+    run = subprocess.run
+    def capture(argv, **kwargs):
+        commands.append(list(argv))
+        return run(argv, **kwargs)
+    monkeypatch.setattr(worker_git.subprocess, "run", capture)
+
+    target = worker_git.start_task_worktree(
+        task_bridge.binding.task_id, base_branch="main", worker_task_binding=task_bridge.binding,
+        require_task_binding=True, task_code_capability=True,
+    )
+    head = _REAL_SUBPROCESS_RUN(["git", "rev-parse", "HEAD"], cwd=target, check=True,
+                                capture_output=True, text=True).stdout.strip()
+    assert head == proof["source_sha"]
+    record = worker_git.read_task_public_source_registration(repo, target, task_bridge.binding.task_id)
+    assert record["source_sha"] == proof["source_sha"]
+    assert record["task_id"] == str(task_bridge.binding.task_id)
+    assert not any(command[:2] == ["git", "fetch"] for command in commands)
+
+    with pytest.raises(RuntimeError, match="Quellregistrierung"):
+        worker_git._store_public_source_registration(
+            repo, target, task_bridge.binding.task_id,
+            {**record, "source_sha": "not-a-valid-registration-sha"},
+        )
+
+
+def test_bound_public_worktree_does_not_create_when_public_proof_is_unavailable(
+        tmp_path, request, monkeypatch):
+    task_bridge = request.getfixturevalue("bridge")
+    _repo, worktrees, _proof = _public_bound_repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(worker_git, "_public_main_source",
+                        lambda _repo: (_ for _ in ()).throw(RuntimeError("unavailable")))
+    target = worktrees / f"task-{task_bridge.binding.task_id}"
+    with pytest.raises(RuntimeError, match="unavailable"):
+        worker_git.start_task_worktree(
+            task_bridge.binding.task_id, base_branch="main", worker_task_binding=task_bridge.binding,
+            require_task_binding=True, task_code_capability=True,
+        )
+    assert not target.exists()
+
+
+def test_bound_existing_worktree_without_public_registration_is_not_upgraded(
+        tmp_path, request, monkeypatch):
+    task_bridge = request.getfixturevalue("bridge")
+    _public_bound_repo(tmp_path, monkeypatch)
+    target = worker_git.start_task_worktree(
+        task_bridge.binding.task_id, base_branch="main", worker_task_binding=task_bridge.binding,
+        require_task_binding=True,
+    )
+    with pytest.raises(RuntimeError, match="Quellregistrierung"):
+        worker_git.start_task_worktree(
+            task_bridge.binding.task_id, base_branch="main", worker_task_binding=task_bridge.binding,
+            require_task_binding=True, task_code_capability=True,
+        )
+    assert target.is_dir()
+
+def test_github_public_metadata_reader_requires_https_api_host_and_sends_no_auth(monkeypatch):
+    import json
+    import urllib.request
+
+    seen = {}
+    class Response:
+        status = 200
+        def geturl(self): return "https://api.github.com/repos/ellmos-ai/bach"
+        def read(self, limit): return json.dumps({"private": False}).encode()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+
+    def fake_open(request, timeout):
+        seen["request"] = request
+        seen["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_open)
+    result = worker_git._github_json("https://api.github.com/repos/ellmos-ai/bach")
+    assert result == {"private": False}
+    assert seen["timeout"] == 8
+    assert "Authorization" not in dict(seen["request"].header_items())
+
+    class Redirected(Response):
+        def geturl(self): return "https://api.evil.invalid/repo"
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_args, **_kwargs: Redirected())
+    with pytest.raises(RuntimeError, match="Öffentliche Quellbindung"):
+        worker_git._github_json("https://api.github.com/repos/ellmos-ai/bach")

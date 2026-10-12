@@ -28,11 +28,20 @@ def test_bound_tools_hide_paid_delegation_and_destructive_cleanup(binding, mode,
 def test_bound_worktree_start_checks_exact_task_before_dispatch(binding, monkeypatch, foreign):
     from hub import worker_git
     calls = []
-    monkeypatch.setattr(worker_git, "start_task_worktree", lambda tid: calls.append(tid) or "isolated-worktree")
+
+    def start(tid, *, worker_task_binding=None, require_task_binding=False,
+              task_code_capability=False):
+        calls.append((tid, worker_task_binding, require_task_binding, task_code_capability))
+        return "isolated-worktree"
+
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
     tid = binding.task_id + int(foreign)
-    result = bach_tools.exec_tool("start_task_worktree", {"task_id": tid}, "safe",
-                                 worker_task_binding=binding, require_task_binding=True)
-    assert calls == ([] if foreign else [tid])
+    result = bach_tools.exec_tool(
+        "start_task_worktree", {"task_id": tid}, "safe",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"start_task_worktree"},
+    )
+    assert calls == ([] if foreign else [(tid, binding, True, True)])
     assert ("BLOCKIERT" in result) is foreign
 
 

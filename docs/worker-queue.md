@@ -26,6 +26,15 @@ Die Diagnose verändert keine Auswahlberechtigung, Task, Lease, Creator-Schonfri
 
 Für `openrouter/free` können geeignete BACH-Aufgaben ausdrücklich zugewiesen oder über einen begrenzten Pickupfilter für die automatische Auswahl eingegrenzt werden. Der Filter kann ungeroutete passende Aufgaben auswählen, übernimmt aber keine nichtleeren Codex-, User- oder sonstigen fremden Zuweisungen. Im automatischen Queuepfad erfordert eine persönliche User-Aufgabe die ausdrückliche Route an die eigene Worker-ID. Ein Filter ändert keine Modellbindung und erlaubt keinen kostenpflichtigen Ersatz.
 
+## Taskgebundene öffentliche Code-Leser und Provenienz
+
+Ein gebundener Codeworker aktiviert den eingeschränkten Reader nur, wenn seine private Worker-Konfiguration `start_task_worktree` ausdrücklich freigibt und das Werkzeug im aktuellen Modus verfügbar ist. Modellargumente können diese Fähigkeit nicht setzen. Der Start bindet den registrierten BACH-Taskarbeitsbaum an `ellmos-ai/bach`, prüft anonym die öffentliche GitHub-Metadatenquelle und den exakten `main`-Commit und startet ohne Fetch von genau diesem lokalen Commit. Fehlt die öffentliche Metadaten-/Refbestätigung oder stimmt der lokale Commit nicht exakt überein, bleibt der Code-Leser unverfügbar.
+
+Der bestätigte Basis-Commit wird in der bestehenden branchbezogenen Git-Worktree-Registrierung gespeichert. Weitere Reads folgen diesem festen Pin und prüfen, dass der aktuelle Taskbranch davon abstammt; ein eigener Commit oder ein inzwischen weitergelaufenes Remote-`main` verschiebt den Pin nicht. Die Leser `read_file`, `list_directory` und `search_text` erhalten nur reguläre, symlinkfreie, nicht ignorierte, nicht als geheim eingestufte Dateien aus genau diesem gebundenen Arbeitsbaum. Sie traversieren nicht das Homeverzeichnis oder fremde Worktrees.
+
+Unveränderte Dateien aus dem gepinnten Baum werden als `public_base` eingeordnet. Neue oder vom Task geänderte Dateien sind `task_artifact`; ihre Lage in einem öffentlichen Repository macht ihren Inhalt nicht automatisch öffentlich. Eine bestehende ungebundene oder private Leseroute behält ihre bisherigen Regeln. Ein fehlender oder veralteter Pin wird nicht durch eine URL-Form, einen Tasktext oder einen aktuellen Remotevergleich ersetzt.
+
+Diese Begrenzung gilt für die drei BACH-Leserwerkzeuge. Sie ist keine Betriebssystem-Sandbox für beliebigen Python-, Test- oder sonstigen Prozesscode. Die vorhandene isolierte Prüfausführung hat einen eigenen Vertrag; ein Profil darf aus diesem Reader-Patch allein keine weitergehende Dateisystem- oder Prozessisolation ableiten.
 ## Taskrouting und lokale Modellressourcen
 
 `assigned_slot` ist eine logische Taskroute zu einer Worker-ID. Sie ist nicht derselbe Steckplatz wie eine lokale Modellressource. Ein lokaler Modellressourcen-Steckplatz reserviert beziehungsweise prüft eine lokal erreichbare Inferenzressource; im BACH-Vertrag sind das Ollama- und LM-Studio-Ziele. Externe Anbieter wie OpenRouter oder `ollama-cloud` benötigen keinen lokalen Modellressourcen-Steckplatz. Für sie gelten weiterhin Taskroute, `required_model`, Zuweisungs- und Pickupregeln, sofern diese an der Task gesetzt sind.
