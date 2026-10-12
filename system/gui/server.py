@@ -2582,6 +2582,15 @@ class ResourceLeaseAcquireRequest(BaseModel):
     ttl_profile: Optional[str] = None
     intent: Optional[str] = None
     resource_version: Optional[StrictStr] = None
+    rebaseline: StrictBool = False
+
+
+class ResourceLeaseRenewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lease_id: str
+    fence: StrictInt
+    resource_version: Optional[StrictStr] = None
+    inflight: StrictBool = False
 
 
 class ResourceLeaseRefRequest(BaseModel):
@@ -2614,7 +2623,7 @@ async def acquire_resource_lease_route(name: str, body: ResourceLeaseAcquireRequ
         acquire_resource_lease, name, worker_id=body.worker_id, host=body.host,
         request_id=body.request_id, ttl_profile=body.ttl_profile, intent=body.intent or "",
         resource_version=body.resource_version, device=_lease_device_label(request),
-        enforce_device=True)
+        enforce_device=True, rebaseline=body.rebaseline)
 
 
 @app.get("/api/resources/{name}/lease")
@@ -2626,10 +2635,10 @@ async def read_resource_lease_route(name: str, request: Request):
 
 
 @app.post("/api/resources/{name}/lease/renew")
-async def renew_resource_lease_route(name: str, body: ResourceLeaseRefRequest, request: Request):
+async def renew_resource_lease_route(name: str, body: ResourceLeaseRenewRequest, request: Request):
     from hub._services.resource_lease import renew_resource_lease
     return _run_resource_lease_op(renew_resource_lease, name, lease_id=body.lease_id, fence=body.fence,
-                                  resource_version=body.resource_version,
+                                  resource_version=body.resource_version, inflight=body.inflight,
                                   device=_lease_device_label(request), enforce_device=True)
 
 

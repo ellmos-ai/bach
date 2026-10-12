@@ -175,14 +175,16 @@ def manifest_version(root: Path | str, paths: Iterable[str]) -> str:
     """SHA-256 ueber ein kanonisches Manifest: sortierte relative Pfade (``/``),
     Groesse und SHA-256 jeder Datei; fehlende Dateien gehen als ``MISSING`` ein.
     Ordner in ``paths`` werden rekursiv in ihre Dateien aufgeloest; ein fehlender
-    Ordner zaehlt als fehlend. Die Pfadliste ist Teil des Vertrags der Ressource."""
+    oder leerer Ordner zaehlt als fehlend (Hosts duerfen sich nicht darin unterscheiden,
+    ob sie einen leeren Ordner angelegt haben). Die Pfadliste ist Teil des Vertrags der Ressource."""
     base = Path(root)
     entries: dict[str, str] = {}
     for rel in paths:
         target = base / rel
         key = Path(rel).as_posix()
-        if target.is_dir():
-            for sub in sorted(p for p in target.rglob("*") if p.is_file()):
+        files = sorted(p for p in target.rglob("*") if p.is_file()) if target.is_dir() else []
+        if files:
+            for sub in files:
                 entries[sub.relative_to(base).as_posix()] = _file_line(sub)
         elif target.is_file():
             entries[key] = _file_line(target)

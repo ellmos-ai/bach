@@ -803,3 +803,89 @@ def test_device_bindings_are_exact_worker_ids_without_wildcards(conn):
     other_case = acquire_resource_lease(conn, "exact", worker_id="agent@mac-studio", host="mac-studio",
                                         request_id=_rid(), device="dev", enforce_device=True, now=T0, config=CFG)
     assert other_case.payload["reason"] == "device_not_bound"
+
+
+# ---------------------------------------------------------------------------
+# Folge: Manifest-Testvektor (identisch im decision-clicker), rebaseline
+# ---------------------------------------------------------------------------
+
+#: Gemeinsamer Vektor: a.txt = "x", b.txt fehlt, leer/ ist ein leerer Ordner (== fehlend).
+SHARED_MANIFEST_VECTOR = "025c824ad9189e559d0844f99372867f61b3b56b7c8d5e5b6d8266e2b86dea47"
+
+
+def test_manifest_shared_vector_and_empty_dir_equals_missing(tmp_path):
+    (tmp_path / "a.txt").write_bytes(b"x")
+    (tmp_path / "leer").mkdir()
+    assert core.manifest_version(tmp_path, ["leer", "b.txt", "a.txt"]) == SHARED_MANIFEST_VECTOR
+    assert core.manifest_version(tmp_path, ["a.txt", "b.txt", "leer"]) == SHARED_MANIFEST_VECTOR
+    (tmp_path / "leer").rmdir()  # fehlender Ordner: derselbe Hash
+    assert core.manifest_version(tmp_path, ["leer", "b.txt", "a.txt"]) == SHARED_MANIFEST_VECTOR
+
+
+def _commit_version(conn, version, *, inflight=False, worker=SERVER, now=T0):
+    ack = _acq(conn, worker=worker, now=now).payload
+    res = _renew(conn, ack, now + timedelta(seconds=5), resource_version=version, inflight=inflight)
+    assert res.granted
+    _release(conn, ack, now + timedelta(seconds=6))
+
+
+def test_rebaseline_only_server_role_without_open_inflight(conn):
+    _commit_version(conn, V1)
+    t = T0 + timedelta(seconds=30)
+    # Externer Edit: lokales Manifest V2 weicht ab. Ohne rebaseline: wie bisher abgelehnt
+    assert _acq(conn, resource_version=V2, now=t).payload["reason"] == "stale_resource_version"
+    # Server mit rebaseline: uebernimmt den lokalen Stand, Ereignis + Status
+    ok = _acq(conn, resource_version=V2, rebaseline=True, now=t).payload
+    assert ok["granted"] and ok["resource_version"] == V2
+    status = read_resource_lease(conn, RES, now=t + timedelta(seconds=1), config=CFG).payload
+    assert status["last_rebaseline_at"] and status["version_inflight"] is False
+    ev = [e for e in list_events(conn, RES) if e["action"] == "rebaseline_external_change"]
+    assert len(ev) == 1 and json.loads(ev[0]["detail"])["previous_version"] == V1
+    assert json.loads(ev[0]["detail"])["new_version"] == V2
+
+
+def test_rebaseline_is_ignored_for_standby_and_blocked_by_open_inflight(conn):
+    _commit_version(conn, V1)
+    # Standby: rebaseline wirkt nicht (exakter Abgleich bleibt)
+    t = T0 + timedelta(seconds=300)
+    standby = _acq(conn, worker=STANDBY, resource_version=V2, rebaseline=True, now=t)
+    assert standby.payload["reason"] in ("stale_resource_version", "server_active")
+    # Offener In-flight-Marker blockiert auch den Server
+    first = _acq(conn, now=t + timedelta(seconds=1), resource_version=V1).payload
+    _renew(conn, first, t + timedelta(seconds=2), resource_version=V2, inflight=True)
+    blocked = _acq(conn, resource_version="c" * 64, rebaseline=True, now=t + timedelta(seconds=200))
+    assert blocked.payload["reason"] == "inflight_open"
+    # Recovery (Version = In-flight-Marker) wird weiter exakt akzeptiert; Commit raeumt das Flag
+    recovered = _acq(conn, resource_version=V2, now=t + timedelta(seconds=210)).payload
+    assert recovered["granted"]
+    _renew(conn, recovered, t + timedelta(seconds=215), resource_version="d" * 64)  # Commit-Marker
+    assert read_resource_lease(conn, RES, now=t + timedelta(seconds=216), config=CFG).payload["version_inflight"] is False
+
+
+def test_rebaseline_over_http(client_for_rebaseline):
+    client, ref = client_for_rebaseline
+    r = client.post(f"/api/resources/{RES}/lease", json={**ref, "resource_version": V1})
+    assert r.status_code == 200
+    ack = r.json()
+    body = {"lease_id": ack["lease_id"], "fence": ack["fence"]}
+    assert client.post(f"/api/resources/{RES}/lease/renew",
+                       json={**body, "resource_version": V1, "inflight": False}).status_code == 200
+    assert client.post(f"/api/resources/{RES}/lease/release", json=body).status_code == 200
+    r = client.post(f"/api/resources/{RES}/lease", json={**ref, "resource_version": V2})
+    assert r.json()["reason"] == "stale_resource_version"
+    r = client.post(f"/api/resources/{RES}/lease", json={**ref, "resource_version": V2, "rebaseline": True})
+    assert r.status_code == 200 and r.json()["resource_version"] == V2
+
+
+@pytest.fixture
+def client_for_rebaseline(db_path, tmp_path, monkeypatch):
+    import gui.server as srv
+    monkeypatch.setattr(srv, "BACH_DB", db_path)
+    monkeypatch.setattr(srv, "USER_DB", db_path)
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(srv, "BACH_DIR", tmp_path)
+    monkeypatch.setattr(srv, "GUI_DIR", tmp_path / "gui")
+    monkeypatch.setattr(srv, "validate_token",
+                        lambda token: {"id": 1, "name": "test-device"} if token == "star-fixture" else None)
+    http = TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer star-fixture"})
+    return http, {"worker_id": SERVER, "host": "mac-studio", "request_id": _rid()}

@@ -88,7 +88,9 @@ _DDL = (
         request_id TEXT,
         resource_version TEXT,
         server_last_at TEXT,
-        server_wanted_at TEXT
+        server_wanted_at TEXT,
+        version_inflight INTEGER NOT NULL DEFAULT 0,
+        last_rebaseline_at TEXT
     )""",
     """CREATE TABLE IF NOT EXISTS resource_lease_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,10 +364,12 @@ def _finish(conn, result: LeaseResult, *, keep: bool = False) -> LeaseResult:
 def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id: str, host: str,
                            request_id: str, ttl_profile: str | None = None, intent: str = "",
                            resource_version: str | None = None, device: str | None = None,
-                           enforce_device: bool = False,
+                           enforce_device: bool = False, rebaseline: bool = False,
                            config: ResourceLeaseConfig | None = None,
                            now: datetime | None = None) -> LeaseResult:
-    """Polaris star anfordern. ``enforce_device`` (HTTP-Weg) bindet den Worker an das
+    """Polaris star anfordern. ``rebaseline`` (nur Server-Rolle): bei abweichendem Manifest ohne
+    offenen In-flight-Marker den gemeldeten Stand als neue Version uebernehmen (externe Aenderung,
+    Ereignis ``rebaseline_external_change``). Ein offener In-flight-Marker blockiert auch den Server. ``enforce_device`` (HTTP-Weg) bindet den Worker an das
     authentifizierte Geraet; die Rolle ergibt sich aus Registrierung UND Geraet. Hoechstens ein lebender Halter je Ressource."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)
@@ -414,12 +418,18 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
                 return _finish(conn, core.deny("server_active", now, resource=resource))
 
         stored = row["resource_version"]
+        rebased = False
         if stored is not None and resource_version is None:
             return _finish(conn, core.deny("resource_version_required", now, resource=resource,
                                            expected_resource_version=stored), keep=is_server)
         if stored is not None and resource_version != stored:
-            return _finish(conn, core.deny("stale_resource_version", now, resource=resource,
-                                           expected_resource_version=stored), keep=is_server)
+            if not (rebaseline and is_server):
+                return _finish(conn, core.deny("stale_resource_version", now, resource=resource,
+                                               expected_resource_version=stored), keep=is_server)
+            if row["version_inflight"]:  # offene Transaktion: erst Recovery, auch fuer den Server
+                return _finish(conn, core.deny("inflight_open", now, resource=resource,
+                                               expected_resource_version=stored), keep=True)
+            rebased = True
 
         profile = (ttl_profile or reg["default_profile"] or cfg.default_profile).upper()
         if profile not in cfg.profiles:
@@ -440,6 +450,11 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
              role, resource, old_fence))
         if cursor.rowcount != 1:  # unter BEGIN IMMEDIATE nicht erwartbar; fail-closed
             return _finish(conn, core.deny("conflict", now, resource=resource))
+        if rebased:
+            conn.execute("UPDATE resource_leases SET resource_version = ?, version_inflight = 0, "
+                         "last_rebaseline_at = ? WHERE resource = ?", (resource_version, core.fmt(now), resource))
+            _event(conn, resource, "rebaseline_external_change", worker_id, old_fence + 1, now,
+                   previous_version=stored, new_version=resource_version, device=device)
         _event(conn, resource, "acquire", worker_id, old_fence + 1, now, role=role, host=host,
                device=device, previous=row["claim_worker"] if row["claim_id"] else None,
                previous_fence=old_fence if row["claim_id"] else None)
@@ -469,7 +484,7 @@ def _check_holder(conn, resource, row, lease_id, fence, worker_hint, now, *, dev
 
 def renew_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: str, fence: int,
                          resource_version: str | None = None, device: str | None = None,
-                         enforce_device: bool = False,
+                         enforce_device: bool = False, inflight: bool = False,
                          config: ResourceLeaseConfig | None = None,
                          now: datetime | None = None) -> LeaseResult:
     """Heartbeat: verlaengert nie verkuerzend, nur lebend, gedeckelt auf die
@@ -509,10 +524,11 @@ def renew_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: s
             """UPDATE resource_leases
                   SET claim_expires_at = ?, claim_heartbeat_at = ?,
                       resource_version = COALESCE(?, resource_version),
+                      version_inflight = CASE WHEN ? IS NULL THEN version_inflight ELSE ? END,
                       server_last_at = CASE WHEN ? THEN ? ELSE server_last_at END
                 WHERE resource = ? AND claim_id = ? AND fence = ?""",
-            (new_expires, core.fmt(now), resource_version, int(is_server), core.fmt(now),
-             resource, lease_id, fence))
+            (new_expires, core.fmt(now), resource_version, resource_version, int(bool(inflight)),
+             int(is_server), core.fmt(now), resource, lease_id, fence))
         if cursor.rowcount != 1:
             return _finish(conn, core.deny("stale_fence", now, resource=resource))
         ack = _ack(resource, _lease_row(conn, resource), now, cfg)
@@ -556,9 +572,11 @@ def release_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id:
                       claim_intent = NULL, claim_device = NULL, claim_issued_at = NULL, claim_expires_at = NULL,
                       claim_heartbeat_at = NULL, ttl_profile = NULL, request_id = NULL,
                       resource_version = COALESCE(?, resource_version),
+                      version_inflight = CASE WHEN ? IS NULL THEN version_inflight ELSE 0 END,
                       server_last_at = CASE WHEN ? THEN ? ELSE server_last_at END
                 WHERE resource = ? AND claim_id = ? AND fence = ?""",
-            (None if late else resource_version, int(is_server), core.fmt(now), resource, lease_id, fence))
+            (None if late else resource_version, None if late else resource_version, int(is_server),
+             core.fmt(now), resource, lease_id, fence))
         if cursor.rowcount != 1:
             return _finish(conn, core.deny("stale_fence", now, resource=resource))
         _event(conn, resource, "release", row["claim_worker"], fence, now, late=late)
@@ -589,6 +607,8 @@ def read_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: st
     payload: dict[str, Any] = {
         "resource": resource, "leased": live, "fence": int(row["fence"]),
         "resource_version": row["resource_version"], "server_active": _server_recent(row, now, cfg),
+        "version_inflight": bool(row.get("version_inflight")),
+        "last_rebaseline_at": row.get("last_rebaseline_at"),
         "server_role": reg["server_role"], "standby_roles": reg["standby_roles"],
         "renew_after_seconds": cfg.renew_seconds, "margin_seconds": cfg.margin_seconds,
         "server_now": core.fmt(now),

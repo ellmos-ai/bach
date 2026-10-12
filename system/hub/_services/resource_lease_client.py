@@ -225,18 +225,22 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
             raise LeaseProtocolError(f"ACK unvollstaendig: {exc}") from None
 
     def acquire(self, resource, *, worker_id, host=None, ttl_profile=None, intent="",
-                resource_version=None, request_id=None, config=None, now=None) -> ResourceLeaseAck:
+                resource_version=None, request_id=None, rebaseline=False, config=None, now=None) -> ResourceLeaseAck:
         host = host or worker_id.rsplit("@", 1)[-1]
         payload = {"worker_id": worker_id, "host": host, "request_id": request_id or "req-" + uuid.uuid4().hex,
-                   "ttl_profile": ttl_profile, "intent": intent, "resource_version": resource_version}
+                   "ttl_profile": ttl_profile, "intent": intent, "resource_version": resource_version,
+                   "rebaseline": rebaseline}
         return self._ack(self._call("acquire", resource, payload, config=config, now=now))
 
-    def renew(self, ack: ResourceLeaseAck, *, resource_version=None, config=None, now=None) -> ResourceLeaseAck:
+    def renew(self, ack: ResourceLeaseAck, *, resource_version=None, inflight=False, config=None,
+              now=None) -> ResourceLeaseAck:
         return self.renew_ref(ack.resource, ack.lease_id, ack.fence, resource_version=resource_version,
-                              config=config, now=now)
+                              inflight=inflight, config=config, now=now)
 
-    def renew_ref(self, resource, lease_id, fence, *, resource_version=None, config=None, now=None):
-        payload = {"lease_id": lease_id, "fence": fence, "resource_version": resource_version}
+    def renew_ref(self, resource, lease_id, fence, *, resource_version=None, inflight=False, config=None,
+                  now=None):
+        payload = {"lease_id": lease_id, "fence": fence, "resource_version": resource_version,
+                   "inflight": inflight}
         return self._ack(self._call("renew", resource, payload, config=config, now=now))
 
     def release(self, ack: ResourceLeaseAck, *, resource_version=None, config=None, now=None) -> ResourceReleaseAck:
