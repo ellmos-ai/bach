@@ -1,0 +1,20 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-12
+# Next review: 2027-10-12
+
+
+POLARIS (POLARSTERN)
+--------------------
+
+Polaris は書き込み者が一人だけの資源に lease("star")を与えます。書き込めるのは保持者のみで、fence と有効期限は lead が決めます。
+
+bach polaris <resource> <action>
+
+操作
+  acquire  Polaris star を要求 (--by agent@host [--ttl POLARIS] [--version HASH] [--show-capability])
+  renew    延長 (--lease-id UUID --fence N [--version HASH])
+  release  返却 (--lease-id UUID --fence N [--version HASH])
+  status   保持者・fence・version を表示
+  register 資源を登録 (lead 権限のみ; --allowed --server-role [--standby] [--bind device=pattern])
+
+lead に到達できない場合は引き継げず、資源は読み取り専用のままです。capability は --show-capability のときだけ表示されます。

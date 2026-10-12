@@ -59,6 +59,7 @@ DEFAULT_RENEW_SECONDS = 40
 DEFAULT_MARGIN_SECONDS = 15
 DEFAULT_SERVER_DOWN_AFTER_SECONDS = 120
 
+_DEVICE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$")
 _PATTERN_RE = re.compile(r"^[A-Za-z0-9*?._:+@-]{1,130}$")
 
 _DDL = (
@@ -68,6 +69,7 @@ _DDL = (
         server_role TEXT NOT NULL,
         standby_roles TEXT NOT NULL DEFAULT '[]',
         default_profile TEXT NOT NULL DEFAULT 'POLARIS',
+        device_bindings TEXT NOT NULL DEFAULT '{}',
         updated_at TEXT NOT NULL
     )""",
     """CREATE TABLE IF NOT EXISTS resource_leases (
@@ -77,6 +79,7 @@ _DDL = (
         claim_host TEXT,
         claim_role TEXT,
         claim_intent TEXT,
+        claim_device TEXT,
         claim_issued_at TEXT,
         claim_expires_at TEXT,
         claim_heartbeat_at TEXT,
@@ -164,7 +167,7 @@ def _validate_patterns(value: Any, what: str, *, allow_empty: bool = False) -> l
 
 
 def register_resource(conn: sqlite3.Connection, resource: str, *, allowed_workers, server_role: str,
-                      standby_roles=(), default_profile: str = POLARIS,
+                      standby_roles=(), default_profile: str = POLARIS, device_bindings=None,
                       config: ResourceLeaseConfig | None = None, now: datetime | None = None) -> dict[str, Any]:
     """Registriert oder aktualisiert eine Ressource (nur lokal an der Authority,
     keine HTTP-Route). ``allowed_workers`` ist die Zulassung (fnmatch auf
@@ -177,25 +180,33 @@ def register_resource(conn: sqlite3.Connection, resource: str, *, allowed_worker
     standby = _validate_patterns(standby_roles, "standby_roles", allow_empty=True)
     if default_profile not in cfg.profiles:
         raise LeaseValidationError(f"default_profile muss einer von {sorted(cfg.profiles)} sein")
+    bindings = {}
+    for device, patterns in dict(device_bindings or {}).items():
+        if not isinstance(device, str) or not _DEVICE_RE.fullmatch(device):
+            raise LeaseValidationError("device_bindings: Geraetename ungueltig")
+        bindings[device] = _validate_patterns(patterns, "device_bindings")
     ensure_resource_lease_schema(conn)
     stamp = core.fmt(now or core.utcnow())
     _begin(conn)
     try:
         conn.execute(
             """INSERT INTO resource_registry
-                   (resource, allowed_workers, server_role, standby_roles, default_profile, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)
+                   (resource, allowed_workers, server_role, standby_roles, default_profile, device_bindings,
+                    updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(resource) DO UPDATE SET allowed_workers=excluded.allowed_workers,
                    server_role=excluded.server_role, standby_roles=excluded.standby_roles,
-                   default_profile=excluded.default_profile, updated_at=excluded.updated_at""",
-            (resource, json.dumps(allowed), server, json.dumps(standby), default_profile, stamp))
+                   default_profile=excluded.default_profile, device_bindings=excluded.device_bindings,
+                   updated_at=excluded.updated_at""",
+            (resource, json.dumps(allowed), server, json.dumps(standby), default_profile,
+             json.dumps(bindings, sort_keys=True), stamp))
         conn.execute("INSERT OR IGNORE INTO resource_leases (resource) VALUES (?)", (resource,))
         conn.commit()
     except BaseException:
         conn.rollback()
         raise
     return {"resource": resource, "allowed_workers": allowed, "server_role": server,
-            "standby_roles": standby, "default_profile": default_profile}
+            "standby_roles": standby, "default_profile": default_profile, "device_bindings": bindings}
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +231,7 @@ def _registry(conn: sqlite3.Connection, resource: str) -> dict[str, Any]:
     reg = _fetch(conn, "SELECT * FROM resource_registry WHERE resource = ?", (resource,))
     if reg is None:
         raise ResourceNotFound(resource)
-    for key in ("allowed_workers", "standby_roles"):
+    for key in ("allowed_workers", "standby_roles", "device_bindings"):
         reg[key] = json.loads(reg[key])
     return reg
 
@@ -243,6 +254,12 @@ def _role(reg: Mapping[str, Any], worker_id: str) -> str | None:
     if _match(worker_id, reg["standby_roles"]):
         return "standby"
     return None
+
+
+def _device_bound(reg: Mapping[str, Any], device: str | None, worker_id: str) -> bool:
+    """HTTP-Weg: das authentifizierte Geraet darf nur als die ihm zugeordneten
+    Worker handeln. Keine Zuordnung oder kein Geraet = fail-closed."""
+    return bool(device) and _match(worker_id, reg["device_bindings"].get(device, []))
 
 
 def _live(row: Mapping[str, Any], now: datetime) -> bool:
@@ -292,9 +309,11 @@ def _finish(conn, result: LeaseResult, *, keep: bool = False) -> LeaseResult:
 def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id: str, host: str,
                            request_id: str, ttl_profile: str | None = None, intent: str = "",
                            resource_version: str | None = None, device: str | None = None,
+                           enforce_device: bool = False,
                            config: ResourceLeaseConfig | None = None,
                            now: datetime | None = None) -> LeaseResult:
-    """Polaris star anfordern. Hoechstens ein lebender Halter je Ressource."""
+    """Polaris star anfordern. ``enforce_device`` (HTTP-Weg) bindet den Worker an das
+    authentifizierte Geraet; die Rolle ergibt sich aus Registrierung UND Geraet. Hoechstens ein lebender Halter je Ressource."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)
     worker_id, host = core.validate_worker(worker_id, host)
@@ -308,6 +327,9 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
         now = now if now is not None else core.utcnow()  # erst unter der Sperre messen
         reg = _registry(conn, resource)
         role = _role(reg, worker_id)
+        if enforce_device and not _device_bound(reg, device, worker_id):
+            _event(conn, resource, "device_not_bound", worker_id, None, now, device=device)
+            return _finish(conn, core.deny("device_not_bound", now, resource=resource), keep=True)
         if role is None:
             return _finish(conn, core.deny("worker_not_allowed", now, resource=resource))
         row = _lease_row(conn, resource)
@@ -357,11 +379,11 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
         cursor = conn.execute(
             """UPDATE resource_leases
                   SET claim_id = ?, claim_worker = ?, claim_host = ?, claim_role = ?, claim_intent = ?,
-                      claim_issued_at = ?, claim_expires_at = ?, claim_heartbeat_at = ?,
+                      claim_device = ?, claim_issued_at = ?, claim_expires_at = ?, claim_heartbeat_at = ?,
                       fence = fence + 1, ttl_profile = ?, request_id = ?,
                       server_wanted_at = CASE WHEN ? = 'server' THEN NULL ELSE server_wanted_at END
                 WHERE resource = ? AND fence = ?""",
-            (lease_id, worker_id, host, role, intent or None, issued, expires, issued, profile, request_id,
+            (lease_id, worker_id, host, role, intent or None, device, issued, expires, issued, profile, request_id,
              role, resource, old_fence))
         if cursor.rowcount != 1:  # unter BEGIN IMMEDIATE nicht erwartbar; fail-closed
             return _finish(conn, core.deny("conflict", now, resource=resource))
@@ -377,18 +399,24 @@ def acquire_resource_lease(conn: sqlite3.Connection, resource: str, *, worker_id
     return LeaseResult(ack)
 
 
-def _check_holder(conn, resource, row, lease_id, fence, worker_hint, now):
-    """Stale-Pruefung fuer renew/release; protokolliert Alt-Halter (committet)."""
+def _check_holder(conn, resource, row, lease_id, fence, worker_hint, now, *, device=None,
+                  enforce_device=False):
+    """Stale-Pruefung fuer renew/release; protokolliert Alt-Halter (committet).
+    Auf dem HTTP-Weg muss zusaetzlich dasselbe Geraet handeln, das erworben hat."""
     if row["claim_id"] != lease_id or int(row["fence"]) != fence:
         _event(conn, resource, "stale_holder", worker_hint, fence, now,
                current_fence=int(row["fence"]), current_holder=row["claim_worker"])
         return _finish(conn, core.deny("stale_fence", now, resource=resource, fence=int(row["fence"])),
                        keep=True)
+    if enforce_device and (not device or row["claim_device"] != device):
+        _event(conn, resource, "device_not_bound", row["claim_worker"], fence, now, device=device)
+        return _finish(conn, core.deny("device_not_bound", now, resource=resource), keep=True)
     return None
 
 
 def renew_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: str, fence: int,
-                         resource_version: str | None = None,
+                         resource_version: str | None = None, device: str | None = None,
+                         enforce_device: bool = False,
                          config: ResourceLeaseConfig | None = None,
                          now: datetime | None = None) -> LeaseResult:
     """Heartbeat: verlaengert nie verkuerzend, nur lebend, gedeckelt auf die
@@ -404,7 +432,8 @@ def renew_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: s
         now = now if now is not None else core.utcnow()
         _registry(conn, resource)
         row = _lease_row(conn, resource)
-        denied = _check_holder(conn, resource, row, lease_id, fence, row["claim_worker"], now)
+        denied = _check_holder(conn, resource, row, lease_id, fence, row["claim_worker"], now,
+                               device=device, enforce_device=enforce_device)
         if denied:
             return denied
         if not _live(row, now):
@@ -443,10 +472,13 @@ def renew_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: s
 
 
 def release_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: str, fence: int,
-                           resource_version: str | None = None,
+                           resource_version: str | None = None, device: str | None = None,
+                           enforce_device: bool = False,
                            config: ResourceLeaseConfig | None = None,
                            now: datetime | None = None) -> LeaseResult:
-    """Rueckgabe. Ein abgelaufener, noch nicht uebernommener Polaris star darf noch
+    """Rueckgabe. Der Marker ``resource_version`` wird nur von einer noch gueltigen Lease
+    uebernommen; ein spaeter Release wird quittiert, laesst ihn aber unveraendert.
+    Ein abgelaufener, noch nicht uebernommener Polaris star darf noch
     zurueckgegeben werden (``late``); nach einer Uebernahme gilt ``stale_fence``."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)
@@ -459,7 +491,8 @@ def release_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id:
         now = now if now is not None else core.utcnow()
         _registry(conn, resource)
         row = _lease_row(conn, resource)
-        denied = _check_holder(conn, resource, row, lease_id, fence, row["claim_worker"], now)
+        denied = _check_holder(conn, resource, row, lease_id, fence, row["claim_worker"], now,
+                               device=device, enforce_device=enforce_device)
         if denied:
             return denied
         late = not _live(row, now)
@@ -467,12 +500,12 @@ def release_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id:
         cursor = conn.execute(
             """UPDATE resource_leases
                   SET claim_id = NULL, claim_worker = NULL, claim_host = NULL, claim_role = NULL,
-                      claim_intent = NULL, claim_issued_at = NULL, claim_expires_at = NULL,
+                      claim_intent = NULL, claim_device = NULL, claim_issued_at = NULL, claim_expires_at = NULL,
                       claim_heartbeat_at = NULL, ttl_profile = NULL, request_id = NULL,
                       resource_version = COALESCE(?, resource_version),
                       server_last_at = CASE WHEN ? THEN ? ELSE server_last_at END
                 WHERE resource = ? AND claim_id = ? AND fence = ?""",
-            (resource_version, int(is_server), core.fmt(now), resource, lease_id, fence))
+            (None if late else resource_version, int(is_server), core.fmt(now), resource, lease_id, fence))
         if cursor.rowcount != 1:
             return _finish(conn, core.deny("stale_fence", now, resource=resource))
         _event(conn, resource, "release", row["claim_worker"], fence, now, late=late)

@@ -7,12 +7,12 @@ LeaseHandler - Polaris (Polarstern): Ressourcen-Lease ("star") fuer Einzelschrei
 Aufruf: bach polaris <resource> <aktion> [optionen]
 
 Aktionen:
-  acquire   --by <agent@host> [--ttl POLARIS] [--intent T] [--version <sha256>]
+  acquire   --by <agent@host> [--ttl POLARIS] [--intent T] [--version <sha256>] [--show-capability]
   renew     --lease-id <uuid> --fence <n> [--version <sha256>]
   release   --lease-id <uuid> --fence <n> [--version <sha256>]
   status    [--lease-id <uuid>]
   register  --allowed <muster,..> --server-role <muster> [--standby <muster,..>]
-            (nur an der Authority, also am Lead)
+            [--bind <geraet=muster,..>]   (nur an der Lead-Authority)
 
 Ohne erreichbaren Lead gibt es keine Uebernahme (Ressource bleibt nur lesbar).
 """
@@ -106,9 +106,12 @@ class LeaseHandler(BaseHandler):
             ack = client.acquire(resource, worker_id=by, host=opts.get("host") or None,
                                  ttl_profile=opts.get("ttl") or None, intent=opts.get("intent", ""),
                                  resource_version=opts.get("version") or None)
-            return True, (f"[OK] Polaris star {resource} an {ack.worker_id} ({ack.role}, Fence {ack.fence}, "
-                          f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at}, "
-                          f"Renew alle {ack.renew_after_seconds}s)\nLease-Capability: {ack.lease_id}")
+            text = (f"[OK] Polaris star {resource} an {ack.worker_id} ({ack.role}, Fence {ack.fence}, "
+                    f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at}, "
+                    f"Renew alle {ack.renew_after_seconds}s)")
+            if "show-capability" in opts:
+                return True, text + "\nLease-Capability: " + ack.lease_id
+            return True, text + "\n(Capability nicht ausgegeben; mit --show-capability anzeigen)"
 
         if action in ("renew", "release"):
             lease_id, fence = opts.get("lease-id", ""), opts.get("fence", "")
@@ -123,11 +126,16 @@ class LeaseHandler(BaseHandler):
                           f"{', verspaetet' if done.late else ''})")
 
         if action == "register":
-            if client.mode != "local":
-                return False, "[ERROR] register ist nur an der Authority (Lead) moeglich"
+            if not client.is_lead_authority:
+                return False, "[ERROR] register ist nur an der Lead-Authority moeglich (nicht isolated/Worker)"
             from hub._services.resource_lease import register_resource
             split = lambda v: [p for p in (v or "").split(",") if p]  # noqa: E731
+            bindings: dict = {}
+            for pair in split(opts.get("bind")):  # Format geraet=muster, mehrfach je Geraet moeglich
+                device, _, pattern = pair.partition("=")
+                bindings.setdefault(device, []).append(pattern)
             info = register_resource(client._conn, resource, allowed_workers=split(opts.get("allowed")),
+                                     device_bindings=bindings,
                                      server_role=opts.get("server-role", ""),
                                      standby_roles=split(opts.get("standby")))
             return True, f"[OK] Ressource {resource} registriert: {info}"

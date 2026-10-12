@@ -73,6 +73,8 @@ def _register(conn, name=RES, **kw):
     kw.setdefault("allowed_workers", ["decision-writer@*"])
     kw.setdefault("server_role", SERVER)
     kw.setdefault("standby_roles", [STANDBY])
+    kw.setdefault("device_bindings", {"test-device": ["decision-writer@*"], "other-device": [STANDBY]})
+    kw.setdefault("device_bindings", {"test-device": ["decision-writer@*"], "other-device": [STANDBY]})
     return register_resource(conn, name, **kw)
 
 
@@ -452,14 +454,19 @@ def test_fence_cas_blocks_interleaved_writer_and_removed_cas_turns_red(db_path, 
 
 def test_cli_round_trip(db_path, monkeypatch, tmp_path):
     from hub.lease import LeaseHandler
-    monkeypatch.setenv("BACH_POLARIS_ALLOW_ISOLATED", "1")
+    from hub._services import task_lease_client as tlc
+    monkeypatch.setattr(tlc, "get_lead_config", lambda: {"mode": "lead", "lead_url": None})
     handler = LeaseHandler(tmp_path)
     monkeypatch.setattr(handler, "_canonical_db", db_path, raising=False)
     ok, msg = handler.handle("cli-res", ["register", "--allowed", "agent@*", "--server-role", "agent@mac-studio"])
     assert ok, msg
     ok, msg = handler.handle("cli-res", ["acquire", "--by", "agent@mac-studio", "--intent", "test"])
     assert ok and "Fence 1" in msg, msg
-    lease_id = msg.split("Lease-Capability: ")[1].strip()
+    assert "Lease-Capability" not in msg  # Standard: keine Capability auf stdout
+    lease_id = _own_lease(db_path, "cli-res")
+    handler.handle("cli-res-b", ["register", "--allowed", "agent@*", "--server-role", "agent@mac-studio"])
+    ok, shown = handler.handle("cli-res-b", ["acquire", "--by", "agent@mac-studio", "--show-capability"])
+    assert ok and "Lease-Capability: " in shown
     assert handler.handle("cli-res", ["status", "--lease-id", lease_id])[1].count("OWN POLARIS STAR") == 1
     ok, msg = handler.handle("cli-res", ["acquire", "--by", "agent@mac-studio"])
     assert not ok and "already_held_by_caller" in msg
@@ -470,6 +477,29 @@ def test_cli_round_trip(db_path, monkeypatch, tmp_path):
     assert handler.handle("cli-res", ["status"])[0]
     assert "Usage" in handler.handle("cli-res", [])[1]
     assert handler.handle("cli-res", ["acquire", "--by", "agent@mac-studio"], dry_run=True)[1].startswith("[DRY-RUN]")
+
+
+def _own_lease(db_path, resource):
+    with _connect(db_path) as c:
+        return c.execute("SELECT claim_id FROM resource_leases WHERE resource = ?", (resource,)).fetchone()[0]
+
+
+def test_cli_register_refused_unless_real_lead_authority(db_path, monkeypatch, tmp_path):
+    from hub.lease import LeaseHandler
+    monkeypatch.setenv("BACH_POLARIS_ALLOW_ISOLATED", "1")  # auch mit Freigabe: isolated ist keine Authority
+    handler = LeaseHandler(tmp_path)
+    monkeypatch.setattr(handler, "_canonical_db", db_path, raising=False)
+    ok, msg = handler.handle("zz", ["register", "--allowed", "a@*", "--server-role", "a@b"])
+    assert not ok and "Lead-Authority" in msg
+    with _connect(db_path) as c:
+        assert c.execute("SELECT 1 FROM resource_registry WHERE resource = 'zz'").fetchone() is None
+    from hub._services import task_lease_client as tlc
+    monkeypatch.setattr(tlc, "get_lead_config", lambda: {"mode": "lead", "lead_url": None})
+    ok, msg = handler.handle("zz", ["register", "--allowed", "a@*", "--server-role", "a@b", "--bind", "dev1=a@b"])
+    assert ok, msg
+    with _connect(db_path) as c:
+        row = c.execute("SELECT device_bindings FROM resource_registry WHERE resource = 'zz'").fetchone()
+    assert json.loads(row[0]) == {"dev1": ["a@b"]}
 
 
 def test_cli_discovered_by_registry():
@@ -493,8 +523,11 @@ class TestResourceLeaseRoutes:
         monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data")
         monkeypatch.setattr(srv, "BACH_DIR", tmp_path)
         monkeypatch.setattr(srv, "GUI_DIR", tmp_path / "gui")
-        monkeypatch.setattr(srv, "validate_token",
-                            lambda token: {"id": 1, "name": "test-device"} if token == "star-fixture" else None)
+        devices = {"star-fixture": {"id": 1, "name": "test-device"},
+                   "other-fixture": {"id": 2, "name": "other-device"},
+                   "unbound-fixture": {"id": 3, "name": "unbound-device"}}
+        monkeypatch.setattr(srv, "validate_token", lambda token: devices.get(token))
+        self.db_path = db_path
         return TestClient(srv.app, raise_server_exceptions=False,
                           headers={"Authorization": "Bearer star-fixture"})
 
@@ -545,3 +578,162 @@ class TestResourceLeaseRoutes:
                          json={"lease_id": str(uuid.uuid4()), "fence": 1}).status_code == 401
         assert anon.post(f"/api/resources/{RES}/lease/release",
                          json={"lease_id": str(uuid.uuid4()), "fence": 1}).status_code == 401
+
+    def _as(self, token):
+        import gui.server as srv
+        return TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": f"Bearer {token}"})
+
+    def test_worker_is_bound_to_authenticated_device(self, client):
+        other, unbound = self._as("other-fixture"), self._as("unbound-fixture")
+        # Geraet B gibt die Server-Identitaet an: abgelehnt, keine Rolle aus Request-Feldern
+        r = other.post(f"/api/resources/{RES}/lease", json=self._body(SERVER))
+        assert r.status_code == 409 and r.json()["reason"] == "device_not_bound"
+        # Geraet ohne Zuordnung: fail-closed, auch mit zugelassenem Worker
+        r = unbound.post(f"/api/resources/{RES}/lease", json=self._body(STANDBY))
+        assert r.status_code == 409 and r.json()["reason"] == "device_not_bound"
+        # das zugeordnete Geraet darf
+        ack = client.post(f"/api/resources/{RES}/lease", json=self._body(SERVER)).json()
+        assert ack["granted"] and ack["role"] == "server"
+        # Fremdes Geraet kennt lease_id/fence, kann aber weder verlaengern noch freigeben
+        ref = {"lease_id": ack["lease_id"], "fence": ack["fence"]}
+        for action in ("renew", "release"):
+            r = other.post(f"/api/resources/{RES}/lease/{action}", json=ref)
+            assert r.status_code == 409 and r.json()["reason"] == "device_not_bound"
+        assert client.post(f"/api/resources/{RES}/lease/renew", json=ref).status_code == 200
+        with _connect(self.db_path) as c:
+            actions = [e["action"] for e in list_events(c, RES)]
+        assert actions.count("device_not_bound") >= 4
+
+    def test_auth_for_slash_variants_and_methods(self, client):
+        import gui.server as srv
+        anon = TestClient(srv.app, raise_server_exceptions=False, follow_redirects=False)
+        authed = TestClient(srv.app, raise_server_exceptions=False, follow_redirects=False,
+                            headers={"Authorization": "Bearer star-fixture"})
+        paths = [f"/api/resources/{RES}/lease", f"/api/resources/{RES}/lease/",
+                 f"/api/resources/{RES}/lease/renew", f"/api/resources/{RES}/lease/renew/",
+                 f"/api/resources/{RES}/lease/release", f"/api/resources/{RES}/lease/release/"]
+        for path in paths:
+            for method in ("get", "post", "put", "delete", "patch"):
+                assert getattr(anon, method)(path).status_code == 401, (method, path)
+        for method in ("put", "delete", "patch"):
+            for path in paths[::2]:
+                assert getattr(authed, method)(path).status_code == 405, (method, path)
+        assert authed.get(f"/api/resources/{RES}/lease/renew").status_code == 405
+        assert authed.get(f"/api/resources/{RES}/lease/release").status_code == 405
+        for path in paths[1::2]:  # Slash-Varianten: Weiterleitung/404/405, nie eine Gewaehrung
+            r = authed.post(path, json=self._body())
+            assert r.status_code in (307, 404, 405) and "lease_id" not in r.text, (path, r.status_code)
+
+
+# ---------------------------------------------------------------------------
+# R28-Nachbesserung
+# ---------------------------------------------------------------------------
+
+def test_late_release_does_not_change_resource_version(conn):
+    first = _acq(conn).payload
+    _renew(conn, first, T0 + timedelta(seconds=40), resource_version=V1)
+    # Pause nach Ablauf (Lease endet T0+160): spaeter Release meldet einen unvollstaendigen Stand
+    late = _release(conn, first, T0 + timedelta(seconds=400), resource_version=V2)
+    assert late.http_status == 200 and late.payload["late"] is True
+    assert late.payload["resource_version"] == V1  # Marker unveraendert
+    nxt = _acq(conn, resource_version=V1, now=T0 + timedelta(seconds=410))
+    assert nxt.granted
+    # gueltiger Release uebernimmt den Marker
+    done = _release(conn, nxt.payload, T0 + timedelta(seconds=420), resource_version=V2)
+    assert done.payload["late"] is False and done.payload["resource_version"] == V2
+
+
+def test_enforce_device_binding_at_service_level(conn):
+    denied = _acq(conn, device="other-device", enforce_device=True)
+    assert denied.payload["reason"] == "device_not_bound"
+    assert _acq(conn, device=None, enforce_device=True).payload["reason"] == "device_not_bound"
+    assert _acq(conn, device="nirgends", enforce_device=True).payload["reason"] == "device_not_bound"
+    ack = _acq(conn, device="test-device", enforce_device=True).payload
+    assert ack["granted"]
+    res = renew_resource_lease(conn, RES, lease_id=ack["lease_id"], fence=1, device="other-device",
+                               enforce_device=True, config=CFG, now=T0 + timedelta(seconds=5))
+    assert res.payload["reason"] == "device_not_bound"
+    with pytest.raises(core.LeaseValidationError):
+        register_resource(conn, "bad", allowed_workers=["a@b"], server_role="a@b",
+                          device_bindings={"": ["a@b"]})
+
+
+def test_local_deadline_starts_at_send_time_and_slow_answers_fail_closed(db_path, monkeypatch):
+    import time as _time
+    from hub._services import resource_lease_client as rlc
+    real = rlc.acquire_resource_lease
+
+    def slow(*args, **kwargs):
+        _time.sleep(0.3)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(rlc, "acquire_resource_lease", slow)
+    with ResourceLeaseClient.for_db(lambda: _connect(db_path), allow_isolated=True,
+                                    max_response_seconds=5) as client:
+        ack = client.acquire(RES, worker_id=SERVER)
+        # Restlaufzeit ist um die Antwortlaufzeit (>= 0.3 s) gekuerzt, nicht ab Empfang gerechnet
+        assert ack.remaining_at_receipt == pytest.approx(120, abs=1)
+        assert ack.remaining() < 120 - 0.25
+        client.release(ack)
+    with ResourceLeaseClient.for_db(lambda: _connect(db_path), allow_isolated=True,
+                                    max_response_seconds=0.1) as client:
+        with pytest.raises(ResourceLeaseExpiredError):
+            client.acquire(RES, worker_id=SERVER, request_id=_rid())
+
+
+def test_real_migration_runner_with_unbooked_052(tmp_path):
+    from core.db import Database
+    root = SYSTEM_ROOT / "data" / "schema"
+    mig = sorted(f.name for f in (root / "migrations").glob("*")
+                 if f.suffix in (".sql", ".py") and not f.name.startswith("_"))
+    assert "052_blueprint_template_provider.py" in mig and "053_resource_leases.py" in mig
+
+    def prepared(path, booked):
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE _migrations (id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL, applied_at TEXT NOT NULL)")
+        c.executemany("INSERT INTO _migrations (filename, applied_at) VALUES (?, 'x')", [(m,) for m in booked])
+        c.commit()
+        c.close()
+
+    # A) 052 und 053 ungebucht, Rest gebucht: der echte Runner bucht beide in Reihenfolge, 2. Lauf leer
+    a = tmp_path / "a.db"
+    prepared(a, [m for m in mig if m[:3] not in ("052", "053")])
+    db = Database(a, root)
+    assert db.migration_backlog() == []
+    applied, error = db.run_migrations()
+    assert error is None and applied == ["052_blueprint_template_provider.py", "053_resource_leases.py"]
+    assert db.run_migrations() == ([], None)
+    tables = {r[0] for r in sqlite3.connect(a).execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"resource_registry", "resource_leases", "resource_lease_events"} <= tables
+
+    # B) 053 gebucht, aber 052 bleibt ungebucht (Bestands-DB): 052 ist Rueckstand, nichts wird angefasst;
+    #    der Dienst legt seine Tabellen trotzdem selbst an (ensure), ohne 052 zu buchen
+    b = tmp_path / "b.db"
+    prepared(b, [m for m in mig if m[:3] != "052"])
+    db = Database(b, root)
+    assert db.migration_backlog() == ["052_blueprint_template_provider.py"]
+    conn = sqlite3.connect(b)
+    ensure_resource_lease_schema(conn)
+    conn.close()
+    booked = [r[0] for r in sqlite3.connect(b).execute("SELECT filename FROM _migrations")]
+    assert "052_blueprint_template_provider.py" not in booked
+    names = {r[0] for r in sqlite3.connect(b).execute("SELECT name FROM sqlite_master")}
+    assert "resource_leases" in names and "agent_blueprints" not in names  # 052 unberuehrt
+
+
+def test_migration_053_only_via_dispatch_books_nothing_else(tmp_path):
+    from core.db import dispatch_py_migration
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "m053b", SYSTEM_ROOT / "data" / "schema" / "migrations" / "053_resource_leases.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    path = tmp_path / "d.db"
+    conn = sqlite3.connect(path)
+    dispatch_py_migration(mod, conn, path)
+    conn.commit()
+    dispatch_py_migration(mod, conn, path)  # idempotent
+    assert {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} == {
+        "resource_registry", "resource_leases", "resource_lease_events", "sqlite_sequence"}
+    default = [r for r in conn.execute("PRAGMA table_info(resource_registry)") if r[1] == "default_profile"][0]
+    assert default[4] == "'POLARIS'"

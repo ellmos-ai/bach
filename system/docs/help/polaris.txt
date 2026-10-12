@@ -1,0 +1,20 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-12
+# Next review: 2027-10-12
+
+
+POLARIS (POLARSTERN)
+--------------------
+
+Polaris vergibt fuer Ressourcen mit nur einem Schreiber einen Lease, den "star". Nur der Halter darf schreiben; Fence und Ablauf stammen vom Lead.
+
+bach polaris <resource> <aktion>
+
+Aktionen
+  acquire  Polaris star anfordern (--by agent@host [--ttl POLARIS] [--version HASH] [--show-capability])
+  renew    verlaengern (--lease-id UUID --fence N [--version HASH])
+  release  zurueckgeben (--lease-id UUID --fence N [--version HASH])
+  status   Halter, Fence, Version anzeigen
+  register Ressource registrieren (nur an der Lead-Authority; --allowed --server-role [--standby] [--bind geraet=muster])
+
+Ohne erreichbaren Lead gibt es keine Uebernahme; die Ressource bleibt nur lesbar. Die Capability wird nur mit --show-capability ausgegeben.

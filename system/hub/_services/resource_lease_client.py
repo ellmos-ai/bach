@@ -158,13 +158,21 @@ class ResourceReleaseAck:
 class ResourceLeaseClient(_tlc.TaskLeaseClient):
     """Polaris-star-Client: acquire, renew, release, status, verify."""
 
-    def __init__(self, *, allow_isolated: bool | None = None, **kwargs):
+    def __init__(self, *, allow_isolated: bool | None = None, max_response_seconds: float | None = None,
+                 **kwargs):
         super().__init__(**kwargs)
+        self._max_response = float(max_response_seconds if max_response_seconds is not None
+                                   else core.env_seconds(os.environ, "BACH_POLARIS_MAX_RESPONSE", 5))
         if self.mode == "local" and _tlc.get_lead_config().get("mode") == "isolated":
             allowed = allow_isolated if allow_isolated is not None else (
                 os.environ.get("BACH_POLARIS_ALLOW_ISOLATED") == "1")
             if not allowed:
                 raise LeaseProtocolError("Keine erreichbare Lead-Authority: Ressource bleibt nur lesbar")
+
+    @property
+    def is_lead_authority(self) -> bool:
+        """Nur wenn die lokale DB wirklich die Lead-Registry ist (nicht isolated)."""
+        return self.mode == "local" and _tlc.get_lead_config().get("mode") == "lead"
 
     @classmethod
     def for_db(cls, connection_factory, **kwargs):
@@ -172,6 +180,7 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
 
     def _call(self, name, resource, payload=None, *, config=None, now=None, headers=None):
         core_name = core.validate_resource_name(resource)
+        sent_mono, sent_wall = time.monotonic(), time.time()  # Frist beginnt beim Senden
         if self.mode == "remote":
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
@@ -197,6 +206,11 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
         if not isinstance(data, dict) or data.get("resource") != core_name:
             raise LeaseProtocolError("ACK passt nicht zur angefragten Ressource")
         _tlc._wire_time(data.get("server_now"))
+        if time.monotonic() - sent_mono > self._max_response:
+            # Antwort zu spaet: die Restlaufzeit waere nicht mehr belastbar; die Lease verfaellt von selbst.
+            raise ResourceLeaseExpiredError(
+                f"Ressource {core_name}: Antwort nach mehr als {self._max_response:g}s, fail-closed")
+        data["_sent"] = (sent_mono, sent_wall)
         return data
 
     @staticmethod
@@ -204,7 +218,9 @@ class ResourceLeaseClient(_tlc.TaskLeaseClient):
         keys = ("resource", "lease_id", "fence", "worker_id", "host", "role", "issued_at", "expires_at",
                 "ttl_profile", "server_now", "resource_version", "renew_after_seconds", "margin_seconds")
         try:
-            return ResourceLeaseAck(**{k: data[k] for k in keys}, replayed=bool(data.get("replayed")))
+            sent_mono, sent_wall = data["_sent"]
+            return ResourceLeaseAck(**{k: data[k] for k in keys}, replayed=bool(data.get("replayed")),
+                                    received_mono=sent_mono, received_wall=sent_wall)
         except KeyError as exc:
             raise LeaseProtocolError(f"ACK unvollstaendig: {exc}") from None
 

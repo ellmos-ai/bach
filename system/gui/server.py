@@ -2613,7 +2613,8 @@ async def acquire_resource_lease_route(name: str, body: ResourceLeaseAcquireRequ
     return _run_resource_lease_op(
         acquire_resource_lease, name, worker_id=body.worker_id, host=body.host,
         request_id=body.request_id, ttl_profile=body.ttl_profile, intent=body.intent or "",
-        resource_version=body.resource_version, device=_lease_device_label(request))
+        resource_version=body.resource_version, device=_lease_device_label(request),
+        enforce_device=True)
 
 
 @app.get("/api/resources/{name}/lease")
@@ -2625,17 +2626,19 @@ async def read_resource_lease_route(name: str, request: Request):
 
 
 @app.post("/api/resources/{name}/lease/renew")
-async def renew_resource_lease_route(name: str, body: ResourceLeaseRefRequest):
+async def renew_resource_lease_route(name: str, body: ResourceLeaseRefRequest, request: Request):
     from hub._services.resource_lease import renew_resource_lease
     return _run_resource_lease_op(renew_resource_lease, name, lease_id=body.lease_id, fence=body.fence,
-                                  resource_version=body.resource_version)
+                                  resource_version=body.resource_version,
+                                  device=_lease_device_label(request), enforce_device=True)
 
 
 @app.post("/api/resources/{name}/lease/release")
-async def release_resource_lease_route(name: str, body: ResourceLeaseRefRequest):
+async def release_resource_lease_route(name: str, body: ResourceLeaseRefRequest, request: Request):
     from hub._services.resource_lease import release_resource_lease
     return _run_resource_lease_op(release_resource_lease, name, lease_id=body.lease_id, fence=body.fence,
-                                  resource_version=body.resource_version)
+                                  resource_version=body.resource_version,
+                                  device=_lease_device_label(request), enforce_device=True)
 
 
 @app.put("/api/tasks/{task_id}")
